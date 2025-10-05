@@ -1,9 +1,13 @@
 {
   "tasks": {
-    "start": "deno run --allow-ffi --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts"
+    "start": "deno run --allow-ffi --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts",
+    "kli": "deno run --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts"
   },
   "compilerOptions": {
     "strict": true
   },
-  "lint": { "rules": { "exclude": ["no-explicit-any"] } }
+  "lint": { "rules": { "exclude": ["no-explicit-any"] } },
+  "imports": {
+    "@std/cli": "jsr:@std/cli@^1.0.22"
+  }
 }

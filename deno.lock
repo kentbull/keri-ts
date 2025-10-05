@@ -1,11 +1,17 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/cli@^1.0.22": "1.0.22",
     "npm:effection@2": "2.0.8",
     "npm:effection@3": "3.6.0",
     "npm:effection@3.6.0": "3.6.0",
     "npm:lmdb@3": "3.4.2",
     "npm:lmdb@3.4.2": "3.4.2"
+  },
+  "jsr": {
+    "@std/cli@1.0.22": {
+      "integrity": "50d1e4f87887cb8a8afa29b88505ab5081188f5cad3985460c3b471fa49ff21a"
+    }
   },
   "npm": {
     "@chainsafe/abort-controller@3.0.1": {
@@ -635,5 +641,10 @@
   "remote": {
     "https://deno.land/std@0.224.0/async/delay.ts": "f90dd685b97c2f142b8069082993e437b1602b8e2561134827eeb7c12b95c499",
     "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514"
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@std/cli@^1.0.22"
+    ]
   }
 }

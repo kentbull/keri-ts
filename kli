@@ -40,11 +40,7 @@ async function main(): Promise<void> {
   const command = Deno.args[0];
   
   // If we have a command, parse all arguments including command-specific ones
-  if (command 
-    && command !== "--help" 
-    && command !== "-h" 
-    && command !== "--version" 
-    && command !== "-v") {
+  if (command && command !== "--help" && command !== "-h" && command !== "--version" && command !== "-v") {
     const args = parseArgs(Deno.args, {
       boolean: ["help", "version", "temp", "nopasscode"],
       string: ["name", "base", "salt", "configDir", "configFile", "passcode", "aeid", "seed"],

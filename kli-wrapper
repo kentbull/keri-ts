@@ -1,0 +1,10 @@
+#!/bin/bash
+# KERI TypeScript CLI wrapper script
+# This script runs the kli command from the keri-ts project directory
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KERI_TS_DIR="/Users/kbull/code/keri/kentbull/keri-ts"
+
+# Change to the keri-ts directory and run the command
+cd "$KERI_TS_DIR" && deno run --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts "$@"
