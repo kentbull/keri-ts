@@ -35,21 +35,8 @@ export function* readValue(db: RootDatabase, key: string): string | null {
 
 export function* writeValue(db: RootDatabase, key: string, value: string): Operation<void> {
   // sync write
-  db.putSync(key, value);
-}
-
-function* spawnTxn(env: DBEnv, mode: 'ro' | 'rw'): Operation<any> {
-  // Effection spawn for txn as supervised child.
-  return yield* spawn(function* () {
-    return env.env.beginTxn({ readOnly: mode === 'ro' });
+  return db.transactionSync(() => {
+    db.putSync(key, value);
   });
-}
-
-function* commitTxn(txn: any): Operation<void> {
-  yield* spawn(function* () { txn.commit(); });
-}
-
-function* abortTxn(txn: any): Operation<void> {
-  yield* spawn(function* () { txn.abort(); });
 }
 
