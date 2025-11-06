@@ -1,5 +1,4 @@
-import { parseArgs } from "@std/cli";
-import { type Operation } from 'npm:effection@3.6.0';
+import { type Operation } from 'effection';
 
 interface InitArgs {
   name?: string;
@@ -36,40 +35,31 @@ Options:
 `);
 }
 
+// TODO remove this ignore once init is finished
+// deno-lint-ignore require-yield
 export function* initCommand(args: Record<string, unknown>): Operation<void> {
-  // Check for help flag in the main args first
+  // Check for help flag
   if (args.help || args.h) {
     printInitHelp();
     return;
   }
-  
-  // Extract the remaining arguments after the 'init' command
-  const remainingArgs = (args._ as string[])?.slice(1) || [];
-  
-  // Check for help flag in the remaining args
-  if (remainingArgs.includes("--help") || remainingArgs.includes("-h")) {
-    printInitHelp();
-    return;
-  }
-  
-  // Parse the remaining arguments for init-specific options
-  const initArgs = parseArgs(remainingArgs, {
-    boolean: ["temp", "nopasscode", "help"],
-    string: ["base", "salt", "configDir", "configFile", "passcode", "aeid", "seed"],
-    alias: {
-      base: "b", 
-      temp: "t",
-      salt: "s",
-      configDir: "c",
-      passcode: "p",
-      aeid: "a",
-      seed: "e",
-      help: "h",
-    },
-  }) as InitArgs;
 
-  // Use the name from the main args (already parsed)
-  const name = args.name as string;
+  // Extract values from args (already parsed by Cliffy or test mocks)
+  const initArgs: InitArgs = {
+    name: args.name as string | undefined,
+    base: args.base as string | undefined,
+    temp: args.temp as boolean | undefined,
+    salt: args.salt as string | undefined,
+    configDir: args.configDir as string | undefined,
+    configFile: args.configFile as string | undefined,
+    passcode: args.passcode as string | undefined,
+    nopasscode: args.nopasscode as boolean | undefined,
+    aeid: args.aeid as string | undefined,
+    seed: args.seed as string | undefined,
+  };
+
+  // Validate required name
+  const name = initArgs.name;
   if (!name || name === "") {
     throw new Error("Name is required and cannot be empty");
   }
@@ -79,7 +69,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   let bran = initArgs.passcode;
   const configFile = initArgs.configFile;
   const configDir = initArgs.configDir;
-  const nopasscode = args.nopasscode as boolean || false;
+  const nopasscode = initArgs.nopasscode || false;
 
   // Handle passcode input if not provided and not using nopasscode
   if (!nopasscode && !bran) {
@@ -94,7 +84,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       throw new Error("Passcodes do not match");
     }
     
-    bran = passcode;
+    bran = passcode || undefined;
   }
 
   // TODO: Implement actual keystore and database creation

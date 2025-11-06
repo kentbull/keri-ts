@@ -1,6 +1,6 @@
-import { action, type Operation, run, spawn } from 'npm:effection@3.6.0' // Core concurrency.
+import { action, type Operation, run, spawn } from 'effection'
 import { openDB, readValue, writeValue } from './db.ts'
-import { RootDatabase } from 'npm:lmdb@3.4.2' // Helper: Promise → Operation (for server.finished).
+import { RootDatabase } from 'lmdb' // Helper: Promise → Operation (for server.finished).
 
 // Helper: Promise → Operation (for server.finished).
 function* toOp<T>(promise: Promise<T>): Operation<T> {
@@ -53,4 +53,3 @@ function* handleRequest(req: Request, db: RootDatabase): Operation<Response> {
   return new Response("Not Found", { status: 404 });
 }
 
-// CS note: URL parsing is O(n) string ops—efficient, but for KERI's DID paths, consider trie-based routing (Sedgewick's *Algorithms*, Ch. 12).
