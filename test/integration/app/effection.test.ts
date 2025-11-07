@@ -1,12 +1,12 @@
-import { assertEquals, assert } from "@std/assert";
-import { type Operation, run, spawn } from 'effection';
-import { initCommand } from '@app/cli/init.ts';
+import { assertEquals, assert } from "jsr:@std/assert@^1.0.15";
+import { type Operation, run, spawn } from 'npm:effection@3.6.0';
+import { initCommand } from '../../../src/app/cli/init.ts';
 import { 
   CLITestHarness, 
   testCLICommand, 
   testConcurrentCLICommands,
   createMockArgs
-} from '@test/utils.ts';
+} from '../../../test/utils.ts';
 
 /**
  * Integration tests using Effection primitives for full system simulation.

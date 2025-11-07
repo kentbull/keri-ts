@@ -19,7 +19,7 @@ KERIpy uses Python's `memoryview` with `buffers=True` for zero-copy access. Java
 
 ```typescript
 import { type Operation } from 'effection';
-import { RootDatabase } from 'lmdb';
+import { RootDatabase } from 'npm:lmdb@3.4.2';
 
 // Get value - returns Uint8Array (zero-copy, like Python memoryview)
 function* getVal(

@@ -84,7 +84,7 @@ docs/
 ```typescript
 // 1. Imports (external first, then internal)
 import { type Operation } from 'effection';
-import { RootDatabase } from 'lmdb';
+import { RootDatabase } from 'npm:lmdb@3.4.2';
 import { KeyBuilder } from './keys/builder.ts';
 
 // 2. Types/Interfaces

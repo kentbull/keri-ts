@@ -1,7 +1,7 @@
-import { assertEquals } from "@std/assert";
-import { run } from 'effection';
-import { initCommand } from '@app/cli/init.ts';
-import { CLITestHarness, createMockArgs } from '@test/utils.ts';
+import { assertEquals } from "jsr:@std/assert@^1.0.15";
+import { run } from 'npm:effection@3.6.0';
+import { initCommand } from '../../../src/app/cli/init.ts';
+import { CLITestHarness, createMockArgs } from '../../../test/utils.ts';
 
 /**
  * Integration tests for the main CLI entry point

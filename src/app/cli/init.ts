@@ -1,4 +1,4 @@
-import { type Operation } from 'effection';
+import { type Operation } from 'npm:effection@3.6.0';
 
 interface InitArgs {
   name?: string;

@@ -132,7 +132,7 @@ import { KeyBuilder } from '../db/keys/builder.ts';
 ```typescript
 // Use import map aliases for external packages
 import { type Operation } from 'effection';
-import { RootDatabase } from 'lmdb';
+import { RootDatabase } from 'npm:lmdb@3.4.2';
 ```
 
 ### Type-Only Imports

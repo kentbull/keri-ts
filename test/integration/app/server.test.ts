@@ -1,5 +1,5 @@
-import { assertEquals } from "@std/assert";
-import { type Operation, type Task, run, spawn, action } from 'effection';
+import { assertEquals } from "jsr:@std/assert@^1.0.15";
+import { type Operation, type Task, run, spawn, action } from 'npm:effection@3.6.0';
 import { startServer } from '../../../src/app/server.ts';
 
 /**
@@ -160,6 +160,7 @@ Deno.test("Integration: startServer with HTTP requests", async () => {
       yield* waitForShutdown(serverTask);
     }
   });
+  console.log("Integration: startServer with HTTP requests passed");
 });
 
 /**

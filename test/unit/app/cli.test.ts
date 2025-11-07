@@ -1,7 +1,7 @@
-import { assertEquals } from "@std/assert";
-import { run } from 'effection';
-import { initCommand } from '@app/cli/init.ts';
-import { createMockArgs, assertOperationThrows } from '@test/utils.ts';
+import { assertEquals } from "jsr:@std/assert@^1.0.15";
+import { run } from 'npm:effection@3.6.0';
+import { initCommand } from '../../../src/app/cli/init.ts';
+import { createMockArgs, assertOperationThrows } from '../../../test/utils.ts';
 
 Deno.test("CLI: init command with valid arguments", async () => {
   const args = createMockArgs({

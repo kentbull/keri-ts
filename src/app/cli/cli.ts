@@ -1,8 +1,8 @@
 #!/usr/bin/env -S deno run --allow-sys --allow-net --allow-env --allow-read --allow-write
-import { Command } from "@cliffy/command";
-import { action, type Operation } from 'effection';
-import { initCommand } from '@app/cli/init.ts';
-import { agentCommand } from '@app/cli/agent.ts';
+import { Command } from "jsr:@cliffy/command@^1.0.0-rc.8";
+import { action, type Operation } from 'npm:effection@3.6.0';
+import { initCommand } from './src/app/cli/init.ts';
+import { agentCommand } from './src/app/cli/agent.ts';
 
 /**
  * Promise to Structured Concurrency Helper: Convert Promise to Effection Operation

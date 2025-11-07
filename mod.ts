@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-sys --allow-net --allow-env --allow-read --allow-write
-import { run } from 'effection';
-import { kli } from '@app/cli/cli.ts';
+import { run } from 'npm:effection@3.6.0';
+import { kli } from './src/app/cli/cli.ts';
 
 /**
  * Main entry point - Effection is the outermost runtime

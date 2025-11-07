@@ -1,5 +1,5 @@
-import { type Operation } from 'effection';
-import { startServer } from '@app/server.ts';
+import { type Operation } from 'npm:effection@3.6.0';
+import { startServer } from './src/app/server.ts';
 
 interface AgentArgs {
   port?: number;

@@ -26,7 +26,7 @@ Maps KERIpy's LMDB patterns to TypeScript using `npm:lmdb@3.4.2`, integrated wit
 
 ```typescript
 import { type Operation } from 'effection';
-import { RootDatabase } from 'lmdb';
+import { RootDatabase } from 'npm:lmdb@3.4.2';
 
 // Read operation
 function* getVal(

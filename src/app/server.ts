@@ -1,6 +1,6 @@
-import { action, type Operation, run, spawn } from 'effection'
-import { openDB, readValue, writeValue } from '@db/core/db.ts'
-import { RootDatabase } from 'lmdb' // Helper: Promise → Operation (for server.finished).
+import { action, type Operation, run, spawn } from 'npm:effection@3.6.0'
+import { openDB, readValue, writeValue } from '../../src/db/core/db.ts'
+import { RootDatabase } from 'npm:lmdb@3.4.2' // Helper: Promise → Operation (for server.finished).
 
 // Helper: Promise → Operation (for server.finished).
 function* toOp<T>(promise: Promise<T>, cleanup: () => void): Operation<T> {

@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { type Operation, run, spawn } from 'effection';
+import { assertEquals, assertRejects } from "jsr:@std/assert@^1.0.15";
+import { type Operation, run, spawn } from 'npm:effection@3.6.0';
 
 /**
  * Test utilities for CLI testing with Effection

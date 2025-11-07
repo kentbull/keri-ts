@@ -22,7 +22,7 @@ function* toOp<T>(promise: Promise<T>): Operation<T> {
 ```typescript
 // mod.ts - Entry point
 import { run } from 'effection';
-import { kli } from '@app/cli/cli.ts';
+import { kli } from './src/app/cli/cli.ts';
 
 if (import.meta.main) {
   run(() => kli(Deno.args)).catch((error) => {

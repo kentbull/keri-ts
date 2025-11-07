@@ -38,7 +38,7 @@ class Doer:
 ## JavaScript lmdb: Both APIs Available
 
 ```typescript
-import { open, RootDatabase } from 'lmdb';
+import { open, RootDatabase } from 'npm:lmdb@3.4.2';
 
 const db = open({ path: './data.mdb' });
 
@@ -57,7 +57,7 @@ await db.transaction(async () => {
 
 ```typescript
 import { type Operation } from 'effection';
-import { RootDatabase } from 'lmdb';
+import { RootDatabase } from 'npm:lmdb@3.4.2';
 
 class LMDBer {
   private env: RootDatabase;
