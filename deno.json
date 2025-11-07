@@ -1,13 +1,38 @@
 {
   "tasks": {
     "start": "deno run --allow-ffi --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts",
-    "kli": "deno run --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts"
+    "kli": "deno run --allow-sys --allow-net --allow-env --allow-read --allow-write mod.ts",
+    "test": "deno test --allow-net --allow-sys --allow-env --allow-read --allow-write --allow-ffi --allow-run",
+    "test:unit": "deno test --allow-net --allow-sys --allow-env --allow-read --allow-write --allow-ffi --allow-run test/unit",
+    "test:integration": "deno test --allow-net --allow-sys --allow-env --allow-read --allow-write --allow-ffi --allow-run test/integration",
+    "test:watch": "deno test --allow-net --allow-sys --allow-env --allow-read --allow-write --allow-ffi --allow-run --watch",
+    "test:coverage": "deno test --allow-net --allow-sys --allow-env --allow-read --allow-write --allow-ffi --allow-run --coverage",
+    "coverage": "deno coverage coverage --html"
   },
   "compilerOptions": {
     "strict": true
   },
-  "lint": { "rules": { "exclude": ["no-explicit-any"] } },
+  "lint": { 
+    "rules": { 
+      "exclude": ["no-explicit-any", "no-import-prefix"]
+    } 
+  },
+  "dependencies": {
+    "@std/assert": "jsr:@std/assert@^1.0.15",
+    "@std/cli": "jsr:@std/cli@^1.0.23",
+    "@std/testing": "jsr:@std/testing@^1.0.16",
+    "@cliffy/command": "jsr:@cliffy/command@^1.0.0-rc.8",
+    "lmdb": "npm:lmdb@3.4.2"
+  },
   "imports": {
-    "@std/cli": "jsr:@std/cli@^1.0.22"
+    "@std/cli": "jsr:@std/cli@^1.0.23",
+    "@std/testing": "jsr:@std/testing@^1.0.16",
+    "@std/assert": "jsr:@std/assert@^1.0.15",
+    "lmdb": "npm:lmdb@3.4.2",
+    "@cliffy/command": "jsr:@cliffy/command@^1.0.0-rc.8",
+    "@app/": "./src/app/",
+    "@db/": "./src/db/",
+    "@core/": "./src/core/",
+    "@test/": "./test/"
   }
 }
