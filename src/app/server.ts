@@ -3,10 +3,10 @@ import { openDB, readValue, writeValue } from '@db/core/db.ts'
 import { RootDatabase } from 'lmdb' // Helper: Promise → Operation (for server.finished).
 
 // Helper: Promise → Operation (for server.finished).
-function* toOp<T>(promise: Promise<T>): Operation<T> {
+function* toOp<T>(promise: Promise<T>, cleanup: () => void): Operation<T> {
   return yield* action((resolve, reject) => {
     promise.then(resolve, reject);
-    return () => {}; // Cleanup server resources / abort
+    return cleanup; // Cleanup server resources / abort
   });
 }
 
@@ -23,22 +23,51 @@ export function* startServer(port: number = 8000): Operation<void> {
   // openDB is synchronous, so call it directly
   const db = openDB();
 
-  // Modern Deno.serve; handler wraps effect in run (tradeoff: error handling explicit).
-  const server = Deno.serve({ port }, (req: Request) =>
+  // Create an AbortController to manage server lifecycle
+  // When aborted, Deno will cancel pending requests, allowing server.finished to resolve
+  const abortController = new AbortController();
+  const { signal } = abortController;
+
+  // Modern Deno.serve with AbortSignal; handler wraps effect in run (tradeoff: error handling explicit).
+  // The signal allows us to cancel pending requests when the server is halted
+  const server = Deno.serve({ port, signal }, (req: Request) =>
     run(function* () {
       return yield* handleRequest(req, db);
     }));
 
+  let shutdownInitiated = false;
+
+  const shutdownServer = () => {
+    shutdownInitiated = true;
+    abortController.abort(); // Abort signal cancels pending requests
+    server.shutdown();
+  }
+
   // Sig handler spawns background task (structured: runs until halt).
   yield* spawn(function* () {
     yield* waitSignal("SIGINT");
-    server.shutdown();
+    if (!shutdownInitiated) {
+      shutdownServer();
+    }
   });
 
   console.log(`Server running on http://localhost:${port}`);
 
-  // Wait for shutdown (Hio recur equiv: blocks until done).
-  yield* toOp(server.finished);
+  try {
+    const serverCleanup = () => {
+      if (!shutdownInitiated) {
+        shutdownServer();
+      }
+    }
+    yield* toOp(server.finished, serverCleanup);
+  } finally {
+    if (!shutdownInitiated) {
+      shutdownServer();
+    }
+    
+    // Wait for shutdown to complete - ensures Deno's leak detector sees completion
+    yield* toOp(server.finished, () => {});
+  }
 }
 
 // deno-lint-ignore require-yield
@@ -55,4 +84,3 @@ function* handleRequest(req: Request, db: RootDatabase): Operation<Response> {
   }
   return new Response("Not Found", { status: 404 });
 }
-
