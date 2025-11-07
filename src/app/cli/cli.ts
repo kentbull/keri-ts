@@ -2,6 +2,7 @@
 import { Command } from "@cliffy/command";
 import { action, type Operation } from 'effection';
 import { initCommand } from '@app/cli/init.ts';
+import { agentCommand } from '@app/cli/agent.ts';
 
 /**
  * Promise to Structured Concurrency Helper: Convert Promise to Effection Operation
@@ -57,6 +58,15 @@ function createCLIProgram(context: CommandContext) {
           seed: options.seed,
         };
         // Return immediately - actual execution happens in kli operation
+        return Promise.resolve();
+      })
+    .command("agent", "Start the KERI agent server")
+      .option("-p, --port <port:number>", "Port number for the server (default: 8000)")
+      .action((options: Record<string, unknown>) => {
+        context.command = 'agent';
+        context.args = {
+          port: options.port,
+        };
         return Promise.resolve();
       })
     .command("incept", "Create a new identifier")
@@ -116,6 +126,7 @@ function* witnessCommand(_args: Record<string, unknown>): Operation<void> {
  */
 const commandHandlers: Map<string, (args: Record<string, unknown>) => Operation<void>> = new Map([
   ['init', (args: Record<string, unknown>) => initCommand(args)],
+  ['agent', (args: Record<string, unknown>) => agentCommand(args)],
   ['incept', (args: Record<string, unknown>) => inceptCommand(args)],
   ['rotate', (args: Record<string, unknown>) => rotateCommand(args)],
   ['interact', (args: Record<string, unknown>) => interactCommand(args)],

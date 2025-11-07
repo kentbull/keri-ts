@@ -4,15 +4,15 @@ import { RootDatabase } from 'lmdb' // Helper: Promise → Operation (for server
 
 // Helper: Promise → Operation (for server.finished).
 function* toOp<T>(promise: Promise<T>): Operation<T> {
-  return yield* action(function* (resolve) {
-    promise.then(resolve, (e) => resolve.raise(e));
-    return () => {}; // Add abort if available.
+  return yield* action((resolve, reject) => {
+    promise.then(resolve, reject);
+    return () => {}; // Cleanup server resources / abort
   });
 }
 
 // Helper: Signal → Operation (Deno-specific; Hio Tymist equiv for events).
 function* waitSignal(signame: string): Operation<void> {
-  return yield* action(function* (resolve) {
+  return yield* action((resolve) => {
     const listener = () => resolve(undefined);
     Deno.addSignalListener(signame as Deno.Signal, listener);
     return () => Deno.removeSignalListener(signame as Deno.Signal, listener);
@@ -20,7 +20,8 @@ function* waitSignal(signame: string): Operation<void> {
 }
 
 export function* startServer(port: number = 8000): Operation<void> {
-  const db = yield* openDB();
+  // openDB is synchronous, so call it directly
+  const db = openDB();
 
   // Modern Deno.serve; handler wraps effect in run (tradeoff: error handling explicit).
   const server = Deno.serve({ port }, (req: Request) =>
@@ -40,14 +41,16 @@ export function* startServer(port: number = 8000): Operation<void> {
   yield* toOp(server.finished);
 }
 
+// deno-lint-ignore require-yield
 function* handleRequest(req: Request, db: RootDatabase): Operation<Response> {
   const url = new URL(req.url);
 
   if (url.pathname.startsWith("/echo/")) {
     let val = url.pathname.slice(6); // Trim '/echo/'.
-    const oldVal = yield* readValue(db, 'echo');
+    // readValue and writeValue are synchronous, so call them directly (no yield needed)
+    const oldVal = readValue(db, 'echo');
     val = val ? val : oldVal ? oldVal : "initial echo";
-    yield* writeValue(db, 'echo', val);
+    writeValue(db, 'echo', val);
     return new Response(val, { status: 200 });
   }
   return new Response("Not Found", { status: 404 });
