@@ -1,5 +1,5 @@
 import { action, type Operation, run, spawn } from 'effection'
-import { openDB, readValue, writeValue } from './db.ts'
+import { openDB, readValue, writeValue } from '@db/core/db.ts'
 import { RootDatabase } from 'lmdb' // Helper: Promise → Operation (for server.finished).
 
 // Helper: Promise → Operation (for server.finished).

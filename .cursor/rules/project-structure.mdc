@@ -71,10 +71,21 @@ docs/
 - **DO** re-export only public interfaces/types
 - **DO** document public APIs with JSDoc
 
-### Internal Modules
-- **DO** use relative imports for internal modules
+### Import Paths
+- **DO** use import map aliases (`@app/`, `@db/`, `@core/`, `@test/`) for cross-directory imports
+- **DO** use relative imports (`./` or `../`) for files in the same directory or closely related subdirectories
+- **DO** avoid deep relative paths (`../../../`) - use import maps instead
 - **DO** avoid circular dependencies
 - **DO** keep module boundaries clear
+
+### Import Map Aliases
+Configured in `deno.json`:
+- `@app/` → `./src/app/`
+- `@db/` → `./src/db/`
+- `@core/` → `./src/core/`
+- `@test/` → `./test/`
+
+**Example**: `import { initCommand } from '@app/cli/init.ts'` instead of `import { initCommand } from '../../../src/app/cli/init.ts'`
 
 ---
 

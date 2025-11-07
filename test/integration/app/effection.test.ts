@@ -1,12 +1,12 @@
 import { assertEquals, assert } from "@std/assert";
 import { type Operation, run, spawn } from 'effection';
-import { initCommand } from '../../commands/init.ts';
+import { initCommand } from '@app/cli/init.ts';
 import { 
   CLITestHarness, 
   testCLICommand, 
   testConcurrentCLICommands,
   createMockArgs
-} from '../utils.ts';
+} from '@test/utils.ts';
 
 /**
  * Integration tests using Effection primitives for full system simulation.
@@ -153,3 +153,4 @@ Deno.test("Integration: CLI command with nested operations", async () => {
   assertEquals(result.output.length > 0, true);
   assertEquals(result.errors.length, 0);
 });
+

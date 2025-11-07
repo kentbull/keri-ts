@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run --allow-sys --allow-net --allow-env --allow-read --allow-write
 import { Command } from "@cliffy/command";
 import { action, type Operation } from 'effection';
-import { initCommand } from './commands/init.ts';
+import { initCommand } from '@app/cli/init.ts';
 
 /**
  * Promise to Structured Concurrency Helper: Convert Promise to Effection Operation
@@ -155,3 +155,4 @@ export function* kli(args: string[] = []): Operation<void> {
     throw error; // Re-throw so Effection can handle it properly
   }
 }
+

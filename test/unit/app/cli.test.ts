@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { run } from 'effection';
-import { initCommand } from '../../commands/init.ts';
-import { createMockArgs, assertOperationThrows } from '../utils.ts';
+import { initCommand } from '@app/cli/init.ts';
+import { createMockArgs, assertOperationThrows } from '@test/utils.ts';
 
 Deno.test("CLI: init command with valid arguments", async () => {
   const args = createMockArgs({
@@ -98,3 +98,4 @@ Deno.test("CLI: init command with config overrides", async () => {
   await run(() => initCommand(args));
   // Test passes if no exception is thrown
 });
+

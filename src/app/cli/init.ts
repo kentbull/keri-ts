@@ -101,3 +101,4 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   console.log("\nInitialization complete!");
   console.log("Note: This is a stub implementation. Full keystore and database creation will be implemented in future versions.");
 }
+

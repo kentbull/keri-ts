@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { run } from 'effection';
-import { initCommand } from '../../commands/init.ts';
-import { CLITestHarness, createMockArgs } from '../utils.ts';
+import { initCommand } from '@app/cli/init.ts';
+import { CLITestHarness, createMockArgs } from '@test/utils.ts';
 
 /**
  * Integration tests for the main CLI entry point
@@ -25,3 +25,4 @@ Deno.test("Integration: CLI init command with help flag", async () => {
     harness.restoreOutput();
   }
 });
+
