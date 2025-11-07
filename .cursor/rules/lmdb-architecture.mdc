@@ -1,0 +1,139 @@
+# LMDBer Implementation Architecture Rules
+
+## Core Principles
+
+### 1. Separation of Concerns
+- **DO NOT** mix file system (Filer) with database operations (LMDBer)
+- **DO** separate: Database Layer, File System Layer, Key Management, Serialization
+
+### 2. TinyTypes Throughout
+- **DO** use TinyTypes for all database keys and values
+- **DO** validate at construction with `ensure()`
+- **DO** convert to `Uint8Array` at LMDB boundary (`.value` or `.toBytes()`)
+- **DO NOT** optimize prematurely - measure first
+- **RATIONALE**: Learnability, KERIpy compatibility, type safety, runtime validation
+
+### 3. Effection Integration
+- **DO** return `Operation<T>` for all database operations
+- **DO** wrap LMDB transactions in Effection operations
+- **DO NOT** mix async/await with Effection
+
+### 4. Composition Over Inheritance
+- **DO** prefer composition (especially path/database separation)
+- **DO** create small, focused classes
+- **DO NOT** create deep inheritance hierarchies
+
+### 5. Explicit Over Implicit
+- **DO** make transaction modes, key types, serialization formats explicit
+- **DO NOT** rely on implicit conversions
+
+---
+
+## Key Patterns
+
+### Database Layer Separation
+**KERIpy**: `LMDBer(Filer)` - mixes concerns  
+**KERI TS**: `LMDBer` composes `DatabaseEnvironment` + `PathManager`
+
+### TinyTypes Pattern
+```typescript
+// Primitive TinyTypes
+class Prefix extends TinyTypeOf<Uint8Array>() {
+  constructor(value: Uint8Array | string) {
+    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+    ensure('Prefix', bytes, isDefined(), hasLength(44));
+    super(bytes);
+  }
+}
+
+// Composite keys
+class DigestKey extends TinyType {
+  constructor(public readonly prefix: Prefix, public readonly digest: Digest) { super(); }
+  toBytes(): Uint8Array { /* convert for LMDB */ }
+  static fromBytes(bytes: Uint8Array): DigestKey { /* parse from LMDB */ }
+}
+
+// Usage: Convert at LMDB boundary
+function* getVal(db: Database, key: DigestKey): Operation<Event | null> {
+  const valueBytes = db.get(key.toBytes()); // Convert TinyType → Uint8Array
+  return valueBytes ? Event.fromBytes(valueBytes) : null; // Convert Uint8Array → TinyType
+}
+```
+
+### Sub-Database Pattern
+- Use typed properties: `private evts: Suber<DigestKey, Event>`
+- Interfaces optional - use when multiple implementations exist
+- Separate serialization from storage
+
+### Serialization Pattern
+- Separate serializer layer (interfaces optional)
+- Use dependency injection for serializers
+- Choose: Interface (pluggable), Type alias (single impl), Methods (intrinsic)
+
+---
+
+## Implementation Checklist
+
+### Database Operations
+- ✅ Accept TinyTypes (keys, values)
+- ✅ Convert TinyTypes ↔ `Uint8Array` at LMDB boundary
+- ✅ Use TinyTypes in public APIs
+- ✅ Document conversion points
+
+### Key Utilities
+- ✅ Use TinyTypes for all key types
+- ✅ Implement `toBytes()` and `fromBytes()` static
+- ✅ Use `ensure()` for validation
+- ✅ Builder/parser patterns return TinyTypes
+
+### Sub-Databases
+- ✅ Use TinyTypes for key/value types
+- ✅ Separate serialization from storage
+- ✅ Convert at LMDB boundary only
+
+---
+
+## File Structure
+```
+src/db/
+├── core/          # Pure LMDB (environment, transaction, cursor)
+├── keys/          # TinyType keys (types, builder, parser, primitives)
+├── serialization/ # Serializers (CESR, JSON)
+├── subdb/         # Sub-database wrappers (Suber, Komer)
+├── path/          # Path management (separate from DB)
+├── dbing.ts       # LMDBer base
+├── basing.ts      # Baser subclass
+└── keeping.ts     # Keeper subclass
+```
+
+---
+
+## Anti-Patterns
+- ❌ God classes - split into focused classes
+- ❌ Implicit conversions - make explicit
+- ❌ Mixed concerns - separate layers
+- ❌ Deep inheritance - use composition
+- ❌ Global state - pass dependencies explicitly
+
+---
+
+## Key Differences from KERIpy
+
+| Aspect | KERIpy | KERI TS |
+|--------|--------|---------|
+| **Inheritance** | LMDBer extends Filer | LMDBer composes PathManager |
+| **Key Types** | Implicit (bytes/str) | TinyTypes (DigestKey, etc.) |
+| **Value Types** | Implicit (bytes/str) | TinyTypes (Event, etc.) |
+| **Transactions** | Context managers | Effection operations |
+| **Type Safety** | Duck typing | TinyTypes + TypeScript |
+| **Validation** | Manual checks | TinyTypes `ensure()` |
+
+---
+
+## Remember
+- **Functional Compatibility**: Same functionality as KERIpy
+- **TinyTypes Throughout**: All domain concepts (keys, values, entities)
+- **Composition Over Inheritance**: Especially path/database separation
+- **Effection Integration**: All operations in structured concurrency
+- **Learnability**: Self-documenting TinyTypes
+- **Performance**: Optimize hot paths later if needed

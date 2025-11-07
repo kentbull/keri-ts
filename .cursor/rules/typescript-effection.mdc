@@ -1,0 +1,142 @@
+# TypeScript and Effection Patterns
+
+## TypeScript Best Practices
+
+### Type Safety
+- **DO** use explicit types, avoid `any` unless it is the best choice
+- **DO** create interfaces for all public APIs
+- **DO** use type guards for runtime type checking if it feels right
+- **DO** leverage TypeScript's discriminated unions for state management
+- **DO NOT** use `any` unless absolutely necessary (and document why)
+
+### Code Organization
+- **DO** use named exports for public APIs
+- **DO** use default exports sparingly (only for main entry points)
+- **DO** group related functionality in modules
+- **DO** create index files for clean public APIs
+
+### Error Handling
+- **DO** use custom error classes that extend `Error`
+- **DO** include context in error messages
+- **DO** use Result types for operations that can fail
+- **DO NOT** swallow errors silently
+
+---
+
+## Effection Patterns
+
+### Operation Definition
+- **DO** use generator functions (`function*`) for operations
+- **DO** return `Operation<T>` type explicitly
+- **DO** use `yield*` to compose operations
+- **DO NOT** mix async/await with Effection operations
+
+### Resource Management
+- **DO** use `spawn()` for concurrent operations
+- **DO** use `action()` to wrap promise-based APIs
+- **DO** ensure cleanup functions in `action()` callbacks
+- **DO** use `finally` blocks for resource cleanup
+
+### Error Propagation
+- **DO** let errors propagate through Effection's error handling
+- **DO** use structured error types
+- **DO NOT** catch errors unless you can handle them meaningfully
+
+### Example Pattern with resource acquisition and cleanup
+```typescript
+function* databaseOperation(db: Database): Operation<Result> {
+  // Acquire resource
+  const resource = yield* acquireResource();
+  
+  try {
+    // Use resource
+    return yield* useResource(resource);
+  } finally {
+    // Cleanup guaranteed
+    yield* releaseResource(resource);
+  }
+}
+```
+
+---
+
+## Database Operation Patterns
+
+### Transaction Pattern
+```typescript
+function* transaction<T>(
+  db: Database,
+  operation: (txn: Transaction) => T
+): Operation<T> {
+  return db.transactionSync(() => {
+    return operation(db);
+  });
+}
+```
+
+### Iteration Pattern
+```typescript
+function* iterate<T>(
+  db: Database,
+  options: IterationOptions
+): Operation<Generator<T, void, unknown>> {
+  return function* () {
+    for (const item of db.getRange(options)) {
+      yield item;
+      // Can be cancelled here
+    }
+  }();
+}
+```
+
+### Batch Operation Pattern
+```typescript
+function* batchOperation(
+  db: Database,
+  items: Item[]
+): Operation<void> {
+  return db.transactionSync(() => {
+    for (const item of items) {
+      db.putSync(item.key, item.value);
+    }
+  });
+}
+```
+
+---
+
+## Testing Patterns
+
+### Unit Tests
+- **DO** test operations using `run()` from Effection
+- **DO** use `assertOperationThrows()` for error cases
+- **DO** mock dependencies using interfaces
+
+### Integration Tests
+- **DO** use real LMDB databases in tests
+- **DO** use temporary databases (`temp: true`)
+- **DO** clean up test databases after tests
+
+---
+
+## Import Conventions
+
+### Internal Imports
+```typescript
+// Use relative imports for internal modules
+import { LMDBer } from '../db/dbing.ts';
+import { KeyBuilder } from '../db/keys/builder.ts';
+```
+
+### External Imports
+```typescript
+// Use import map aliases for external packages
+import { type Operation } from 'effection';
+import { RootDatabase } from 'lmdb';
+```
+
+### Type-Only Imports
+```typescript
+// Use type-only imports when possible
+import type { DatabaseConfig } from './types.ts';
+```

@@ -1,0 +1,166 @@
+# Project Structure and Organization
+
+## Directory Structure
+
+### Source Code Organization
+```
+src/
+├── db/                    # Database layer
+│   ├── core/             # Core database operations
+│   ├── keys/             # Key utilities
+│   ├── serialization/    # Serialization layer
+│   ├── subdb/            # Sub-database wrappers
+│   └── path/             # Path management
+├── app/                   # Application layer
+│   └── cli/              # CLI commands
+└── core/                  # Core KERI types (future)
+```
+
+### Test Organization
+```
+test/
+├── unit/                  # Unit tests
+│   ├── db/               # Database unit tests
+│   └── app/              # Application unit tests
+└── integration/          # Integration tests
+    ├── db/               # Database integration tests
+    └── app/              # Application integration tests
+```
+
+### Documentation Organization
+```
+docs/
+├── cursor-articles/       # Learning/exploration docs
+└── design-docs/          # Design and architecture docs
+```
+
+---
+
+## Module Naming Conventions
+
+### Files
+- **DO** use kebab-case for file names: `key-builder.ts`, `sub-database.ts`
+- **DO** use descriptive names that match the primary export
+- **DO** use `.ts` extension (not `.tsx` unless JSX)
+
+### Classes
+- **DO** use PascalCase: `LMDBer`, `KeyBuilder`, `DatabaseEnvironment`
+- **DO** use descriptive names
+- **DO** match KERIpy names when maintaining compatibility
+
+### Interfaces
+- **DO** prefix with `I` for interfaces: `IDatabase`, `ISubDatabase`
+- **DO** use descriptive names
+- **DO** document the contract clearly
+
+### Functions
+- **DO** use camelCase: `getValue`, `createKey`, `parseKey`
+- **DO** use verb-noun pattern for actions
+- **DO** match KERIpy function names when maintaining compatibility
+
+### Constants
+- **DO** use UPPER_SNAKE_CASE: `MAX_NAMED_DBS`, `DEFAULT_MAP_SIZE`
+- **DO** group related constants in objects or namespaces
+
+---
+
+## Import/Export Conventions
+
+### Public API
+- **DO** create `index.ts` files for clean public APIs
+- **DO** re-export only public interfaces/types
+- **DO** document public APIs with JSDoc
+
+### Internal Modules
+- **DO** use relative imports for internal modules
+- **DO** avoid circular dependencies
+- **DO** keep module boundaries clear
+
+---
+
+## File Organization Within Modules
+
+### Class Files
+```typescript
+// 1. Imports (external first, then internal)
+import { type Operation } from 'effection';
+import { RootDatabase } from 'lmdb';
+import { KeyBuilder } from './keys/builder.ts';
+
+// 2. Types/Interfaces
+interface Config { ... }
+
+// 3. Constants
+const DEFAULT_SIZE = 1024;
+
+// 4. Class definition
+export class LMDBer { ... }
+
+// 5. Helper functions (if needed)
+function helper() { ... }
+```
+
+### Utility Files
+```typescript
+// 1. Imports
+// 2. Types
+// 3. Constants
+// 4. Functions (exported)
+export function utility1() { ... }
+export function utility2() { ... }
+```
+
+---
+
+## Documentation Conventions
+
+### JSDoc Comments
+- **DO** document all public APIs
+- **DO** include parameter types and descriptions
+- **DO** include return types and descriptions
+- **DO** include examples for complex operations
+- **DO** document errors that can be thrown
+
+### Example
+```typescript
+/**
+ * Get value from database.
+ * 
+ * @param db - Database instance
+ * @param key - Key to lookup (Uint8Array or string)
+ * @returns Operation that resolves to value or null if not found
+ * @throws DatabaseError if database is not opened
+ */
+function* getValue(
+  db: Database,
+  key: Uint8Array | string
+): Operation<Uint8Array | null> {
+  // ...
+}
+```
+
+---
+
+## Git Conventions
+
+### Commit Messages
+- **DO** use conventional commits format
+- **DO** reference issues when applicable
+- **DO** be descriptive
+
+### Branch Naming
+- **DO** use descriptive branch names
+- **DO** prefix with feature/, fix/, refactor/, etc.
+
+---
+
+## Code Review Checklist
+
+Before submitting code, ensure:
+- [ ] All public APIs are documented
+- [ ] Types are explicit (no `any` without justification)
+- [ ] All operations return `Operation<T>`
+- [ ] Tests are included
+- [ ] Code follows project structure conventions
+- [ ] Imports are organized correctly
+- [ ] No circular dependencies
