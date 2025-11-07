@@ -2,7 +2,7 @@
 
 ## The Pattern: Two-Phase Execution
 
-We're using a **two-phase execution pattern** that bridges Cliffy (promise-based) with Effection (operation-based):
+We use a **two-phase execution pattern** that bridges Cliffy (promise-based) with Effection (operation-based):
 
 ```typescript
 .action((options) => {
@@ -13,10 +13,7 @@ We're using a **two-phase execution pattern** that bridges Cliffy (promise-based
   // Return immediately resolved promise
   return Promise.resolve();
 })
-```
 
-Then later:
-```typescript
 // Phase 2: Actual execution (happens in Effection)
 yield* toOp(program.parse(args));
 if (context.command) {
@@ -26,12 +23,12 @@ if (context.command) {
 
 ## Why `Promise.resolve()`?
 
-### 1. **Cliffy's Expectation**
+### 1. Cliffy's Expectation
 
-Cliffy's `parse()` method is designed to handle async action handlers:
+Cliffy's `parse()` **awaits** the promise returned by action handlers:
 
 ```typescript
-// Cliffy internally does something like:
+// Cliffy internally does:
 async function parse(args: string[]) {
   const command = findCommand(args);
   const result = await command.action(options); // Waits for promise!
@@ -39,63 +36,25 @@ async function parse(args: string[]) {
 }
 ```
 
-**Key insight**: Cliffy's `parse()` **awaits** the promise returned by action handlers. This is intentional - it allows action handlers to be async:
+**Key insight**: Cliffy expects action handlers to return promises (allows async handlers).
 
-```typescript
-// Normal Cliffy pattern (async/await):
-.action(async (options) => {
-  await doSomethingAsync();
-  return result;
-})
-```
+### 2. Our Workaround Pattern
 
-### 2. **Our Workaround Pattern**
-
-We're **not** using async/await in action handlers because we want Effection to manage concurrency. Instead:
+We're **not** using async/await in action handlers because we want Effection to manage concurrency:
 
 - **Action handlers**: Synchronous setup only (set context)
 - **Return**: `Promise.resolve()` to satisfy Cliffy's expectation
 - **Actual work**: Happens later in Effection operations
 
-### 3. **What Happens Without `Promise.resolve()`?**
+### 3. Why Not Execute in Action Handler?
 
-If we return `undefined` or nothing:
-
-```typescript
-.action((options) => {
-  context.command = 'init';
-  // No return - Cliffy might not wait properly
-})
-```
-
-**Potential issues**:
-- Cliffy's `parse()` might complete before context is set (race condition)
-- Type errors if Cliffy expects a Promise
-- Unpredictable behavior depending on Cliffy's implementation
-
-### 4. **Why Not Return the Actual Promise?**
-
-We could theoretically do:
-
-```typescript
-.action((options) => {
-  context.command = 'init';
-  context.args = options;
-  
-  // Return a promise that waits for Effection operation?
-  return run(() => initCommand(options));
-})
-```
-
-**Problems with this approach**:
+**Problems with executing Effection operations in action handlers**:
 - ❌ Creates nested Effection contexts (`run()` inside `run()`)
 - ❌ Breaks structured concurrency (two separate trees)
 - ❌ Can't properly cancel or manage lifecycle
 - ❌ Errors don't propagate correctly
 
-### 5. **The Correct Pattern: Deferred Execution**
-
-Our pattern separates concerns:
+### 4. The Correct Pattern: Deferred Execution
 
 ```typescript
 // Phase 1: Cliffy parsing (synchronous setup)
@@ -115,124 +74,42 @@ yield* handler(context.args);      // Execute in Effection context
 - ✅ Proper structured concurrency
 - ✅ Errors propagate correctly
 - ✅ Can be cancelled properly
-- ✅ Resources managed by Effection
 
 ## Is This a Cliffy Pattern?
 
 **No, this is a hybrid workaround pattern**, not a Cliffy best practice.
 
-### Normal Cliffy Pattern:
-
+**Normal Cliffy Pattern**:
 ```typescript
-// Pure Cliffy (async/await):
-.command("init")
-  .action(async (options) => {
-    await createKeystore(options.name);
-    await createDatabase(options.name);
-    console.log("Done!");
-  })
-
-// Then:
+.action(async (options) => {
+  await createKeystore(options.name);
+  await createDatabase(options.name);
+})
 await program.parse(args); // Everything happens here
 ```
 
-### Our Pattern (Cliffy + Effection):
-
+**Our Pattern (Cliffy + Effection)**:
 ```typescript
-// Hybrid (Effection-structured):
-.command("init")
-  .action((options) => {
-    context.command = 'init';
-    context.args = options;
-    return Promise.resolve(); // "Ready, but not executing yet"
-  })
-
-// Then:
+.action((options) => {
+  context.command = 'init';
+  context.args = options;
+  return Promise.resolve(); // "Ready, but not executing yet"
+})
 yield* toOp(program.parse(args)); // Parse completes
 yield* handler(context.args);      // Execute in Effection
 ```
 
 ## Design Rationale
 
-### Why This Pattern?
+1. **Separation of Concerns**: Cliffy handles parsing, Effection handles execution
+2. **Structured Concurrency**: All execution in single Effection context
+3. **Type Safety**: Satisfies Cliffy's promise expectation
+4. **Future-Proof**: Easy to add new commands
 
-1. **Separation of Concerns**:
-   - Cliffy handles: Argument parsing, validation, help text
-   - Effection handles: Actual execution, concurrency, resource management
-
-2. **Structured Concurrency**:
-   - All execution happens in a single Effection context
-   - Proper task hierarchy and cleanup
-   - Cancellation works correctly
-
-3. **Type Safety**:
-   - Cliffy expects promises from action handlers
-   - We satisfy that expectation with `Promise.resolve()`
-   - TypeScript is happy, runtime is happy
-
-4. **Future-Proof**:
-   - If Cliffy changes how it handles action handlers, we only change Phase 1
-   - Effection operations remain unchanged
-   - Easy to add new commands
-
-## Alternative Approaches (and why we didn't use them)
-
-### Alternative 1: Make Action Handlers Async
-
-```typescript
-.action(async (options) => {
-  await run(() => initCommand(options));
-})
-```
-
-**Rejected because**: Creates nested Effection contexts, breaks structured concurrency.
-
-### Alternative 2: Don't Return Anything
-
-```typescript
-.action((options) => {
-  context.command = 'init';
-  // No return
-})
-```
-
-**Rejected because**: Cliffy might not wait properly, potential race conditions.
-
-### Alternative 3: Return a Promise That Resolves After Execution
-
-```typescript
-.action((options) => {
-  context.command = 'init';
-  return new Promise((resolve) => {
-    run(() => initCommand(options)).then(resolve);
-  });
-})
-```
-
-**Rejected because**: Still creates nested contexts, breaks structured concurrency.
-
-## The Correct Understanding
+## Key Insight
 
 `Promise.resolve()` is **not** a Cliffy pattern - it's our **bridge pattern**:
 
-1. **Cliffy's expectation**: Action handlers can return promises
-2. **Our need**: Execute in Effection's structured concurrency
-3. **The bridge**: Return `Promise.resolve()` to satisfy Cliffy, defer execution to Effection
-
-This is a **necessary workaround** when integrating promise-based APIs with Effection. The key insight is:
-
 > **We're not executing in the action handler - we're just signaling what to execute later.**
 
-## Best Practice Summary
-
-When integrating promise-based APIs with Effection:
-
-1. ✅ **Do**: Return `Promise.resolve()` from action handlers
-2. ✅ **Do**: Defer actual execution to Effection operations
-3. ✅ **Do**: Use context objects to pass data between phases
-4. ❌ **Don't**: Execute Effection operations inside action handlers
-5. ❌ **Don't**: Create nested `run()` contexts
-6. ❌ **Don't**: Mix async/await with Effection operations
-
-This pattern ensures that **Effection remains the outermost runtime**, maintaining proper structured concurrency while still leveraging Cliffy's excellent CLI parsing capabilities.
-
+This ensures **Effection remains the outermost runtime**, maintaining proper structured concurrency while leveraging Cliffy's CLI parsing.

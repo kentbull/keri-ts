@@ -6,24 +6,46 @@
 - **DO NOT** mix file system (Filer) with database operations (LMDBer)
 - **DO** separate: Database Layer, File System Layer, Key Management, Serialization
 
-### 2. TinyTypes Throughout
-- **DO** use TinyTypes for all database keys and values
-- **DO** validate at construction with `ensure()`
-- **DO** convert to `Uint8Array` at LMDB boundary (`.value` or `.toBytes()`)
-- **DO NOT** optimize prematurely - measure first
-- **RATIONALE**: Learnability, KERIpy compatibility, type safety, runtime validation
+### 2. Type Safety - Consider TinyTypes
+- **CONSIDER** using TinyTypes library for database keys and values
+- **CONSIDER** creating TinyType classes for domain concepts (DigestKey, OrdinalKey, Prefix, Digest, etc.)
+- **CONSIDER** using TinyTypes throughout the codebase for consistency and learnability
+- **IF using TinyTypes**: Validate at construction with `ensure()`
+- **IF using TinyTypes**: Convert to `Uint8Array` at LMDB boundary (`.value` or `.toBytes()`)
+- **ALTERNATIVE**: Use branded types (`type DigestKey = Uint8Array & { __brand: 'DigestKey' }`) for compile-time safety without runtime overhead
+- **RATIONALE for TinyTypes**: 
+  - Matches KERIpy's pattern of using typed groups for keys
+  - Makes codebase more learnable for beginners
+  - Provides database-level compatibility and intuitive structure
+  - Type safety prevents mixing different key types
+  - Runtime validation catches errors early
+- **RATIONALE for branded types**:
+  - Compile-time type safety without runtime overhead
+  - Direct LMDB compatibility (no conversion needed)
+  - Validation functions can be called when creating keys
 
 ### 3. Effection Integration
 - **DO** return `Operation<T>` for all database operations
 - **DO** wrap LMDB transactions in Effection operations
 - **DO NOT** mix async/await with Effection
+- **NOTE**: Structured concurrency comes from Effection, not from async transactions
 
-### 4. Composition Over Inheritance
+### 4. Transaction Mode: Sync by Default
+- **DO** use synchronous LMDB transactions by default (matches KERIpy pattern)
+- **DO** use `transactionSync()` for all database operations
+- **DO** support async transactions only for special cases (if needed)
+- **RATIONALE**: 
+  - Sync is fast enough for single-user scenarios (nanoseconds reads, microseconds writes)
+  - Sync is simpler, more durable, and matches KERIpy's pattern
+  - Structured concurrency comes from Effection operations, not async transactions
+  - Async provides negligible performance benefit for local LMDB
+
+### 5. Composition Over Inheritance
 - **DO** prefer composition (especially path/database separation)
 - **DO** create small, focused classes
 - **DO NOT** create deep inheritance hierarchies
 
-### 5. Explicit Over Implicit
+### 6. Explicit Over Implicit
 - **DO** make transaction modes, key types, serialization formats explicit
 - **DO NOT** rely on implicit conversions
 
@@ -35,9 +57,9 @@
 **KERIpy**: `LMDBer(Filer)` - mixes concerns  
 **KERI TS**: `LMDBer` composes `DatabaseEnvironment` + `PathManager`
 
-### TinyTypes Pattern
+### TinyTypes Pattern (Optional - Consider)
 ```typescript
-// Primitive TinyTypes
+// Option 1: TinyTypes (runtime validation, self-documenting)
 class Prefix extends TinyTypeOf<Uint8Array>() {
   constructor(value: Uint8Array | string) {
     const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
@@ -46,17 +68,27 @@ class Prefix extends TinyTypeOf<Uint8Array>() {
   }
 }
 
-// Composite keys
 class DigestKey extends TinyType {
   constructor(public readonly prefix: Prefix, public readonly digest: Digest) { super(); }
   toBytes(): Uint8Array { /* convert for LMDB */ }
   static fromBytes(bytes: Uint8Array): DigestKey { /* parse from LMDB */ }
 }
 
-// Usage: Convert at LMDB boundary
+// Option 2: Branded types (compile-time safety, no runtime overhead)
+type Prefix = Uint8Array & { readonly __brand: 'Prefix' };
+type Digest = Uint8Array & { readonly __brand: 'Digest' };
+type DigestKey = Uint8Array & { readonly __brand: 'DigestKey' };
+
+function createDigestKey(prefix: Prefix, digest: Digest): DigestKey {
+  // Validation here if needed
+  return dgKey(prefix, digest) as DigestKey;
+}
+
+// Usage: Convert at LMDB boundary (if using TinyTypes)
 function* getVal(db: Database, key: DigestKey): Operation<Event | null> {
-  const valueBytes = db.get(key.toBytes()); // Convert TinyType → Uint8Array
-  return valueBytes ? Event.fromBytes(valueBytes) : null; // Convert Uint8Array → TinyType
+  const keyBytes = key instanceof TinyType ? key.toBytes() : key; // Handle both
+  const valueBytes = db.get(keyBytes);
+  return valueBytes ? Event.fromBytes(valueBytes) : null;
 }
 ```
 
@@ -75,21 +107,23 @@ function* getVal(db: Database, key: DigestKey): Operation<Event | null> {
 ## Implementation Checklist
 
 ### Database Operations
-- ✅ Accept TinyTypes (keys, values)
-- ✅ Convert TinyTypes ↔ `Uint8Array` at LMDB boundary
-- ✅ Use TinyTypes in public APIs
+- ✅ Accept typed keys/values (TinyTypes or branded types)
+- ✅ Convert to `Uint8Array` at LMDB boundary if using TinyTypes
+- ✅ Use explicit types in public APIs (not raw `Uint8Array`)
+- ✅ Use sync transactions by default (`transactionSync()`)
 - ✅ Document conversion points
 
 ### Key Utilities
-- ✅ Use TinyTypes for all key types
-- ✅ Implement `toBytes()` and `fromBytes()` static
-- ✅ Use `ensure()` for validation
-- ✅ Builder/parser patterns return TinyTypes
+- ✅ Use explicit types for all key types (TinyTypes or branded types)
+- ✅ IF using TinyTypes: Implement `toBytes()` and `fromBytes()` static
+- ✅ IF using TinyTypes: Use `ensure()` for validation
+- ✅ IF using branded types: Use validation functions at key creation
+- ✅ Builder/parser patterns return typed keys
 
 ### Sub-Databases
-- ✅ Use TinyTypes for key/value types
+- ✅ Use explicit types for key/value types (TinyTypes or branded types)
 - ✅ Separate serialization from storage
-- ✅ Convert at LMDB boundary only
+- ✅ Convert at LMDB boundary only (if using TinyTypes)
 
 ---
 
@@ -97,7 +131,7 @@ function* getVal(db: Database, key: DigestKey): Operation<Event | null> {
 ```
 src/db/
 ├── core/          # Pure LMDB (environment, transaction, cursor)
-├── keys/          # TinyType keys (types, builder, parser, primitives)
+├── keys/          # Key types (TinyTypes or branded types, builder, parser)
 ├── serialization/ # Serializers (CESR, JSON)
 ├── subdb/         # Sub-database wrappers (Suber, Komer)
 ├── path/          # Path management (separate from DB)
@@ -122,18 +156,19 @@ src/db/
 | Aspect | KERIpy | KERI TS |
 |--------|--------|---------|
 | **Inheritance** | LMDBer extends Filer | LMDBer composes PathManager |
-| **Key Types** | Implicit (bytes/str) | TinyTypes (DigestKey, etc.) |
-| **Value Types** | Implicit (bytes/str) | TinyTypes (Event, etc.) |
-| **Transactions** | Context managers | Effection operations |
-| **Type Safety** | Duck typing | TinyTypes + TypeScript |
-| **Validation** | Manual checks | TinyTypes `ensure()` |
+| **Key Types** | Implicit (bytes/str) | Explicit types (TinyTypes or branded types) |
+| **Value Types** | Implicit (bytes/str) | Explicit types (TinyTypes or branded types) |
+| **Transactions** | Sync context managers | Sync Effection operations (default) |
+| **Type Safety** | Duck typing | TypeScript + optional runtime validation |
+| **Validation** | Manual checks | Optional: TinyTypes `ensure()` or validation functions |
 
 ---
 
 ## Remember
 - **Functional Compatibility**: Same functionality as KERIpy
-- **TinyTypes Throughout**: All domain concepts (keys, values, entities)
+- **Type Safety**: Use explicit types (consider TinyTypes for learnability, branded types for performance)
 - **Composition Over Inheritance**: Especially path/database separation
 - **Effection Integration**: All operations in structured concurrency
-- **Learnability**: Self-documenting TinyTypes
-- **Performance**: Optimize hot paths later if needed
+- **Sync Transactions**: Default to sync (matches KERIpy, fast enough, simpler, more durable)
+- **Learnability**: Consider TinyTypes for self-documenting code
+- **Performance**: Measure both approaches - optimize hot paths later if needed
