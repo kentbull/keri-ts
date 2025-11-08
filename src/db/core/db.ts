@@ -1,4 +1,4 @@
-import {open, RootDatabase, Key} from 'npm:lmdb@3.4.2';
+import {open, RootDatabase, Key} from 'lmdb';
 
 // Singleton db-lazy open - not thread safe
 let db: RootDatabase<any, Key> | null = null;
