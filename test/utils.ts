@@ -1,5 +1,5 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@^1.0.15";
-import { type Operation, run, spawn } from 'npm:effection@3.6.0';
+import { type Operation, run, spawn } from "effection";
+import { expect } from "vitest";
 
 /**
  * Test utilities for CLI testing with Effection
@@ -20,10 +20,10 @@ export class CLITestHarness {
    */
   captureOutput(): void {
     console.log = (...args: unknown[]) => {
-      this.capturedOutput.push(args.map(String).join(' '));
+      this.capturedOutput.push(args.map(String).join(" "));
     };
     console.error = (...args: unknown[]) => {
-      this.capturedErrors.push(args.map(String).join(' '));
+      this.capturedErrors.push(args.map(String).join(" "));
     };
   }
 
@@ -61,16 +61,16 @@ export class CLITestHarness {
    * Assert output contains expected text
    */
   assertOutputContains(expected: string): void {
-    const output = this.capturedOutput.join('\n');
-    assertEquals(output.includes(expected), true, `Expected output to contain "${expected}", but got: ${output}`);
+    const output = this.capturedOutput.join("\n");
+    expect(output.includes(expected)).toBe(true);
   }
 
   /**
    * Assert error contains expected text
    */
   assertErrorContains(expected: string): void {
-    const errors = this.capturedErrors.join('\n');
-    assertEquals(errors.includes(expected), true, `Expected errors to contain "${expected}", but got: ${errors}`);
+    const errors = this.capturedErrors.join("\n");
+    expect(errors.includes(expected)).toBe(true);
   }
 }
 
@@ -99,18 +99,18 @@ export interface MockCLIArgs {
  */
 export function createMockArgs(args: MockCLIArgs = {}): Record<string, unknown> {
   return {
-    command: 'init',
+    command: "init",
     help: false,
     version: false,
-    name: 'testkeystore',
-    base: '',
+    name: "testkeystore",
+    base: "",
     temp: false,
-    salt: '',
-    configDir: '',
-    configFile: '',
-    passcode: '',
-    aeid: '',
-    seed: '',
+    salt: "",
+    configDir: "",
+    configFile: "",
+    passcode: "",
+    aeid: "",
+    seed: "",
     nopasscode: false,
     ...args,
   };
@@ -124,15 +124,15 @@ export function* testCLICommand(
   _args: MockCLIArgs = {}
 ): Operation<{ output: string[]; errors: string[] }> {
   const harness = new CLITestHarness();
-  
+
   try {
     harness.captureOutput();
-    
+
     // Note: Deno.args is read-only, so we can't mock it directly
     // In a real test, you'd need to modify the command to accept args as a parameter
-    
+
     yield* command;
-    
+
     return {
       output: harness.getOutput(),
       errors: harness.getErrors(),
@@ -149,7 +149,7 @@ export function* testConcurrentCLICommands(
   commands: Array<{ name: string; command: Operation<void>; args: MockCLIArgs }>
 ): Operation<Record<string, { output: string[]; errors: string[] }>> {
   const results: Record<string, { output: string[]; errors: string[] }> = {};
-  
+
   // Spawn all commands concurrently
   const tasks = commands.map(({ name, command, args }) =>
     spawn(function* () {
@@ -157,12 +157,12 @@ export function* testConcurrentCLICommands(
       results[name] = result;
     })
   );
-  
+
   // Wait for all commands to complete
   for (const task of tasks) {
     yield* task;
   }
-  
+
   return results;
 }
 
@@ -173,13 +173,9 @@ export async function assertOperationThrows(
   operation: Operation<void>,
   expectedError: string
 ): Promise<void> {
-  await assertRejects(
-    async () => {
-      await run(() => operation);
-    },
-    Error,
-    expectedError
-  );
+  await expect(async () => {
+    await run(() => operation);
+  }).rejects.toThrow(expectedError);
 }
 
 /**

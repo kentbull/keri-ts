@@ -1,5 +1,5 @@
-import { type Operation } from 'npm:effection@3.6.0';
-import { startServer } from './src/app/server.ts';
+import { type Operation } from "effection";
+import { startServer } from "../../../src/app/server.ts";
 
 interface AgentArgs {
   port?: number;
@@ -23,7 +23,7 @@ The server will run until interrupted with SIGINT (Ctrl+C).
 
 /**
  * Agent command operation - starts the HTTP server
- * 
+ *
  * @param args - Command arguments including optional port
  * @returns Operation that runs the server until shutdown
  */
@@ -43,6 +43,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   // Start the server (this operation will run until shutdown)
+  console.log(`Starting server on port ${port}`);
   yield* startServer(port);
 }
-

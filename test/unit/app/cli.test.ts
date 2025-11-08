@@ -1,9 +1,10 @@
-import { assertEquals } from "jsr:@std/assert@^1.0.15";
-import { run } from 'npm:effection@3.6.0';
+import { describe, it, expect } from "vitest";
+import { run } from 'effection';
 import { initCommand } from '../../../src/app/cli/init.ts';
 import { createMockArgs, assertOperationThrows } from '../../../test/utils.ts';
 
-Deno.test("CLI: init command with valid arguments", async () => {
+describe("CLI", () => {
+  it("init command with valid arguments", async () => {
   const args = createMockArgs({
     name: 'testkeystore',
     nopasscode: true,
@@ -13,7 +14,7 @@ Deno.test("CLI: init command with valid arguments", async () => {
   // Test passes if no exception is thrown
 });
 
-Deno.test("CLI: init command requires name", async () => {
+  it("init command requires name", async () => {
   const args = createMockArgs({
     name: '',
     nopasscode: true,
@@ -25,7 +26,7 @@ Deno.test("CLI: init command requires name", async () => {
   );
 });
 
-Deno.test("CLI: init command with missing name", async () => {
+  it("init command with missing name", async () => {
   const args = createMockArgs({
     name: undefined,
     nopasscode: true,
@@ -37,7 +38,7 @@ Deno.test("CLI: init command with missing name", async () => {
   );
 });
 
-Deno.test("CLI: init command with help flag", async () => {
+  it("init command with help flag", async () => {
   const args = createMockArgs({
     help: true,
   });
@@ -51,13 +52,13 @@ Deno.test("CLI: init command with help flag", async () => {
 
   try {
     await run(() => initCommand(args));
-    assertEquals(capturedOutput.includes('kli init -'), true);
+    expect(capturedOutput.includes('kli init -')).toBe(true);
   } finally {
     console.log = originalLog;
   }
 });
 
-Deno.test("CLI: init command with all options", async () => {
+  it("init command with all options", async () => {
   const args = createMockArgs({
     name: 'fulltest',
     base: '/custom/base',
@@ -76,7 +77,7 @@ Deno.test("CLI: init command with all options", async () => {
 });
 
 
-Deno.test("CLI: init command with custom salt", async () => {
+  it("init command with custom salt", async () => {
   const args = createMockArgs({
     name: 'salttest',
     salt: 'custom-salt-value',
@@ -87,7 +88,7 @@ Deno.test("CLI: init command with custom salt", async () => {
   // Test passes if no exception is thrown
 });
 
-Deno.test("CLI: init command with config overrides", async () => {
+  it("init command with config overrides", async () => {
   const args = createMockArgs({
     name: 'configtest',
     configDir: '/custom/config/dir',
@@ -98,4 +99,4 @@ Deno.test("CLI: init command with config overrides", async () => {
   await run(() => initCommand(args));
   // Test passes if no exception is thrown
 });
-
+});

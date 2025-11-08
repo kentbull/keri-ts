@@ -1,5 +1,5 @@
-import { assertEquals, assert } from "jsr:@std/assert@^1.0.15";
-import { type Operation, run, spawn } from 'npm:effection@3.6.0';
+import { describe, it, expect } from "vitest";
+import { type Operation, run, spawn } from 'effection';
 import { initCommand } from '../../../src/app/cli/init.ts';
 import { 
   CLITestHarness, 
@@ -12,7 +12,8 @@ import {
  * Integration tests using Effection primitives for full system simulation.
  * The tests in this file are instructional and are examples for learning how to test with Effection.
  */
-Deno.test("Integration: CLI command execution with Effection run", async () => {
+describe("Integration: Effection", () => {
+  it("CLI command execution with Effection run", async () => {
   const args = createMockArgs({
     name: 'integration-test',
     nopasscode: true,
@@ -20,11 +21,11 @@ Deno.test("Integration: CLI command execution with Effection run", async () => {
 
   const result = await run(() => testCLICommand(initCommand(args), args));
   
-  assertEquals(result.output.length > 0, true);
-  assertEquals(result.errors.length, 0);
-});
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.errors.length).toBe(0);
+  });
 
-Deno.test("Integration: Multiple CLI commands with spawn", async () => {
+  it("Multiple CLI commands with spawn", async () => {
   const commands = [
     {
       name: 'init1',
@@ -45,13 +46,13 @@ Deno.test("Integration: Multiple CLI commands with spawn", async () => {
 
   const results = await run(() => testConcurrentCLICommands(commands));
   
-  assertEquals(Object.keys(results).length, 3);
-  assertEquals(results.init1.output.length > 0, true);
-  assertEquals(results.init2.output.length > 0, true);
-  assertEquals(results.init3.output.length > 0, true);
-});
+    expect(Object.keys(results).length).toBe(3);
+    expect(results.init1.output.length).toBeGreaterThan(0);
+    expect(results.init2.output.length).toBeGreaterThan(0);
+    expect(results.init3.output.length).toBeGreaterThan(0);
+  });
 
-Deno.test("Integration: CLI command with timeout using Effection", async () => {
+  it("CLI command with timeout using Effection", async () => {
   const args = createMockArgs({
     name: 'timeout-test',
     nopasscode: true,
@@ -67,28 +68,28 @@ Deno.test("Integration: CLI command with timeout using Effection", async () => {
     return commandResult;
   });
 
-  assert(result !== undefined);
-  assertEquals(result.output.length > 0, true);
-});
+    expect(result).toBeDefined();
+    expect(result.output.length).toBeGreaterThan(0);
+  });
 
-Deno.test("Integration: CLI error handling with Effection", async () => {
+  it("CLI error handling with Effection", async () => {
   const args = createMockArgs({
     name: '', // Invalid empty name
     nopasscode: true,
   });
 
   // Test that errors are properly thrown
-  try {
-    await run(() => testCLICommand(initCommand(args), args));
-    // Should not reach here - initCommand should throw
-    assert(false, 'Should have thrown an error');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    assertEquals(message.includes('Name is required'), true);
-  }
-});
+    try {
+      await run(() => testCLICommand(initCommand(args), args));
+      // Should not reach here - initCommand should throw
+      expect(true).toBe(false); // Should have thrown an error
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message.includes('Name is required')).toBe(true);
+    }
+  });
 
-Deno.test("Integration: CLI command with CLI test harness cleanup", async () => {
+  it("CLI command with CLI test harness cleanup", async () => {
   const args = createMockArgs({
     name: 'resource-test',
     nopasscode: true,
@@ -114,11 +115,11 @@ Deno.test("Integration: CLI command with CLI test harness cleanup", async () => 
     }
   });
 
-  assertEquals(cleanupCalled, true);
-  assertEquals(result.output.length > 0, true);
-});
+    expect(cleanupCalled).toBe(true);
+    expect(result.output.length).toBeGreaterThan(0);
+  });
 
-Deno.test("Integration: CLI command with nested operations", async () => {
+  it("CLI command with nested operations", async () => {
   function* nestedInitCommand(args: Record<string, unknown>): Operation<void> {
     yield* initCommand(args);
     
@@ -150,7 +151,8 @@ Deno.test("Integration: CLI command with nested operations", async () => {
 
   const result = await run(() => testCLICommand(nestedInitCommand(args), args));
   
-  assertEquals(result.output.length > 0, true);
-  assertEquals(result.errors.length, 0);
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.errors.length).toBe(0);
+  });
 });
 

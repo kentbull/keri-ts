@@ -1,0 +1,40 @@
+{
+  "name": "keri-ts",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "KERI TypeScript implementation with Effection structured concurrency",
+  "main": "dist/mod.js",
+  "bin": {
+    "kli": "./dist/mod.js"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "start": "node dist/mod.js",
+    "kli": "npm run build && node dist/mod.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "keri",
+    "weboftrust",
+    "effection",
+    "lmdb"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "effection": "^3.6.0",
+    "lmdb": "^3.4.2",
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^1.2.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.0",
+    "vitest": "^1.2.0"
+  }
+}
