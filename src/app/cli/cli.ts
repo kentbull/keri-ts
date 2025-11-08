@@ -30,6 +30,9 @@ function createCLIProgram(context: CommandContext) {
   const program = new Command();
   program.name("kli").version("0.0.2").description("KERI TypeScript CLI");
 
+  // Prevent Commander from exiting automatically so we can run Effection operations
+  program.exitOverride();
+
   program
     .command("init")
     .description("Create a database and keystore")
@@ -74,8 +77,9 @@ function createCLIProgram(context: CommandContext) {
   program
     .command("agent")
     .description("Start the KERI agent server")
-    .option("-p, --port <port>", "Port number for the server (default: 8000)")
-    .action((options: Record<string, unknown>) => {
+    .option("-p, --port <port>", "Port number for the server (default: 8000)", "8000")
+    .action(function (this: Command) {
+      const options = this.opts();
       context.command = "agent";
       context.args = {
         port: options.port ? Number(options.port) : 8000,
@@ -128,7 +132,7 @@ function createCLIProgram(context: CommandContext) {
     .argument("<name>", "Database name (required)")
     .option("-b, --base <base>", "Additional optional prefix to database path")
     .option("-t, --temp", "Use temporary database")
-    .action((name: string, options: Record<string, unknown> = {}) => {
+    .action((name: string, options: { base?: string; temp?: boolean } = {}) => {
       context.command = "db.dump";
       context.args = {
         name: name,
@@ -186,108 +190,42 @@ export function* kli(args: string[] = []): Operation<void> {
   // Create a context for command execution
   const context: CommandContext = {};
 
-  const parseArgs = args.length > 0 ? args : process.argv.slice(2);
+  // Use Commander.js for all command parsing
+  const program = createCLIProgram(context);
 
-  // Workaround for Commander.js v11 option parsing issues
-  // Manually handle agent and db dump command parsing
-  if (parseArgs.length >= 1 && parseArgs[0] === "agent") {
-    // Check for help flag
-    if (parseArgs.includes("--help") || parseArgs.includes("-h")) {
-      console.log("Usage: kli agent [options]");
-      console.log("");
-      console.log("Start the KERI agent server");
-      console.log("");
-      console.log("Options:");
-      console.log("  -p, --port <port>  Port number for the server (default: 8000)");
-      console.log("  -h, --help         Display help for command");
-      return;
+  try {
+    // Parse arguments - Commander expects full argv or args array
+    // If args provided, prepend program name; otherwise use process.argv directly
+    if (args.length > 0) {
+      program.parse(["node", "kli", ...args], { from: "node" });
+    } else {
+      // Use process.argv directly - Commander handles it correctly
+      program.parse(process.argv);
     }
+  } catch (error: unknown) {
+    // Handle Commander-specific errors
+    if (error && typeof error === "object" && "code" in error) {
+      const commanderError = error as { code: string; exitCode?: number };
 
-    // Parse agent command manually
-    const agentArgs: Record<string, unknown> = {
-      port: 8000,
-    };
+      // Help was requested - Commander already printed it, just return
+      if (commanderError.code === "commander.help") {
+        return;
+      }
 
-    for (let i = 1; i < parseArgs.length; i++) {
-      const arg = parseArgs[i];
-      if (arg === "--port" || arg === "-p") {
-        agentArgs.port = Number(parseArgs[++i]) || 8000;
-      } else if (arg.startsWith("--port=")) {
-        agentArgs.port = Number(arg.split("=")[1]) || 8000;
-      } else if (arg.startsWith("-p") && arg.length > 2) {
-        agentArgs.port = Number(arg.substring(2)) || 8000;
+      // Unknown command or other parsing errors - Commander already printed the error
+      if (
+        commanderError.code === "commander.unknownCommand" ||
+        commanderError.code === "commander.missingArgument"
+      ) {
+        // Commander already printed the error message, just exit gracefully
+        return;
       }
     }
 
-    context.command = "agent";
-    context.args = agentArgs;
-  } else if (parseArgs.length >= 2 && parseArgs[0] === "db" && parseArgs[1] === "dump") {
-    // Check for help flag
-    if (parseArgs.includes("--help") || parseArgs.includes("-h")) {
-      console.log("Usage: kli db dump --name <name> [options]");
-      console.log("");
-      console.log("Dump database contents");
-      console.log("");
-      console.log("Options:");
-      console.log("  -n, --name <name>  Database name (required)");
-      console.log("  -b, --base <base>  Additional optional prefix to database path");
-      console.log("  -t, --temp         Use temporary database");
-      console.log("  -h, --help         Display help for command");
-      return;
-    }
-
-    // Parse db dump command manually
-    const dumpArgs: Record<string, unknown> = {
-      name: undefined,
-      base: undefined,
-      temp: false,
-    };
-
-    for (let i = 2; i < parseArgs.length; i++) {
-      const arg = parseArgs[i];
-      if (arg === "--name" || arg === "-n") {
-        dumpArgs.name = parseArgs[++i];
-      } else if (arg.startsWith("--name=")) {
-        dumpArgs.name = arg.split("=")[1];
-      } else if (arg.startsWith("-n") && arg.length > 2) {
-        dumpArgs.name = arg.substring(2);
-      } else if (arg === "--base" || arg === "-b") {
-        dumpArgs.base = parseArgs[++i];
-      } else if (arg.startsWith("--base=")) {
-        dumpArgs.base = arg.split("=")[1];
-      } else if (arg === "--temp" || arg === "-t") {
-        dumpArgs.temp = true;
-      } else if (!arg.startsWith("-")) {
-        // Positional argument - treat as name if not set
-        if (!dumpArgs.name) {
-          dumpArgs.name = arg;
-        }
-      }
-    }
-
-    if (!dumpArgs.name) {
-      console.error("Error: --name is required");
-      console.error("Usage: kli db dump --name <name> [options]");
-      console.error("Options:");
-      console.error("  -n, --name <name>  Database name (required)");
-      console.error("  -b, --base <base>  Additional optional prefix to database path");
-      console.error("  -t, --temp         Use temporary database");
-      process.exit(1);
-    }
-
-    context.command = "db.dump";
-    context.args = dumpArgs;
-  } else {
-    // Use Commander.js for other commands
-    const program = createCLIProgram(context);
-
-    try {
-      program.parse(parseArgs);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Error: ${message}`);
-      throw error;
-    }
+    // For other errors, log and rethrow
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error: ${message}`);
+    throw error;
   }
 
   // Execute the appropriate command operation based on context

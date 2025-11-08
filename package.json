@@ -26,9 +26,9 @@
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {
+    "commander": "^10.0.1",
     "effection": "^3.6.0",
-    "lmdb": "^3.4.2",
-    "commander": "^11.1.0"
+    "lmdb": "^3.4.2"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
