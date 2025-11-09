@@ -1,14 +1,13 @@
 /**
  * LMDBer - Core LMDB database manager
- * 
+ *
  * Manages LMDB database environments and provides CRUD operations.
  * Uses composition with PathManager instead of inheritance.
  */
 
-import { open, RootDatabase, Database, Key } from 'lmdb';
-import { PathManager, PathManagerOptions, PathManagerDefaults } from './path-manager.ts';
-import { action, type Operation } from 'effection';
-import { toOp } from "../../app/server.ts";
+import { action, type Operation } from "effection";
+import { Database, Key, open, RootDatabase } from "lmdb";
+import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
 export interface LMDBerOptions extends PathManagerOptions {
   readonly?: boolean;
@@ -62,7 +61,7 @@ export class LMDBer {
 
   constructor(options: LMDBerOptions = {}, defaults?: Partial<LMDBerDefaults>) {
     this.defaults = { ...LMDBER_DEFAULTS, ...defaults };
-    
+
     // Create PathManager with composition
     const pathDefaults: Partial<PathManagerDefaults> = {
       headDirPath: this.defaults.headDirPath,
@@ -76,7 +75,7 @@ export class LMDBer {
       tempSuffix: this.defaults.tempSuffix,
       perm: this.defaults.perm,
     };
-    
+
     this.pathManager = new PathManager(options, pathDefaults);
     this.env = null;
     this.readonly = options.readonly || false;
@@ -110,8 +109,8 @@ export class LMDBer {
     const readonly = options.readonly ?? this.readonly;
     this.readonly = readonly;
 
-    // Reopen path manager
-    yield* toOp(this.pathManager.reopen(options));
+    // Reopen path manager (now an Effection operation)
+    yield* this.pathManager.reopen(options);
 
     if (!this.pathManager.path) {
       return false;
@@ -130,7 +129,7 @@ export class LMDBer {
     if (!this.pathManager.path) {
       return false;
     }
-    
+
     // Ensure path doesn't contain ~ (should already be expanded by PathManager, but double-check)
     let dbPath = this.pathManager.path;
     if (dbPath.startsWith("~/") || dbPath === "~") {
@@ -139,7 +138,7 @@ export class LMDBer {
         dbPath = dbPath.replace("~", home);
       }
     }
-    
+
     try {
       const dbconfig = {
         path: dbPath,
@@ -175,13 +174,8 @@ export class LMDBer {
       return false;
     }
 
-    // Check if database files exist
-    return yield* action((resolve, reject) => {
-      this.pathManager.databaseFilesExist()
-        .then(resolve)
-        .catch(reject);
-      return () => {}; // Cleanup function
-    });
+    // Check if database files exist (now an Effection operation)
+    return yield* this.pathManager.databaseFilesExist();
   }
 
   /**
@@ -189,30 +183,26 @@ export class LMDBer {
    */
   *close(clear = false): Operation<boolean> {
     if (this.env) {
-    yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          this.env!.close();
-          resolve(undefined);
-        } catch (error) {
-          // Ignore close errors
-          console.warn(`Error closing LMDB: ${error}`);
-          resolve(undefined);
-        }
+      yield* action((resolve, reject) => {
+        const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
+        // Defer resolution to ensure cleanup hook is registered
+        queueMicrotask(() => {
+          try {
+            this.env!.close();
+            resolve(undefined);
+          } catch (error) {
+            // Ignore close errors
+            console.warn(`Error closing LMDB: ${error}`);
+            resolve(undefined);
+          }
+        });
+        return cleanup;
       });
-      return cleanup;
-    });
       this.env = null;
     }
 
-    yield* action((resolve, reject) => {
-      this.pathManager.close(clear)
-        .then(() => resolve(undefined))
-        .catch(reject);
-      return () => {}; // Cleanup function
-    });
+    // Close path manager (now an Effection operation)
+    yield* this.pathManager.close(clear);
 
     return true;
   }
@@ -236,9 +226,10 @@ export class LMDBer {
         try {
           const versionBytes = this.env!.get("__version__");
           if (versionBytes) {
-            const version = typeof versionBytes === 'string' 
-              ? versionBytes 
-              : new TextDecoder().decode(versionBytes as Uint8Array);
+            const version =
+              typeof versionBytes === "string"
+                ? versionBytes
+                : new TextDecoder().decode(versionBytes as Uint8Array);
             this._version = version;
             resolve(version);
           } else {
@@ -301,12 +292,12 @@ export class LMDBer {
     if (!this.env) {
       throw new Error("Database not opened");
     }
-    return this.env.openDB(name, { keyEncoding: 'binary', dupSort: dupsort });
+    return this.env.openDB(name, { keyEncoding: "binary", dupSort: dupsort });
   }
 
   /**
    * Put value (no overwrite)
-   * 
+   *
    * @param db - Named sub-database
    * @param key - Key bytes
    * @param val - Value bytes
@@ -341,7 +332,7 @@ export class LMDBer {
 
   /**
    * Set value (overwrite allowed)
-   * 
+   *
    * @param db - Named sub-database
    * @param key - Key bytes
    * @param val - Value bytes
@@ -371,7 +362,7 @@ export class LMDBer {
 
   /**
    * Get value
-   * 
+   *
    * @param db - Named sub-database
    * @param key - Key bytes
    * @returns Value bytes or null if not found
@@ -402,7 +393,7 @@ export class LMDBer {
 
   /**
    * Delete value
-   * 
+   *
    * @param db - Named sub-database
    * @param key - Key bytes
    * @returns True if key existed, False otherwise
@@ -435,7 +426,7 @@ export class LMDBer {
 
   /**
    * Count all values in database
-   * 
+   *
    * @param db - Named sub-database
    * @returns Count of entries
    */
@@ -464,7 +455,7 @@ export class LMDBer {
 
   /**
    * Get iterator over all items in database
-   * 
+   *
    * @param db - Named sub-database
    * @param key - Starting key (empty to start from beginning)
    * @param split - Whether to split key at separator
@@ -475,7 +466,7 @@ export class LMDBer {
     db: Database<any, Key>,
     key: Uint8Array = new Uint8Array(0),
     split = true,
-    sep: Uint8Array = new TextEncoder().encode('.')
+    sep: Uint8Array = new TextEncoder().encode(".")
   ): Generator<Uint8Array[] | [Uint8Array, Uint8Array]> {
     if (!this.env) {
       throw new Error("Database not opened");
@@ -483,18 +474,18 @@ export class LMDBer {
 
     const sepStr = new TextDecoder().decode(sep);
     const startKey = key.length > 0 ? key : undefined;
-    
+
     try {
       // getRange returns RangeIterable<{ key: K, value: V }>, not tuples
       for (const entry of db.getRange({ start: startKey })) {
         const dbKey = entry.key;
         const dbVal = entry.value;
-        
+
         // Convert key to Uint8Array
         let keyBytes: Uint8Array;
         if (dbKey instanceof Uint8Array) {
           keyBytes = dbKey;
-        } else if (typeof dbKey === 'string') {
+        } else if (typeof dbKey === "string") {
           keyBytes = new TextEncoder().encode(dbKey);
         } else if (dbKey instanceof ArrayBuffer) {
           keyBytes = new Uint8Array(dbKey);
@@ -502,12 +493,12 @@ export class LMDBer {
           // Try to convert array-like or other types
           keyBytes = new Uint8Array(dbKey as ArrayLike<number>);
         }
-        
+
         // Convert value to Uint8Array
         let valBytes: Uint8Array;
         if (dbVal instanceof Uint8Array) {
           valBytes = dbVal;
-        } else if (typeof dbVal === 'string') {
+        } else if (typeof dbVal === "string") {
           valBytes = new TextEncoder().encode(dbVal);
         } else if (dbVal instanceof ArrayBuffer) {
           valBytes = new Uint8Array(dbVal);
@@ -515,10 +506,10 @@ export class LMDBer {
           // Try to convert array-like or other types
           valBytes = new Uint8Array(dbVal as ArrayLike<number>);
         }
-        
+
         if (split) {
           const keyStr = new TextDecoder().decode(keyBytes);
-          const splits: Uint8Array[] = keyStr.split(sepStr).map(s => new TextEncoder().encode(s));
+          const splits: Uint8Array[] = keyStr.split(sepStr).map((s) => new TextEncoder().encode(s));
           splits.push(valBytes);
           yield splits;
         } else {
@@ -531,4 +522,3 @@ export class LMDBer {
     }
   }
 }
-
