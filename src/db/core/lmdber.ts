@@ -7,7 +7,11 @@
 
 import { type Operation } from "effection";
 import { Database, Key, open, RootDatabase } from "lmdb";
+import { startsWith } from "../../core/bytes.ts";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
+
+export type BinVal = Uint8Array;
+export type BinKey = Uint8Array;
 
 // Module-level encoder/decoder instances (stateless, reusable)
 const encoder = new TextEncoder();
@@ -21,6 +25,7 @@ const t = (b: Uint8Array): string => decoder.decode(b);
 
 export interface LMDBerOptions extends PathManagerOptions {
   readonly?: boolean;
+  dupsort?: boolean;
 }
 
 export interface LMDBerDefaults extends PathManagerDefaults {
@@ -264,7 +269,7 @@ export class LMDBer {
   /**
    * Open a named sub-database
    */
-  openDB(name: string, dupsort = false): Database<any, Key> {
+  openDB(name: string, dupsort = false): Database<BinVal, BinKey> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -283,7 +288,7 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written, False if key already exists
    */
-  *putVal(db: Database<any, Key>, key: Uint8Array, val: Uint8Array): Operation<boolean> {
+  *putVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): Operation<boolean> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -311,7 +316,7 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written
    */
-  *setVal(db: Database<any, Key>, key: Uint8Array, val: Uint8Array): Operation<boolean> {
+  *setVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): Operation<boolean> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -333,7 +338,7 @@ export class LMDBer {
    * @param key - Key bytes
    * @returns Value bytes or null if not found
    */
-  *getVal(db: Database<any, Key>, key: Uint8Array): Operation<Uint8Array | null> {
+  *getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Operation<Uint8Array | null> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -357,7 +362,7 @@ export class LMDBer {
    * @param key - Key bytes
    * @returns True if key existed, False otherwise
    */
-  *delVal(db: Database<any, Key>, key: Uint8Array): Operation<boolean> {
+  *delVal(db: Database<BinVal, BinKey>, key: Uint8Array): Operation<boolean> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -382,7 +387,7 @@ export class LMDBer {
    * @param db - Named sub-database
    * @returns Count of entries
    */
-  *cnt(db: Database<any, Key>): Operation<number> {
+  *cnt(db: Database<BinVal, BinKey>): Operation<number> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -399,67 +404,46 @@ export class LMDBer {
   }
 
   /**
-   * Get iterator over all items in database
+   * Iterates over branch of db given by top key
+   *
+   * Returns iterator of (full key, val) tuples over a branch of the db given by top key
+   * where: full key is full database key for val not truncated top key.
+   *
+   * Works for both dupsort==False and dupsort==True
+   * Because cursor.iternext() advances cursor after returning item its safe
+   * to delete the item within the iteration loop.
    *
    * @param db - Named sub-database
-   * @param key - Starting key (empty to start from beginning)
-   * @param split - Whether to split key at separator
-   * @param sep - Separator character
-   * @returns Generator yielding tuples
+   * @param top - Truncated top key, a key space prefix to get all the items
+   *              from multiple branches of the key space. If top key is
+   *              empty then gets all items in database.
+   *              Empty Uint8Array matches all keys (like str.startswith('') always returns True)
+   * @returns Generator yielding (key, val) tuples
    */
-  *getAllItemIter(
-    db: Database<any, Key>,
-    key: Uint8Array = new Uint8Array(0),
-    split = true,
-    sep: Uint8Array = b(".")
-  ): Generator<Uint8Array[] | [Uint8Array, Uint8Array]> {
+  *getTopItemIter(
+    db: Database<BinVal, BinKey>,
+    top: Uint8Array = new Uint8Array(0)
+  ): Generator<[Uint8Array, Uint8Array]> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
 
-    const sepStr = t(sep);
-    const startKey = key.length > 0 ? key : undefined;
-
     try {
-      // getRange returns RangeIterable<{ key: K, value: V }>, not tuples
+      // Use getRange with start position at top key
+      // With binary encoding, keys and values are always Uint8Array
+      const startKey = top.length > 0 ? top : undefined;
+
       for (const entry of db.getRange({ start: startKey })) {
-        const dbKey = entry.key;
-        const dbVal = entry.value;
+        const keyBytes = entry.key as Uint8Array;
+        const valBytes = entry.value as Uint8Array;
 
-        // Convert key to Uint8Array
-        let keyBytes: Uint8Array;
-        if (dbKey instanceof Uint8Array) {
-          keyBytes = dbKey;
-        } else if (typeof dbKey === "string") {
-          keyBytes = b(dbKey);
-        } else if (dbKey instanceof ArrayBuffer) {
-          keyBytes = new Uint8Array(dbKey);
-        } else {
-          // Try to convert array-like or other types
-          keyBytes = new Uint8Array(dbKey as ArrayLike<number>);
+        // Check if key starts with top prefix
+        // If top is empty, match all keys (empty prefix matches everything)
+        if (top.length > 0 && !startsWith(keyBytes, top)) {
+          break; // Done - no more keys in this branch
         }
 
-        // Convert value to Uint8Array
-        let valBytes: Uint8Array;
-        if (dbVal instanceof Uint8Array) {
-          valBytes = dbVal;
-        } else if (typeof dbVal === "string") {
-          valBytes = b(dbVal);
-        } else if (dbVal instanceof ArrayBuffer) {
-          valBytes = new Uint8Array(dbVal);
-        } else {
-          // Try to convert array-like or other types
-          valBytes = new Uint8Array(dbVal as ArrayLike<number>);
-        }
-
-        if (split) {
-          const keyStr = t(keyBytes);
-          const splits: Uint8Array[] = keyStr.split(sepStr).map((s) => b(s));
-          splits.push(valBytes);
-          yield splits;
-        } else {
-          yield [keyBytes, valBytes];
-        }
+        yield [keyBytes, valBytes];
       }
     } catch (error) {
       // If iteration fails, return empty generator

@@ -87,7 +87,7 @@ describe("Integration: DB dump command", () => {
 
         // Try to get the iterator
         console.log("Getting iterator...");
-        const iter = baser.getAllEvtsIter(new Uint8Array(0), false);
+        const iter = baser.getAllEvtsIter(new Uint8Array(0));
         console.log("Iterator type:", typeof iter);
         console.log("Iterator:", iter);
         console.log(

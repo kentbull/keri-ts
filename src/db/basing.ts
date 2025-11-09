@@ -6,8 +6,8 @@
  */
 
 import { type Operation } from "effection";
-import { Database, Key } from "lmdb";
-import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { Database } from "lmdb";
+import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 
 export interface BaserOptions extends LMDBerOptions {
   // Baser-specific options can be added here
@@ -21,7 +21,7 @@ export class Baser {
   private lmdber: LMDBer;
 
   // Named sub-databases
-  public evts: Database<any, Key> | null; // Events sub-database (dgKey: serialized KEL events)
+  public evts: Database<BinVal, BinKey> | null; // Events sub-database (dgKey: serialized KEL events)
 
   // Class constants
   static readonly TailDirPath = "keri/db";
@@ -78,7 +78,7 @@ export class Baser {
     // Open named sub-databases
     // Names end with "." to avoid namespace collisions with Base64 identifier prefixes
     try {
-      this.evts = this.lmdber.openDB("evts.", false); // dupsort=False
+      this.evts = this.lmdber.openDB("evts.", false);
 
       return this.opened;
     } catch (error) {
@@ -160,16 +160,15 @@ export class Baser {
   }
 
   /**
-   * Get iterator over all items in evts sub-database
+   * Get iterator over items in evts sub-database
+   *
+   * @param top - Key prefix to filter by (empty to get all items)
+   * @returns Generator yielding (key, val) tuples
    */
-  getAllEvtsIter(
-    key: Uint8Array = new Uint8Array(0),
-    split = true,
-    sep: Uint8Array = new TextEncoder().encode(".")
-  ): Generator<Uint8Array[] | [Uint8Array, Uint8Array]> {
+  getAllEvtsIter(top: Uint8Array = new Uint8Array(0)): Generator<[Uint8Array, Uint8Array]> {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return this.lmdber.getAllItemIter(this.evts, key, split, sep);
+    return this.lmdber.getTopItemIter(this.evts, top);
   }
 }

@@ -29,12 +29,13 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
     temp,
     reopen: true,
     readonly,
+    dupsort: false,
   };
 
   const baser = new Baser(options);
 
   try {
-    const opened = yield* baser.reopen();
+    const opened = yield* baser.reopen(options);
     if (!opened) {
       console.error(`Failed to open database ${name} from ${base} in temp mode: ${temp}`);
       throw new Error(`Failed to open database ${name} from ${base} in temp mode: ${temp}`);
@@ -50,11 +51,11 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
     console.log("=".repeat(100));
 
     // Print header
-    console.log(`${"Key".padEnd(50)} | ${"Value (UTF-8)".padEnd(45)}`);
+    console.log(`${"Key".padEnd(89)} | ${"Value (UTF-8)".padEnd(45)}`);
     console.log("-".repeat(100));
 
-    // Iterate and print entries
-    const iter = baser.getAllEvtsIter(new Uint8Array(0), false);
+    // Iterate and print entries (empty top = all items)
+    const iter = baser.getAllEvtsIter(new Uint8Array(0));
     let entryCount = 0;
 
     for (const [keyBytes, valBytes] of iter) {
