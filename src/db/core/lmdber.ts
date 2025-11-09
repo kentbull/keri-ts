@@ -5,9 +5,19 @@
  * Uses composition with PathManager instead of inheritance.
  */
 
-import { action, type Operation } from "effection";
+import { type Operation } from "effection";
 import { Database, Key, open, RootDatabase } from "lmdb";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
+
+// Module-level encoder/decoder instances (stateless, reusable)
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+// Short helpers for string ↔ Uint8Array conversion
+// bytes from string/text (UTF-8)
+const b = (t: string): Uint8Array => encoder.encode(t);
+// text/string from bytes (UTF-8)
+const t = (b: Uint8Array): string => decoder.decode(b);
 
 export interface LMDBerOptions extends PathManagerOptions {
   readonly?: boolean;
@@ -43,7 +53,6 @@ export class LMDBer {
   private pathManager: PathManager;
   public env: RootDatabase<any, Key> | null;
   public readonly: boolean;
-  private _version: string | null;
   private defaults: LMDBerDefaults;
 
   // Class constants
@@ -79,7 +88,6 @@ export class LMDBer {
     this.pathManager = new PathManager(options, pathDefaults);
     this.env = null;
     this.readonly = options.readonly || false;
-    this._version = null;
   }
 
   get name(): string {
@@ -124,10 +132,10 @@ export class LMDBer {
 
     // Reopen path manager (now an Effection operation)
     yield* this.pathManager.reopen(options);
-
     if (!this.pathManager.path) {
       return false;
     }
+    let dbPath = this.pathManager.path;
 
     // Get map size from environment variable or use default
     const mapSizeEnv = process.env.KERI_LMDB_MAP_SIZE;
@@ -135,22 +143,6 @@ export class LMDBer {
 
     // Check if database files exist before opening
     const dbExists = yield* this.checkDatabaseExists();
-
-    // Open LMDB environment
-    // LMDB's open() will create data.mdb and lock.mdb if they don't exist
-    // Ensure path is absolute (expand ~ if needed)
-    if (!this.pathManager.path) {
-      return false;
-    }
-
-    // Ensure path doesn't contain ~ (should already be expanded by PathManager, but double-check)
-    let dbPath = this.pathManager.path;
-    if (dbPath.startsWith("~/") || dbPath === "~") {
-      const home = process.env.HOME;
-      if (home) {
-        dbPath = dbPath.replace("~", home);
-      }
-    }
 
     // If readonly and database doesn't exist, we need to handle that gracefully
     // For readonly mode, database files must exist
@@ -169,38 +161,31 @@ export class LMDBer {
         ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
         : mapSize;
 
-    // Try using directory path first (Node.js lmdb may accept either)
-    // If that fails, we'll try the data.mdb file path
-    const dbconfig: {
-      path: string;
-      maxDbs: number;
-      mapSize: number;
-      readOnly: boolean;
-      compression?: boolean;
-    } = {
+    const dbConfig = {
       path: dbPath, // Use directory path (Node.js lmdb should handle this)
       maxDbs: this.defaults.maxNamedDBs,
       mapSize: effectiveMapSize,
       readOnly: readonly,
       compression: false, // Disable compression for compatibility
+      encoding: "binary" as const, // to mimic KERIpy behavior
+      keyEncoding: "binary" as const, // to mimic KERIpy behavior
     };
     console.log(`Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`);
 
+    // Open LMDB environment
+    // LMDB's open() will create data.mdb and lock.mdb if they don't exist
     try {
-      // Open synchronously - LMDB's open() is synchronous
-      // Do NOT wrap in action() - synchronous operations should be called directly
-      // Wrapping synchronous native operations in action() can cause memory management issues
-      // with native bindings (double-free errors)
-      this.env = open(dbconfig);
+      // do sync because wrapping synchronous native operations in action() can cause
+      // memory management issues with native bindings (double-free errors)
+      this.env = open(dbConfig);
       console.log(`LMDB environment opened successfully`);
 
-      // TODO: Uncomment when database access is verified
       // Set version if new database and not readonly
-      // if (this.opened && !readonly && !dbExists && !this.temp) {
-      //   // Set version for new database
-      //   const version = "1.0.0"; // Default version
-      //   yield* this.setVer(version);
-      // }
+      if (this.opened && !readonly && !dbExists && !this.temp) {
+        // Set version for new database
+        const version = "1.0.0"; // Default version
+        yield* this.setVer(version);
+      }
 
       return this.opened;
     } catch (error) {
@@ -227,21 +212,12 @@ export class LMDBer {
    */
   *close(clear = false): Operation<boolean> {
     if (this.env) {
-      yield* action((resolve, reject) => {
-        const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-        // Defer resolution to ensure cleanup hook is registered
-        queueMicrotask(() => {
-          try {
-            this.env!.close();
-            resolve(undefined);
-          } catch (error) {
-            // Ignore close errors
-            console.warn(`Error closing LMDB: ${error}`);
-            resolve(undefined);
-          }
-        });
-        return cleanup;
-      });
+      try {
+        this.env.close();
+      } catch (error) {
+        // Ignore close errors (database might already be closed)
+        console.warn(`Error closing LMDB: ${error}`);
+      }
       this.env = null;
     }
 
@@ -255,78 +231,34 @@ export class LMDBer {
    * Get database version
    */
   *getVer(): Operation<string | null> {
-    if (this._version !== null) {
-      return this._version;
+    if (!this.env) {
+      throw new Error("Database not opened");
     }
 
-    if (!this.env) {
+    try {
+      const versionBytes: Uint8Array = this.env.get(b("__version__"));
+      const version = t(versionBytes);
+      return version || null;
+    } catch (error) {
       return null;
     }
-
-    return yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          const versionBytes = this.env!.get("__version__");
-          if (versionBytes) {
-            const version =
-              typeof versionBytes === "string"
-                ? versionBytes
-                : new TextDecoder().decode(versionBytes as Uint8Array);
-            this._version = version;
-            resolve(version);
-          } else {
-            resolve(null);
-          }
-        } catch (error) {
-          resolve(null);
-        }
-      });
-      return cleanup;
-    });
   }
 
   /**
    * Set database version
    */
   *setVer(val: string): Operation<void> {
-    this._version = val;
-
     if (!this.env) {
-      return;
+      throw new Error("Database not opened");
     }
 
-    yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          const versionBytes = new TextEncoder().encode(val);
-          this.env!.transactionSync(() => {
-            this.env!.putSync("__version__", versionBytes);
-          });
-          resolve(undefined);
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
+    try {
+      this.env.transactionSync(() => {
+        this.env!.putSync(b("__version__"), b(val));
       });
-      return cleanup;
-    });
-  }
-
-  /**
-   * Get version property
-   */
-  get version(): string | null {
-    return this._version;
-  }
-
-  /**
-   * Set version property
-   */
-  set version(val: string) {
-    this._version = val;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
   }
 
   /**
@@ -356,26 +288,19 @@ export class LMDBer {
       throw new Error("Database not opened");
     }
 
-    return yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          const result = this.env!.transactionSync(() => {
-            const existing = db.get(key);
-            if (existing !== null && existing !== undefined) {
-              return false;
-            }
-            db.put(key, val);
-            return true;
-          });
-          resolve(result);
-        } catch (error) {
-          reject(new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`));
+    try {
+      const result = this.env.transactionSync(() => {
+        const existing = db.get(key);
+        if (existing !== null && existing !== undefined) {
+          return false;
         }
+        db.put(key, val);
+        return true;
       });
-      return cleanup;
-    });
+      return result;
+    } catch (error) {
+      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+    }
   }
 
   /**
@@ -391,21 +316,14 @@ export class LMDBer {
       throw new Error("Database not opened");
     }
 
-    return yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          this.env!.transactionSync(() => {
-            db.put(key, val);
-          });
-          resolve(true);
-        } catch (error) {
-          reject(new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`));
-        }
+    try {
+      this.env.transactionSync(() => {
+        db.put(key, val);
       });
-      return cleanup;
-    });
+      return true;
+    } catch (error) {
+      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+    }
   }
 
   /**
@@ -420,23 +338,16 @@ export class LMDBer {
       throw new Error("Database not opened");
     }
 
-    return yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          const val = db.get(key);
-          if (val === null || val === undefined) {
-            resolve(null);
-          } else {
-            resolve(val instanceof Uint8Array ? val : new Uint8Array(val));
-          }
-        } catch (error) {
-          reject(new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`));
-        }
-      });
-      return cleanup;
-    });
+    try {
+      const val = db.get(key);
+      if (val === null || val === undefined) {
+        return null;
+      } else {
+        return val instanceof Uint8Array ? val : new Uint8Array(val);
+      }
+    } catch (error) {
+      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+    }
   }
 
   /**
@@ -451,25 +362,18 @@ export class LMDBer {
       throw new Error("Database not opened");
     }
 
-    return yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          const result = this.env!.transactionSync(() => {
-            const exists = db.get(key) !== null && db.get(key) !== undefined;
-            if (exists) {
-              db.remove(key);
-            }
-            return exists;
-          });
-          resolve(result);
-        } catch (error) {
-          reject(new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`));
+    try {
+      const result = this.env.transactionSync(() => {
+        const exists = db.get(key) !== null && db.get(key) !== undefined;
+        if (exists) {
+          db.remove(key);
         }
+        return exists;
       });
-      return cleanup;
-    });
+      return result;
+    } catch (error) {
+      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+    }
   }
 
   /**
@@ -483,22 +387,15 @@ export class LMDBer {
       throw new Error("Database not opened");
     }
 
-    return yield* action((resolve, reject) => {
-      const cleanup = () => {}; // Cleanup function (no-op for synchronous operations)
-      // Defer resolution to ensure cleanup hook is registered
-      queueMicrotask(() => {
-        try {
-          let count = 0;
-          for (const _ of db.getRange({})) {
-            count++;
-          }
-          resolve(count);
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      });
-      return cleanup;
-    });
+    try {
+      let count = 0;
+      for (const _ of db.getRange({})) {
+        count++;
+      }
+      return count;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
   }
 
   /**
@@ -514,13 +411,13 @@ export class LMDBer {
     db: Database<any, Key>,
     key: Uint8Array = new Uint8Array(0),
     split = true,
-    sep: Uint8Array = new TextEncoder().encode(".")
+    sep: Uint8Array = b(".")
   ): Generator<Uint8Array[] | [Uint8Array, Uint8Array]> {
     if (!this.env) {
       throw new Error("Database not opened");
     }
 
-    const sepStr = new TextDecoder().decode(sep);
+    const sepStr = t(sep);
     const startKey = key.length > 0 ? key : undefined;
 
     try {
@@ -534,7 +431,7 @@ export class LMDBer {
         if (dbKey instanceof Uint8Array) {
           keyBytes = dbKey;
         } else if (typeof dbKey === "string") {
-          keyBytes = new TextEncoder().encode(dbKey);
+          keyBytes = b(dbKey);
         } else if (dbKey instanceof ArrayBuffer) {
           keyBytes = new Uint8Array(dbKey);
         } else {
@@ -547,7 +444,7 @@ export class LMDBer {
         if (dbVal instanceof Uint8Array) {
           valBytes = dbVal;
         } else if (typeof dbVal === "string") {
-          valBytes = new TextEncoder().encode(dbVal);
+          valBytes = b(dbVal);
         } else if (dbVal instanceof ArrayBuffer) {
           valBytes = new Uint8Array(dbVal);
         } else {
@@ -556,8 +453,8 @@ export class LMDBer {
         }
 
         if (split) {
-          const keyStr = new TextDecoder().decode(keyBytes);
-          const splits: Uint8Array[] = keyStr.split(sepStr).map((s) => new TextEncoder().encode(s));
+          const keyStr = t(keyBytes);
+          const splits: Uint8Array[] = keyStr.split(sepStr).map((s) => b(s));
           splits.push(valBytes);
           yield splits;
         } else {

@@ -1,13 +1,13 @@
 /**
  * Baser - KERI Event Log Database
- * 
+ *
  * Manages KEL events and related data using composition with LMDBer.
  * Sets up named sub-databases for key event logs.
  */
 
-import { LMDBer, LMDBerOptions } from './core/lmdber.ts';
-import { Database, Key } from 'lmdb';
-import { type Operation } from 'effection';
+import { type Operation } from "effection";
+import { Database, Key } from "lmdb";
+import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 
 export interface BaserOptions extends LMDBerOptions {
   // Baser-specific options can be added here
@@ -19,7 +19,7 @@ export interface BaserOptions extends LMDBerOptions {
  */
 export class Baser {
   private lmdber: LMDBer;
-  
+
   // Named sub-databases
   public evts: Database<any, Key> | null; // Events sub-database (dgKey: serialized KEL events)
 
@@ -37,7 +37,7 @@ export class Baser {
       tempPrefix: Baser.TempPrefix,
       maxNamedDBs: Baser.MaxNamedDBs,
     });
-    
+
     this.evts = null;
   }
 
@@ -70,7 +70,7 @@ export class Baser {
    */
   *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
     const opened = yield* this.lmdber.reopen(options);
-    
+
     if (!opened || !this.lmdber.env) {
       return false;
     }
@@ -79,7 +79,7 @@ export class Baser {
     // Names end with "." to avoid namespace collisions with Base64 identifier prefixes
     try {
       this.evts = this.lmdber.openDB("evts.", false); // dupsort=False
-      
+
       return this.opened;
     } catch (error) {
       console.error(`Failed to open Baser sub-databases: ${error}`);
@@ -109,12 +109,14 @@ export class Baser {
     return yield* this.lmdber.setVer(val);
   }
 
-  get version(): string | null {
-    return this.lmdber.version;
-  }
-
-  set version(val: string) {
-    this.lmdber.version = val;
+  /**
+   * Count entries in evts sub-database
+   */
+  *cntEvts(): Operation<number> {
+    if (!this.evts) {
+      throw new Error("evts sub-database not opened");
+    }
+    return yield* this.lmdber.cnt(this.evts);
   }
 
   /**
@@ -158,22 +160,12 @@ export class Baser {
   }
 
   /**
-   * Count entries in evts sub-database
-   */
-  *cntEvts(): Operation<number> {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
-    return yield* this.lmdber.cnt(this.evts);
-  }
-
-  /**
    * Get iterator over all items in evts sub-database
    */
   getAllEvtsIter(
     key: Uint8Array = new Uint8Array(0),
     split = true,
-    sep: Uint8Array = new TextEncoder().encode('.')
+    sep: Uint8Array = new TextEncoder().encode(".")
   ): Generator<Uint8Array[] | [Uint8Array, Uint8Array]> {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
@@ -181,4 +173,3 @@ export class Baser {
     return this.lmdber.getAllItemIter(this.evts, key, split, sep);
   }
 }
-

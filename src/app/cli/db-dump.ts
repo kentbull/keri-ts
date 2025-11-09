@@ -1,11 +1,11 @@
 /**
  * Database dump command for CLI
- * 
+ *
  * Dumps the contents of Baser.evts sub-database to console in prettified table format
  */
 
-import { Baser, BaserOptions } from '../../db/basing.ts';
-import { type Operation } from 'effection';
+import { type Operation } from "effection";
+import { Baser, BaserOptions } from "../../db/basing.ts";
 
 /**
  * Dump the evts sub-database to console
@@ -32,13 +32,17 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
   };
 
   const baser = new Baser(options);
-  
+
   try {
     const opened = yield* baser.reopen();
     if (!opened) {
-      console.error("Failed to open database");
-      return;
+      console.error(`Failed to open database ${name} from ${base} in temp mode: ${temp}`);
+      throw new Error(`Failed to open database ${name} from ${base} in temp mode: ${temp}`);
     }
+
+    // get database version
+    const version = yield* baser.getVer();
+    console.log(`Database version: ${version}`);
 
     // Get count
     const count = yield* baser.cntEvts();
@@ -46,24 +50,22 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
     console.log("=".repeat(100));
 
     // Print header
-    console.log(
-      `${"Key".padEnd(50)} | ${"Value (UTF-8)".padEnd(45)}`
-    );
+    console.log(`${"Key".padEnd(50)} | ${"Value (UTF-8)".padEnd(45)}`);
     console.log("-".repeat(100));
 
     // Iterate and print entries
     const iter = baser.getAllEvtsIter(new Uint8Array(0), false);
     let entryCount = 0;
-    
+
     for (const [keyBytes, valBytes] of iter) {
       entryCount++;
-      
+
       // Decode key to UTF-8 (with error handling)
       let keyStr: string;
       try {
-        keyStr = new TextDecoder('utf-8', { fatal: false }).decode(keyBytes);
+        keyStr = new TextDecoder("utf-8", { fatal: false }).decode(keyBytes);
         // Replace non-printable characters
-        keyStr = keyStr.replace(/[\x00-\x1F\x7F-\x9F]/g, '.');
+        keyStr = keyStr.replace(/[\x00-\x1F\x7F-\x9F]/g, ".");
       } catch {
         keyStr = `[${keyBytes.length} bytes]`;
       }
@@ -71,25 +73,22 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
       // Decode value to UTF-8 (with error handling)
       let valStr: string;
       try {
-        valStr = new TextDecoder('utf-8', { fatal: false }).decode(valBytes);
+        valStr = new TextDecoder("utf-8", { fatal: false }).decode(valBytes);
         // Replace non-printable characters
-        valStr = valStr.replace(/[\x00-\x1F\x7F-\x9F]/g, '.');
+        valStr = valStr.replace(/[\x00-\x1F\x7F-\x9F]/g, ".");
         // Truncate if too long
         if (valStr.length > 45) {
-          valStr = valStr.substring(0, 42) + '...';
+          valStr = valStr.substring(0, 42) + "...";
         }
       } catch {
         valStr = `[${valBytes.length} bytes]`;
       }
 
-      console.log(
-        `${keyStr.padEnd(50)} | ${valStr.padEnd(45)}`
-      );
+      console.log(`${keyStr.padEnd(50)} | ${valStr.padEnd(45)}`);
     }
 
     console.log("=".repeat(100));
     console.log(`\nTotal entries: ${entryCount}`);
-    
   } catch (error) {
     console.error(`Error dumping database: ${error}`);
     throw error;
@@ -97,4 +96,3 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
     yield* baser.close();
   }
 }
-

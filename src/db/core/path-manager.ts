@@ -242,7 +242,7 @@ export class PathManager {
     });
   }
 
-  private *_statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean } | null> {
+  private *_statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean }> {
     return yield* action((resolve, reject) => {
       stat(path)
         .then((stats) => {
@@ -252,9 +252,12 @@ export class PathManager {
           });
         })
         .catch((error) => {
-          // ENOENT (file doesn't exist) is not an error for our use case - return null
+          // ENOENT (file doesn't exist)
           if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-            resolve(null);
+            resolve({
+              isDirectory: false,
+              isFile: false,
+            });
           } else {
             // Other errors should be rejected
             reject(error);
@@ -437,6 +440,6 @@ export class PathManager {
 
     const dataMdbPath = `${this.path}/data.mdb`;
     const pathStat = yield* this._statFileOp(dataMdbPath);
-    return pathStat?.isFile ?? false;
+    return pathStat.isFile ?? false;
   }
 }
