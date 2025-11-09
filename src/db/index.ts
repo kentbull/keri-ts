@@ -1,7 +1,5 @@
 /**
- * Database core module - public API
- * 
- * This module provides core database operations for LMDB.
+ * Database module exports
  */
-export { openDB, readValue, writeValue } from './core/db.ts';
 
+export * from './basing.ts';
