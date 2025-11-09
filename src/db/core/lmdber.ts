@@ -19,9 +19,9 @@ const decoder = new TextDecoder();
 
 // Short helpers for string ↔ Uint8Array conversion
 // bytes from string/text (UTF-8)
-const b = (t: string): Uint8Array => encoder.encode(t);
+export const b = (t: string): Uint8Array => encoder.encode(t);
 // text/string from bytes (UTF-8)
-const t = (b: Uint8Array): string => decoder.decode(b);
+export const t = (b: Uint8Array): string => decoder.decode(b);
 
 export interface LMDBerOptions extends PathManagerOptions {
   readonly?: boolean;
@@ -189,7 +189,7 @@ export class LMDBer {
       if (this.opened && !readonly && !dbExists && !this.temp) {
         // Set version for new database
         const version = "1.0.0"; // Default version
-        yield* this.setVer(version);
+        this.setVer(version);
       }
 
       return this.opened;
@@ -235,7 +235,7 @@ export class LMDBer {
   /**
    * Get database version
    */
-  *getVer(): Operation<string | null> {
+  getVer(): string | null {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -252,7 +252,7 @@ export class LMDBer {
   /**
    * Set database version
    */
-  *setVer(val: string): Operation<void> {
+  setVer(val: string): void {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -288,7 +288,7 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written, False if key already exists
    */
-  *putVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): Operation<boolean> {
+  putVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): boolean {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -316,7 +316,7 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written
    */
-  *setVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): Operation<boolean> {
+  setVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): boolean {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -338,7 +338,7 @@ export class LMDBer {
    * @param key - Key bytes
    * @returns Value bytes or null if not found
    */
-  *getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Operation<Uint8Array | null> {
+  getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -362,7 +362,7 @@ export class LMDBer {
    * @param key - Key bytes
    * @returns True if key existed, False otherwise
    */
-  *delVal(db: Database<BinVal, BinKey>, key: Uint8Array): Operation<boolean> {
+  delVal(db: Database<BinVal, BinKey>, key: Uint8Array): boolean {
     if (!this.env) {
       throw new Error("Database not opened");
     }
@@ -387,7 +387,7 @@ export class LMDBer {
    * @param db - Named sub-database
    * @returns Count of entries
    */
-  *cnt(db: Database<BinVal, BinKey>): Operation<number> {
+  cnt(db: Database<BinVal, BinKey>): number {
     if (!this.env) {
       throw new Error("Database not opened");
     }

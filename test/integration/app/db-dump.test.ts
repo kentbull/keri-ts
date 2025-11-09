@@ -82,7 +82,7 @@ describe("Integration: DB dump command", () => {
         console.log("Evts database:", baser.evts ? "exists" : "null");
 
         // Get count first
-        const count = yield* baser.cntEvts();
+        const count = baser.cntEvts();
         console.log("Entry count:", count);
 
         // Try to get the iterator

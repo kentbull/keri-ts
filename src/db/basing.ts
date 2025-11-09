@@ -98,65 +98,65 @@ export class Baser {
   /**
    * Get version
    */
-  *getVer(): Operation<string | null> {
-    return yield* this.lmdber.getVer();
+  getVer(): string | null {
+    return this.lmdber.getVer();
   }
 
   /**
    * Set version
    */
-  *setVer(val: string): Operation<void> {
-    return yield* this.lmdber.setVer(val);
+  setVer(val: string): void {
+    this.lmdber.setVer(val);
   }
 
   /**
    * Count entries in evts sub-database
    */
-  *cntEvts(): Operation<number> {
+  cntEvts(): number {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return yield* this.lmdber.cnt(this.evts);
+    return this.lmdber.cnt(this.evts);
   }
 
   /**
    * Put value in evts sub-database
    */
-  *putEvt(key: Uint8Array, val: Uint8Array): Operation<boolean> {
+  putEvt(key: Uint8Array, val: Uint8Array): boolean {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return yield* this.lmdber.putVal(this.evts, key, val);
+    return this.lmdber.putVal(this.evts, key, val);
   }
 
   /**
    * Set value in evts sub-database
    */
-  *setEvt(key: Uint8Array, val: Uint8Array): Operation<boolean> {
+  setEvt(key: Uint8Array, val: Uint8Array): boolean {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return yield* this.lmdber.setVal(this.evts, key, val);
+    return this.lmdber.setVal(this.evts, key, val);
   }
 
   /**
    * Get value from evts sub-database
    */
-  *getEvt(key: Uint8Array): Operation<Uint8Array | null> {
+  getEvt(key: Uint8Array): Uint8Array | null {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return yield* this.lmdber.getVal(this.evts, key);
+    return this.lmdber.getVal(this.evts, key);
   }
 
   /**
    * Delete value from evts sub-database
    */
-  *delEvt(key: Uint8Array): Operation<boolean> {
+  delEvt(key: Uint8Array): boolean {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return yield* this.lmdber.delVal(this.evts, key);
+    return this.lmdber.delVal(this.evts, key);
   }
 
   /**
@@ -165,10 +165,10 @@ export class Baser {
    * @param top - Key prefix to filter by (empty to get all items)
    * @returns Generator yielding (key, val) tuples
    */
-  getAllEvtsIter(top: Uint8Array = new Uint8Array(0)): Generator<[Uint8Array, Uint8Array]> {
+  *getAllEvtsIter(top: Uint8Array = new Uint8Array(0)): Generator<[Uint8Array, Uint8Array]> {
     if (!this.evts) {
       throw new Error("evts sub-database not opened");
     }
-    return this.lmdber.getTopItemIter(this.evts, top);
+    yield* this.lmdber.getTopItemIter(this.evts, top);
   }
 }
