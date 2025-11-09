@@ -104,10 +104,23 @@ export class LMDBer {
 
   /**
    * Reopen the LMDB database
+   * Closes existing database if open before opening a new one to prevent double-free errors
    */
   *reopen(options: Partial<LMDBerOptions> = {}): Operation<boolean> {
     const readonly = options.readonly ?? this.readonly;
     this.readonly = readonly;
+
+    // Close existing database if open (prevents double-free when reopening)
+    if (this.env) {
+      try {
+        // Close synchronously - LMDB close() is synchronous
+        this.env.close();
+      } catch (error) {
+        // Ignore close errors (database might already be closed)
+        console.warn(`Warning: Error closing existing LMDB environment: ${error}`);
+      }
+      this.env = null;
+    }
 
     // Reopen path manager (now an Effection operation)
     yield* this.pathManager.reopen(options);
@@ -139,14 +152,45 @@ export class LMDBer {
       }
     }
 
+    // If readonly and database doesn't exist, we need to handle that gracefully
+    // For readonly mode, database files must exist
+    if (readonly && !dbExists) {
+      console.error(`Cannot open readonly database: database files do not exist at ${dbPath}`);
+      this.env = null;
+      return false;
+    }
+
+    // For readonly opens of existing databases, use a large mapSize that's safe
+    // LMDB will use the actual map size from the database file, but the Node.js
+    // lmdb package requires mapSize to be >= the database's actual map size
+    // Use 4GB (KERIpy default) or larger to ensure compatibility
+    const effectiveMapSize =
+      readonly && dbExists
+        ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
+        : mapSize;
+
+    // Try using directory path first (Node.js lmdb may accept either)
+    // If that fails, we'll try the data.mdb file path
+    const dbconfig: {
+      path: string;
+      maxDbs: number;
+      mapSize: number;
+      readOnly: boolean;
+      compression?: boolean;
+    } = {
+      path: dbPath, // Use directory path (Node.js lmdb should handle this)
+      maxDbs: this.defaults.maxNamedDBs,
+      mapSize: effectiveMapSize,
+      readOnly: readonly,
+      compression: false, // Disable compression for compatibility
+    };
+    console.log(`Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`);
+
     try {
-      const dbconfig = {
-        path: dbPath,
-        maxDbs: this.defaults.maxNamedDBs,
-        mapSize: mapSize,
-        readOnly: readonly,
-      };
-      console.log(`Opening LMDB at: ${dbPath}`);
+      // Open synchronously - LMDB's open() is synchronous
+      // Do NOT wrap in action() - synchronous operations should be called directly
+      // Wrapping synchronous native operations in action() can cause memory management issues
+      // with native bindings (double-free errors)
       this.env = open(dbconfig);
       console.log(`LMDB environment opened successfully`);
 
@@ -292,7 +336,11 @@ export class LMDBer {
     if (!this.env) {
       throw new Error("Database not opened");
     }
-    return this.env.openDB(name, { keyEncoding: "binary", dupSort: dupsort });
+    return this.env.openDB(name, {
+      keyEncoding: "binary",
+      encoding: "binary", // Use binary encoding for values (raw bytes) to match KERIpy
+      dupSort: dupsort,
+    });
   }
 
   /**

@@ -243,20 +243,25 @@ export class PathManager {
   }
 
   private *_statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean } | null> {
-    try {
-      const stats = yield* action((resolve, reject) => {
-        stat(path)
-          .then((stats) => resolve(stats))
-          .catch(reject);
-        return () => {}; // No cleanup needed for stat
-      });
-      return {
-        isDirectory: stats.isDirectory(),
-        isFile: stats.isFile(),
-      };
-    } catch {
-      return null;
-    }
+    return yield* action((resolve, reject) => {
+      stat(path)
+        .then((stats) => {
+          resolve({
+            isDirectory: stats.isDirectory(),
+            isFile: stats.isFile(),
+          });
+        })
+        .catch((error) => {
+          // ENOENT (file doesn't exist) is not an error for our use case - return null
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            resolve(null);
+          } else {
+            // Other errors should be rejected
+            reject(error);
+          }
+        });
+      return () => {}; // No cleanup needed for stat
+    });
   }
 
   /**
