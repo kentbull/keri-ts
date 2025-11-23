@@ -1,5 +1,4 @@
 import { run } from "effection";
-import { describe, it } from "vitest";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
 import { Baser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
@@ -9,8 +8,11 @@ import { CLITestHarness } from "../../../test/utils.ts";
  * Tests dumping the evts sub-database with debugging support
  */
 
-describe("Integration: DB dump command", () => {
-  it("should dump database contents - debug iterator issue", async () => {
+Deno.test({
+  name: "Integration: DB dump command - should dump database contents - debug iterator issue",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
     const harness = new CLITestHarness();
     harness.captureOutput();
 
@@ -57,9 +59,14 @@ describe("Integration: DB dump command", () => {
     } finally {
       harness.restoreOutput();
     }
-  });
+  },
+});
 
-  it("should test Baser.getAllEvtsIter directly", async () => {
+Deno.test({
+  name: "Integration: DB dump command - should test Baser.getAllEvtsIter directly",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
     await run(function* () {
       const baser = new Baser({
         name: "accolon",
@@ -132,5 +139,5 @@ describe("Integration: DB dump command", () => {
         yield* baser.close();
       }
     });
-  });
+  },
 });

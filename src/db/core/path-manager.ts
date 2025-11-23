@@ -6,7 +6,6 @@
  */
 
 import { type Operation, action } from "effection";
-import { access, constants, mkdir, rm, stat } from "fs/promises";
 
 export interface PathManagerOptions {
   name?: string;
@@ -108,14 +107,14 @@ export class PathManager {
   }
 
   _getTempPath(): string {
-    const tempDir = process.env.TMPDIR || process.env.TMP || process.env.TEMP || "/tmp";
+    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") || Deno.env.get("TEMP") || "/tmp";
     const tempName = `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
     return `${tempDir}/${tempName}`;
   }
 
   _pathExpandTilde(path: string): string {
     if (path === "~" || path.startsWith("~/")) {
-      const home = process.env.HOME || "~";
+      const home = Deno.env.get("HOME") || "~";
       return path === "~" ? home : path.replace("~", home);
     }
     return path;
@@ -145,7 +144,7 @@ export class PathManager {
 
   _getAltPath(clean: boolean): string {
     // HOME or ~ / tail / base / name
-    let head = process.env.HOME || "~";
+    let head = Deno.env.get("HOME") || "~";
     head = this._pathExpandTilde(head);
     let tail: string;
 
@@ -188,82 +187,80 @@ export class PathManager {
    */
   private *_statOp(path: string): Operation<boolean> {
     return yield* action((resolve, reject) => {
-      stat(path)
+      Deno.stat(path)
         .then(() => resolve(true))
         .catch((error) => {
-          // ENOENT (file doesn't exist) is not an error for our use case
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          if (error instanceof Deno.errors.NotFound) {
             resolve(false);
           } else {
             reject(error);
           }
         });
-      return () => {}; // No cleanup needed for stat
+      return () => {};
     });
   }
 
   private *_accessOp(path: string): Operation<boolean> {
     return yield* action((resolve, reject) => {
-      access(path, constants.F_OK | constants.R_OK | constants.W_OK)
+      // In Deno, we check access by stating or trying to read/write.
+      // Simplified to checking existence and relying on OS permissions for now
+      Deno.stat(path)
         .then(() => resolve(true))
-        .catch(() => resolve(false)); // No access is not an error, just return false
-      return () => {}; // No cleanup needed for access
+        .catch(() => resolve(false));
+      return () => {};
     });
   }
 
   private *_mkdirOp(path: string, perm: number): Operation<boolean> {
     return yield* action((resolve, reject) => {
-      mkdir(path, { recursive: true, mode: perm })
+      Deno.mkdir(path, { recursive: true, mode: perm })
         .then(() => resolve(true))
         .catch((error) => {
-          if ((error as NodeJS.ErrnoException).code === "EACCES") {
+          if (error instanceof Deno.errors.PermissionDenied) {
             resolve(false);
           } else {
             reject(error);
           }
         });
-      return () => {}; // No cleanup needed for mkdir
+      return () => {};
     });
   }
 
   private *_rmOp(path: string): Operation<void> {
     return yield* action((resolve, reject) => {
-      rm(path, { recursive: true })
+      Deno.remove(path, { recursive: true })
         .then(() => resolve(undefined))
         .catch((error) => {
-          // ENOENT (file doesn't exist) is not an error for our use case
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          if (error instanceof Deno.errors.NotFound) {
             resolve(undefined);
           } else {
             reject(error);
           }
         });
-      return () => {}; // No cleanup needed for rm
+      return () => {};
     });
   }
 
   private *_statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean }> {
     return yield* action((resolve, reject) => {
-      stat(path)
+      Deno.stat(path)
         .then((stats) => {
           resolve({
-            isDirectory: stats.isDirectory(),
-            isFile: stats.isFile(),
+            isDirectory: stats.isDirectory,
+            isFile: stats.isFile,
           });
         })
         .catch((error) => {
-          // ENOENT (file doesn't exist)
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          if (error instanceof Deno.errors.NotFound) {
             resolve({
               isDirectory: false,
               isFile: false,
             });
           } else {
-            // Other errors should be rejected
             reject(error);
           }
         });
-      return () => {}; // No cleanup needed for stat
+      return () => {};
     });
   }
 

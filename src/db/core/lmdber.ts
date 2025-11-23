@@ -143,7 +143,7 @@ export class LMDBer {
     let dbPath = this.pathManager.path;
 
     // Get map size from environment variable or use default
-    const mapSizeEnv = process.env.KERI_LMDB_MAP_SIZE;
+    const mapSizeEnv = Deno.env.get("KERI_LMDB_MAP_SIZE");
     const mapSize = mapSizeEnv ? parseInt(mapSizeEnv, 10) : this.defaults.mapSize;
 
     // Check if database files exist before opening

@@ -1,5 +1,5 @@
 import { type Operation, run, spawn } from "effection";
-import { expect } from "vitest";
+import { assertRejects, assertStringIncludes } from "jsr:@std/assert";
 
 /**
  * Test utilities for CLI testing with Effection
@@ -62,7 +62,7 @@ export class CLITestHarness {
    */
   assertOutputContains(expected: string): void {
     const output = this.capturedOutput.join("\n");
-    expect(output.includes(expected)).toBe(true);
+    assertStringIncludes(output, expected);
   }
 
   /**
@@ -70,7 +70,7 @@ export class CLITestHarness {
    */
   assertErrorContains(expected: string): void {
     const errors = this.capturedErrors.join("\n");
-    expect(errors.includes(expected)).toBe(true);
+    assertStringIncludes(errors, expected);
   }
 }
 
@@ -173,9 +173,7 @@ export async function assertOperationThrows(
   operation: Operation<void>,
   expectedError: string
 ): Promise<void> {
-  await expect(async () => {
-    await run(() => operation);
-  }).rejects.toThrow(expectedError);
+  await assertRejects(() => run(() => operation), Error, expectedError);
 }
 
 /**

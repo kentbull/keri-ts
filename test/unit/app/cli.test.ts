@@ -1,12 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { run } from 'effection';
-import { initCommand } from '../../../src/app/cli/init.ts';
-import { createMockArgs, assertOperationThrows } from '../../../test/utils.ts';
+import { run } from "effection";
+import { assertStringIncludes } from "jsr:@std/assert";
+import { initCommand } from "../../../src/app/cli/init.ts";
+import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
 
-describe("CLI", () => {
-  it("init command with valid arguments", async () => {
+Deno.test("CLI - init command with valid arguments", async () => {
   const args = createMockArgs({
-    name: 'testkeystore',
+    name: "testkeystore",
     nopasscode: true,
   });
 
@@ -14,61 +13,55 @@ describe("CLI", () => {
   // Test passes if no exception is thrown
 });
 
-  it("init command requires name", async () => {
+Deno.test("CLI - init command requires name", async () => {
   const args = createMockArgs({
-    name: '',
+    name: "",
     nopasscode: true,
   });
 
-  await assertOperationThrows(
-    initCommand(args),
-    "Name is required and cannot be empty"
-  );
+  await assertOperationThrows(initCommand(args), "Name is required and cannot be empty");
 });
 
-  it("init command with missing name", async () => {
+Deno.test("CLI - init command with missing name", async () => {
   const args = createMockArgs({
     name: undefined,
     nopasscode: true,
   });
 
-  await assertOperationThrows(
-    initCommand(args),
-    "Name is required and cannot be empty"
-  );
+  await assertOperationThrows(initCommand(args), "Name is required and cannot be empty");
 });
 
-  it("init command with help flag", async () => {
+Deno.test("CLI - init command with help flag", async () => {
   const args = createMockArgs({
     help: true,
   });
 
   // Mock console.log to capture output
   const originalLog = console.log;
-  let capturedOutput = '';
+  let capturedOutput = "";
   console.log = (message: string) => {
     capturedOutput += message;
   };
 
   try {
     await run(() => initCommand(args));
-    expect(capturedOutput.includes('kli init -')).toBe(true);
+    assertStringIncludes(capturedOutput, "kli init -");
   } finally {
     console.log = originalLog;
   }
 });
 
-  it("init command with all options", async () => {
+Deno.test("CLI - init command with all options", async () => {
   const args = createMockArgs({
-    name: 'fulltest',
-    base: '/custom/base',
+    name: "fulltest",
+    base: "/custom/base",
     temp: true,
-    salt: 'custom-salt',
-    configDir: '/custom/config',
-    configFile: 'custom.json',
-    passcode: 'testpasscode123456789012',
-    aeid: 'test-aeid',
-    seed: 'test-seed',
+    salt: "custom-salt",
+    configDir: "/custom/config",
+    configFile: "custom.json",
+    passcode: "testpasscode123456789012",
+    aeid: "test-aeid",
+    seed: "test-seed",
     nopasscode: true, // Use nopasscode to avoid prompt
   });
 
@@ -76,11 +69,10 @@ describe("CLI", () => {
   // Test passes if no exception is thrown
 });
 
-
-  it("init command with custom salt", async () => {
+Deno.test("CLI - init command with custom salt", async () => {
   const args = createMockArgs({
-    name: 'salttest',
-    salt: 'custom-salt-value',
+    name: "salttest",
+    salt: "custom-salt-value",
     nopasscode: true,
   });
 
@@ -88,15 +80,14 @@ describe("CLI", () => {
   // Test passes if no exception is thrown
 });
 
-  it("init command with config overrides", async () => {
+Deno.test("CLI - init command with config overrides", async () => {
   const args = createMockArgs({
-    name: 'configtest',
-    configDir: '/custom/config/dir',
-    configFile: 'custom-config.json',
+    name: "configtest",
+    configDir: "/custom/config/dir",
+    configFile: "custom-config.json",
     nopasscode: true,
   });
 
   await run(() => initCommand(args));
   // Test passes if no exception is thrown
-});
 });
