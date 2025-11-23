@@ -129,13 +129,13 @@ function createCLIProgram(context: CommandContext) {
   dbCommand
     .command("dump")
     .description("Dump database contents")
-    .argument("<name>", "Database name (required)")
+    .requiredOption("-n, --name <name>", "Database name")
     .option("-b, --base <base>", "Additional optional prefix to database path")
     .option("-t, --temp", "Use temporary database")
-    .action((name: string, options: { base?: string; temp?: boolean } = {}) => {
+    .action((options: { name: string; base?: string; temp?: boolean }) => {
       context.command = "db.dump";
       context.args = {
-        name: name,
+        name: options.name,
         base: options.base,
         temp: options.temp || false,
       };
@@ -195,13 +195,9 @@ export function* kli(args: string[] = []): Operation<void> {
 
   try {
     // Parse arguments - Commander expects full argv or args array
-    // If args provided, prepend program name; otherwise use process.argv directly
-    if (args.length > 0) {
-      program.parse(["node", "kli", ...args], { from: "node" });
-    } else {
-      // Use process.argv directly - Commander handles it correctly
-      program.parse(process.argv);
-    }
+    // In Deno, Deno.args gives us the arguments without the executable info
+    const argsToParse = args.length > 0 ? args : Deno.args;
+    program.parse(argsToParse, { from: "user" });
   } catch (error: unknown) {
     // Handle Commander-specific errors
     if (error && typeof error === "object" && "code" in error) {

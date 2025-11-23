@@ -1,24 +1,6 @@
-import { action, type Operation, suspend } from "effection";
-import { createServer, IncomingMessage, Server, ServerResponse } from "http";
+import { action, type Operation } from "effection";
 import { RootDatabase } from "lmdb";
 import { openDB, readValue, writeValue } from "../../src/db/core/db.ts";
-
-// Helper: Promise → Operation (for server lifecycle).
-export function* toOp<T>(promise: Promise<T>, cleanup: () => void = () => {}): Operation<T> {
-  return yield* action((resolve, reject) => {
-    promise.then(resolve, reject);
-    return cleanup; // Cleanup server resources / abort
-  });
-}
-
-// Helper: Signal → Operation (Node.js signal handling).
-function* waitSignal(signame: string): Operation<void> {
-  return yield* action((resolve) => {
-    const listener = () => resolve(undefined);
-    process.on(signame as NodeJS.Signals, listener);
-    return () => process.removeListener(signame as NodeJS.Signals, listener);
-  });
-}
 
 /**
  * Start HTTP server with Effection as the outermost runtime.
@@ -35,86 +17,71 @@ export function* startServer(port: number = 8000): Operation<void> {
     throw error;
   }
 
-  let serverClosed = false;
+  // Use Deno.serve
+  return yield* action((resolve, reject) => {
+    const controller = new AbortController();
+    const { signal } = controller;
 
-  // Create Node.js HTTP server
-  const server: Server = createServer();
+    const server = Deno.serve(
+      {
+        port,
+        hostname: "127.0.0.1",
+        signal,
+        onListen: ({ port }) => console.log(`Server running on http://localhost:${port}`),
+        onError: (error) => {
+          console.error("Server error:", error);
+          return new Response("Internal Server Error", { status: 500 });
+        },
+      },
+      (req: Request) => {
+        try {
+          const url = new URL(req.url);
+          if (url.pathname.startsWith("/echo/")) {
+            // Extract value from path (everything after "/echo/")
+            let val = url.pathname.slice(6); // Trim '/echo/'
 
-  // Handle each request with database persistence
-  server.on("request", (req: IncomingMessage, res: ServerResponse) => {
-    try {
-      const url = new URL(req.url || "/", `http://${req.headers.host}`);
-      if (url.pathname.startsWith("/echo/")) {
-        // Extract value from path (everything after "/echo/")
-        let val = url.pathname.slice(6); // Trim '/echo/'
+            // If no value in path, read from database
+            if (!val) {
+              const oldVal = readValue(db, "echo");
+              val = oldVal ? oldVal : "initial echo";
+            }
 
-        // If no value in path, read from database
-        if (!val) {
-          const oldVal = readValue(db, "echo");
-          val = oldVal ? oldVal : "initial echo";
+            // Write the value to database (persist it)
+            writeValue(db, "echo", val);
+
+            return new Response(val, {
+              status: 200,
+              headers: { "Content-Type": "text/plain" },
+            });
+          } else {
+            return new Response("Not Found", {
+              status: 404,
+              headers: { "Content-Type": "text/plain" },
+            });
+          }
+        } catch (error) {
+          return new Response(String(error), { status: 500 });
         }
-
-        // Write the value to database (persist it)
-        writeValue(db, "echo", val);
-
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "text/plain");
-        res.end(val);
-      } else {
-        res.statusCode = 404;
-        res.setHeader("Content-Type", "text/plain");
-        res.end("Not Found");
       }
-    } catch (error) {
-      res.statusCode = 500;
-      res.end(String(error));
-    }
+    );
+
+    // Wait for server to finish
+    server.finished.then(resolve).catch(reject);
+
+    // Graceful shutdown logic using signals
+    const shutdown = () => {
+      console.log("Shutting down server...");
+      controller.abort();
+    };
+
+    // Deno signal listeners
+    Deno.addSignalListener("SIGINT", shutdown);
+    Deno.addSignalListener("SIGTERM", shutdown);
+
+    return () => {
+      Deno.removeSignalListener("SIGINT", shutdown);
+      Deno.removeSignalListener("SIGTERM", shutdown);
+      controller.abort();
+    };
   });
-
-  // Handle server errors
-  server.on("error", (error) => {
-    if (!serverClosed) {
-      console.error("Server error:", error);
-    }
-  });
-
-  // Start server synchronously (listen is async but we don't need to wait)
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
-  });
-
-  server.on("error", (error) => {
-    if (!serverClosed) {
-      console.error("Server error:", error);
-    }
-  });
-
-  // Set up signal handlers for graceful shutdown
-  const shutdown = () => {
-    if (!serverClosed) {
-      serverClosed = true;
-      server.close(() => {
-        console.log("Server closed");
-      });
-    }
-  };
-
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
-
-  try {
-    // Keep the operation running indefinitely until halted
-    yield* suspend();
-  } finally {
-    // Cleanup runs when operation is halted (by signal or external halt)
-    process.removeListener("SIGINT", shutdown);
-    process.removeListener("SIGTERM", shutdown);
-
-    if (!serverClosed) {
-      serverClosed = true;
-      server.close(() => {
-        console.log("Server closed (cleanup)");
-      });
-    }
-  }
 }
