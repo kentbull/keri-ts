@@ -13,6 +13,12 @@ This document provides a comprehensive analysis of all CESR implementations acro
 - **Version handling** (v1.0 vs v2.0) is critical and inconsistently implemented
 - **Stream parsing** requires sophisticated cold-start detection and tritet-based routing
 
+**Architectural Decision:**
+We explicitly decouple the **Parser** (Stream Processing) from the **Router** (Application Logic).
+
+- **`CesrStream`**: A pure iterator transforming bytes into `CesrFrame` objects (Serder + Attachments).
+- **`CesrRouter`**: Consumes `CesrFrame` objects and dispatches to `Kevery`/`Tevery`.
+
 ---
 
 ## 1. Implementation Inventory
@@ -53,6 +59,7 @@ This document provides a comprehensive analysis of all CESR implementations acro
 - ❌ **Python Performance**: Slower than compiled languages
 - ❌ **Type Safety**: Dynamic typing limits compile-time guarantees
 - ❌ **Complexity**: Large codebase (2300+ lines in parser alone)
+- ❌ **Coupling**: Heavily coupled to `Kevery` and application logic.
 
 **Best Ideas to Adopt:**
 
@@ -513,9 +520,9 @@ fn infil(&self) -> Result<String> {
 
 ### 2.4 Stream Parsing Architecture
 
-**Problem:** CESR streams contain multiple frames (events, attachments, groups) that must be parsed incrementally.
+**Problem:** CESR streams contain multiple frames (events, attachments, groups) that must be parsed incrementally. In KERIpy, this is coupled with the routing logic.
 
-**KERIpy Solution:**
+**KERIpy Solution (Coupled):**
 
 ```python
 def parseOne(self, ims, cold=Colds.txt):
@@ -523,31 +530,37 @@ def parseOne(self, ims, cold=Colds.txt):
     # Sniff cold start
     # Extract version string if event
     # Parse attachments using extractors
-    # Route to handlers (kvy, tvy, exc, rvy)
+    # DIRECT CALL to kvy.processEvent() inside the parser
 ```
 
-**cesrixir Solution:**
+**Recommended Approach for KERI TS (Decoupled):**
 
-```elixir
-def consume_stream(stream, protocol_genus \\ :keri_aaabaa) do
-  _consume_stream(stream, [], 0, protocol_genus)
-end
+Implement a **CesrStream** that strictly yields parsed frames, and a separate **CesrRouter** that handles them.
 
-defp _consume_stream(stream, acc, current_byte, protocol_genus) do
-  case consume_element(stream, protocol_genus) do
-    {:ok, element, rest} ->
-      _consume_stream(rest, [element | acc], ...)
-    {:error, message} -> {:error, message}
-  end
-end
+```typescript
+// CesrFrame: The atomic unit of a CESR stream
+type CesrFrame = {
+  serder: Serder; // The message body (Event, Receipt, Reply)
+  attachments: AttachmentGroup[]; // The signatures/couples attached
+};
+
+// CesrStream: The Iterator
+class CesrStream {
+  async *frames(ims: Uint8Array): AsyncGenerator<CesrFrame> {
+    // 1. Sniff
+    // 2. Extract Serder
+    // 3. Extract Attachments
+    // 4. Yield Frame
+  }
+}
 ```
 
 **Best Approach for KERI TS:**
 
-- Use generator/iterator pattern for incremental parsing
-- Support both framed (single message) and unframed (multiple messages) streams
-- Return parsed elements incrementally
-- Support pipelined count codes
+- **Decouple Parsing from Routing**: The parser should not know about `Kevery`.
+- Use **Generator/Iterator Pattern**: Return a stream of `CesrFrame` objects.
+- Support both framed (single message) and unframed (multiple messages) streams.
+- Support pipelined count codes.
 
 ---
 
@@ -624,33 +637,40 @@ pub(crate) fn siger_parser<'a>(cold_code: &ColdCode) -> ParsideResult<ParserRet<
 
 ### 4.1 Architecture Recommendations
 
-1. **Layered Design:**
+1.  **Layered Design:**
 
-   ```
-   Layer 1: Primitives (Matter, Prefixer, Seqner, etc.)
-   Layer 2: Groups (Count codes, indexed signatures)
-   Layer 3: Events (Serder, event parsing)
-   Layer 4: Streams (Parser, cold start, version detection)
-   ```
+    ```
+    Layer 1: Primitives (Matter, Prefixer, Seqner, etc.)
+    Layer 2: Groups (Count codes, indexed signatures)
+    Layer 3: Parsing (CesrStream -> CesrFrame)
+    Layer 4: Routing (CesrRouter -> Kevery/Tevery)
+    ```
 
-2. **Type Safety:**
+2.  **Decoupled Parsing:**
+    Instead of injecting `Kevery` into `Parser`, the `Parser` (or `CesrStream`) should purely yield structured data. This allows:
 
-   - Use TypeScript strict mode
-   - Define interfaces for all structures
-   - Use discriminated unions for version handling
-   - Avoid `any` types
+    - Easier testing of the parser in isolation.
+    - Reuse of the parser for non-KERI applications.
+    - Cleaner types.
 
-3. **Error Handling:**
+3.  **Type Safety:**
 
-   - Custom error classes (ShortageError, ColdStartError, etc.)
-   - Result types for parsing operations
-   - Clear error messages with context
+    - Use TypeScript strict mode
+    - Define interfaces for all structures
+    - Use discriminated unions for version handling
+    - Avoid `any` types
 
-4. **Performance:**
-   - Zero-copy where possible (use Uint8Array slices)
-   - Lazy evaluation for large streams
-   - Efficient base64 encoding/decoding
-   - Consider WASM for hot paths
+4.  **Error Handling:**
+
+    - Custom error classes (ShortageError, ColdStartError, etc.)
+    - Result types for parsing operations
+    - Clear error messages with context
+
+5.  **Performance:**
+    - Zero-copy where possible (use Uint8Array slices)
+    - Lazy evaluation for large streams
+    - Efficient base64 encoding/decoding
+    - Consider WASM for hot paths
 
 ### 4.2 Code Organization
 
@@ -676,10 +696,12 @@ src/cesr/
 │   ├── code-tables.ts      # Version-aware code tables
 │   └── versionage.ts       # Version struct
 ├── parser/
-│   ├── parser.ts           # Main parser class
+│   ├── cesr-stream.ts      # Main CesrStream class (Generator)
 │   ├── cold-start.ts       # Cold start detection
 │   ├── extractors.ts       # Primitive extractors
-│   └── stream.ts           # Stream processing
+│   └── frames.ts           # CesrFrame definitions
+├── router/
+│   ├── cesr-router.ts      # Router to Kevery
 └── utils/
     ├── base64.ts           # Base64 encoding/decoding
     ├── codex.ts            # Code tables
@@ -779,38 +801,38 @@ src/cesr/
    - PathedMaterialCouples
    - SealSourceCouples/Triples
 
-### Phase 5: Stream Parser (Week 5-6)
+### Phase 5: CesrStream (The Parser) (Week 5-6)
 
-1. **Parser Class**
+1.  **CesrStream Class**
 
-   - Main `Parser` class (like KERIpy)
-   - Incremental parsing with generators/iterators
-   - Framed and unframed stream support
+    - Implementation of the Generator Pattern
+    - Pure transformation of `Bytes` -> `CesrFrame`
+    - No dependency on `Kevery`
 
-2. **Extraction Methods**
+2.  **Extraction Methods**
+    - `extract()` for single primitive
+    - `_extractor()` generator for incremental
+    - Group extraction methods
 
-   - `extract()` for single primitive
-   - `_extractor()` generator for incremental
-   - Group extraction methods
+### Phase 6: CesrRouter (The Dispatcher) (Week 7-8)
 
-3. **Routing**
-   - Route to Kevery (event validation)
-   - Route to Revery (reply processing)
-   - Route to Exchanger (exchange messages)
+1.  **Router Class**
 
-### Phase 6: Integration & Testing (Week 7-8)
+    - Consumes `CesrStream`
+    - Dispatches to `Kevery` (events), `Revery` (replies), `Exchanger` (exchanges) based on message ilk
 
-1. **Integration**
+2.  **Integration**
+    - Integrate with existing KERI TS codebase
+    - Database storage integration
+    - Event processing integration
 
-   - Integrate with existing KERI TS codebase
-   - Database storage integration
-   - Event processing integration
+### Phase 7: Testing (Week 8-9)
 
-2. **Testing**
-   - Unit tests for all components
-   - Integration tests with KERIpy
-   - Performance testing
-   - Edge case testing
+1.  **Testing**
+    - Unit tests for all components
+    - Integration tests with KERIpy
+    - Performance testing
+    - Edge case testing
 
 ---
 
@@ -818,40 +840,21 @@ src/cesr/
 
 ### 6.1 Parser API Design
 
-**Option A: Generator/Iterator Pattern (KERIpy-style)**
+**Chosen Approach: Generator/Iterator Pattern with Decoupled Frames**
 
 ```typescript
-class Parser {
-  *parse(ims: Uint8Array): Generator<ParsedElement> {
+type CesrFrame = [Serder, AttachmentGroup[]];
+
+class CesrStream {
+  *parse(ims: Uint8Array): Generator<CesrFrame> {
     while (ims.length > 0) {
-      const element = yield* this._extractor(ims, SomeClass);
-      yield element;
+      // 1. Extract Body (Serder)
+      // 2. Extract Attachments
+      yield [serder, attachments];
     }
   }
 }
 ```
-
-**Option B: Callback Pattern**
-
-```typescript
-class Parser {
-  parse(ims: Uint8Array, callback: (element: ParsedElement) => void): void {
-    // Parse and call callback for each element
-  }
-}
-```
-
-**Option C: Promise-Based**
-
-```typescript
-class Parser {
-  async parse(ims: Uint8Array): Promise<ParsedElement[]> {
-    // Parse all and return array
-  }
-}
-```
-
-**Recommendation:** Use **Option A (Generator)** for incremental parsing, with **Option C (Promise)** convenience method for full parsing.
 
 ### 6.2 Error Handling Strategy
 
@@ -918,7 +921,7 @@ interface VersionString {
 The best CESR parser for KERI TS should:
 
 1. **Base Implementation on kerits Matter class** (most complete TypeScript implementation)
-2. **Adopt KERIpy's parser architecture** (most complete and tested)
+2. **Adopt a decoupled Stream/Router architecture**: Deviate from KERIpy's coupled design. Use `CesrStream` for pure parsing and `CesrRouter` for dispatch.
 3. **Use cesrixir's stream consumption pattern** (elegant and efficient)
 4. **Implement parside's group parsing approach** (type-safe and structured)
 5. **Support both v1.0 and v2.0 fully** (critical for compatibility)
@@ -932,8 +935,9 @@ The best CESR parser for KERI TS should:
 2. Implement version string handling (versify/deversify)
 3. Implement cold start detection
 4. Build group parsing infrastructure
-5. Create main Parser class
-6. Integrate with KERI TS codebase
-7. Comprehensive testing with KERIpy compatibility
+5. Create main Parser class (`CesrStream`)
+6. Create Router class (`CesrRouter`)
+7. Integrate with KERI TS codebase
+8. Comprehensive testing with KERIpy compatibility
 
-This implementation will be the **best CESR parser in the world** by combining the strengths of all existing implementations while leveraging TypeScript's type system for safety and developer experience.
+This implementation will be the **best CESR parser in the world** by combining the strengths of all existing implementations while leveraging TypeScript's type system for safety and developer experience, and improving upon the architectural separation of concerns.
