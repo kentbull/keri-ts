@@ -28,7 +28,7 @@ export interface AttachmentGroup {
   name: string;
   count: number;
   raw: Uint8Array;
-  items: string[];
+  items: unknown[];
 }
 
 export interface CesrFrame {

@@ -61,7 +61,7 @@ export class CesrParserCore {
         while (this.state.buffer.length > 0) {
           const nextCold = sniff(this.state.buffer);
           if (nextCold === "msg") break;
-          if (nextCold !== "txt") {
+          if (nextCold !== "txt" && nextCold !== "bny") {
             throw new ColdStartError(
               `Unsupported attachment cold code ${nextCold}`,
               this.state.offset,
@@ -71,6 +71,7 @@ export class CesrParserCore {
           const { group, consumed } = parseAttachmentGroup(
             this.state.buffer,
             serder.gvrsn ?? serder.pvrsn,
+            nextCold,
           );
           attachments.push(group);
           this.consume(consumed);
