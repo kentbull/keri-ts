@@ -1,0 +1,250 @@
+{
+  "version": "2026-02-13",
+  "scope": "CESR parser primitive parity against KERIpy",
+  "status_values": ["done", "partial", "planned"],
+  "impact_values": ["critical", "high", "medium", "low"],
+  "execution_policy": {
+    "ordering": "descending parser impact, then dependency depth",
+    "notes": [
+      "Map/struct helpers and label/path primitives are prioritized before lower-impact crypto verifier wrappers.",
+      "A primitive is 'done' only when txt+qb2 parse paths and parser integration tests exist where applicable."
+    ]
+  },
+  "entries": [
+    {
+      "id": "matter",
+      "keripy_class": "Matter",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["MtrDex (all generated entries)"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "txt and qb2 parsing implemented."
+    },
+    {
+      "id": "counter",
+      "keripy_class": "Counter",
+      "module": "keripy/src/keri/core/counting.py",
+      "codex_entries": ["CtrDex v1/v2 (all generated entries)"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "txt and qb2 parsing implemented."
+    },
+    {
+      "id": "indexer",
+      "keripy_class": "Indexer",
+      "module": "keripy/src/keri/core/indexing.py",
+      "codex_entries": ["IdrDex / IdxSigDex families"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "Required for indexed signature groups."
+    },
+    {
+      "id": "verser",
+      "keripy_class": "Verser",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["Tag7/Tag10 version encodings (e.g. 0O)"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "Dedicated primitive implemented and integrated into native parser metadata path."
+    },
+    {
+      "id": "ilker",
+      "keripy_class": "Ilker",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["X"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "Dedicated primitive implemented and integrated into native parser metadata path."
+    },
+    {
+      "id": "labeler",
+      "keripy_class": "Labeler",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["LabelDex family (V/W and label text encodings)"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "Primitive parser implemented with semantic label decoding and txt+qb2 tests."
+    },
+    {
+      "id": "texter",
+      "keripy_class": "Texter",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["TexDex family"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "bexter",
+      "keripy_class": "Bexter",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["BexDex family"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "pather",
+      "keripy_class": "Pather",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["StrB64/Bytes path encodings"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "number",
+      "keripy_class": "Number",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["NumDex family"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "seqner",
+      "keripy_class": "Seqner",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["MtrDex.Salt_128 based sequence encoding"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "dater",
+      "keripy_class": "Dater",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["MtrDex.DateTime"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "diger",
+      "keripy_class": "Diger",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["DigDex family"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "prefixer",
+      "keripy_class": "Prefixer",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["PreDex family"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "noncer",
+      "keripy_class": "Noncer",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["NonceDex family"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "saider",
+      "keripy_class": "Saider",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["DigDex family SAID semantics"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "tholder",
+      "keripy_class": "Tholder",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["threshold encodings"],
+      "status": "done",
+      "impact": "medium",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "traitor",
+      "keripy_class": "Traitor",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["TraitDex + Tag codes"],
+      "status": "done",
+      "impact": "medium",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "mapper",
+      "keripy_class": "Mapper",
+      "module": "keripy/src/keri/core/mapping.py",
+      "codex_entries": ["MapBodyGroup / GenericMapGroup / label primitives"],
+      "status": "done",
+      "impact": "critical",
+      "notes": "Strict recursive map parser implemented and integrated with txt+qb2 tests."
+    },
+    {
+      "id": "compactor",
+      "keripy_class": "Compactor",
+      "module": "keripy/src/keri/core/mapping.py",
+      "codex_entries": ["hierarchical map compaction"],
+      "status": "done",
+      "impact": "medium",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "aggor",
+      "keripy_class": "Aggor",
+      "module": "keripy/src/keri/core/mapping.py",
+      "codex_entries": ["native list/map aggregates"],
+      "status": "done",
+      "impact": "medium",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "sealer",
+      "keripy_class": "Sealer",
+      "module": "keripy/src/keri/core/structing.py",
+      "codex_entries": ["Seal clans via counter group casts"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "blinder",
+      "keripy_class": "Blinder",
+      "module": "keripy/src/keri/core/structing.py",
+      "codex_entries": ["BlindedStateQuadruples / BoundStateSextuples"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "mediar",
+      "keripy_class": "Mediar",
+      "module": "keripy/src/keri/core/structing.py",
+      "codex_entries": ["TypedMediaQuadruples"],
+      "status": "done",
+      "impact": "high",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "cigar",
+      "keripy_class": "Cigar",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["non-indexed signatures"],
+      "status": "done",
+      "impact": "low",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    },
+    {
+      "id": "verfer",
+      "keripy_class": "Verfer",
+      "module": "keripy/src/keri/core/coring.py",
+      "codex_entries": ["verification key codes"],
+      "status": "done",
+      "impact": "low",
+      "notes": "Primitive parser implemented with txt+qb2 tests."
+    }
+  ],
+  "execution_queue": []
+}

@@ -68,6 +68,7 @@ export const COUNTER_SIZES_V2 = new Map<string, Cizage>([
   ["-G", { hs: 2, ss: 2, fs: 4 }],
   ["-H", { hs: 2, ss: 2, fs: 4 }],
   ["-I", { hs: 2, ss: 2, fs: 4 }],
+  ["-J", { hs: 2, ss: 2, fs: 4 }],
   ["-K", { hs: 2, ss: 2, fs: 4 }],
   ["-L", { hs: 2, ss: 2, fs: 4 }],
   ["-M", { hs: 2, ss: 2, fs: 4 }],

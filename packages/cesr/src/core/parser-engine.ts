@@ -7,10 +7,14 @@ import { ColdStartError, ParserError, ShortageError } from "./errors.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
+import { parseVerser } from "../primitives/verser.ts";
+import { parseIlker } from "../primitives/ilker.ts";
+import { parseLabeler } from "../primitives/labeler.ts";
+import { parseMapperBody } from "../primitives/mapper.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import { b64ToInt, intToB64 } from "./bytes.ts";
-import { Kinds, Protocols } from "../tables/versions.ts";
+import { Kinds, Protocols, type Protocol } from "../tables/versions.ts";
 
 export interface ParserOptions {
   framed?: boolean;
@@ -407,30 +411,19 @@ export class CesrParserCore {
         offset = this.skipNativeLabelers(raw, offset, cold);
       }
 
-      const verser = parseMatter(raw.slice(offset), cold);
+      const verser = parseVerser(raw.slice(offset), cold);
       offset += cold === "bny" ? verser.fullSizeB2 : verser.fullSize;
-      const verserText = verser.qb64.slice(verser.code.length);
-      if (verserText.startsWith("KERI")) proto = Protocols.keri;
-      if (verserText.startsWith("ACDC")) proto = Protocols.acdc;
-      if (verserText.length >= 6) {
-        const majorRaw = b64ToInt(verserText[4]);
-        const minorRaw = b64ToInt(verserText[5]);
-        pvrsn = {
-          major: majorRaw === 1 ? 1 : 2,
-          minor: minorRaw,
-        };
-        gvrsn = pvrsn;
-      }
+      proto = verser.proto as Protocol;
+      pvrsn = verser.pvrsn;
+      gvrsn = verser.gvrsn;
 
       if (MAP_BODY_CODES.has(bodyCounter.code)) {
         offset = this.skipNativeLabelers(raw, offset, cold);
       }
 
-      const ilker = parseMatter(raw.slice(offset), cold);
+      const ilker = parseIlker(raw.slice(offset), cold);
       offset += cold === "bny" ? ilker.fullSizeB2 : ilker.fullSize;
-      if (ilker.code === "X") {
-        ilk = ilker.qb64.slice(ilker.code.length);
-      }
+      ilk = ilker.ilk;
 
       if (MAP_BODY_CODES.has(bodyCounter.code)) {
         offset = this.skipNativeLabelers(raw, offset, cold);
@@ -453,7 +446,7 @@ export class CesrParserCore {
     cold: "txt" | "bny",
   ): number {
     let out = offset;
-    while (out < raw.length) {
+      while (out < raw.length) {
       const item = parseMatter(raw.slice(out), cold);
       if (item.code !== "V" && item.code !== "W") {
         break;
@@ -468,9 +461,18 @@ export class CesrParserCore {
     cold: "txt" | "bny",
     fallbackVersion: Versionage,
   ): Array<{ label: string | null; code: string; qb64: string }> {
+    const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+    if (MAP_BODY_CODES.has(bodyCounter.code)) {
+      const mapper = parseMapperBody(raw, fallbackVersion, cold);
+      return mapper.fields.map((field) => ({
+        label: field.label,
+        code: field.code,
+        qb64: field.qb64,
+      }));
+    }
+
     const fields: Array<{ label: string | null; code: string; qb64: string }> =
       [];
-    const bodyCounter = parseCounter(raw, fallbackVersion, cold);
     const total = cold === "bny" ? bodyCounter.fullSizeB2 : bodyCounter.fullSize;
     const payloadBytes = bodyCounter.count * (cold === "bny" ? 3 : 4);
     const start = total;
@@ -479,42 +481,65 @@ export class CesrParserCore {
     let pendingLabel: string | null = null;
 
     while (offset < end) {
-      const at = raw.slice(offset);
-      try {
-        if (cold === "txt" && at[0] === "-".charCodeAt(0)) {
-          const ctr = parseCounter(at, fallbackVersion, cold);
-          const size = ctr.fullSize;
-          offset += size;
-          fields.push({
-            label: pendingLabel,
-            code: ctr.code,
-            qb64: ctr.qb64,
-          });
-          pendingLabel = null;
-          continue;
-        }
-
-        const token = parseMatter(at, cold);
-        const size = cold === "bny" ? token.fullSizeB2 : token.fullSize;
+      const at = raw.slice(offset, end);
+      const ctr = this.tryParseCounter(at, fallbackVersion, cold);
+      if (ctr) {
+        const size = cold === "bny" ? ctr.fullSizeB2 : ctr.fullSize;
         offset += size;
-
-        if (token.code === "V" || token.code === "W") {
-          pendingLabel = token.qb64;
-          continue;
-        }
-
         fields.push({
           label: pendingLabel,
-          code: token.code,
-          qb64: token.qb64,
+          code: ctr.code,
+          qb64: ctr.qb64,
         });
         pendingLabel = null;
-      } catch {
-        break;
+        continue;
       }
+
+      const token = parseMatter(at, cold);
+      const size = cold === "bny" ? token.fullSizeB2 : token.fullSize;
+      offset += size;
+
+      if (token.code === "V" || token.code === "W") {
+        pendingLabel = parseLabeler(at, cold).label;
+        continue;
+      }
+
+      fields.push({
+        label: pendingLabel,
+        code: token.code,
+        qb64: token.qb64,
+      });
+      pendingLabel = null;
+    }
+
+    if (offset !== end) {
+      throw new ShortageError(end, offset);
+    }
+    if (pendingLabel !== null) {
+      throw new ColdStartError("Dangling native map label without value");
     }
 
     return fields;
+  }
+
+  private tryParseCounter(
+    input: Uint8Array,
+    version: Versionage,
+    cold: "txt" | "bny",
+  ): Counter | null {
+    const attempts: Versionage[] = [
+      version,
+      { major: 2, minor: 0 },
+      { major: 1, minor: 0 },
+    ];
+    for (const attempt of attempts) {
+      try {
+        return parseCounter(input, attempt, cold);
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   private parseCompleteFrame(

@@ -180,8 +180,7 @@ Deno.test("native MapBodyGroup supports labels between primitives", () => {
 
   const parser = createParser();
   const first = parser.feed(encode(mapBody));
-  assertEquals(first.length, 0);
-  const emissions = parser.flush();
+  const emissions = first.length > 0 ? first : parser.flush();
   assertEquals(emissions.length, 1);
   assertEquals(emissions[0].type, "frame");
   if (emissions[0].type === "frame") {

@@ -104,6 +104,15 @@ Deno.test("native frame emission is split-boundary deterministic", () => {
   }
 });
 
+Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
+  const parser = createParser();
+  const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${
+    KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)
+  }`;
+  const emissions = [...parser.feed(encode(bad)), ...parser.flush()];
+  assertEquals(emissions.some((e) => e.type === "error"), true);
+});
+
 Deno.test("sniff throws on empty buffer", () => {
   assertThrows(() => sniff(new Uint8Array(0)));
 });
