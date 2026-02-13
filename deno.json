@@ -5,6 +5,9 @@
     ".": "./mod.ts"
   },
   "tasks": {
+    "fmt": "deno fmt",
+    "check": "deno check mod.ts packages/cesr/mod.ts",
+    "quality": "deno task fmt && deno task check && deno task test && deno task test:cesr",
     "setup": "rm -rf node_modules/@lmdb && export LMDB_DATA_V1=true && npm rebuild lmdb --build-from-source",
     "start": "deno run --allow-all --unstable-ffi mod.ts",
     "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
