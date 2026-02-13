@@ -3,7 +3,12 @@ import { createParser } from "../../src/core/parser-engine.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
 import { sniff } from "../../src/parser/cold-start.ts";
 import { smell } from "../../src/serder/smell.ts";
-import { COUNTER_SIZES_V1 } from "../../src/tables/counter.tables.generated.ts";
+import {
+  COUNTER_CODE_NAMES_V1,
+  COUNTER_SIZES_V1,
+  COUNTER_SIZES_V2,
+} from "../../src/tables/counter.tables.generated.ts";
+import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 
 function encode(input: string): Uint8Array {
@@ -24,6 +29,32 @@ function counterV1(code: string, count: number): string {
   const sizage = COUNTER_SIZES_V1.get(code);
   if (!sizage) throw new Error(`Unknown counter code ${code}`);
   return `${code}${intToB64(count, sizage.ss)}`;
+}
+
+function counterV2(code: string, count: number): string {
+  const sizage = COUNTER_SIZES_V2.get(code);
+  if (!sizage) throw new Error(`Unknown counter code ${code}`);
+  return `${code}${intToB64(count, sizage.ss)}`;
+}
+
+function selectV2OnlyQuadletGroupCode(): string {
+  const candidates = [
+    CtrDexV2.ESSRWrapperGroup,
+    CtrDexV2.BigESSRWrapperGroup,
+    CtrDexV2.FixBodyGroup,
+    CtrDexV2.BigFixBodyGroup,
+    CtrDexV2.MapBodyGroup,
+    CtrDexV2.BigMapBodyGroup,
+    CtrDexV2.GenericMapGroup,
+    CtrDexV2.BigGenericMapGroup,
+    CtrDexV2.GenericListGroup,
+    CtrDexV2.BigGenericListGroup,
+  ];
+  const code = candidates.find((value) => !(value in COUNTER_CODE_NAMES_V1));
+  if (!code) {
+    throw new Error("No v2-only quadlet-group code found for fallback tests");
+  }
+  return code;
 }
 
 Deno.test("sniff detects message and text counters", () => {
@@ -66,6 +97,43 @@ Deno.test("parser fail-fast on malformed attachment stream", () => {
   assertEquals(emissions.some((e) => e.type === "error"), true);
 });
 
+Deno.test("parser strict mode rejects mixed-version attachments that need fallback", () => {
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
+  const v2OnlyAttachment = `${
+    counterV2(selectV2OnlyQuadletGroupCode(), 1)
+  }AAAA`;
+  const ims = `${body}${v2OnlyAttachment}`;
+
+  const parser = createParser({ attachmentDispatchMode: "strict" });
+  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
+  assertEquals(emissions.some((e) => e.type === "error"), true);
+});
+
+Deno.test("parser compat mode uses fallback callback for mixed-version attachments", () => {
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
+  const v2OnlyAttachment = `${
+    counterV2(selectV2OnlyQuadletGroupCode(), 1)
+  }AAAA`;
+  const ims = `${body}${v2OnlyAttachment}`;
+  const fallbackCalls: Array<{ from: number; to: number }> = [];
+
+  const parser = createParser({
+    attachmentDispatchMode: "compat",
+    onAttachmentVersionFallback: (info) => {
+      fallbackCalls.push({ from: info.from.major, to: info.to.major });
+    },
+  });
+  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
+  const frames = emissions.filter((e) => e.type === "frame");
+  const errors = emissions.filter((e) => e.type === "error");
+
+  assertEquals(errors.length, 0);
+  assertEquals(frames.length, 1);
+  assertEquals(fallbackCalls.length, 1);
+  assertEquals(fallbackCalls[0].from, 1);
+  assertEquals(fallbackCalls[0].to, 2);
+});
+
 Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => {
   const ims = `-HAB${sigerToken()}`; // declares 1 quadlet, provides much larger body token
   const parser = createParser();
@@ -89,7 +157,8 @@ Deno.test("parser handles chunked input", () => {
 
 Deno.test("native frame emission is split-boundary deterministic", () => {
   const parser = createParser();
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+  const ims =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   const split = KERIPY_NATIVE_V2_ICP_FIX_BODY.length;
 
   const first = parser.feed(encode(ims.slice(0, split)));

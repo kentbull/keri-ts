@@ -28,12 +28,31 @@ interface ParsedGroup {
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 type PrimitiveKind = "matter" | "indexer";
+type AttachmentDispatchMode = "strict" | "compat";
+
+export interface VersionFallbackInfo {
+  from: Versionage;
+  to: Versionage;
+  domain: ParseDomain;
+  reason: string;
+}
+
+export interface AttachmentDispatchOptions {
+  mode?: AttachmentDispatchMode;
+  onVersionFallback?: (info: VersionFallbackInfo) => void;
+}
+
+interface DispatchContext {
+  mode: AttachmentDispatchMode;
+  onVersionFallback?: (info: VersionFallbackInfo) => void;
+}
 
 type GroupParser = (
   input: Uint8Array,
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
+  context: DispatchContext,
 ) => ParsedGroup;
 
 const SIGER_LIST_CODES_BY_VERSION: Record<1 | 2, Set<string>> = {
@@ -141,6 +160,7 @@ function parseQuadletGroup(
   version: Versionage,
   wrapperCodes: Set<string>,
   domain: ParseDomain,
+  context: DispatchContext,
 ): ParsedGroup {
   const unitSize = quadletUnitSize(domain);
   const payloadSize = counter.count * unitSize;
@@ -164,6 +184,7 @@ function parseQuadletGroup(
           payload.slice(offset),
           version,
           domain,
+          context,
         );
         items.push({
           code: nested.group.code,
@@ -219,6 +240,7 @@ function repeatTupleParser(kinds: PrimitiveKind[]): GroupParser {
     counter: Counter,
     _version: Versionage,
     domain: ParseDomain,
+    _context: DispatchContext,
   ): ParsedGroup => {
     const headerSize = counterHeaderSize(counter, domain);
     const parsed = parseRepeated(
@@ -236,6 +258,7 @@ function transIdxSigGroupsParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
+  _context: DispatchContext,
 ): ParsedGroup {
   const items: unknown[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -258,6 +281,7 @@ function transLastIdxSigGroupsParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
+  _context: DispatchContext,
 ): ParsedGroup {
   const items: unknown[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -276,6 +300,7 @@ function sadPathSigParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
+  context: DispatchContext,
 ): ParsedGroup {
   const items: unknown[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -286,6 +311,7 @@ function sadPathSigParser(
       input.slice(offset),
       version,
       domain,
+      context,
     );
     offset += sigGroup.consumed;
     items.push([path.qb64, {
@@ -302,6 +328,7 @@ function sadPathSigGroupParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
+  context: DispatchContext,
 ): ParsedGroup {
   const items: unknown[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -317,6 +344,7 @@ function sadPathSigGroupParser(
       input.slice(offset),
       version,
       domain,
+      context,
     );
     offset += sigGroup.consumed;
     items.push([path.qb64, {
@@ -333,6 +361,7 @@ function genusVersionParser(
   counter: Counter,
   _version: Versionage,
   domain: ParseDomain,
+  _context: DispatchContext,
 ): ParsedGroup {
   return {
     items: [counter.qb64],
@@ -340,11 +369,37 @@ function genusVersionParser(
   };
 }
 
-const V1_QUADLET_PARSER: GroupParser = (input, counter, version, domain) =>
-  parseQuadletGroup(input, counter, version, WRAPPER_GROUP_CODES_V1, domain);
+const V1_QUADLET_PARSER: GroupParser = (
+  input,
+  counter,
+  version,
+  domain,
+  context,
+) =>
+  parseQuadletGroup(
+    input,
+    counter,
+    version,
+    WRAPPER_GROUP_CODES_V1,
+    domain,
+    context,
+  );
 
-const V2_QUADLET_PARSER: GroupParser = (input, counter, version, domain) =>
-  parseQuadletGroup(input, counter, version, WRAPPER_GROUP_CODES_V2, domain);
+const V2_QUADLET_PARSER: GroupParser = (
+  input,
+  counter,
+  version,
+  domain,
+  context,
+) =>
+  parseQuadletGroup(
+    input,
+    counter,
+    version,
+    WRAPPER_GROUP_CODES_V2,
+    domain,
+    context,
+  );
 
 const V1_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV1.GenericGroup, V1_QUADLET_PARSER],
@@ -499,6 +554,7 @@ function parseAttachmentDispatchWithVersion(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
+  context: DispatchContext,
 ): { group: AttachmentGroup; consumed: number } {
   const counter = parseCounter(input, version, domain);
   const parser = getDispatch(version).get(counter.code);
@@ -509,7 +565,7 @@ function parseAttachmentDispatchWithVersion(
     );
   }
 
-  const parsed = parser(input, counter, version, domain);
+  const parsed = parser(input, counter, version, domain, context);
 
   if (parsed.consumed > input.length) {
     throw new GroupSizeError(
@@ -529,17 +585,18 @@ function parseAttachmentDispatchWithVersion(
   };
 }
 
-/**
- * Parse with primary version, then retry with the alternate major on unknown
- * code/deserialize failures. This mirrors real-world mixed-stream tolerance.
- */
-export function parseAttachmentDispatchCompat(
+function parseAttachmentDispatchByMode(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
+  context: DispatchContext,
 ): { group: AttachmentGroup; consumed: number } {
+  if (context.mode === "strict") {
+    return parseAttachmentDispatchWithVersion(input, version, domain, context);
+  }
+
   try {
-    return parseAttachmentDispatchWithVersion(input, version, domain);
+    return parseAttachmentDispatchWithVersion(input, version, domain, context);
   } catch (error) {
     if (
       !(error instanceof UnknownCodeError) &&
@@ -550,8 +607,43 @@ export function parseAttachmentDispatchCompat(
     const alternate: Versionage = version.major >= 2
       ? { major: 1, minor: 0 }
       : { major: 2, minor: 0 };
-    return parseAttachmentDispatchWithVersion(input, alternate, domain);
+    const info: VersionFallbackInfo = {
+      from: version,
+      to: alternate,
+      domain,
+      reason: error.message,
+    };
+    if (context.onVersionFallback) {
+      context.onVersionFallback(info);
+    } else {
+      console.warn(
+        `CESR attachment dispatch fallback ${version.major}.${version.minor} -> ${alternate.major}.${alternate.minor} (${domain}): ${error.message}`,
+      );
+    }
+    return parseAttachmentDispatchWithVersion(
+      input,
+      alternate,
+      domain,
+      context,
+    );
   }
+}
+
+/**
+ * Parse with primary version, then retry with the alternate major on unknown
+ * code/deserialize failures. This mirrors real-world mixed-stream tolerance.
+ */
+export function parseAttachmentDispatchCompat(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+  options: AttachmentDispatchOptions = {},
+): { group: AttachmentGroup; consumed: number } {
+  const context: DispatchContext = {
+    mode: options.mode ?? "compat",
+    onVersionFallback: options.onVersionFallback,
+  };
+  return parseAttachmentDispatchByMode(input, version, domain, context);
 }
 
 /** Strict versioned attachment-group dispatch (no major-version fallback). */
@@ -560,5 +652,7 @@ export function parseAttachmentDispatch(
   version: Versionage,
   domain: ParseDomain,
 ): { group: AttachmentGroup; consumed: number } {
-  return parseAttachmentDispatchWithVersion(input, version, domain);
+  return parseAttachmentDispatchByMode(input, version, domain, {
+    mode: "strict",
+  });
 }

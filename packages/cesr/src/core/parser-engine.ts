@@ -3,6 +3,10 @@ import type { CesrFrame, ParseEmission, ParserState } from "./types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
+import type {
+  AttachmentDispatchOptions,
+  VersionFallbackInfo,
+} from "../parser/group-dispatch.ts";
 import {
   ColdStartError,
   DeserializeError,
@@ -24,6 +28,8 @@ import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 
 export interface ParserOptions {
   framed?: boolean;
+  attachmentDispatchMode?: AttachmentDispatchOptions["mode"];
+  onAttachmentVersionFallback?: (info: VersionFallbackInfo) => void;
 }
 
 const DEFAULT_VERSION: Versionage = { major: 2, minor: 0 };
@@ -72,12 +78,18 @@ function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
 export class CesrParserCore {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
   private readonly framed: boolean;
+  private readonly attachmentDispatchMode: AttachmentDispatchOptions["mode"];
+  private readonly onAttachmentVersionFallback?: (
+    info: VersionFallbackInfo,
+  ) => void;
   private pendingFrame:
     | { frame: CesrFrame; version: Versionage }
     | null = null;
 
   constructor(options: ParserOptions = {}) {
     this.framed = options.framed ?? false;
+    this.attachmentDispatchMode = options.attachmentDispatchMode ?? "compat";
+    this.onAttachmentVersionFallback = options.onAttachmentVersionFallback;
   }
 
   /** Append bytes and emit any complete parse events. */
@@ -154,6 +166,10 @@ export class CesrParserCore {
               this.state.buffer,
               version,
               nextCold,
+              {
+                mode: this.attachmentDispatchMode,
+                onVersionFallback: this.onAttachmentVersionFallback,
+              },
             );
             attachments.push(group);
             this.consume(consumed);
@@ -248,6 +264,10 @@ export class CesrParserCore {
       this.state.buffer,
       this.pendingFrame.version,
       nextCold,
+      {
+        mode: this.attachmentDispatchMode,
+        onVersionFallback: this.onAttachmentVersionFallback,
+      },
     );
     this.pendingFrame.frame.attachments.push(group);
     this.consume(consumed);
@@ -723,6 +743,10 @@ export class CesrParserCore {
         input.slice(offset),
         version,
         nextCold,
+        {
+          mode: this.attachmentDispatchMode,
+          onVersionFallback: this.onAttachmentVersionFallback,
+        },
       );
       attachments.push(group);
       offset += consumed;
