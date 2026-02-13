@@ -1,0 +1,110 @@
+import { annotate } from "./annotator.ts";
+
+interface CliOptions {
+  inPath?: string;
+  outPath?: string;
+  qb2: boolean;
+  pretty: boolean;
+}
+
+export interface CliIo {
+  readFile(path: string): Promise<Uint8Array>;
+  writeTextFile(path: string, text: string): Promise<void>;
+  readStdin(): Promise<Uint8Array>;
+  writeStdout(text: string): Promise<void>;
+  writeStderr(text: string): Promise<void>;
+}
+
+const TEXT_DECODER = new TextDecoder();
+
+function parseArgs(args: string[]): CliOptions {
+  const out: CliOptions = { qb2: false, pretty: false };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--qb2") {
+      out.qb2 = true;
+      continue;
+    }
+    if (arg === "--pretty") {
+      out.pretty = true;
+      continue;
+    }
+    if (arg === "--in") {
+      const next = args[i + 1];
+      if (!next) throw new Error("Missing value for --in");
+      out.inPath = next;
+      i++;
+      continue;
+    }
+    if (arg === "--out") {
+      const next = args[i + 1];
+      if (!next) throw new Error("Missing value for --out");
+      out.outPath = next;
+      i++;
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      throw new Error(
+        "Usage: cesr-annotate [--in <path>] [--out <path>] [--qb2] [--pretty]",
+      );
+    }
+    throw new Error(`Unknown argument: ${arg}`);
+  }
+  return out;
+}
+
+export async function readAllReadable(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        total += value.length;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+export async function annotateCli(args: string[], io: CliIo): Promise<number> {
+  try {
+    const options = parseArgs(args);
+    const inputBytes = options.inPath
+      ? await io.readFile(options.inPath)
+      : await io.readStdin();
+
+    const annotated = options.qb2
+      ? annotate(inputBytes, { domainHint: "bny", pretty: options.pretty })
+      : annotate(TEXT_DECODER.decode(inputBytes), {
+        domainHint: "txt",
+        pretty: options.pretty,
+      });
+
+    if (options.outPath) {
+      await io.writeTextFile(options.outPath, annotated);
+    } else {
+      await io.writeStdout(`${annotated}\n`);
+    }
+
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await io.writeStderr(`cesr annotate error: ${message}\n`);
+    return 1;
+  }
+}

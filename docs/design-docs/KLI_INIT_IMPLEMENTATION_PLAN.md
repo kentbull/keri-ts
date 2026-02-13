@@ -248,7 +248,13 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 
 **1.3 Parser (Full Implementation)**
 
-- [ ] `Parser` class - CESR message parser
+- [ ] `CesrStream` class - Pure CESR stream parser (Generator Pattern)
+  - [ ] Transforms bytes -> `CesrFrame` (Serder + Attachments)
+  - [ ] Handle cold start (sniffing)
+  - [ ] Handle framed and unframed streams
+- [ ] `CesrRouter` class - Message dispatcher
+  - [ ] Consumes `CesrFrame` objects from `CesrStream`
+  - [ ] Routes to Kevery (events), Revery (replies), Exchanger (exchanges)
 - [ ] Parse CESR streams (framed/unframed)
 - [ ] Parse KERI events with attachments
 - [ ] Parse reply messages (rpy) - REQUIRED for OOBI
@@ -257,7 +263,6 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - [ ] Parse witness receipts
 - [ ] Parse exchange messages (exn)
 - [ ] Handle multiple message types in stream
-- [ ] Integration hooks for Kevery, Revery, Exchanger
 - [ ] **Version Support**:
   - [ ] Parse CESR v1.0 format (`KERI10JSON..._`)
   - [ ] Parse CESR v2.0 format (`KERICAACAAJSON....`)

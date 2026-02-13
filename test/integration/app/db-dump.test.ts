@@ -1,6 +1,7 @@
 import { run } from "effection";
+import { assert, assertEquals } from "jsr:@std/assert";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
-import { Baser } from "../../../src/db/basing.ts";
+import { createBaser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
 /**
@@ -13,33 +14,44 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
+    const name = `db-dump-${crypto.randomUUID()}`;
+    const key = new TextEncoder().encode("evt.0001");
+    const val = new TextEncoder().encode("sample event payload");
+
+    await run(function* () {
+      const baser = yield* createBaser({
+        name,
+        temp: true,
+        reopen: true,
+        readonly: false,
+      });
+
+      try {
+        assertEquals(baser.putEvt(key, val), true, "Fixture event should be written");
+      } finally {
+        // Keep temp database files for readonly dump step.
+        yield* baser.close();
+      }
+    });
+
     const harness = new CLITestHarness();
     harness.captureOutput();
 
     try {
-      // Test with an existing database
       const args = {
-        name: "accolon",
+        name,
         base: undefined,
-        temp: false,
+        temp: true,
       };
-
-      console.log("Starting db dump test...");
-      console.log("Args:", args);
 
       await run(() => dumpEvts(args));
 
       const output = harness.getOutput();
       const errors = harness.getErrors();
 
-      console.log("\n=== Captured Output ===");
-      output.forEach((line, i) => console.log(`[${i}] ${line}`));
-
-      console.log("\n=== Captured Errors ===");
-      errors.forEach((line, i) => console.log(`[${i}] ${line}`));
-
-      // If we got here without throwing, the test passed
-      // The error should be visible in the captured output
+      assertEquals(errors.length, 0, `Expected no stderr output, got: ${errors.join("\n")}`);
+      assert(output.some((line) => line.includes("Baser.evts sub-database dump (1 entries)")));
+      assert(output.some((line) => line.includes("Total entries: 1")));
     } catch (error) {
       console.error("\n=== Test Error ===");
       console.error("Error type:", error instanceof Error ? error.constructor.name : typeof error);
@@ -67,26 +79,39 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
+    const name = `db-dump-iter-${crypto.randomUUID()}`;
+    const key = new TextEncoder().encode("evt.0001");
+    const val = new TextEncoder().encode("sample event payload");
+
     await run(function* () {
-      const baser = new Baser({
-        name: "accolon",
-        base: undefined,
-        temp: false,
+      // Seed a deterministic fixture DB first so readonly open always has files.
+      const writableBaser = yield* createBaser({
+        name,
+        temp: true,
+        reopen: true,
+        readonly: false,
+      });
+
+      try {
+        assertEquals(
+          writableBaser.putEvt(key, val),
+          true,
+          "Fixture event should be written"
+        );
+      } finally {
+        yield* writableBaser.close();
+      }
+
+      const baser = yield* createBaser({
+        name,
+        temp: true,
         reopen: true,
         readonly: true,
       });
 
       try {
-        const opened = yield* baser.reopen();
-        console.log("Database opened:", opened);
-
-        if (!opened) {
-          console.error("Failed to open database");
-          return;
-        }
-
         console.log("Database path:", baser.path);
-        console.log("Evts database:", baser.evts ? "exists" : "null");
+        console.log("Evts database: exists");
 
         // Get count first
         const count = baser.cntEvts();
@@ -118,6 +143,7 @@ Deno.test({
               break;
             }
           }
+          assert(entryCount > 0, "Expected at least one iterated entry");
           console.log(`Iteration complete. Total entries iterated: ${entryCount}`);
         } catch (iterError) {
           console.error("Iteration error:", iterError);

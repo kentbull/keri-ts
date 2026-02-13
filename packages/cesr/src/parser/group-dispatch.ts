@@ -1,0 +1,658 @@
+import type { AttachmentGroup, ColdCode } from "../core/types.ts";
+import type { Versionage } from "../tables/table-types.ts";
+import { type Counter, parseCounter } from "../primitives/counter.ts";
+import { parseMatter } from "../primitives/matter.ts";
+import { parseIndexer } from "../primitives/indexer.ts";
+import {
+  DeserializeError,
+  GroupSizeError,
+  ShortageError,
+  UnknownCodeError,
+} from "../core/errors.ts";
+import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
+
+/**
+ * Counter-group dispatcher for attachment payload parsing.
+ *
+ * Design notes:
+ * - Dispatch is table-driven by major CESR version.
+ * - Wrapper groups attempt nested parsing and preserve unknown remainder as opaque
+ *   payload instead of hard-failing (except true boundary violations).
+ * - `parseAttachmentDispatchCompat` is intentionally version-tolerant for real-world
+ *   mixed streams where wrappers and nested groups may differ by major version.
+ */
+interface ParsedGroup {
+  items: unknown[];
+  consumed: number;
+}
+
+type ParseDomain = Extract<ColdCode, "txt" | "bny">;
+type PrimitiveKind = "matter" | "indexer";
+type AttachmentDispatchMode = "strict" | "compat";
+
+export interface VersionFallbackInfo {
+  from: Versionage;
+  to: Versionage;
+  domain: ParseDomain;
+  reason: string;
+}
+
+export interface AttachmentDispatchOptions {
+  mode?: AttachmentDispatchMode;
+  onVersionFallback?: (info: VersionFallbackInfo) => void;
+}
+
+interface DispatchContext {
+  mode: AttachmentDispatchMode;
+  onVersionFallback?: (info: VersionFallbackInfo) => void;
+}
+
+type GroupParser = (
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+  context: DispatchContext,
+) => ParsedGroup;
+
+const SIGER_LIST_CODES_BY_VERSION: Record<1 | 2, Set<string>> = {
+  1: new Set([
+    CtrDexV1.ControllerIdxSigs,
+    CtrDexV1.WitnessIdxSigs,
+  ]),
+  2: new Set([
+    CtrDexV2.ControllerIdxSigs,
+    CtrDexV2.BigControllerIdxSigs,
+    CtrDexV2.WitnessIdxSigs,
+    CtrDexV2.BigWitnessIdxSigs,
+  ]),
+};
+
+const WRAPPER_GROUP_CODES_V1 = new Set([
+  CtrDexV1.AttachmentGroup,
+  CtrDexV1.BigAttachmentGroup,
+  CtrDexV1.BodyWithAttachmentGroup,
+  CtrDexV1.BigBodyWithAttachmentGroup,
+]);
+
+const WRAPPER_GROUP_CODES_V2 = new Set([
+  CtrDexV2.AttachmentGroup,
+  CtrDexV2.BigAttachmentGroup,
+  CtrDexV2.BodyWithAttachmentGroup,
+  CtrDexV2.BigBodyWithAttachmentGroup,
+]);
+
+function primitiveSize(
+  primitive: { fullSize: number; fullSizeB2: number },
+  domain: ParseDomain,
+): number {
+  return domain === "bny" ? primitive.fullSizeB2 : primitive.fullSize;
+}
+
+function counterHeaderSize(counter: Counter, domain: ParseDomain): number {
+  return primitiveSize(counter, domain);
+}
+
+function quadletUnitSize(domain: ParseDomain): number {
+  return domain === "bny" ? 3 : 4;
+}
+
+function parseTuple(
+  input: Uint8Array,
+  kinds: PrimitiveKind[],
+  domain: ParseDomain,
+): { items: string[]; consumed: number } {
+  const items: string[] = [];
+  let offset = 0;
+  for (const kind of kinds) {
+    const part = kind === "indexer"
+      ? parseIndexer(input.slice(offset), domain)
+      : parseMatter(input.slice(offset), domain);
+    items.push(part.qb64);
+    offset += primitiveSize(part, domain);
+  }
+  return { items, consumed: offset };
+}
+
+function parseRepeated(
+  input: Uint8Array,
+  count: number,
+  kinds: PrimitiveKind[],
+  domain: ParseDomain,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = 0;
+  for (let i = 0; i < count; i++) {
+    const tuple = parseTuple(input.slice(offset), kinds, domain);
+    items.push(tuple.items);
+    offset += tuple.consumed;
+  }
+  return { items, consumed: offset };
+}
+
+function parseSigerList(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+): { items: string[]; consumed: number } {
+  const counter = parseCounter(input, version, domain);
+  const allowed = SIGER_LIST_CODES_BY_VERSION[version.major];
+  if (!allowed.has(counter.code)) {
+    throw new UnknownCodeError(
+      `Expected siger-list counter but got ${counter.code}`,
+    );
+  }
+
+  const items: string[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const part = parseIndexer(input.slice(offset), domain);
+    items.push(part.qb64);
+    offset += primitiveSize(part, domain);
+  }
+
+  return { items, consumed: offset };
+}
+
+function parseQuadletGroup(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  wrapperCodes: Set<string>,
+  domain: ParseDomain,
+  context: DispatchContext,
+): ParsedGroup {
+  const unitSize = quadletUnitSize(domain);
+  const payloadSize = counter.count * unitSize;
+  const headerSize = counterHeaderSize(counter, domain);
+  const total = headerSize + payloadSize;
+  if (input.length < total) {
+    throw new ShortageError(total, input.length);
+  }
+
+  const payload = input.slice(headerSize, total);
+
+  if (wrapperCodes.has(counter.code)) {
+    // Wrapper payload is a packed stream of nested groups (best effort).
+    const items: unknown[] = [];
+    let offset = 0;
+    while (offset < payload.length) {
+      try {
+        const nested = parseAttachmentDispatchCompat(
+          // Allow mixed-version nested groups inside wrapper payloads.
+          // Some real-world streams wrap v2 groups inside v1 wrappers.
+          payload.slice(offset),
+          version,
+          domain,
+          context,
+        );
+        items.push({
+          code: nested.group.code,
+          name: nested.group.name,
+          count: nested.group.count,
+        });
+        if (nested.consumed === 0) {
+          throw new GroupSizeError(
+            "Nested attachment parser consumed zero bytes",
+          );
+        }
+        offset += nested.consumed;
+      } catch (error) {
+        if (
+          error instanceof ShortageError ||
+          error instanceof GroupSizeError
+        ) {
+          throw error;
+        }
+        // Intentional recovery point: keep unread wrapper tail as opaque units.
+        const remainder = payload.slice(offset);
+        const opaque = domain === "bny"
+          ? Array.from(
+            { length: Math.floor(remainder.length / 3) },
+            (_v, i) => remainder.slice(i * 3, i * 3 + 3),
+          )
+          : (String.fromCharCode(...remainder).match(/.{1,4}/g) ?? []);
+        items.push(...opaque);
+        offset = payload.length;
+      }
+    }
+    if (offset !== payload.length) {
+      throw new GroupSizeError(
+        "Nested attachment parsing did not consume exact payload",
+      );
+    }
+    return { items, consumed: total };
+  }
+
+  const items = domain === "bny"
+    ? Array.from(
+      { length: counter.count },
+      (_v, i) => payload.slice(i * 3, i * 3 + 3),
+    )
+    : (String.fromCharCode(...payload).match(/.{1,4}/g) ?? []);
+
+  return { items, consumed: total };
+}
+
+function repeatTupleParser(kinds: PrimitiveKind[]): GroupParser {
+  return (
+    input: Uint8Array,
+    counter: Counter,
+    _version: Versionage,
+    domain: ParseDomain,
+    _context: DispatchContext,
+  ): ParsedGroup => {
+    const headerSize = counterHeaderSize(counter, domain);
+    const parsed = parseRepeated(
+      input.slice(headerSize),
+      counter.count,
+      kinds,
+      domain,
+    );
+    return { items: parsed.items, consumed: parsed.consumed + headerSize };
+  };
+}
+
+function transIdxSigGroupsParser(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+  _context: DispatchContext,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const header = parseTuple(input.slice(offset), [
+      "matter",
+      "matter",
+      "matter",
+    ], domain);
+    offset += header.consumed;
+    const sigers = parseSigerList(input.slice(offset), version, domain);
+    offset += sigers.consumed;
+    items.push([...header.items, sigers.items]);
+  }
+  return { items, consumed: offset };
+}
+
+function transLastIdxSigGroupsParser(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+  _context: DispatchContext,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const header = parseTuple(input.slice(offset), ["matter"], domain);
+    offset += header.consumed;
+    const sigers = parseSigerList(input.slice(offset), version, domain);
+    offset += sigers.consumed;
+    items.push([...header.items, sigers.items]);
+  }
+  return { items, consumed: offset };
+}
+
+function sadPathSigParser(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+  context: DispatchContext,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const path = parseMatter(input.slice(offset), domain);
+    offset += primitiveSize(path, domain);
+    const sigGroup = parseAttachmentDispatchCompat(
+      input.slice(offset),
+      version,
+      domain,
+      context,
+    );
+    offset += sigGroup.consumed;
+    items.push([path.qb64, {
+      code: sigGroup.group.code,
+      name: sigGroup.group.name,
+      count: sigGroup.group.count,
+    }]);
+  }
+  return { items, consumed: offset };
+}
+
+function sadPathSigGroupParser(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+  context: DispatchContext,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = counterHeaderSize(counter, domain);
+
+  const root = parseMatter(input.slice(offset), domain);
+  offset += primitiveSize(root, domain);
+  items.push(root.qb64);
+
+  for (let i = 0; i < counter.count; i++) {
+    const path = parseMatter(input.slice(offset), domain);
+    offset += primitiveSize(path, domain);
+    const sigGroup = parseAttachmentDispatchCompat(
+      input.slice(offset),
+      version,
+      domain,
+      context,
+    );
+    offset += sigGroup.consumed;
+    items.push([path.qb64, {
+      code: sigGroup.group.code,
+      name: sigGroup.group.name,
+      count: sigGroup.group.count,
+    }]);
+  }
+  return { items, consumed: offset };
+}
+
+function genusVersionParser(
+  _input: Uint8Array,
+  counter: Counter,
+  _version: Versionage,
+  domain: ParseDomain,
+  _context: DispatchContext,
+): ParsedGroup {
+  return {
+    items: [counter.qb64],
+    consumed: counterHeaderSize(counter, domain),
+  };
+}
+
+const V1_QUADLET_PARSER: GroupParser = (
+  input,
+  counter,
+  version,
+  domain,
+  context,
+) =>
+  parseQuadletGroup(
+    input,
+    counter,
+    version,
+    WRAPPER_GROUP_CODES_V1,
+    domain,
+    context,
+  );
+
+const V2_QUADLET_PARSER: GroupParser = (
+  input,
+  counter,
+  version,
+  domain,
+  context,
+) =>
+  parseQuadletGroup(
+    input,
+    counter,
+    version,
+    WRAPPER_GROUP_CODES_V2,
+    domain,
+    context,
+  );
+
+const V1_DISPATCH: Map<string, GroupParser> = new Map([
+  [CtrDexV1.GenericGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.BigGenericGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.BodyWithAttachmentGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.BigBodyWithAttachmentGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.AttachmentGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.BigAttachmentGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.NonNativeBodyGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.BigNonNativeBodyGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.ESSRPayloadGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.BigESSRPayloadGroup, V1_QUADLET_PARSER],
+  [CtrDexV1.PathedMaterialCouples, V1_QUADLET_PARSER],
+  [CtrDexV1.BigPathedMaterialCouples, V1_QUADLET_PARSER],
+  [CtrDexV1.ControllerIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV1.WitnessIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV1.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
+  [
+    CtrDexV1.TransReceiptQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
+  ],
+  [CtrDexV1.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV1.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
+  [
+    CtrDexV1.SealSourceTriples,
+    repeatTupleParser(["matter", "matter", "matter"]),
+  ],
+  [CtrDexV1.TransIdxSigGroups, transIdxSigGroupsParser],
+  [CtrDexV1.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
+  [CtrDexV1.SadPathSig, sadPathSigParser],
+  [CtrDexV1.SadPathSigGroup, sadPathSigGroupParser],
+  [CtrDexV1.KERIACDCGenusVersion, genusVersionParser],
+]);
+
+const V2_DISPATCH: Map<string, GroupParser> = new Map([
+  [CtrDexV2.GenericGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigGenericGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BodyWithAttachmentGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigBodyWithAttachmentGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.AttachmentGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigAttachmentGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.NonNativeBodyGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigNonNativeBodyGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.ESSRPayloadGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigESSRPayloadGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.PathedMaterialCouples, V2_QUADLET_PARSER],
+  [CtrDexV2.BigPathedMaterialCouples, V2_QUADLET_PARSER],
+  [CtrDexV2.DatagramSegmentGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigDatagramSegmentGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.ESSRWrapperGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigESSRWrapperGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.FixBodyGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigFixBodyGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.MapBodyGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigMapBodyGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.GenericMapGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigGenericMapGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.GenericListGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.BigGenericListGroup, V2_QUADLET_PARSER],
+  [CtrDexV2.ControllerIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.BigControllerIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.WitnessIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.BigWitnessIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigNonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
+  [
+    CtrDexV2.TransReceiptQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
+  ],
+  [
+    CtrDexV2.BigTransReceiptQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
+  ],
+  [CtrDexV2.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigFirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigSealSourceCouples, repeatTupleParser(["matter", "matter"])],
+  [
+    CtrDexV2.SealSourceTriples,
+    repeatTupleParser(["matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigSealSourceTriples,
+    repeatTupleParser(["matter", "matter", "matter"]),
+  ],
+  [CtrDexV2.SealSourceLastSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BigSealSourceLastSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.DigestSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BigDigestSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.MerkleRootSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BigMerkleRootSealSingles, repeatTupleParser(["matter"])],
+  [
+    CtrDexV2.BackerRegistrarSealCouples,
+    repeatTupleParser(["matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigBackerRegistrarSealCouples,
+    repeatTupleParser(["matter", "matter"]),
+  ],
+  [CtrDexV2.TypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigTypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.TransIdxSigGroups, transIdxSigGroupsParser],
+  [CtrDexV2.BigTransIdxSigGroups, transIdxSigGroupsParser],
+  [CtrDexV2.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
+  [CtrDexV2.BigTransLastIdxSigGroups, transLastIdxSigGroupsParser],
+  [
+    CtrDexV2.BlindedStateQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigBlindedStateQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BoundStateSextuples,
+    repeatTupleParser([
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+    ]),
+  ],
+  [
+    CtrDexV2.BigBoundStateSextuples,
+    repeatTupleParser([
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+    ]),
+  ],
+  [
+    CtrDexV2.TypedMediaQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigTypedMediaQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [CtrDexV2.KERIACDCGenusVersion, genusVersionParser],
+]);
+
+function getDispatch(version: Versionage): Map<string, GroupParser> {
+  return version.major >= 2 ? V2_DISPATCH : V1_DISPATCH;
+}
+
+function parseAttachmentDispatchWithVersion(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+  context: DispatchContext,
+): { group: AttachmentGroup; consumed: number } {
+  const counter = parseCounter(input, version, domain);
+  const parser = getDispatch(version).get(counter.code);
+
+  if (!parser) {
+    throw new UnknownCodeError(
+      `Unsupported attachment group code ${counter.code} (${counter.name})`,
+    );
+  }
+
+  const parsed = parser(input, counter, version, domain, context);
+
+  if (parsed.consumed > input.length) {
+    throw new GroupSizeError(
+      `Parsed beyond input boundary for ${counter.code}`,
+    );
+  }
+
+  return {
+    group: {
+      code: counter.code,
+      name: counter.name,
+      count: counter.count,
+      raw: input.slice(0, parsed.consumed),
+      items: parsed.items,
+    },
+    consumed: parsed.consumed,
+  };
+}
+
+function parseAttachmentDispatchByMode(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+  context: DispatchContext,
+): { group: AttachmentGroup; consumed: number } {
+  if (context.mode === "strict") {
+    return parseAttachmentDispatchWithVersion(input, version, domain, context);
+  }
+
+  try {
+    return parseAttachmentDispatchWithVersion(input, version, domain, context);
+  } catch (error) {
+    if (
+      !(error instanceof UnknownCodeError) &&
+      !(error instanceof DeserializeError)
+    ) {
+      throw error;
+    }
+    const alternate: Versionage = version.major >= 2
+      ? { major: 1, minor: 0 }
+      : { major: 2, minor: 0 };
+    const info: VersionFallbackInfo = {
+      from: version,
+      to: alternate,
+      domain,
+      reason: error.message,
+    };
+    if (context.onVersionFallback) {
+      context.onVersionFallback(info);
+    } else {
+      console.warn(
+        `CESR attachment dispatch fallback ${version.major}.${version.minor} -> ${alternate.major}.${alternate.minor} (${domain}): ${error.message}`,
+      );
+    }
+    return parseAttachmentDispatchWithVersion(
+      input,
+      alternate,
+      domain,
+      context,
+    );
+  }
+}
+
+/**
+ * Parse with primary version, then retry with the alternate major on unknown
+ * code/deserialize failures. This mirrors real-world mixed-stream tolerance.
+ */
+export function parseAttachmentDispatchCompat(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+  options: AttachmentDispatchOptions = {},
+): { group: AttachmentGroup; consumed: number } {
+  const context: DispatchContext = {
+    mode: options.mode ?? "compat",
+    onVersionFallback: options.onVersionFallback,
+  };
+  return parseAttachmentDispatchByMode(input, version, domain, context);
+}
+
+/** Strict versioned attachment-group dispatch (no major-version fallback). */
+export function parseAttachmentDispatch(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+): { group: AttachmentGroup; consumed: number } {
+  return parseAttachmentDispatchByMode(input, version, domain, {
+    mode: "strict",
+  });
+}

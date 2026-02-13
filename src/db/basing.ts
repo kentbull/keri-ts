@@ -7,6 +7,10 @@
 
 import { type Operation } from "effection";
 import { Database } from "lmdb";
+import {
+  DatabaseNotOpenError,
+  DatabaseOperationError,
+} from "../core/errors.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 
 export interface BaserOptions extends LMDBerOptions {
@@ -21,7 +25,7 @@ export class Baser {
   private lmdber: LMDBer;
 
   // Named sub-databases
-  public evts: Database<BinVal, BinKey> | null; // Events sub-database (dgKey: serialized KEL events)
+  public evts!: Database<BinVal, BinKey>; // Events sub-database (dgKey: serialized KEL events)
 
   // Class constants
   static readonly TailDirPath = "keri/db";
@@ -37,8 +41,6 @@ export class Baser {
       tempPrefix: Baser.TempPrefix,
       maxNamedDBs: Baser.MaxNamedDBs,
     });
-
-    this.evts = null;
   }
 
   get name(): string {
@@ -50,7 +52,7 @@ export class Baser {
   }
 
   get opened(): boolean {
-    return this.lmdber.opened && this.evts !== null;
+    return this.lmdber.opened;
   }
 
   get temp(): boolean {
@@ -71,7 +73,7 @@ export class Baser {
   *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
     const opened = yield* this.lmdber.reopen(options);
 
-    if (!opened || !this.lmdber.env) {
+    if (!opened) {
       return false;
     }
 
@@ -83,7 +85,10 @@ export class Baser {
       return this.opened;
     } catch (error) {
       console.error(`Failed to open Baser sub-databases: ${error}`);
-      return false;
+      throw new DatabaseOperationError(
+        "Failed to open Baser sub-databases",
+        { cause: error instanceof Error ? error.message : String(error) },
+      );
     }
   }
 
@@ -91,7 +96,6 @@ export class Baser {
    * Close the database
    */
   *close(clear = false): Operation<boolean> {
-    this.evts = null;
     return yield* this.lmdber.close(clear);
   }
 
@@ -113,9 +117,6 @@ export class Baser {
    * Count entries in evts sub-database
    */
   cntEvts(): number {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
     return this.lmdber.cnt(this.evts);
   }
 
@@ -123,9 +124,6 @@ export class Baser {
    * Put value in evts sub-database
    */
   putEvt(key: Uint8Array, val: Uint8Array): boolean {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
     return this.lmdber.putVal(this.evts, key, val);
   }
 
@@ -133,9 +131,6 @@ export class Baser {
    * Set value in evts sub-database
    */
   setEvt(key: Uint8Array, val: Uint8Array): boolean {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
     return this.lmdber.setVal(this.evts, key, val);
   }
 
@@ -143,9 +138,6 @@ export class Baser {
    * Get value from evts sub-database
    */
   getEvt(key: Uint8Array): Uint8Array | null {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
     return this.lmdber.getVal(this.evts, key);
   }
 
@@ -153,9 +145,6 @@ export class Baser {
    * Delete value from evts sub-database
    */
   delEvt(key: Uint8Array): boolean {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
     return this.lmdber.delVal(this.evts, key);
   }
 
@@ -165,10 +154,23 @@ export class Baser {
    * @param top - Key prefix to filter by (empty to get all items)
    * @returns Generator yielding (key, val) tuples
    */
-  *getAllEvtsIter(top: Uint8Array = new Uint8Array(0)): Generator<[Uint8Array, Uint8Array]> {
-    if (!this.evts) {
-      throw new Error("evts sub-database not opened");
-    }
+  *getAllEvtsIter(
+    top: Uint8Array = new Uint8Array(0),
+  ): Generator<[Uint8Array, Uint8Array]> {
     yield* this.lmdber.getTopItemIter(this.evts, top);
   }
+}
+
+/**
+ * Create and open a Baser instance.
+ *
+ * Constructors cannot be async, so call this factory where an opened Baser is required.
+ */
+export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
+  const baser = new Baser(options);
+  const opened = yield* baser.reopen(options);
+  if (!opened) {
+    throw new DatabaseNotOpenError("Failed to open Baser");
+  }
+  return baser;
 }
