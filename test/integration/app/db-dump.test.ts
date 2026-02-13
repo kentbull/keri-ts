@@ -1,4 +1,5 @@
 import { run } from "effection";
+import { assert, assertEquals } from "jsr:@std/assert";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
 import { Baser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
@@ -13,33 +14,46 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
+    const name = `db-dump-${crypto.randomUUID()}`;
+    const key = new TextEncoder().encode("evt.0001");
+    const val = new TextEncoder().encode("sample event payload");
+
+    await run(function* () {
+      const baser = new Baser({
+        name,
+        temp: true,
+        reopen: true,
+        readonly: false,
+      });
+
+      try {
+        const opened = yield* baser.reopen();
+        assert(opened, "Fixture database should open");
+        assertEquals(baser.putEvt(key, val), true, "Fixture event should be written");
+      } finally {
+        // Keep temp database files for readonly dump step.
+        yield* baser.close();
+      }
+    });
+
     const harness = new CLITestHarness();
     harness.captureOutput();
 
     try {
-      // Test with an existing database
       const args = {
-        name: "accolon",
+        name,
         base: undefined,
-        temp: false,
+        temp: true,
       };
-
-      console.log("Starting db dump test...");
-      console.log("Args:", args);
 
       await run(() => dumpEvts(args));
 
       const output = harness.getOutput();
       const errors = harness.getErrors();
 
-      console.log("\n=== Captured Output ===");
-      output.forEach((line, i) => console.log(`[${i}] ${line}`));
-
-      console.log("\n=== Captured Errors ===");
-      errors.forEach((line, i) => console.log(`[${i}] ${line}`));
-
-      // If we got here without throwing, the test passed
-      // The error should be visible in the captured output
+      assertEquals(errors.length, 0, `Expected no stderr output, got: ${errors.join("\n")}`);
+      assert(output.some((line) => line.includes("Baser.evts sub-database dump (1 entries)")));
+      assert(output.some((line) => line.includes("Total entries: 1")));
     } catch (error) {
       console.error("\n=== Test Error ===");
       console.error("Error type:", error instanceof Error ? error.constructor.name : typeof error);

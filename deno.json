@@ -1,12 +1,16 @@
 {
   "name": "keri-ts",
   "version": "0.1.0",
+  "exports": {
+    ".": "./mod.ts"
+  },
   "tasks": {
     "setup": "rm -rf node_modules/@lmdb && export LMDB_DATA_V1=true && npm rebuild lmdb --build-from-source",
     "start": "deno run --allow-all --unstable-ffi mod.ts",
     "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
     "kli": "deno run --allow-all --unstable-ffi mod.ts",
-    "test": "deno test --allow-all --unstable-ffi"
+    "test": "deno test --allow-all --unstable-ffi",
+    "test:cesr": "deno test packages/cesr/test"
   },
   "imports": {
     "effection": "npm:effection@^3.6.0",
