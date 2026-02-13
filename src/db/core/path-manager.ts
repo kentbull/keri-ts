@@ -5,7 +5,7 @@
  * Uses composition pattern instead of inheritance.
  */
 
-import { action, type Operation } from "effection";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { InvalidPathNameError, PathError } from "../../core/errors.ts";
 
 export interface PathManagerOptions {

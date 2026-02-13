@@ -5,8 +5,8 @@
  * Uses composition with PathManager instead of inheritance.
  */
 
-import { type Operation } from "effection";
-import { Database, Key, open, RootDatabase } from "lmdb";
+import { type Operation } from "npm:effection@^3.6.0";
+import { Database, Key, open, RootDatabase } from "npm:lmdb@^3.4.4";
 import { startsWith } from "../../core/bytes.ts";
 import {
   DatabaseKeyError,

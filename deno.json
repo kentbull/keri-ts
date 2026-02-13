@@ -9,6 +9,7 @@
     "check": "deno check mod.ts packages/cesr/mod.ts",
     "quality": "deno task fmt && deno task check && deno task test:quality && deno task test:cesr",
     "quality:report": "deno run --allow-run=rg,scc --allow-read scripts/quality-report.ts",
+    "build:npm": "deno run -A scripts/build_npm.ts",
     "setup": "rm -rf node_modules/@lmdb && export LMDB_DATA_V1=true && npm rebuild lmdb --build-from-source",
     "start": "deno run --allow-all --unstable-ffi mod.ts",
     "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
@@ -18,9 +19,11 @@
     "test:integration:server": "deno test --allow-all --unstable-ffi test/integration/app/server.test.ts",
     "test:cesr": "deno test packages/cesr/test",
     "cesr:annotate": "deno run --allow-read --allow-write packages/cesr/src/annotate/cli-deno.ts",
-    "cesr:build:npm": "cd packages/cesr && deno task build:npm"
+    "cesr:build:npm": "cd packages/cesr && deno task build:npm",
+    "npm:build:all": "deno task build:npm && deno task cesr:build:npm"
   },
   "imports": {
+    "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
     "effection": "npm:effection@^3.6.0",
     "lmdb": "npm:lmdb@^3.4.4",
     "commander": "npm:commander@^10.0.1",

@@ -1,7 +1,10 @@
 /**
  * Check if keyBytes starts with prefixBytes
  */
-export function startsWith(keyBytes: Uint8Array, prefixBytes: Uint8Array): boolean {
+export function startsWith(
+  keyBytes: Uint8Array,
+  prefixBytes: Uint8Array,
+): boolean {
   if (prefixBytes.length === 0) {
     return true; // Empty prefix matches everything
   }

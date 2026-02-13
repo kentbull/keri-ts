@@ -2,4 +2,4 @@
  * Database module exports
  */
 
-export * from './basing.ts';
+export * from "./basing.ts";

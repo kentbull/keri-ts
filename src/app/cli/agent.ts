@@ -1,4 +1,4 @@
-import { type Operation } from "effection";
+import { type Operation } from "npm:effection@^3.6.0";
 import { startServer } from "../../../src/app/server.ts";
 
 interface AgentArgs {
@@ -39,7 +39,9 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
 
   // Validate port number
   if (isNaN(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid port number: ${port}. Port must be between 1 and 65535.`);
+    throw new Error(
+      `Invalid port number: ${port}. Port must be between 1 and 65535.`,
+    );
   }
 
   // Start the server (this operation will run until shutdown)

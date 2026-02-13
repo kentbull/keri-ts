@@ -1,5 +1,5 @@
-import { Command } from "commander";
-import { action, type Operation } from "effection";
+import { Command } from "npm:commander@^10.0.1";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { agentCommand } from "./agent.ts";
 import { dumpEvts } from "./db-dump.ts";
 import { initCommand } from "./init.ts";
@@ -36,24 +36,33 @@ function createCLIProgram(context: CommandContext) {
   program
     .command("init")
     .description("Create a database and keystore")
-    .option("-n, --name <name>", "Keystore name and file location of KERI keystore (required)")
-    .option("-b, --base <base>", "Additional optional prefix to file location of KERI keystore")
+    .option(
+      "-n, --name <name>",
+      "Keystore name and file location of KERI keystore (required)",
+    )
+    .option(
+      "-b, --base <base>",
+      "Additional optional prefix to file location of KERI keystore",
+    )
     .option("-t, --temp", "Create a temporary keystore, used for testing")
     .option("-s, --salt <salt>", "Qualified base64 salt for creating key pairs")
-    .option("-c, --config-dir <dir>", "Directory override for configuration data")
+    .option(
+      "-c, --config-dir <dir>",
+      "Directory override for configuration data",
+    )
     .option("--config-file <file>", "Configuration filename override")
     .option(
       "-p, --passcode <passcode>",
-      "22 character encryption passcode for keystore (is not saved)"
+      "22 character encryption passcode for keystore (is not saved)",
     )
     .option("--nopasscode", "Create an unencrypted keystore")
     .option(
       "-a, --aeid <aeid>",
-      "Qualified base64 of non-transferable identifier prefix for authentication and encryption of secrets in keystore"
+      "Qualified base64 of non-transferable identifier prefix for authentication and encryption of secrets in keystore",
     )
     .option(
       "-e, --seed <seed>",
-      "Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived"
+      "Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived",
     )
     .action((options: Record<string, unknown>) => {
       // Store command info in context for execution within Effection
@@ -77,7 +86,11 @@ function createCLIProgram(context: CommandContext) {
   program
     .command("agent")
     .description("Start the KERI agent server")
-    .option("-p, --port <port>", "Port number for the server (default: 8000)", "8000")
+    .option(
+      "-p, --port <port>",
+      "Port number for the server (default: 8000)",
+      "8000",
+    )
     .action(function (this: Command) {
       const options = this.opts();
       context.command = "agent";
@@ -172,7 +185,10 @@ function* witnessCommand(_args: Record<string, unknown>): Operation<void> {
 /**
  * Command handler registry - maps command names to Effection operations
  */
-const commandHandlers: Map<string, (args: Record<string, unknown>) => Operation<void>> = new Map([
+const commandHandlers: Map<
+  string,
+  (args: Record<string, unknown>) => Operation<void>
+> = new Map([
   ["init", (args: Record<string, unknown>) => initCommand(args)],
   ["agent", (args: Record<string, unknown>) => agentCommand(args)],
   ["incept", (args: Record<string, unknown>) => inceptCommand(args)],
@@ -204,7 +220,10 @@ export function* kli(args: string[] = []): Operation<void> {
       const commanderError = error as { code: string; exitCode?: number };
 
       // Help was requested - Commander already printed it, just return
-      if (commanderError.code === "commander.help") {
+      if (
+        commanderError.code === "commander.help" ||
+        commanderError.code === "commander.helpDisplayed"
+      ) {
         return;
       }
 

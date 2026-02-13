@@ -1,4 +1,4 @@
-import { run } from "effection";
+import { run } from "npm:effection@^3.6.0";
 import { kli } from "./src/app/cli/cli.ts";
 
 /**

@@ -5,8 +5,8 @@
  * Sets up named sub-databases for key event logs.
  */
 
-import { type Operation } from "effection";
-import { Database } from "lmdb";
+import { type Operation } from "npm:effection@^3.6.0";
+import { Database } from "npm:lmdb@^3.4.4";
 import {
   DatabaseNotOpenError,
   DatabaseOperationError,
