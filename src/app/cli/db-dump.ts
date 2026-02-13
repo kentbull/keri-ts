@@ -6,7 +6,7 @@
 
 import { type Operation } from "effection";
 import { displayStr } from "../../core/bytes.ts";
-import { Baser, BaserOptions } from "../../db/basing.ts";
+import { BaserOptions, createBaser } from "../../db/basing.ts";
 
 /**
  * Dump the evts sub-database to console
@@ -33,15 +33,9 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
     dupsort: false,
   };
 
-  const baser = new Baser(options);
+  const baser = yield* createBaser(options);
 
   try {
-    const opened = yield* baser.reopen(options);
-    if (!opened) {
-      console.error(`Failed to open database ${name} from ${base} in temp mode: ${temp}`);
-      throw new Error(`Failed to open database ${name} from ${base} in temp mode: ${temp}`);
-    }
-
     // get database version
     const version = baser.getVer();
     console.log(`Database version: ${version}`);

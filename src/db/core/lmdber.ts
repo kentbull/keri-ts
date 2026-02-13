@@ -8,7 +8,16 @@
 import { type Operation } from "effection";
 import { Database, Key, open, RootDatabase } from "lmdb";
 import { startsWith } from "../../core/bytes.ts";
-import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
+import {
+  DatabaseKeyError,
+  DatabaseNotOpenError,
+  DatabaseOperationError,
+} from "../../core/errors.ts";
+import {
+  PathManager,
+  PathManagerDefaults,
+  PathManagerOptions,
+} from "./path-manager.ts";
 
 export type BinVal = Uint8Array;
 export type BinKey = Uint8Array;
@@ -115,6 +124,14 @@ export class LMDBer {
     return this.pathManager.path;
   }
 
+  private formatDbKeyError(key: Uint8Array, error: unknown): DatabaseKeyError {
+    const message = error instanceof Error ? error.message : String(error);
+    return new DatabaseKeyError(
+      `Key is empty, too big, or wrong size: ${message}`,
+      { key: Array.from(key) },
+    );
+  }
+
   /**
    * Reopen the LMDB database
    * Closes existing database if open before opening a new one to prevent double-free errors
@@ -130,7 +147,9 @@ export class LMDBer {
         this.env.close();
       } catch (error) {
         // Ignore close errors (database might already be closed)
-        console.warn(`Warning: Error closing existing LMDB environment: ${error}`);
+        console.warn(
+          `Warning: Error closing existing LMDB environment: ${error}`,
+        );
       }
       this.env = null;
     }
@@ -144,7 +163,9 @@ export class LMDBer {
 
     // Get map size from environment variable or use default
     const mapSizeEnv = Deno.env.get("KERI_LMDB_MAP_SIZE");
-    const mapSize = mapSizeEnv ? parseInt(mapSizeEnv, 10) : this.defaults.mapSize;
+    const mapSize = mapSizeEnv
+      ? parseInt(mapSizeEnv, 10)
+      : this.defaults.mapSize;
 
     // Check if database files exist before opening
     const dbExists = yield* this.checkDatabaseExists();
@@ -152,7 +173,9 @@ export class LMDBer {
     // If readonly and database doesn't exist, we need to handle that gracefully
     // For readonly mode, database files must exist
     if (readonly && !dbExists) {
-      console.error(`Cannot open readonly database: database files do not exist at ${dbPath}`);
+      console.error(
+        `Cannot open readonly database: database files do not exist at ${dbPath}`,
+      );
       this.env = null;
       return false;
     }
@@ -161,10 +184,9 @@ export class LMDBer {
     // LMDB will use the actual map size from the database file, but the Node.js
     // lmdb package requires mapSize to be >= the database's actual map size
     // Use 4GB (KERIpy default) or larger to ensure compatibility
-    const effectiveMapSize =
-      readonly && dbExists
-        ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
-        : mapSize;
+    const effectiveMapSize = readonly && dbExists
+      ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
+      : mapSize;
 
     const dbConfig = {
       path: dbPath, // Use directory path (Node.js lmdb should handle this)
@@ -175,7 +197,9 @@ export class LMDBer {
       encoding: "binary" as const, // to mimic KERIpy behavior
       keyEncoding: "binary" as const, // to mimic KERIpy behavior
     };
-    console.log(`Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`);
+    console.log(
+      `Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`,
+    );
 
     // Open LMDB environment
     // LMDB's open() will create data.mdb and lock.mdb if they don't exist
@@ -236,15 +260,13 @@ export class LMDBer {
    * Get database version
    */
   getVer(): string | null {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
+    const env = this.env!;
 
     try {
-      const versionBytes: Uint8Array = this.env.get(b("__version__"));
+      const versionBytes: Uint8Array = env.get(b("__version__"));
       const version = t(versionBytes);
       return version || null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -253,16 +275,18 @@ export class LMDBer {
    * Set database version
    */
   setVer(val: string): void {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
+    const env = this.env!;
 
     try {
-      this.env.transactionSync(() => {
-        this.env!.putSync(b("__version__"), b(val));
+      env.transactionSync(() => {
+        env.putSync(b("__version__"), b(val));
       });
     } catch (error) {
-      throw error instanceof Error ? error : new Error(String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseOperationError(
+        `Failed to set database version: ${message}`,
+        { version: val },
+      );
     }
   }
 
@@ -270,10 +294,8 @@ export class LMDBer {
    * Open a named sub-database
    */
   openDB(name: string, dupsort = false): Database<BinVal, BinKey> {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
-    return this.env.openDB(name, {
+    const env = this.env!;
+    return env.openDB(name, {
       keyEncoding: "binary",
       encoding: "binary", // Use binary encoding for values (raw bytes) to match KERIpy
       dupSort: dupsort,
@@ -288,13 +310,15 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written, False if key already exists
    */
-  putVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): boolean {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
+  putVal(
+    db: Database<BinVal, BinKey>,
+    key: Uint8Array,
+    val: Uint8Array,
+  ): boolean {
+    const env = this.env!;
 
     try {
-      const result = this.env.transactionSync(() => {
+      const result = env.transactionSync(() => {
         const existing = db.get(key);
         if (existing !== null && existing !== undefined) {
           return false;
@@ -304,7 +328,7 @@ export class LMDBer {
       });
       return result;
     } catch (error) {
-      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+      throw this.formatDbKeyError(key, error);
     }
   }
 
@@ -316,18 +340,20 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written
    */
-  setVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): boolean {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
+  setVal(
+    db: Database<BinVal, BinKey>,
+    key: Uint8Array,
+    val: Uint8Array,
+  ): boolean {
+    const env = this.env!;
 
     try {
-      this.env.transactionSync(() => {
+      env.transactionSync(() => {
         db.put(key, val);
       });
       return true;
     } catch (error) {
-      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+      throw this.formatDbKeyError(key, error);
     }
   }
 
@@ -339,10 +365,6 @@ export class LMDBer {
    * @returns Value bytes or null if not found
    */
   getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
-
     try {
       const val = db.get(key);
       if (val === null || val === undefined) {
@@ -351,7 +373,7 @@ export class LMDBer {
         return val instanceof Uint8Array ? val : new Uint8Array(val);
       }
     } catch (error) {
-      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+      throw this.formatDbKeyError(key, error);
     }
   }
 
@@ -363,12 +385,10 @@ export class LMDBer {
    * @returns True if key existed, False otherwise
    */
   delVal(db: Database<BinVal, BinKey>, key: Uint8Array): boolean {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
+    const env = this.env!;
 
     try {
-      const result = this.env.transactionSync(() => {
+      const result = env.transactionSync(() => {
         const exists = db.get(key) !== null && db.get(key) !== undefined;
         if (exists) {
           db.remove(key);
@@ -377,7 +397,7 @@ export class LMDBer {
       });
       return result;
     } catch (error) {
-      throw new Error(`Key: \`${key}\` is either empty, too big, or wrong size. ${error}`);
+      throw this.formatDbKeyError(key, error);
     }
   }
 
@@ -388,10 +408,6 @@ export class LMDBer {
    * @returns Count of entries
    */
   cnt(db: Database<BinVal, BinKey>): number {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
-
     try {
       let count = 0;
       for (const _ of db.getRange({})) {
@@ -399,7 +415,10 @@ export class LMDBer {
       }
       return count;
     } catch (error) {
-      throw error instanceof Error ? error : new Error(String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseOperationError(
+        `Failed to count database entries: ${message}`,
+      );
     }
   }
 
@@ -422,12 +441,8 @@ export class LMDBer {
    */
   *getTopItemIter(
     db: Database<BinVal, BinKey>,
-    top: Uint8Array = new Uint8Array(0)
+    top: Uint8Array = new Uint8Array(0),
   ): Generator<[Uint8Array, Uint8Array]> {
-    if (!this.env) {
-      throw new Error("Database not opened");
-    }
-
     try {
       // Use getRange with start position at top key
       // With binary encoding, keys and values are always Uint8Array
@@ -450,4 +465,21 @@ export class LMDBer {
       console.warn(`Error iterating database: ${error}`);
     }
   }
+}
+
+/**
+ * Create and open an LMDBer instance.
+ *
+ * Constructors cannot be async, so call this factory where an opened LMDBer is required.
+ */
+export function* createLMDBer(
+  options: LMDBerOptions = {},
+  defaults?: Partial<LMDBerDefaults>,
+): Operation<LMDBer> {
+  const lmdber = new LMDBer(options, defaults);
+  const opened = yield* lmdber.reopen(options);
+  if (!opened) {
+    throw new DatabaseNotOpenError("Failed to open LMDBer");
+  }
+  return lmdber;
 }

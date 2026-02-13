@@ -5,7 +5,8 @@
  * Uses composition pattern instead of inheritance.
  */
 
-import { type Operation, action } from "effection";
+import { action, type Operation } from "effection";
+import { InvalidPathNameError, PathError } from "../../core/errors.ts";
 
 export interface PathManagerOptions {
   name?: string;
@@ -75,7 +76,10 @@ export class PathManager {
   public opened: boolean;
   private defaults: PathManagerDefaults;
 
-  constructor(options: PathManagerOptions = {}, defaults?: Partial<PathManagerDefaults>) {
+  constructor(
+    options: PathManagerOptions = {},
+    defaults?: Partial<PathManagerDefaults>,
+  ) {
     this.defaults = { ...PATH_DEFAULTS, ...defaults };
 
     this._name = options.name || "main";
@@ -101,14 +105,19 @@ export class PathManager {
   set name(value: string) {
     // Check if path is absolute
     if (value.startsWith("/") || value.includes(":")) {
-      throw new Error(`Not relative name=${value} path.`);
+      throw new InvalidPathNameError(
+        `Not relative name=${value} path.`,
+        { name: value },
+      );
     }
     this._name = value;
   }
 
   _getTempPath(): string {
-    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") || Deno.env.get("TEMP") || "/tmp";
-    const tempName = `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
+    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") ||
+      Deno.env.get("TEMP") || "/tmp";
+    const tempName =
+      `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
     return `${tempDir}/${tempName}`;
   }
 
@@ -166,7 +175,9 @@ export class PathManager {
    * @param options path creation options
    * @returns File path to a persistent file or directory
    */
-  _getPersistentPaths(options: Partial<PathManagerOptions> = {}): [string, string] {
+  _getPersistentPaths(
+    options: Partial<PathManagerOptions> = {},
+  ): [string, string] {
     const headDirPath = options.headDirPath ?? this.headDirPath;
     const clean = options.clean || false;
 
@@ -175,7 +186,9 @@ export class PathManager {
     return [primary, alt];
   }
 
-  _getPaths(options: Partial<PathManagerOptions> = {}): [string, string, string] {
+  _getPaths(
+    options: Partial<PathManagerOptions> = {},
+  ): [string, string, string] {
     const [primary, alt] = this._getPersistentPaths(options);
     const tempPath = this._getTempPath();
     return [primary, alt, tempPath];
@@ -241,7 +254,9 @@ export class PathManager {
     });
   }
 
-  private *_statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean }> {
+  private *_statFileOp(
+    path: string,
+  ): Operation<{ isDirectory: boolean; isFile: boolean }> {
     return yield* action((resolve, reject) => {
       Deno.stat(path)
         .then((stats) => {
@@ -291,7 +306,11 @@ export class PathManager {
     this.fext = fext;
 
     let path: string;
-    const [primary, alt, tempPath] = this._getPaths({ ...options, headDirPath, clean });
+    const [primary, alt, tempPath] = this._getPaths({
+      ...options,
+      headDirPath,
+      clean,
+    });
 
     if (temp) {
       // Use temporary directory
@@ -314,7 +333,9 @@ export class PathManager {
           const created = yield* this._mkdirOp(path, perm);
           if (!created) {
             // Creation failed (e.g., EACCES) - fall back to alt path
-            console.log(`Failed to create primary path, falling back to alt path`);
+            console.log(
+              `Failed to create primary path, falling back to alt path`,
+            );
             useAltPath = true;
             path = alt;
             headDirPath = this.defaults.altHeadDirPath;
@@ -331,15 +352,23 @@ export class PathManager {
             if (!created) {
               // Even alt path creation failed - this is unexpected, but we'll continue
               console.error(`Error: Failed to create alt directory at ${path}`);
-              throw new Error(`Failed to create alt directory at ${path}`);
+              throw new PathError(
+                `Failed to create alt directory at ${path}`,
+                { path },
+              );
             }
           } else {
             // Path exists, verify access
             const altHasAccess = yield* this._accessOp(path);
             if (!altHasAccess) {
               // Path exists but no access - this shouldn't happen for alt path, but log it
-              console.error(`Error: Alt path exists but is not accessible: ${path}`);
-              throw new Error(`Alt path exists but is not accessible: ${path}`);
+              console.error(
+                `Error: Alt path exists but is not accessible: ${path}`,
+              );
+              throw new PathError(
+                `Alt path exists but is not accessible: ${path}`,
+                { path },
+              );
             }
           }
         }
@@ -355,18 +384,24 @@ export class PathManager {
             path = alt;
             headDirPath = this.defaults.altHeadDirPath;
             const altPathExists = yield* this._statOp(path);
-            const altHasAccess = altPathExists ? yield* this._accessOp(path) : false;
+            const altHasAccess = altPathExists
+              ? yield* this._accessOp(path)
+              : false;
 
             if (!altPathExists) {
               // Alt path doesn't exist, create it
               console.log(`Creating alt directory at ${path}`);
               const created = yield* this._mkdirOp(path, perm);
               if (!created) {
-                console.warn(`Warning: Failed to create alt directory at ${path}`);
+                console.warn(
+                  `Warning: Failed to create alt directory at ${path}`,
+                );
               }
             } else if (!altHasAccess) {
               // Alt path exists but not accessible - unexpected but continue
-              console.warn(`Warning: Alt path exists but is not accessible: ${path}`);
+              console.warn(
+                `Warning: Alt path exists but is not accessible: ${path}`,
+              );
             }
           }
         }

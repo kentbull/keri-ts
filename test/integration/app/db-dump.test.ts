@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
-import { Baser } from "../../../src/db/basing.ts";
+import { createBaser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
 /**
@@ -19,7 +19,7 @@ Deno.test({
     const val = new TextEncoder().encode("sample event payload");
 
     await run(function* () {
-      const baser = new Baser({
+      const baser = yield* createBaser({
         name,
         temp: true,
         reopen: true,
@@ -27,8 +27,6 @@ Deno.test({
       });
 
       try {
-        const opened = yield* baser.reopen();
-        assert(opened, "Fixture database should open");
         assertEquals(baser.putEvt(key, val), true, "Fixture event should be written");
       } finally {
         // Keep temp database files for readonly dump step.
@@ -81,26 +79,39 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
+    const name = `db-dump-iter-${crypto.randomUUID()}`;
+    const key = new TextEncoder().encode("evt.0001");
+    const val = new TextEncoder().encode("sample event payload");
+
     await run(function* () {
-      const baser = new Baser({
-        name: "accolon",
-        base: undefined,
-        temp: false,
+      // Seed a deterministic fixture DB first so readonly open always has files.
+      const writableBaser = yield* createBaser({
+        name,
+        temp: true,
+        reopen: true,
+        readonly: false,
+      });
+
+      try {
+        assertEquals(
+          writableBaser.putEvt(key, val),
+          true,
+          "Fixture event should be written"
+        );
+      } finally {
+        yield* writableBaser.close();
+      }
+
+      const baser = yield* createBaser({
+        name,
+        temp: true,
         reopen: true,
         readonly: true,
       });
 
       try {
-        const opened = yield* baser.reopen();
-        console.log("Database opened:", opened);
-
-        if (!opened) {
-          console.error("Failed to open database");
-          return;
-        }
-
         console.log("Database path:", baser.path);
-        console.log("Evts database:", baser.evts ? "exists" : "null");
+        console.log("Evts database: exists");
 
         // Get count first
         const count = baser.cntEvts();
@@ -132,6 +143,7 @@ Deno.test({
               break;
             }
           }
+          assert(entryCount > 0, "Expected at least one iterated entry");
           console.log(`Iteration complete. Total entries iterated: ${entryCount}`);
         } catch (iterError) {
           console.error("Iteration error:", iterError);
