@@ -54,6 +54,21 @@ const MAP_BODY_CODES = new Set([
 
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 
+function tokenSize(
+  token: { fullSize: number; fullSizeB2: number },
+  cold: "txt" | "bny",
+): number {
+  return cold === "bny" ? token.fullSizeB2 : token.fullSize;
+}
+
+function quadletUnit(cold: "txt" | "bny"): number {
+  return cold === "bny" ? 3 : 4;
+}
+
+function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
+  return cold === "txt" || cold === "bny";
+}
+
 export class CesrParserCore {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
   private readonly framed: boolean;
@@ -65,11 +80,13 @@ export class CesrParserCore {
     this.framed = options.framed ?? false;
   }
 
+  /** Append bytes and emit any complete parse events. */
   feed(chunk: Uint8Array): ParseEmission[] {
     this.state.buffer = concatBytes(this.state.buffer, chunk);
     return this.drain();
   }
 
+  /** Flush pending state at end-of-stream, emitting frame/error if needed. */
   flush(): ParseEmission[] {
     const out: ParseEmission[] = [];
     if (this.pendingFrame) {
@@ -93,6 +110,11 @@ export class CesrParserCore {
     this.pendingFrame = null;
   }
 
+  /**
+   * Core streaming loop.
+   * Keeps state machine behavior explicit: consume separators, parse a base
+   * frame, then greedily collect trailing attachment groups.
+   */
   private drain(): ParseEmission[] {
     const out: ParseEmission[] = [];
 
@@ -123,7 +145,7 @@ export class CesrParserCore {
               this.consumeLeadingAno();
               continue;
             }
-            if (nextCold !== "txt" && nextCold !== "bny") {
+            if (!isAttachmentDomain(nextCold)) {
               throw new ColdStartError(
                 `Unsupported attachment cold code ${nextCold}`,
               );
@@ -197,7 +219,7 @@ export class CesrParserCore {
       this.pendingFrame = null;
       return true;
     }
-    if (nextCold !== "txt" && nextCold !== "bny") {
+    if (!isAttachmentDomain(nextCold)) {
       throw new ColdStartError(
         `Unsupported pending-frame continuation cold code ${nextCold}`,
       );
@@ -264,6 +286,10 @@ export class CesrParserCore {
     }
   }
 
+  /**
+   * Parse a single top-level frame start from current buffer head.
+   * Supports message-domain serders and CESR-native body groups.
+   */
   private parseFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
@@ -282,7 +308,7 @@ export class CesrParserCore {
     if (cold === "txt" || cold === "bny") {
       const peek = parseCounter(input.slice(offset), activeVersion, cold);
       if (peek.code === GENUS_VERSION_CODE) {
-        offset += cold === "bny" ? peek.fullSizeB2 : peek.fullSize;
+        offset += tokenSize(peek, cold);
         activeVersion = this.decodeVersionCounter(peek);
         if (input.length <= offset) {
           throw new ShortageError(offset + 1, input.length);
@@ -300,113 +326,50 @@ export class CesrParserCore {
       };
     }
 
-    if (cold !== "txt" && cold !== "bny") {
+    if (!isAttachmentDomain(cold)) {
       throw new ColdStartError(
         `Expected message or CESR body group at frame start but got ${cold}`,
       );
     }
 
     const counter = parseCounter(input.slice(offset), activeVersion, cold);
-    const headerSize = cold === "bny" ? counter.fullSizeB2 : counter.fullSize;
-    const unit = cold === "bny" ? 3 : 4;
+    const headerSize = tokenSize(counter, cold);
+    const unit = quadletUnit(cold);
 
     if (BODY_WITH_ATTACH_CODES.has(counter.code)) {
-      const payloadSize = counter.count * unit;
-      const total = headerSize + payloadSize;
-      if (input.length < offset + total) {
-        throw new ShortageError(offset + total, input.length);
-      }
-      const payload = input.slice(offset + headerSize, offset + total);
-      const nested = this.parseCompleteFrame(payload, activeVersion, false);
-      if (nested.consumed !== payload.length) {
-        throw new ColdStartError(
-          "BodyWithAttachmentGroup payload did not parse to a complete frame",
-        );
-      }
-      return {
-        frame: nested.frame,
-        consumed: offset + total,
-        version: nested.frame.serder.gvrsn ?? nested.frame.serder.pvrsn,
-      };
+      return this.parseBodyWithAttachmentGroup(
+        input,
+        offset,
+        headerSize,
+        counter.count,
+        unit,
+        activeVersion,
+      );
     }
 
     if (NON_NATIVE_BODY_CODES.has(counter.code)) {
-      const matter = parseMatter(input.slice(offset + headerSize), cold);
-      const bodySize = cold === "bny" ? matter.fullSizeB2 : matter.fullSize;
-      const payloadSize = counter.count * unit;
-      if (payloadSize !== bodySize) {
-        throw new ColdStartError(
-          `NonNativeBodyGroup payload size mismatch: expected=${payloadSize} actual=${bodySize}`,
-        );
-      }
-
-      try {
-        const { serder } = reapSerder(matter.raw);
-        return {
-          frame: { serder, attachments: [] },
-          consumed: offset + headerSize + bodySize,
-          version: serder.gvrsn ?? serder.pvrsn,
-        };
-      } catch (_error) {
-        // Intentional recovery: NonNativeBodyGroup payload is opaque CESR body data.
-        // If it cannot be interpreted as a KERI/ACDC Serder, preserve bytes and
-        // continue with conservative metadata instead of failing the frame parse.
-        return {
-          frame: {
-            serder: {
-              raw: matter.raw,
-              ked: null,
-              proto: Protocols.keri,
-              kind: Kinds.cesr,
-              size: matter.raw.length,
-              pvrsn: activeVersion,
-              gvrsn: activeVersion,
-              ilk: null,
-              said: null,
-            },
-            attachments: [],
-          },
-          consumed: offset + headerSize + bodySize,
-          version: activeVersion,
-        };
-      }
-    }
-
-    if (FIX_BODY_CODES.has(counter.code) || MAP_BODY_CODES.has(counter.code)) {
-      const payloadSize = counter.count * unit;
-      const total = headerSize + payloadSize;
-      if (input.length < offset + total) {
-        throw new ShortageError(offset + total, input.length);
-      }
-      const raw = input.slice(offset, offset + total);
-      const metadata = this.extractNativeMetadata(
-        raw,
+      return this.parseNonNativeBodyGroup(
+        input,
+        offset,
+        headerSize,
+        counter.count,
+        unit,
         cold,
         activeVersion,
       );
-      const fields = this.extractNativeFields(raw, cold, activeVersion);
-      return {
-        frame: {
-          serder: {
-            raw,
-            ked: null,
-            proto: metadata.proto,
-            kind: Kinds.cesr,
-            size: raw.length,
-            pvrsn: metadata.pvrsn,
-            gvrsn: metadata.gvrsn,
-            ilk: metadata.ilk,
-            said: metadata.said,
-            native: {
-              bodyCode: counter.code,
-              fields,
-            },
-          },
-          attachments: [],
-        },
-        consumed: offset + total,
-        version: activeVersion,
-      };
+    }
+
+    if (FIX_BODY_CODES.has(counter.code) || MAP_BODY_CODES.has(counter.code)) {
+      return this.parseNativeBodyGroup(
+        input,
+        offset,
+        headerSize,
+        counter.count,
+        unit,
+        cold,
+        activeVersion,
+        counter.code,
+      );
     }
 
     throw new ColdStartError(
@@ -414,6 +377,129 @@ export class CesrParserCore {
     );
   }
 
+  /** Parse wrapped body+attachments payloads as a complete nested frame. */
+  private parseBodyWithAttachmentGroup(
+    input: Uint8Array,
+    offset: number,
+    headerSize: number,
+    count: number,
+    unit: number,
+    version: Versionage,
+  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+    const payloadSize = count * unit;
+    const total = headerSize + payloadSize;
+    if (input.length < offset + total) {
+      throw new ShortageError(offset + total, input.length);
+    }
+    const payload = input.slice(offset + headerSize, offset + total);
+    const nested = this.parseCompleteFrame(payload, version, false);
+    if (nested.consumed !== payload.length) {
+      throw new ColdStartError(
+        "BodyWithAttachmentGroup payload did not parse to a complete frame",
+      );
+    }
+    return {
+      frame: nested.frame,
+      consumed: offset + total,
+      version: nested.frame.serder.gvrsn ?? nested.frame.serder.pvrsn,
+    };
+  }
+
+  /** Parse a non-native body group; keep opaque fallback when serder reap fails. */
+  private parseNonNativeBodyGroup(
+    input: Uint8Array,
+    offset: number,
+    headerSize: number,
+    count: number,
+    unit: number,
+    cold: "txt" | "bny",
+    version: Versionage,
+  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+    const matter = parseMatter(input.slice(offset + headerSize), cold);
+    const bodySize = tokenSize(matter, cold);
+    const payloadSize = count * unit;
+    if (payloadSize !== bodySize) {
+      throw new ColdStartError(
+        `NonNativeBodyGroup payload size mismatch: expected=${payloadSize} actual=${bodySize}`,
+      );
+    }
+
+    try {
+      const { serder } = reapSerder(matter.raw);
+      return {
+        frame: { serder, attachments: [] },
+        consumed: offset + headerSize + bodySize,
+        version: serder.gvrsn ?? serder.pvrsn,
+      };
+    } catch (_error) {
+      // Intentional recovery: NonNativeBodyGroup payload is opaque CESR body data.
+      // If it cannot be interpreted as a KERI/ACDC Serder, preserve bytes and
+      // continue with conservative metadata instead of failing the frame parse.
+      return {
+        frame: {
+          serder: {
+            raw: matter.raw,
+            ked: null,
+            proto: Protocols.keri,
+            kind: Kinds.cesr,
+            size: matter.raw.length,
+            pvrsn: version,
+            gvrsn: version,
+            ilk: null,
+            said: null,
+          },
+          attachments: [],
+        },
+        consumed: offset + headerSize + bodySize,
+        version,
+      };
+    }
+  }
+
+  /** Parse fixed/map native body groups and extract semantic native fields. */
+  private parseNativeBodyGroup(
+    input: Uint8Array,
+    offset: number,
+    headerSize: number,
+    count: number,
+    unit: number,
+    cold: "txt" | "bny",
+    version: Versionage,
+    bodyCode: string,
+  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+    const payloadSize = count * unit;
+    const total = headerSize + payloadSize;
+    if (input.length < offset + total) {
+      throw new ShortageError(offset + total, input.length);
+    }
+    const raw = input.slice(offset, offset + total);
+    const metadata = this.extractNativeMetadata(raw, cold, version);
+    const fields = this.extractNativeFields(raw, cold, version);
+    return {
+      frame: {
+        serder: {
+          raw,
+          ked: null,
+          proto: metadata.proto,
+          kind: Kinds.cesr,
+          size: raw.length,
+          pvrsn: metadata.pvrsn,
+          gvrsn: metadata.gvrsn,
+          ilk: metadata.ilk,
+          said: metadata.said,
+          native: {
+            bodyCode,
+            fields,
+          },
+        },
+        attachments: [],
+      },
+      consumed: offset + total,
+      version,
+    };
+  }
+
+  /** Decode genus-version counter suffix to active CESR version. */
   private decodeVersionCounter(counter: Counter): Versionage {
     const triplet = counter.qb64.length >= 3
       ? counter.qb64.slice(-3)
@@ -427,6 +513,10 @@ export class CesrParserCore {
     };
   }
 
+  /**
+   * Best-effort native metadata extraction.
+   * This is intentionally advisory and may recover instead of failing hard.
+   */
   private extractNativeMetadata(
     raw: Uint8Array,
     cold: "txt" | "bny",
@@ -448,13 +538,15 @@ export class CesrParserCore {
     try {
       const bodyCounter = parseCounter(raw, fallbackVersion, cold);
       offset += cold === "bny" ? bodyCounter.fullSizeB2 : bodyCounter.fullSize;
+      // In map-body mode, labels may appear between semantic fields.
+      // Metadata extraction skips those labels before reading core fields.
 
       if (MAP_BODY_CODES.has(bodyCounter.code)) {
         offset = this.skipNativeLabelers(raw, offset, cold);
       }
 
       const verser = parseVerser(raw.slice(offset), cold);
-      offset += cold === "bny" ? verser.fullSizeB2 : verser.fullSize;
+      offset += tokenSize(verser, cold);
       proto = verser.proto as Protocol;
       pvrsn = verser.pvrsn;
       gvrsn = verser.gvrsn;
@@ -464,7 +556,7 @@ export class CesrParserCore {
       }
 
       const ilker = parseIlker(raw.slice(offset), cold);
-      offset += cold === "bny" ? ilker.fullSizeB2 : ilker.fullSize;
+      offset += tokenSize(ilker, cold);
       ilk = ilker.ilk;
 
       if (MAP_BODY_CODES.has(bodyCounter.code)) {
@@ -483,6 +575,7 @@ export class CesrParserCore {
     return { proto, pvrsn, gvrsn, ilk, said };
   }
 
+  /** Skip consecutive native label tokens (V/W) from an offset. */
   private skipNativeLabelers(
     raw: Uint8Array,
     offset: number,
@@ -494,11 +587,12 @@ export class CesrParserCore {
       if (!isLabelerCode(item.code)) {
         break;
       }
-      out += cold === "bny" ? item.fullSizeB2 : item.fullSize;
+      out += tokenSize(item, cold);
     }
     return out;
   }
 
+  /** Strict native field extraction for annotation and higher-level processing. */
   private extractNativeFields(
     raw: Uint8Array,
     cold: "txt" | "bny",
@@ -516,10 +610,8 @@ export class CesrParserCore {
 
     const fields: Array<{ label: string | null; code: string; qb64: string }> =
       [];
-    const total = cold === "bny"
-      ? bodyCounter.fullSizeB2
-      : bodyCounter.fullSize;
-    const payloadBytes = bodyCounter.count * (cold === "bny" ? 3 : 4);
+    const total = tokenSize(bodyCounter, cold);
+    const payloadBytes = bodyCounter.count * quadletUnit(cold);
     const start = total;
     const end = start + payloadBytes;
     let offset = start;
@@ -529,7 +621,7 @@ export class CesrParserCore {
       const at = raw.slice(offset, end);
       const ctr = this.tryParseCounter(at, fallbackVersion, cold);
       if (ctr) {
-        const size = cold === "bny" ? ctr.fullSizeB2 : ctr.fullSize;
+        const size = tokenSize(ctr, cold);
         offset += size;
         fields.push({
           label: pendingLabel,
@@ -541,7 +633,7 @@ export class CesrParserCore {
       }
 
       const token = parseMatter(at, cold);
-      const size = cold === "bny" ? token.fullSizeB2 : token.fullSize;
+      const size = tokenSize(token, cold);
       offset += size;
 
       if (isLabelerCode(token.code)) {
@@ -567,6 +659,7 @@ export class CesrParserCore {
     return fields;
   }
 
+  /** Counter probe with ordered version fallback; throws on shortage. */
   private tryParseCounter(
     input: Uint8Array,
     version: Versionage,
@@ -596,6 +689,7 @@ export class CesrParserCore {
     return null;
   }
 
+  /** Parse one complete frame plus optional attachments from a standalone slice. */
   private parseCompleteFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
@@ -619,7 +713,7 @@ export class CesrParserCore {
         );
       }
 
-      if (nextCold !== "txt" && nextCold !== "bny") {
+      if (!isAttachmentDomain(nextCold)) {
         throw new ColdStartError(
           `Unsupported attachment cold code ${nextCold}`,
         );

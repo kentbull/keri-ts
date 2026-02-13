@@ -30,6 +30,10 @@ const WRAPPER_GROUP_NAMES = new Set([
   "BigBodyWithAttachmentGroup",
 ]);
 
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function isRecoverableParseError(error: unknown): boolean {
   return error instanceof UnknownCodeError ||
     error instanceof DeserializeError ||
@@ -155,9 +159,13 @@ function renderGroupItems(
     }
 
     if (item instanceof Uint8Array) {
-      const hex = Array.from(item).map((b) => b.toString(16).padStart(2, "0"))
-        .join("");
-      emitLine(lines, `0x${hex}`, "raw qb2 quadlet fragment", indent, options);
+      emitLine(
+        lines,
+        `0x${toHex(item)}`,
+        "raw qb2 quadlet fragment",
+        indent,
+        options,
+      );
       continue;
     }
 
@@ -207,6 +215,8 @@ function renderAttachmentGroupRaw(
   const payload = raw.slice(headerSize, parsed.consumed);
 
   if (WRAPPER_GROUP_NAMES.has(parsed.group.name)) {
+    // Wrapper groups contain nested groups by convention, but real-world
+    // streams may include trailing opaque segments. Keep annotation resilient.
     let offset = 0;
     while (offset < payload.length) {
       const slice = payload.slice(offset);
@@ -242,11 +252,7 @@ function renderAttachmentGroupRaw(
       for (let i = 0; i < remainder.length; i += unit) {
         const chunk = remainder.slice(i, Math.min(i + unit, remainder.length));
         const rendered = domain === "bny"
-          ? `0x${
-            Array.from(chunk).map((b) => b.toString(16).padStart(2, "0")).join(
-              "",
-            )
-          }`
+          ? `0x${toHex(chunk)}`
           : TEXT_DECODER.decode(chunk);
         emitLine(
           lines,
@@ -351,6 +357,7 @@ function renderFrame(
   return { index, frame, lines };
 }
 
+/** Render parsed CESR frames into line-oriented, human-annotated text blocks. */
 export function renderAnnotatedFrames(
   frames: CesrFrame[],
   options: Required<AnnotateOptions>,

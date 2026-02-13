@@ -20,10 +20,12 @@ export function isLabelerCode(code: string): boolean {
   return LABELER_CODES.has(code);
 }
 
+/** Parse a V/W label primitive into decoded map-label metadata. */
 export function parseLabeler(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Labeler {
+  // Labelers are fixed-size matter primitives used as map field keys.
   const matter = parseMatter(input, cold);
   if (!isLabelerCode(matter.code)) {
     throw new UnknownCodeError(

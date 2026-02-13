@@ -11,6 +11,16 @@ import {
 } from "../core/errors.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 
+/**
+ * Counter-group dispatcher for attachment payload parsing.
+ *
+ * Design notes:
+ * - Dispatch is table-driven by major CESR version.
+ * - Wrapper groups attempt nested parsing and preserve unknown remainder as opaque
+ *   payload instead of hard-failing (except true boundary violations).
+ * - `parseAttachmentDispatchCompat` is intentionally version-tolerant for real-world
+ *   mixed streams where wrappers and nested groups may differ by major version.
+ */
 interface ParsedGroup {
   items: unknown[];
   consumed: number;
@@ -53,6 +63,21 @@ const WRAPPER_GROUP_CODES_V2 = new Set([
   CtrDexV2.BigBodyWithAttachmentGroup,
 ]);
 
+function primitiveSize(
+  primitive: { fullSize: number; fullSizeB2: number },
+  domain: ParseDomain,
+): number {
+  return domain === "bny" ? primitive.fullSizeB2 : primitive.fullSize;
+}
+
+function counterHeaderSize(counter: Counter, domain: ParseDomain): number {
+  return primitiveSize(counter, domain);
+}
+
+function quadletUnitSize(domain: ParseDomain): number {
+  return domain === "bny" ? 3 : 4;
+}
+
 function parseTuple(
   input: Uint8Array,
   kinds: PrimitiveKind[],
@@ -65,7 +90,7 @@ function parseTuple(
       ? parseIndexer(input.slice(offset), domain)
       : parseMatter(input.slice(offset), domain);
     items.push(part.qb64);
-    offset += domain === "bny" ? part.fullSizeB2 : part.fullSize;
+    offset += primitiveSize(part, domain);
   }
   return { items, consumed: offset };
 }
@@ -100,11 +125,11 @@ function parseSigerList(
   }
 
   const items: string[] = [];
-  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const part = parseIndexer(input.slice(offset), domain);
     items.push(part.qb64);
-    offset += domain === "bny" ? part.fullSizeB2 : part.fullSize;
+    offset += primitiveSize(part, domain);
   }
 
   return { items, consumed: offset };
@@ -117,9 +142,9 @@ function parseQuadletGroup(
   wrapperCodes: Set<string>,
   domain: ParseDomain,
 ): ParsedGroup {
-  const unitSize = domain === "bny" ? 3 : 4;
+  const unitSize = quadletUnitSize(domain);
   const payloadSize = counter.count * unitSize;
-  const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  const headerSize = counterHeaderSize(counter, domain);
   const total = headerSize + payloadSize;
   if (input.length < total) {
     throw new ShortageError(total, input.length);
@@ -128,6 +153,7 @@ function parseQuadletGroup(
   const payload = input.slice(headerSize, total);
 
   if (wrapperCodes.has(counter.code)) {
+    // Wrapper payload is a packed stream of nested groups (best effort).
     const items: unknown[] = [];
     let offset = 0;
     while (offset < payload.length) {
@@ -157,6 +183,7 @@ function parseQuadletGroup(
         ) {
           throw error;
         }
+        // Intentional recovery point: keep unread wrapper tail as opaque units.
         const remainder = payload.slice(offset);
         const opaque = domain === "bny"
           ? Array.from(
@@ -193,7 +220,7 @@ function repeatTupleParser(kinds: PrimitiveKind[]): GroupParser {
     _version: Versionage,
     domain: ParseDomain,
   ): ParsedGroup => {
-    const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+    const headerSize = counterHeaderSize(counter, domain);
     const parsed = parseRepeated(
       input.slice(headerSize),
       counter.count,
@@ -211,9 +238,13 @@ function transIdxSigGroupsParser(
   domain: ParseDomain,
 ): ParsedGroup {
   const items: unknown[] = [];
-  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
-    const header = parseTuple(input.slice(offset), ["matter", "matter", "matter"], domain);
+    const header = parseTuple(input.slice(offset), [
+      "matter",
+      "matter",
+      "matter",
+    ], domain);
     offset += header.consumed;
     const sigers = parseSigerList(input.slice(offset), version, domain);
     offset += sigers.consumed;
@@ -229,7 +260,7 @@ function transLastIdxSigGroupsParser(
   domain: ParseDomain,
 ): ParsedGroup {
   const items: unknown[] = [];
-  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const header = parseTuple(input.slice(offset), ["matter"], domain);
     offset += header.consumed;
@@ -247,10 +278,10 @@ function sadPathSigParser(
   domain: ParseDomain,
 ): ParsedGroup {
   const items: unknown[] = [];
-  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const path = parseMatter(input.slice(offset), domain);
-    offset += domain === "bny" ? path.fullSizeB2 : path.fullSize;
+    offset += primitiveSize(path, domain);
     const sigGroup = parseAttachmentDispatchCompat(
       input.slice(offset),
       version,
@@ -273,15 +304,15 @@ function sadPathSigGroupParser(
   domain: ParseDomain,
 ): ParsedGroup {
   const items: unknown[] = [];
-  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  let offset = counterHeaderSize(counter, domain);
 
   const root = parseMatter(input.slice(offset), domain);
-  offset += domain === "bny" ? root.fullSizeB2 : root.fullSize;
+  offset += primitiveSize(root, domain);
   items.push(root.qb64);
 
   for (let i = 0; i < counter.count; i++) {
     const path = parseMatter(input.slice(offset), domain);
-    offset += domain === "bny" ? path.fullSizeB2 : path.fullSize;
+    offset += primitiveSize(path, domain);
     const sigGroup = parseAttachmentDispatchCompat(
       input.slice(offset),
       version,
@@ -305,7 +336,7 @@ function genusVersionParser(
 ): ParsedGroup {
   return {
     items: [counter.qb64],
-    consumed: domain === "bny" ? counter.fullSizeB2 : counter.fullSize,
+    consumed: counterHeaderSize(counter, domain),
   };
 }
 
@@ -331,10 +362,16 @@ const V1_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV1.ControllerIdxSigs, repeatTupleParser(["indexer"])],
   [CtrDexV1.WitnessIdxSigs, repeatTupleParser(["indexer"])],
   [CtrDexV1.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
-  [CtrDexV1.TransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
+  [
+    CtrDexV1.TransReceiptQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
+  ],
   [CtrDexV1.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV1.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
-  [CtrDexV1.SealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
+  [
+    CtrDexV1.SealSourceTriples,
+    repeatTupleParser(["matter", "matter", "matter"]),
+  ],
   [CtrDexV1.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV1.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
   [CtrDexV1.SadPathSig, sadPathSigParser],
@@ -373,34 +410,84 @@ const V2_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV2.BigWitnessIdxSigs, repeatTupleParser(["indexer"])],
   [CtrDexV2.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigNonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
-  [CtrDexV2.TransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
-  [CtrDexV2.BigTransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
+  [
+    CtrDexV2.TransReceiptQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
+  ],
+  [
+    CtrDexV2.BigTransReceiptQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
+  ],
   [CtrDexV2.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigFirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigSealSourceCouples, repeatTupleParser(["matter", "matter"])],
-  [CtrDexV2.SealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
-  [CtrDexV2.BigSealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
+  [
+    CtrDexV2.SealSourceTriples,
+    repeatTupleParser(["matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigSealSourceTriples,
+    repeatTupleParser(["matter", "matter", "matter"]),
+  ],
   [CtrDexV2.SealSourceLastSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.BigSealSourceLastSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.DigestSealSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.BigDigestSealSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.MerkleRootSealSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.BigMerkleRootSealSingles, repeatTupleParser(["matter"])],
-  [CtrDexV2.BackerRegistrarSealCouples, repeatTupleParser(["matter", "matter"])],
-  [CtrDexV2.BigBackerRegistrarSealCouples, repeatTupleParser(["matter", "matter"])],
+  [
+    CtrDexV2.BackerRegistrarSealCouples,
+    repeatTupleParser(["matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigBackerRegistrarSealCouples,
+    repeatTupleParser(["matter", "matter"]),
+  ],
   [CtrDexV2.TypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigTypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV2.BigTransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV2.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
   [CtrDexV2.BigTransLastIdxSigGroups, transLastIdxSigGroupsParser],
-  [CtrDexV2.BlindedStateQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
-  [CtrDexV2.BigBlindedStateQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
-  [CtrDexV2.BoundStateSextuples, repeatTupleParser(["matter", "matter", "matter", "matter", "matter", "matter"])],
-  [CtrDexV2.BigBoundStateSextuples, repeatTupleParser(["matter", "matter", "matter", "matter", "matter", "matter"])],
-  [CtrDexV2.TypedMediaQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
-  [CtrDexV2.BigTypedMediaQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [
+    CtrDexV2.BlindedStateQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigBlindedStateQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BoundStateSextuples,
+    repeatTupleParser([
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+    ]),
+  ],
+  [
+    CtrDexV2.BigBoundStateSextuples,
+    repeatTupleParser([
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+      "matter",
+    ]),
+  ],
+  [
+    CtrDexV2.TypedMediaQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
+  [
+    CtrDexV2.BigTypedMediaQuadruples,
+    repeatTupleParser(["matter", "matter", "matter", "matter"]),
+  ],
   [CtrDexV2.KERIACDCGenusVersion, genusVersionParser],
 ]);
 
@@ -442,6 +529,10 @@ function parseAttachmentDispatchWithVersion(
   };
 }
 
+/**
+ * Parse with primary version, then retry with the alternate major on unknown
+ * code/deserialize failures. This mirrors real-world mixed-stream tolerance.
+ */
 export function parseAttachmentDispatchCompat(
   input: Uint8Array,
   version: Versionage,
@@ -463,6 +554,7 @@ export function parseAttachmentDispatchCompat(
   }
 }
 
+/** Strict versioned attachment-group dispatch (no major-version fallback). */
 export function parseAttachmentDispatch(
   input: Uint8Array,
   version: Versionage,

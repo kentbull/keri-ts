@@ -46,6 +46,13 @@ export interface Mapper {
   fields: MapperField[];
 }
 
+function tokenSize(
+  token: { fullSize: number; fullSizeB2: number },
+  domain: ParseDomain,
+): number {
+  return domain === "bny" ? token.fullSizeB2 : token.fullSize;
+}
+
 function isMapGroupCode(code: string): boolean {
   return MAP_GROUP_CODES.has(code);
 }
@@ -59,6 +66,8 @@ function parseCounterProbe(
   version: Versionage,
   domain: ParseDomain,
 ): ReturnType<typeof parseCounter> | null {
+  // Probe both active and known majors so map parsing remains robust when
+  // streams mix legacy and current counters in nested structures.
   const attempts: Versionage[] = [
     version,
     { major: 2, minor: 0 },
@@ -86,7 +95,7 @@ function parseCounterProbe(
 function parseLabelProbe(
   input: Uint8Array,
   domain: ParseDomain,
-) {
+): ReturnType<typeof parseLabeler> | null {
   try {
     return parseLabeler(input, domain);
   } catch (error) {
@@ -133,7 +142,7 @@ function parseMapperValue(
       qb64: matter.qb64,
       isCounter: false,
     },
-    consumed: domain === "bny" ? matter.fullSizeB2 : matter.fullSize,
+    consumed: tokenSize(matter, domain),
   };
 }
 
@@ -153,7 +162,7 @@ function parseMapPayload(
     const maybeLabel = parseLabelProbe(at, domain);
     if (maybeLabel) {
       pendingLabel = maybeLabel.label;
-      offset += domain === "bny" ? maybeLabel.fullSizeB2 : maybeLabel.fullSize;
+      offset += tokenSize(maybeLabel, domain);
       continue;
     }
 
@@ -179,18 +188,26 @@ function parseMapPayload(
   return fields;
 }
 
+/**
+ * Parse map-style native bodies/counters into labeled semantic fields.
+ * Parsing is strict: payload boundaries and label/value pairing must be exact.
+ */
 export function parseMapperBody(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
 ): Mapper {
+  // Mapper is intentionally strict: payload boundaries must be exact and
+  // labels cannot be left dangling without a value.
   const counter = parseCounter(input, version, domain);
   if (!isMapGroupCode(counter.code)) {
-    throw new UnknownCodeError(`Expected map-body/group counter, got ${counter.code}`);
+    throw new UnknownCodeError(
+      `Expected map-body/group counter, got ${counter.code}`,
+    );
   }
 
   const unit = domain === "bny" ? 3 : 4;
-  const header = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  const header = tokenSize(counter, domain);
   const payload = counter.count * unit;
   const total = header + payload;
   if (input.length < total) {
@@ -210,6 +227,7 @@ export function parseMapperBody(
   };
 }
 
+/** True for counter codes that represent map/list-native aggregate primitives. */
 export function isMapperCounterCode(code: string): boolean {
   return MAP_GROUP_CODES.has(code) || LIST_GROUP_CODES.has(code);
 }
