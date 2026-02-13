@@ -1,5 +1,9 @@
 import { encodeB64 } from "../core/bytes.ts";
-import { ShortageError, UnknownCodeError } from "../core/errors.ts";
+import {
+  DeserializeError,
+  ShortageError,
+  UnknownCodeError,
+} from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
@@ -63,11 +67,40 @@ function parseCounterProbe(
   for (const attempt of attempts) {
     try {
       return parseCounter(input, attempt, domain);
-    } catch {
-      continue;
+    } catch (error) {
+      if (error instanceof ShortageError) {
+        throw error;
+      }
+      if (
+        error instanceof UnknownCodeError ||
+        error instanceof DeserializeError
+      ) {
+        continue;
+      }
+      throw error;
     }
   }
   return null;
+}
+
+function parseLabelProbe(
+  input: Uint8Array,
+  domain: ParseDomain,
+) {
+  try {
+    return parseLabeler(input, domain);
+  } catch (error) {
+    if (error instanceof ShortageError) {
+      throw error;
+    }
+    if (
+      error instanceof UnknownCodeError ||
+      error instanceof DeserializeError
+    ) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 function parseMapperValue(
@@ -117,13 +150,7 @@ function parseMapPayload(
 
   while (offset < end) {
     const at = input.slice(offset, end);
-    const maybeLabel = (() => {
-      try {
-        return parseLabeler(at, domain);
-      } catch {
-        return null;
-      }
-    })();
+    const maybeLabel = parseLabelProbe(at, domain);
     if (maybeLabel) {
       pendingLabel = maybeLabel.label;
       offset += domain === "bny" ? maybeLabel.fullSizeB2 : maybeLabel.fullSize;

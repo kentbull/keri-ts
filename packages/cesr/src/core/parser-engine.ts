@@ -3,7 +3,13 @@ import type { CesrFrame, ParseEmission, ParserState } from "./types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
-import { ColdStartError, ParserError, ShortageError } from "./errors.ts";
+import {
+  ColdStartError,
+  DeserializeError,
+  ParserError,
+  ShortageError,
+  UnknownCodeError,
+} from "./errors.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
@@ -308,7 +314,10 @@ export class CesrParserCore {
           consumed: offset + headerSize + bodySize,
           version: serder.gvrsn ?? serder.pvrsn,
         };
-      } catch {
+      } catch (_error) {
+        // Intentional recovery: NonNativeBodyGroup payload is opaque CESR body data.
+        // If it cannot be interpreted as a KERI/ACDC Serder, preserve bytes and
+        // continue with conservative metadata instead of failing the frame parse.
         return {
           frame: {
             serder: {
@@ -433,8 +442,9 @@ export class CesrParserCore {
       if (saider.code.startsWith("E")) {
         said = saider.qb64;
       }
-    } catch {
-      // Keep conservative defaults when metadata extraction is partial.
+    } catch (_error) {
+      // Intentional recovery: native metadata extraction is advisory only.
+      // Strict token validation happens in extractNativeFields/mapper parsing.
     }
 
     return { proto, pvrsn, gvrsn, ilk, said };
@@ -535,8 +545,17 @@ export class CesrParserCore {
     for (const attempt of attempts) {
       try {
         return parseCounter(input, attempt, cold);
-      } catch {
-        continue;
+      } catch (error) {
+        if (error instanceof ShortageError) {
+          throw error;
+        }
+        if (
+          error instanceof UnknownCodeError ||
+          error instanceof DeserializeError
+        ) {
+          continue;
+        }
+        throw error;
       }
     }
     return null;

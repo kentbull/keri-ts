@@ -18,6 +18,9 @@ export function parseSerder(
       ilk = typeof ked.t === "string" ? ked.t : null;
       said = typeof ked.d === "string" ? ked.d : null;
     } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
       throw new DeserializeError(
         `Failed to decode JSON Serder: ${String(error)}`,
       );
