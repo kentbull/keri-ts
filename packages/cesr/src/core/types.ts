@@ -21,6 +21,10 @@ export interface SerderEnvelope {
   gvrsn: Versionage | null;
   ilk: string | null;
   said: string | null;
+  native?: {
+    bodyCode: string;
+    fields: Array<{ label: string | null; code: string; qb64: string }>;
+  };
 }
 
 export interface AttachmentGroup {

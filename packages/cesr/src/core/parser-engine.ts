@@ -47,6 +47,9 @@ const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 export class CesrParserCore {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
   private readonly framed: boolean;
+  private pendingNative:
+    | { frame: CesrFrame; version: Versionage }
+    | null = null;
 
   constructor(options: ParserOptions = {}) {
     this.framed = options.framed ?? false;
@@ -58,19 +61,26 @@ export class CesrParserCore {
   }
 
   flush(): ParseEmission[] {
-    if (this.state.buffer.length === 0) return [];
-    return [{
+    const out: ParseEmission[] = [];
+    if (this.pendingNative) {
+      out.push({ type: "frame", frame: this.pendingNative.frame });
+      this.pendingNative = null;
+    }
+    if (this.state.buffer.length === 0) return out;
+    out.push({
       type: "error",
       error: new ShortageError(
         this.state.buffer.length + 1,
         this.state.buffer.length,
         this.state.offset,
       ),
-    }];
+    });
+    return out;
   }
 
   reset(): void {
     this.state = { buffer: new Uint8Array(0), offset: 0 };
+    this.pendingNative = null;
   }
 
   private drain(): ParseEmission[] {
@@ -78,9 +88,50 @@ export class CesrParserCore {
 
     while (this.state.buffer.length > 0) {
       try {
-        const { frame, consumed } = this.parseCompleteFrame(this.state.buffer);
-        this.consume(consumed);
-        out.push({ type: "frame", frame });
+        if (this.pendingNative) {
+          if (!this.resumePendingNative(out)) {
+            break;
+          }
+          continue;
+        }
+
+        const base = this.parseFrame(this.state.buffer);
+        this.consume(base.consumed);
+        const attachments = [...base.frame.attachments];
+        const version = base.version;
+
+        while (this.state.buffer.length > 0) {
+          const nextCold = sniff(this.state.buffer);
+          if (nextCold === "msg") break;
+          if (nextCold !== "txt" && nextCold !== "bny") {
+            throw new ColdStartError(
+              `Unsupported attachment cold code ${nextCold}`,
+            );
+          }
+          const { group, consumed } = parseAttachmentGroup(
+            this.state.buffer,
+            version,
+            nextCold,
+          );
+          attachments.push(group);
+          this.consume(consumed);
+          if (this.framed) break;
+        }
+
+        const completed: CesrFrame = {
+          serder: base.frame.serder,
+          attachments,
+        };
+
+        if (
+          !this.framed && completed.serder.kind === Kinds.cesr &&
+          this.state.buffer.length === 0
+        ) {
+          this.pendingNative = { frame: completed, version };
+          break;
+        }
+
+        out.push({ type: "frame", frame: completed });
         if (this.framed) break;
       } catch (error) {
         if (error instanceof ShortageError) {
@@ -96,6 +147,66 @@ export class CesrParserCore {
     }
 
     return out;
+  }
+
+  private resumePendingNative(out: ParseEmission[]): boolean {
+    if (!this.pendingNative) return false;
+    if (this.state.buffer.length === 0) return false;
+
+    const nextCold = sniff(this.state.buffer);
+    if (nextCold === "msg") {
+      out.push({ type: "frame", frame: this.pendingNative.frame });
+      this.pendingNative = null;
+      return true;
+    }
+    if (nextCold !== "txt" && nextCold !== "bny") {
+      throw new ColdStartError(
+        `Unsupported native-frame continuation cold code ${nextCold}`,
+      );
+    }
+
+    const peek = parseCounter(
+      this.state.buffer,
+      this.pendingNative.version,
+      nextCold,
+    );
+    if (
+      BODY_WITH_ATTACH_CODES.has(peek.code) ||
+      NON_NATIVE_BODY_CODES.has(peek.code) ||
+      FIX_BODY_CODES.has(peek.code) ||
+      MAP_BODY_CODES.has(peek.code) ||
+      peek.code === GENUS_VERSION_CODE
+    ) {
+      out.push({ type: "frame", frame: this.pendingNative.frame });
+      this.pendingNative = null;
+      return true;
+    }
+
+    const { group, consumed } = parseAttachmentGroup(
+      this.state.buffer,
+      this.pendingNative.version,
+      nextCold,
+    );
+    this.pendingNative.frame.attachments.push(group);
+    this.consume(consumed);
+
+    if (this.framed) {
+      out.push({ type: "frame", frame: this.pendingNative.frame });
+      this.pendingNative = null;
+      return false;
+    }
+
+    if (this.state.buffer.length === 0) {
+      return false;
+    }
+
+    const afterCold = sniff(this.state.buffer);
+    if (afterCold === "msg") {
+      out.push({ type: "frame", frame: this.pendingNative.frame });
+      this.pendingNative = null;
+      return true;
+    }
+    return true;
   }
 
   private consume(length: number): void {
@@ -166,9 +277,9 @@ export class CesrParserCore {
       const matter = parseMatter(input.slice(offset + headerSize), cold);
       const bodySize = cold === "bny" ? matter.fullSizeB2 : matter.fullSize;
       const payloadSize = counter.count * unit;
-      if (payloadSize > 0 && payloadSize < bodySize) {
+      if (payloadSize !== bodySize) {
         throw new ColdStartError(
-          `NonNativeBodyGroup payload shorter than enclosed matter size`,
+          `NonNativeBodyGroup payload size mismatch: expected=${payloadSize} actual=${bodySize}`,
         );
       }
 
@@ -208,18 +319,28 @@ export class CesrParserCore {
         throw new ShortageError(offset + total, input.length);
       }
       const raw = input.slice(offset, offset + total);
+      const metadata = this.extractNativeMetadata(
+        raw,
+        cold,
+        activeVersion,
+      );
+      const fields = this.extractNativeFields(raw, cold, activeVersion);
       return {
         frame: {
           serder: {
             raw,
             ked: null,
-            proto: Protocols.keri,
+            proto: metadata.proto,
             kind: Kinds.cesr,
             size: raw.length,
-            pvrsn: activeVersion,
-            gvrsn: activeVersion,
-            ilk: null,
-            said: null,
+            pvrsn: metadata.pvrsn,
+            gvrsn: metadata.gvrsn,
+            ilk: metadata.ilk,
+            said: metadata.said,
+            native: {
+              bodyCode: counter.code,
+              fields,
+            },
           },
           attachments: [],
         },
@@ -244,6 +365,142 @@ export class CesrParserCore {
       major,
       minor: minorRaw,
     };
+  }
+
+  private extractNativeMetadata(
+    raw: Uint8Array,
+    cold: "txt" | "bny",
+    fallbackVersion: Versionage,
+  ): {
+    proto: "KERI" | "ACDC";
+    pvrsn: Versionage;
+    gvrsn: Versionage;
+    ilk: string | null;
+    said: string | null;
+  } {
+    let offset = 0;
+    let proto: "KERI" | "ACDC" = Protocols.keri;
+    let pvrsn = fallbackVersion;
+    let gvrsn = fallbackVersion;
+    let ilk: string | null = null;
+    let said: string | null = null;
+
+    try {
+      const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+      offset += cold === "bny" ? bodyCounter.fullSizeB2 : bodyCounter.fullSize;
+
+      if (MAP_BODY_CODES.has(bodyCounter.code)) {
+        offset = this.skipNativeLabelers(raw, offset, cold);
+      }
+
+      const verser = parseMatter(raw.slice(offset), cold);
+      offset += cold === "bny" ? verser.fullSizeB2 : verser.fullSize;
+      const verserText = verser.qb64.slice(verser.code.length);
+      if (verserText.startsWith("KERI")) proto = Protocols.keri;
+      if (verserText.startsWith("ACDC")) proto = Protocols.acdc;
+      if (verserText.length >= 6) {
+        const majorRaw = b64ToInt(verserText[4]);
+        const minorRaw = b64ToInt(verserText[5]);
+        pvrsn = {
+          major: majorRaw === 1 ? 1 : 2,
+          minor: minorRaw,
+        };
+        gvrsn = pvrsn;
+      }
+
+      if (MAP_BODY_CODES.has(bodyCounter.code)) {
+        offset = this.skipNativeLabelers(raw, offset, cold);
+      }
+
+      const ilker = parseMatter(raw.slice(offset), cold);
+      offset += cold === "bny" ? ilker.fullSizeB2 : ilker.fullSize;
+      if (ilker.code === "X") {
+        ilk = ilker.qb64.slice(ilker.code.length);
+      }
+
+      if (MAP_BODY_CODES.has(bodyCounter.code)) {
+        offset = this.skipNativeLabelers(raw, offset, cold);
+      }
+
+      const saider = parseMatter(raw.slice(offset), cold);
+      if (saider.code.startsWith("E")) {
+        said = saider.qb64;
+      }
+    } catch {
+      // Keep conservative defaults when metadata extraction is partial.
+    }
+
+    return { proto, pvrsn, gvrsn, ilk, said };
+  }
+
+  private skipNativeLabelers(
+    raw: Uint8Array,
+    offset: number,
+    cold: "txt" | "bny",
+  ): number {
+    let out = offset;
+    while (out < raw.length) {
+      const item = parseMatter(raw.slice(out), cold);
+      if (item.code !== "V" && item.code !== "W") {
+        break;
+      }
+      out += cold === "bny" ? item.fullSizeB2 : item.fullSize;
+    }
+    return out;
+  }
+
+  private extractNativeFields(
+    raw: Uint8Array,
+    cold: "txt" | "bny",
+    fallbackVersion: Versionage,
+  ): Array<{ label: string | null; code: string; qb64: string }> {
+    const fields: Array<{ label: string | null; code: string; qb64: string }> =
+      [];
+    const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+    const total = cold === "bny" ? bodyCounter.fullSizeB2 : bodyCounter.fullSize;
+    const payloadBytes = bodyCounter.count * (cold === "bny" ? 3 : 4);
+    const start = total;
+    const end = start + payloadBytes;
+    let offset = start;
+    let pendingLabel: string | null = null;
+
+    while (offset < end) {
+      const at = raw.slice(offset);
+      try {
+        if (cold === "txt" && at[0] === "-".charCodeAt(0)) {
+          const ctr = parseCounter(at, fallbackVersion, cold);
+          const size = ctr.fullSize;
+          offset += size;
+          fields.push({
+            label: pendingLabel,
+            code: ctr.code,
+            qb64: ctr.qb64,
+          });
+          pendingLabel = null;
+          continue;
+        }
+
+        const token = parseMatter(at, cold);
+        const size = cold === "bny" ? token.fullSizeB2 : token.fullSize;
+        offset += size;
+
+        if (token.code === "V" || token.code === "W") {
+          pendingLabel = token.qb64;
+          continue;
+        }
+
+        fields.push({
+          label: pendingLabel,
+          code: token.code,
+          qb64: token.qb64,
+        });
+        pendingLabel = null;
+      } catch {
+        break;
+      }
+    }
+
+    return fields;
   }
 
   private parseCompleteFrame(

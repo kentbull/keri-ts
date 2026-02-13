@@ -93,7 +93,9 @@ Deno.test("parside fixtures have qb64/qb2 dispatch parity", () => {
 
 Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", () => {
   const parser = createParser();
-  const emissions = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
+  const first = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
+  assertEquals(first.length, 0);
+  const emissions = parser.flush();
   assertEquals(emissions.length, 1);
   assertEquals(emissions[0].type, "frame");
   if (emissions[0].type === "frame") {
@@ -101,6 +103,11 @@ Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", () => {
     assertEquals(raw, KERIPY_NATIVE_V2_ICP_FIX_BODY);
     assertEquals(emissions[0].frame.serder.kind, "CESR");
     assertEquals(emissions[0].frame.serder.pvrsn.major, 2);
+    assertEquals(emissions[0].frame.serder.ilk, "icp");
+    assertEquals(
+      emissions[0].frame.serder.said,
+      "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+    );
     assertEquals(emissions[0].frame.attachments.length, 0);
   }
 });
@@ -115,7 +122,8 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
   )}${payload}`;
 
   const parser = createParser();
-  const emissions = parser.feed(decodeB64(wrapped));
+  const first = parser.feed(decodeB64(wrapped));
+  const emissions = first.length > 0 ? first : parser.flush();
   assertEquals(emissions.length, 1);
   assertEquals(emissions[0].type, "frame");
   if (emissions[0].type === "frame") {
@@ -137,22 +145,54 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
   )}${payload}`;
 
   const txtParser = createParser();
-  const txt = txtParser.feed(encode(wrapped));
+  const txtFirst = txtParser.feed(encode(wrapped));
+  const txt = txtFirst.length > 0 ? txtFirst : txtParser.flush();
   assertEquals(txt.length, 1);
   assertEquals(txt[0].type, "frame");
   if (txt[0].type === "frame") {
     assertEquals(txt[0].frame.serder.kind, "CESR");
+    assertEquals(txt[0].frame.serder.ilk, "icp");
   }
 
   const qb2Parser = createParser();
-  const bny = qb2Parser.feed(decodeB64(wrapped));
+  const qb2First = qb2Parser.feed(decodeB64(wrapped));
+  const bny = qb2First.length > 0 ? qb2First : qb2Parser.flush();
   assertEquals(bny.length, 1);
   assertEquals(bny[0].type, "frame");
   if (txt[0].type === "frame" && bny[0].type === "frame") {
     assertEquals(bny[0].frame.serder.kind, "CESR");
+    assertEquals(bny[0].frame.serder.ilk, txt[0].frame.serder.ilk);
+    assertEquals(bny[0].frame.serder.said, txt[0].frame.serder.said);
     assertEquals(
       bny[0].frame.attachments.length,
       txt[0].frame.attachments.length,
     );
+  }
+});
+
+Deno.test("native MapBodyGroup supports labels between primitives", () => {
+  const base = KERIPY_NATIVE_V2_ICP_FIX_BODY;
+  const payload = base.slice(4);
+  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${payload.slice(12, 16)}VAAA${
+    payload.slice(16)
+  }`;
+  const mapBody = `${makeCounterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
+
+  const parser = createParser();
+  const first = parser.feed(encode(mapBody));
+  assertEquals(first.length, 0);
+  const emissions = parser.flush();
+  assertEquals(emissions.length, 1);
+  assertEquals(emissions[0].type, "frame");
+  if (emissions[0].type === "frame") {
+    assertEquals(emissions[0].frame.serder.kind, "CESR");
+    assertEquals(emissions[0].frame.serder.ilk, "icp");
+    assertEquals(
+      emissions[0].frame.serder.native?.bodyCode,
+      CtrDexV2.MapBodyGroup,
+    );
+    const labels = emissions[0].frame.serder.native?.fields
+      .filter((f) => f.label !== null).length ?? 0;
+    assertEquals(labels > 0, true);
   }
 });

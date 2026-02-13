@@ -4,6 +4,7 @@ import { intToB64 } from "../../src/core/bytes.ts";
 import { sniff } from "../../src/parser/cold-start.ts";
 import { smell } from "../../src/serder/smell.ts";
 import { COUNTER_SIZES_V1 } from "../../src/tables/counter.tables.generated.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 
 function encode(input: string): Uint8Array {
   return new TextEncoder().encode(input);
@@ -66,6 +67,14 @@ Deno.test("parser fail-fast on malformed attachment stream", () => {
   assertEquals(emissions[0].type, "error");
 });
 
+Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => {
+  const ims = `-HAB${sigerToken()}`; // declares 1 quadlet, provides much larger body token
+  const parser = createParser();
+  const emissions = parser.feed(encode(ims));
+  assertEquals(emissions.length, 1);
+  assertEquals(emissions[0].type, "error");
+});
+
 Deno.test("parser handles chunked input", () => {
   const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   const nested = `-AAB${sigerToken()}`;
@@ -77,6 +86,22 @@ Deno.test("parser handles chunked input", () => {
   const second = parser.feed(encode(ims.slice(10)));
   assertEquals(second.length, 1);
   assertEquals(second[0].type, "frame");
+});
+
+Deno.test("native frame emission is split-boundary deterministic", () => {
+  const parser = createParser();
+  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+  const split = KERIPY_NATIVE_V2_ICP_FIX_BODY.length;
+
+  const first = parser.feed(encode(ims.slice(0, split)));
+  assertEquals(first.length, 0);
+  const second = parser.feed(encode(ims.slice(split)));
+  assertEquals(second.length, 1);
+  assertEquals(second[0].type, "frame");
+  if (second[0].type === "frame") {
+    assertEquals(second[0].frame.serder.kind, "CESR");
+    assertEquals(second[0].frame.serder.ilk, "icp");
+  }
 });
 
 Deno.test("sniff throws on empty buffer", () => {
