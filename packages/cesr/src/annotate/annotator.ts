@@ -9,6 +9,7 @@ const DEFAULT_OPTIONS: Required<AnnotateOptions> = Object.freeze({
   showOffsets: false,
   showRawHex: false,
   domainHint: "auto",
+  pretty: false,
 });
 
 function resolveOptions(options?: AnnotateOptions): Required<AnnotateOptions> {

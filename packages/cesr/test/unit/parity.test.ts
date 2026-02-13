@@ -3,7 +3,11 @@ import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
 import { MATTER_SIZES } from "../../src/tables/matter.tables.generated.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
+import {
+  COUNTER_CODE_NAMES_V1,
+  COUNTER_SIZES_V1,
+  COUNTER_SIZES_V2,
+} from "../../src/tables/counter.tables.generated.ts";
 
 function token(code: string): string {
   const sizage = MATTER_SIZES.get(code);
@@ -63,4 +67,12 @@ Deno.test("dispatch parses nested attachment wrapper", () => {
   }, "txt");
   assertEquals(parsed.group.name, "AttachmentGroup");
   assertEquals(parsed.group.items.length, 1);
+});
+
+Deno.test("legacy v1 sad path aliases persist in generated tables", () => {
+  assertEquals(COUNTER_CODE_NAMES_V1["-J"], "SadPathSig");
+  assertEquals(COUNTER_CODE_NAMES_V1["-K"], "SadPathSigGroup");
+  assert(COUNTER_SIZES_V1.has("-J"));
+  assert(COUNTER_SIZES_V1.has("-K"));
+  assert(COUNTER_SIZES_V2.has("-J"));
 });

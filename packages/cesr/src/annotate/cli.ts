@@ -4,6 +4,7 @@ interface CliOptions {
   inPath?: string;
   outPath?: string;
   qb2: boolean;
+  pretty: boolean;
 }
 
 export interface CliIo {
@@ -18,11 +19,15 @@ const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
 function parseArgs(args: string[]): CliOptions {
-  const out: CliOptions = { qb2: false };
+  const out: CliOptions = { qb2: false, pretty: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--qb2") {
       out.qb2 = true;
+      continue;
+    }
+    if (arg === "--pretty") {
+      out.pretty = true;
       continue;
     }
     if (arg === "--in") {
@@ -41,7 +46,7 @@ function parseArgs(args: string[]): CliOptions {
     }
     if (arg === "--help" || arg === "-h") {
       throw new Error(
-        "Usage: cesr-annotate [--in <path>] [--out <path>] [--qb2]",
+        "Usage: cesr-annotate [--in <path>] [--out <path>] [--qb2] [--pretty]",
       );
     }
     throw new Error(`Unknown argument: ${arg}`);
@@ -95,8 +100,11 @@ export async function annotateCli(args: string[], io: CliIo = DEFAULT_IO): Promi
       : await io.readStdin();
 
     const annotated = options.qb2
-      ? annotate(inputBytes, { domainHint: "bny" })
-      : annotate(TEXT_DECODER.decode(inputBytes), { domainHint: "txt" });
+      ? annotate(inputBytes, { domainHint: "bny", pretty: options.pretty })
+      : annotate(TEXT_DECODER.decode(inputBytes), {
+        domainHint: "txt",
+        pretty: options.pretty,
+      });
 
     if (options.outPath) {
       await io.writeTextFile(options.outPath, annotated);

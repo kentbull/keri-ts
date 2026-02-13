@@ -5,7 +5,7 @@ import { sniff } from "../parser/cold-start.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
-import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
+import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import {
   counterCodeNameForVersion,
   matterCodeName,
@@ -76,11 +76,33 @@ function describeToken(token: string, domain: "txt" | "bny", version: Versionage
     // Try matter below.
   }
 
-  const matter = parseMatter(input, domain);
-  return {
-    comment: matterCodeName(matter.code),
-    size: domain === "bny" ? matter.fullSizeB2 : matter.fullSize,
-  };
+  try {
+    const matter = parseMatter(input, domain);
+    return {
+      comment: matterCodeName(matter.code),
+      size: domain === "bny" ? matter.fullSizeB2 : matter.fullSize,
+    };
+  } catch {
+    return {
+      comment: "opaque token",
+      size: token.length,
+    };
+  }
+}
+
+function parseCounterCompat(
+  input: Uint8Array,
+  version: Versionage,
+  domain: "txt" | "bny",
+) {
+  try {
+    return parseCounter(input, version, domain);
+  } catch {
+    const alternate: Versionage = version.major >= 2
+      ? { major: 1, minor: 0 }
+      : { major: 2, minor: 0 };
+    return parseCounter(input, alternate, domain);
+  }
 }
 
 function renderGroupItems(
@@ -135,12 +157,12 @@ function renderAttachmentGroupRaw(
   if (domain !== "txt" && domain !== "bny") {
     return 0;
   }
-  const parsed = parseAttachmentDispatch(raw, version, domain);
-  const counter = parseCounter(raw, version, domain);
+  const parsed = parseAttachmentDispatchCompat(raw, version, domain);
+  const counter = parseCounterCompat(raw, version, domain);
   emitLine(
     lines,
     counter.qb64,
-    `${counterCodeNameForVersion(counter.code, version)} count=${counter.count}`,
+    `${parsed.group.name} count=${counter.count}`,
     indent,
     options,
   );
@@ -217,7 +239,7 @@ function renderNativeBody(
     return;
   }
 
-  const counter = parseCounter(raw, version, domain);
+  const counter = parseCounterCompat(raw, version, domain);
   emitLine(
     lines,
     counter.qb64,
@@ -240,7 +262,15 @@ function renderMessageBody(
   frame: CesrFrame,
   options: Required<AnnotateOptions>,
 ): void {
-  const body = TEXT_DECODER.decode(frame.serder.raw);
+  const rawBody = TEXT_DECODER.decode(frame.serder.raw);
+  let body = rawBody;
+  if (options.pretty && frame.serder.kind === "JSON") {
+    try {
+      body = JSON.stringify(JSON.parse(rawBody), null, 2);
+    } catch {
+      body = rawBody;
+    }
+  }
   const info = [
     `SERDER`,
     frame.serder.proto,

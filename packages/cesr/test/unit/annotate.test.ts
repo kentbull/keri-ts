@@ -109,3 +109,48 @@ Deno.test("annotate decodes v1 -V wrapped -C group without opaque fallback", () 
   assertStringIncludes(annotated, "NonTransReceiptCouples");
   assertEquals(annotated.includes("opaque wrapper payload"), false);
 });
+
+Deno.test("annotate handles v1 wrapper carrying v2 -J generic list payload", () => {
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}');
+  const nestedV2List = "-JAB--FA";
+  const ims = `${body}${counterV1("-V", nestedV2List.length / 4)}${nestedV2List}`;
+  const annotated = annotate(ims);
+  assertStringIncludes(annotated, "AttachmentGroup");
+  assertStringIncludes(annotated, "GenericListGroup");
+  assertStringIncludes(annotated, "opaque token");
+});
+
+Deno.test("annotate supports legacy v1 SadPathSig inside attachment wrapper", () => {
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}');
+  const nested = `-JAB6AABAAA-${PARSIDE_GROUP_VECTORS.transIdxSigGroups}`;
+  const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
+  const annotated = annotate(ims);
+  assertStringIncludes(annotated, "SadPathSig");
+  assertStringIncludes(annotated, "TransIdxSigGroups");
+  assertEquals(annotated.includes("opaque wrapper payload"), false);
+});
+
+Deno.test("annotateCli --pretty pretty-prints JSON body", async () => {
+  const ims = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const files = new Map<string, Uint8Array>([
+    ["/virtual/in.cesr", TEXT_ENCODER.encode(ims)],
+  ]);
+
+  const exitCode = await annotateCli(
+    ["--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated", "--pretty"],
+    {
+      readFile: async (path: string) => files.get(path) ?? new Uint8Array(0),
+      writeTextFile: async (path: string, text: string) => {
+        files.set(path, TEXT_ENCODER.encode(text));
+      },
+      readStdin: async () => new Uint8Array(0),
+      writeStdout: async () => {},
+      writeStderr: async () => {},
+    },
+  );
+
+  assertEquals(exitCode, 0);
+  const out = TEXT_DECODER.decode(files.get("/virtual/out.annotated")!);
+  assertStringIncludes(out, '\n  "v":');
+  assertStringIncludes(out, "SERDER KERI JSON");
+});

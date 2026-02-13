@@ -4,6 +4,7 @@ import { type Counter, parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
 import {
+  DeserializeError,
   GroupSizeError,
   ShortageError,
   UnknownCodeError,
@@ -130,22 +131,42 @@ function parseQuadletGroup(
     const items: unknown[] = [];
     let offset = 0;
     while (offset < payload.length) {
-      const nested = parseAttachmentDispatch(
-        payload.slice(offset),
-        version,
-        domain,
-      );
-      items.push({
-        code: nested.group.code,
-        name: nested.group.name,
-        count: nested.group.count,
-      });
-      if (nested.consumed === 0) {
-        throw new GroupSizeError(
-          "Nested attachment parser consumed zero bytes",
+      try {
+        const nested = parseAttachmentDispatchCompat(
+          // Allow mixed-version nested groups inside wrapper payloads.
+          // Some real-world streams wrap v2 groups inside v1 wrappers.
+          payload.slice(offset),
+          version,
+          domain,
         );
+        items.push({
+          code: nested.group.code,
+          name: nested.group.name,
+          count: nested.group.count,
+        });
+        if (nested.consumed === 0) {
+          throw new GroupSizeError(
+            "Nested attachment parser consumed zero bytes",
+          );
+        }
+        offset += nested.consumed;
+      } catch (error) {
+        if (
+          error instanceof ShortageError ||
+          error instanceof GroupSizeError
+        ) {
+          throw error;
+        }
+        const remainder = payload.slice(offset);
+        const opaque = domain === "bny"
+          ? Array.from(
+            { length: Math.floor(remainder.length / 3) },
+            (_v, i) => remainder.slice(i * 3, i * 3 + 3),
+          )
+          : (String.fromCharCode(...remainder).match(/.{1,4}/g) ?? []);
+        items.push(...opaque);
+        offset = payload.length;
       }
-      offset += nested.consumed;
     }
     if (offset !== payload.length) {
       throw new GroupSizeError(
@@ -219,6 +240,63 @@ function transLastIdxSigGroupsParser(
   return { items, consumed: offset };
 }
 
+function sadPathSigParser(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  for (let i = 0; i < counter.count; i++) {
+    const path = parseMatter(input.slice(offset), domain);
+    offset += domain === "bny" ? path.fullSizeB2 : path.fullSize;
+    const sigGroup = parseAttachmentDispatchCompat(
+      input.slice(offset),
+      version,
+      domain,
+    );
+    offset += sigGroup.consumed;
+    items.push([path.qb64, {
+      code: sigGroup.group.code,
+      name: sigGroup.group.name,
+      count: sigGroup.group.count,
+    }]);
+  }
+  return { items, consumed: offset };
+}
+
+function sadPathSigGroupParser(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+): ParsedGroup {
+  const items: unknown[] = [];
+  let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+
+  const root = parseMatter(input.slice(offset), domain);
+  offset += domain === "bny" ? root.fullSizeB2 : root.fullSize;
+  items.push(root.qb64);
+
+  for (let i = 0; i < counter.count; i++) {
+    const path = parseMatter(input.slice(offset), domain);
+    offset += domain === "bny" ? path.fullSizeB2 : path.fullSize;
+    const sigGroup = parseAttachmentDispatchCompat(
+      input.slice(offset),
+      version,
+      domain,
+    );
+    offset += sigGroup.consumed;
+    items.push([path.qb64, {
+      code: sigGroup.group.code,
+      name: sigGroup.group.name,
+      count: sigGroup.group.count,
+    }]);
+  }
+  return { items, consumed: offset };
+}
+
 function genusVersionParser(
   _input: Uint8Array,
   counter: Counter,
@@ -259,6 +337,8 @@ const V1_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV1.SealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
   [CtrDexV1.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV1.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
+  [CtrDexV1.SadPathSig, sadPathSigParser],
+  [CtrDexV1.SadPathSigGroup, sadPathSigGroupParser],
   [CtrDexV1.KERIACDCGenusVersion, genusVersionParser],
 ]);
 
@@ -328,7 +408,7 @@ function getDispatch(version: Versionage): Map<string, GroupParser> {
   return version.major >= 2 ? V2_DISPATCH : V1_DISPATCH;
 }
 
-export function parseAttachmentDispatch(
+function parseAttachmentDispatchWithVersion(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
@@ -360,4 +440,33 @@ export function parseAttachmentDispatch(
     },
     consumed: parsed.consumed,
   };
+}
+
+export function parseAttachmentDispatchCompat(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+): { group: AttachmentGroup; consumed: number } {
+  try {
+    return parseAttachmentDispatchWithVersion(input, version, domain);
+  } catch (error) {
+    if (
+      !(error instanceof UnknownCodeError) &&
+      !(error instanceof DeserializeError)
+    ) {
+      throw error;
+    }
+    const alternate: Versionage = version.major >= 2
+      ? { major: 1, minor: 0 }
+      : { major: 2, minor: 0 };
+    return parseAttachmentDispatchWithVersion(input, alternate, domain);
+  }
+}
+
+export function parseAttachmentDispatch(
+  input: Uint8Array,
+  version: Versionage,
+  domain: ParseDomain,
+): { group: AttachmentGroup; consumed: number } {
+  return parseAttachmentDispatchWithVersion(input, version, domain);
 }

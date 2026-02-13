@@ -1,5 +1,25 @@
 const encoder = new TextEncoder();
 
+const LEGACY_V1_COUNTER_NAME_ALIASES: Record<string, string> = {
+  "-J": "SadPathSig",
+  "-K": "SadPathSigGroup",
+};
+
+const LEGACY_V1_COUNTER_SIZE_ALIASES: Record<
+  string,
+  { hs: number; ss: number; fs: number }
+> = {
+  "-J": { hs: 2, ss: 2, fs: 4 },
+  "-K": { hs: 2, ss: 2, fs: 4 },
+};
+
+const COMPAT_V2_COUNTER_SIZE_ALIASES: Record<
+  string,
+  { hs: number; ss: number; fs: number }
+> = {
+  "-J": { hs: 2, ss: 2, fs: 4 },
+};
+
 function resolveKeripyPath(): string {
   const env = Deno.env.get("KERIPY_PATH");
   if (env) return env;
@@ -168,6 +188,43 @@ function emitCounterTables(
   }\n} as const;\n`;
 }
 
+function applyLegacyV1CounterAliases(
+  sizes: Record<string, { hs: number; ss: number; fs: number }>,
+  names: Record<string, string>,
+): {
+  sizes: Record<string, { hs: number; ss: number; fs: number }>;
+  names: Record<string, string>;
+} {
+  const outSizes = { ...sizes };
+  const outNames = { ...names };
+
+  for (const [code, size] of Object.entries(LEGACY_V1_COUNTER_SIZE_ALIASES)) {
+    if (!outSizes[code]) {
+      outSizes[code] = size;
+    }
+  }
+  for (const [code, name] of Object.entries(LEGACY_V1_COUNTER_NAME_ALIASES)) {
+    if (!outNames[code]) {
+      outNames[code] = name;
+    }
+  }
+
+  return { sizes: outSizes, names: outNames };
+}
+
+function applyCompatV2CounterSizeAliases(
+  sizes: Record<string, { hs: number; ss: number; fs: number }>,
+  names: Record<string, string>,
+): Record<string, { hs: number; ss: number; fs: number }> {
+  const outSizes = { ...sizes };
+  for (const [code, size] of Object.entries(COMPAT_V2_COUNTER_SIZE_ALIASES)) {
+    if (names[code] && !outSizes[code]) {
+      outSizes[code] = size;
+    }
+  }
+  return outSizes;
+}
+
 async function main(): Promise<void> {
   const keripyPath = resolveKeripyPath();
   const coring = await readFile(`${keripyPath}/src/keri/core/coring.py`);
@@ -177,6 +234,11 @@ async function main(): Promise<void> {
   const matterNames = parseMatterCodex(coring);
   const counterNames = parseCounterCodexes(counting);
   const counterSizes = parseCounterSizes(counting);
+  const compatV1 = applyLegacyV1CounterAliases(counterSizes.v1, counterNames.v1);
+  const compatV2Sizes = applyCompatV2CounterSizeAliases(
+    counterSizes.v2,
+    counterNames.v2,
+  );
 
   await Deno.writeTextFile(
     "packages/cesr/src/tables/matter.tables.generated.ts",
@@ -186,9 +248,9 @@ async function main(): Promise<void> {
   await Deno.writeTextFile(
     "packages/cesr/src/tables/counter.tables.generated.ts",
     emitCounterTables(
-      counterSizes.v1,
-      counterSizes.v2,
-      counterNames.v1,
+      compatV1.sizes,
+      compatV2Sizes,
+      compatV1.names,
       counterNames.v2,
     ),
   );

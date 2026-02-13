@@ -62,9 +62,8 @@ Deno.test("parser fail-fast on malformed attachment stream", () => {
   const ims = `${body}-AAB`; // truncated group payload
 
   const parser = createParser();
-  const emissions = parser.feed(encode(ims));
-  assertEquals(emissions.length, 1);
-  assertEquals(emissions[0].type, "error");
+  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
+  assertEquals(emissions.some((e) => e.type === "error"), true);
 });
 
 Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => {

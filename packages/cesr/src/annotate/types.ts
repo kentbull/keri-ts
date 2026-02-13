@@ -6,6 +6,7 @@ export interface AnnotateOptions {
   showOffsets?: boolean;
   showRawHex?: boolean;
   domainHint?: "txt" | "bny" | "auto";
+  pretty?: boolean;
 }
 
 export interface AnnotatedFrame {
