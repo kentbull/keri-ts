@@ -4,7 +4,7 @@
  * Dumps the contents of Baser.evts sub-database to console in prettified table format
  */
 
-import { type Operation } from "effection";
+import { type Operation } from "npm:effection@^3.6.0";
 import { displayStr } from "../../core/bytes.ts";
 import { BaserOptions, createBaser } from "../../db/basing.ts";
 

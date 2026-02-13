@@ -1,5 +1,5 @@
-import { action, type Operation } from "effection";
-import { RootDatabase } from "lmdb";
+import { action, type Operation } from "npm:effection@^3.6.0";
+import { RootDatabase } from "npm:lmdb@^3.4.4";
 import { openDB, readValue, writeValue } from "../../src/db/core/db.ts";
 
 /**
@@ -27,7 +27,8 @@ export function* startServer(port: number = 8000): Operation<void> {
         port,
         hostname: "127.0.0.1",
         signal,
-        onListen: ({ port }) => console.log(`Server running on http://localhost:${port}`),
+        onListen: ({ port }) =>
+          console.log(`Server running on http://localhost:${port}`),
         onError: (error) => {
           console.error("Server error:", error);
           return new Response("Internal Server Error", { status: 500 });
@@ -62,7 +63,7 @@ export function* startServer(port: number = 8000): Operation<void> {
         } catch (error) {
           return new Response(String(error), { status: 500 });
         }
-      }
+      },
     );
 
     // Wait for server to finish

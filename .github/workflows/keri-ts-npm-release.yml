@@ -1,0 +1,66 @@
+name: keri-ts npm release
+
+on:
+  push:
+    tags:
+      - "keri-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "npm version (for example 0.1.0)"
+        required: true
+      publish:
+        description: "Publish to npm"
+        required: true
+        default: "false"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    environment: publishing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: compute version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#keri-v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: test quality gate
+        run: deno task test:quality
+
+      - name: build npm package
+        env:
+          KERI_TS_NPM_VERSION: ${{ steps.version.outputs.version }}
+        run: deno task build:npm
+
+      - name: npm pack dry run
+        run: |
+          cd npm
+          npm pack
+
+      - name: publish to npm
+        if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd npm
+          npm publish --provenance --access public

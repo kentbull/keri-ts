@@ -1,4 +1,4 @@
-import { type Operation } from 'effection';
+import { type Operation } from "npm:effection@^3.6.0";
 
 interface InitArgs {
   name?: string;
@@ -73,32 +73,37 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
 
   // Handle passcode input if not provided and not using nopasscode
   if (!nopasscode && !bran) {
-    console.log("Creating encrypted keystore, please enter your 22 character passcode:");
-    
+    console.log(
+      "Creating encrypted keystore, please enter your 22 character passcode:",
+    );
+
     // For now, we'll use a simple prompt since Deno doesn't have getpass equivalent
     // In a real implementation, you'd want to use a proper password input library
     const passcode = prompt("Passcode: ");
     const retry = prompt("Re-enter passcode: ");
-    
+
     if (passcode !== retry) {
       throw new Error("Passcodes do not match");
     }
-    
+
     bran = passcode || undefined;
   }
 
   // TODO: Implement actual keystore and database creation
   // This is a stub implementation that mirrors the KERIpy structure
-  
+
   console.log("KERI Keystore created at: [stub - keystore path]");
   console.log("KERI Database created at: [stub - database path]");
-  console.log("KERI Credential Store created at: [stub - credential store path]");
-  
+  console.log(
+    "KERI Credential Store created at: [stub - credential store path]",
+  );
+
   if (initArgs.aeid) {
     console.log("\taeid:", initArgs.aeid);
   }
 
   console.log("\nInitialization complete!");
-  console.log("Note: This is a stub implementation. Full keystore and database creation will be implemented in future versions.");
+  console.log(
+    "Note: This is a stub implementation. Full keystore and database creation will be implemented in future versions.",
+  );
 }
-
