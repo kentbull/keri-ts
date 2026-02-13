@@ -1,0 +1,14 @@
+{
+  "name": "@keri-ts/cesr",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./mod.ts"
+  },
+  "imports": {
+    "effection": "npm:effection@^3.6.0",
+    "jsr:@std/assert": "jsr:@std/assert@^0.217.0"
+  },
+  "tasks": {
+    "test": "deno test"
+  }
+}
