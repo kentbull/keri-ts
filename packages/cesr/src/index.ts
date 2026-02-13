@@ -39,3 +39,8 @@ export * from "./router/router-stub.ts";
 export * from "./tables/versions.ts";
 export * from "./tables/table-types.ts";
 export * from "./tables/counter-codex.ts";
+export * from "./annotate/types.ts";
+export * from "./annotate/comments.ts";
+export * from "./annotate/render.ts";
+export * from "./annotate/annotator.ts";
+export * from "./annotate/denot.ts";

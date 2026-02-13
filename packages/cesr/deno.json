@@ -9,6 +9,7 @@
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0"
   },
   "tasks": {
-    "test": "deno test"
+    "test": "deno test",
+    "annotate": "deno run --allow-read --allow-write src/annotate/cli.ts"
   }
 }

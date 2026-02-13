@@ -104,6 +104,16 @@ Deno.test("native frame emission is split-boundary deterministic", () => {
   }
 });
 
+Deno.test("parser ignores annotation-domain separator bytes between frames", () => {
+  const parser = createParser();
+  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}\n`;
+  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
+  const frames = emissions.filter((e) => e.type === "frame");
+  const errors = emissions.filter((e) => e.type === "error");
+  assertEquals(errors.length, 0);
+  assertEquals(frames.length, 1);
+});
+
 Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
   const parser = createParser();
   const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${

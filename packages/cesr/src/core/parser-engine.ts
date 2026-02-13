@@ -98,6 +98,11 @@ export class CesrParserCore {
 
     while (this.state.buffer.length > 0) {
       try {
+        this.consumeLeadingAno();
+        if (this.state.buffer.length === 0) {
+          break;
+        }
+
         if (this.pendingFrame) {
           if (!this.resumePendingFrame(out)) {
             break;
@@ -114,6 +119,10 @@ export class CesrParserCore {
           while (this.state.buffer.length > 0) {
             const nextCold = sniff(this.state.buffer);
             if (nextCold === "msg") break;
+            if (nextCold === "ano") {
+              this.consumeLeadingAno();
+              continue;
+            }
             if (nextCold !== "txt" && nextCold !== "bny") {
               throw new ColdStartError(
                 `Unsupported attachment cold code ${nextCold}`,
@@ -176,6 +185,10 @@ export class CesrParserCore {
     if (this.state.buffer.length === 0) return false;
 
     const nextCold = sniff(this.state.buffer);
+    if (nextCold === "ano") {
+      this.consumeLeadingAno();
+      return this.state.buffer.length > 0;
+    }
     if (nextCold === "msg") {
       out.push({ type: "frame", frame: this.pendingFrame.frame });
       this.pendingFrame = null;
@@ -225,6 +238,10 @@ export class CesrParserCore {
     }
 
     const afterCold = sniff(this.state.buffer);
+    if (afterCold === "ano") {
+      this.consumeLeadingAno();
+      return this.state.buffer.length > 0;
+    }
     if (afterCold === "msg") {
       out.push({ type: "frame", frame: this.pendingFrame.frame });
       this.pendingFrame = null;
@@ -238,6 +255,12 @@ export class CesrParserCore {
     this.state.offset += length;
   }
 
+  private consumeLeadingAno(): void {
+    while (this.state.buffer.length > 0 && sniff(this.state.buffer) === "ano") {
+      this.consume(1);
+    }
+  }
+
   private parseFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
@@ -246,6 +269,13 @@ export class CesrParserCore {
     let activeVersion = inheritedVersion;
 
     let cold = sniff(input.slice(offset));
+    while (cold === "ano") {
+      offset += 1;
+      if (input.length <= offset) {
+        throw new ShortageError(offset + 1, input.length);
+      }
+      cold = sniff(input.slice(offset));
+    }
     if (cold === "txt" || cold === "bny") {
       const peek = parseCounter(input.slice(offset), activeVersion, cold);
       if (peek.code === GENUS_VERSION_CODE) {
@@ -573,6 +603,10 @@ export class CesrParserCore {
 
     while (offset < input.length) {
       const nextCold = sniff(input.slice(offset));
+      if (nextCold === "ano") {
+        offset += 1;
+        continue;
+      }
       if (nextCold === "msg") {
         if (stopAtNextMessage) break;
         throw new ColdStartError(
