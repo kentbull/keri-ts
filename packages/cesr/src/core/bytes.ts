@@ -62,15 +62,9 @@ export function sceil(value: number): number {
 }
 
 export function codeB64ToB2(text: string): Uint8Array {
-  const i = b64ToInt(text) << (2 * (text.length % 4));
   const n = sceil((text.length * 3) / 4);
-  const out = new Uint8Array(n);
-  let v = i;
-  for (let idx = n - 1; idx >= 0; idx--) {
-    out[idx] = v & 0xff;
-    v = Math.floor(v / 256);
-  }
-  return out;
+  const full = text + "A".repeat((4 - (text.length % 4)) % 4);
+  return decodeB64(full).slice(0, n);
 }
 
 export function codeB2ToB64(bytes: Uint8Array, sextets: number): string {
@@ -78,30 +72,9 @@ export function codeB2ToB64(bytes: Uint8Array, sextets: number): string {
   if (n > bytes.length) {
     throw new Error(`Not enough bytes to convert ${sextets} sextets`);
   }
-  let i = 0;
-  for (let idx = 0; idx < n; idx++) {
-    i = (i << 8) | bytes[idx];
-  }
-  i >>= 2 * (sextets % 4);
-  return intToB64(i, sextets);
+  return encodeB64(bytes.slice(0, n)).slice(0, sextets);
 }
 
 export function nabSextets(bytes: Uint8Array, sextets: number): Uint8Array {
-  const n = sceil((sextets * 3) / 4);
-  if (n > bytes.length) {
-    throw new Error(`Not enough bytes to nab ${sextets} sextets`);
-  }
-  let i = 0;
-  for (let idx = 0; idx < n; idx++) {
-    i = (i << 8) | bytes[idx];
-  }
-  const p = 2 * (sextets % 4);
-  i >>= p;
-  i <<= p;
-  const out = new Uint8Array(n);
-  for (let idx = n - 1; idx >= 0; idx--) {
-    out[idx] = i & 0xff;
-    i >>= 8;
-  }
-  return out;
+  return codeB64ToB2(codeB2ToB64(bytes, sextets));
 }

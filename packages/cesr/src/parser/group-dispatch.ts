@@ -2,6 +2,7 @@ import type { AttachmentGroup, ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Counter, parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
+import { parseIndexer } from "../primitives/indexer.ts";
 import {
   GroupSizeError,
   ShortageError,
@@ -15,6 +16,7 @@ interface ParsedGroup {
 }
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
+type PrimitiveKind = "matter" | "indexer";
 
 type GroupParser = (
   input: Uint8Array,
@@ -52,13 +54,15 @@ const WRAPPER_GROUP_CODES_V2 = new Set([
 
 function parseTuple(
   input: Uint8Array,
-  width: number,
+  kinds: PrimitiveKind[],
   domain: ParseDomain,
 ): { items: string[]; consumed: number } {
   const items: string[] = [];
   let offset = 0;
-  for (let i = 0; i < width; i++) {
-    const part = parseMatter(input.slice(offset), domain);
+  for (const kind of kinds) {
+    const part = kind === "indexer"
+      ? parseIndexer(input.slice(offset), domain)
+      : parseMatter(input.slice(offset), domain);
     items.push(part.qb64);
     offset += domain === "bny" ? part.fullSizeB2 : part.fullSize;
   }
@@ -68,13 +72,13 @@ function parseTuple(
 function parseRepeated(
   input: Uint8Array,
   count: number,
-  width: number,
+  kinds: PrimitiveKind[],
   domain: ParseDomain,
 ): ParsedGroup {
   const items: unknown[] = [];
   let offset = 0;
   for (let i = 0; i < count; i++) {
-    const tuple = parseTuple(input.slice(offset), width, domain);
+    const tuple = parseTuple(input.slice(offset), kinds, domain);
     items.push(tuple.items);
     offset += tuple.consumed;
   }
@@ -97,7 +101,7 @@ function parseSigerList(
   const items: string[] = [];
   let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
   for (let i = 0; i < counter.count; i++) {
-    const part = parseMatter(input.slice(offset), domain);
+    const part = parseIndexer(input.slice(offset), domain);
     items.push(part.qb64);
     offset += domain === "bny" ? part.fullSizeB2 : part.fullSize;
   }
@@ -161,7 +165,7 @@ function parseQuadletGroup(
   return { items, consumed: total };
 }
 
-function repeatTupleParser(width: number): GroupParser {
+function repeatTupleParser(kinds: PrimitiveKind[]): GroupParser {
   return (
     input: Uint8Array,
     counter: Counter,
@@ -172,7 +176,7 @@ function repeatTupleParser(width: number): GroupParser {
     const parsed = parseRepeated(
       input.slice(headerSize),
       counter.count,
-      width,
+      kinds,
       domain,
     );
     return { items: parsed.items, consumed: parsed.consumed + headerSize };
@@ -188,7 +192,7 @@ function transIdxSigGroupsParser(
   const items: unknown[] = [];
   let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
   for (let i = 0; i < counter.count; i++) {
-    const header = parseTuple(input.slice(offset), 3, domain);
+    const header = parseTuple(input.slice(offset), ["matter", "matter", "matter"], domain);
     offset += header.consumed;
     const sigers = parseSigerList(input.slice(offset), version, domain);
     offset += sigers.consumed;
@@ -206,7 +210,7 @@ function transLastIdxSigGroupsParser(
   const items: unknown[] = [];
   let offset = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
   for (let i = 0; i < counter.count; i++) {
-    const header = parseTuple(input.slice(offset), 1, domain);
+    const header = parseTuple(input.slice(offset), ["matter"], domain);
     offset += header.consumed;
     const sigers = parseSigerList(input.slice(offset), version, domain);
     offset += sigers.consumed;
@@ -246,13 +250,13 @@ const V1_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV1.BigESSRPayloadGroup, V1_QUADLET_PARSER],
   [CtrDexV1.PathedMaterialCouples, V1_QUADLET_PARSER],
   [CtrDexV1.BigPathedMaterialCouples, V1_QUADLET_PARSER],
-  [CtrDexV1.ControllerIdxSigs, repeatTupleParser(1)],
-  [CtrDexV1.WitnessIdxSigs, repeatTupleParser(1)],
-  [CtrDexV1.NonTransReceiptCouples, repeatTupleParser(2)],
-  [CtrDexV1.TransReceiptQuadruples, repeatTupleParser(4)],
-  [CtrDexV1.FirstSeenReplayCouples, repeatTupleParser(2)],
-  [CtrDexV1.SealSourceCouples, repeatTupleParser(2)],
-  [CtrDexV1.SealSourceTriples, repeatTupleParser(3)],
+  [CtrDexV1.ControllerIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV1.WitnessIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV1.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV1.TransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
+  [CtrDexV1.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV1.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV1.SealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
   [CtrDexV1.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV1.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
   [CtrDexV1.KERIACDCGenusVersion, genusVersionParser],
@@ -283,40 +287,40 @@ const V2_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV2.BigGenericMapGroup, V2_QUADLET_PARSER],
   [CtrDexV2.GenericListGroup, V2_QUADLET_PARSER],
   [CtrDexV2.BigGenericListGroup, V2_QUADLET_PARSER],
-  [CtrDexV2.ControllerIdxSigs, repeatTupleParser(1)],
-  [CtrDexV2.BigControllerIdxSigs, repeatTupleParser(1)],
-  [CtrDexV2.WitnessIdxSigs, repeatTupleParser(1)],
-  [CtrDexV2.BigWitnessIdxSigs, repeatTupleParser(1)],
-  [CtrDexV2.NonTransReceiptCouples, repeatTupleParser(2)],
-  [CtrDexV2.BigNonTransReceiptCouples, repeatTupleParser(2)],
-  [CtrDexV2.TransReceiptQuadruples, repeatTupleParser(4)],
-  [CtrDexV2.BigTransReceiptQuadruples, repeatTupleParser(4)],
-  [CtrDexV2.FirstSeenReplayCouples, repeatTupleParser(2)],
-  [CtrDexV2.BigFirstSeenReplayCouples, repeatTupleParser(2)],
-  [CtrDexV2.SealSourceCouples, repeatTupleParser(2)],
-  [CtrDexV2.BigSealSourceCouples, repeatTupleParser(2)],
-  [CtrDexV2.SealSourceTriples, repeatTupleParser(3)],
-  [CtrDexV2.BigSealSourceTriples, repeatTupleParser(3)],
-  [CtrDexV2.SealSourceLastSingles, repeatTupleParser(1)],
-  [CtrDexV2.BigSealSourceLastSingles, repeatTupleParser(1)],
-  [CtrDexV2.DigestSealSingles, repeatTupleParser(1)],
-  [CtrDexV2.BigDigestSealSingles, repeatTupleParser(1)],
-  [CtrDexV2.MerkleRootSealSingles, repeatTupleParser(1)],
-  [CtrDexV2.BigMerkleRootSealSingles, repeatTupleParser(1)],
-  [CtrDexV2.BackerRegistrarSealCouples, repeatTupleParser(2)],
-  [CtrDexV2.BigBackerRegistrarSealCouples, repeatTupleParser(2)],
-  [CtrDexV2.TypedDigestSealCouples, repeatTupleParser(2)],
-  [CtrDexV2.BigTypedDigestSealCouples, repeatTupleParser(2)],
+  [CtrDexV2.ControllerIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.BigControllerIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.WitnessIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.BigWitnessIdxSigs, repeatTupleParser(["indexer"])],
+  [CtrDexV2.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigNonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.TransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
+  [CtrDexV2.BigTransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
+  [CtrDexV2.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigFirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigSealSourceCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.SealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
+  [CtrDexV2.BigSealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
+  [CtrDexV2.SealSourceLastSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BigSealSourceLastSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.DigestSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BigDigestSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.MerkleRootSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BigMerkleRootSealSingles, repeatTupleParser(["matter"])],
+  [CtrDexV2.BackerRegistrarSealCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigBackerRegistrarSealCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.TypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigTypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV2.BigTransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV2.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
   [CtrDexV2.BigTransLastIdxSigGroups, transLastIdxSigGroupsParser],
-  [CtrDexV2.BlindedStateQuadruples, repeatTupleParser(4)],
-  [CtrDexV2.BigBlindedStateQuadruples, repeatTupleParser(4)],
-  [CtrDexV2.BoundStateSextuples, repeatTupleParser(6)],
-  [CtrDexV2.BigBoundStateSextuples, repeatTupleParser(6)],
-  [CtrDexV2.TypedMediaQuadruples, repeatTupleParser(4)],
-  [CtrDexV2.BigTypedMediaQuadruples, repeatTupleParser(4)],
+  [CtrDexV2.BlindedStateQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BigBlindedStateQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BoundStateSextuples, repeatTupleParser(["matter", "matter", "matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BigBoundStateSextuples, repeatTupleParser(["matter", "matter", "matter", "matter", "matter", "matter"])],
+  [CtrDexV2.TypedMediaQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BigTypedMediaQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
   [CtrDexV2.KERIACDCGenusVersion, genusVersionParser],
 ]);
 
