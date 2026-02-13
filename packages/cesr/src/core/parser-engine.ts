@@ -47,7 +47,7 @@ const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 export class CesrParserCore {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
   private readonly framed: boolean;
-  private pendingNative:
+  private pendingFrame:
     | { frame: CesrFrame; version: Versionage }
     | null = null;
 
@@ -62,9 +62,9 @@ export class CesrParserCore {
 
   flush(): ParseEmission[] {
     const out: ParseEmission[] = [];
-    if (this.pendingNative) {
-      out.push({ type: "frame", frame: this.pendingNative.frame });
-      this.pendingNative = null;
+    if (this.pendingFrame) {
+      out.push({ type: "frame", frame: this.pendingFrame.frame });
+      this.pendingFrame = null;
     }
     if (this.state.buffer.length === 0) return out;
     out.push({
@@ -80,7 +80,7 @@ export class CesrParserCore {
 
   reset(): void {
     this.state = { buffer: new Uint8Array(0), offset: 0 };
-    this.pendingNative = null;
+    this.pendingFrame = null;
   }
 
   private drain(): ParseEmission[] {
@@ -88,8 +88,8 @@ export class CesrParserCore {
 
     while (this.state.buffer.length > 0) {
       try {
-        if (this.pendingNative) {
-          if (!this.resumePendingNative(out)) {
+        if (this.pendingFrame) {
+          if (!this.resumePendingFrame(out)) {
             break;
           }
           continue;
@@ -99,23 +99,38 @@ export class CesrParserCore {
         this.consume(base.consumed);
         const attachments = [...base.frame.attachments];
         const version = base.version;
-
-        while (this.state.buffer.length > 0) {
-          const nextCold = sniff(this.state.buffer);
-          if (nextCold === "msg") break;
-          if (nextCold !== "txt" && nextCold !== "bny") {
-            throw new ColdStartError(
-              `Unsupported attachment cold code ${nextCold}`,
+        let pausedForAttachmentShortage = false;
+        try {
+          while (this.state.buffer.length > 0) {
+            const nextCold = sniff(this.state.buffer);
+            if (nextCold === "msg") break;
+            if (nextCold !== "txt" && nextCold !== "bny") {
+              throw new ColdStartError(
+                `Unsupported attachment cold code ${nextCold}`,
+              );
+            }
+            const { group, consumed } = parseAttachmentGroup(
+              this.state.buffer,
+              version,
+              nextCold,
             );
+            attachments.push(group);
+            this.consume(consumed);
+            if (this.framed) break;
           }
-          const { group, consumed } = parseAttachmentGroup(
-            this.state.buffer,
-            version,
-            nextCold,
-          );
-          attachments.push(group);
-          this.consume(consumed);
-          if (this.framed) break;
+        } catch (error) {
+          if (error instanceof ShortageError) {
+            this.pendingFrame = {
+              frame: { serder: base.frame.serder, attachments },
+              version,
+            };
+            pausedForAttachmentShortage = true;
+          } else {
+            throw error;
+          }
+        }
+        if (pausedForAttachmentShortage) {
+          break;
         }
 
         const completed: CesrFrame = {
@@ -123,11 +138,8 @@ export class CesrParserCore {
           attachments,
         };
 
-        if (
-          !this.framed && completed.serder.kind === Kinds.cesr &&
-          this.state.buffer.length === 0
-        ) {
-          this.pendingNative = { frame: completed, version };
+        if (!this.framed && attachments.length === 0 && this.state.buffer.length === 0) {
+          this.pendingFrame = { frame: completed, version };
           break;
         }
 
@@ -149,50 +161,52 @@ export class CesrParserCore {
     return out;
   }
 
-  private resumePendingNative(out: ParseEmission[]): boolean {
-    if (!this.pendingNative) return false;
+  private resumePendingFrame(out: ParseEmission[]): boolean {
+    if (!this.pendingFrame) return false;
     if (this.state.buffer.length === 0) return false;
 
     const nextCold = sniff(this.state.buffer);
     if (nextCold === "msg") {
-      out.push({ type: "frame", frame: this.pendingNative.frame });
-      this.pendingNative = null;
+      out.push({ type: "frame", frame: this.pendingFrame.frame });
+      this.pendingFrame = null;
       return true;
     }
     if (nextCold !== "txt" && nextCold !== "bny") {
       throw new ColdStartError(
-        `Unsupported native-frame continuation cold code ${nextCold}`,
+        `Unsupported pending-frame continuation cold code ${nextCold}`,
       );
     }
 
-    const peek = parseCounter(
-      this.state.buffer,
-      this.pendingNative.version,
-      nextCold,
-    );
-    if (
-      BODY_WITH_ATTACH_CODES.has(peek.code) ||
-      NON_NATIVE_BODY_CODES.has(peek.code) ||
-      FIX_BODY_CODES.has(peek.code) ||
-      MAP_BODY_CODES.has(peek.code) ||
-      peek.code === GENUS_VERSION_CODE
-    ) {
-      out.push({ type: "frame", frame: this.pendingNative.frame });
-      this.pendingNative = null;
-      return true;
+    if (this.pendingFrame.frame.serder.kind === Kinds.cesr) {
+      const peek = parseCounter(
+        this.state.buffer,
+        this.pendingFrame.version,
+        nextCold,
+      );
+      if (
+        BODY_WITH_ATTACH_CODES.has(peek.code) ||
+        NON_NATIVE_BODY_CODES.has(peek.code) ||
+        FIX_BODY_CODES.has(peek.code) ||
+        MAP_BODY_CODES.has(peek.code) ||
+        peek.code === GENUS_VERSION_CODE
+      ) {
+        out.push({ type: "frame", frame: this.pendingFrame.frame });
+        this.pendingFrame = null;
+        return true;
+      }
     }
 
     const { group, consumed } = parseAttachmentGroup(
       this.state.buffer,
-      this.pendingNative.version,
+      this.pendingFrame.version,
       nextCold,
     );
-    this.pendingNative.frame.attachments.push(group);
+    this.pendingFrame.frame.attachments.push(group);
     this.consume(consumed);
 
     if (this.framed) {
-      out.push({ type: "frame", frame: this.pendingNative.frame });
-      this.pendingNative = null;
+      out.push({ type: "frame", frame: this.pendingFrame.frame });
+      this.pendingFrame = null;
       return false;
     }
 
@@ -202,8 +216,8 @@ export class CesrParserCore {
 
     const afterCold = sniff(this.state.buffer);
     if (afterCold === "msg") {
-      out.push({ type: "frame", frame: this.pendingNative.frame });
-      this.pendingNative = null;
+      out.push({ type: "frame", frame: this.pendingFrame.frame });
+      this.pendingFrame = null;
       return true;
     }
     return true;

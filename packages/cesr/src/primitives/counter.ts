@@ -50,18 +50,31 @@ export function parseCounterFromText(
   version: Versionage,
 ): Counter {
   const txt = String.fromCharCode(...input);
-  if (txt.length < 4 || txt[0] !== "-") {
+  if (txt.length === 0) {
+    throw new ShortageError(1, 0);
+  }
+  if (txt[0] !== "-") {
     throw new DeserializeError("Invalid counter text input");
+  }
+  if (txt.length < 2) {
+    throw new ShortageError(2, txt.length);
   }
 
   const { sizeTable, nameTable } = getTables(version);
 
   const hard2 = txt.slice(0, 2);
   const hs = COUNTER_HARDS.get(hard2);
+  if (!hs && txt.length < 4) {
+    // Counter hard selectors are at most 4 chars in current codex tables.
+    throw new ShortageError(4, txt.length);
+  }
   if (!hs) {
     throw new UnknownCodeError(
       `Unsupported counter hard code at stream: ${hard2}`,
     );
+  }
+  if (txt.length < hs) {
+    throw new ShortageError(hs, txt.length);
   }
 
   const code = txt.slice(0, hs);
