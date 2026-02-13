@@ -15,12 +15,12 @@ import type { Counter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { parseIlker } from "../primitives/ilker.ts";
-import { parseLabeler } from "../primitives/labeler.ts";
+import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { parseMapperBody } from "../primitives/mapper.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import { b64ToInt, intToB64 } from "./bytes.ts";
-import { Kinds, Protocols, type Protocol } from "../tables/versions.ts";
+import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 
 export interface ParserOptions {
   framed?: boolean;
@@ -157,7 +157,10 @@ export class CesrParserCore {
           attachments,
         };
 
-        if (!this.framed && attachments.length === 0 && this.state.buffer.length === 0) {
+        if (
+          !this.framed && attachments.length === 0 &&
+          this.state.buffer.length === 0
+        ) {
           this.pendingFrame = { frame: completed, version };
           break;
         }
@@ -486,9 +489,9 @@ export class CesrParserCore {
     cold: "txt" | "bny",
   ): number {
     let out = offset;
-      while (out < raw.length) {
+    while (out < raw.length) {
       const item = parseMatter(raw.slice(out), cold);
-      if (item.code !== "V" && item.code !== "W") {
+      if (!isLabelerCode(item.code)) {
         break;
       }
       out += cold === "bny" ? item.fullSizeB2 : item.fullSize;
@@ -513,7 +516,9 @@ export class CesrParserCore {
 
     const fields: Array<{ label: string | null; code: string; qb64: string }> =
       [];
-    const total = cold === "bny" ? bodyCounter.fullSizeB2 : bodyCounter.fullSize;
+    const total = cold === "bny"
+      ? bodyCounter.fullSizeB2
+      : bodyCounter.fullSize;
     const payloadBytes = bodyCounter.count * (cold === "bny" ? 3 : 4);
     const start = total;
     const end = start + payloadBytes;
@@ -539,7 +544,7 @@ export class CesrParserCore {
       const size = cold === "bny" ? token.fullSizeB2 : token.fullSize;
       offset += size;
 
-      if (token.code === "V" || token.code === "W") {
+      if (isLabelerCode(token.code)) {
         pendingLabel = parseLabeler(at, cold).label;
         continue;
       }

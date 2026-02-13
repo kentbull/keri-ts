@@ -1,6 +1,12 @@
 import type { AttachmentGroup, CesrFrame } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import type { AnnotateOptions, AnnotatedFrame } from "./types.ts";
+import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
+import {
+  DeserializeError,
+  GroupSizeError,
+  ShortageError,
+  UnknownCodeError,
+} from "../core/errors.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
@@ -13,6 +19,9 @@ import {
 } from "./comments.ts";
 
 const TEXT_DECODER = new TextDecoder();
+const TEXT_ENCODER = new TextEncoder();
+const OPAQUE_TOKEN_COMMENT = "opaque token";
+const OPAQUE_WRAPPER_PAYLOAD_COMMENT = "opaque wrapper payload";
 
 const WRAPPER_GROUP_NAMES = new Set([
   "AttachmentGroup",
@@ -20,6 +29,13 @@ const WRAPPER_GROUP_NAMES = new Set([
   "BodyWithAttachmentGroup",
   "BigBodyWithAttachmentGroup",
 ]);
+
+function isRecoverableParseError(error: unknown): boolean {
+  return error instanceof UnknownCodeError ||
+    error instanceof DeserializeError ||
+    error instanceof ShortageError ||
+    error instanceof GroupSizeError;
+}
 
 function spaces(count: number): string {
   return " ".repeat(Math.max(0, count));
@@ -29,7 +45,10 @@ function asDomain(raw: Uint8Array): "txt" | "bny" | "msg" {
   try {
     const cold = sniff(raw);
     if (cold === "txt" || cold === "bny" || cold === "msg") return cold;
-  } catch {
+  } catch (error) {
+    if (!isRecoverableParseError(error)) {
+      throw error;
+    }
     // Fallback handled below.
   }
   return "msg";
@@ -51,18 +70,25 @@ function emitLine(
   lines.push(`${pad}${value} # ${comment}`);
 }
 
-function describeToken(token: string, domain: "txt" | "bny", version: Versionage): {
+function describeToken(
+  token: string,
+  domain: "txt" | "bny",
+  version: Versionage,
+): {
   comment: string;
   size: number;
 } {
-  const input = new TextEncoder().encode(token);
+  const input = TEXT_ENCODER.encode(token);
   try {
     const counter = parseCounter(input, version, domain);
     return {
       comment: `${counterCodeNameForVersion(counter.code, version)} counter`,
       size: domain === "bny" ? counter.fullSizeB2 : counter.fullSize,
     };
-  } catch {
+  } catch (error) {
+    if (!isRecoverableParseError(error)) {
+      throw error;
+    }
     // Try indexer/matter below.
   }
 
@@ -72,7 +98,10 @@ function describeToken(token: string, domain: "txt" | "bny", version: Versionage
       comment: `Indexer ${indexer.code}`,
       size: domain === "bny" ? indexer.fullSizeB2 : indexer.fullSize,
     };
-  } catch {
+  } catch (error) {
+    if (!isRecoverableParseError(error)) {
+      throw error;
+    }
     // Try matter below.
   }
 
@@ -82,9 +111,12 @@ function describeToken(token: string, domain: "txt" | "bny", version: Versionage
       comment: matterCodeName(matter.code),
       size: domain === "bny" ? matter.fullSizeB2 : matter.fullSize,
     };
-  } catch {
+  } catch (error) {
+    if (!isRecoverableParseError(error)) {
+      throw error;
+    }
     return {
-      comment: "opaque token",
+      comment: OPAQUE_TOKEN_COMMENT,
       size: token.length,
     };
   }
@@ -97,7 +129,10 @@ function parseCounterCompat(
 ) {
   try {
     return parseCounter(input, version, domain);
-  } catch {
+  } catch (error) {
+    if (!isRecoverableParseError(error)) {
+      throw error;
+    }
     const alternate: Versionage = version.major >= 2
       ? { major: 1, minor: 0 }
       : { major: 2, minor: 0 };
@@ -120,7 +155,8 @@ function renderGroupItems(
     }
 
     if (item instanceof Uint8Array) {
-      const hex = Array.from(item).map((b) => b.toString(16).padStart(2, "0")).join("");
+      const hex = Array.from(item).map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
       emitLine(lines, `0x${hex}`, "raw qb2 quadlet fragment", indent, options);
       continue;
     }
@@ -191,7 +227,10 @@ function renderAttachmentGroupRaw(
           indent + options.indent,
           options,
         );
-      } catch {
+      } catch (error) {
+        if (!isRecoverableParseError(error)) {
+          throw error;
+        }
         break;
       }
       if (consumed <= 0) break;
@@ -203,12 +242,16 @@ function renderAttachmentGroupRaw(
       for (let i = 0; i < remainder.length; i += unit) {
         const chunk = remainder.slice(i, Math.min(i + unit, remainder.length));
         const rendered = domain === "bny"
-          ? `0x${Array.from(chunk).map((b) => b.toString(16).padStart(2, "0")).join("")}`
+          ? `0x${
+            Array.from(chunk).map((b) => b.toString(16).padStart(2, "0")).join(
+              "",
+            )
+          }`
           : TEXT_DECODER.decode(chunk);
         emitLine(
           lines,
           rendered,
-          "opaque wrapper payload",
+          OPAQUE_WRAPPER_PAYLOAD_COMMENT,
           indent + options.indent,
           options,
         );
@@ -243,7 +286,9 @@ function renderNativeBody(
   emitLine(
     lines,
     counter.qb64,
-    `${counterCodeNameForVersion(counter.code, version)} count=${counter.count}`,
+    `${
+      counterCodeNameForVersion(counter.code, version)
+    } count=${counter.count}`,
     0,
     options,
   );
@@ -267,7 +312,10 @@ function renderMessageBody(
   if (options.pretty && frame.serder.kind === "JSON") {
     try {
       body = JSON.stringify(JSON.parse(rawBody), null, 2);
-    } catch {
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
       body = rawBody;
     }
   }
