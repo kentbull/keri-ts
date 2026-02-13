@@ -17,7 +17,8 @@
     "test:quality": "deno test --allow-all --unstable-ffi --ignore=test/integration/app/server.test.ts",
     "test:integration:server": "deno test --allow-all --unstable-ffi test/integration/app/server.test.ts",
     "test:cesr": "deno test packages/cesr/test",
-    "cesr:annotate": "deno run --allow-read --allow-write packages/cesr/src/annotate/cli.ts"
+    "cesr:annotate": "deno run --allow-read --allow-write packages/cesr/src/annotate/cli-deno.ts",
+    "cesr:build:npm": "cd packages/cesr && deno task build:npm"
   },
   "imports": {
     "effection": "npm:effection@^3.6.0",

@@ -1,4 +1,4 @@
-import { action, type Operation } from "effection";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import type { CesrFrame } from "../core/types.ts";
 import { toAsyncFrames } from "./async-iterable.ts";
 import type { ParserOptions } from "../core/parser-engine.ts";

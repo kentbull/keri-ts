@@ -15,7 +15,6 @@ export interface CliIo {
   writeStderr(text: string): Promise<void>;
 }
 
-const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
 function parseArgs(args: string[]): CliOptions {
@@ -54,7 +53,9 @@ function parseArgs(args: string[]): CliOptions {
   return out;
 }
 
-async function readAllReadable(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+export async function readAllReadable(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Uint8Array> {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -80,19 +81,7 @@ async function readAllReadable(stream: ReadableStream<Uint8Array>): Promise<Uint
   return out;
 }
 
-const DEFAULT_IO: CliIo = {
-  readFile: (path: string) => Deno.readFile(path),
-  writeTextFile: (path: string, text: string) => Deno.writeTextFile(path, text),
-  readStdin: () => readAllReadable(Deno.stdin.readable),
-  writeStdout: async (text: string) => {
-    await Deno.stdout.write(TEXT_ENCODER.encode(text));
-  },
-  writeStderr: async (text: string) => {
-    await Deno.stderr.write(TEXT_ENCODER.encode(text));
-  },
-};
-
-export async function annotateCli(args: string[], io: CliIo = DEFAULT_IO): Promise<number> {
+export async function annotateCli(args: string[], io: CliIo): Promise<number> {
   try {
     const options = parseArgs(args);
     const inputBytes = options.inPath
@@ -118,9 +107,4 @@ export async function annotateCli(args: string[], io: CliIo = DEFAULT_IO): Promi
     await io.writeStderr(`cesr annotate error: ${message}\n`);
     return 1;
   }
-}
-
-if (import.meta.main) {
-  const code = await annotateCli(Deno.args);
-  Deno.exit(code);
 }
