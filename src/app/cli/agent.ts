@@ -9,9 +9,9 @@ interface AgentArgs {
 
 function printAgentHelp() {
   console.log(`
-kli agent - Start the KERI agent server
+tufa agent - Start the KERI agent server
 
-Usage: kli agent [options]
+Usage: tufa agent [options]
 
 Options:
   --port, -p <port>           Port number for the server (default: 8000)

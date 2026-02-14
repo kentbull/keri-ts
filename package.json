@@ -1,0 +1,14 @@
+{
+  "name": "keri-ts",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Monorepo metadata for keri-ts and cesr-ts release/version tooling",
+  "workspaces": [
+    "packages/cesr"
+  ],
+  "scripts": {
+    "changeset": "npx --yes @changesets/cli changeset",
+    "version-packages": "npx --yes @changesets/cli version",
+    "publish-packages": "npx --yes @changesets/cli publish"
+  }
+}

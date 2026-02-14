@@ -4,6 +4,26 @@ const ENTRYPOINT = "./mod.ts";
 const NODE_CLI_ENTRYPOINT = "./src/annotate/cli-node.ts";
 const OUT_DIR = "./npm";
 
+interface PackageManifest {
+  version?: string;
+}
+
+function resolvePackageVersion(): string {
+  const fromEnv = Deno.env.get("CESR_NPM_VERSION");
+  if (fromEnv && fromEnv.trim()) {
+    return fromEnv.trim();
+  }
+
+  const raw = Deno.readTextFileSync("./package.json");
+  const pkg = JSON.parse(raw) as PackageManifest;
+  const version = pkg.version?.trim();
+  if (!version) {
+    throw new Error("Missing version in ./package.json");
+  }
+
+  return version;
+}
+
 await emptyDir(OUT_DIR);
 
 await build({
@@ -18,7 +38,7 @@ await build({
   scriptModule: false,
   package: {
     name: "cesr-ts",
-    version: Deno.env.get("CESR_NPM_VERSION") ?? "0.1.0",
+    version: resolvePackageVersion(),
     description:
       "CESR parser, primitives, and annotation tooling for TypeScript/JavaScript",
     license: "Apache-2.0",

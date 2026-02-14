@@ -17,9 +17,9 @@ interface InitArgs {
 
 function printInitHelp() {
   console.log(`
-kli init - Create a database and keystore
+tufa init - Create a database and keystore
 
-Usage: kli init [options]
+Usage: tufa init [options]
 
 Options:
   --name, -n <name>           Keystore name and file location of KERI keystore (required)

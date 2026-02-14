@@ -4,6 +4,26 @@ const ENTRYPOINT = "./src/npm/index.ts";
 const NODE_CLI_ENTRYPOINT = "./src/app/cli/cli-node.ts";
 const OUT_DIR = "./npm";
 
+interface PackageManifest {
+  version?: string;
+}
+
+function resolvePackageVersion(): string {
+  const fromEnv = Deno.env.get("KERI_TS_NPM_VERSION");
+  if (fromEnv && fromEnv.trim()) {
+    return fromEnv.trim();
+  }
+
+  const raw = Deno.readTextFileSync("./package.json");
+  const pkg = JSON.parse(raw) as PackageManifest;
+  const version = pkg.version?.trim();
+  if (!version) {
+    throw new Error("Missing version in ./package.json");
+  }
+
+  return version;
+}
+
 // Avoid running native install scripts (for example lmdb build) during packaging.
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
   Deno.env.set("NPM_CONFIG_IGNORE_SCRIPTS", "true");
@@ -23,7 +43,7 @@ await build({
   scriptModule: false,
   package: {
     name: "keri-ts",
-    version: Deno.env.get("KERI_TS_NPM_VERSION") ?? "0.1.0",
+    version: resolvePackageVersion(),
     description:
       "KERI TypeScript package with database primitives and CLI runtime",
     license: "Apache-2.0",
@@ -47,7 +67,7 @@ await build({
       },
     },
     bin: {
-      kli: "./esm/app/cli/cli-node.js",
+      tufa: "./esm/app/cli/cli-node.js",
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     engines: {

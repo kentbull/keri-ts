@@ -11,6 +11,8 @@
   "tasks": {
     "test": "deno test",
     "annotate": "deno run --allow-read --allow-write src/annotate/cli-deno.ts",
-    "build:npm": "deno run -A scripts/build_npm.ts"
+    "version:generate": "deno run -A ../../scripts/generate_versions.ts --only cesr",
+    "version:check": "deno run -A ../../scripts/generate_versions.ts --check --only cesr",
+    "build:npm": "deno task version:generate && deno run -A scripts/build_npm.ts"
   }
 }
