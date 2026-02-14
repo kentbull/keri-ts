@@ -47,7 +47,7 @@ await build({
       },
     },
     bin: {
-      kli: "./esm/app/cli/cli-node.js",
+      tufa: "./esm/app/cli/cli-node.js",
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     engines: {

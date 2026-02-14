@@ -51,7 +51,7 @@ Deno.test("CLI - init command with help flag", async () => {
 
   try {
     await run(() => initCommand(args));
-    assertStringIncludes(capturedOutput, "kli init -");
+    assertStringIncludes(capturedOutput, "tufa init -");
   } finally {
     console.log = originalLog;
   }

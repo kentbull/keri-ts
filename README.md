@@ -7,13 +7,25 @@ in TypeScript.
 
 ```bash
 # Run the CLI
-deno task kli --help
+deno task tufa --help
 
 # Initialize a keystore
-deno task kli init --name mykeystore
+deno task tufa init --name mykeystore
 
 # Get help for specific commands
-deno task kli init --help
+deno task tufa init --help
+```
+
+### Install CLI (`tufa`)
+
+```bash
+# npm (global)
+npm install -g keri-ts
+tufa --help
+
+# Deno (global)
+deno install --allow-all --unstable-ffi --name tufa mod.ts
+tufa --help
 ```
 
 ### Features
@@ -36,7 +48,7 @@ TBD
 
 ```bash
 # Run CLI commands
-deno task kli init --name test
+deno task tufa init --name test
 
 # Start server (legacy)
 deno task start

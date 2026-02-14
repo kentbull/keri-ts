@@ -18,7 +18,9 @@ import {
  */
 function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
-  program.name("kli").version("0.0.2").description("KERI TypeScript CLI");
+  program.name("tufa").version("0.0.2").description(
+    "Trust Utilities for Agents CLI",
+  );
 
   // Prevent Commander from exiting automatically so we can run Effection operations
   program.exitOverride();
@@ -35,7 +37,7 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
  * Main CLI operation - runs within Effection's structured concurrency
  * This is the outermost runtime, not JavaScript's event loop
  */
-export function* kli(args: string[] = []): Operation<void> {
+export function* tufa(args: string[] = []): Operation<void> {
   const executionContext: { selection?: CommandSelection } = {};
   const commandHandlers = createCoreCommandHandlers();
   if (isStubCommandsEnabled()) {

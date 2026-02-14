@@ -7,7 +7,7 @@ import {
 } from "./command-types.ts";
 
 export function isStubCommandsEnabled(): boolean {
-  return Deno.env.get("KLI_ENABLE_STUB_COMMANDS") === "1";
+  return Deno.env.get("TUFA_ENABLE_STUB_COMMANDS") === "1";
 }
 
 export function createStubCommandHandlers(): Map<string, CommandHandler> {
@@ -62,20 +62,20 @@ export function registerStubCommands(
 
 // deno-lint-ignore require-yield
 function* inceptCommand(_args: CommandArgs): Operation<void> {
-  console.log("kli experimental incept command - coming soon!");
+  console.log("tufa experimental incept command - coming soon!");
 }
 
 // deno-lint-ignore require-yield
 function* rotateCommand(_args: CommandArgs): Operation<void> {
-  console.log("kli experimental rotate command - coming soon!");
+  console.log("tufa experimental rotate command - coming soon!");
 }
 
 // deno-lint-ignore require-yield
 function* interactCommand(_args: CommandArgs): Operation<void> {
-  console.log("kli experimental interact command - coming soon!");
+  console.log("tufa experimental interact command - coming soon!");
 }
 
 // deno-lint-ignore require-yield
 function* witnessCommand(_args: CommandArgs): Operation<void> {
-  console.log("kli experimental witness command - coming soon!");
+  console.log("tufa experimental witness command - coming soon!");
 }

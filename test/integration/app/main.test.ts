@@ -20,7 +20,7 @@ Deno.test("Integration: CLI - init command with help flag", async () => {
     await run(() => initCommand(args));
 
     const output = harness.getOutput().join("\n");
-    assertStringIncludes(output, "kli init - Create a database and keystore");
+    assertStringIncludes(output, "tufa init - Create a database and keystore");
   } finally {
     harness.restoreOutput();
   }
