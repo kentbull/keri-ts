@@ -11,6 +11,7 @@ import {
   isStubCommandsEnabled,
   registerStubCommands,
 } from "./stub-commands.ts";
+import { DISPLAY_VERSION } from "../version.ts";
 
 /**
  * Create the CLI program with action handlers that signal command execution.
@@ -18,7 +19,7 @@ import {
  */
 function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
-  program.name("tufa").version("0.0.2").description(
+  program.name("tufa").version(DISPLAY_VERSION).description(
     "Trust Utilities for Agents CLI",
   );
 
@@ -64,7 +65,8 @@ export function* tufa(args: string[] = []): Operation<void> {
       // Help was requested - Commander already printed it, just return
       if (
         commanderError.code === "commander.help" ||
-        commanderError.code === "commander.helpDisplayed"
+        commanderError.code === "commander.helpDisplayed" ||
+        commanderError.code === "commander.version"
       ) {
         return;
       }

@@ -5,13 +5,16 @@ import {
   type CommandHandler,
 } from "./command-types.ts";
 import { agentCommand } from "./agent.ts";
+import { annotateCommand } from "./annotate.ts";
 import { dumpEvts } from "./db-dump.ts";
 import { initCommand } from "./init.ts";
+import { DISPLAY_VERSION } from "../version.ts";
 
 export function createCoreCommandHandlers(): Map<string, CommandHandler> {
   return new Map([
     ["init", (args: CommandArgs) => initCommand(args)],
     ["agent", (args: CommandArgs) => agentCommand(args)],
+    ["annotate", (args: CommandArgs) => annotateCommand(args)],
     ["db.dump", (args: CommandArgs) => dumpEvts(args)],
   ]);
 }
@@ -71,6 +74,31 @@ export function registerCoreCommands(
     });
 
   program
+    .command("annotate")
+    .description("Annotate CESR stream from file or stdin")
+    .option("--in <path>", "Input file path (defaults to stdin)")
+    .option("--out <path>", "Output file path (defaults to stdout)")
+    .option("--qb2", "Treat input as qb2 binary instead of text CESR")
+    .option("--pretty", "Pretty-print annotation output")
+    .action((options: {
+      in?: string;
+      out?: string;
+      qb2?: boolean;
+      pretty?: boolean;
+    }) => {
+      dispatch({
+        name: "annotate",
+        args: {
+          inPath: options.in,
+          outPath: options.out,
+          qb2: options.qb2 || false,
+          pretty: options.pretty || false,
+        },
+      });
+      return Promise.resolve();
+    });
+
+  program
     .command("agent")
     .description("Start the KERI agent server")
     .option(
@@ -106,6 +134,14 @@ export function registerCoreCommands(
           temp: options.temp || false,
         },
       });
+      return Promise.resolve();
+    });
+
+  program
+    .command("version")
+    .description("Show tufa version")
+    .action(() => {
+      console.log(DISPLAY_VERSION);
       return Promise.resolve();
     });
 }
