@@ -24,6 +24,29 @@ function resolvePackageVersion(): string {
   return version;
 }
 
+function resolveCesrPackageVersion(): string {
+  const raw = Deno.readTextFileSync("./packages/cesr/package.json");
+  const pkg = JSON.parse(raw) as PackageManifest;
+  const version = pkg.version?.trim();
+  if (!version) {
+    throw new Error("Missing version in ./packages/cesr/package.json");
+  }
+
+  return version;
+}
+
+function resolveCesrDependencyRange(): string {
+  const version = resolveCesrPackageVersion();
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    throw new Error(`Unsupported cesr-ts version format: ${version}`);
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return `>=${major}.${minor}.0 <${major}.${minor + 1}.0`;
+}
+
 // Avoid running native install scripts (for example lmdb build) during packaging.
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
   Deno.env.set("NPM_CONFIG_IGNORE_SCRIPTS", "true");
@@ -70,6 +93,9 @@ await build({
       tufa: "./esm/app/cli/cli-node.js",
     },
     files: ["esm", "types", "README.md", "LICENSE"],
+    dependencies: {
+      "cesr-ts": resolveCesrDependencyRange(),
+    },
     engines: {
       node: ">=18",
     },
