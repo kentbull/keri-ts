@@ -1,4 +1,4 @@
-# TUFA - Trustless Utilities For Agents
+# TUFA - Trust Utilities For Agents
 
 TUFA is a set of libraries, infrastructure components, and user interfaces that
 provide scalable security for AI Agents, and broader web infrastructure.
