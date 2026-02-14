@@ -2,7 +2,8 @@
 
 ## The Pattern: Two-Phase Execution
 
-We use a **two-phase execution pattern** that bridges Cliffy (promise-based) with Effection (operation-based):
+We use a **two-phase execution pattern** that bridges Cliffy (promise-based)
+with Effection (operation-based):
 
 ```typescript
 .action((options) => {
@@ -36,11 +37,13 @@ async function parse(args: string[]) {
 }
 ```
 
-**Key insight**: Cliffy expects action handlers to return promises (allows async handlers).
+**Key insight**: Cliffy expects action handlers to return promises (allows async
+handlers).
 
 ### 2. Our Workaround Pattern
 
-We're **not** using async/await in action handlers because we want Effection to manage concurrency:
+We're **not** using async/await in action handlers because we want Effection to
+manage concurrency:
 
 - **Action handlers**: Synchronous setup only (set context)
 - **Return**: `Promise.resolve()` to satisfy Cliffy's expectation
@@ -49,6 +52,7 @@ We're **not** using async/await in action handlers because we want Effection to 
 ### 3. Why Not Execute in Action Handler?
 
 **Problems with executing Effection operations in action handlers**:
+
 - ❌ Creates nested Effection contexts (`run()` inside `run()`)
 - ❌ Breaks structured concurrency (two separate trees)
 - ❌ Can't properly cancel or manage lifecycle
@@ -70,6 +74,7 @@ yield* handler(context.args);      // Execute in Effection context
 ```
 
 **Benefits**:
+
 - ✅ Single Effection context (no nesting)
 - ✅ Proper structured concurrency
 - ✅ Errors propagate correctly
@@ -80,6 +85,7 @@ yield* handler(context.args);      // Execute in Effection context
 **No, this is a hybrid workaround pattern**, not a Cliffy best practice.
 
 **Normal Cliffy Pattern**:
+
 ```typescript
 .action(async (options) => {
   await createKeystore(options.name);
@@ -89,6 +95,7 @@ await program.parse(args); // Everything happens here
 ```
 
 **Our Pattern (Cliffy + Effection)**:
+
 ```typescript
 .action((options) => {
   context.command = 'init';
@@ -101,7 +108,8 @@ yield* handler(context.args);      // Execute in Effection
 
 ## Design Rationale
 
-1. **Separation of Concerns**: Cliffy handles parsing, Effection handles execution
+1. **Separation of Concerns**: Cliffy handles parsing, Effection handles
+   execution
 2. **Structured Concurrency**: All execution in single Effection context
 3. **Type Safety**: Satisfies Cliffy's promise expectation
 4. **Future-Proof**: Easy to add new commands
@@ -110,6 +118,8 @@ yield* handler(context.args);      // Execute in Effection
 
 `Promise.resolve()` is **not** a Cliffy pattern - it's our **bridge pattern**:
 
-> **We're not executing in the action handler - we're just signaling what to execute later.**
+> **We're not executing in the action handler - we're just signaling what to
+> execute later.**
 
-This ensures **Effection remains the outermost runtime**, maintaining proper structured concurrency while leveraging Cliffy's CLI parsing.
+This ensures **Effection remains the outermost runtime**, maintaining proper
+structured concurrency while leveraging Cliffy's CLI parsing.

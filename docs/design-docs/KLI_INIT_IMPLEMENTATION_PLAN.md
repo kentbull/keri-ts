@@ -2,7 +2,8 @@
 
 ## Overview
 
-This document outlines the implementation plan for `kli init` command in KERI TS, tracing through KERIpy's implementation to identify all required components.
+This document outlines the implementation plan for `kli init` command in KERI
+TS, tracing through KERIpy's implementation to identify all required components.
 
 ## Database Keys Required for `kli init`
 
@@ -11,7 +12,8 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 **Core Event Storage:**
 
 - `evts.` - Serialized key events (dgKey: prefix + digest)
-- `kels.` - Key event log indices (snKey: prefix + sequence number, dupsort=True)
+- `kels.` - Key event log indices (snKey: prefix + sequence number,
+  dupsort=True)
 - `fels.` - First seen event logs (fnKey: prefix + first seen ordinal)
 - `fons.` - Maps digest to first seen ordinal number (dgKey)
 - `states.` (stts.) - Latest keystate for each prefix (read-through cache)
@@ -37,12 +39,16 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - `ends.` - Endpoint records (Komer: EndpointRecord)
 - `locs.` - Location records (Komer: LocationRecord)
 
-**Note:** Escrow databases are REQUIRED for `kli init` when OOBI resolution is enabled:
+**Note:** Escrow databases are REQUIRED for `kli init` when OOBI resolution is
+enabled:
 
-- **Reply Escrows**: `rpes.`, `rpys.`, `sdts.`, `ssgs.`, `scgs.` - Required for async reply processing
-- **Key Event Escrows**: `ooes.`, `pses.`, `pwes.`, `ures.`, `vres.`, `dtss.`, `sigs.` - Required for processing KEL events from OOBI responses
-- **OOBI Escrows**: `eoobi.`, `coobi.`, `moobi.` - Required for OOBI retry and client management
-  These escrows allow OOBI resolution to work asynchronously, handling out-of-order events and incomplete signatures.
+- **Reply Escrows**: `rpes.`, `rpys.`, `sdts.`, `ssgs.`, `scgs.` - Required for
+  async reply processing
+- **Key Event Escrows**: `ooes.`, `pses.`, `pwes.`, `ures.`, `vres.`, `dtss.`,
+  `sigs.` - Required for processing KEL events from OOBI responses
+- **OOBI Escrows**: `eoobi.`, `coobi.`, `moobi.` - Required for OOBI retry and
+  client management These escrows allow OOBI resolution to work asynchronously,
+  handling out-of-order events and incomplete signatures.
 
 ### Keeper (Keystore) - Required for Init
 
@@ -73,21 +79,28 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 
 **Phase 1: Database Layer & Configuration Files**
 
-- **Baser**: Add remaining sub-databases (`habs.`, `names.`, `oobis.`, `roobi.`, `woobi.`, `wkas.`, `rpys.`, `rpes.`, `eans.`, `lans.`, `ends.`, `locs.`)
-- **Keeper**: Implement all sub-databases (`gbls.`, `pris.`, `prxs.`, `nxts.`, `pres.`, `prms.`, `sits.`, `pubs.`, `smids.`, `rmids.`)
-- **Configer**: Implement configuration file management (JSON/HJSON/MsgPack/CBOR)
-- **Data Structures**: Implement `HabitatRecord`, `OobiRecord`, `WellKnownAuthN`, `PrePrm`, `PreSit`, `PubSet`, `PubLot`, `EndpointRecord`, `LocationRecord`
+- **Baser**: Add remaining sub-databases (`habs.`, `names.`, `oobis.`, `roobi.`,
+  `woobi.`, `wkas.`, `rpys.`, `rpes.`, `eans.`, `lans.`, `ends.`, `locs.`)
+- **Keeper**: Implement all sub-databases (`gbls.`, `pris.`, `prxs.`, `nxts.`,
+  `pres.`, `prms.`, `sits.`, `pubs.`, `smids.`, `rmids.`)
+- **Configer**: Implement configuration file management
+  (JSON/HJSON/MsgPack/CBOR)
+- **Data Structures**: Implement `HabitatRecord`, `OobiRecord`,
+  `WellKnownAuthN`, `PrePrm`, `PreSit`, `PubSet`, `PubLot`, `EndpointRecord`,
+  `LocationRecord`
 
 **Phase 2: Manager & Keystore Activities**
 
 - **Manager**: Implement key pair creation, storage, retrieval, signing
 - **Creatory**: Implement `RandyCreator`, `SaltyCreator` for key generation
 - **Signatory**: Implement signing/verification at rest
-- **Crypto Primitives**: Ensure `Salter`, `Signer`, `Encrypter`, `Decrypter` are complete
+- **Crypto Primitives**: Ensure `Salter`, `Signer`, `Encrypter`, `Decrypter` are
+  complete
 
 **Phase 3: Habery, Hab, and Related Classes**
 
-- **Habery**: Implement shared environment (db, ks, cf, mgr, signator, psr, kvy, rvy)
+- **Habery**: Implement shared environment (db, ks, cf, mgr, signator, psr, kvy,
+  rvy)
 - **Hab**: Implement basic habitat (not needed for init, but structure)
 - **Router**: Basic routing infrastructure
 - **Revery**: Reply message processing (REQUIRED for OOBI resolution)
@@ -98,7 +111,8 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 
 - **Parser**: Full CESR parser for KERI messages (REQUIRED for OOBI resolution)
 - **Serder**: Event serialization/deserialization (SerderKERI)
-- **CESR Primitives**: All CESR types (Prefixer, Seqner, Saider, Dater, Siger, Cigar, Verfer, etc.)
+- **CESR Primitives**: All CESR types (Prefixer, Seqner, Saider, Dater, Siger,
+  Cigar, Verfer, etc.)
 - **Kevery**: Event validation and processing
 - **Revery**: Reply message processing (REQUIRED for OOBI)
 
@@ -165,8 +179,10 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - ✅ **Solid Foundation**: Database layer is complete before building on top
 - ✅ **Clear Dependencies**: Lower layers don't depend on higher layers
 - ✅ **Testability**: Can test database operations independently
-- ✅ **Incremental Validation**: Can verify database structure matches KERIpy early
-- ✅ **Reusability**: Database layer can be used by other commands (`incept`, `rotate`, etc.)
+- ✅ **Incremental Validation**: Can verify database structure matches KERIpy
+  early
+- ✅ **Reusability**: Database layer can be used by other commands (`incept`,
+  `rotate`, etc.)
 - ✅ **Type Safety**: Can define all data structures upfront
 - ✅ **Less Refactoring**: Database structure is stable, less likely to change
 
@@ -174,7 +190,8 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 
 - ❌ **Delayed Feedback**: Don't see working `kli init` until Phase 5
 - ❌ **Over-Engineering Risk**: Might implement databases not needed for init
-- ❌ **More Upfront Work**: Need to implement many databases before seeing results
+- ❌ **More Upfront Work**: Need to implement many databases before seeing
+  results
 
 ### Path B: Top-Down (CLI → Database)
 
@@ -188,7 +205,8 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 **Cons:**
 
 - ❌ **Refactoring Risk**: May need to refactor as we discover requirements
-- ❌ **Dependency Issues**: Higher layers depend on lower layers that don't exist yet
+- ❌ **Dependency Issues**: Higher layers depend on lower layers that don't
+  exist yet
 - ❌ **Testing Challenges**: Harder to test components in isolation
 - ❌ **Incomplete Foundation**: Database structure may be incomplete
 - ❌ **Type Safety**: May need to change types as we discover requirements
@@ -197,19 +215,25 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 
 **Rationale:**
 
-1. **Database is Foundation**: KERI is fundamentally database-driven. Getting the database structure right is critical.
+1. **Database is Foundation**: KERI is fundamentally database-driven. Getting
+   the database structure right is critical.
 2. **Compatibility**: Need to ensure database compatibility with KERIpy early
-3. **Reusability**: Database layer will be used by `incept`, `rotate`, `interact`, etc.
+3. **Reusability**: Database layer will be used by `incept`, `rotate`,
+   `interact`, etc.
 4. **Type Safety**: TypeScript benefits from defining types upfront
 5. **Testing**: Can test database operations independently
 6. **Stability**: Database structure is unlikely to change, reducing refactoring
 
 **Mitigation for Cons:**
 
-- **Incremental Validation**: After Phase 1, can verify database structure with `kli db dump`
-- **Focused Implementation**: Only implement databases needed for `init` (not all escrows)
-- **Early Integration Tests**: Can write integration tests that verify database structure matches KERIpy
-- **OOBI Deferral**: Can defer OOBI resolution to Phase 6+ if needed, implementing basic `init` without OOBI resolution first
+- **Incremental Validation**: After Phase 1, can verify database structure with
+  `kli db dump`
+- **Focused Implementation**: Only implement databases needed for `init` (not
+  all escrows)
+- **Early Integration Tests**: Can write integration tests that verify database
+  structure matches KERIpy
+- **OOBI Deferral**: Can defer OOBI resolution to Phase 6+ if needed,
+  implementing basic `init` without OOBI resolution first
 
 ## Detailed Phase Breakdown (Path A - REVISED: CESR First)
 
@@ -240,8 +264,10 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - [ ] KERI event format (icp, rot, ixn, dip, drt, rpy, etc.)
 - [ ] Event validation (structure, SAID computation)
 - [ ] Version handling:
-  - [ ] **CESR v1.0**: Format `KERI10JSON00012b_` (17 chars, terminates with `_`)
-  - [ ] **CESR v2.0**: Format `KERICAACAAJSON00012b.` (19 chars, terminates with `.`)
+  - [ ] **CESR v1.0**: Format `KERI10JSON00012b_` (17 chars, terminates with
+        `_`)
+  - [ ] **CESR v2.0**: Format `KERICAACAAJSON00012b.` (19 chars, terminates with
+        `.`)
   - [ ] **KERI subprotocol**: Support both v1.0 and v2.0
   - [ ] **ACDC subprotocol**: Support both v1.0 and v2.0
   - [ ] Legacy v1.0 format support (for compatibility)
@@ -272,11 +298,14 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 
 **1.4 Sub-Database Helpers (CESR Storage)**
 
-- [ ] `CesrSuber` - Single CESR object storage (Prefixer, Seqner, Saider, Dater, etc.)
+- [ ] `CesrSuber` - Single CESR object storage (Prefixer, Seqner, Saider, Dater,
+      etc.)
 - [ ] `SerderSuber` - Serder storage (SerderKERI for rpys, states)
-- [ ] `CatCesrSuber` - Concatenated CESR tuple storage ((Seqner, Saider), (Verfer, Cigar))
+- [ ] `CatCesrSuber` - Concatenated CESR tuple storage ((Seqner, Saider),
+      (Verfer, Cigar))
 - [ ] `CesrIoSetSuber` - Indexed ordered set of CESR objects (Saider, Siger)
-- [ ] `CatCesrIoSetSuber` - Indexed ordered set of CESR tuples ((Prefixer, Seqner))
+- [ ] `CatCesrIoSetSuber` - Indexed ordered set of CESR tuples ((Prefixer,
+      Seqner))
 - [ ] `CryptSignerSuber` - Encrypted signer storage (Signer with encryption)
 - [ ] `Komer` - Key-value database with schema (HabitatRecord, OobiRecord, etc.)
 - [ ] `IoSetKomer` - Indexed ordered set Komer (WellKnownAuthN)
@@ -288,14 +317,19 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - [ ] Compatibility tests with KERIpy CESR format
 - [ ] Parser tests with sample KERI messages
 - [ ] **Intermediary Testing Steps**:
-  - [ ] **Test 1: CESR v1.0 Parsing** - Parse sample v1.0 KERI events (icp, rot, ixn)
-  - [ ] **Test 2: CESR v2.0 Parsing** - Parse sample v2.0 KERI events (icp, rot, ixn)
+  - [ ] **Test 1: CESR v1.0 Parsing** - Parse sample v1.0 KERI events (icp, rot,
+        ixn)
+  - [ ] **Test 2: CESR v2.0 Parsing** - Parse sample v2.0 KERI events (icp, rot,
+        ixn)
   - [ ] **Test 3: ACDC v1.0 Parsing** - Parse sample v1.0 ACDC credentials
   - [ ] **Test 4: ACDC v2.0 Parsing** - Parse sample v2.0 ACDC credentials
-  - [ ] **Test 5: Reply Message Parsing** - Parse rpy messages with routes `/end/role`, `/loc/scheme`, `/oobi/*`
+  - [ ] **Test 5: Reply Message Parsing** - Parse rpy messages with routes
+        `/end/role`, `/loc/scheme`, `/oobi/*`
   - [ ] **Test 6: Escrow Processing** - Test reply escrow storage and retrieval
-  - [ ] **Test 7: Mixed Stream Parsing** - Parse streams containing both v1.0 and v2.0 messages
-  - [ ] **Test 8: OOBI Response Parsing** - Parse full OOBI HTTP responses (CESR streams)
+  - [ ] **Test 7: Mixed Stream Parsing** - Parse streams containing both v1.0
+        and v2.0 messages
+  - [ ] **Test 8: OOBI Response Parsing** - Parse full OOBI HTTP responses (CESR
+        streams)
 
 ### Phase 2: Database Layer & Configuration Files
 
@@ -310,16 +344,20 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - [ ] `coobi.` - OOBI client escrow Komer (REQUIRED for OOBI resolution)
 - [ ] `moobi.` - Multi-OOBI escrow Komer (REQUIRED for OOBI resolution)
 - [ ] `wkas.` - Well-known authN IoSetKomer
-- [ ] `rpys.` - Reply messages SerderSuber (stores SerderKERI) - REQUIRED for OOBI
+- [ ] `rpys.` - Reply messages SerderSuber (stores SerderKERI) - REQUIRED for
+      OOBI
 - [ ] `rpes.` - Reply escrows CesrIoSetSuber (stores Saider) - REQUIRED for OOBI
 - [ ] `eans.` - Endpoint authorization CesrSuber (stores Saider)
 - [ ] `lans.` - Location authorization CesrSuber (stores Saider)
 - [ ] `ends.` - Endpoint records Komer
 - [ ] `locs.` - Location records Komer
 - [ ] `fons.` - First seen ordinal CesrSuber (stores Number)
-- [ ] `sdts.` - SAD datetime CesrSuber (stores Dater) - REQUIRED for reply escrows
-- [ ] `ssgs.` - SAD indexed sigs CesrIoSetSuber (stores Siger) - REQUIRED for reply escrows
-- [ ] `scgs.` - SAD non-indexed sigs CatCesrIoSetSuber (stores (Verfer, Cigar)) - REQUIRED for reply escrows
+- [ ] `sdts.` - SAD datetime CesrSuber (stores Dater) - REQUIRED for reply
+      escrows
+- [ ] `ssgs.` - SAD indexed sigs CesrIoSetSuber (stores Siger) - REQUIRED for
+      reply escrows
+- [ ] `scgs.` - SAD non-indexed sigs CatCesrIoSetSuber (stores (Verfer,
+      Cigar)) - REQUIRED for reply escrows
 - [ ] `wits.` - Witnesses CesrIoSetSuber (stores Prefixer)
 - [ ] `udes.` - Delegation seals CatCesrSuber (stores (Seqner, Saider))
 - [ ] **Key Event Escrows (REQUIRED for processing KEL events from OOBI)**:
@@ -327,14 +365,19 @@ This document outlines the implementation plan for `kli init` command in KERI TS
   - [ ] `pses.` - Partially signed event escrows (snKey, stores digests)
   - [ ] `pwes.` - Partially witnessed event escrows (snKey, stores digests)
   - [ ] `ures.` - Unverified receipt escrows (snKey, stores triples)
-  - [ ] `vres.` - Unverified validator receipt escrows (dgKey, stores quadruples)
-  - [ ] `dtss.` - Datetime stamps for escrowed events (dgKey, stores ISO-8601 bytes)
-  - [ ] `sigs.` - Event signatures (dgKey, stores Siger qb64b) - REQUIRED for escrowed events
-  - [ ] `evts.` - Events themselves (dgKey, stores SerderKERI raw) - Already have
+  - [ ] `vres.` - Unverified validator receipt escrows (dgKey, stores
+        quadruples)
+  - [ ] `dtss.` - Datetime stamps for escrowed events (dgKey, stores ISO-8601
+        bytes)
+  - [ ] `sigs.` - Event signatures (dgKey, stores Siger qb64b) - REQUIRED for
+        escrowed events
+  - [ ] `evts.` - Events themselves (dgKey, stores SerderKERI raw) - Already
+        have
 
 **2.2 Keeper Sub-Databases (All use CESR from Phase 1)**
 
-- [ ] `gbls.` - Global parameters Suber (stores bytes, but references Prefixer for aeid)
+- [ ] `gbls.` - Global parameters Suber (stores bytes, but references Prefixer
+      for aeid)
 - [ ] `pris.` - Private keys CryptSignerSuber (stores Signer)
 - [ ] `prxs.` - Encrypted private keys CesrSuber (stores Cipher)
 - [ ] `nxts.` - Next key digests CesrSuber (stores Cipher)
@@ -418,7 +461,8 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 - [ ] `Revery` - Reply message processing (REQUIRED for OOBI)
   - [ ] `processReply()` - Process reply messages
   - [ ] `escrowReply()` - Escrow incomplete reply messages
-  - [ ] `processEscrowReply()` - Process escrowed replies (REQUIRED for async OOBI)
+  - [ ] `processEscrowReply()` - Process escrowed replies (REQUIRED for async
+        OOBI)
 - [ ] `Kevery` - Event validation and processing (REQUIRED for OOBI)
   - [ ] `processOne()` - Process single event
   - [ ] `processEscrows()` - Process all event escrows (REQUIRED for async OOBI)
@@ -437,7 +481,8 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 **5.1 Init Command**
 
 - [ ] CLI handler structure
-- [ ] Argument parsing (name, base, temp, salt, configDir, configFile, nopasscode, aeid, seed, bran)
+- [ ] Argument parsing (name, base, temp, salt, configDir, configFile,
+      nopasscode, aeid, seed, bran)
 - [ ] Passcode prompt (if not nopasscode)
 - [ ] Create Habery instance
 - [ ] Create Regery instance (optional, for credentials)
@@ -494,32 +539,46 @@ This document outlines the implementation plan for `kli init` command in KERI TS
 ## Notes
 
 - **Escrow Databases**: Many escrow databases are REQUIRED for OOBI resolution:
-  - **Reply Escrows**: `rpes.`, `rpys.`, `sdts.`, `ssgs.`, `scgs.` - Required for async reply processing
-  - **Key Event Escrows**: `ooes.`, `pses.`, `pwes.`, `ures.`, `vres.`, `dtss.`, `sigs.` - Required for processing KEL events from OOBI responses
-  - **OOBI Escrows**: `eoobi.`, `coobi.`, `moobi.` - Required for OOBI retry and client management
-  - These escrows allow OOBI resolution to work asynchronously, handling out-of-order events and incomplete signatures
-- **CESR Primitives**: **REQUIRED FIRST** - ALL sub-databases store CESR objects. We cannot implement ANY database without CESR primitives:
-  - Baser: CesrSuber stores Prefixer, Seqner, Saider, Dater, Siger, Cigar, Verfer, Number
+  - **Reply Escrows**: `rpes.`, `rpys.`, `sdts.`, `ssgs.`, `scgs.` - Required
+    for async reply processing
+  - **Key Event Escrows**: `ooes.`, `pses.`, `pwes.`, `ures.`, `vres.`, `dtss.`,
+    `sigs.` - Required for processing KEL events from OOBI responses
+  - **OOBI Escrows**: `eoobi.`, `coobi.`, `moobi.` - Required for OOBI retry and
+    client management
+  - These escrows allow OOBI resolution to work asynchronously, handling
+    out-of-order events and incomplete signatures
+- **CESR Primitives**: **REQUIRED FIRST** - ALL sub-databases store CESR
+  objects. We cannot implement ANY database without CESR primitives:
+  - Baser: CesrSuber stores Prefixer, Seqner, Saider, Dater, Siger, Cigar,
+    Verfer, Number
   - Baser: SerderSuber stores SerderKERI (reply messages, keystate)
   - Baser: CatCesrSuber stores tuples like (Seqner, Saider), (Verfer, Cigar)
   - Keeper: CesrSuber stores Prefixer, Cipher
   - Keeper: CryptSignerSuber stores Signer
   - Keeper: CatCesrIoSetSuber stores (Prefixer, Seqner)
-- **CESR Parser**: **REQUIRED** for OOBI resolution. OOBI resolution fetches HTTP responses containing CESR-formatted KERI messages that must be parsed:
+- **CESR Parser**: **REQUIRED** for OOBI resolution. OOBI resolution fetches
+  HTTP responses containing CESR-formatted KERI messages that must be parsed:
   - Key event messages (icp, rot, ixn, dip, drt) - full KERI events
-  - Reply messages (rpy) with routes `/end/role/add`, `/loc/scheme`, `/oobi/witness`, `/oobi/controller`
+  - Reply messages (rpy) with routes `/end/role/add`, `/loc/scheme`,
+    `/oobi/witness`, `/oobi/controller`
   - All message types must be parseable using full `Parser` implementation
   - `SerderKERI` for event deserialization
   - `Kevery` for event validation
   - `Revery` for reply message processing
-- **OOBI Resolution**: While OOBI resolution is optional (only happens if config file has OOBIs), if we want to support it, we need the full CESR parser. For initial implementation, we can skip OOBI resolution and just load OOBIs into the database.
-- **Credentials**: `Regery` (credential store) is created in `init` but not required for basic functionality.
+- **OOBI Resolution**: While OOBI resolution is optional (only happens if config
+  file has OOBIs), if we want to support it, we need the full CESR parser. For
+  initial implementation, we can skip OOBI resolution and just load OOBIs into
+  the database.
+- **Credentials**: `Regery` (credential store) is created in `init` but not
+  required for basic functionality.
 - **CESR Protocol Versions**: Must support both CESR v1.0 and v2.0:
   - **v1.0 Format**: `KERI10JSON00012b_` (17 chars, terminates with `_`)
   - **v2.0 Format**: `KERICAACAAJSON00012b.` (19 chars, terminates with `.`)
   - Both KERI and ACDC subprotocols must be supported in both versions
-  - Legacy v1.0 format support is required for compatibility with existing KERIpy databases
-- **Intermediary Testing**: After Phase 1, we can test CESR parsing independently before implementing full `kli init`:
+  - Legacy v1.0 format support is required for compatibility with existing
+    KERIpy databases
+- **Intermediary Testing**: After Phase 1, we can test CESR parsing
+  independently before implementing full `kli init`:
   - Test CESR v1.0 and v2.0 parsing for KERI events
   - Test CESR v1.0 and v2.0 parsing for ACDC credentials
   - Test reply message parsing

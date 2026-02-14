@@ -23,7 +23,8 @@ export function parsePrefixer(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Prefixer {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!PREFIX_CODE_NAMES.has(name)) {
     throw new UnknownCodeError(`Expected prefix code, got ${matter.code}`);
   }

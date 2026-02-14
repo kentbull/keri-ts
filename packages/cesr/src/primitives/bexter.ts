@@ -22,7 +22,9 @@ export function parseBexter(
 ): Bexter {
   const matter = parseMatter(input, cold);
   if (!isBexterCode(matter.code)) {
-    throw new UnknownCodeError(`Expected bexter strb64 code, got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected bexter strb64 code, got ${matter.code}`,
+    );
   }
 
   return {

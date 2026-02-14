@@ -2,17 +2,21 @@
 
 ## Summary
 
-**Difficulty: MODERATE** - Most changes are straightforward API replacements, but requires careful testing.
+**Difficulty: MODERATE** - Most changes are straightforward API replacements,
+but requires careful testing.
 
-**Effection Compatibility: EXCELLENT** - Effection works identically in Node.js since it's pure JavaScript.
+**Effection Compatibility: EXCELLENT** - Effection works identically in Node.js
+since it's pure JavaScript.
 
-**LMDB Compatibility: BETTER** - The `lmdb` npm package is designed for Node.js, so the FFI panic issue should be resolved.
+**LMDB Compatibility: BETTER** - The `lmdb` npm package is designed for Node.js,
+so the FFI panic issue should be resolved.
 
 ## Required Changes
 
 ### 1. File System Operations (PathManager)
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
 await Deno.mkdir(path, { recursive: true, mode: perm });
@@ -20,7 +24,7 @@ await Deno.stat(path);
 await Deno.remove(path, { recursive: true });
 
 // Node.js
-import { mkdir, stat, rm } from 'fs/promises';
+import { mkdir, rm, stat } from "fs/promises";
 await mkdir(path, { recursive: true, mode: perm });
 await stat(path);
 await rm(path, { recursive: true });
@@ -31,23 +35,26 @@ await rm(path, { recursive: true });
 ### 2. Environment Variables
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
-Deno.env.get("HOME")
-Deno.env.get("KERI_LMDB_MAP_SIZE")
+Deno.env.get("HOME");
+Deno.env.get("KERI_LMDB_MAP_SIZE");
 
 // Node.js
-process.env.HOME
-process.env.KERI_LMDB_MAP_SIZE
+process.env.HOME;
+process.env.KERI_LMDB_MAP_SIZE;
 ```
 
-**Files affected:** 
+**Files affected:**
+
 - `src/db/core/path-manager.ts`
 - `src/db/core/lmdber.ts`
 
 ### 3. Platform Detection
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
 if (Deno.build.os === "darwin") { ... }
@@ -64,12 +71,13 @@ if (process.platform === "darwin") { ... }
 ### 4. CLI Arguments
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
-kli(Deno.args)
+kli(Deno.args);
 
 // Node.js
-kli(process.argv.slice(2))
+kli(process.argv.slice(2));
 ```
 
 **Files affected:** `mod.ts`, `src/app/cli/cli.ts`
@@ -77,6 +85,7 @@ kli(process.argv.slice(2))
 ### 5. Entry Point Detection
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
 if (import.meta.main) { ... }
@@ -91,6 +100,7 @@ if (import.meta.url === `file://${process.argv[1]}`) { ... }
 ### 6. Process Exit
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
 Deno.exit(1);
@@ -104,12 +114,13 @@ process.exit(1);
 ### 7. HTTP Server (if used)
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
 const server = Deno.serve({ port, signal }, handler);
 
 // Node.js
-import { createServer } from 'http';
+import { createServer } from "http";
 const server = createServer(handler);
 server.listen(port);
 // Signal handling via process.on('SIGINT', ...)
@@ -120,6 +131,7 @@ server.listen(port);
 ### 8. Signal Handling
 
 **Deno → Node.js:**
+
 ```typescript
 // Deno
 Deno.addSignalListener(signame, listener);
@@ -135,12 +147,14 @@ process.removeListener(signame, listener);
 ### 9. Package Management
 
 **Deno → Node.js:**
+
 - Remove `npm:` prefix from imports
 - Create `package.json` with dependencies
 - Add `"type": "module"` for ES modules
 - Use `npm install` or `pnpm install`
 
 **Example package.json:**
+
 ```json
 {
   "name": "keri-ts",
@@ -181,6 +195,7 @@ process.removeListener(signame, listener);
 ## Effection Compatibility
 
 ✅ **No changes needed** - Effection works identically:
+
 - `action()` pattern works the same
 - Generator functions work the same
 - `yield*` works the same
@@ -203,11 +218,13 @@ process.removeListener(signame, listener);
 ## Potential Issues
 
 1. **Signal handling** - Slightly different API
-2. **File permissions** - Node.js uses different permission model (no explicit permissions needed)
+2. **File permissions** - Node.js uses different permission model (no explicit
+   permissions needed)
 3. **Path handling** - Should be similar, but test thoroughly
 4. **Module resolution** - Need to ensure all imports resolve correctly
 
 ## Recommendation
 
-**YES, migrate to Node.js** - The LMDB FFI panic is a blocker, and Node.js should resolve it. The migration is straightforward and Effection compatibility is excellent.
-
+**YES, migrate to Node.js** - The LMDB FFI panic is a blocker, and Node.js
+should resolve it. The migration is straightforward and Effection compatibility
+is excellent.

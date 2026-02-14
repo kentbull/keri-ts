@@ -2,24 +2,33 @@
 
 ## Overview
 
-This document outlines the architectural changes required to make `keri-ts` a platform-agnostic library that supports Deno (Server), Browsers, and potential future platforms (Mobile/Desktop wrappers) while maintaining a unified core codebase.
+This document outlines the architectural changes required to make `keri-ts` a
+platform-agnostic library that supports Deno (Server), Browsers, and potential
+future platforms (Mobile/Desktop wrappers) while maintaining a unified core
+codebase.
 
 ## Problem Statement
 
 Currently, `keri-ts` has direct dependencies on:
 
-1.  **Runtime Specific Globals**: `Deno.stat`, `Deno.mkdir`, `Deno.serve`, `Deno.env`.
-2.  **Native Modules**: `lmdb` (C++ bindings) which are incompatible with browsers.
+1. **Runtime Specific Globals**: `Deno.stat`, `Deno.mkdir`, `Deno.serve`,
+   `Deno.env`.
+2. **Native Modules**: `lmdb` (C++ bindings) which are incompatible with
+   browsers.
 
-To support browser environments (using IndexedDB) and other runtimes, we must decouple the "Core Logic" (KERI protocol) from the "Infrastructure Logic" (Storage, Networking, File System).
+To support browser environments (using IndexedDB) and other runtimes, we must
+decouple the "Core Logic" (KERI protocol) from the "Infrastructure Logic"
+(Storage, Networking, File System).
 
 ## Architecture
 
-We will implement a Hexagonal (Ports and Adapters) Architecture for infrastructure dependencies.
+We will implement a Hexagonal (Ports and Adapters) Architecture for
+infrastructure dependencies.
 
 ### 1. The `Platform` Interface
 
-The `Platform` interface abstracts OS-level operations that vary between environments.
+The `Platform` interface abstracts OS-level operations that vary between
+environments.
 
 ```typescript
 // src/framework/platform.ts
@@ -33,7 +42,10 @@ export interface Platform {
     homeDir(): string;
     tmpDir(): string;
     resolve(...paths: string[]): string;
-    mkdir(path: string, options?: { recursive: true; mode?: number }): Promise<boolean>;
+    mkdir(
+      path: string,
+      options?: { recursive: true; mode?: number },
+    ): Promise<boolean>;
     exists(path: string): Promise<boolean>;
     readText(path: string): Promise<string>;
     writeText(path: string, content: string): Promise<void>;
@@ -54,7 +66,8 @@ export interface Platform {
 
 ### 2. The `Storage` Interface
 
-This is the most critical abstraction. KERI requires an ordered Key-Value store (KS) and typically multiple sub-databases (KEL, DEL, etc.).
+This is the most critical abstraction. KERI requires an ordered Key-Value store
+(KS) and typically multiple sub-databases (KEL, DEL, etc.).
 
 ```typescript
 // src/framework/storage.ts
@@ -112,13 +125,17 @@ export interface DBCursor {
 
 Code in `src/core` and `src/keri` uses **only** the interfaces.
 
-- `Baser` (the KERI DB manager) will accept a `DBBackend` in its constructor, not an `LMDBer` instance.
-- `Baser` will no longer manage file paths directly; it will rely on the `DBBackend` implementation to handle persistence details.
+- `Baser` (the KERI DB manager) will accept a `DBBackend` in its constructor,
+  not an `LMDBer` instance.
+- `Baser` will no longer manage file paths directly; it will rely on the
+  `DBBackend` implementation to handle persistence details.
 
 #### B. Deno Server Implementation (`src/platform/deno`)
 
-- **Storage**: `LMDBBackend` implementing `DBBackend`. Wrapper around `lmdb` package.
-- **Platform**: `DenoPlatform` implementing `Platform`. Wrapper around `Deno.*` APIs.
+- **Storage**: `LMDBBackend` implementing `DBBackend`. Wrapper around `lmdb`
+  package.
+- **Platform**: `DenoPlatform` implementing `Platform`. Wrapper around `Deno.*`
+  APIs.
 
 #### C. Browser Implementation (`src/platform/browser`)
 
@@ -126,7 +143,8 @@ Code in `src/core` and `src/keri` uses **only** the interfaces.
   - Mapping: `DBHandle` -> `IDBObjectStore`.
   - Ordering: IndexedDB supports cursor iteration naturally.
 - **Platform**: `BrowserPlatform`.
-  - `fs`: Throws errors or maps to a virtual FS (like OPFS - Origin Private File System) if strictly needed, but mostly unused since DB is IndexedDB.
+  - `fs`: Throws errors or maps to a virtual FS (like OPFS - Origin Private File
+    System) if strictly needed, but mostly unused since DB is IndexedDB.
 
 ### 4. Dependency Injection
 
@@ -164,13 +182,19 @@ export { BrowserPlatform, IndexedDBBackend };
 
 ## Migration Plan
 
-1.  **Define Interfaces**: Create `src/framework/storage.ts` and `src/framework/platform.ts`.
-2.  **Refactor `LMDBer`**: Rename current `LMDBer` to `LMDBBackend` and make it implement `DBBackend`.
-3.  **Refactor `Baser`**: Update `Baser` to depend on `DBBackend` interface, removing direct `LMDBer` dependency.
-4.  **Refactor `PathManager`**: Extract `Deno` calls into a `DenoPlatform` class.
-5.  **Update Entry Points**: Wire up the specific implementations in `cli.ts` and `server.ts`.
+1. **Define Interfaces**: Create `src/framework/storage.ts` and
+   `src/framework/platform.ts`.
+2. **Refactor `LMDBer`**: Rename current `LMDBer` to `LMDBBackend` and make it
+   implement `DBBackend`.
+3. **Refactor `Baser`**: Update `Baser` to depend on `DBBackend` interface,
+   removing direct `LMDBer` dependency.
+4. **Refactor `PathManager`**: Extract `Deno` calls into a `DenoPlatform` class.
+5. **Update Entry Points**: Wire up the specific implementations in `cli.ts` and
+   `server.ts`.
 
 ## Future Considerations
 
-- **React Native**: Can implement `DBBackend` using SQLite or a native mobile DB wrapper.
-- **Electron**: Can choose between `LMDBBackend` (Node main process) or `IndexedDBBackend` (Renderer process).
+- **React Native**: Can implement `DBBackend` using SQLite or a native mobile DB
+  wrapper.
+- **Electron**: Can choose between `LMDBBackend` (Node main process) or
+  `IndexedDBBackend` (Renderer process).

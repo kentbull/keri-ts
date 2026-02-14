@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { intToB64, decodeB64 } from "../../src/core/bytes.ts";
+import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import {
   COUNTER_SIZES_V1,
   COUNTER_SIZES_V2,
@@ -61,23 +61,23 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
 
   const frames = emissions.filter((e) => e.type === "frame");
   return frames.map((e) => {
-      const frame = e.frame as {
-        serder: {
-          kind: string;
-          ilk: string | null;
-          said: string | null;
-          native?: { bodyCode: string; fields: Array<unknown> };
-        };
-        attachments: Array<{ code: string; count: number }>;
+    const frame = e.frame as {
+      serder: {
+        kind: string;
+        ilk: string | null;
+        said: string | null;
+        native?: { bodyCode: string; fields: Array<unknown> };
       };
-      const atts = frame.attachments.map((a) => `${a.code}:${a.count}`).join(",");
-      const native = frame.serder.native
-        ? `${frame.serder.native.bodyCode}:${frame.serder.native.fields.length}`
-        : "none";
-      return `${frame.serder.kind}|${frame.serder.ilk ?? ""}|${
-        frame.serder.said ?? ""
-      }|${native}|${atts}`;
-    });
+      attachments: Array<{ code: string; count: number }>;
+    };
+    const atts = frame.attachments.map((a) => `${a.code}:${a.count}`).join(",");
+    const native = frame.serder.native
+      ? `${frame.serder.native.bodyCode}:${frame.serder.native.fields.length}`
+      : "none";
+    return `${frame.serder.kind}|${frame.serder.ilk ?? ""}|${
+      frame.serder.said ?? ""
+    }|${native}|${atts}`;
+  });
 }
 
 function assertSplitDeterminism(
@@ -121,18 +121,23 @@ Deno.test("chunk-fuzz matrix: v1 json frame with wrapped attachments", () => {
 });
 
 Deno.test("chunk-fuzz matrix: v2 native fix-body frame stream", () => {
-  assertSplitDeterminism("v2-native-fix", encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
+  assertSplitDeterminism(
+    "v2-native-fix",
+    encode(KERIPY_NATIVE_V2_ICP_FIX_BODY),
+  );
 });
 
 Deno.test("chunk-fuzz matrix: v2 BodyWithAttachmentGroup stream (txt + qb2)", () => {
-  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${
-    sigerToken()
-  }`;
+  const nestedAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
-  const wrapped = `${counterV2(
-    CtrDexV2.BodyWithAttachmentGroup,
-    payload.length / 4,
-  )}${payload}`;
+  const wrapped = `${
+    counterV2(
+      CtrDexV2.BodyWithAttachmentGroup,
+      payload.length / 4,
+    )
+  }${payload}`;
 
   const txtStream = wrapped;
   assertSplitDeterminism("v2-body-with-attachment-txt", encode(txtStream));

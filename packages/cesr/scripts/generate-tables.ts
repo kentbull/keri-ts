@@ -234,7 +234,10 @@ async function main(): Promise<void> {
   const matterNames = parseMatterCodex(coring);
   const counterNames = parseCounterCodexes(counting);
   const counterSizes = parseCounterSizes(counting);
-  const compatV1 = applyLegacyV1CounterAliases(counterSizes.v1, counterNames.v1);
+  const compatV1 = applyLegacyV1CounterAliases(
+    counterSizes.v1,
+    counterNames.v1,
+  );
   const compatV2Sizes = applyCompatV2CounterSizeAliases(
     counterSizes.v2,
     counterNames.v2,

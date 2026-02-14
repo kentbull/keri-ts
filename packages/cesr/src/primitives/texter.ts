@@ -22,7 +22,9 @@ export function parseTexter(
 ): Texter {
   const matter = parseMatter(input, cold);
   if (!isTexterCode(matter.code)) {
-    throw new UnknownCodeError(`Expected texter bytes code, got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected texter bytes code, got ${matter.code}`,
+    );
   }
   return {
     code: matter.code,

@@ -17,9 +17,12 @@ export function parseCigar(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Cigar {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!name.endsWith("_Sig")) {
-    throw new UnknownCodeError(`Expected non-indexed signature code, got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected non-indexed signature code, got ${matter.code}`,
+    );
   }
 
   return {

@@ -19,7 +19,8 @@ await build({
   package: {
     name: "cesr-ts",
     version: Deno.env.get("CESR_NPM_VERSION") ?? "0.1.0",
-    description: "CESR parser, primitives, and annotation tooling for TypeScript/JavaScript",
+    description:
+      "CESR parser, primitives, and annotation tooling for TypeScript/JavaScript",
     license: "Apache-2.0",
     repository: {
       type: "git",

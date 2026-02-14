@@ -23,7 +23,9 @@ export function parsePather(
 ): Pather {
   const matter = parseMatter(input, cold);
   if (!isPatherCode(matter.code)) {
-    throw new UnknownCodeError(`Expected pather-compatible code, got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected pather-compatible code, got ${matter.code}`,
+    );
   }
   // For parser-level fidelity we preserve encoded path token text.
   const path = matter.qb64.slice(matter.code.length);

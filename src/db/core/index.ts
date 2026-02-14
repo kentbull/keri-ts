@@ -5,4 +5,3 @@
 export * from "./path-manager.ts";
 export * from "./keys.ts";
 export * from "./lmdber.ts";
-export * from "./db.ts";

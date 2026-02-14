@@ -12,7 +12,8 @@ export interface Tholder {
 }
 
 function isNumericName(name: string): boolean {
-  return name === "Short" || name === "Long" || name === "Big" || name === "Tall" ||
+  return name === "Short" || name === "Long" || name === "Big" ||
+    name === "Tall" ||
     name === "Large" || name === "Great" || name === "Vast";
 }
 
@@ -25,13 +26,16 @@ export function parseTholder(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Tholder {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!isNumericName(name) && !isWeightedName(name)) {
     throw new UnknownCodeError(`Expected threshold code, got ${matter.code}`);
   }
 
   const sith = isNumericName(name)
-    ? [...matter.raw].reduce((acc, b) => (acc << 8n) | BigInt(b), 0n).toString(16)
+    ? [...matter.raw].reduce((acc, b) => (acc << 8n) | BigInt(b), 0n).toString(
+      16,
+    )
     : new TextDecoder().decode(matter.raw);
 
   return {

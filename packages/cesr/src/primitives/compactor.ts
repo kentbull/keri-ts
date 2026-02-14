@@ -2,7 +2,7 @@ import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
-import { parseMapperBody, type Mapper } from "./mapper.ts";
+import { type Mapper, parseMapperBody } from "./mapper.ts";
 
 const COMPACTOR_CODES = new Set([
   CtrDexV2.MapBodyGroup,
@@ -18,7 +18,9 @@ export function parseCompactor(
 ): Mapper {
   const mapper = parseMapperBody(input, version, cold);
   if (!COMPACTOR_CODES.has(mapper.code)) {
-    throw new UnknownCodeError(`Expected map compactor group code, got ${mapper.code}`);
+    throw new UnknownCodeError(
+      `Expected map compactor group code, got ${mapper.code}`,
+    );
   }
   return mapper;
 }

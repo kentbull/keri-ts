@@ -22,7 +22,8 @@ export function parseSaider(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Saider {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!isDigestName(name)) {
     throw new UnknownCodeError(`Expected said digest code, got ${matter.code}`);
   }

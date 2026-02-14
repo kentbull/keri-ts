@@ -125,5 +125,7 @@ export function parseIndexer(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Indexer {
-  return cold === "bny" ? parseIndexerFromBinary(input) : parseIndexerFromText(input);
+  return cold === "bny"
+    ? parseIndexerFromBinary(input)
+    : parseIndexerFromText(input);
 }

@@ -281,10 +281,15 @@ Deno.test("pather qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("sealer qb2 parsing matches qb64 parsing", () => {
-  const qb64 = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${token("E")}`;
+  const qb64 = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${
+    token("E")
+  }`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseSealer(new TextEncoder().encode(qb64), { major: 2, minor: 0 }, "txt");
+  const txt = parseSealer(new TextEncoder().encode(qb64), {
+    major: 2,
+    minor: 0,
+  }, "txt");
   const bny = parseSealer(qb2, { major: 2, minor: 0 }, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -293,12 +298,15 @@ Deno.test("sealer qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("blinder qb2 parsing matches qb64 parsing", () => {
-  const qb64 = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
+  const qb64 = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${
+    token("E")
+  }${token("D")}${token("M")}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseBlinder(new TextEncoder().encode(qb64), { major: 2, minor: 0 }, "txt");
+  const txt = parseBlinder(new TextEncoder().encode(qb64), {
+    major: 2,
+    minor: 0,
+  }, "txt");
   const bny = parseBlinder(qb2, { major: 2, minor: 0 }, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -307,12 +315,15 @@ Deno.test("blinder qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("mediar qb2 parsing matches qb64 parsing", () => {
-  const qb64 = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
+  const qb64 = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${
+    token("E")
+  }${token("D")}${token("M")}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseMediar(new TextEncoder().encode(qb64), { major: 2, minor: 0 }, "txt");
+  const txt = parseMediar(new TextEncoder().encode(qb64), {
+    major: 2,
+    minor: 0,
+  }, "txt");
   const bny = parseMediar(qb2, { major: 2, minor: 0 }, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -322,10 +333,15 @@ Deno.test("mediar qb2 parsing matches qb64 parsing", () => {
 
 Deno.test("compactor qb2 parsing matches qb64 parsing", () => {
   const payload = `VAAA${token("B")}VAAA${token("E")}`;
-  const qb64 = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
+  const qb64 = `${
+    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
+  }${payload}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseCompactor(new TextEncoder().encode(qb64), { major: 2, minor: 0 }, "txt");
+  const txt = parseCompactor(new TextEncoder().encode(qb64), {
+    major: 2,
+    minor: 0,
+  }, "txt");
   const bny = parseCompactor(qb2, { major: 2, minor: 0 }, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -335,16 +351,19 @@ Deno.test("compactor qb2 parsing matches qb64 parsing", () => {
 
 Deno.test("mapper nested map qb2 parsing matches qb64 parsing", () => {
   const innerPayload = `VAAA${token("B")}`;
-  const innerMap = `${counterV2(CtrDexV2.MapBodyGroup, innerPayload.length / 4)}${
-    innerPayload
-  }`;
+  const innerMap = `${
+    counterV2(CtrDexV2.MapBodyGroup, innerPayload.length / 4)
+  }${innerPayload}`;
   const outerPayload = `VAAA${innerMap}VAAA${token("E")}`;
-  const qb64 = `${counterV2(CtrDexV2.MapBodyGroup, outerPayload.length / 4)}${
-    outerPayload
-  }`;
+  const qb64 = `${
+    counterV2(CtrDexV2.MapBodyGroup, outerPayload.length / 4)
+  }${outerPayload}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseCompactor(new TextEncoder().encode(qb64), { major: 2, minor: 0 }, "txt");
+  const txt = parseCompactor(new TextEncoder().encode(qb64), {
+    major: 2,
+    minor: 0,
+  }, "txt");
   const bny = parseCompactor(qb2, { major: 2, minor: 0 }, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -354,10 +373,16 @@ Deno.test("mapper nested map qb2 parsing matches qb64 parsing", () => {
 
 Deno.test("aggor qb2 parsing matches qb64 parsing", () => {
   const payload = "ABCDWXYZ";
-  const qb64 = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
+  const qb64 = `${
+    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
+  }${payload}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseAggor(new TextEncoder().encode(qb64), { major: 2, minor: 0 }, "txt");
+  const txt = parseAggor(
+    new TextEncoder().encode(qb64),
+    { major: 2, minor: 0 },
+    "txt",
+  );
   const bny = parseAggor(qb2, { major: 2, minor: 0 }, "bny");
 
   assertEquals(bny.code, txt.code);

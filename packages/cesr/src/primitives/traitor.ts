@@ -20,7 +20,8 @@ export function parseTraitor(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Traitor {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!isTraitName(name)) {
     throw new UnknownCodeError(`Expected trait code, got ${matter.code}`);
   }

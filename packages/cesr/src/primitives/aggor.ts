@@ -58,5 +58,7 @@ export function parseAggor(
     };
   }
 
-  throw new UnknownCodeError(`Expected aggregate list/map group code, got ${counter.code}`);
+  throw new UnknownCodeError(
+    `Expected aggregate list/map group code, got ${counter.code}`,
+  );
 }

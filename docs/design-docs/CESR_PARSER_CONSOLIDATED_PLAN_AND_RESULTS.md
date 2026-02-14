@@ -14,12 +14,16 @@ This document condenses and de-duplicates the parser planning content from:
 
 ## Consolidated Design Goals
 
-1. Deliver a full CESR parser package as a reusable kernel, independent from event-processing logic.
-2. Reach high parity with KERIpy/SignifyTS/parside behavior for primitives, group dispatch, and framing.
+1. Deliver a full CESR parser package as a reusable kernel, independent from
+   event-processing logic.
+2. Reach high parity with KERIpy/SignifyTS/parside behavior for primitives,
+   group dispatch, and framing.
 3. Support CESR v1 and v2, including real-world mixed-version edge streams.
-4. Support both text and byte domains (`qb64`/`qb2`) with strict structural validation.
+4. Support both text and byte domains (`qb64`/`qb2`) with strict structural
+   validation.
 5. Provide deterministic incremental parsing across arbitrary chunk boundaries.
-6. Keep parser core runtime-agnostic, then provide thin async/Effection adapters.
+6. Keep parser core runtime-agnostic, then provide thin async/Effection
+   adapters.
 7. Add human-usable stream annotation tooling for inspection and debugging.
 
 ## Consolidated Architecture
@@ -30,7 +34,8 @@ This document condenses and de-duplicates the parser planning content from:
 2. **Group-dispatch layer**: counter-driven parsing for attachment/body groups.
 3. **Core parser engine**: incremental state machine that emits frames/errors.
 4. **Adapters layer**: async iterable + Effection wrappers over the sync core.
-5. **Router contract layer**: stub only in parser phase; no event processing coupling.
+5. **Router contract layer**: stub only in parser phase; no event processing
+   coupling.
 
 ### Parser/Router Decoupling
 
@@ -48,7 +53,8 @@ This document condenses and de-duplicates the parser planning content from:
 2. **Body parsing**
 
 - Parse JSON/CBOR/MGPK bodies using exact size boundaries from smelled metadata.
-- Parse CESR-native body groups, including map/list and label-interleaving paths.
+- Parse CESR-native body groups, including map/list and label-interleaving
+  paths.
 
 3. **Attachment parsing**
 
@@ -58,17 +64,21 @@ This document condenses and de-duplicates the parser planning content from:
 
 4. **Primitive coverage**
 
-- Implement core KERIpy-relevant primitive classes/codex paths used by parser/group decoding.
+- Implement core KERIpy-relevant primitive classes/codex paths used by
+  parser/group decoding.
 - Ensure both text and qb2 parse paths where applicable.
 
 5. **Error model**
 
-- Typed errors for shortage, cold start, version, unknown code, size/group mismatch, and deserialize failures.
-- Strict-by-default behavior; recovery only at explicit compatibility boundaries.
+- Typed errors for shortage, cold start, version, unknown code, size/group
+  mismatch, and deserialize failures.
+- Strict-by-default behavior; recovery only at explicit compatibility
+  boundaries.
 
 6. **Tooling and UX**
 
-- `cesr:annotate` CLI that reads input stream and emits annotated output to stdout or file.
+- `cesr:annotate` CLI that reads input stream and emits annotated output to
+  stdout or file.
 - Optional JSON pretty output mode.
 
 ## Consolidated Test Strategy
@@ -83,7 +93,9 @@ This document condenses and de-duplicates the parser planning content from:
 
 ## Why `feed()/flush()` Sync State Machine Core
 
-The plans considered generator-forward designs, but parser implementation converged on a sync state machine core with `feed()`/`flush()`, then adapter wrappers. This is a standard and defensible protocol-parser architecture.
+The plans considered generator-forward designs, but parser implementation
+converged on a sync state machine core with `feed()`/`flush()`, then adapter
+wrappers. This is a standard and defensible protocol-parser architecture.
 
 Well-known references with the same lifecycle pattern:
 
@@ -92,13 +104,15 @@ Well-known references with the same lifecycle pattern:
 3. Expat XML parser (`XML_Parse` in repeated chunk calls with final EOF signal).
 4. YAJL incremental JSON parsing (`yajl_parse` + `yajl_complete_parse`).
 5. RapidJSON SAX `Reader` incremental stream consumption.
-6. zlib streaming codecs (`update`/`flush`-style incremental finalization pattern).
+6. zlib streaming codecs (`update`/`flush`-style incremental finalization
+   pattern).
 
 Rationale for CESR specifically:
 
 - CESR is framing-heavy and boundary-sensitive.
 - Chunk determinism and partial-input handling are first-order concerns.
-- Sync core is easier to test exhaustively; async/Effection become thin transport adapters.
+- Sync core is easier to test exhaustively; async/Effection become thin
+  transport adapters.
 
 ## Results (What Was Created and Why)
 
@@ -129,12 +143,15 @@ Rationale for CESR specifically:
 
 5. Human annotation tooling:
 
-- `cesr:annotate` CLI for converting raw CESR streams into readable annotated output.
+- `cesr:annotate` CLI for converting raw CESR streams into readable annotated
+  output.
 - `--in`, `--out`, `--qb2`, and `--pretty` support.
 
 ### Why it was created
 
-1. Establish CESR as a stable, publishable foundation layer before KERI event processing and escrow workflows.
+1. Establish CESR as a stable, publishable foundation layer before KERI event
+   processing and escrow workflows.
 2. Create a reliable cross-language parity base against KERIpy/parside behavior.
 3. Make CESR streams debuggable by humans via annotation output.
-4. Ensure parser behavior is deterministic and robust under real-world streaming/chunking conditions.
+4. Ensure parser behavior is deterministic and robust under real-world
+   streaming/chunking conditions.

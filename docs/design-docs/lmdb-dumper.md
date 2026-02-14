@@ -1,6 +1,12 @@
 # LMDB Dumper
 
-Being able to see what is in the database is the first task for keri-ts. The critical goal here is to maintain a 1:1 mapping between KERIpy's database format and KERI TS's database format. We're going to take all of the database key value pairs in KERIpy's Baser, Reger, Keeper, Noter, and Mailboxer and be able to dump all of them to the console so it is easy to see both key space and value space that is used in a human-friendly dump format. We will also support the option to dump the data to a CSV file for easy processing with other data tools.
+Being able to see what is in the database is the first task for keri-ts. The
+critical goal here is to maintain a 1:1 mapping between KERIpy's database format
+and KERI TS's database format. We're going to take all of the database key value
+pairs in KERIpy's Baser, Reger, Keeper, Noter, and Mailboxer and be able to dump
+all of them to the console so it is easy to see both key space and value space
+that is used in a human-friendly dump format. We will also support the option to
+dump the data to a CSV file for easy processing with other data tools.
 
 See the below Emacs Org Mode notes for tables of these key value pairs.
 
@@ -8,11 +14,15 @@ See the following outline of our tasks in order of priority and approach.
 
 # Task Outline
 
-We need to get base LMDB read, write, and ordered key/value pairs functional and tested first. Then we move on to database by database support for all of the KERIpy LMDB key and value pairs.
+We need to get base LMDB read, write, and ordered key/value pairs functional and
+tested first. Then we move on to database by database support for all of the
+KERIpy LMDB key and value pairs.
 
 ## Prioritized Tasks
 
-1. Get a basic LMDBer implementation working with get, set, put, del, cnt, getIter, and so forth, and database migrations starting from version 1.0 as the first migration.
+1. Get a basic LMDBer implementation working with get, set, put, del, cnt,
+   getIter, and so forth, and database migrations starting from version 1.0 as
+   the first migration.
 2. Support reading the evts. key value pair.
 
 ## Style and coding guides.
@@ -155,7 +165,6 @@ Acronyms: NTsig = non-transferable signers (witnesses or watchers), TRsigs = tra
   | cmse.     | .cmse            | SerderSuber       | SerderACDC                 | Credential Missing Signature Escrow                                                        |    1 | (cred SAID, sn)            |
   | ccrd.     | .ccrd            | SerderSuber       | SerderACDC                 | Completed Credentials                                                                      |    1 | (cred SAID)                |
   |           |                  |                   |                            |                                                                                            |      |                            |
-
 ```
 
 ## Keeper
@@ -183,7 +192,6 @@ Path: keri/ks
 
 Remember to explain the use of the AEID with the Encrypter and Decrypter for storing private key material and whatever else is securely stored.
 - Only salts and private keys are encrypted.
-
 ```
 
 ## Noter
@@ -242,5 +250,4 @@ Path: keri/mbx
   This stores first seen messages where the first seen logic depends on the "fn" arg defaulting to zero.
   There could be other events stored, as they are appended to a topic based on the topic name and not an order number.
   There may be storage-based DOS attack here by allowing storage of arbitrary events, though it is a minor attack vector.
-    
 ```

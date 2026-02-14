@@ -1,7 +1,4 @@
-import {
-  assertEquals,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { annotateCli } from "../../src/annotate/cli.ts";
@@ -113,7 +110,9 @@ Deno.test("annotate decodes v1 -V wrapped -C group without opaque fallback", () 
 Deno.test("annotate handles v1 wrapper carrying v2 -J generic list payload", () => {
   const body = v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}');
   const nestedV2List = "-JAB--FA";
-  const ims = `${body}${counterV1("-V", nestedV2List.length / 4)}${nestedV2List}`;
+  const ims = `${body}${
+    counterV1("-V", nestedV2List.length / 4)
+  }${nestedV2List}`;
   const annotated = annotate(ims);
   assertStringIncludes(annotated, "AttachmentGroup");
   assertStringIncludes(annotated, "GenericListGroup");

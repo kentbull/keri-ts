@@ -1,4 +1,4 @@
-import { type Operation, type Task, action, run, spawn } from "effection";
+import { action, type Operation, run, spawn, type Task } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { startServer } from "../../../src/app/server.ts";
 
@@ -62,10 +62,13 @@ function* textOp(response: Response): Operation<string> {
  * Helper function to wait for a server to be ready
  * Polls the server until it responds or times out
  */
-function* waitForServer(port: number, maxAttempts: number = 10): Operation<void> {
+function* waitForServer(
+  port: number,
+  maxAttempts: number = 10,
+): Operation<void> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = yield* fetchOp(`http://localhost:${port}/echo/`, {
+      const response = yield* fetchOp(`http://localhost:${port}/health`, {
         signal: AbortSignal.timeout(100), // 100ms timeout per attempt
       });
       if (response.ok) {
@@ -86,7 +89,9 @@ function* waitForServer(port: number, maxAttempts: number = 10): Operation<void>
     });
   }
 
-  throw new Error(`Server on port ${port} did not become ready within ${maxAttempts} attempts`);
+  throw new Error(
+    `Server on port ${port} did not become ready within ${maxAttempts} attempts`,
+  );
 }
 
 /**
@@ -125,35 +130,16 @@ Deno.test("Integration: Server - startServer with HTTP requests", async () => {
     yield* waitForServer(testPort);
 
     try {
-      // Make HTTP requests to test the server
-      // These run in the same Effection task tree
-      // Each fetchOp() creates an Operation that yields control back to Effection
-
-      // Test 1: Initial echo endpoint
-      // Note: Database may persist between test runs, so we test the actual behavior
-      const response1 = yield* fetchOp(`http://localhost:${testPort}/echo/`);
+      // Test 1: health endpoint
+      const response1 = yield* fetchOp(`http://localhost:${testPort}/health`);
       assertEquals(response1.status, 200);
       const text1 = yield* textOp(response1);
-      // The echo endpoint returns stored value or "initial echo" if none exists
-      assertEquals(typeof text1, "string");
+      assertEquals(text1, "ok");
 
-      // Test 2: Echo with a value
-      const response2 = yield* fetchOp(`http://localhost:${testPort}/echo/test-value`);
-      assertEquals(response2.status, 200);
-      const text2 = yield* textOp(response2);
-      assertEquals(text2, "test-value");
-
-      // Test 3: Echo again (should return the stored value)
-      const response3 = yield* fetchOp(`http://localhost:${testPort}/echo/`);
-      assertEquals(response3.status, 200);
-      const text3 = yield* textOp(response3);
-      assertEquals(text3, "test-value");
-
-      // Test 4: 404 for unknown endpoint
-      const response4 = yield* fetchOp(`http://localhost:${testPort}/unknown`);
-      assertEquals(response4.status, 404);
-      // Consume the response body to avoid leaks
-      yield* textOp(response4);
+      // Test 2: 404 for unknown endpoint
+      const response2 = yield* fetchOp(`http://localhost:${testPort}/unknown`);
+      assertEquals(response2.status, 404);
+      yield* textOp(response2);
     } finally {
       // Cleanup: Wait for server shutdown to complete
       yield* waitForShutdown(serverTask);
@@ -163,8 +149,7 @@ Deno.test("Integration: Server - startServer with HTTP requests", async () => {
 });
 
 /**
- * Test demonstrating concurrent requests
- * Shows how Effection manages multiple concurrent operations
+ * Test demonstrating concurrent requests against /health
  */
 Deno.test("Integration: Server - startServer with concurrent requests", async () => {
   const testPort = 8002;
@@ -180,17 +165,17 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
       // Spawn multiple concurrent fetch operations
       // Each spawn creates a child task that runs concurrently
       const request1 = yield* spawn(function* () {
-        const res = yield* fetchOp(`http://localhost:${testPort}/echo/req1`);
+        const res = yield* fetchOp(`http://localhost:${testPort}/health`);
         return yield* textOp(res);
       });
 
       const request2 = yield* spawn(function* () {
-        const res = yield* fetchOp(`http://localhost:${testPort}/echo/req2`);
+        const res = yield* fetchOp(`http://localhost:${testPort}/health`);
         return yield* textOp(res);
       });
 
       const request3 = yield* spawn(function* () {
-        const res = yield* fetchOp(`http://localhost:${testPort}/echo/req3`);
+        const res = yield* fetchOp(`http://localhost:${testPort}/health`);
         return yield* textOp(res);
       });
 
@@ -201,9 +186,9 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
       const result3 = yield* request3;
 
       // Verify results
-      assertEquals(result1, "req1");
-      assertEquals(result2, "req2");
-      assertEquals(result3, "req3");
+      assertEquals(result1, "ok");
+      assertEquals(result2, "ok");
+      assertEquals(result3, "ok");
     } finally {
       // Cleanup: Wait for server shutdown to complete
       yield* waitForShutdown(serverTask);
@@ -226,16 +211,18 @@ Deno.test("Integration: Server - startServer error handling", async () => {
 
     try {
       // Test that errors propagate correctly through the task tree
-      const response = yield* fetchOp(`http://localhost:${testPort}/nonexistent`);
+      const response = yield* fetchOp(
+        `http://localhost:${testPort}/nonexistent`,
+      );
       assertEquals(response.status, 404);
       // Consume the response body to avoid leaks
       yield* textOp(response);
 
       // Test that the server continues to work after an error
-      const response2 = yield* fetchOp(`http://localhost:${testPort}/echo/after-error`);
+      const response2 = yield* fetchOp(`http://localhost:${testPort}/health`);
       assertEquals(response2.status, 200);
       const text = yield* textOp(response2);
-      assertEquals(text, "after-error");
+      assertEquals(text, "ok");
     } finally {
       // Cleanup: Wait for server shutdown to complete
       yield* waitForShutdown(serverTask);

@@ -5,6 +5,21 @@
 Raise maintainability, readability, library consumability, and long-term
 evolvability across `keri-ts` (app, db, CESR) without destabilizing behavior.
 
+## Status Update (2026-02-14)
+
+- Phase 0: completed.
+  - `docs/design-docs/ARCHITECTURE_MAP.md` added.
+  - quality gate tasks and static quality report task are in `deno.json`.
+- Phase 1: in progress with major items completed.
+  - Typed errors propagated through db/core + CLI validation paths.
+  - broad generic `Error` throws in current Phase 1 target files replaced.
+- Phase 2: in progress.
+  - `Logger` abstraction added in `src/core/logger.ts`.
+  - direct `console.*` removed from `src/db/**` and `src/app/server.ts`.
+- Phase 3: started (incremental).
+  - legacy `src/db/core/db.ts` helper now typed-error based and documented as
+    legacy/simple path.
+
 ## Quality Principles
 
 - Prefer small, labeled functions and explicit composition over large

@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document provides a comprehensive checklist for implementing LMDBer and all its subclasses in KERI TS, matching KERIpy's functionality. The plan is organized by component with clear implementation priorities.
+This document provides a comprehensive checklist for implementing LMDBer and all
+its subclasses in KERI TS, matching KERIpy's functionality. The plan is
+organized by component with clear implementation priorities.
 
 ---
 
@@ -13,6 +15,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Functions for creating and parsing composite database keys
 
 #### Key Construction Functions
+
 - [ ] `dgKey(pre, dig)` - Create digest key: `prefix.digest`
   - Input: prefix (string/Uint8Array), digest (string/Uint8Array)
   - Output: Uint8Array key with separator `.`
@@ -35,6 +38,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Format: `pre + '|' + dts`
 
 #### Key Parsing Functions
+
 - [ ] `splitKey(key, sep?)` - Split key at separator
   - Input: key (Uint8Array/string), separator (default `.`)
   - Output: tuple of [prefix, suffix]
@@ -53,8 +57,10 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Parses: suffix as ISO8601 datetime string → Date object
 
 #### Ordinal Suffix Functions (for IoSet operations)
+
 - [ ] `suffix(key, ion, sep?)` - Append insertion ordinal suffix
-  - Input: key (Uint8Array/string), insertion ordinal (number), separator (default `.`)
+  - Input: key (Uint8Array/string), insertion ordinal (number), separator
+    (default `.`)
   - Output: Uint8Array with suffix: `key + sep + '%032x'`
   - Purpose: Create hidden ordinal keys for insertion-ordered sets
 
@@ -64,6 +70,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Purpose: Extract apparent key and ordinal from suffixed key
 
 #### Constants
+
 - [ ] `ProemSize = 32` - Size of proem prefix (hex chars, no separator)
 - [ ] `MaxProem = 0xffff...ffff` (32 hex chars) - Maximum proem value
 - [ ] `MaxON = 0xffff...ffff` (32 hex chars) - Maximum ordinal number
@@ -77,6 +84,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Inheritance**: Extends `Filer` (file/directory management base class)
 
 #### Class Constants
+
 - [ ] `HeadDirPath = "/usr/local/var"` - Default head directory
 - [ ] `TailDirPath = "keri/db"` - Default tail directory
 - [ ] `CleanTailDirPath = "keri/clean/db"` - Clean variant tail
@@ -90,6 +98,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] `MaxNamedDBs = 96` - Maximum named sub-databases
 
 #### Constructor (`__init__`)
+
 - [ ] Parameters:
   - `name` (string) - Directory path name differentiator
   - `base` (string, optional) - Optional path segment before name
@@ -105,14 +114,17 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - `fext` (string, optional) - File extension if filed
   - `readonly` (boolean) - Open database readonly
 - [ ] Initialize: `env = None`, `_version = None`, `readonly`
-- [ ] Call super().__init__() with Filer parameters
+- [ ] Call super().**init**() with Filer parameters
 - [ ] If `reopen=True`, call `self.reopen()`
 
 #### Database Lifecycle Methods
+
 - [ ] `reopen(**kwa)` - Open/reopen database
-  - Parameters: `temp`, `headDirPath`, `perm`, `clear`, `reuse`, `clean`, `mode`, `fext`, `readonly`
+  - Parameters: `temp`, `headDirPath`, `perm`, `clear`, `reuse`, `clean`,
+    `mode`, `fext`, `readonly`
   - Create directory path via Filer
-  - Open LMDB environment: `lmdb.open(path, max_dbs=MaxNamedDBs, map_size=4GB, mode=perm, readonly=readonly)`
+  - Open LMDB environment:
+    `lmdb.open(path, max_dbs=MaxNamedDBs, map_size=4GB, mode=perm, readonly=readonly)`
   - Set `opened = True` if successful
   - If new database and not readonly, set version
   - Return: boolean (opened status)
@@ -124,6 +136,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: result from super().close()
 
 #### Version Management
+
 - [ ] `getVer()` - Get database version
   - Read `__version__` key from main database
   - Return: string version or None
@@ -235,7 +248,8 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Yield: (key, ordinal, value)
   - Return: Generator
 
-- [ ] `getOnIoDupItemIter(db, key='', on=0, sep='.')` - Iterate ordinal items (strip proem)
+- [ ] `getOnIoDupItemIter(db, key='', on=0, sep='.')` - Iterate ordinal items
+      (strip proem)
   - Same as getOnItemIter but strip 33-byte proem from values
   - Yield: (key, ordinal, value_without_proem)
   - Return: Generator
@@ -293,6 +307,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: Generator
 
 #### Context Manager
+
 - [ ] `openLMDB(cls?, name, temp, **kwa)` - Context manager factory
   - Create LMDBer instance
   - Yield instance
@@ -307,6 +322,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Wrapper classes for named sub-databases with various behaviors
 
 #### SuberBase (Abstract Base)
+
 - [ ] `Sep = '.'` - Default separator
 - [ ] `__init__(db, subkey, dupsort, sep)` - Initialize
   - Store: `db` (LMDBer), `sdb` (named sub-db), `sep`
@@ -344,6 +360,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: number
 
 #### Suber (Basic Sub-Database)
+
 - [ ] `put(keys, val)` - Put value
   - Call `db.setVal(sdb, _tokey(keys), _ser(val))`
   - Return: boolean
@@ -361,6 +378,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: boolean
 
 #### CesrSuber (CESR Serializable Values)
+
 - [ ] `_ser(val)` - Serialize CESR object
   - Input: Matter subclass instance
   - Return: `val.qb64b` (Uint8Array)
@@ -372,6 +390,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] Inherits: Suber methods
 
 #### CatCesrSuber (Concatenated CESR Values)
+
 - [ ] `_ser(val)` - Serialize multiple CESR objects
   - Input: Iterable of Matter instances
   - Return: Concatenated qb64b values
@@ -381,6 +400,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: tuple of Matter instances
 
 #### IoSetSuber (Insertion-Ordered Sets)
+
 - [ ] `add(keys, val)` - Add value to set
   - Call `db.putIoSetVal(sdb, _tokey(keys), _ser(val))`
   - Return: boolean (added)
@@ -407,10 +427,12 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: number
 
 #### CatCesrIoSetSuber (Concatenated CESR in Ordered Sets)
+
 - [ ] Combines: CatCesrSuber + IoSetSuber
 - [ ] Values: Concatenated CESR objects in insertion order
 
 #### DupSuber (Duplicate-Sorted Database)
+
 - [ ] `put(keys, vals)` - Put multiple values
   - Call `db.putVals(sdb, _tokey(keys), vals.map(_ser))`
   - Return: boolean
@@ -425,10 +447,12 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: boolean
 
 #### CesrDupSuber (CESR in Duplicate-Sorted Database)
+
 - [ ] Combines: CesrSuber + DupSuber
 - [ ] Values: CESR objects with duplicates allowed
 
 #### SignerSuber (Signer Storage)
+
 - [ ] `_ser(val)` - Serialize Signer
   - Return: `val.qb64b` (private key)
 
@@ -436,6 +460,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: `self.klas(qb64b=val)` (Signer instance)
 
 #### CryptSignerSuber (Encrypted Signer Storage)
+
 - [ ] `_ser(val)` - Serialize encrypted Signer
   - Encrypt private key before storage
   - Return: encrypted bytes
@@ -449,6 +474,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Return: Signer instance
 
 #### SerderSuber (Serder Storage)
+
 - [ ] `_ser(val)` - Serialize Serder
   - Return: `val.raw` (serialized event)
 
@@ -459,9 +485,11 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 
 ### 2.2 Komer Classes (`koming.ts`)
 
-**Purpose**: Keyspace Object Mapper - maps dataclass instances to database entries
+**Purpose**: Keyspace Object Mapper - maps dataclass instances to database
+entries
 
 #### KomerBase (Abstract Base)
+
 - [ ] `Sep = '.'` - Default separator
 - [ ] `__init__(db, subkey, schema, kind, dupsort, sep)` - Initialize
   - Store: `db`, `sdb`, `schema` (dataclass class), `kind` (serialization type)
@@ -495,16 +523,19 @@ This document provides a comprehensive checklist for implementing LMDBer and all
   - Yield: (keys_tuple, dataclass_instance)
 
 #### Komer (Basic Object Mapper)
+
 - [ ] Inherits: KomerBase
 - [ ] Single value per key (dupsort=False)
 
 #### DupKomer (Duplicate-Sorted Object Mapper)
+
 - [ ] Inherits: KomerBase
 - [ ] Multiple values per key (dupsort=True)
 - [ ] `put(keys, vals)` - Put multiple instances
 - [ ] `get(keys)` - Get all instances
 
 #### IoSetKomer (Insertion-Ordered Set Object Mapper)
+
 - [ ] Inherits: KomerBase
 - [ ] Uses insertion-ordering suffix
 - [ ] `add(keys, val)` - Add instance to set
@@ -521,12 +552,14 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Main KERI event log database
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/db"`
 - [ ] `AltTailDirPath = ".keri/db"`
 - [ ] `TempPrefix = "keri_db_"`
 - [ ] `MaxNamedDBs = 96`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.evts` - Events (dgKey) - SerderSuber
 - [ ] `.fels` - First seen event log (fnKey) - Suber
 - [ ] `.dtss` - Datetime stamps (dgKey) - Suber
@@ -550,10 +583,14 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] `.habs` - Habitats (name) - Komer (HabitatRecord)
 - [ ] `.nmsp` - Namespaces (namespace + '\x00' + name) - Komer (HabitatRecord)
 - [ ] `.sdts` - SAD datetimes (said) - CesrSuber (Dater)
-- [ ] `.ssgs` - SAD signatures (saider + prefixer + seqner + diger) - CatCesrIoSetSuber
-- [ ] `.tsgs` - Trans indexed sigs (saider + prefixer + seqner + diger) - CatCesrIoSetSuber
-- [ ] `.wsgs` - Witness indexed sigs (saider + prefixer + seqner + diger) - CatCesrIoSetSuber
-- [ ] `.cigs` - Non-indexed sigs (saider + prefixer + seqner + diger) - CatCesrIoSetSuber
+- [ ] `.ssgs` - SAD signatures (saider + prefixer + seqner + diger) -
+      CatCesrIoSetSuber
+- [ ] `.tsgs` - Trans indexed sigs (saider + prefixer + seqner + diger) -
+      CatCesrIoSetSuber
+- [ ] `.wsgs` - Witness indexed sigs (saider + prefixer + seqner + diger) -
+      CatCesrIoSetSuber
+- [ ] `.cigs` - Non-indexed sigs (saider + prefixer + seqner + diger) -
+      CatCesrIoSetSuber
 - [ ] `.ancs` - Anchors (saider + prefixer + seqner + diger) - CatCesrIoSetSuber
 - [ ] `.exns` - Exn messages (topic) - DupSuber
 - [ ] `.chgs` - Challenges (saider) - DupSuber
@@ -562,6 +599,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] `.mids` - Message IDs (saider) - CesrSuber (Matter)
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open all sub-databases
 - [ ] Event storage/retrieval methods (use sub-databases)
 - [ ] Kever management methods
@@ -574,12 +612,14 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Key pair storage (keystore)
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/ks"`
 - [ ] `AltTailDirPath = ".keri/ks"`
 - [ ] `TempPrefix = "keri_ks_"`
 - [ ] `MaxNamedDBs = 10`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.gbls` - Global parameters - Suber
 - [ ] `.pris` - Private keys (public key → private key) - CryptSignerSuber
 - [ ] `.prxs` - Next private keys - CesrSuber (Cipher)
@@ -592,6 +632,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] `.pubs` - Public key sets (prefix.ridx) - Komer (PubSet)
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open all sub-databases
 - [ ] Key pair generation methods
 - [ ] Key storage/retrieval methods
@@ -604,15 +645,18 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Message mailbox storage
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/mbx"`
 - [ ] `AltTailDirPath = ".keri/mbx"`
 - [ ] `TempPrefix = "keri_mbx_"`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.tpcs` - Topics (dupsort=True) - IoSetSuber
 - [ ] `.msgs` - Messages - Suber
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] `appendToTopic(topic, val)` - Append message to topic
 - [ ] `getTopicMsgs(topic, fn?)` - Get messages for topic
@@ -625,14 +669,17 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Notification storage
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/ntf"`
 - [ ] `AltTailDirPath = ".keri/ntf"`
 - [ ] `TempPrefix = "keri_ntf_"`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.ntfs` - Notifications - Suber
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] Notification storage/retrieval methods
 
@@ -643,11 +690,13 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Verifiable Data Registry (VDR) - credential registry
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/vdr"`
 - [ ] `AltTailDirPath = ".keri/vdr"`
 - [ ] `TempPrefix = "keri_vdr_"`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.tels` - Tel events - SerderSuber
 - [ ] `.tdts` - Tel datetimes - Suber
 - [ ] `.tsgs` - Tel signatures - DupSuber
@@ -673,6 +722,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] `.rsigs` - Revocation signatures - CatCesrIoSetSuber
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open all sub-databases
 - [ ] Registry management methods
 - [ ] Credential storage/retrieval methods
@@ -687,16 +737,19 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Agency database (Signify agent)
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/agency"`
 - [ ] `AltTailDirPath = ".keri/agency"`
 - [ ] `TempPrefix = "keri_agency_"`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.agnt` - Agent AIDs (controller → agent) - CesrSuber (Prefixer)
 - [ ] `.ctrl` - Controller AIDs (agent → controller) - CesrSuber (Prefixer)
 - [ ] `.aids` - Managed AIDs (aid → controller) - CesrSuber (Prefixer)
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] Agency mapping methods
 
@@ -707,11 +760,13 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Remote key storage (Salty/Randy edge keys)
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/rks"`
 - [ ] `AltTailDirPath = ".keri/rks"`
 - [ ] `TempPrefix = "keri_rks_"`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.gbls` - Global parameters - Suber
 - [ ] `.prxs` - Next private keys - CesrSuber (Cipher)
 - [ ] `.nxts` - Next keys - CesrSuber (Cipher)
@@ -722,6 +777,7 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 - [ ] `.pubs` - Public key sets - Komer (PubSet)
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] Remote key management methods
 
@@ -732,16 +788,19 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Credential search/indexing database
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/seekdb"`
 - [ ] `AltTailDirPath = ".keri/seekdb"`
 - [ ] `TempPrefix = "keri_seekdb_"`
 - [ ] `MaxNamedDBs = 500`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.schIdx` - Schema indexes - Dynamic
 - [ ] `.dynIdx` - Dynamic indexes - Dynamic
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] `createIndex(field)` - Create dynamic index
 - [ ] Indexing methods
@@ -754,15 +813,18 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: EXN message search/indexing
 
 #### Class Constants
+
 - [ ] Similar to Seeker
 
 #### Sub-Databases (in reopen())
+
 - [ ] Route indexes
 - [ ] Sender/recipient indexes
 - [ ] Date indexes
 - [ ] Schema indexes
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] `createIndex(field)` - Create index
 - [ ] Search methods
@@ -774,14 +836,17 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 **Purpose**: Long-running operation storage
 
 #### Class Constants
+
 - [ ] `TailDirPath = "keri/ops"`
 - [ ] `AltTailDirPath = ".keri/ops"`
 - [ ] `TempPrefix = "keri_ops_"`
 
 #### Sub-Databases (in reopen())
+
 - [ ] `.ops` - Operations - Komer (Op)
 
 #### Methods
+
 - [ ] `reopen(**kwa)` - Open sub-databases
 - [ ] Operation storage/retrieval methods
 
@@ -855,10 +920,11 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 
 ## Key Patterns to Maintain
 
-1. **Transaction Pattern**: Always use `buffers=True` equivalent (Uint8Array by default)
+1. **Transaction Pattern**: Always use `buffers=True` equivalent (Uint8Array by
+   default)
 2. **Key Pattern**: Composite keys with separators (`.`, `|`)
 3. **Ordinal Pattern**: 32-char hex ordinals for ordering
-4. **Sub-Database Pattern**: Named sub-dbs with trailing `.` to avoid Base64 collisions
+4. **Sub-Database Pattern**: Named sub-dbs with trailing `.` to avoid Base64
+   collisions
 5. **Iterator Pattern**: Generator functions for iteration
 6. **Error Pattern**: Convert LMDB errors to KeyError/ValueError equivalents
-

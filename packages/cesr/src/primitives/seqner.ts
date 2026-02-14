@@ -19,7 +19,9 @@ export function parseSeqner(
   const matter = parseMatter(input, cold);
   const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES];
   if (name !== "Salt_128") {
-    throw new UnknownCodeError(`Expected seqner Salt_128 code, got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected seqner Salt_128 code, got ${matter.code}`,
+    );
   }
 
   let sn = 0n;

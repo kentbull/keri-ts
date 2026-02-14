@@ -97,7 +97,9 @@ export interface MockCLIArgs {
 /**
  * Create mock CLI arguments
  */
-export function createMockArgs(args: MockCLIArgs = {}): Record<string, unknown> {
+export function createMockArgs(
+  args: MockCLIArgs = {},
+): Record<string, unknown> {
   return {
     command: "init",
     help: false,
@@ -121,7 +123,7 @@ export function createMockArgs(args: MockCLIArgs = {}): Record<string, unknown> 
  */
 export function* testCLICommand(
   command: Operation<void>,
-  _args: MockCLIArgs = {}
+  _args: MockCLIArgs = {},
 ): Operation<{ output: string[]; errors: string[] }> {
   const harness = new CLITestHarness();
 
@@ -146,7 +148,9 @@ export function* testCLICommand(
  * Test operation that runs multiple CLI commands concurrently
  */
 export function* testConcurrentCLICommands(
-  commands: Array<{ name: string; command: Operation<void>; args: MockCLIArgs }>
+  commands: Array<
+    { name: string; command: Operation<void>; args: MockCLIArgs }
+  >,
 ): Operation<Record<string, { output: string[]; errors: string[] }>> {
   const results: Record<string, { output: string[]; errors: string[] }> = {};
 
@@ -171,7 +175,7 @@ export function* testConcurrentCLICommands(
  */
 export async function assertOperationThrows(
   operation: Operation<void>,
-  expectedError: string
+  expectedError: string,
 ): Promise<void> {
   await assertRejects(() => run(() => operation), Error, expectedError);
 }

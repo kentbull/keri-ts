@@ -24,7 +24,8 @@ await build({
   package: {
     name: "keri-ts",
     version: Deno.env.get("KERI_TS_NPM_VERSION") ?? "0.1.0",
-    description: "KERI TypeScript package with database primitives and CLI runtime",
+    description:
+      "KERI TypeScript package with database primitives and CLI runtime",
     license: "Apache-2.0",
     repository: {
       type: "git",

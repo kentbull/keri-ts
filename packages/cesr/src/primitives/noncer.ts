@@ -18,7 +18,8 @@ export function parseNoncer(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Noncer {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!NONCE_CODE_NAMES.has(name)) {
     throw new UnknownCodeError(`Expected nonce code, got ${matter.code}`);
   }

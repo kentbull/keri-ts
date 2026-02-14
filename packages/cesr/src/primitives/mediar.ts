@@ -25,7 +25,9 @@ export function parseMediar(
 ): Mediar {
   const parsed = parseAttachmentDispatch(input, version, cold);
   if (!MEDIAR_CODES.has(parsed.group.code)) {
-    throw new UnknownCodeError(`Expected mediar group code, got ${parsed.group.code}`);
+    throw new UnknownCodeError(
+      `Expected mediar group code, got ${parsed.group.code}`,
+    );
   }
   return {
     code: parsed.group.code,

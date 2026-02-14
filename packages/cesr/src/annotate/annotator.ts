@@ -1,7 +1,7 @@
 import { parseBytes } from "../core/parser-engine.ts";
 import type { ParseEmission } from "../core/types.ts";
 import { renderAnnotatedFrames } from "./render.ts";
-import type { AnnotateOptions, AnnotatedFrame } from "./types.ts";
+import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
 const DEFAULT_OPTIONS: Required<AnnotateOptions> = Object.freeze({
   commentMode: "inline",
@@ -35,7 +35,9 @@ export function annotateFrames(
   options?: AnnotateOptions,
 ): AnnotatedFrame[] {
   const opts = resolveOptions(options);
-  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+  const bytes = typeof input === "string"
+    ? new TextEncoder().encode(input)
+    : input;
   const frames = framesOrThrow(parseBytes(bytes));
   return renderAnnotatedFrames(frames, opts);
 }

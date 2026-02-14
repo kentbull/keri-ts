@@ -1,6 +1,8 @@
 # KERI-ts CLI Test Suite
 
-This directory contains comprehensive tests for the KERI-ts CLI implementation, built on top of Deno's testing framework and Effection primitives for structured concurrency.
+This directory contains comprehensive tests for the KERI-ts CLI implementation,
+built on top of Deno's testing framework and Effection primitives for structured
+concurrency.
 
 ## Test Structure
 
@@ -19,12 +21,14 @@ test/
 ## Test Categories
 
 ### Unit Tests (`test/unit/`)
+
 - CLI argument parsing and validation
 - Command logic and error handling
 - Individual component functionality
 - Mock data and test utilities
 
 ### Integration Tests (`test/integration/`)
+
 - Full CLI command execution
 - Effection primitive usage (`run`, `spawn`, `Operation`)
 - System simulation and resource management
@@ -34,6 +38,7 @@ test/
 ## Running Tests
 
 ### Basic Commands
+
 ```bash
 # Run all tests
 deno task test
@@ -55,6 +60,7 @@ deno task coverage
 ```
 
 ### Advanced Usage
+
 ```bash
 # Run specific test file
 deno test test/unit/cli.test.ts
@@ -69,22 +75,27 @@ deno test test/integration/ --allow-sys --allow-net --allow-env --allow-read --a
 ## Test Utilities
 
 ### CLITestHarness
+
 Captures console output for testing CLI commands:
+
 ```typescript
 const harness = new CLITestHarness();
 harness.captureOutput();
 // ... run CLI command
-harness.assertOutputContains('Expected output');
+harness.assertOutputContains("Expected output");
 harness.restoreOutput();
 ```
 
 ### Effection Integration
+
 Tests use Effection primitives for structured concurrency:
+
 ```typescript
 const result = await run(() => testCLICommand(() => initCommand(args), args));
 ```
 
 ### Mock Utilities
+
 - `createMockArgs()` - Create mock CLI arguments
 - `testCLICommand()` - Test CLI command execution
 - `testConcurrentCLICommands()` - Test multiple commands concurrently
@@ -93,12 +104,14 @@ const result = await run(() => testCLICommand(() => initCommand(args), args));
 ## Test Features
 
 ### Effection Primitive Testing
+
 - **`run()`** - Execute operations with proper error handling
 - **`spawn()`** - Test concurrent command execution
 - **`timeout()`** - Test command timeouts and cancellation
 - **Resource Management** - Test proper cleanup and resource handling
 
 ### System Simulation
+
 - Full CLI command execution
 - Concurrent command testing
 - Error propagation and handling
@@ -106,6 +119,7 @@ const result = await run(() => testCLICommand(() => initCommand(args), args));
 - Timeout and cancellation testing
 
 ### Coverage
+
 - Line coverage reporting
 - Branch coverage analysis
 - HTML coverage reports
@@ -114,10 +128,11 @@ const result = await run(() => testCLICommand(() => initCommand(args), args));
 ## Test Examples
 
 ### Unit Test Example
+
 ```typescript
 Deno.test("CLI: init command with valid arguments", async () => {
   const args = createMockArgs({
-    name: 'testkeystore',
+    name: "testkeystore",
     nopasscode: true,
   });
 
@@ -127,11 +142,12 @@ Deno.test("CLI: init command with valid arguments", async () => {
 ```
 
 ### Integration Test Example
+
 ```typescript
 Deno.test("Integration: Multiple CLI commands with spawn", async () => {
   const commands = [
-    { name: 'init1', command: () => initCommand(args1), args: args1 },
-    { name: 'init2', command: () => initCommand(args2), args: args2 },
+    { name: "init1", command: () => initCommand(args1), args: args1 },
+    { name: "init2", command: () => initCommand(args2), args: args2 },
   ];
 
   const results = await run(() => testConcurrentCLICommands(commands));
@@ -141,12 +157,17 @@ Deno.test("Integration: Multiple CLI commands with spawn", async () => {
 
 ## Best Practices
 
-1. **Use Effection Primitives**: All tests should use `run()`, `spawn()`, and `Operation<T>` for proper structured concurrency
-2. **Test Resource Cleanup**: Always verify that resources are properly cleaned up
-3. **Mock External Dependencies**: Use test utilities to mock console output and CLI arguments
+1. **Use Effection Primitives**: All tests should use `run()`, `spawn()`, and
+   `Operation<T>` for proper structured concurrency
+2. **Test Resource Cleanup**: Always verify that resources are properly cleaned
+   up
+3. **Mock External Dependencies**: Use test utilities to mock console output and
+   CLI arguments
 4. **Test Error Cases**: Include tests for error conditions and edge cases
-5. **Concurrent Testing**: Test multiple commands running concurrently using `spawn()`
-6. **Coverage Goals**: Aim for high test coverage, especially for critical CLI functionality
+5. **Concurrent Testing**: Test multiple commands running concurrently using
+   `spawn()`
+6. **Coverage Goals**: Aim for high test coverage, especially for critical CLI
+   functionality
 
 ## Dependencies
 

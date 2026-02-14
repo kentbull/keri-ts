@@ -10,7 +10,8 @@ import { CLITestHarness } from "../../../test/utils.ts";
  */
 
 Deno.test({
-  name: "Integration: DB dump command - should dump database contents - debug iterator issue",
+  name:
+    "Integration: DB dump command - should dump database contents - debug iterator issue",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -27,7 +28,11 @@ Deno.test({
       });
 
       try {
-        assertEquals(baser.putEvt(key, val), true, "Fixture event should be written");
+        assertEquals(
+          baser.putEvt(key, val),
+          true,
+          "Fixture event should be written",
+        );
       } finally {
         // Keep temp database files for readonly dump step.
         yield* baser.close();
@@ -49,14 +54,31 @@ Deno.test({
       const output = harness.getOutput();
       const errors = harness.getErrors();
 
-      assertEquals(errors.length, 0, `Expected no stderr output, got: ${errors.join("\n")}`);
-      assert(output.some((line) => line.includes("Baser.evts sub-database dump (1 entries)")));
+      assertEquals(
+        errors.length,
+        0,
+        `Expected no stderr output, got: ${errors.join("\n")}`,
+      );
+      assert(
+        output.some((line) =>
+          line.includes("Baser.evts sub-database dump (1 entries)")
+        ),
+      );
       assert(output.some((line) => line.includes("Total entries: 1")));
     } catch (error) {
       console.error("\n=== Test Error ===");
-      console.error("Error type:", error instanceof Error ? error.constructor.name : typeof error);
-      console.error("Error message:", error instanceof Error ? error.message : String(error));
-      console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
+      console.error(
+        "Error type:",
+        error instanceof Error ? error.constructor.name : typeof error,
+      );
+      console.error(
+        "Error message:",
+        error instanceof Error ? error.message : String(error),
+      );
+      console.error(
+        "Error stack:",
+        error instanceof Error ? error.stack : "No stack trace",
+      );
 
       const output = harness.getOutput();
       const errors = harness.getErrors();
@@ -75,7 +97,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Integration: DB dump command - should test Baser.getAllEvtsIter directly",
+  name:
+    "Integration: DB dump command - should test Baser.getAllEvtsIter directly",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -96,7 +119,7 @@ Deno.test({
         assertEquals(
           writableBaser.putEvt(key, val),
           true,
-          "Fixture event should be written"
+          "Fixture event should be written",
         );
       } finally {
         yield* writableBaser.close();
@@ -124,7 +147,8 @@ Deno.test({
         console.log("Iterator:", iter);
         console.log(
           "Is generator?",
-          iter.constructor.name === "GeneratorFunction" || iter[Symbol.iterator]
+          iter.constructor.name === "GeneratorFunction" ||
+            iter[Symbol.iterator],
         );
 
         // Try to iterate
@@ -135,7 +159,7 @@ Deno.test({
           for (const [keyBytes, valBytes] of iter) {
             entryCount++;
             console.log(
-              `Entry ${entryCount}: key length=${keyBytes.length}, val length=${valBytes.length}`
+              `Entry ${entryCount}: key length=${keyBytes.length}, val length=${valBytes.length}`,
             );
 
             if (entryCount >= 5) {
@@ -144,20 +168,24 @@ Deno.test({
             }
           }
           assert(entryCount > 0, "Expected at least one iterated entry");
-          console.log(`Iteration complete. Total entries iterated: ${entryCount}`);
+          console.log(
+            `Iteration complete. Total entries iterated: ${entryCount}`,
+          );
         } catch (iterError) {
           console.error("Iteration error:", iterError);
           console.error(
             "Error type:",
-            iterError instanceof Error ? iterError.constructor.name : typeof iterError
+            iterError instanceof Error
+              ? iterError.constructor.name
+              : typeof iterError,
           );
           console.error(
             "Error message:",
-            iterError instanceof Error ? iterError.message : String(iterError)
+            iterError instanceof Error ? iterError.message : String(iterError),
           );
           console.error(
             "Error stack:",
-            iterError instanceof Error ? iterError.stack : "No stack trace"
+            iterError instanceof Error ? iterError.stack : "No stack trace",
           );
           throw iterError;
         }

@@ -2,11 +2,14 @@
 
 ## Goal
 
-Given an arbitrary CESR stream (text or binary), produce a deterministic, human-readable annotated CESR stream with indentation and comments, suitable for debugging and translation.
+Given an arbitrary CESR stream (text or binary), produce a deterministic,
+human-readable annotated CESR stream with indentation and comments, suitable for
+debugging and translation.
 
 ## Hard Requirement: CLI UX (JQ-like for CESR)
 
-From the command line in `keri-ts`, we must support piping CESR text input and getting annotated output to:
+From the command line in `keri-ts`, we must support piping CESR text input and
+getting annotated output to:
 
 1. `STDOUT` by default
 2. A specified output file when requested
@@ -28,10 +31,13 @@ Minimum CLI shape:
 Observed baseline and gaps:
 
 1. KERIpy has `annot()`/`denot()` behavior for text CESR.
-2. KERIpy binary-domain annotation path is unfinished (`cold == bny` branch effectively unimplemented).
-3. KERIpy annotation is event-field heavy and not a complete generic CESR annotator.
+2. KERIpy binary-domain annotation path is unfinished (`cold == bny` branch
+   effectively unimplemented).
+3. KERIpy annotation is event-field heavy and not a complete generic CESR
+   annotator.
 
-Our implementation in `keri-ts` closes these gaps by building annotation on top of the existing parser engine and primitives, with full txt + qb2 coverage.
+Our implementation in `keri-ts` closes these gaps by building annotation on top
+of the existing parser engine and primitives, with full txt + qb2 coverage.
 
 ## Architecture
 
@@ -73,7 +79,8 @@ Initial options:
    - optional comment-above mode
 3. Native body groups and nested maps preserve hierarchy and label semantics.
 4. Output must be deterministic regardless of stream chunk boundaries.
-5. qb2 input is parsed in binary domain and rendered as canonical textual annotated output for human readability.
+5. qb2 input is parsed in binary domain and rendered as canonical textual
+   annotated output for human readability.
 
 ## No Magic Strings Policy
 
@@ -105,7 +112,8 @@ Annotation uses strict parser behavior:
 
 1. Add qb2 fixtures for attachment groups and native body-group paths.
 2. Validate identical semantic annotation for equivalent txt vs qb2 payloads.
-3. Ensure MapBodyGroup label interleaving and nested mapper structures are fully preserved.
+3. Ensure MapBodyGroup label interleaving and nested mapper structures are fully
+   preserved.
 
 ### Split/Chunk Determinism
 
@@ -132,8 +140,10 @@ Annotation uses strict parser behavior:
 ## Definition of Done
 
 1. Any CESR input stream (txt or qb2) can be annotated deterministically.
-2. CLI supports jq-like stream workflow (`stdin -> stdout`) and file output mode.
+2. CLI supports jq-like stream workflow (`stdin -> stdout`) and file output
+   mode.
 3. `denot(annotate(x)) == x` across fixture corpus.
-4. KERIpy annotation fixtures pass where applicable; qb2 parity covered with new fixtures.
+4. KERIpy annotation fixtures pass where applicable; qb2 parity covered with new
+   fixtures.
 5. No magic strings in annotation logic; registries are single source of truth.
 6. All tests pass.

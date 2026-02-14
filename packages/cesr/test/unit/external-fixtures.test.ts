@@ -116,10 +116,12 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   assertEquals(payload.length % 4, 0);
 
-  const wrapped = `${makeCounterV2(
-    CtrDexV2.BodyWithAttachmentGroup,
-    payload.length / 4,
-  )}${payload}`;
+  const wrapped = `${
+    makeCounterV2(
+      CtrDexV2.BodyWithAttachmentGroup,
+      payload.length / 4,
+    )
+  }${payload}`;
 
   const parser = createParser();
   const first = parser.feed(decodeB64(wrapped));
@@ -133,16 +135,18 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
 });
 
 Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with attachments", () => {
-  const nestedAttachment = `${makeCounterV2(CtrDexV2.ControllerIdxSigs, 1)}${
-    sigerToken()
-  }`;
+  const nestedAttachment = `${
+    makeCounterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   assertEquals(payload.length % 4, 0);
 
-  const wrapped = `${makeCounterV2(
-    CtrDexV2.BodyWithAttachmentGroup,
-    payload.length / 4,
-  )}${payload}`;
+  const wrapped = `${
+    makeCounterV2(
+      CtrDexV2.BodyWithAttachmentGroup,
+      payload.length / 4,
+    )
+  }${payload}`;
 
   const txtParser = createParser();
   const txtFirst = txtParser.feed(encode(wrapped));
@@ -173,10 +177,12 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
 Deno.test("native MapBodyGroup supports labels between primitives", () => {
   const base = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   const payload = base.slice(4);
-  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${payload.slice(12, 16)}VAAA${
-    payload.slice(16)
-  }`;
-  const mapBody = `${makeCounterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
+  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${
+    payload.slice(12, 16)
+  }VAAA${payload.slice(16)}`;
+  const mapBody = `${
+    makeCounterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
+  }${mapPayload}`;
 
   const parser = createParser();
   const first = parser.feed(encode(mapBody));

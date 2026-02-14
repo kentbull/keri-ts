@@ -29,17 +29,23 @@ Deno.test("Integration: Effection - Multiple CLI commands with spawn", async () 
   const commands = [
     {
       name: "init1",
-      command: initCommand(createMockArgs({ name: "keystore1", nopasscode: true })),
+      command: initCommand(
+        createMockArgs({ name: "keystore1", nopasscode: true }),
+      ),
       args: createMockArgs({ name: "keystore1", nopasscode: true }),
     },
     {
       name: "init2",
-      command: initCommand(createMockArgs({ name: "keystore2", nopasscode: true })),
+      command: initCommand(
+        createMockArgs({ name: "keystore2", nopasscode: true }),
+      ),
       args: createMockArgs({ name: "keystore2", nopasscode: true }),
     },
     {
       name: "init3",
-      command: initCommand(createMockArgs({ name: "keystore3", nopasscode: true })),
+      command: initCommand(
+        createMockArgs({ name: "keystore3", nopasscode: true }),
+      ),
       args: createMockArgs({ name: "keystore3", nopasscode: true }),
     },
   ];

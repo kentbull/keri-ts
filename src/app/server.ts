@@ -1,7 +1,5 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { RootDatabase } from "npm:lmdb@^3.4.4";
 import { consoleLogger, type Logger } from "../core/logger.ts";
-import { openDB, readValue, writeValue } from "../db/core/db.ts";
 
 /**
  * Start HTTP server with Effection as the outermost runtime.
@@ -12,15 +10,6 @@ export function* startServer(
   port: number = 8000,
   logger: Logger = consoleLogger,
 ): Operation<void> {
-  // openDB is synchronous, so call it directly
-  let db: RootDatabase;
-  try {
-    db = openDB();
-  } catch (error) {
-    logger.error("Error opening database:", error);
-    throw error;
-  }
-
   // Use Deno.serve
   return yield* action((resolve, reject) => {
     const controller = new AbortController();
@@ -41,29 +30,16 @@ export function* startServer(
       (req: Request) => {
         try {
           const url = new URL(req.url);
-          if (url.pathname.startsWith("/echo/")) {
-            // Extract value from path (everything after "/echo/")
-            let val = url.pathname.slice(6); // Trim '/echo/'
-
-            // If no value in path, read from database
-            if (!val) {
-              const oldVal = readValue(db, "echo");
-              val = oldVal ? oldVal : "initial echo";
-            }
-
-            // Write the value to database (persist it)
-            writeValue(db, "echo", val);
-
-            return new Response(val, {
+          if (url.pathname === "/health") {
+            return new Response("ok", {
               status: 200,
               headers: { "Content-Type": "text/plain" },
             });
-          } else {
-            return new Response("Not Found", {
-              status: 404,
-              headers: { "Content-Type": "text/plain" },
-            });
           }
+          return new Response("Not Found", {
+            status: 404,
+            headers: { "Content-Type": "text/plain" },
+          });
         } catch (error) {
           return new Response(String(error), { status: 500 });
         }

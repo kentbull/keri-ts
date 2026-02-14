@@ -27,7 +27,9 @@ export function parseBlinder(
 ): Blinder {
   const parsed = parseAttachmentDispatch(input, version, cold);
   if (!BLINDER_CODES.has(parsed.group.code)) {
-    throw new UnknownCodeError(`Expected blinder group code, got ${parsed.group.code}`);
+    throw new UnknownCodeError(
+      `Expected blinder group code, got ${parsed.group.code}`,
+    );
   }
   return {
     code: parsed.group.code,

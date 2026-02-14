@@ -19,7 +19,10 @@ Deno.test("CLI - init command requires name", async () => {
     nopasscode: true,
   });
 
-  await assertOperationThrows(initCommand(args), "Name is required and cannot be empty");
+  await assertOperationThrows(
+    initCommand(args),
+    "Name is required and cannot be empty",
+  );
 });
 
 Deno.test("CLI - init command with missing name", async () => {
@@ -28,7 +31,10 @@ Deno.test("CLI - init command with missing name", async () => {
     nopasscode: true,
   });
 
-  await assertOperationThrows(initCommand(args), "Name is required and cannot be empty");
+  await assertOperationThrows(
+    initCommand(args),
+    "Name is required and cannot be empty",
+  );
 });
 
 Deno.test("CLI - init command with help flag", async () => {

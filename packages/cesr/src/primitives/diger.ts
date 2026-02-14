@@ -22,7 +22,8 @@ export function parseDiger(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Diger {
   const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
+  const name =
+    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
   if (!isDigestName(name)) {
     throw new UnknownCodeError(`Expected digest code, got ${matter.code}`);
   }

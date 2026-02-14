@@ -23,7 +23,9 @@ export function parseDater(
   const matter = parseMatter(input, cold);
   const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES];
   if (name !== "DateTime") {
-    throw new UnknownCodeError(`Expected dater DateTime code, got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected dater DateTime code, got ${matter.code}`,
+    );
   }
 
   const dts = new TextDecoder().decode(matter.raw);

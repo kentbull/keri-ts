@@ -23,7 +23,9 @@ export function parseVerser(
 ): Verser {
   const matter = parseMatter(input, cold);
   if (matter.code !== "0O" && matter.code !== "1O") {
-    throw new UnknownCodeError(`Expected verser code (0O/1O), got ${matter.code}`);
+    throw new UnknownCodeError(
+      `Expected verser code (0O/1O), got ${matter.code}`,
+    );
   }
 
   const body = matter.qb64.slice(matter.code.length);

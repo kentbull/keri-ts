@@ -37,7 +37,9 @@ function encode(input: string): Uint8Array {
 
 function token(code: string): string {
   const sizage = MATTER_SIZES.get(code);
-  if (!sizage || sizage.fs === null) throw new Error(`Need fixed-size code ${code}`);
+  if (!sizage || sizage.fs === null) {
+    throw new Error(`Need fixed-size code ${code}`);
+  }
   return code + "A".repeat(sizage.fs - code.length);
 }
 
@@ -87,15 +89,19 @@ Deno.test("pather parses strb64 token", () => {
 
 Deno.test("mapper parses map body with interleaved labels", () => {
   const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(4);
-  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${payload.slice(12, 16)}VAAA${
-    payload.slice(16)
-  }`;
+  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${
+    payload.slice(12, 16)
+  }VAAA${payload.slice(16)}`;
   const sizage = COUNTER_SIZES_V2.get(CtrDexV2.MapBodyGroup)!;
   const mapBody = `${CtrDexV2.MapBodyGroup}${
     intToB64(mapPayload.length / 4, sizage.ss)
   }${mapPayload}`;
 
-  const mapper = parseMapperBody(encode(mapBody), { major: 2, minor: 0 }, "txt");
+  const mapper = parseMapperBody(
+    encode(mapBody),
+    { major: 2, minor: 0 },
+    "txt",
+  );
   assertEquals(mapper.code, CtrDexV2.MapBodyGroup);
   assertEquals(mapper.fields.length > 0, true);
   assertEquals(mapper.fields.some((f) => f.label !== null), true);
@@ -103,15 +109,19 @@ Deno.test("mapper parses map body with interleaved labels", () => {
 
 Deno.test("mapper recursively parses nested map values", () => {
   const innerPayload = `VAAA${token("B")}`;
-  const innerMap = `${counterV2(CtrDexV2.MapBodyGroup, innerPayload.length / 4)}${
-    innerPayload
-  }`;
+  const innerMap = `${
+    counterV2(CtrDexV2.MapBodyGroup, innerPayload.length / 4)
+  }${innerPayload}`;
   const outerPayload = `VAAA${innerMap}VAAA${token("E")}`;
-  const outerMap = `${counterV2(CtrDexV2.MapBodyGroup, outerPayload.length / 4)}${
-    outerPayload
-  }`;
+  const outerMap = `${
+    counterV2(CtrDexV2.MapBodyGroup, outerPayload.length / 4)
+  }${outerPayload}`;
 
-  const mapper = parseMapperBody(encode(outerMap), { major: 2, minor: 0 }, "txt");
+  const mapper = parseMapperBody(
+    encode(outerMap),
+    { major: 2, minor: 0 },
+    "txt",
+  );
   assertEquals(mapper.fields.length, 2);
   assertEquals(mapper.fields[0].isCounter, true);
   assertEquals((mapper.fields[0].children?.length ?? 0) > 0, true);
@@ -189,7 +199,9 @@ Deno.test("tholder parses threshold primitive", () => {
 });
 
 Deno.test("sealer parses seal source couples group", () => {
-  const ims = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${token("E")}`;
+  const ims = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${
+    token("E")
+  }`;
   const sealer = parseSealer(encode(ims), { major: 2, minor: 0 }, "txt");
   assertEquals(sealer.code, CtrDexV2.SealSourceCouples);
   assertEquals(sealer.count, 1);
@@ -207,9 +219,9 @@ Deno.test("blinder parses blinded state quadruples group", () => {
 });
 
 Deno.test("mediar parses typed media quadruples group", () => {
-  const ims = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
+  const ims = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${
+    token("E")
+  }${token("D")}${token("M")}`;
   const mediar = parseMediar(encode(ims), { major: 2, minor: 0 }, "txt");
   assertEquals(mediar.code, CtrDexV2.TypedMediaQuadruples);
   assertEquals(mediar.count, 1);
@@ -218,7 +230,9 @@ Deno.test("mediar parses typed media quadruples group", () => {
 
 Deno.test("compactor parses map body group", () => {
   const payload = `VAAA${token("B")}VAAA${token("E")}`;
-  const ims = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
+  const ims = `${
+    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
+  }${payload}`;
   const compactor = parseCompactor(encode(ims), { major: 2, minor: 0 }, "txt");
   assertEquals(compactor.code, CtrDexV2.MapBodyGroup);
   assertEquals(compactor.fields.length >= 1, true);
@@ -226,7 +240,9 @@ Deno.test("compactor parses map body group", () => {
 
 Deno.test("aggor parses generic list group", () => {
   const payload = "ABCDWXYZ";
-  const ims = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
+  const ims = `${
+    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
+  }${payload}`;
   const aggor = parseAggor(encode(ims), { major: 2, minor: 0 }, "txt");
   assertEquals(aggor.code, CtrDexV2.GenericListGroup);
   assertEquals(aggor.kind, "list");

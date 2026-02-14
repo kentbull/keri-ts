@@ -39,7 +39,9 @@ export function parseSealer(
 ): Sealer {
   const parsed = parseAttachmentDispatch(input, version, cold);
   if (!SEALER_CODES.has(parsed.group.code)) {
-    throw new UnknownCodeError(`Expected sealer group code, got ${parsed.group.code}`);
+    throw new UnknownCodeError(
+      `Expected sealer group code, got ${parsed.group.code}`,
+    );
   }
   return {
     code: parsed.group.code,
