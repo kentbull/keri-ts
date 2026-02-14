@@ -1,5 +1,6 @@
 import { Command } from "npm:commander@^10.0.1";
 import { action, type Operation } from "npm:effection@^3.6.0";
+import { AppError } from "../../core/errors.ts";
 import { agentCommand } from "./agent.ts";
 import { dumpEvts } from "./db-dump.ts";
 import { initCommand } from "./init.ts";
@@ -239,7 +240,11 @@ export function* kli(args: string[] = []): Operation<void> {
 
     // For other errors, log and rethrow
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`Error: ${message}`);
+    if (error instanceof AppError && error.context) {
+      console.error(`Error: ${message}`, error.context);
+    } else {
+      console.error(`Error: ${message}`);
+    }
     throw error;
   }
 

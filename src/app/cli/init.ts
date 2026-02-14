@@ -1,4 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
+import { ValidationError } from "../../core/errors.ts";
 
 interface InitArgs {
   name?: string;
@@ -61,7 +62,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   // Validate required name
   const name = initArgs.name;
   if (!name || name === "") {
-    throw new Error("Name is required and cannot be empty");
+    throw new ValidationError("Name is required and cannot be empty");
   }
 
   const base = initArgs.base || "";
@@ -83,7 +84,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     const retry = prompt("Re-enter passcode: ");
 
     if (passcode !== retry) {
-      throw new Error("Passcodes do not match");
+      throw new ValidationError("Passcodes do not match");
     }
 
     bran = passcode || undefined;

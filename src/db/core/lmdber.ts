@@ -13,11 +13,8 @@ import {
   DatabaseNotOpenError,
   DatabaseOperationError,
 } from "../../core/errors.ts";
-import {
-  PathManager,
-  PathManagerDefaults,
-  PathManagerOptions,
-} from "./path-manager.ts";
+import { consoleLogger, type Logger } from "../../core/logger.ts";
+import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
 export type BinVal = Uint8Array;
 export type BinKey = Uint8Array;
@@ -35,6 +32,7 @@ export const t = (b: Uint8Array): string => decoder.decode(b);
 export interface LMDBerOptions extends PathManagerOptions {
   readonly?: boolean;
   dupsort?: boolean;
+  logger?: Logger;
 }
 
 export interface LMDBerDefaults extends PathManagerDefaults {
@@ -68,6 +66,7 @@ export class LMDBer {
   public env: RootDatabase<any, Key> | null;
   public readonly: boolean;
   private defaults: LMDBerDefaults;
+  private readonly logger: Logger;
 
   // Class constants
   static readonly HeadDirPath = "/usr/local/var";
@@ -84,6 +83,7 @@ export class LMDBer {
 
   constructor(options: LMDBerOptions = {}, defaults?: Partial<LMDBerDefaults>) {
     this.defaults = { ...LMDBER_DEFAULTS, ...defaults };
+    this.logger = options.logger ?? consoleLogger;
 
     // Create PathManager with composition
     const pathDefaults: Partial<PathManagerDefaults> = {
@@ -126,10 +126,9 @@ export class LMDBer {
 
   private formatDbKeyError(key: Uint8Array, error: unknown): DatabaseKeyError {
     const message = error instanceof Error ? error.message : String(error);
-    return new DatabaseKeyError(
-      `Key is empty, too big, or wrong size: ${message}`,
-      { key: Array.from(key) },
-    );
+    return new DatabaseKeyError(`Key is empty, too big, or wrong size: ${message}`, {
+      key: Array.from(key),
+    });
   }
 
   /**
@@ -147,9 +146,7 @@ export class LMDBer {
         this.env.close();
       } catch (error) {
         // Ignore close errors (database might already be closed)
-        console.warn(
-          `Warning: Error closing existing LMDB environment: ${error}`,
-        );
+        this.logger.warn(`Warning: Error closing existing LMDB environment: ${error}`);
       }
       this.env = null;
     }
@@ -163,9 +160,7 @@ export class LMDBer {
 
     // Get map size from environment variable or use default
     const mapSizeEnv = Deno.env.get("KERI_LMDB_MAP_SIZE");
-    const mapSize = mapSizeEnv
-      ? parseInt(mapSizeEnv, 10)
-      : this.defaults.mapSize;
+    const mapSize = mapSizeEnv ? parseInt(mapSizeEnv, 10) : this.defaults.mapSize;
 
     // Check if database files exist before opening
     const dbExists = yield* this.checkDatabaseExists();
@@ -173,9 +168,7 @@ export class LMDBer {
     // If readonly and database doesn't exist, we need to handle that gracefully
     // For readonly mode, database files must exist
     if (readonly && !dbExists) {
-      console.error(
-        `Cannot open readonly database: database files do not exist at ${dbPath}`,
-      );
+      this.logger.error(`Cannot open readonly database: database files do not exist at ${dbPath}`);
       this.env = null;
       return false;
     }
@@ -184,9 +177,10 @@ export class LMDBer {
     // LMDB will use the actual map size from the database file, but the Node.js
     // lmdb package requires mapSize to be >= the database's actual map size
     // Use 4GB (KERIpy default) or larger to ensure compatibility
-    const effectiveMapSize = readonly && dbExists
-      ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
-      : mapSize;
+    const effectiveMapSize =
+      readonly && dbExists
+        ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
+        : mapSize;
 
     const dbConfig = {
       path: dbPath, // Use directory path (Node.js lmdb should handle this)
@@ -197,7 +191,7 @@ export class LMDBer {
       encoding: "binary" as const, // to mimic KERIpy behavior
       keyEncoding: "binary" as const, // to mimic KERIpy behavior
     };
-    console.log(
+    this.logger.info(
       `Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`,
     );
 
@@ -207,7 +201,7 @@ export class LMDBer {
       // do sync because wrapping synchronous native operations in action() can cause
       // memory management issues with native bindings (double-free errors)
       this.env = open(dbConfig);
-      console.log(`LMDB environment opened successfully`);
+      this.logger.info(`LMDB environment opened successfully`);
 
       // Set version if new database and not readonly
       if (this.opened && !readonly && !dbExists && !this.temp) {
@@ -218,9 +212,13 @@ export class LMDBer {
 
       return this.opened;
     } catch (error) {
-      console.error(`Failed to open LMDB: ${error}`);
       this.env = null;
-      return false;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseOperationError(`Failed to open LMDB environment: ${message}`, {
+        path: dbPath,
+        readonly,
+        mapSize: effectiveMapSize,
+      });
     }
   }
 
@@ -244,8 +242,8 @@ export class LMDBer {
       try {
         this.env.close();
       } catch (error) {
-        // Ignore close errors (database might already be closed)
-        console.warn(`Error closing LMDB: ${error}`);
+        // Intentional recovery: close errors are non-fatal during shutdown paths.
+        this.logger.warn(`Error closing LMDB: ${error}`);
       }
       this.env = null;
     }
@@ -267,6 +265,7 @@ export class LMDBer {
       const version = t(versionBytes);
       return version || null;
     } catch {
+      // Intentional recovery: absent/malformed version metadata is treated as unknown.
       return null;
     }
   }
@@ -283,10 +282,9 @@ export class LMDBer {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new DatabaseOperationError(
-        `Failed to set database version: ${message}`,
-        { version: val },
-      );
+      throw new DatabaseOperationError(`Failed to set database version: ${message}`, {
+        version: val,
+      });
     }
   }
 
@@ -310,11 +308,7 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written, False if key already exists
    */
-  putVal(
-    db: Database<BinVal, BinKey>,
-    key: Uint8Array,
-    val: Uint8Array,
-  ): boolean {
+  putVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): boolean {
     const env = this.env!;
 
     try {
@@ -340,11 +334,7 @@ export class LMDBer {
    * @param val - Value bytes
    * @returns True if successfully written
    */
-  setVal(
-    db: Database<BinVal, BinKey>,
-    key: Uint8Array,
-    val: Uint8Array,
-  ): boolean {
+  setVal(db: Database<BinVal, BinKey>, key: Uint8Array, val: Uint8Array): boolean {
     const env = this.env!;
 
     try {
@@ -416,9 +406,7 @@ export class LMDBer {
       return count;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new DatabaseOperationError(
-        `Failed to count database entries: ${message}`,
-      );
+      throw new DatabaseOperationError(`Failed to count database entries: ${message}`);
     }
   }
 
@@ -461,8 +449,10 @@ export class LMDBer {
         yield [keyBytes, valBytes];
       }
     } catch (error) {
-      // If iteration fails, return empty generator
-      console.warn(`Error iterating database: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseOperationError(`Failed to iterate database branch: ${message}`, {
+        top: Array.from(top),
+      });
     }
   }
 }

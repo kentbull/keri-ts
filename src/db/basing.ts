@@ -11,6 +11,7 @@ import {
   DatabaseNotOpenError,
   DatabaseOperationError,
 } from "../core/errors.ts";
+import { consoleLogger, type Logger } from "../core/logger.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 
 export interface BaserOptions extends LMDBerOptions {
@@ -23,6 +24,7 @@ export interface BaserOptions extends LMDBerOptions {
  */
 export class Baser {
   private lmdber: LMDBer;
+  private readonly logger: Logger;
 
   // Named sub-databases
   public evts!: Database<BinVal, BinKey>; // Events sub-database (dgKey: serialized KEL events)
@@ -34,6 +36,7 @@ export class Baser {
   static readonly MaxNamedDBs = 96;
 
   constructor(options: BaserOptions = {}) {
+    this.logger = options.logger ?? consoleLogger;
     // Create LMDBer with composition
     this.lmdber = new LMDBer(options, {
       tailDirPath: Baser.TailDirPath,
@@ -84,7 +87,7 @@ export class Baser {
 
       return this.opened;
     } catch (error) {
-      console.error(`Failed to open Baser sub-databases: ${error}`);
+      this.logger.error(`Failed to open Baser sub-databases: ${error}`);
       throw new DatabaseOperationError(
         "Failed to open Baser sub-databases",
         { cause: error instanceof Error ? error.message : String(error) },

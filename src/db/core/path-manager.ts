@@ -7,6 +7,7 @@
 
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { InvalidPathNameError, PathError } from "../../core/errors.ts";
+import { consoleLogger, type Logger } from "../../core/logger.ts";
 
 export interface PathManagerOptions {
   name?: string;
@@ -22,6 +23,7 @@ export interface PathManagerOptions {
   extensioned?: boolean;
   mode?: string;
   fext?: string;
+  logger?: Logger;
 }
 
 export interface PathManagerDefaults {
@@ -75,6 +77,7 @@ export class PathManager {
   public fext: string;
   public opened: boolean;
   private defaults: PathManagerDefaults;
+  private readonly logger: Logger;
 
   constructor(
     options: PathManagerOptions = {},
@@ -93,6 +96,7 @@ export class PathManager {
     this.mode = options.mode || this.defaults.mode;
     this.fext = options.fext || this.defaults.fext;
     this.opened = false;
+    this.logger = options.logger ?? consoleLogger;
 
     // Note: Constructor cannot be async/generator, so reopen must be called explicitly
     // if options.reopen is true. This is handled by callers (e.g., LMDBer).
@@ -329,11 +333,11 @@ export class PathManager {
 
         if (!pathExists) {
           // Path doesn't exist, try to create it
-          console.log(`Creating directory at ${path}`);
+          this.logger.info(`Creating directory at ${path}`);
           const created = yield* this._mkdirOp(path, perm);
           if (!created) {
             // Creation failed (e.g., EACCES) - fall back to alt path
-            console.log(
+            this.logger.warn(
               `Failed to create primary path, falling back to alt path`,
             );
             useAltPath = true;
@@ -347,11 +351,11 @@ export class PathManager {
           const altPathExists = yield* this._statOp(path);
           if (!altPathExists) {
             // Alt path doesn't exist, create it
-            console.log(`Creating alt directory at ${path}`);
+            this.logger.info(`Creating alt directory at ${path}`);
             const created = yield* this._mkdirOp(path, perm);
             if (!created) {
               // Even alt path creation failed - this is unexpected, but we'll continue
-              console.error(`Error: Failed to create alt directory at ${path}`);
+              this.logger.error(`Failed to create alt directory at ${path}`);
               throw new PathError(
                 `Failed to create alt directory at ${path}`,
                 { path },
@@ -362,8 +366,8 @@ export class PathManager {
             const altHasAccess = yield* this._accessOp(path);
             if (!altHasAccess) {
               // Path exists but no access - this shouldn't happen for alt path, but log it
-              console.error(
-                `Error: Alt path exists but is not accessible: ${path}`,
+              this.logger.error(
+                `Alt path exists but is not accessible: ${path}`,
               );
               throw new PathError(
                 `Alt path exists but is not accessible: ${path}`,
@@ -380,7 +384,7 @@ export class PathManager {
         if (!pathExists || !hasAccess) {
           // If reuse path doesn't work and we're using default, try alt
           if (usingDefaultHeadDir) {
-            console.log(`Reuse path not accessible, trying alt path`);
+            this.logger.info(`Reuse path not accessible, trying alt path`);
             path = alt;
             headDirPath = this.defaults.altHeadDirPath;
             const altPathExists = yield* this._statOp(path);
@@ -390,16 +394,16 @@ export class PathManager {
 
             if (!altPathExists) {
               // Alt path doesn't exist, create it
-              console.log(`Creating alt directory at ${path}`);
+              this.logger.info(`Creating alt directory at ${path}`);
               const created = yield* this._mkdirOp(path, perm);
               if (!created) {
-                console.warn(
+                this.logger.warn(
                   `Warning: Failed to create alt directory at ${path}`,
                 );
               }
             } else if (!altHasAccess) {
               // Alt path exists but not accessible - unexpected but continue
-              console.warn(
+              this.logger.warn(
                 `Warning: Alt path exists but is not accessible: ${path}`,
               );
             }
@@ -424,18 +428,20 @@ export class PathManager {
       const pathExists = yield* this._statOp(path);
       if (!pathExists) {
         // Path doesn't exist, create it
-        console.log(`Creating directory at ${path}`);
+        this.logger.info(`Creating directory at ${path}`);
         const created = yield* this._mkdirOp(path, perm);
         if (!created) {
           // Creation failed - this is unexpected at this point, but log it
-          console.warn(`Warning: Failed to create directory at ${path}`);
+          this.logger.warn(`Warning: Failed to create directory at ${path}`);
         }
       } else {
         // Path exists, verify we can access it
         const hasAccess = yield* this._accessOp(path);
         if (!hasAccess) {
           // Path exists but not accessible - unexpected but continue
-          console.warn(`Warning: Path exists but is not accessible: ${path}`);
+          this.logger.warn(
+            `Warning: Path exists but is not accessible: ${path}`,
+          );
         }
       }
     }

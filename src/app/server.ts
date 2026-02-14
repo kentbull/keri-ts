@@ -1,19 +1,23 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { RootDatabase } from "npm:lmdb@^3.4.4";
-import { openDB, readValue, writeValue } from "../../src/db/core/db.ts";
+import { consoleLogger, type Logger } from "../core/logger.ts";
+import { openDB, readValue, writeValue } from "../db/core/db.ts";
 
 /**
  * Start HTTP server with Effection as the outermost runtime.
  * Each request is spawned as a separate Effection task, ensuring
  * proper structured concurrency and cleanup.
  */
-export function* startServer(port: number = 8000): Operation<void> {
+export function* startServer(
+  port: number = 8000,
+  logger: Logger = consoleLogger,
+): Operation<void> {
   // openDB is synchronous, so call it directly
   let db: RootDatabase;
   try {
     db = openDB();
   } catch (error) {
-    console.error("Error opening database:", error);
+    logger.error("Error opening database:", error);
     throw error;
   }
 
@@ -28,9 +32,9 @@ export function* startServer(port: number = 8000): Operation<void> {
         hostname: "127.0.0.1",
         signal,
         onListen: ({ port }) =>
-          console.log(`Server running on http://localhost:${port}`),
+          logger.info(`Server running on http://localhost:${port}`),
         onError: (error) => {
-          console.error("Server error:", error);
+          logger.error("Server error:", error);
           return new Response("Internal Server Error", { status: 500 });
         },
       },
@@ -71,7 +75,7 @@ export function* startServer(port: number = 8000): Operation<void> {
 
     // Graceful shutdown logic using signals
     const shutdown = () => {
-      console.log("Shutting down server...");
+      logger.info("Shutting down server...");
       controller.abort();
     };
 

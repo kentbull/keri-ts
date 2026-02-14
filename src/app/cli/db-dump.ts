@@ -6,6 +6,7 @@
 
 import { type Operation } from "npm:effection@^3.6.0";
 import { displayStr } from "../../core/bytes.ts";
+import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
 import { BaserOptions, createBaser } from "../../db/basing.ts";
 
 /**
@@ -18,8 +19,7 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
   const readonly = true; // Always open readonly for dump
 
   if (!name) {
-    console.error("Error: --name is required");
-    return;
+    throw new ValidationError("`--name` is required");
   }
 
   console.log(`Dumping database ${name} from ${base} in temp mode: ${temp}`);
@@ -71,8 +71,12 @@ export function* dumpEvts(args: Record<string, unknown>): Operation<void> {
     console.log("=".repeat(137));
     console.log(`\nTotal entries: ${entryCount}`);
   } catch (error) {
-    console.error(`Error dumping database: ${error}`);
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DatabaseOperationError(`Error dumping database: ${message}`, {
+      name,
+      base,
+      temp,
+    });
   } finally {
     yield* baser.close();
   }

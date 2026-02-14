@@ -1,13 +1,20 @@
 import { Key, open, RootDatabase } from "npm:lmdb@^3.4.4";
+import { DatabaseOperationError } from "../../core/errors.ts";
 
-// Singleton db-lazy open - not thread safe
+// Legacy lightweight DB helper used by HTTP server paths.
+// Preferred DB access for richer flows is LMDBer/Baser.
 let db: RootDatabase<any, Key> | null = null;
 
 export function openDB(path: string = "./data.mdb"): RootDatabase<any, Key> {
-  if (!db) {
-    db = open({ path, mapSize: 2e9 }); // 2GB map; tune for KERI events.
+  try {
+    if (!db) {
+      db = open({ path, mapSize: 2e9 }); // 2GB map; tune for KERI events.
+    }
+    return db;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DatabaseOperationError(`Failed to open DB: ${message}`, { path });
   }
-  return db;
 }
 
 export function readValue(db: RootDatabase, key: string): string | null {
@@ -16,8 +23,15 @@ export function readValue(db: RootDatabase, key: string): string | null {
 }
 
 export function writeValue(db: RootDatabase, key: string, value: string) {
-  // sync write
-  db.transactionSync(() => {
-    db.putSync(key, value);
-  });
+  try {
+    // sync write
+    db.transactionSync(() => {
+      db.putSync(key, value);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new DatabaseOperationError(`Failed to write DB value: ${message}`, {
+      key,
+    });
+  }
 }
