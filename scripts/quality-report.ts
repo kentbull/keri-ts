@@ -11,8 +11,16 @@ async function runCommand(
   args: string[],
   allowNonZero = false,
 ): Promise<CmdResult> {
+  const env: Record<string, string> = {};
+  for (const key of ["PATH", "HOME", "TMPDIR"]) {
+    const value = Deno.env.get(key);
+    if (value) env[key] = value;
+  }
+
   const out = await new Deno.Command(cmd, {
     args,
+    clearEnv: true,
+    env,
     stdout: "piped",
     stderr: "piped",
   }).output();
