@@ -7,7 +7,7 @@
     "packages/cesr"
   ],
   "scripts": {
-    "changeset": "npx --yes @changesets/cli changeset",
+    "changeset": "npx --yes @changesets/cli add",
     "version-packages": "npx --yes @changesets/cli version",
     "publish-packages": "npx --yes @changesets/cli publish"
   }

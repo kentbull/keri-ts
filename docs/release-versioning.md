@@ -3,9 +3,12 @@
 ## Version model
 
 - `keri-ts` and `cesr-ts` are versioned independently.
-- Package versions are sourced from:
+- Canonical versions are sourced from:
   - `package.json` (`keri-ts`)
   - `packages/cesr/package.json` (`cesr-ts`)
+- `deno.json` versions are synchronized from package manifests:
+  - `deno task manifest:sync`
+  - `deno task manifest:check`
 
 ## Runtime CLI version strings
 
@@ -31,6 +34,12 @@ deno task release:changeset
 ```bash
 deno task release:version
 ```
+
+This command now runs:
+
+- `changeset version`
+- `manifest:sync` (package.json -> deno.json)
+- `version:generate` (runtime version modules)
 
 3. Validate generated runtime version modules:
 

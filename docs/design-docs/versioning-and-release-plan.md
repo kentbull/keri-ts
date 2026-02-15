@@ -43,7 +43,7 @@ Use package manifests as the canonical version source:
 - Root package (keri-ts) version in package.json (to be added/normalized for Changesets).
 - CESR package version in packages/cesr/package.json (to be added/normalized).
 
-deno.json version fields are treated as non-authoritative and synced only if needed for tooling/docs consistency.
+deno.json version fields are treated as non-authoritative and synced for tooling/docs consistency by a build script.
 
 ### 2) Runtime version module
 
