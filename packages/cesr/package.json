@@ -2,5 +2,6 @@
   "name": "cesr-ts",
   "version": "0.2.3",
   "private": true,
-  "description": "Monorepo metadata for cesr-ts versioning and release tooling"
+  "description": "Monorepo metadata for cesr-ts versioning and release tooling",
+  "exports": "./mod.ts"
 }

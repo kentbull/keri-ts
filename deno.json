@@ -10,6 +10,7 @@
     "version:generate": "deno run -A scripts/generate_versions.ts",
     "version:check": "deno task manifest:check && deno run -A scripts/generate_versions.ts --check",
     "build:npm": "deno task version:generate && cd packages/keri && deno task build:npm",
+    "smoke:keri:npm": "bash scripts/smoke-test-keri-npm.sh",
     "release:changeset": "npx --yes @changesets/cli add",
     "release:version": "npx --yes @changesets/cli version && deno task manifest:sync && deno task version:generate",
     "release:publish": "npx --yes @changesets/cli publish",
@@ -26,7 +27,7 @@
     "npm:build:all": "deno task build:npm && deno task cesr:build:npm"
   },
   "imports": {
-    "cesr-ts": "./packages/cesr/mod.ts"
+    "cesr-ts": "npm:cesr-ts@^0.2.0"
   },
   "nodeModulesDir": "auto",
   "compilerOptions": {

@@ -27,7 +27,7 @@
     "lmdb": "npm:lmdb@^3.4.4",
     "commander": "npm:commander@^10.0.1",
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0",
-    "cesr-ts": "../cesr/mod.ts"
+    "cesr-ts": "npm:cesr-ts@^0.2.0"
   },
   "compilerOptions": {
     "lib": [

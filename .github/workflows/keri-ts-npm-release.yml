@@ -59,6 +59,11 @@ jobs:
           cd packages/keri/npm
           npm pack
 
+      - name: smoke test tufa in node alpine
+        run: |
+          TARBALL=$(cd packages/keri/npm && ls -1 keri-ts-*.tgz | sort | tail -n 1)
+          bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/${TARBALL}"
+
       - name: publish to npm
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         env:

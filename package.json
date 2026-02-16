@@ -10,6 +10,7 @@
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",
     "version-packages": "npx --yes @changesets/cli version",
-    "publish-packages": "npx --yes @changesets/cli publish"
+    "publish-packages": "npx --yes @changesets/cli publish",
+    "smoke:keri:npm": "bash scripts/smoke-test-keri-npm.sh"
   }
 }

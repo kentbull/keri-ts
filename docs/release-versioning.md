@@ -47,6 +47,19 @@ This command now runs:
 deno task version:check
 ```
 
+4. Smoke test keri npm artifact in `node:alpine` (verifies `tufa version` and
+   `tufa annotate`):
+
+```bash
+deno task smoke:keri:npm
+```
+
+To smoke test a specific tarball (already packed):
+
+```bash
+bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
+```
+
 ## Publishing
 
 - `keri-ts` release workflow: `.github/workflows/keri-ts-npm-release.yml`
@@ -56,3 +69,5 @@ deno task version:check
   - `cesr-v<version>`
 - Each workflow validates that the tag version matches package manifest version
   before publishing.
+- `keri-ts` release workflow also runs Docker smoke validation (`node:alpine`)
+  against the packed tarball before `npm publish`.
