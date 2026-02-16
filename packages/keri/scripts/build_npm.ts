@@ -3,6 +3,7 @@ import { build, emptyDir } from "@deno/dnt";
 const ENTRYPOINT = "./src/npm/index.ts";
 const NODE_CLI_ENTRYPOINT = "./src/app/cli/cli-node.ts";
 const OUT_DIR = "./npm";
+const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
 
 interface PackageManifest {
   version?: string;
@@ -24,70 +25,119 @@ function resolvePackageVersion(): string {
   return version;
 }
 
+function resolveCesrPackageVersion(): string {
+  const raw = Deno.readTextFileSync("../cesr/package.json");
+  const pkg = JSON.parse(raw) as PackageManifest;
+  const version = pkg.version?.trim();
+  if (!version) {
+    throw new Error("Missing version in ../cesr/package.json");
+  }
+
+  return version;
+}
+
+function resolveCesrDependencyRange(): string {
+  const version = resolveCesrPackageVersion();
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    throw new Error(`Unsupported cesr-ts version format: ${version}`);
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return `>=${major}.${minor}.0 <${major}.${minor + 1}.0`;
+}
+
+function writeDntImportMap(cesrVersion: string): void {
+  const importMap = {
+    imports: {
+      "cesr-ts": `npm:cesr-ts@${cesrVersion}`,
+    },
+  };
+  Deno.writeTextFileSync(
+    DNT_IMPORT_MAP_PATH,
+    `${JSON.stringify(importMap, null, 2)}\n`,
+  );
+}
+
 // Avoid running native install scripts (for example lmdb build) during packaging.
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
   Deno.env.set("NPM_CONFIG_IGNORE_SCRIPTS", "true");
 }
 
 await emptyDir(OUT_DIR);
+const cesrPackageVersion = resolveCesrPackageVersion();
+writeDntImportMap(cesrPackageVersion);
 
-await build({
-  entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
-  outDir: OUT_DIR,
-  shims: {
-    deno: true,
-  },
-  typeCheck: false,
-  test: false,
-  declaration: "separate",
-  scriptModule: false,
-  package: {
-    name: "keri-ts",
-    version: resolvePackageVersion(),
-    description:
-      "KERI TypeScript package with database primitives and CLI runtime",
-    license: "Apache-2.0",
-    repository: {
-      type: "git",
-      url: "git+https://github.com/kentbull/keri-ts.git",
-      directory: "packages/keri",
+try {
+  await build({
+    entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
+    outDir: OUT_DIR,
+    shims: {
+      deno: true,
     },
-    bugs: {
-      url: "https://github.com/kentbull/keri-ts/issues",
-    },
-    homepage: "https://github.com/kentbull/keri-ts",
-    type: "module",
-    sideEffects: false,
-    main: "./esm/keri/src/npm/index.js",
-    module: "./esm/keri/src/npm/index.js",
-    types: "./types/keri/src/npm/index.d.ts",
-    exports: {
-      ".": {
-        import: "./esm/keri/src/npm/index.js",
-        types: "./types/keri/src/npm/index.d.ts",
+    importMap: DNT_IMPORT_MAP_PATH,
+    typeCheck: false,
+    test: false,
+    declaration: "separate",
+    scriptModule: false,
+    package: {
+      name: "keri-ts",
+      version: resolvePackageVersion(),
+      description:
+        "KERI TypeScript package with database primitives and CLI runtime",
+      license: "Apache-2.0",
+      repository: {
+        type: "git",
+        url: "git+https://github.com/kentbull/keri-ts.git",
+        directory: "packages/keri",
+      },
+      bugs: {
+        url: "https://github.com/kentbull/keri-ts/issues",
+      },
+      homepage: "https://github.com/kentbull/keri-ts",
+      type: "module",
+      sideEffects: false,
+      main: "./esm/npm/index.js",
+      module: "./esm/npm/index.js",
+      types: "./types/npm/index.d.ts",
+      exports: {
+        ".": {
+          import: "./esm/npm/index.js",
+          types: "./types/npm/index.d.ts",
+        },
+      },
+      bin: {
+        tufa: "./esm/app/cli/cli-node.js",
+      },
+      files: ["esm", "types", "README.md", "LICENSE"],
+      dependencies: {
+        "cesr-ts": resolveCesrDependencyRange(),
+      },
+      engines: {
+        node: ">=18",
+      },
+      scripts: {
+        prepublishOnly: "npm run test",
+        test: "node --version",
       },
     },
-    bin: {
-      tufa: "./esm/keri/src/app/cli/cli-node.js",
-    },
-    files: ["esm", "types", "README.md", "LICENSE"],
-    engines: {
-      node: ">=18",
-    },
-    scripts: {
-      prepublishOnly: "npm run test",
-      test: "node --version",
-    },
-  },
-  postBuild() {
-    Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
-    Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
+    postBuild() {
+      Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
+      Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
 
-    const binPath = `${OUT_DIR}/esm/keri/src/app/cli/cli-node.js`;
-    const current = Deno.readTextFileSync(binPath);
-    if (!current.startsWith("#!/usr/bin/env node\n")) {
-      Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);
-    }
-    Deno.chmodSync(binPath, 0o755);
-  },
-});
+      const binPath = `${OUT_DIR}/esm/app/cli/cli-node.js`;
+      const current = Deno.readTextFileSync(binPath);
+      if (!current.startsWith("#!/usr/bin/env node\n")) {
+        Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);
+      }
+      Deno.chmodSync(binPath, 0o755);
+    },
+  });
+} finally {
+  try {
+    Deno.removeSync(DNT_IMPORT_MAP_PATH);
+  } catch {
+    // no-op
+  }
+}
