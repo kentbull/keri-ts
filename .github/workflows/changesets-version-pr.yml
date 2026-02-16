@@ -3,7 +3,7 @@ name: Changesets Version PR
 on:
   push:
     branches:
-      - main
+      - master
 
 jobs:
   version:
@@ -25,7 +25,7 @@ jobs:
       - name: create version PR
         uses: changesets/action@v1
         with:
-          version: npx --yes @changesets/cli version && deno task version:generate
+          version: deno task release:version
           publish: echo "Publishing is handled by keri-v*/cesr-v* tag workflows."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -22,8 +22,8 @@ interface PackageManifest {
 const TARGETS: GenerateTarget[] = [
   {
     name: "keri",
-    packagePath: new URL("../package.json", import.meta.url),
-    outputPath: new URL("../src/app/version.ts", import.meta.url),
+    packagePath: new URL("../packages/keri/package.json", import.meta.url),
+    outputPath: new URL("../packages/keri/src/app/version.ts", import.meta.url),
     envOverrideKey: "KERI_TS_BUILD_METADATA",
   },
   {

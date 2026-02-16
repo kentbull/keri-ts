@@ -2,13 +2,16 @@
 
 ## Summary
 
-Establish a production-grade, independent SemVer release system for keri-ts and cesr-ts using Changesets, remove hardcoded CLI version strings, and
-implement deterministic build metadata for CI artifacts so tufa version and tufa --version always report a consistent, current version string.
+Establish a production-grade, independent SemVer release system for keri-ts and
+cesr-ts using Changesets, remove hardcoded CLI version strings, and implement
+deterministic build metadata for CI artifacts so tufa version and tufa --version
+always report a consistent, current version string.
 
 Chosen decisions from this review:
 
 - Version model: Independent package versioning.
-- CI build metadata: Display-only suffix in CLI output (not npm package version).
+- CI build metadata: Display-only suffix in CLI output (not npm package
+  version).
 - Release automation: Changesets.
 - tufa version output: single-line keri-ts version.
 
@@ -18,7 +21,8 @@ Chosen decisions from this review:
 
 1. tufa version and tufa --version return the exact same value.
 2. Released artifacts show clean SemVer (x.y.z).
-3. CI-built artifacts automatically show x.y.z+build.<run>.<sha> (or equivalent) in CLI output.
+3. CI-built artifacts automatically show x.y.z+build.<run>.<sha> (or equivalent)
+   in CLI output.
 4. SemVer bumping (patch/minor/major) is one-command/simple PR workflow.
 5. keri-ts and cesr-ts can release independently without forced lockstep bumps.
 6. Release process is reproducible and documented end-to-end.
@@ -28,8 +32,10 @@ Chosen decisions from this review:
 ## Current-State Gaps (from repo inspection)
 
 - src/app/cli/cli.ts hardcodes version as 0.0.2.
-- dnt build scripts set npm versions via env vars with fallback literals (0.1.0).
-- Existing release workflows are tag/manual-driven, but no unified version source used by runtime CLI output.
+- dnt build scripts set npm versions via env vars with fallback literals
+  (0.1.0).
+- Existing release workflows are tag/manual-driven, but no unified version
+  source used by runtime CLI output.
 - No formalized SemVer workflow metadata/changelog process across both packages.
 
 ———
@@ -40,10 +46,12 @@ Chosen decisions from this review:
 
 Use package manifests as the canonical version source:
 
-- Root package (keri-ts) version in package.json (to be added/normalized for Changesets).
+- Root package (keri-ts) version in package.json (to be added/normalized for
+  Changesets).
 - CESR package version in packages/cesr/package.json (to be added/normalized).
 
-deno.json version fields are treated as non-authoritative and synced for tooling/docs consistency by a build script.
+deno.json version fields are treated as non-authoritative and synced for
+tooling/docs consistency by a build script.
 
 ### 2) Runtime version module
 
@@ -99,11 +107,14 @@ Add root deno.json tasks:
 
 - release:changeset -> create changeset (npx changeset)
 - release:version -> apply bumps/changelogs (npx changeset version)
-- release:publish -> publish (npx changeset publish) for Node-side registry publishing pipelines
-- version:generate -> generate runtime version modules from manifests + optional CI metadata
+- release:publish -> publish (npx changeset publish) for Node-side registry
+  publishing pipelines
+- version:generate -> generate runtime version modules from manifests + optional
+  CI metadata
 - version:check -> verify generated files are in sync (CI guard)
 
-Also add CESR package task wrappers where useful, but centralize release orchestration at repo root.
+Also add CESR package task wrappers where useful, but centralize release
+orchestration at repo root.
 
 ———
 
@@ -121,15 +132,20 @@ On PR:
 
 Use Changesets GitHub Action:
 
-- On merge to main, action opens/updates a “Version Packages” PR from pending changesets.
-- Merging that PR creates tags and publishes packages (or creates publish-ready commits depending on chosen mode).
-- Build step injects CI metadata into generated version modules before package build so CLI in CI artifacts includes build suffix.
+- On merge to main, action opens/updates a “Version Packages” PR from pending
+  changesets.
+- Merging that PR creates tags and publishes packages (or creates publish-ready
+  commits depending on chosen mode).
+- Build step injects CI metadata into generated version modules before package
+  build so CLI in CI artifacts includes build suffix.
 
 For stable release publish:
 
-- npm package version remains plain SemVer (x.y.z), no build metadata in package version field.
-- CLI display can still include build metadata on CI-built non-release artifacts; release artifacts can omit it (configurable default: omit for tagged
-  release builds, include for non-tag CI builds).
+- npm package version remains plain SemVer (x.y.z), no build metadata in package
+  version field.
+- CLI display can still include build metadata on CI-built non-release
+  artifacts; release artifacts can omit it (configurable default: omit for
+  tagged release builds, include for non-tag CI builds).
 
 ———
 
@@ -186,7 +202,8 @@ For stable release publish:
 
 - No hardcoded version literals in CLI.
 - tufa always reports version consistent with packaged artifact.
-- patch/minor/major bump flow can be executed with documented steps and no manual file editing.
+- patch/minor/major bump flow can be executed with documented steps and no
+  manual file editing.
 
 ———
 
@@ -196,7 +213,8 @@ For stable release publish:
 2. Implement version generation modules and wire cli.ts to DISPLAY_VERSION.
 3. Add tufa version subcommand.
 4. Add Deno tasks for version/release operations.
-5. Update GitHub workflows to Changesets-driven release flow and CI metadata injection.
+5. Update GitHub workflows to Changesets-driven release flow and CI metadata
+   injection.
 6. Add tests.
 7. Update docs:
 
@@ -219,7 +237,8 @@ For stable release publish:
 ### Build metadata behavior
 
 - Non-tag CI builds: show x.y.z+build.<run>.<sha>
-- Tagged release builds: default to x.y.z (or include metadata if policy switched)
+- Tagged release builds: default to x.y.z (or include metadata if policy
+  switched)
 
 ———
 
@@ -227,6 +246,9 @@ For stable release publish:
 
 - npm remains the publish target for both packages.
 - GitHub Actions remains CI/CD system.
-- We will add/manage package.json manifests needed by Changesets even though Deno is primary dev runtime.
-- Build metadata is display-only and not part of published npm package version semantics.
-- tufa version command remains human-readable plain text by default (no JSON unless added later with explicit flag).
+- We will add/manage package.json manifests needed by Changesets even though
+  Deno is primary dev runtime.
+- Build metadata is display-only and not part of published npm package version
+  semantics.
+- tufa version command remains human-readable plain text by default (no JSON
+  unless added later with explicit flag).

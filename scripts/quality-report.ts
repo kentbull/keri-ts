@@ -1,4 +1,4 @@
-const SCOPE = ["src", "packages/cesr/src"];
+const SCOPE = ["packages/keri/src", "packages/cesr/src"];
 
 interface CmdResult {
   code: number;

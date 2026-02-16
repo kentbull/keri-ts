@@ -23,8 +23,8 @@ interface SyncTarget {
 const TARGETS: SyncTarget[] = [
   {
     name: "keri",
-    packagePath: new URL("../package.json", import.meta.url),
-    denoPath: new URL("../deno.json", import.meta.url),
+    packagePath: new URL("../packages/keri/package.json", import.meta.url),
+    denoPath: new URL("../packages/keri/deno.json", import.meta.url),
   },
   {
     name: "cesr",

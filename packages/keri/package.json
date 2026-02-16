@@ -1,0 +1,11 @@
+{
+  "name": "keri-ts",
+  "version": "0.2.2",
+  "description": "KERI TypeScript package with database primitives and CLI runtime",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kentbull/keri-ts.git",
+    "directory": "packages/keri"
+  }
+}

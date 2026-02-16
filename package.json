@@ -1,9 +1,10 @@
 {
-  "name": "keri-ts",
+  "name": "keri-ts-workspace",
   "version": "0.2.2",
   "private": true,
-  "description": "Monorepo metadata for keri-ts and cesr-ts release/version tooling",
+  "description": "Monorepo workspace and release tooling for keri-ts and cesr-ts",
   "workspaces": [
+    "packages/keri",
     "packages/cesr"
   ],
   "scripts": {

@@ -24,29 +24,6 @@ function resolvePackageVersion(): string {
   return version;
 }
 
-function resolveCesrPackageVersion(): string {
-  const raw = Deno.readTextFileSync("./packages/cesr/package.json");
-  const pkg = JSON.parse(raw) as PackageManifest;
-  const version = pkg.version?.trim();
-  if (!version) {
-    throw new Error("Missing version in ./packages/cesr/package.json");
-  }
-
-  return version;
-}
-
-function resolveCesrDependencyRange(): string {
-  const version = resolveCesrPackageVersion();
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) {
-    throw new Error(`Unsupported cesr-ts version format: ${version}`);
-  }
-
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  return `>=${major}.${minor}.0 <${major}.${minor + 1}.0`;
-}
-
 // Avoid running native install scripts (for example lmdb build) during packaging.
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
   Deno.env.set("NPM_CONFIG_IGNORE_SCRIPTS", "true");
@@ -73,6 +50,7 @@ await build({
     repository: {
       type: "git",
       url: "git+https://github.com/kentbull/keri-ts.git",
+      directory: "packages/keri",
     },
     bugs: {
       url: "https://github.com/kentbull/keri-ts/issues",
@@ -80,22 +58,19 @@ await build({
     homepage: "https://github.com/kentbull/keri-ts",
     type: "module",
     sideEffects: false,
-    main: "./esm/npm/index.js",
-    module: "./esm/npm/index.js",
-    types: "./types/npm/index.d.ts",
+    main: "./esm/keri/src/npm/index.js",
+    module: "./esm/keri/src/npm/index.js",
+    types: "./types/keri/src/npm/index.d.ts",
     exports: {
       ".": {
-        import: "./esm/npm/index.js",
-        types: "./types/npm/index.d.ts",
+        import: "./esm/keri/src/npm/index.js",
+        types: "./types/keri/src/npm/index.d.ts",
       },
     },
     bin: {
-      tufa: "./esm/app/cli/cli-node.js",
+      tufa: "./esm/keri/src/app/cli/cli-node.js",
     },
     files: ["esm", "types", "README.md", "LICENSE"],
-    dependencies: {
-      "cesr-ts": resolveCesrDependencyRange(),
-    },
     engines: {
       node: ">=18",
     },
@@ -106,9 +81,9 @@ await build({
   },
   postBuild() {
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
-    Deno.copyFileSync("./LICENSE", `${OUT_DIR}/LICENSE`);
+    Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
 
-    const binPath = `${OUT_DIR}/esm/app/cli/cli-node.js`;
+    const binPath = `${OUT_DIR}/esm/keri/src/app/cli/cli-node.js`;
     const current = Deno.readTextFileSync(binPath);
     if (!current.startsWith("#!/usr/bin/env node\n")) {
       Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);

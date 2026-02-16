@@ -1,4 +1,4 @@
-import { annotate } from "npm:cesr-ts@0.2.0";
+import { annotate } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 
 const TEXT_DECODER = new TextDecoder();

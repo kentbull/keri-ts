@@ -1,6 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { startServer } from "../../../src/app/server.ts";
+import { startServer } from "../server.ts";
 
 interface AgentArgs {
   port?: number;

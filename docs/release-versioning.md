@@ -4,7 +4,7 @@
 
 - `keri-ts` and `cesr-ts` are versioned independently.
 - Canonical versions are sourced from:
-  - `package.json` (`keri-ts`)
+  - `packages/keri/package.json` (`keri-ts`)
   - `packages/cesr/package.json` (`cesr-ts`)
 - `deno.json` versions are synchronized from package manifests:
   - `deno task manifest:sync`
@@ -13,7 +13,7 @@
 ## Runtime CLI version strings
 
 - Generated files:
-  - `src/app/version.ts`
+  - `packages/keri/src/app/version.ts`
   - `packages/cesr/src/version.ts`
 - Generator:
   - `scripts/generate_versions.ts`

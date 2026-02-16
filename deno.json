@@ -1,40 +1,32 @@
 {
-  "name": "keri-ts",
   "version": "0.2.2",
-  "exports": {
-    ".": "./mod.ts"
-  },
   "tasks": {
     "fmt": "deno fmt",
-    "check": "deno check mod.ts packages/cesr/mod.ts",
+    "check": "cd packages/keri && deno task check && cd ../cesr && deno check mod.ts",
     "quality": "deno task fmt && deno task check && deno task version:check && deno task test:quality && deno task test:cesr",
     "quality:report": "deno run --allow-run=rg,scc --allow-read --allow-env=PATH,HOME,TMPDIR scripts/quality-report.ts",
     "manifest:sync": "deno run -A scripts/sync_manifest_versions.ts",
     "manifest:check": "deno run -A scripts/sync_manifest_versions.ts --check",
     "version:generate": "deno run -A scripts/generate_versions.ts",
     "version:check": "deno task manifest:check && deno run -A scripts/generate_versions.ts --check",
-    "build:npm": "deno task version:generate && deno run -A scripts/build_npm.ts",
+    "build:npm": "deno task version:generate && cd packages/keri && deno task build:npm",
     "release:changeset": "npx --yes @changesets/cli add",
     "release:version": "npx --yes @changesets/cli version && deno task manifest:sync && deno task version:generate",
     "release:publish": "npx --yes @changesets/cli publish",
-    "setup": "rm -rf node_modules/@lmdb && export LMDB_DATA_V1=true && npm rebuild lmdb --build-from-source",
-    "start": "deno run --allow-all --unstable-ffi mod.ts",
-    "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
-    "tufa": "deno run --allow-all --unstable-ffi mod.ts",
-    "test": "deno test --allow-all --unstable-ffi",
-    "test:quality": "deno test --allow-all --unstable-ffi --ignore=test/integration/app/server.test.ts",
-    "test:integration:server": "deno test --allow-all --unstable-ffi test/integration/app/server.test.ts",
-    "test:cesr": "deno test packages/cesr/test",
-    "cesr:annotate": "deno run --allow-read --allow-write packages/cesr/src/annotate/cli-deno.ts",
+    "setup": "cd packages/keri && deno task setup",
+    "start": "cd packages/keri && deno task start",
+    "dev": "cd packages/keri && deno task dev",
+    "tufa": "cd packages/keri && deno task tufa",
+    "test": "cd packages/keri && deno task test",
+    "test:quality": "cd packages/keri && deno task test:quality",
+    "test:integration:server": "cd packages/keri && deno task test:integration:server",
+    "test:cesr": "cd packages/cesr && deno task test",
+    "cesr:annotate": "cd packages/cesr && deno task annotate",
     "cesr:build:npm": "deno task version:generate && cd packages/cesr && deno task build:npm",
     "npm:build:all": "deno task build:npm && deno task cesr:build:npm"
   },
   "imports": {
-    "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
-    "effection": "npm:effection@^3.6.0",
-    "lmdb": "npm:lmdb@^3.4.4",
-    "commander": "npm:commander@^10.0.1",
-    "jsr:@std/assert": "jsr:@std/assert@^0.217.0"
+    "cesr-ts": "./packages/cesr/mod.ts"
   },
   "nodeModulesDir": "auto",
   "compilerOptions": {
