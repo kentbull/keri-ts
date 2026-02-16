@@ -23,6 +23,63 @@
 
 ## Release intent and version bumps
 
+### Common sequence: bump `keri-ts` after `cesr-ts`
+
+Use this when `cesr-ts` is already bumped (for example `0.2.3`) and you want to
+bump only `keri-ts` to the matching version.
+
+```bash
+# 1) Create a changeset for keri-ts only
+deno task release:changeset
+# select package: keri-ts
+# select bump type (usually patch)
+
+# 2) Apply versioning updates
+deno task release:version
+
+# 3) Validate
+deno task quality
+deno task build:npm
+
+# 4) Commit and tag
+git add -A
+git commit -m "release: bump keri-ts to <version>"
+git tag keri-v<version>
+git push origin master --follow-tags
+```
+
+Notes:
+
+- `keri-ts` and `cesr-ts` are independent; matching versions are optional.
+- `keri-ts` npm dependency range for `cesr-ts` is derived at build time from
+  `packages/cesr/package.json`.
+- Deno import-map entries for `cesr-ts` (for example in `deno.json` and
+  `packages/keri/deno.json`) are managed manually and are not CI-enforced.
+
+### Common sequence: bump and release `cesr-ts` + `keri-ts` together
+
+Use this when both packages changed and you want to release both in one cycle.
+
+```bash
+# 1) Add changesets (one for cesr-ts, one for keri-ts)
+deno task release:changeset
+deno task release:changeset
+
+# 2) Apply version updates for both packages
+deno task release:version
+
+# 3) Validate and build both npm artifacts
+deno task quality
+deno task npm:build:all
+
+# 4) Commit and tag both releases
+git add -A
+git commit -m "release: bump cesr-ts and keri-ts"
+git tag cesr-v<cesr-version>
+git tag keri-v<keri-version>
+git push origin master --follow-tags
+```
+
 1. Add a changeset in feature PRs:
 
 ```bash

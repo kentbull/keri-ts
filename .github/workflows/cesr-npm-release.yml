@@ -51,9 +51,6 @@ jobs:
       - name: test cesr package
         run: deno task test:cesr
 
-      - name: check cesr dependency policy
-        run: deno task cesr:dependency:check
-
       - name: build npm package
         run: deno task cesr:build:npm
 

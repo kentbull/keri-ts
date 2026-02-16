@@ -22,9 +22,6 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: check cesr dependency policy
-        run: deno task cesr:dependency:check
-
       - name: create version PR
         uses: changesets/action@v1
         with:
