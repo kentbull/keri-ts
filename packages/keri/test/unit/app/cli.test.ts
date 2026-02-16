@@ -62,12 +62,10 @@ Deno.test("CLI - init command with all options", async () => {
     name: "fulltest",
     base: "/custom/base",
     temp: true,
-    salt: "custom-salt",
+    salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
     configDir: "/custom/config",
     configFile: "custom.json",
     passcode: "testpasscode123456789012",
-    aeid: "test-aeid",
-    seed: "test-seed",
     nopasscode: true, // Use nopasscode to avoid prompt
   });
 
@@ -78,7 +76,7 @@ Deno.test("CLI - init command with all options", async () => {
 Deno.test("CLI - init command with custom salt", async () => {
   const args = createMockArgs({
     name: "salttest",
-    salt: "custom-salt-value",
+    salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
     nopasscode: true,
   });
 
@@ -96,4 +94,26 @@ Deno.test("CLI - init command with config overrides", async () => {
 
   await run(() => initCommand(args));
   // Test passes if no exception is thrown
+});
+
+Deno.test("CLI - init command honors custom head directory", async () => {
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const args = createMockArgs({
+    name: `headtest-${crypto.randomUUID()}`,
+    headDirPath,
+    nopasscode: true,
+  });
+
+  const originalLog = console.log;
+  let capturedOutput = "";
+  console.log = (...messages: unknown[]) => {
+    capturedOutput += `${messages.map(String).join(" ")}\n`;
+  };
+
+  try {
+    await run(() => initCommand(args));
+    assertStringIncludes(capturedOutput, headDirPath);
+  } finally {
+    console.log = originalLog;
+  }
 });

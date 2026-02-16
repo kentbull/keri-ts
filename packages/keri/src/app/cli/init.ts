@@ -1,9 +1,11 @@
-import { type Operation } from "npm:effection@^3.6.0";
-import { ValidationError } from "../../core/errors.ts";
+import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
+import { PathError, ValidationError } from "../../core/errors.ts";
+import { createHabery } from "../habbing.ts";
 
 interface InitArgs {
   name?: string;
   base?: string;
+  headDirPath?: string;
   temp?: boolean;
   salt?: string;
   configDir?: string;
@@ -15,6 +17,7 @@ interface InitArgs {
   help?: boolean;
 }
 
+/** Prints help text for `tufa init`. */
 function printInitHelp() {
   console.log(`
 tufa init - Create a database and keystore
@@ -24,6 +27,7 @@ Usage: tufa init [options]
 Options:
   --name, -n <name>           Keystore name and file location of KERI keystore (required)
   --base, -b <base>           Additional optional prefix to file location of KERI keystore
+  --head-dir <dir>            Directory override for database and keystore root (default fallback: ~/.tufa)
   --temp, -t                  Create a temporary keystore, used for testing
   --salt, -s <salt>           Qualified base64 salt for creating key pairs
   --config-dir, -c <dir>      Directory override for configuration data
@@ -36,8 +40,11 @@ Options:
 `);
 }
 
-// TODO remove this ignore once init is finished
-// deno-lint-ignore require-yield
+/**
+ * Implements `tufa init`.
+ *
+ * Creates/open a habery keystore and database.
+ */
 export function* initCommand(args: Record<string, unknown>): Operation<void> {
   // Check for help flag
   if (args.help || args.h) {
@@ -49,6 +56,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   const initArgs: InitArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
+    headDirPath: args.headDirPath as string | undefined,
     temp: args.temp as boolean | undefined,
     salt: args.salt as string | undefined,
     configDir: args.configDir as string | undefined,
@@ -66,10 +74,11 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const base = initArgs.base || "";
+  const headDirPath = initArgs.headDirPath;
   const temp = initArgs.temp || false;
   let bran = initArgs.passcode;
-  const configFile = initArgs.configFile;
-  const configDir = initArgs.configDir;
+  const _configFile = initArgs.configFile;
+  const _configDir = initArgs.configDir;
   const nopasscode = initArgs.nopasscode || false;
 
   // Handle passcode input if not provided and not using nopasscode
@@ -90,21 +99,53 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     bran = passcode || undefined;
   }
 
-  // TODO: Implement actual keystore and database creation
-  // This is a stub implementation that mirrors the KERIpy structure
+  const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
+  const doer = yield* spawn(function* () {
+    let hby;
+    try {
+      hby = yield* createHabery({
+        name,
+        base,
+        headDirPath,
+        temp,
+        bran: bran ?? undefined,
+        aeid: initArgs.aeid,
+        seed: initArgs.seed,
+        salt: initArgs.salt,
+      });
+    } catch (error) {
+      if (temp || !(error instanceof PathError)) {
+        throw error;
+      }
+      console.log(
+        "Persistent keystore path unavailable, retrying with temporary keystore mode.",
+      );
+      hby = yield* createHabery({
+        name,
+        base,
+        headDirPath,
+        temp: true,
+        bran: bran ?? undefined,
+        aeid: initArgs.aeid,
+        seed: initArgs.seed,
+        salt: initArgs.salt,
+      });
+    }
 
-  console.log("KERI Keystore created at: [stub - keystore path]");
-  console.log("KERI Database created at: [stub - database path]");
-  console.log(
-    "KERI Credential Store created at: [stub - credential store path]",
-  );
+    try {
+      console.log("KERI Keystore created at:", hby.ks.path);
+      console.log("KERI Database created at:", hby.db.path);
+      console.log("KERI Credential Store created at:", hby.db.path);
+      if (hby.mgr.aeid) {
+        console.log("\taeid:", hby.mgr.aeid);
+      }
+      cues.add({ kin: "init", mode: "native", name });
+    } finally {
+      yield* hby.close();
+    }
+  });
 
-  if (initArgs.aeid) {
-    console.log("\taeid:", initArgs.aeid);
-  }
-
-  console.log("\nInitialization complete!");
-  console.log(
-    "Note: This is a stub implementation. Full keystore and database creation will be implemented in future versions.",
-  );
+  yield* doer;
+  const cue = yield* cues.next();
+  if (cue.done) return;
 }

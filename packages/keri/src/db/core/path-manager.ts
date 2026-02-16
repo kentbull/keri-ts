@@ -46,8 +46,8 @@ export const PATH_DEFAULTS: PathManagerDefaults = {
   tailDirPath: "keri/db",
   cleanTailDirPath: "keri/clean/db",
   altHeadDirPath: "~",
-  altTailDirPath: ".keri/db",
-  altCleanTailDirPath: ".keri/clean/db",
+  altTailDirPath: ".tufa/db",
+  altCleanTailDirPath: ".tufa/clean/db",
   tempHeadDir: "/tmp",
   tempPrefix: "keri_lmdb_",
   tempSuffix: "_test",
@@ -287,7 +287,7 @@ export class PathManager {
    * Reopen/create the directory or file path
    * Replicates KERIpy/HIO Filer.remake logic:
    * - Tries primary path (/usr/local/var/keri/*) first
-   * - Falls back to alt path (~/.keri/*) on OS errors or access issues
+   * - Falls back to alt path (~/.tufa/*) on OS errors or access issues
    *
    * Uses Effection for structured concurrency:
    * - All file system operations are cancellable

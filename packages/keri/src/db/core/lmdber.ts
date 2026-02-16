@@ -49,8 +49,8 @@ export const LMDBER_DEFAULTS: LMDBerDefaults = {
   tailDirPath: "keri/db",
   cleanTailDirPath: "keri/clean/db",
   altHeadDirPath: "~",
-  altTailDirPath: ".keri/db",
-  altCleanTailDirPath: ".keri/clean/db",
+  altTailDirPath: ".tufa/db",
+  altCleanTailDirPath: ".tufa/clean/db",
   tempHeadDir: "/tmp",
   tempPrefix: "keri_lmdb_",
   tempSuffix: "_test",
@@ -77,8 +77,8 @@ export class LMDBer {
   static readonly TailDirPath = "keri/db";
   static readonly CleanTailDirPath = "keri/clean/db";
   static readonly AltHeadDirPath = "~";
-  static readonly AltTailDirPath = ".keri/db";
-  static readonly AltCleanTailDirPath = ".keri/clean/db";
+  static readonly AltTailDirPath = ".tufa/db";
+  static readonly AltCleanTailDirPath = ".tufa/clean/db";
   static readonly TempHeadDir = "/tmp";
   static readonly TempPrefix = "keri_lmdb_";
   static readonly TempSuffix = "_test";

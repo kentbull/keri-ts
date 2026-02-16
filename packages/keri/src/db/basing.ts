@@ -28,10 +28,13 @@ export class Baser {
 
   // Named sub-databases
   public evts!: Database<BinVal, BinKey>; // Events sub-database (dgKey: serialized KEL events)
+  public habs!: Database<BinVal, BinKey>; // Habitat records keyed by pre
+  public names!: Database<BinVal, BinKey>; // (ns,name) -> pre
+  public hbys!: Database<BinVal, BinKey>; // Habery-scoped values such as __signatory__
 
   // Class constants
   static readonly TailDirPath = "keri/db";
-  static readonly AltTailDirPath = ".keri/db";
+  static readonly AltTailDirPath = ".tufa/db";
   static readonly TempPrefix = "keri_db_";
   static readonly MaxNamedDBs = 96;
 
@@ -84,6 +87,9 @@ export class Baser {
     // Names end with "." to avoid namespace collisions with Base64 identifier prefixes
     try {
       this.evts = this.lmdber.openDB("evts.", false);
+      this.habs = this.lmdber.openDB("habs.", false);
+      this.names = this.lmdber.openDB("names.", false);
+      this.hbys = this.lmdber.openDB("hbys.", false);
 
       return this.opened;
     } catch (error) {
@@ -161,6 +167,86 @@ export class Baser {
     top: Uint8Array = new Uint8Array(0),
   ): Generator<[Uint8Array, Uint8Array]> {
     yield* this.lmdber.getTopItemIter(this.evts, top);
+  }
+
+  private encodeText(text: string): Uint8Array {
+    return new TextEncoder().encode(text);
+  }
+
+  private decodeText(bytes: Uint8Array | null): string | null {
+    if (bytes === null) return null;
+    return new TextDecoder().decode(bytes);
+  }
+
+  private encodeJson(value: unknown): Uint8Array {
+    return this.encodeText(JSON.stringify(value));
+  }
+
+  private decodeJson<T>(bytes: Uint8Array | null): T | null {
+    const text = this.decodeText(bytes);
+    if (text === null) return null;
+    return JSON.parse(text) as T;
+  }
+
+  putHab(pre: string, record: unknown): boolean {
+    return this.lmdber.putVal(
+      this.habs,
+      this.encodeText(pre),
+      this.encodeJson(record),
+    );
+  }
+
+  pinHab(pre: string, record: unknown): boolean {
+    return this.lmdber.setVal(
+      this.habs,
+      this.encodeText(pre),
+      this.encodeJson(record),
+    );
+  }
+
+  getHab<T>(pre: string): T | null {
+    return this.decodeJson<T>(
+      this.lmdber.getVal(this.habs, this.encodeText(pre)),
+    );
+  }
+
+  putName(ns: string, name: string, pre: string): boolean {
+    const key = `${ns}:${name}`;
+    return this.lmdber.putVal(
+      this.names,
+      this.encodeText(key),
+      this.encodeText(pre),
+    );
+  }
+
+  pinName(ns: string, name: string, pre: string): boolean {
+    const key = `${ns}:${name}`;
+    return this.lmdber.setVal(
+      this.names,
+      this.encodeText(key),
+      this.encodeText(pre),
+    );
+  }
+
+  getName(ns: string, name: string): string | null {
+    const key = `${ns}:${name}`;
+    return this.decodeText(
+      this.lmdber.getVal(this.names, this.encodeText(key)),
+    );
+  }
+
+  pinHby(name: string, value: string): boolean {
+    return this.lmdber.setVal(
+      this.hbys,
+      this.encodeText(name),
+      this.encodeText(value),
+    );
+  }
+
+  getHby(name: string): string | null {
+    return this.decodeText(
+      this.lmdber.getVal(this.hbys, this.encodeText(name)),
+    );
   }
 }
 

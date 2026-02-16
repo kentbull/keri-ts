@@ -7,12 +7,16 @@ import {
 import { agentCommand } from "./agent.ts";
 import { annotateCommand } from "./annotate.ts";
 import { dumpEvts } from "./db-dump.ts";
+import { exportCommand } from "./export.ts";
+import { inceptCommand } from "./incept.ts";
 import { initCommand } from "./init.ts";
 import { DISPLAY_VERSION } from "../version.ts";
 
 export function createCoreCommandHandlers(): Map<string, CommandHandler> {
   return new Map([
     ["init", (args: CommandArgs) => initCommand(args)],
+    ["incept", (args: CommandArgs) => inceptCommand(args)],
+    ["export", (args: CommandArgs) => exportCommand(args)],
     ["agent", (args: CommandArgs) => agentCommand(args)],
     ["annotate", (args: CommandArgs) => annotateCommand(args)],
     ["db.dump", (args: CommandArgs) => dumpEvts(args)],
@@ -33,6 +37,10 @@ export function registerCoreCommands(
     .option(
       "-b, --base <base>",
       "Additional optional prefix to file location of KERI keystore",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
     .option("-t, --temp", "Create a temporary keystore, used for testing")
     .option("-s, --salt <salt>", "Qualified base64 salt for creating key pairs")
@@ -60,6 +68,7 @@ export function registerCoreCommands(
         args: {
           name: options.name,
           base: options.base,
+          headDirPath: options.headDir,
           temp: options.temp || false,
           salt: options.salt,
           configDir: options.configDir,
@@ -68,6 +77,129 @@ export function registerCoreCommands(
           nopasscode: options.nopasscode || false,
           aeid: options.aeid,
           seed: options.seed,
+        },
+      });
+      return Promise.resolve();
+    });
+
+  program
+    .command("incept")
+    .description("Initialize a prefix")
+    .requiredOption(
+      "-n, --name <name>",
+      "Keystore name and file location of KERI keystore",
+    )
+    .option(
+      "-b, --base <base>",
+      "Additional optional prefix to file location of KERI keystore",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for the new identifier prefix",
+    )
+    .option(
+      "-f, --file <file>",
+      "Filename to use to create the identifier",
+      "",
+    )
+    .option(
+      "-tf, --transferable",
+      "Whether the prefix is transferable or non-transferable",
+    )
+    .option(
+      "-w, --wits <prefix>",
+      "New set of witnesses, replaces all existing witnesses",
+      (value: string, prev: string[] = []) => {
+        prev.push(value);
+        return prev;
+      },
+      [],
+    )
+    .option(
+      "-t, --toad <toad>",
+      "Witness threshold (threshold of accountable duplicity)",
+      (value: string) => Number(value),
+    )
+    .option(
+      "-ic, --icount <count>",
+      "Incepting key count for number of keys used for inception",
+      (value: string) => Number(value),
+    )
+    .option("-s, --isith <isith>", "Signing threshold for the inception event")
+    .option(
+      "-nc, --ncount <count>",
+      "Next key count for number of next keys used on first rotation",
+      (value: string) => Number(value),
+    )
+    .option("-x, --nsith <nsith>", "Signing threshold for the next rotation")
+    .option("-e, --est-only", "Only allow establishment events in KEL")
+    .option(
+      "-d, --data <data>",
+      "Anchor data, '@' allowed",
+      (value: string, prev: string[] = []) => {
+        prev.push(value);
+        return prev;
+      },
+      [],
+    )
+    .option("-di, --delpre <prefix>", "Delegator AID for delegated identifiers")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "incept",
+        args: {
+          name: options.name,
+          base: options.base,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+          alias: options.alias,
+          file: options.file,
+          transferable: options.transferable || false,
+          wits: options.wits || [],
+          toad: options.toad,
+          icount: options.icount,
+          isith: options.isith,
+          ncount: options.ncount,
+          nsith: options.nsith,
+          estOnly: options.estOnly || false,
+          data: options.data || [],
+          delpre: options.delpre,
+        },
+      });
+      return Promise.resolve();
+    });
+
+  program
+    .command("export")
+    .description("Export key events in CESR stream format")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for identifier to export",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .option("--files", "Export artifacts to individual files")
+    .option("--ends", "Export service end points")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "export",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          base: options.base,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+          files: options.files || false,
+          ends: options.ends || false,
         },
       });
       return Promise.resolve();
