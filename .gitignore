@@ -9,7 +9,7 @@ dist
 compiled
 packages/cesr/npm
 packages/keri/npm
-npm
+/npm
 .awcache
 .rpt2_cache
 data.mdb*
