@@ -9,14 +9,17 @@ CESR annotation.
 npm install cesr-ts
 ```
 
-## Library usage
+## Library quick start
 
 ```ts
-import { createParser } from "cesr-ts";
+import { annotate, createParser } from "cesr-ts";
 
 const parser = createParser();
-const out = parser.feed(new TextEncoder().encode("..."));
+const out = parser.feed(new TextEncoder().encode("...CESR..."));
 const last = parser.flush();
+
+const text = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+const annotated = annotate(text, { domainHint: "txt", pretty: true });
 ```
 
 ## CLI usage
@@ -29,4 +32,14 @@ npx cesr-annotate --in mystream.cesr --pretty
 
 ```bash
 deno task cesr:annotate --in mystream.cesr --pretty
+```
+
+## Using cesr-ts through tufa
+
+`keri-ts` exposes CESR annotation through `tufa annotate`, which is often the
+easiest on-ramp:
+
+```bash
+tufa version
+tufa annotate --in mystream.cesr --pretty
 ```
