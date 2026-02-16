@@ -51,6 +51,9 @@ jobs:
       - name: test quality gate
         run: deno task test:quality
 
+      - name: check cesr dependency policy
+        run: deno task cesr:dependency:check
+
       - name: build npm package
         run: deno task build:npm
 
