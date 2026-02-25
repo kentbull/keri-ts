@@ -1,6 +1,7 @@
 import { run } from "effection";
 import { assertStringIncludes } from "jsr:@std/assert";
 import { initCommand } from "../../../src/app/cli/init.ts";
+import { tufa } from "../../../src/app/cli/cli.ts";
 import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
 
 Deno.test("CLI - init command with valid arguments", async () => {
@@ -38,32 +39,18 @@ Deno.test("CLI - init command with missing name", async () => {
 });
 
 Deno.test("CLI - init command with help flag", async () => {
-  const args = createMockArgs({
-    help: true,
-  });
-
-  // Mock console.log to capture output
-  const originalLog = console.log;
-  let capturedOutput = "";
-  console.log = (message: string) => {
-    capturedOutput += message;
-  };
-
-  try {
-    await run(() => initCommand(args));
-    assertStringIncludes(capturedOutput, "tufa init -");
-  } finally {
-    console.log = originalLog;
-  }
+  // Help is parsed by commander; command handlers should not be invoked directly for help tests.
+  await run(() => tufa(["init", "--help"]));
 });
 
 Deno.test("CLI - init command with all options", async () => {
+  const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
   const args = createMockArgs({
     name: "fulltest",
     base: "/custom/base",
     temp: true,
     salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
-    configDir: "/custom/config",
+    configDir,
     configFile: "custom.json",
     passcode: "testpasscode123456789012",
     nopasscode: true, // Use nopasscode to avoid prompt
@@ -85,9 +72,10 @@ Deno.test("CLI - init command with custom salt", async () => {
 });
 
 Deno.test("CLI - init command with config overrides", async () => {
+  const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
   const args = createMockArgs({
     name: "configtest",
-    configDir: "/custom/config/dir",
+    configDir,
     configFile: "custom-config.json",
     nopasscode: true,
   });

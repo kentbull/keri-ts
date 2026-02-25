@@ -1,4 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
+import { Configer, createConfiger } from "./configing.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
 import {
@@ -30,6 +31,7 @@ export interface HaberyArgs {
   base?: string;
   temp?: boolean;
   headDirPath?: string;
+  cf?: Configer;
   bran?: string;
   seed?: string;
   aeid?: string;
@@ -306,16 +308,29 @@ export class Habery {
   readonly db: Baser;
   readonly ks: Keeper;
   readonly mgr: Manager;
+  readonly cf?: Configer;
+  readonly config: Record<string, unknown>;
   readonly habs = new Map<string, Hab>();
   readonly signator: Signator;
 
-  constructor(name: string, base: string, temp: boolean, db: Baser, ks: Keeper, mgr: Manager) {
+  constructor(
+    name: string,
+    base: string,
+    temp: boolean,
+    db: Baser,
+    ks: Keeper,
+    mgr: Manager,
+    cf?: Configer,
+    config: Record<string, unknown> = {},
+  ) {
     this.name = name;
     this.base = base;
     this.temp = temp;
     this.db = db;
     this.ks = ks;
     this.mgr = mgr;
+    this.cf = cf;
+    this.config = config;
     this.signator = new Signator(this.db, this);
   }
 
@@ -344,6 +359,9 @@ export class Habery {
   *close(clear = false): Operation<void> {
     yield* this.db.close(clear);
     yield* this.ks.close(clear);
+    if (this.cf) {
+      yield* this.cf.close(clear && this.temp);
+    }
   }
 }
 
@@ -356,7 +374,18 @@ export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
 
 /** Creates a habery with opened database/keystore and initialized manager state. */
 export function* createHabery(args: HaberyArgs): Operation<Habery> {
-  const { name, base = "", temp = false, headDirPath, bran, seed, aeid, salt, algo } = args;
+  const {
+    name,
+    base = "",
+    temp = false,
+    headDirPath,
+    cf: providedCf,
+    bran,
+    seed,
+    aeid,
+    salt,
+    algo,
+  } = args;
 
   const db = yield* createBaser({
     name,
@@ -375,6 +404,16 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     readonly: false,
   });
 
+  const cf = providedCf ?? (yield* createConfiger({
+    name,
+    base,
+    temp,
+    headDirPath,
+    reopen: true,
+    clear: false,
+  }));
+  const config = cf ? cf.get<Record<string, unknown>>() : {};
+
   let usedSeed = seed ?? "";
   let usedAeid = aeid ?? "";
   if (bran && !seed) {
@@ -391,5 +430,5 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     salt: normalizeSaltQb64(salt),
   });
 
-  return new Habery(name, base, temp, db, ks, mgr);
+  return new Habery(name, base, temp, db, ks, mgr, cf, config);
 }
