@@ -1,17 +1,9 @@
 import { Command } from "npm:commander@^10.0.1";
 import { type Operation } from "npm:effection@^3.6.0";
 import { AppError } from "../../core/errors.ts";
-import {
-  createCoreCommandHandlers,
-  registerCoreCommands,
-} from "./command-definitions.ts";
-import { type CommandSelection } from "./command-types.ts";
-import {
-  createStubCommandHandlers,
-  isStubCommandsEnabled,
-  registerStubCommands,
-} from "./stub-commands.ts";
 import { DISPLAY_VERSION } from "../version.ts";
+import { createCmdHandlers, registerCmds } from "./command-definitions.ts";
+import { type CommandSelection } from "./command-types.ts";
 
 /**
  * Create the CLI program with action handlers that signal command execution.
@@ -26,10 +18,7 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   // Prevent Commander from exiting automatically so we can run Effection operations
   program.exitOverride();
 
-  registerCoreCommands(program, onCommand);
-  if (isStubCommandsEnabled()) {
-    registerStubCommands(program, onCommand);
-  }
+  registerCmds(program, onCommand);
 
   return program;
 }
@@ -39,17 +28,12 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
  * This is the outermost runtime, not JavaScript's event loop
  */
 export function* tufa(args: string[] = []): Operation<void> {
-  const executionContext: { selection?: CommandSelection } = {};
-  const commandHandlers = createCoreCommandHandlers();
-  if (isStubCommandsEnabled()) {
-    for (const [key, handler] of createStubCommandHandlers()) {
-      commandHandlers.set(key, handler);
-    }
-  }
+  const dispatch: { selection?: CommandSelection } = {};
+  const commandHandlers = createCmdHandlers();
 
   // Use Commander.js for all command parsing
   const program = createCLIProgram((next) => {
-    executionContext.selection = next;
+    dispatch.selection = next;
   });
 
   try {
@@ -92,7 +76,7 @@ export function* tufa(args: string[] = []): Operation<void> {
   }
 
   // Execute the appropriate command operation based on context
-  const selected = executionContext.selection;
+  const selected = dispatch.selection;
   if (selected) {
     const handler = commandHandlers.get(selected.name);
 

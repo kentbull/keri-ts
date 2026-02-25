@@ -1,10 +1,10 @@
 import { ValidationError } from "../../../core/errors.ts";
 import {
   each,
-  spawn,
-  stream,
   type Operation,
+  spawn,
   type Stream,
+  stream,
   type Subscription,
   withResolvers,
 } from "npm:effection@^3.6.0";
@@ -89,7 +89,9 @@ function* processText(
 }
 
 /** Async line generator used to create an Effection stream from static text. */
-async function* lineGenerator(text: string): AsyncGenerator<string, void, void> {
+async function* lineGenerator(
+  text: string,
+): AsyncGenerator<string, void, void> {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   for (const line of lines) {
     if (line.length > 0) yield line;

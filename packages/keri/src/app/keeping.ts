@@ -4,7 +4,8 @@ import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { parseMatter } from "cesr-ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
 
-const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const B64_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 export enum Algos {
   randy = "randy",
@@ -83,9 +84,9 @@ function parseQb64Raw(qb64: string): Uint8Array {
 function encodeFixedMatter(code: string, raw: Uint8Array): string {
   const cs = code.length;
   const ps = cs % 4;
-  const body = toBase64Url(new Uint8Array(ps + raw.length).map((_, i) =>
-    i < ps ? 0 : raw[i - ps]
-  ));
+  const body = toBase64Url(
+    new Uint8Array(ps + raw.length).map((_, i) => i < ps ? 0 : raw[i - ps]),
+  );
   return `${code}${body.slice(ps)}`;
 }
 
@@ -100,9 +101,11 @@ function encodeIndexerEd25519Sig(
   }
   const both = `${code}${intToB64(index, 1)}`;
   const ps = (3 - (rawSig.length % 3)) % 3;
-  const body = toBase64Url(new Uint8Array(ps + rawSig.length).map((_, i) =>
-    i < ps ? 0 : rawSig[i - ps]
-  ));
+  const body = toBase64Url(
+    new Uint8Array(ps + rawSig.length).map((_, i) =>
+      i < ps ? 0 : rawSig[i - ps]
+    ),
+  );
   return `${both}${body.slice(ps)}`;
 }
 
@@ -292,7 +295,7 @@ export class Manager {
     const rootStem = stem || `${pidx.toString(16)}`;
 
     for (let i = 0; i < icount; i++) {
-      const path = `${rootStem}${(0).toString(16)}${(i).toString(16)}`;
+      const path = `${rootStem}${(0).toString(16)}${i.toString(16)}`;
       const signer = saltySigner(
         usedSalt,
         path,
@@ -313,7 +316,10 @@ export class Manager {
         usedTier,
         temp,
       );
-      const dig = blake3Qb64(new TextEncoder().encode(signer.verferQb64), dcode);
+      const dig = blake3Qb64(
+        new TextEncoder().encode(signer.verferQb64),
+        dcode,
+      );
       digers.push({ qb64: dig });
       this.ks.putPris(signer.verferQb64, signer.seedQb64);
     }
@@ -394,7 +400,9 @@ export class Manager {
       if (!seedQb64) throw new Error(`Missing prikey in db for pubkey=${pub}`);
       const seedRaw = parseQb64Raw(seedQb64);
       const sigRaw = ed25519.sign(ser, seedRaw);
-      return indexed ? encodeIndexerEd25519Sig(sigRaw, idx, idx) : encodeFixedMatter("0B", sigRaw);
+      return indexed
+        ? encodeIndexerEd25519Sig(sigRaw, idx, idx)
+        : encodeFixedMatter("0B", sigRaw);
     });
   }
 }
@@ -411,7 +419,9 @@ export function branToSaltQb64(bran: string): string {
 }
 
 export function encodeDateTimeToDater(dts: string): string {
-  return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
+  return `1AAG${
+    dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")
+  }`;
 }
 
 export function encodeCounterV1(code: string, count: number): string {
@@ -429,7 +439,10 @@ export function encodeHugeNumber(num: number): string {
 }
 
 export function normalizeQb64Code(qb64: string): string {
-  return encodeFixedMatter(parseMatter(new TextEncoder().encode(qb64), "txt").code, parseQb64Raw(qb64));
+  return encodeFixedMatter(
+    parseMatter(new TextEncoder().encode(qb64), "txt").code,
+    parseQb64Raw(qb64),
+  );
 }
 
 export function makeSaider(raw: Uint8Array): string {

@@ -2,15 +2,18 @@
 
 ## Summary
 
-We will implement this in strict parity-first order with KERIpy behavior, starting from tufa init and only then exposing top-level tufa incept for single-sig, no-witness/no-
-delegation mode.
+We will implement this in strict parity-first order with KERIpy behavior,
+starting from tufa init and only then exposing top-level tufa incept for
+single-sig, no-witness/no- delegation mode.
 
 The key architectural fact is:
 
-kli init in KERIpy already depends on inception-capable internals because Habery.setup() creates Signator, and Signator creates hidden **signatory** Hab via local inception
-(Hab.make(...)).
+kli init in KERIpy already depends on inception-capable internals because
+Habery.setup() creates Signator, and Signator creates hidden **signatory** Hab
+via local inception (Hab.make(...)).
 
-So phase 1 must include enough Manager + Habery + Hab to support hidden local inception before public incept command work.
+So phase 1 must include enough Manager + Habery + Hab to support hidden local
+inception before public incept command work.
 
 ## Public APIs / Interfaces / Types To Add
 
@@ -31,7 +34,8 @@ So phase 1 must include enough Manager + Habery + Hab to support hidden local in
 
 3. packages/keri/src/app/configing.ts
 
-- minimal Configer for init --config-dir/--config-file parity loading of OOBI seeds (storage now, resolver later)
+- minimal Configer for init --config-dir/--config-file parity loading of OOBI
+  seeds (storage now, resolver later)
 
 4. packages/keri/src/db/keeping.ts
 
@@ -62,26 +66,32 @@ So phase 1 must include enough Manager + Habery + Hab to support hidden local in
 
 2. Create parity notes with exact call chain:
 
-- tufa init target chain: CLI -> Habery -> Manager.setup -> Signator -> hidden Hab.make
-- tufa incept target chain: CLI arg merge -> existing Habery open -> Habery.makeHab
+- tufa init target chain: CLI -> Habery -> Manager.setup -> Signator -> hidden
+  Hab.make
+- tufa incept target chain: CLI arg merge -> existing Habery open ->
+  Habery.makeHab
 
 3. Add deterministic fixtures from KERIpy tests for salts/passcodes/prefixes.
 
 Exit criteria:
 
-- A single “parity matrix” document in repo mapping each CLI flag and side effect.
+- A single “parity matrix” document in repo mapping each CLI flag and side
+  effect.
 
 ## Phase 1: Keystore Core + Manager + Hidden Signator Inception
 
 1. Implement Keeper and keystore records/subdb contracts.
 2. Implement Manager with AEID encryption flow and bran derivation parity.
 3. Implement Habery.setup() creating Manager then Signator.
-4. Implement Signator hidden Hab creation (transferable=false, hidden record behavior).
-5. Implement minimal local event creation/signing path needed for hidden Hab inception only.
+4. Implement Signator hidden Hab creation (transferable=false, hidden record
+   behavior).
+5. Implement minimal local event creation/signing path needed for hidden Hab
+   inception only.
 
 Exit criteria:
 
-- Constructing Habery with init semantics creates keystore/db, has mgr, and signator can sign/verify.
+- Constructing Habery with init semantics creates keystore/db, has mgr, and
+  signator can sign/verify.
 - **signatory** is persisted in hbys. mapping and not listed as user Hab.
 
 ## Phase 2: Real tufa init (Parity-First)
@@ -92,13 +102,15 @@ Exit criteria:
 - passcode prompt when !nopasscode && !passcode
 - optional salt, aeid, seed, config file/dir
 
-2. Instantiate real Habery and minimal Regery equivalent placeholder path print (or explicit “credential store not yet enabled” if not implemented).
+2. Instantiate real Habery and minimal Regery equivalent placeholder path print
+   (or explicit “credential store not yet enabled” if not implemented).
 3. Preserve output shape parity:
 
 - keystore path, db path, credential store path line
 - print aeid when present
 
-4. Load config OOBIs into db if config exists; do not run async network OOBI resolver yet.
+4. Load config OOBIs into db if config exists; do not run async network OOBI
+   resolver yet.
 
 Exit criteria:
 
@@ -122,9 +134,12 @@ Exit criteria:
 
 Scope rules in this phase:
 
-- Allowed: single-sig transferable/non-transferable, isith/nsith/icount/ncount/toad/data/est-only local state.
-- Not allowed yet: witness receipt orchestration, mailbox director, delegation anchoring/proxy flows.
-- If wits, endpoint, proxy, or delpre requires network orchestration, return explicit “not in single-sig local phase” error.
+- Allowed: single-sig transferable/non-transferable,
+  isith/nsith/icount/ncount/toad/data/est-only local state.
+- Not allowed yet: witness receipt orchestration, mailbox director, delegation
+  anchoring/proxy flows.
+- If wits, endpoint, proxy, or delpre requires network orchestration, return
+  explicit “not in single-sig local phase” error.
 
 Exit criteria:
 
@@ -146,7 +161,8 @@ Exit criteria:
 - incept transferable single-sig
 - est-only single-sig inception acceptance
 
-3. Add CI task alias for interop suite (skippable if Python env missing, hard-fail in dedicated interop job).
+3. Add CI task alias for interop suite (skippable if Python env missing,
+   hard-fail in dedicated interop job).
 
 Exit criteria:
 
@@ -173,12 +189,16 @@ Exit criteria:
 4. Unit: Hab.make single-sig transferable and non-transferable.
 5. CLI integration: tufa init required name validation and path outputs.
 6. CLI integration: tufa incept file+arg merge semantics.
-7. Interop integration: KERIpy vs tufa deterministic parity snapshots for single-sig, no-witness.
+7. Interop integration: KERIpy vs tufa deterministic parity snapshots for
+   single-sig, no-witness.
 
 ## Assumptions and Defaults
 
 1. Parity baseline is current keripy/src behavior.
-2. Implementation strategy is hybrid with signify-ts patterns reused where useful, but code lands in keri-ts.
+2. Implementation strategy is hybrid with signify-ts patterns reused where
+   useful, but code lands in keri-ts.
 3. incept is top-level tufa incept once single-sig local path is complete.
-4. Witness/delegation orchestration is explicitly deferred until after init+single-sig interop is green.
-5. Initial interop target is behavior parity (derived identifiers/events), not direct cross-language LMDB file compatibility.
+4. Witness/delegation orchestration is explicitly deferred until after
+   init+single-sig interop is green.
+5. Initial interop target is behavior parity (derived identifiers/events), not
+   direct cross-language LMDB file compatibility.

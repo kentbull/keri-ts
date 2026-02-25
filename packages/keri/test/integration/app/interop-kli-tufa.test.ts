@@ -65,7 +65,7 @@ function normalizeCesr(text: string): string {
 function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith("{\"v\":\"KERI"))
+    .filter((line) => line.trim().startsWith('{"v":"KERI'))
     .join("\n");
 }
 

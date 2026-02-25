@@ -4,20 +4,37 @@ import { type Operation } from "npm:effection@^3.6.0";
 const TEXT_DECODER = new TextDecoder();
 
 interface AnnotateArgs {
+  /**
+   * Path to CESR stream to be annotated
+   */
   inPath?: string;
+  /**
+   * Path to write annotated CESR stream
+   */
   outPath?: string;
+  /**
+   * Whether to treat input as binary domain bytes
+   */
   qb2?: boolean;
+  /**
+   * Whether to pretty-print JSON objects in annotation output
+   */
   pretty?: boolean;
 }
 
+/**
+ * Reads bytes from stdin in chunks of 64KB and returns them as a single Uint8Array
+ * @returns All bytes read from stdin
+ */
 function readAllStdinSync(): Uint8Array {
   const chunks: Uint8Array[] = [];
   let total = 0;
 
   while (true) {
-    const chunk = new Uint8Array(64 * 1024);
-    const read = Deno.stdin.readSync(chunk);
+    const chunk = new Uint8Array(64 * 1024); // 64KB chunk size
+    const read = Deno.stdin.readSync(chunk); // reads up to 64KB chunk, returns num bytes
     if (read === null) {
+      // read until EOF (null)
       break;
     }
 

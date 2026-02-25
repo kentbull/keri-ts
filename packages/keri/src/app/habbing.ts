@@ -1,4 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
+import { Baser, createBaser } from "../db/basing.ts";
+import { createKeeper, Keeper } from "../db/keeping.ts";
 import {
   Algos,
   branToSaltQb64,
@@ -9,11 +11,7 @@ import {
   Manager,
   normalizeSaltQb64,
   saltySigner,
-  type KeyDiger,
-  type KeyVerfer,
 } from "./keeping.ts";
-import { Baser, createBaser } from "../db/basing.ts";
-import { createKeeper, Keeper } from "../db/keeping.ts";
 
 export const SIGNER = "__signatory__";
 
@@ -149,14 +147,7 @@ export class Hab {
   pre = "";
   kever: KeverState | null = null;
 
-  constructor(
-    name: string,
-    db: Baser,
-    ks: Keeper,
-    mgr: Manager,
-    ns?: string,
-    pre = "",
-  ) {
+  constructor(name: string, db: Baser, ks: Keeper, mgr: Manager, ns?: string, pre = "") {
     this.name = name;
     this.db = db;
     this.ks = ks;
@@ -207,10 +198,7 @@ export class Hab {
 
     const keys = verfers.map((v) => v.qb64);
     const ndigs = digers.map((d) => d.qb64);
-    const cnfg = [
-      ...(estOnly ? ["EO"] : []),
-      ...(DnD ? ["DND"] : []),
-    ];
+    const cnfg = [...(estOnly ? ["EO"] : []), ...(DnD ? ["DND"] : [])];
 
     const { raw, pre } = makeInceptRaw(keys, ndigs, {
       code: prefixCode,
@@ -290,14 +278,7 @@ export class Signator {
       this.pre = hab.pre;
       this.db.pinHby(SIGNER, this.pre);
     } else {
-      const hab = new Hab(
-        SIGNER,
-        habery.db,
-        habery.ks,
-        habery.mgr,
-        undefined,
-        spre,
-      );
+      const hab = new Hab(SIGNER, habery.db, habery.ks, habery.mgr, undefined, spre);
       this.hab = hab;
       this.pre = spre;
     }
@@ -328,14 +309,7 @@ export class Habery {
   readonly habs = new Map<string, Hab>();
   readonly signator: Signator;
 
-  constructor(
-    name: string,
-    base: string,
-    temp: boolean,
-    db: Baser,
-    ks: Keeper,
-    mgr: Manager,
-  ) {
+  constructor(name: string, base: string, temp: boolean, db: Baser, ks: Keeper, mgr: Manager) {
     this.name = name;
     this.base = base;
     this.temp = temp;
@@ -382,17 +356,7 @@ export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
 
 /** Creates a habery with opened database/keystore and initialized manager state. */
 export function* createHabery(args: HaberyArgs): Operation<Habery> {
-  const {
-    name,
-    base = "",
-    temp = false,
-    headDirPath,
-    bran,
-    seed,
-    aeid,
-    salt,
-    algo,
-  } = args;
+  const { name, base = "", temp = false, headDirPath, bran, seed, aeid, salt, algo } = args;
 
   const db = yield* createBaser({
     name,
