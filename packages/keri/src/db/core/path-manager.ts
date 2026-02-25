@@ -6,6 +6,7 @@
  */
 
 import { action, type Operation } from "npm:effection@^3.6.0";
+import { isAbsolute, join } from "jsr:@std/path";
 import { InvalidPathNameError, PathError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
 
@@ -157,7 +158,7 @@ export class PathManager {
 
   set name(value: string) {
     // Check if path is absolute
-    if (value.startsWith("/") || value.includes(":")) {
+    if (isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value)) {
       throw new InvalidPathNameError(`Not relative name=${value} path.`, { name: value });
     }
     this._name = value;
@@ -166,12 +167,34 @@ export class PathManager {
   _getTempPath(): string {
     const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") || Deno.env.get("TEMP") || "/tmp";
     const tempName = `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
-    return `${tempDir}/${tempName}`;
+    return join(tempDir, tempName);
+  }
+
+  /** Resolve user home directory with a Windows-aware fallback chain. */
+  _resolveHomeDir(): string {
+    const home = Deno.env.get("HOME");
+    if (home) {
+      return home;
+    }
+
+    // Windows common environment variables
+    const userProfile = Deno.env.get("USERPROFILE");
+    if (userProfile) {
+      return userProfile;
+    }
+
+    const homeDrive = Deno.env.get("HOMEDRIVE");
+    const homePath = Deno.env.get("HOMEPATH");
+    if (homeDrive && homePath) {
+      return `${homeDrive}${homePath}`;
+    }
+
+    return "~";
   }
 
   _pathExpandTilde(path: string): string {
-    if (path === "~" || path.startsWith("~/")) {
-      const home = Deno.env.get("HOME") || "~";
+    if (path === "~" || /^~[\\/]/.test(path)) {
+      const home = this._resolveHomeDir();
       return path === "~" ? home : path.replace("~", home);
     }
     return path;
@@ -191,12 +214,9 @@ export class PathManager {
       tail = this.defaults.tailDirPath;
     }
 
-    const parts = [head, tail];
-    if (this.base) parts.push(this.base);
-    parts.push(this.name);
-
-    const path = parts.join("/");
-    return path;
+    return this.base
+      ? join(head, tail, this.base, this.name)
+      : join(head, tail, this.name);
   }
 
   _getAltPath(clean: boolean): string {
@@ -211,11 +231,9 @@ export class PathManager {
       tail = this.defaults.altTailDirPath;
     }
 
-    const altParts = [head, tail];
-    if (this.base) altParts.push(this.base);
-    altParts.push(this.name);
-    const path = altParts.join("/");
-    return path;
+    return this.base
+      ? join(head, tail, this.base, this.name)
+      : join(head, tail, this.name);
   }
 
   /*
