@@ -2,42 +2,32 @@ import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { PathError, ValidationError } from "../../core/errors.ts";
 import { createHabery } from "../habbing.ts";
 
+/**
+ * Arguments for `tufa init`.
+ */
 interface InitArgs {
+  /** Keystore name and file location of KERI keystore */
   name?: string;
+  /** Additional optional prefix to file location of KERI keystore */
   base?: string;
+  /** Directory override for database and keystore root (default fallback: ~/.tufa) */
   headDirPath?: string;
+  /** Create a temporary keystore, used for testing */
   temp?: boolean;
+  /** Qualified base64 salt for creating key pairs */
   salt?: string;
+  /** Directory override for configuration data */
   configDir?: string;
+  /** Configuration filename override */
   configFile?: string;
+  /** 22 character encryption passcode for keystore (is not saved) */
   passcode?: string;
+  /** Create an unencrypted keystore */
   nopasscode?: boolean;
+  /** Qualified base64 of non-transferable identifier prefix for authentication and encryption of secrets in keystore */
   aeid?: string;
+  /** Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived */
   seed?: string;
-  help?: boolean;
-}
-
-/** Prints help text for `tufa init`. */
-function printInitHelp() {
-  console.log(`
-tufa init - Create a database and keystore
-
-Usage: tufa init [options]
-
-Options:
-  --name, -n <name>           Keystore name and file location of KERI keystore (required)
-  --base, -b <base>           Additional optional prefix to file location of KERI keystore
-  --head-dir <dir>            Directory override for database and keystore root (default fallback: ~/.tufa)
-  --temp, -t                  Create a temporary keystore, used for testing
-  --salt, -s <salt>           Qualified base64 salt for creating key pairs
-  --config-dir, -c <dir>      Directory override for configuration data
-  --config-file <file>        Configuration filename override
-  --passcode, -p <passcode>   22 character encryption passcode for keystore (is not saved)
-  --nopasscode                Create an unencrypted keystore
-  --aeid, -a <aeid>           Qualified base64 of non-transferable identifier prefix for authentication and encryption of secrets in keystore
-  --seed, -e <seed>           Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived
-  --help, -h                  Show this help message
-`);
 }
 
 /**
@@ -46,13 +36,7 @@ Options:
  * Creates/open a habery keystore and database.
  */
 export function* initCommand(args: Record<string, unknown>): Operation<void> {
-  // Check for help flag
-  if (args.help || args.h) {
-    printInitHelp();
-    return;
-  }
-
-  // Extract values from args (already parsed by Cliffy or test mocks)
+  // Extract values from args
   const initArgs: InitArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -83,9 +67,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
 
   // Handle passcode input if not provided and not using nopasscode
   if (!nopasscode && !bran) {
-    console.log(
-      "Creating encrypted keystore, please enter your 22 character passcode:",
-    );
+    console.log("Creating encrypted keystore, please enter your 22 character passcode:");
 
     // For now, we'll use a simple prompt since Deno doesn't have getpass equivalent
     // In a real implementation, you'd want to use a proper password input library
@@ -117,9 +99,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       if (temp || !(error instanceof PathError)) {
         throw error;
       }
-      console.log(
-        "Persistent keystore path unavailable, retrying with temporary keystore mode.",
-      );
+      console.log("Persistent keystore path unavailable, retrying with temporary keystore mode.");
       hby = yield* createHabery({
         name,
         base,

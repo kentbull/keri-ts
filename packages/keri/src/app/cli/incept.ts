@@ -28,35 +28,6 @@ interface InceptArgs {
   estOnly?: boolean;
   data?: string[];
   delpre?: string;
-  help?: boolean;
-}
-
-/** Prints help text for `tufa incept`. */
-function printInceptHelp() {
-  console.log(`
-tufa incept - Initialize a prefix
-
-Usage: tufa incept [options]
-
-Options:
-  --name, -n <name>           Keystore name
-  --base, -b <base>           Optional base path prefix
-  --head-dir <dir>            Directory override for database and keystore root (default fallback: ~/.tufa)
-  --passcode, -p <passcode>   Keystore encryption passcode
-  --alias, -a <alias>         Human readable alias for new identifier (required)
-  --file, -f <file>           Filename to use to create the identifier
-  --transferable, -tf         Whether prefix is transferable
-  --wits, -w <prefix>         Witness prefix (repeatable)
-  --toad, -t <toad>           Witness threshold
-  --icount, -ic <count>       Inception key count
-  --isith, -s <sith>          Inception signing threshold
-  --ncount, -nc <count>       Next key count
-  --nsith, -x <sith>          Next signing threshold
-  --est-only, -e              Establishment events only
-  --data, -d <data>           Anchor data JSON or @file
-  --delpre, -di <prefix>      Delegator prefix
-  --help, -h                  Show this help message
-`);
 }
 
 /**
@@ -88,11 +59,6 @@ function mergeWithFile(args: InceptArgs): InceptFileOptions {
  * Creates a single-sig identifier locally.
  */
 export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
-  if (args.help || args.h) {
-    printInceptHelp();
-    return;
-  }
-
   const inceptArgs: InceptArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,

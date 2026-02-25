@@ -10,26 +10,6 @@ interface ExportArgs {
   alias?: string;
   files?: boolean;
   ends?: boolean;
-  help?: boolean;
-}
-
-/** Prints help text for `tufa export`. */
-function printExportHelp() {
-  console.log(`
-tufa export - Export key events in CESR stream format
-
-Usage: tufa export [options]
-
-Options:
-  --name, -n <name>           Keystore name
-  --base, -b <base>           Optional base path prefix
-  --head-dir <dir>            Directory override for database and keystore root (default fallback: ~/.tufa)
-  --passcode, -p <passcode>   Keystore encryption passcode
-  --alias, -a <alias>         Human readable alias for identifier (required)
-  --files                     Export to files (default stdout)
-  --ends                      Export service end points
-  --help, -h                  Show this help message
-`);
 }
 
 /**
@@ -38,11 +18,6 @@ Options:
  * Exports CESR-formatted KEL events for a named local AID.
  */
 export function* exportCommand(args: Record<string, unknown>): Operation<void> {
-  if (args.help || args.h) {
-    printExportHelp();
-    return;
-  }
-
   const exportArgs: ExportArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,

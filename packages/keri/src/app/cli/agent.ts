@@ -4,22 +4,6 @@ import { startServer } from "../server.ts";
 
 interface AgentArgs {
   port?: number;
-  help?: boolean;
-}
-
-function printAgentHelp() {
-  console.log(`
-tufa agent - Start the KERI agent server
-
-Usage: tufa agent [options]
-
-Options:
-  --port, -p <port>           Port number for the server (default: 8000)
-  --help, -h                  Show this help message
-
-The agent server provides HTTP endpoints for interacting with keri-ts.
-The server will run until interrupted with SIGINT (Ctrl+C).
-`);
 }
 
 /**
@@ -29,12 +13,6 @@ The server will run until interrupted with SIGINT (Ctrl+C).
  * @returns Operation that runs the server until shutdown
  */
 export function* agentCommand(args: Record<string, unknown>): Operation<void> {
-  // Check for help flag
-  if (args.help || args.h) {
-    printAgentHelp();
-    return;
-  }
-
   // Extract port from args (default to 8000)
   const port = args.port ? Number(args.port) : 8000;
 
