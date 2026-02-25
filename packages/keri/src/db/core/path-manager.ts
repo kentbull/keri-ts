@@ -45,20 +45,23 @@ export interface PathManagerOptions {
   logger?: Logger;
 }
 
-/** Defaults interface for the path manager */
+/**
+ * Defaults interface for the path manager. See PathManager for example paths.
+ */
 export interface PathManagerDefaults {
-  headDirPath: string;
-  tailDirPath: string;
-  cleanTailDirPath: string;
-  altHeadDirPath: string;
-  altTailDirPath: string;
-  altCleanTailDirPath: string;
-  tempHeadDir: string;
-  tempPrefix: string;
-  tempSuffix: string;
-  perm: number;
-  mode: string;
-  fext: string;
+  //                               EXAMPLE PATHS
+  headDirPath: string; //          start of path: /{head}
+  tailDirPath: string; //             after head: /{head}/{tail}
+  cleanTailDirPath: string; //          alt tail: /{head}/{tail}/clean
+  altHeadDirPath: string; // start or after home: /{altHead}/{altTail}/{base}/{name}
+  altTailDirPath: string; //       after altHead: /{altHead}/{altTail}/{base}/{name}
+  altCleanTailDirPath: string; //  after altHead: /{altHead}/{altTail}/clean/{base}/{name}
+  tempPrefix: string; //       start of temp dir: /{tempPrefix}
+  tempSuffix: string; //        after tempPrefix: /{tempPrefix}{tempSuffix}
+  tempHeadDir: string; //       after tempSuffix: /{tempPrefix}{tempSuffix}{tempHead}
+  perm: number; // numeric os dir permissions for database directory and database files
+  mode: string; // file open mode if filed
+  fext: string; // file extension if filed
 }
 
 /** Defaults for the path manager */
@@ -80,10 +83,14 @@ export const PATH_DEFAULTS: PathManagerDefaults = {
 /**
  * PathManager manages file and directory paths
  *
- * Three paths exist by default:
- * - persistent path: /{headDirPath}/{tailDirPath}/{base}/{name}
- * - alt path: /{altHeadDirPath}/{altTailDirPath}/{base}/{name}
- * - temp path: /{tempHeadDir}/{tempPrefix}{name}{tempSuffix}
+ * Main file paths:
+ * - persistent path: /{head}/{tail}      /{base}/{name}
+ * -      clean path: /{head}/{tail}/clean/{base}/{name}
+ * -        alt path: /{altHead}/{altTail}/{base}/{name}
+ * - HOME (alt) path:          ~/{altTail}/{base}/{name}
+ *
+ * Temp files:
+ * -       temp path: /{tempPrefix}/{tempSuffix}{tempHead}
  *
  * The path manager will use the persistent path by default.
  * If the persistent path does not exist, the path manager will use the alt path.
@@ -235,7 +242,7 @@ export class PathManager {
    * Helper: Convert Promise-based file system operations to Effection operations
    * This ensures proper structured concurrency and cancellation support
    */
-  private *_statOp(path: string): Operation<boolean> {
+  *statOp(path: string): Operation<boolean> {
     return yield* action((resolve, reject) => {
       Deno.stat(path)
         .then(() => resolve(true))
@@ -250,7 +257,7 @@ export class PathManager {
     });
   }
 
-  private *_accessOp(path: string): Operation<boolean> {
+  *accessOp(path: string): Operation<boolean> {
     return yield* action((resolve, reject) => {
       // In Deno, we check access by stating or trying to read/write.
       // Simplified to checking existence and relying on OS permissions for now
@@ -261,7 +268,7 @@ export class PathManager {
     });
   }
 
-  private *_mkdirOp(path: string, perm: number): Operation<boolean> {
+  *mkdirOp(path: string, perm: number): Operation<boolean> {
     return yield* action((resolve, reject) => {
       Deno.mkdir(path, { recursive: true, mode: perm })
         .then(() => resolve(true))
@@ -276,7 +283,7 @@ export class PathManager {
     });
   }
 
-  private *_rmOp(path: string): Operation<void> {
+  *rmOp(path: string): Operation<void> {
     return yield* action((resolve, reject) => {
       Deno.remove(path, { recursive: true })
         .then(() => resolve(undefined))
@@ -291,7 +298,7 @@ export class PathManager {
     });
   }
 
-  private *_statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean }> {
+  *statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean }> {
     return yield* action((resolve, reject) => {
       Deno.stat(path)
         .then((stats) => {
@@ -315,153 +322,164 @@ export class PathManager {
   }
 
   /**
-   * Reopen/create the directory or file path
+   * Reopen/create the directory or file path.
    * Replicates KERIpy/HIO Filer.remake logic:
    * - Tries primary path (/usr/local/var/keri/*) first
    * - Falls back to alt path (~/.tufa/*) on OS errors or access issues
    *
-   * Uses Effection for structured concurrency:
-   * - All file system operations are cancellable
-   * - No dangling promises - operations tracked in Effection task tree
-   * - Automatic cleanup if parent operation is halted
+   * Returns Effection Operation with true if path is created and accessible, false otherwise.
    */
   *reopen(options: Partial<PathManagerOptions> = {}): Operation<boolean> {
-    const temp = options.temp ?? this.temp;
-    let headDirPath = options.headDirPath ?? this.headDirPath;
-    const perm = options.perm ?? this.perm;
-    const clear = options.clear || false;
-    const reuse = options.reuse || false;
+    this._applyOptions(options);
+
+    const headDirPath = options.headDirPath ?? this.headDirPath;
     const clean = options.clean || false;
-    const mode = options.mode ?? this.mode;
-    const fext = options.fext ?? this.fext;
+    const reuse = options.reuse || false;
+    const clear = options.clear || false;
 
-    this.temp = temp;
-    this.perm = perm;
-    this.mode = mode;
-    this.fext = fext;
+    const [primary, alt, tempPath] = this._getPaths({ ...options, headDirPath, clean });
 
-    let path: string;
-    const [primary, alt, tempPath] = this._getPaths({
-      ...options,
-      headDirPath,
-      clean,
-    });
+    const resolved = yield* this._resolvePath({ primary, alt, tempPath, headDirPath, reuse });
+    this.headDirPath = resolved.headDirPath;
 
-    if (temp) {
-      // Use temporary directory
-      path = tempPath;
-    } else {
-      // Use persistent directory - try primary first, fall back to alt on error
-      path = primary;
-      let useAltPath = false;
-
-      // Only attempt fallback if using default headDirPath (not a custom one)
-      const usingDefaultHeadDir = headDirPath === this.defaults.headDirPath;
-
-      if (!reuse && usingDefaultHeadDir) {
-        // Check if path exists using Effection operation
-        const pathExists = yield* this._statOp(path);
-
-        if (!pathExists) {
-          // Path doesn't exist, try to create it
-          this.logger.info(`Creating directory at ${path}`);
-          const created = yield* this._mkdirOp(path, perm);
-          if (!created) {
-            // Creation failed (e.g., EACCES) - fall back to alt path
-            this.logger.warn(`Failed to create primary path, falling back to alt path`);
-            useAltPath = true;
-            path = alt;
-            headDirPath = this.defaults.altHeadDirPath;
-          }
-        }
-
-        // If we're using alt path, ensure it exists
-        if (useAltPath) {
-          const altPathExists = yield* this._statOp(path);
-          if (!altPathExists) {
-            // Alt path doesn't exist, create it
-            this.logger.info(`Creating alt directory at ${path}`);
-            const created = yield* this._mkdirOp(path, perm);
-            if (!created) {
-              // Even alt path creation failed - this is unexpected, but we'll continue
-              this.logger.error(`Failed to create alt directory at ${path}`);
-              throw new PathError(`Failed to create alt directory at ${path}`, { path });
-            }
-          } else {
-            // Path exists, verify access
-            const altHasAccess = yield* this._accessOp(path);
-            if (!altHasAccess) {
-              // Path exists but no access - this shouldn't happen for alt path, but log it
-              this.logger.error(`Alt path exists but is not accessible: ${path}`);
-              throw new PathError(`Alt path exists but is not accessible: ${path}`, { path });
-            }
-          }
-        }
-      } else if (reuse) {
-        // Reuse mode - just verify the path exists and is accessible
-        const pathExists = yield* this._statOp(path);
-        const hasAccess = pathExists ? yield* this._accessOp(path) : false;
-
-        if (!pathExists || !hasAccess) {
-          // If reuse path doesn't work and we're using default, try alt
-          if (usingDefaultHeadDir) {
-            this.logger.info(`Reuse path not accessible, trying alt path`);
-            path = alt;
-            headDirPath = this.defaults.altHeadDirPath;
-            const altPathExists = yield* this._statOp(path);
-            const altHasAccess = altPathExists ? yield* this._accessOp(path) : false;
-
-            if (!altPathExists) {
-              // Alt path doesn't exist, create it
-              this.logger.info(`Creating alt directory at ${path}`);
-              const created = yield* this._mkdirOp(path, perm);
-              if (!created) {
-                this.logger.warn(`Warning: Failed to create alt directory at ${path}`);
-              }
-            } else if (!altHasAccess) {
-              // Alt path exists but not accessible - unexpected but continue
-              this.logger.warn(`Warning: Alt path exists but is not accessible: ${path}`);
-            }
-          }
-        }
-      }
-    }
-
-    // Update headDirPath if we fell back to alt
-    this.headDirPath = headDirPath;
-
-    // Clear if requested
     if (clear) {
-      const pathStat = yield* this._statFileOp(path);
-      if (pathStat && (pathStat.isDirectory || pathStat.isFile)) {
-        yield* this._rmOp(path);
-      }
+      yield* this._clearPath(resolved.path);
     }
 
-    // Create directory if it doesn't exist (final check)
     if (!this.filed) {
-      const pathExists = yield* this._statOp(path);
-      if (!pathExists) {
-        // Path doesn't exist, create it
-        this.logger.info(`Creating directory at ${path}`);
-        const created = yield* this._mkdirOp(path, perm);
-        if (!created) {
-          // Creation failed - this is unexpected at this point, but log it
-          this.logger.warn(`Warning: Failed to create directory at ${path}`);
-        }
-      } else {
-        // Path exists, verify we can access it
-        const hasAccess = yield* this._accessOp(path);
-        if (!hasAccess) {
-          // Path exists but not accessible - unexpected but continue
-          this.logger.warn(`Warning: Path exists but is not accessible: ${path}`);
-        }
-      }
+      yield* this._ensureDirectoryExists(resolved.path);
     }
 
-    this.path = path;
+    this.path = resolved.path;
     this.opened = true;
     return this.opened;
+  }
+
+  /** Update instance fields from caller-provided options. */
+  private _applyOptions(options: Partial<PathManagerOptions>): void {
+    this.temp = options.temp ?? this.temp;
+    this.perm = options.perm ?? this.perm;
+    this.mode = options.mode ?? this.mode;
+    this.fext = options.fext ?? this.fext;
+  }
+
+  /**
+   * Select which concrete path to use: temp, primary with alt fallback,
+   * reuse with alt fallback, or primary directly (custom headDirPath).
+   */
+  private *_resolvePath(params: {
+    primary: string;
+    alt: string;
+    tempPath: string;
+    headDirPath: string;
+    reuse: boolean;
+  }): Operation<{ path: string; headDirPath: string }> {
+    if (this.temp) {
+      return { path: params.tempPath, headDirPath: params.headDirPath };
+    }
+
+    if (params.reuse) {
+      return yield* this._reuseOrFallback(params.primary, params.alt, params.headDirPath);
+    }
+
+    return yield* this._createOrFallback(params.primary, params.alt, params.headDirPath);
+  }
+
+  /**
+   * Try to use or create the primary path. If creation fails (e.g. EACCES),
+   * fall back to the alt path. Throws if alt path also fails.
+   */
+  private *_createOrFallback(
+    primary: string,
+    alt: string,
+    headDirPath: string,
+  ): Operation<{ path: string; headDirPath: string }> {
+    const exists = yield* this.statOp(primary);
+    if (exists) {
+      return { path: primary, headDirPath };
+    }
+
+    this.logger.info(`Creating directory at ${primary}`);
+    const created = yield* this.mkdirOp(primary, this.perm);
+    if (created) {
+      return { path: primary, headDirPath };
+    }
+
+    this.logger.warn(`Failed to create primary path, falling back to alt path`);
+    const altReady = yield* this._ensurePathAccessible(alt);
+    if (!altReady) {
+      this.logger.error(`Alt path not available at ${alt}`);
+      throw new PathError(`Alt path not available at ${alt}`, { path: alt });
+    }
+    return { path: alt, headDirPath: this.defaults.altHeadDirPath };
+  }
+
+  /**
+   * Verify the primary path exists and is accessible for reuse.
+   * If not accessible and using the default head dir, fall back to alt.
+   */
+  private *_reuseOrFallback(
+    primary: string,
+    alt: string,
+    headDirPath: string,
+  ): Operation<{ path: string; headDirPath: string }> {
+    const exists = yield* this.statOp(primary);
+    const accessible = exists ? yield* this.accessOp(primary) : false;
+
+    if (exists && accessible) {
+      return { path: primary, headDirPath };
+    }
+
+    this.logger.info(`Reuse path unavailable, attempting to (re)create primary path`);
+    const primaryReady = yield* this._ensurePathAccessible(primary);
+    if (primaryReady) {
+      return { path: primary, headDirPath };
+    }
+
+    this.logger.info(`Primary path unavailable, trying alt path`);
+    const altReady = yield* this._ensurePathAccessible(alt);
+    if (!altReady) {
+      this.logger.warn(`Alt path not available: ${alt}`);
+    }
+    return { path: alt, headDirPath: this.defaults.altHeadDirPath };
+  }
+
+  /**
+   * Ensure a path exists and is accessible, creating it if necessary.
+   * Returns true if the path is ready for use.
+   */
+  private *_ensurePathAccessible(path: string): Operation<boolean> {
+    const exists = yield* this.statOp(path);
+    if (!exists) {
+      this.logger.info(`Creating directory at ${path}`);
+      return yield* this.mkdirOp(path, this.perm);
+    }
+    return yield* this.accessOp(path);
+  }
+
+  /** Remove existing file or directory at path. */
+  private *_clearPath(path: string): Operation<void> {
+    const stat = yield* this.statFileOp(path);
+    if (stat.isDirectory || stat.isFile) {
+      yield* this.rmOp(path);
+    }
+  }
+
+  /** Ensure the directory at path exists and is accessible, creating it if needed. */
+  private *_ensureDirectoryExists(path: string): Operation<void> {
+    const exists = yield* this.statOp(path);
+    if (!exists) {
+      this.logger.info(`Creating directory at ${path}`);
+      const created = yield* this.mkdirOp(path, this.perm);
+      if (!created) {
+        this.logger.warn(`Failed to create directory at ${path}`);
+      }
+    } else {
+      const accessible = yield* this.accessOp(path);
+      if (!accessible) {
+        this.logger.warn(`Path exists but is not accessible: ${path}`);
+      }
+    }
   }
 
   /**
@@ -471,26 +489,10 @@ export class PathManager {
    */
   *close(clear = false): Operation<boolean> {
     if (clear && this.path) {
-      yield* this._rmOp(this.path);
+      yield* this.rmOp(this.path);
     }
     this.path = null;
     this.opened = false;
     return true;
-  }
-
-  /**
-   * Check if database files exist in the path directory
-   * LMDB creates data.mdb and lock.mdb files
-   * Returns true if data.mdb exists (lock.mdb might not exist if no active transactions)
-   * Uses Effection for structured concurrency
-   */
-  *databaseFilesExist(): Operation<boolean> {
-    if (!this.path) {
-      return false;
-    }
-
-    const dataMdbPath = `${this.path}/data.mdb`;
-    const pathStat = yield* this._statFileOp(dataMdbPath);
-    return pathStat.isFile ?? false;
   }
 }
