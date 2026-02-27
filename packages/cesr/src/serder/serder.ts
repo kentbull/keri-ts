@@ -1,11 +1,14 @@
-import type { SerderEnvelope } from "../core/types.ts";
+import type { CesrBody } from "../core/types.ts";
 import type { Smellage } from "../core/types.ts";
 import { DeserializeError } from "../core/errors.ts";
 
+// TODO should this be called parseBody?
+//   If we're going to say parseSerder then it should doo a full deserialization
+//   and the CesrBody should be a Serder with subclasses for SerderKERI and SerderACDC
 export function parseSerder(
   raw: Uint8Array,
   smellage: Smellage,
-): SerderEnvelope {
+): CesrBody {
   const { proto, kind, pvrsn, gvrsn, size } = smellage;
   let ked: Record<string, unknown> | null = null;
   let ilk: string | null = null;
@@ -26,6 +29,9 @@ export function parseSerder(
       );
     }
   }
+
+  // TODO support SerderKERI and SerderACDC.
+  //   Is that done at this level or the next level up?
 
   return { raw, ked, proto, kind, size, pvrsn, gvrsn, ilk, said };
 }

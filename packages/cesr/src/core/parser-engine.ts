@@ -1,9 +1,10 @@
 import { concatBytes } from "./bytes.ts";
-import type { CesrFrame, ParseEmission, ParserState } from "./types.ts";
+import type { CesrMessage, CesrFrame, ParserState, AttachmentGroup } from "./types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import type {
+  AttachmentDispatchMode,
   AttachmentDispatchOptions,
   VersionFallbackInfo,
 } from "../parser/group-dispatch.ts";
@@ -75,15 +76,60 @@ function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
   return cold === "txt" || cold === "bny";
 }
 
-export class CesrParserCore {
+/**
+ * Streaming CESR parser for message-domain and CESR-native body-group streams.
+ * Handles chunk boundaries, pending frames, and attachment continuation.
+ *
+ * @param options - Parser options
+ * @param options.framed - Whether input is externally frame-delimited
+ * @param options.attachmentDispatchMode - Attachment dispatch mode ('strict' version handling or 'compat' version parsing fallback)
+ * @param options.onAttachmentVersionFallback - Callback for attachment version fallback
+ */
+export class CesrParser {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
+  /**
+   * Determines how frame (CESR Message of body + atc) boundaries are established.
+   *
+   * - `false` (default): unframed stream mode.
+   *   Parser infers boundaries from CESR structure, greedily parses trailing
+   *   attachment groups, and may defer body-only end-of-buffer emission until
+   *   more bytes arrive or `flush()` is called.
+   *
+   * - `true`: externally framed mode.
+   *   Caller is expected to provide frame-delimited input. Parser prefers early
+   *   emission and bounded work per `feed()` call instead of greedy lookahead.
+   *
+   * Use `true` only when frame boundaries are known by the caller.
+   * Note: `true` is an emission policy, not a completeness guarantee; shortages
+   * still defer emission.
+   */
   private readonly framed: boolean;
-  private readonly attachmentDispatchMode: AttachmentDispatchOptions["mode"];
+  /**
+   * Controls how attachment groups are parsed based on the major CESR version.
+   *
+   * - `strict`: no version fallback; strict mode throws on unknown codes.
+   * - `compat`: version fallback; tries v1 parse if v2 fails.
+   *   Use when caller wants to tolerate version mismatches but prefers v2 parsing.
+   */
+  private readonly attachmentDispatchMode: AttachmentDispatchMode;
+  /**
+   * Callback for attachment version fallback.
+   *
+   * - `info`: version fallback information
+   *   Use when caller wants to be notified of version fallback.
+   */
   private readonly onAttachmentVersionFallback?: (
     info: VersionFallbackInfo,
   ) => void;
+
+  /**
+   * Pending frame to be emitted when more bytes are available.
+   *
+   * - `frame`: the CESrMessage
+   * - `version`: the version of the CESR Message
+   */
   private pendingFrame:
-    | { frame: CesrFrame; version: Versionage }
+    | { frame: CesrMessage; version: Versionage }
     | null = null;
 
   constructor(options: ParserOptions = {}) {
@@ -93,14 +139,14 @@ export class CesrParserCore {
   }
 
   /** Append bytes and emit any complete parse events. */
-  feed(chunk: Uint8Array): ParseEmission[] {
+  feed(chunk: Uint8Array): CesrFrame[] {
     this.state.buffer = concatBytes(this.state.buffer, chunk);
     return this.drain();
   }
 
   /** Flush pending state at end-of-stream, emitting frame/error if needed. */
-  flush(): ParseEmission[] {
-    const out: ParseEmission[] = [];
+  flush(): CesrFrame[] {
+    const out: CesrFrame[] = [];
     if (this.pendingFrame) {
       out.push({ type: "frame", frame: this.pendingFrame.frame });
       this.pendingFrame = null;
@@ -127,8 +173,8 @@ export class CesrParserCore {
    * Keeps state machine behavior explicit: consume separators, parse a base
    * frame, then greedily collect trailing attachment groups.
    */
-  private drain(): ParseEmission[] {
-    const out: ParseEmission[] = [];
+  private drain(): CesrFrame[] {
+    const out: CesrFrame[] = [];
 
     while (this.state.buffer.length > 0) {
       try {
@@ -178,7 +224,7 @@ export class CesrParserCore {
         } catch (error) {
           if (error instanceof ShortageError) {
             this.pendingFrame = {
-              frame: { serder: base.frame.serder, attachments },
+              frame: { body: base.frame.body, attachments },
               version,
             };
             pausedForAttachmentShortage = true;
@@ -190,8 +236,8 @@ export class CesrParserCore {
           break;
         }
 
-        const completed: CesrFrame = {
-          serder: base.frame.serder,
+        const completed: CesrMessage = {
+          body: base.frame.body,
           attachments,
         };
 
@@ -221,7 +267,12 @@ export class CesrParserCore {
     return out;
   }
 
-  private resumePendingFrame(out: ParseEmission[]): boolean {
+  /**
+   * TODO document this function and what the whole pending frame / frame / framed idea is.
+   * @param out
+   * @returns
+   */
+  private resumePendingFrame(out: CesrFrame[]): boolean {
     if (!this.pendingFrame) return false;
     if (this.state.buffer.length === 0) return false;
 
@@ -241,7 +292,8 @@ export class CesrParserCore {
       );
     }
 
-    if (this.pendingFrame.frame.serder.kind === Kinds.cesr) {
+    // CESR native
+    if (this.pendingFrame.frame.body.kind === Kinds.cesr) {
       const peek = parseCounter(
         this.state.buffer,
         this.pendingFrame.version,
@@ -258,6 +310,8 @@ export class CesrParserCore {
         this.pendingFrame = null;
         return true;
       }
+      // TODO do we need to throw an error here or do a continue?
+      //   Does this only happen when a CESR native frame has a group code but no fields/atc?
     }
 
     const { group, consumed } = parseAttachmentGroup(
@@ -292,6 +346,8 @@ export class CesrParserCore {
       this.pendingFrame = null;
       return true;
     }
+    // TODO when would this happen? As in, when would the afterCold be something other than
+    //   ano or msg and get to this point?
     return true;
   }
 
@@ -313,7 +369,7 @@ export class CesrParserCore {
   private parseFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     let offset = 0;
     let activeVersion = inheritedVersion;
 
@@ -335,12 +391,17 @@ export class CesrParserCore {
         }
         cold = sniff(input.slice(offset));
       }
+      // TODO what happens if peek.code is not GENUS_VERSION_CODE (v2)?
+      //   Do we need to handle v1? Is this only a v2 thing? How does KERIpy do it?
     }
 
     if (cold === "msg") {
       const { serder, consumed } = reapSerder(input.slice(offset));
+      // TODO why are we returning a parse frame with no attachments?
+      //  I can see a perf or chunking argument here, though it likely makes the most
+      //  sense to wait until all attachments are parsed up until the next message or EOF.
       return {
-        frame: { serder, attachments: [] },
+        frame: { body: serder, attachments: [] },
         consumed: offset + consumed,
         version: serder.gvrsn ?? serder.pvrsn,
       };
@@ -356,6 +417,7 @@ export class CesrParserCore {
     const headerSize = tokenSize(counter, cold);
     const unit = quadletUnit(cold);
 
+    // TODO how does KERIpy handle these checks? Similarly?
     if (BODY_WITH_ATTACH_CODES.has(counter.code)) {
       return this.parseBodyWithAttachmentGroup(
         input,
@@ -405,7 +467,7 @@ export class CesrParserCore {
     count: number,
     unit: number,
     version: Versionage,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -421,7 +483,7 @@ export class CesrParserCore {
     return {
       frame: nested.frame,
       consumed: offset + total,
-      version: nested.frame.serder.gvrsn ?? nested.frame.serder.pvrsn,
+      version: nested.frame.body.gvrsn ?? nested.frame.body.pvrsn,
     };
   }
 
@@ -434,7 +496,7 @@ export class CesrParserCore {
     unit: number,
     cold: "txt" | "bny",
     version: Versionage,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     const matter = parseMatter(input.slice(offset + headerSize), cold);
     const bodySize = tokenSize(matter, cold);
     const payloadSize = count * unit;
@@ -447,7 +509,7 @@ export class CesrParserCore {
     try {
       const { serder } = reapSerder(matter.raw);
       return {
-        frame: { serder, attachments: [] },
+        frame: { body: serder, attachments: [] },
         consumed: offset + headerSize + bodySize,
         version: serder.gvrsn ?? serder.pvrsn,
       };
@@ -457,7 +519,7 @@ export class CesrParserCore {
       // continue with conservative metadata instead of failing the frame parse.
       return {
         frame: {
-          serder: {
+          body: {
             raw: matter.raw,
             ked: null,
             proto: Protocols.keri,
@@ -486,7 +548,7 @@ export class CesrParserCore {
     cold: "txt" | "bny",
     version: Versionage,
     bodyCode: string,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -497,7 +559,7 @@ export class CesrParserCore {
     const fields = this.extractNativeFields(raw, cold, version);
     return {
       frame: {
-        serder: {
+        body: {
           raw,
           ked: null,
           proto: metadata.proto,
@@ -714,10 +776,10 @@ export class CesrParserCore {
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
     stopAtNextMessage = true,
-  ): { frame: CesrFrame; consumed: number } {
+  ): { frame: CesrMessage; consumed: number } {
     const base = this.parseFrame(input, inheritedVersion);
     const version = base.version;
-    const attachments: CesrFrame["attachments"] = [];
+    const attachments: AttachmentGroup[] = [];
     let offset = base.consumed;
 
     while (offset < input.length) {
@@ -754,20 +816,22 @@ export class CesrParserCore {
     }
 
     return {
-      frame: { serder: base.frame.serder, attachments },
+      frame: { body: base.frame.body, attachments },
       consumed: offset,
     };
   }
 }
 
-export function createParser(options: ParserOptions = {}): CesrParserCore {
-  return new CesrParserCore(options);
+/** CESR parser factory function. */
+export function createParser(options: ParserOptions = {}): CesrParser {
+  return new CesrParser(options);
 }
 
+/** Parse a buffer of bytes into a list of frames. */
 export function parseBytes(
   bytes: Uint8Array,
   options: ParserOptions = {},
-): ParseEmission[] {
+): CesrFrame[] {
   const parser = createParser(options);
   return [...parser.feed(bytes), ...parser.flush()];
 }

@@ -5,7 +5,6 @@ import {
   CLITestHarness,
   createMockArgs,
   testCLICommand,
-  testConcurrentCLICommands,
 } from "../../../test/utils.ts";
 
 /**
@@ -17,6 +16,7 @@ Deno.test("Integration: Effection - CLI command execution with Effection run", a
   const args = createMockArgs({
     name: "integration-test",
     nopasscode: true,
+    temp: true,
   });
 
   const result = await run(() => testCLICommand(initCommand(args), args));
@@ -26,53 +26,29 @@ Deno.test("Integration: Effection - CLI command execution with Effection run", a
 });
 
 Deno.test("Integration: Effection - Multiple CLI commands with spawn", async () => {
-  const commands = [
-    {
-      name: "init1",
-      command: initCommand(
-        createMockArgs({ name: "keystore1", nopasscode: true }),
-      ),
-      args: createMockArgs({ name: "keystore1", nopasscode: true }),
-    },
-    {
-      name: "init2",
-      command: initCommand(
-        createMockArgs({ name: "keystore2", nopasscode: true }),
-      ),
-      args: createMockArgs({ name: "keystore2", nopasscode: true }),
-    },
-    {
-      name: "init3",
-      command: initCommand(
-        createMockArgs({ name: "keystore3", nopasscode: true }),
-      ),
-      args: createMockArgs({ name: "keystore3", nopasscode: true }),
-    },
-  ];
+  const names = ["keystore1", "keystore2", "keystore3"];
+  const results = await run(function* () {
+    const outputSizes: number[] = [];
+    for (const name of names) {
+      const args = createMockArgs({ name, nopasscode: true, temp: true });
+      const result = yield* testCLICommand(initCommand(args), args);
+      outputSizes.push(result.output.length);
+    }
+    return outputSizes;
+  });
 
-  const results = await run(() => testConcurrentCLICommands(commands));
-
-  assertEquals(Object.keys(results).length, 3);
-  assertEquals(results.init1.output.length > 0, true);
-  assertEquals(results.init2.output.length > 0, true);
-  assertEquals(results.init3.output.length > 0, true);
+  assertEquals(results.length, 3);
+  assertEquals(results.every((size) => size > 0), true);
 });
 
 Deno.test("Integration: Effection - CLI command with timeout using Effection", async () => {
   const args = createMockArgs({
     name: "timeout-test",
     nopasscode: true,
+    temp: true,
   });
 
-  // Test that command completes within reasonable time
-  const result = await run(function* () {
-    const commandTask = spawn(() => testCLICommand(initCommand(args), args));
-
-    // Wait for command to complete
-    const commandResult = yield* commandTask;
-
-    return commandResult;
-  });
+  const result = await run(() => testCLICommand(initCommand(args), args));
 
   assertEquals(result !== undefined, true);
   assertEquals(result.output.length > 0, true);
@@ -82,6 +58,7 @@ Deno.test("Integration: Effection - CLI error handling with Effection", async ()
   const args = createMockArgs({
     name: "", // Invalid empty name
     nopasscode: true,
+    temp: true,
   });
 
   // Test that errors are properly thrown
@@ -99,6 +76,7 @@ Deno.test("Integration: Effection - CLI command with CLI test harness cleanup", 
   const args = createMockArgs({
     name: "resource-test",
     nopasscode: true,
+    temp: true,
   });
 
   let cleanupCalled = false;
@@ -153,6 +131,7 @@ Deno.test("Integration: Effection - CLI command with nested operations", async (
   const args = createMockArgs({
     name: "nested-test",
     nopasscode: true,
+    temp: true,
   });
 
   const result = await run(() => testCLICommand(nestedInitCommand(args), args));

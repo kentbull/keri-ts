@@ -95,20 +95,20 @@ Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", () => {
   const parser = createParser();
   const first = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
   assertEquals(first.length, 0);
-  const emissions = parser.flush();
-  assertEquals(emissions.length, 1);
-  assertEquals(emissions[0].type, "frame");
-  if (emissions[0].type === "frame") {
-    const raw = new TextDecoder().decode(emissions[0].frame.serder.raw);
+  const frames = parser.flush();
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "frame");
+  if (frames[0].type === "frame") {
+    const raw = new TextDecoder().decode(frames[0].frame.body.raw);
     assertEquals(raw, KERIPY_NATIVE_V2_ICP_FIX_BODY);
-    assertEquals(emissions[0].frame.serder.kind, "CESR");
-    assertEquals(emissions[0].frame.serder.pvrsn.major, 2);
-    assertEquals(emissions[0].frame.serder.ilk, "icp");
+    assertEquals(frames[0].frame.body.kind, "CESR");
+    assertEquals(frames[0].frame.body.pvrsn.major, 2);
+    assertEquals(frames[0].frame.body.ilk, "icp");
     assertEquals(
-      emissions[0].frame.serder.said,
+      frames[0].frame.body.said,
       "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
     );
-    assertEquals(emissions[0].frame.attachments.length, 0);
+    assertEquals(frames[0].frame.attachments.length, 0);
   }
 });
 
@@ -125,12 +125,12 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
 
   const parser = createParser();
   const first = parser.feed(decodeB64(wrapped));
-  const emissions = first.length > 0 ? first : parser.flush();
-  assertEquals(emissions.length, 1);
-  assertEquals(emissions[0].type, "frame");
-  if (emissions[0].type === "frame") {
-    assertEquals(emissions[0].frame.serder.kind, "CESR");
-    assertEquals(emissions[0].frame.attachments.length, 0);
+  const frames = first.length > 0 ? first : parser.flush();
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "frame");
+  if (frames[0].type === "frame") {
+    assertEquals(frames[0].frame.body.kind, "CESR");
+    assertEquals(frames[0].frame.attachments.length, 0);
   }
 });
 
@@ -154,8 +154,8 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
   assertEquals(txt.length, 1);
   assertEquals(txt[0].type, "frame");
   if (txt[0].type === "frame") {
-    assertEquals(txt[0].frame.serder.kind, "CESR");
-    assertEquals(txt[0].frame.serder.ilk, "icp");
+    assertEquals(txt[0].frame.body.kind, "CESR");
+    assertEquals(txt[0].frame.body.ilk, "icp");
   }
 
   const qb2Parser = createParser();
@@ -164,9 +164,9 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
   assertEquals(bny.length, 1);
   assertEquals(bny[0].type, "frame");
   if (txt[0].type === "frame" && bny[0].type === "frame") {
-    assertEquals(bny[0].frame.serder.kind, "CESR");
-    assertEquals(bny[0].frame.serder.ilk, txt[0].frame.serder.ilk);
-    assertEquals(bny[0].frame.serder.said, txt[0].frame.serder.said);
+    assertEquals(bny[0].frame.body.kind, "CESR");
+    assertEquals(bny[0].frame.body.ilk, txt[0].frame.body.ilk);
+    assertEquals(bny[0].frame.body.said, txt[0].frame.body.said);
     assertEquals(
       bny[0].frame.attachments.length,
       txt[0].frame.attachments.length,
@@ -186,17 +186,17 @@ Deno.test("native MapBodyGroup supports labels between primitives", () => {
 
   const parser = createParser();
   const first = parser.feed(encode(mapBody));
-  const emissions = first.length > 0 ? first : parser.flush();
-  assertEquals(emissions.length, 1);
-  assertEquals(emissions[0].type, "frame");
-  if (emissions[0].type === "frame") {
-    assertEquals(emissions[0].frame.serder.kind, "CESR");
-    assertEquals(emissions[0].frame.serder.ilk, "icp");
+  const frames = first.length > 0 ? first : parser.flush();
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "frame");
+  if (frames[0].type === "frame") {
+    assertEquals(frames[0].frame.body.kind, "CESR");
+    assertEquals(frames[0].frame.body.ilk, "icp");
     assertEquals(
-      emissions[0].frame.serder.native?.bodyCode,
+      frames[0].frame.body.native?.bodyCode,
       CtrDexV2.MapBodyGroup,
     );
-    const labels = emissions[0].frame.serder.native?.fields
+    const labels = frames[0].frame.body.native?.fields
       .filter((f) => f.label !== null).length ?? 0;
     assertEquals(labels > 0, true);
   }

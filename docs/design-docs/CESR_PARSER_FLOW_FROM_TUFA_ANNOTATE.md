@@ -15,8 +15,7 @@ integrate streaming frame parsing into Effection-based services.
 3. Commander wiring maps `annotate` flags to `annotateCommand`:
    `packages/keri/src/app/cli/command-definitions.ts`
 4. `annotateCommand` reads input bytes (file or stdin) and calls `annotate` from
-   `cesr-ts`:
-   `packages/keri/src/app/cli/annotate.ts`
+   `cesr-ts`: `packages/keri/src/app/cli/annotate.ts`
 5. `annotate` -> `annotateFrames` -> `parseBytes`:
    `packages/cesr/src/annotate/annotator.ts`
 6. `parseBytes` creates a parser instance, runs `feed(bytes)`, then `flush()`:
@@ -83,32 +82,35 @@ Reference: `packages/cesr/src/parser/cold-start.ts`
 At frame start:
 
 1. Skip leading `ano`.
-2. If `txt`/`bny`, probe counter; if genus-version counter, decode active version.
+2. If `txt`/`bny`, probe counter; if genus-version counter, decode active
+   version.
 3. Branch:
    - `msg` -> `reapSerder` for message-domain Serder frame
    - CESR body-group counter -> one of:
      - `BodyWithAttachmentGroup` (nested complete frame payload)
-     - `NonNativeBodyGroup` (matter payload, with serder-reap fallback to opaque)
-     - `FixBodyGroup` / `MapBodyGroup` (native CESR body, structured field extraction)
+     - `NonNativeBodyGroup` (matter payload, with serder-reap fallback to
+       opaque)
+     - `FixBodyGroup` / `MapBodyGroup` (native CESR body, structured field
+       extraction)
 
 Reference: `packages/cesr/src/core/parser-engine.ts`
 
 ## Attachment parsing and version tolerance
 
-Attachment groups are table-driven by CESR major version in
-`group-dispatch.ts`:
+Attachment groups are table-driven by CESR major version in `group-dispatch.ts`:
 
 - Parse group counter header
 - Select parser from v1/v2 dispatch table
-- Parse payload structure (tuple repeats, siger lists, wrapper/nested groups, etc.)
+- Parse payload structure (tuple repeats, siger lists, wrapper/nested groups,
+  etc.)
 
 Dispatch modes:
 
 - `strict`: no major-version fallback
 - `compat`: on unknown/deserialize error, retry with alternate major version
 
-Wrapper groups recursively parse nested groups and preserve opaque remainder when
-recoverable instead of hard-failing.
+Wrapper groups recursively parse nested groups and preserve opaque remainder
+when recoverable instead of hard-failing.
 
 Reference: `packages/cesr/src/parser/group-dispatch.ts`
 
@@ -148,4 +150,3 @@ connection task
   leftover bytes.
 - Keep version fallback inside parser/dispatch layer, not business logic.
 - Downstream services consume complete `CesrFrame` objects, not raw bytes.
-

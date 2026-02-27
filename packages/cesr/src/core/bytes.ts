@@ -3,7 +3,13 @@ export const decoder = new TextDecoder();
 const B64_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
+/**
+ * Concatenates Uint8Array byte arrays into one byte array
+ * 
+ * @param chunks chunks to concatenate
+ * @returns concatenated bytearray
+ */
+  export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;

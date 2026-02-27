@@ -7,6 +7,7 @@ import {
 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
+import { CesrFrame } from '../../src/index.ts'
 
 function encode(input: string): Uint8Array {
   return new TextEncoder().encode(input);
@@ -50,19 +51,19 @@ function chunkByBoundaries(
 
 function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
   const parser = createParser();
-  const emissions = [];
+  const frames: CesrFrame[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
-    emissions.push(...parser.feed(chunk));
+    frames.push(...parser.feed(chunk));
   }
-  emissions.push(...parser.flush());
+  frames.push(...parser.flush());
 
-  const errors = emissions.filter((e) => e.type === "error");
+  const errors = frames.filter((e) => e.type === "error");
   assertEquals(errors.length, 0);
 
-  const frames = emissions.filter((e) => e.type === "frame");
-  return frames.map((e) => {
-    const frame = e.frame as {
-      serder: {
+  const messages = frames.filter((e) => e.type === "frame");
+  return messages.map((e) => {
+    const message = e.frame as {
+      body: {
         kind: string;
         ilk: string | null;
         said: string | null;
@@ -70,12 +71,12 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
       };
       attachments: Array<{ code: string; count: number }>;
     };
-    const atts = frame.attachments.map((a) => `${a.code}:${a.count}`).join(",");
-    const native = frame.serder.native
-      ? `${frame.serder.native.bodyCode}:${frame.serder.native.fields.length}`
+    const atts = message.attachments.map((a) => `${a.code}:${a.count}`).join(",");
+    const native = message.body.native
+      ? `${message.body.native.bodyCode}:${message.body.native.fields.length}`
       : "none";
-    return `${frame.serder.kind}|${frame.serder.ilk ?? ""}|${
-      frame.serder.said ?? ""
+    return `${message.body.kind}|${message.body.ilk ?? ""}|${
+      message.body.said ?? ""
     }|${native}|${atts}`;
   });
 }

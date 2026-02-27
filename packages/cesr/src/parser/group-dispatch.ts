@@ -28,7 +28,12 @@ interface ParsedGroup {
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 type PrimitiveKind = "matter" | "indexer";
-type AttachmentDispatchMode = "strict" | "compat";
+
+/**
+ * strict = do not allow version fallback to v1 when v2 parsing fails
+ * compat = fall back to try v1 parse if v2 fails
+ */
+export type AttachmentDispatchMode = "strict" | "compat";
 
 export interface VersionFallbackInfo {
   from: Versionage;
@@ -417,16 +422,10 @@ const V1_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV1.ControllerIdxSigs, repeatTupleParser(["indexer"])],
   [CtrDexV1.WitnessIdxSigs, repeatTupleParser(["indexer"])],
   [CtrDexV1.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
-  [
-    CtrDexV1.TransReceiptQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
-  ],
+  [CtrDexV1.TransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
   [CtrDexV1.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV1.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
-  [
-    CtrDexV1.SealSourceTriples,
-    repeatTupleParser(["matter", "matter", "matter"]),
-  ],
+  [CtrDexV1.SealSourceTriples,repeatTupleParser(["matter", "matter", "matter"])],
   [CtrDexV1.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV1.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
   [CtrDexV1.SadPathSig, sadPathSigParser],
@@ -465,57 +464,31 @@ const V2_DISPATCH: Map<string, GroupParser> = new Map([
   [CtrDexV2.BigWitnessIdxSigs, repeatTupleParser(["indexer"])],
   [CtrDexV2.NonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigNonTransReceiptCouples, repeatTupleParser(["matter", "matter"])],
-  [
-    CtrDexV2.TransReceiptQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
-  ],
-  [
-    CtrDexV2.BigTransReceiptQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "indexer"]),
-  ],
+  [CtrDexV2.TransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
+  [CtrDexV2.BigTransReceiptQuadruples, repeatTupleParser(["matter", "matter", "matter", "indexer"])],
   [CtrDexV2.FirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigFirstSeenReplayCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.SealSourceCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigSealSourceCouples, repeatTupleParser(["matter", "matter"])],
-  [
-    CtrDexV2.SealSourceTriples,
-    repeatTupleParser(["matter", "matter", "matter"]),
-  ],
-  [
-    CtrDexV2.BigSealSourceTriples,
-    repeatTupleParser(["matter", "matter", "matter"]),
-  ],
+  [CtrDexV2.SealSourceTriples, repeatTupleParser(["matter", "matter", "matter"])],
+  [CtrDexV2.BigSealSourceTriples, repeatTupleParser(["matter", "matter", "matter"]),],
   [CtrDexV2.SealSourceLastSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.BigSealSourceLastSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.DigestSealSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.BigDigestSealSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.MerkleRootSealSingles, repeatTupleParser(["matter"])],
   [CtrDexV2.BigMerkleRootSealSingles, repeatTupleParser(["matter"])],
-  [
-    CtrDexV2.BackerRegistrarSealCouples,
-    repeatTupleParser(["matter", "matter"]),
-  ],
-  [
-    CtrDexV2.BigBackerRegistrarSealCouples,
-    repeatTupleParser(["matter", "matter"]),
-  ],
+  [CtrDexV2.BackerRegistrarSealCouples, repeatTupleParser(["matter", "matter"])],
+  [CtrDexV2.BigBackerRegistrarSealCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.TypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.BigTypedDigestSealCouples, repeatTupleParser(["matter", "matter"])],
   [CtrDexV2.TransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV2.BigTransIdxSigGroups, transIdxSigGroupsParser],
   [CtrDexV2.TransLastIdxSigGroups, transLastIdxSigGroupsParser],
   [CtrDexV2.BigTransLastIdxSigGroups, transLastIdxSigGroupsParser],
-  [
-    CtrDexV2.BlindedStateQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "matter"]),
-  ],
-  [
-    CtrDexV2.BigBlindedStateQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "matter"]),
-  ],
-  [
-    CtrDexV2.BoundStateSextuples,
-    repeatTupleParser([
+  [CtrDexV2.BlindedStateQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BigBlindedStateQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BoundStateSextuples, repeatTupleParser([
       "matter",
       "matter",
       "matter",
@@ -524,9 +497,7 @@ const V2_DISPATCH: Map<string, GroupParser> = new Map([
       "matter",
     ]),
   ],
-  [
-    CtrDexV2.BigBoundStateSextuples,
-    repeatTupleParser([
+  [CtrDexV2.BigBoundStateSextuples, repeatTupleParser([
       "matter",
       "matter",
       "matter",
@@ -535,14 +506,8 @@ const V2_DISPATCH: Map<string, GroupParser> = new Map([
       "matter",
     ]),
   ],
-  [
-    CtrDexV2.TypedMediaQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "matter"]),
-  ],
-  [
-    CtrDexV2.BigTypedMediaQuadruples,
-    repeatTupleParser(["matter", "matter", "matter", "matter"]),
-  ],
+  [CtrDexV2.TypedMediaQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
+  [CtrDexV2.BigTypedMediaQuadruples, repeatTupleParser(["matter", "matter", "matter", "matter"])],
   [CtrDexV2.KERIACDCGenusVersion, genusVersionParser],
 ]);
 

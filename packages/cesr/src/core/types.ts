@@ -11,22 +11,42 @@ export interface Smellage {
 
 export type ColdCode = "msg" | "txt" | "bny" | "ano";
 
-export interface SerderEnvelope {
+/**
+ * The body of a CESR message, an envelope for a Serder KERI or ACDC payload.
+ */
+export interface CesrBody {
+  /** The raw bytes of the body. */
   raw: Uint8Array;
+  /**
+   * The "key event dictionary" of the parsed bytes. Insertion ordered dictionary of fields.
+   */
   ked: Record<string, unknown> | null;
-  proto: Protocol;
+  /** Serialization kind of the body. */
   kind: Kind;
+  /** The size of the body in bytes. */
   size: number;
+  /** The protocol of the body. */
+  proto: Protocol;
+  /** The protocol version of the body. */
   pvrsn: Versionage;
+  /** The genus version of the body. */
   gvrsn: Versionage | null;
+  /** The event type of the body. */
   ilk: string | null;
+  /** The SAID of the body. */
   said: string | null;
+  /** The native fields of the body. */
   native?: {
+    /** The body code of the native fields. */
     bodyCode: string;
+    /** The fields of the native fields. */
     fields: Array<{ label: string | null; code: string; qb64: string }>;
   };
 }
 
+/**
+ * CESR attachment group that comes after a CESR body.
+ */
 export interface AttachmentGroup {
   code: string;
   name: string;
@@ -35,16 +55,26 @@ export interface AttachmentGroup {
   items: unknown[];
 }
 
-export interface CesrFrame {
-  serder: SerderEnvelope;
+/**
+ * A single unit of parsed CESR data including message and attachments.
+ */
+export interface CesrMessage {
+  body: CesrBody;
   attachments: AttachmentGroup[];
 }
 
+/**
+ * State of the CESR parser engine.
+ * Contains the buffer of bytes to be parsed and the current offset.
+ */
 export interface ParserState {
   buffer: Uint8Array;
   offset: number;
 }
 
-export type ParseEmission =
-  | { type: "frame"; frame: CesrFrame }
+/**
+ * A single frame of parsed CESR data containing either a successfully parsed message or error.
+ */
+export type CesrFrame =
+  | { type: "frame"; frame: CesrMessage }
   | { type: "error"; error: Error };

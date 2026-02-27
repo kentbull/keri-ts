@@ -1,4 +1,4 @@
-import type { AttachmentGroup, CesrFrame } from "../core/types.ts";
+import type { AttachmentGroup, CesrMessage } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 import {
@@ -278,11 +278,11 @@ function renderAttachmentGroupRaw(
 
 function renderNativeBody(
   lines: string[],
-  frame: CesrFrame,
+  frame: CesrMessage,
   options: Required<AnnotateOptions>,
   version: Versionage,
 ): void {
-  const raw = frame.serder.raw;
+  const raw = frame.body.raw;
   const domain = asDomain(raw);
   if (domain !== "txt" && domain !== "bny") {
     return;
@@ -299,7 +299,7 @@ function renderNativeBody(
     options,
   );
 
-  for (const field of frame.serder.native?.fields ?? []) {
+  for (const field of frame.body.native?.fields ?? []) {
     const label = nativeLabelName(field.label);
     const comment = label
       ? `${label} (${matterCodeName(field.code)})`
@@ -310,12 +310,12 @@ function renderNativeBody(
 
 function renderMessageBody(
   lines: string[],
-  frame: CesrFrame,
+  frame: CesrMessage,
   options: Required<AnnotateOptions>,
 ): void {
-  const rawBody = TEXT_DECODER.decode(frame.serder.raw);
+  const rawBody = TEXT_DECODER.decode(frame.body.raw);
   let body = rawBody;
-  if (options.pretty && frame.serder.kind === "JSON") {
+  if (options.pretty && frame.body.kind === "JSON") {
     try {
       body = JSON.stringify(JSON.parse(rawBody), null, 2);
     } catch (error) {
@@ -327,22 +327,22 @@ function renderMessageBody(
   }
   const info = [
     `SERDER`,
-    frame.serder.proto,
-    frame.serder.kind,
-    frame.serder.ilk ? `ilk=${frame.serder.ilk}` : null,
-    frame.serder.said ? `said=${frame.serder.said}` : null,
+    frame.body.proto,
+    frame.body.kind,
+    frame.body.ilk ? `ilk=${frame.body.ilk}` : null,
+    frame.body.said ? `said=${frame.body.said}` : null,
   ].filter(Boolean).join(" ");
   emitLine(lines, body, info, 0, options);
 }
 
 function renderFrame(
-  frame: CesrFrame,
+  frame: CesrMessage,
   index: number,
   options: Required<AnnotateOptions>,
 ): AnnotatedFrame {
   const lines: string[] = [];
-  const version = frame.serder.gvrsn ?? frame.serder.pvrsn;
-  const domain = asDomain(frame.serder.raw);
+  const version = frame.body.gvrsn ?? frame.body.pvrsn;
+  const domain = asDomain(frame.body.raw);
 
   if (domain === "txt" || domain === "bny") {
     renderNativeBody(lines, frame, options, version);
@@ -359,7 +359,7 @@ function renderFrame(
 
 /** Render parsed CESR frames into line-oriented, human-annotated text blocks. */
 export function renderAnnotatedFrames(
-  frames: CesrFrame[],
+  frames: CesrMessage[],
   options: Required<AnnotateOptions>,
 ): AnnotatedFrame[] {
   return frames.map((frame, index) => renderFrame(frame, index + 1, options));
