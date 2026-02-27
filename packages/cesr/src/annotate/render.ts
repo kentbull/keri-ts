@@ -1,4 +1,5 @@
 import type { AttachmentGroup, CesrMessage } from "../core/types.ts";
+import { parseBytes } from "../core/parser-engine.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 import {
@@ -13,10 +14,12 @@ import { parseMatter } from "../primitives/matter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import {
+  counterCodeName,
   counterCodeNameForVersion,
   matterCodeName,
   nativeLabelName,
 } from "./comments.ts";
+import { b64ToInt, intToB64 } from "../core/bytes.ts";
 
 const TEXT_DECODER = new TextDecoder();
 const TEXT_ENCODER = new TextEncoder();
@@ -26,6 +29,13 @@ const OPAQUE_WRAPPER_PAYLOAD_COMMENT = "opaque wrapper payload";
 const WRAPPER_GROUP_NAMES = new Set([
   "AttachmentGroup",
   "BigAttachmentGroup",
+  "BodyWithAttachmentGroup",
+  "BigBodyWithAttachmentGroup",
+]);
+
+const TOP_LEVEL_WRAPPER_GROUP_NAMES = new Set([
+  "GenericGroup",
+  "BigGenericGroup",
   "BodyWithAttachmentGroup",
   "BigBodyWithAttachmentGroup",
 ]);
@@ -142,6 +152,20 @@ function parseCounterCompat(
       : { major: 2, minor: 0 };
     return parseCounter(input, alternate, domain);
   }
+}
+
+function decodeVersionCounter(
+  counter: { qb64: string; count: number },
+): Versionage {
+  const triplet = counter.qb64.length >= 3
+    ? counter.qb64.slice(-3)
+    : intToB64(counter.count, 3);
+  const majorRaw = b64ToInt(triplet[0] ?? "A");
+  const minorRaw = b64ToInt(triplet[1] ?? "A");
+  return {
+    major: majorRaw === 1 ? 1 : 2,
+    minor: minorRaw,
+  };
 }
 
 function renderGroupItems(
@@ -355,6 +379,128 @@ function renderFrame(
   }
 
   return { index, frame, lines };
+}
+
+function renderFrameChunk(
+  lines: string[],
+  input: Uint8Array,
+  indent: number,
+  options: Required<AnnotateOptions>,
+): void {
+  const parsed = parseBytes(input);
+  const frames: CesrMessage[] = [];
+  for (const event of parsed) {
+    if (event.type === "error") {
+      throw event.error;
+    }
+    frames.push(event.frame);
+  }
+  const rendered = renderAnnotatedFrames(frames, options);
+  for (const frame of rendered) {
+    for (const line of frame.lines) {
+      lines.push(`${spaces(indent)}${line}`);
+    }
+  }
+}
+
+function renderWrapperAwareStream(
+  lines: string[],
+  input: Uint8Array,
+  inheritedVersion: Versionage,
+  indent: number,
+  options: Required<AnnotateOptions>,
+): boolean {
+  let offset = 0;
+  let activeVersion = inheritedVersion;
+  let usedWrapper = false;
+
+  while (offset < input.length) {
+    const slice = input.slice(offset);
+    const domain = asDomain(slice);
+    if (domain !== "txt" && domain !== "bny") {
+      if (!usedWrapper) return false;
+      renderFrameChunk(lines, slice, indent, options);
+      return true;
+    }
+
+    const counter = parseCounterCompat(slice, activeVersion, domain);
+    const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+    const name = counterCodeName(counter.code);
+
+    if (name === "KERIACDCGenusVersion") {
+      emitLine(
+        lines,
+        counter.qb64,
+        `${name} count=${counter.count}`,
+        indent,
+        options,
+      );
+      activeVersion = decodeVersionCounter(counter);
+      offset += headerSize;
+      usedWrapper = true;
+      continue;
+    }
+
+    if (!TOP_LEVEL_WRAPPER_GROUP_NAMES.has(name)) {
+      if (!usedWrapper) return false;
+      renderFrameChunk(lines, slice, indent, options);
+      return true;
+    }
+
+    const unit = domain === "bny" ? 3 : 4;
+    const payloadSize = counter.count * unit;
+    const total = headerSize + payloadSize;
+    if (slice.length < total) {
+      throw new ShortageError(total, slice.length);
+    }
+
+    emitLine(
+      lines,
+      counter.qb64,
+      `${name} count=${counter.count}`,
+      indent,
+      options,
+    );
+    const payload = slice.slice(headerSize, total);
+    const nestedHandled = renderWrapperAwareStream(
+      lines,
+      payload,
+      activeVersion,
+      indent + options.indent,
+      options,
+    );
+    if (!nestedHandled) {
+      renderFrameChunk(lines, payload, indent + options.indent, options);
+    }
+
+    offset += total;
+    usedWrapper = true;
+  }
+
+  return usedWrapper;
+}
+
+/**
+ * Render stream-level wrapper groups (GenericGroup/BodyWithAttachmentGroup)
+ * so denot round-trips preserve wrapper counters. Returns null when input does
+ * not start in a wrapper-oriented domain and caller should use frame rendering.
+ */
+export function renderWrapperAnnotatedStream(
+  input: Uint8Array,
+  options: Required<AnnotateOptions>,
+): string | null {
+  const lines: string[] = [];
+  const rendered = renderWrapperAwareStream(
+    lines,
+    input,
+    { major: 2, minor: 0 },
+    0,
+    options,
+  );
+  if (!rendered) {
+    return null;
+  }
+  return lines.join("\n");
 }
 
 /** Render parsed CESR frames into line-oriented, human-annotated text blocks. */

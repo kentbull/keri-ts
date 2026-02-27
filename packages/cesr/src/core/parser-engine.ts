@@ -1,5 +1,10 @@
 import { concatBytes } from "./bytes.ts";
-import type { CesrMessage, CesrFrame, ParserState, AttachmentGroup } from "./types.ts";
+import type {
+  AttachmentGroup,
+  CesrFrame,
+  CesrMessage,
+  ParserState,
+} from "./types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
@@ -59,6 +64,13 @@ const MAP_BODY_CODES = new Set([
   CtrDexV2.BigMapBodyGroup,
 ]);
 
+const GENERIC_GROUP_CODES = new Set([
+  CtrDexV1.GenericGroup,
+  CtrDexV1.BigGenericGroup,
+  CtrDexV2.GenericGroup,
+  CtrDexV2.BigGenericGroup,
+]);
+
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 
 function tokenSize(
@@ -74,6 +86,16 @@ function quadletUnit(cold: "txt" | "bny"): number {
 
 function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
   return cold === "txt" || cold === "bny";
+}
+
+/** Counter codes that begin a new frame domain rather than an attachment domain. */
+function isFrameBoundaryCounterCode(code: string): boolean {
+  return BODY_WITH_ATTACH_CODES.has(code) ||
+    NON_NATIVE_BODY_CODES.has(code) ||
+    FIX_BODY_CODES.has(code) ||
+    MAP_BODY_CODES.has(code) ||
+    GENERIC_GROUP_CODES.has(code) ||
+    code === GENUS_VERSION_CODE;
 }
 
 /**
@@ -131,6 +153,8 @@ export class CesrParser {
   private pendingFrame:
     | { frame: CesrMessage; version: Versionage }
     | null = null;
+  /** Extra complete frames extracted from one GenericGroup payload. */
+  private queuedFrames: CesrMessage[] = [];
 
   constructor(options: ParserOptions = {}) {
     this.framed = options.framed ?? false;
@@ -147,6 +171,13 @@ export class CesrParser {
   /** Flush pending state at end-of-stream, emitting frame/error if needed. */
   flush(): CesrFrame[] {
     const out: CesrFrame[] = [];
+    // Queued GenericGroup frames are complete and safe to emit first.
+    while (this.queuedFrames.length > 0) {
+      const frame = this.queuedFrames.shift();
+      if (frame) {
+        out.push({ type: "frame", frame });
+      }
+    }
     if (this.pendingFrame) {
       out.push({ type: "frame", frame: this.pendingFrame.frame });
       this.pendingFrame = null;
@@ -166,6 +197,7 @@ export class CesrParser {
   reset(): void {
     this.state = { buffer: new Uint8Array(0), offset: 0 };
     this.pendingFrame = null;
+    this.queuedFrames = [];
   }
 
   /**
@@ -186,6 +218,15 @@ export class CesrParser {
         if (this.pendingFrame) {
           if (!this.resumePendingFrame(out)) {
             break;
+          }
+          continue;
+        }
+        // Emit deferred enclosed frames extracted from prior GenericGroup payload.
+        if (this.queuedFrames.length > 0) {
+          const frame = this.queuedFrames.shift();
+          if (frame) {
+            out.push({ type: "frame", frame });
+            if (this.framed) break;
           }
           continue;
         }
@@ -268,9 +309,11 @@ export class CesrParser {
   }
 
   /**
-   * TODO document this function and what the whole pending frame / frame / framed idea is.
-   * @param out
-   * @returns
+   * Continue parsing attachments for `pendingFrame` using newly arrived bytes.
+   *
+   * Returns:
+   * - `true`: caller may continue drain loop immediately.
+   * - `false`: parser should pause and wait for more bytes.
    */
   private resumePendingFrame(out: CesrFrame[]): boolean {
     if (!this.pendingFrame) return false;
@@ -294,36 +337,26 @@ export class CesrParser {
 
     // CESR native
     if (this.pendingFrame.frame.body.kind === Kinds.cesr) {
-      const peek = parseCounter(
-        this.state.buffer,
-        this.pendingFrame.version,
-        nextCold,
-      );
       if (
-        BODY_WITH_ATTACH_CODES.has(peek.code) ||
-        NON_NATIVE_BODY_CODES.has(peek.code) ||
-        FIX_BODY_CODES.has(peek.code) ||
-        MAP_BODY_CODES.has(peek.code) ||
-        peek.code === GENUS_VERSION_CODE
+        this.isNativeFrameBoundaryAhead(
+          this.state.buffer,
+          this.pendingFrame.version,
+          nextCold,
+        )
       ) {
         out.push({ type: "frame", frame: this.pendingFrame.frame });
         this.pendingFrame = null;
         return true;
       }
-      // TODO do we need to throw an error here or do a continue?
-      //   Does this only happen when a CESR native frame has a group code but no fields/atc?
+      // Otherwise treat the next token as attachment material for this frame.
     }
 
-    const { group, consumed } = parseAttachmentGroup(
+    const consumed = this.appendAttachmentGroup(
+      this.pendingFrame.frame.attachments,
       this.state.buffer,
       this.pendingFrame.version,
       nextCold,
-      {
-        mode: this.attachmentDispatchMode,
-        onVersionFallback: this.onAttachmentVersionFallback,
-      },
     );
-    this.pendingFrame.frame.attachments.push(group);
     this.consume(consumed);
 
     if (this.framed) {
@@ -346,8 +379,7 @@ export class CesrParser {
       this.pendingFrame = null;
       return true;
     }
-    // TODO when would this happen? As in, when would the afterCold be something other than
-    //   ano or msg and get to this point?
+    // Conservative: keep pending frame open when stream stays in attachment domain.
     return true;
   }
 
@@ -362,9 +394,46 @@ export class CesrParser {
     }
   }
 
+  /** Probe whether next token is a native-body/frame boundary counter. */
+  private isNativeFrameBoundaryAhead(
+    input: Uint8Array,
+    version: Versionage,
+    cold: "txt" | "bny",
+  ): boolean {
+    const peek = parseCounter(input, version, cold);
+    return isFrameBoundaryCounterCode(peek.code);
+  }
+
+  /** Parse one attachment group and append it to `target`. */
+  private appendAttachmentGroup(
+    target: AttachmentGroup[],
+    input: Uint8Array,
+    version: Versionage,
+    cold: "txt" | "bny",
+  ): number {
+    const { group, consumed } = parseAttachmentGroup(
+      input,
+      version,
+      cold,
+      {
+        mode: this.attachmentDispatchMode,
+        onVersionFallback: this.onAttachmentVersionFallback,
+      },
+    );
+    target.push(group);
+    return consumed;
+  }
+
   /**
-   * Parse a single top-level frame start from current buffer head.
-   * Supports message-domain serders and CESR-native body groups.
+   * Parse one frame body start at the current head and return its consumed span.
+   *
+   * Contract:
+   * - consumes optional leading `ano` bytes
+   * - consumes optional leading genus-version counter and updates active version
+   * - parses exactly one body start form:
+   *   - message-domain serder (`msg`)
+   *   - CESR body-group counter (`txt`/`bny`)
+   * - does not greedily parse trailing attachments in message streams
    */
   private parseFrame(
     input: Uint8Array,
@@ -382,6 +451,7 @@ export class CesrParser {
       cold = sniff(input.slice(offset));
     }
     if (cold === "txt" || cold === "bny") {
+      // Optional stream-level genus-version prefix before frame body start.
       const peek = parseCounter(input.slice(offset), activeVersion, cold);
       if (peek.code === GENUS_VERSION_CODE) {
         offset += tokenSize(peek, cold);
@@ -391,15 +461,11 @@ export class CesrParser {
         }
         cold = sniff(input.slice(offset));
       }
-      // TODO what happens if peek.code is not GENUS_VERSION_CODE (v2)?
-      //   Do we need to handle v1? Is this only a v2 thing? How does KERIpy do it?
     }
 
     if (cold === "msg") {
       const { serder, consumed } = reapSerder(input.slice(offset));
-      // TODO why are we returning a parse frame with no attachments?
-      //  I can see a perf or chunking argument here, though it likely makes the most
-      //  sense to wait until all attachments are parsed up until the next message or EOF.
+      // Message-body parse only; attachments are collected by the caller.
       return {
         frame: { body: serder, attachments: [] },
         consumed: offset + consumed,
@@ -417,7 +483,7 @@ export class CesrParser {
     const headerSize = tokenSize(counter, cold);
     const unit = quadletUnit(cold);
 
-    // TODO how does KERIpy handle these checks? Similarly?
+    // Body-group counters identify frame starts in CESR-native streams.
     if (BODY_WITH_ATTACH_CODES.has(counter.code)) {
       return this.parseBodyWithAttachmentGroup(
         input,
@@ -451,6 +517,16 @@ export class CesrParser {
         cold,
         activeVersion,
         counter.code,
+      );
+    }
+    if (GENERIC_GROUP_CODES.has(counter.code)) {
+      return this.parseGenericGroup(
+        input,
+        offset,
+        headerSize,
+        counter.count,
+        unit,
+        activeVersion,
       );
     }
 
@@ -771,7 +847,124 @@ export class CesrParser {
     return null;
   }
 
-  /** Parse one complete frame plus optional attachments from a standalone slice. */
+  /**
+   * Parse GenericGroup payload into enclosed frames.
+   * Returns the first enclosed frame and queues any remaining frames for emission.
+   */
+  private parseGenericGroup(
+    input: Uint8Array,
+    offset: number,
+    headerSize: number,
+    count: number,
+    unit: number,
+    version: Versionage,
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
+    const payloadSize = count * unit;
+    const total = headerSize + payloadSize;
+    if (input.length < offset + total) {
+      throw new ShortageError(offset + total, input.length);
+    }
+
+    const payload = input.slice(offset + headerSize, offset + total);
+    const frames = this.parseFrameSequence(payload, version);
+    if (frames.length === 0) {
+      throw new ColdStartError(
+        "GenericGroup payload contained no enclosed frames",
+      );
+    }
+
+    const [first, ...rest] = frames;
+    if (rest.length > 0) {
+      this.queuedFrames.push(...rest);
+    }
+
+    return {
+      frame: first,
+      consumed: offset + total,
+      version: first.body.gvrsn ?? first.body.pvrsn,
+    };
+  }
+
+  /**
+   * Parse every frame inside one GenericGroup payload slice.
+   * Input is already size-bounded by the GenericGroup counter.
+   */
+  private parseFrameSequence(
+    input: Uint8Array,
+    inheritedVersion: Versionage,
+  ): CesrMessage[] {
+    const out: CesrMessage[] = [];
+    let offset = 0;
+    let activeVersion = inheritedVersion;
+
+    while (offset < input.length) {
+      while (offset < input.length && sniff(input.slice(offset)) === "ano") {
+        offset += 1;
+      }
+      if (offset >= input.length) {
+        break;
+      }
+
+      const base = this.parseFrame(input.slice(offset), activeVersion);
+      offset += base.consumed;
+      const frameVersion = base.version;
+      const attachments = [...base.frame.attachments];
+
+      while (offset < input.length) {
+        const nextCold = sniff(input.slice(offset));
+        if (nextCold === "ano") {
+          offset += 1;
+          continue;
+        }
+        if (nextCold === "msg") {
+          break;
+        }
+        if (!isAttachmentDomain(nextCold)) {
+          throw new ColdStartError(
+            `Unsupported attachment cold code ${nextCold}`,
+          );
+        }
+
+        if (base.frame.body.kind === Kinds.cesr) {
+          if (
+            this.isNativeFrameBoundaryAhead(
+              input.slice(offset),
+              frameVersion,
+              nextCold,
+            )
+          ) {
+            // Native streams may begin a new frame with counter codes.
+            break;
+          }
+        }
+
+        const consumed = this.appendAttachmentGroup(
+          attachments,
+          input.slice(offset),
+          frameVersion,
+          nextCold,
+        );
+        offset += consumed;
+      }
+
+      out.push({
+        body: base.frame.body,
+        attachments,
+      });
+      activeVersion = frameVersion;
+    }
+
+    return out;
+  }
+
+  /**
+   * Parse one complete frame from a bounded slice, including trailing attachments.
+   *
+   * Uses `parseFrame()` for body start, then collects attachment groups until:
+   * - end of input
+   * - next message start (`msg`) when `stopAtNextMessage` is true
+   * - first attachment group in `framed` mode (bounded emission policy)
+   */
   private parseCompleteFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
