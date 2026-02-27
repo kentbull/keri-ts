@@ -65,7 +65,7 @@ Status legend:
 | Native FixBody/MapBody parse                      | `test_parse_native_cesr_fixed_field` (line ~4399)                                             | `external-fixtures.test.ts`, `parser.test.ts`, `primitives-native.test.ts` | PARTIAL | Positive paths covered; negative map-boundary cases missing.                                    |
 | Annotation-byte (`ano`) handling                  | KERIpy `sniff`/stream-state semantics                                                         | `parser.test.ts`                                                           | PARTIAL | Inter-frame newline covered; leading/multiple `ano` and continuation cases missing.             |
 | Attachment wrapper nested-group recovery          | KERIpy wrapper/enclosed attachment semantics                                                  | `parity.test.ts`, `annotate.test.ts`                                       | PARTIAL | Some nested and opaque cases covered in annotator path; parser-engine lock coverage incomplete. |
-| Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                             | PARTIAL | V-P0-001 and V-P0-002 are locked; deeper re-entry/version-context variants still pending.      |
+| Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                             | PARTIAL | V-P0-001 and V-P0-002 are locked; deeper re-entry/version-context variants still pending.       |
 | Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | none (explicit)                                                            | MISSING | Critical for mixed-stream correctness and explainability.                                       |
 | Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | none (explicit)                                                            | MISSING | Need deterministic bounded-emission locks.                                                      |
 | Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | none (explicit)                                                            | MISSING | Must lock EOS behavior before refactors.                                                        |
@@ -119,6 +119,68 @@ Priority legend:
 - Why: ensures `ano` normalization parity at stream head.
 - Expected: parser ignores leading `ano` and emits same frame result.
 - Suggested file: `parser.test.ts`.
+
+## P0 Codex Visual Map (KERIpy Entry Mapping)
+
+Use this section as a quick decode key when reading P0 vectors and mapping each to KERIpy codex entries.
+
+Primary KERIpy codex references:
+
+- `keripy/src/keri/core/counting.py` `CounterCodex_2_0` entries around lines 193-251.
+- `keripy/src/keri/core/counting.py` `CounterCodex_1_0` entries around lines 58-79.
+- `keripy/src/keri/core/counting.py` universal subsets `UniDex_*`/`SUDex_*` around lines 125-157 and 267-310.
+
+### Counter and Count Legend
+
+| Token shape | Meaning                                                      | Example                 |
+|-------------|--------------------------------------------------------------|-------------------------|
+| `-Xcc`      | short counter: hard code `-X` + 2-char soft count            | `-AAB` (`AB` = count 1) |
+| `--Xccccc`  | big counter: hard code `--X` + 5-char soft count             | `--AAAAAAB`             |
+| `-_AAAvvv`  | genus-version counter: hard `-_AAA` + 3-char version payload | `-_AAAAAB`              |
+| `cc` values | CESR b64 integers (`AA=0`, `AB=1`, `AC=2`, `AQ=16`)          | `AB`                    |
+
+### Wrapper/Attachment Family Cheat Sheet
+
+| Logical code name         | V2 (keri-ts `CtrDexV2`) | V1 (keri-ts `CtrDexV1`) | KERIpy codex entry                                                         |
+|---------------------------|-------------------------|-------------------------|----------------------------------------------------------------------------|
+| `GenericGroup`            | `-A`                    | `-T`                    | `CtrDex_2_0.GenericGroup`,            `CtrDex_1_0.GenericGroup`            |
+| `BodyWithAttachmentGroup` | `-B`                    | `-U`                    | `CtrDex_2_0.BodyWithAttachmentGroup`, `CtrDex_1_0.BodyWithAttachmentGroup` |
+| `AttachmentGroup`         | `-C`                    | `-V`                    | `CtrDex_2_0.AttachmentGroup`,         `CtrDex_1_0.AttachmentGroup`         |
+| `NonNativeBodyGroup`      | `-H`                    | `-W`                    | `CtrDex_2_0.NonNativeBodyGroup`,      `CtrDex_1_0.NonNativeBodyGroup`      |
+| `KERIACDCGenusVersion`    | `-_AAA`                 | `-_AAA`                 | `CtrDex_2_0.KERIACDCGenusVersion`,    `CtrDex_1_0.KERIACDCGenusVersion`    |
+| `ControllerIdxSigs`       | `-K`                    | `-A`                    | `CtrDex_2_0.ControllerIdxSigs`,       `CtrDex_1_0.ControllerIdxSigs`       |
+
+### P0 Vector Visual Examples
+
+Notation:
+
+- `<q2>`: 2-char quadlet count.
+- `<q5>`: 5-char quadlet count (big counters).
+- `<n2>`: 2-char item count.
+- `<vers3>`: 3-char genus-version payload.
+- `<body>`: CESR message body bytes.
+- `<sig>`: one controller signature token.
+- `<ano>`: annotation/separator byte where `sniff(...) == "ano"` (for example newline `0x0A`).
+
+| Vector     | Visual stream sketch (qb64-style)                                | Key codex entries to map                                                                  |
+|------------|------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| `V-P0-001` | `-A<q2_outer>-B<q2_inner><body>-K<n2><sig>`                      | `GenericGroup`, `BodyWithAttachmentGroup`, `ControllerIdxSigs`                            |
+| `V-P0-002` | `-A<q2_outer>(-A<q2_inner>-B<q2_inner2><body>-K<n2><sig>)<body>` | `GenericGroup` (nested), `BodyWithAttachmentGroup`, `ControllerIdxSigs`                   |
+| `V-P0-003` | `-_AAA<vers3><body>...`                                          | `KERIACDCGenusVersion`                                                                    |
+| `V-P0-004` | `-B<q2>-_AAA<vers3><body>-K<n2><sig>`                            | `BodyWithAttachmentGroup`, `KERIACDCGenusVersion`, `ControllerIdxSigs`                    |
+| `V-P0-005` | `-B<q2><body>-C<q2>-_AAA<vers3>-K<n2><sig>`                      | `BodyWithAttachmentGroup`, `AttachmentGroup`, `KERIACDCGenusVersion`, `ControllerIdxSigs` |
+| `V-P0-006` | `-H<q2><opaque-non-serder-payload>`                              | `NonNativeBodyGroup`                                                                      |
+| `V-P0-007` | `-B<q2><body1>-K<n2><sig1>-B<q2><body2>-K<n2><sig2>`             | `BodyWithAttachmentGroup`, `ControllerIdxSigs`                                            |
+| `V-P0-008` | `-B<q2><body>-K<n2><sig>` then `flush()`                         | `BodyWithAttachmentGroup`, `ControllerIdxSigs`                                            |
+| `V-P0-009` | `<complete-frame><truncated-next-token...>` then `flush()`       | previous frame codex + shortage path on partial next code                                 |
+| `V-P0-010` | `<ano><ano><ano><frame>`                                         | `ano` handling + whatever frame codex starts first real frame                             |
+
+### GenericGroup Type Reminder
+
+| Generic wrapper type | V2 code | V1 code | Count width      |
+|----------------------|---------|---------|------------------|
+| short                | `-A`    | `-T`    | 2 chars (`<q2>`) |
+| big                  | `--A`   | `--T`   | 5 chars (`<q5>`) |
 
 ### Completed P0 Vectors
 
