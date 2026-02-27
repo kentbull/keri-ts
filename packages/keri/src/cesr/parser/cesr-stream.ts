@@ -3,7 +3,7 @@ This module exists as a development time convenience only to faciliate code navi
 and is rewritten by the build system to reference the "cesr-ts" package.
  */
 export {
-  CesrParserCore,
+  CesrParser,
   createParser,
   parseBytes,
   type ParserOptions

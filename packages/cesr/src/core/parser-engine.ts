@@ -4,6 +4,7 @@ import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import type {
+  AttachmentDispatchMode,
   AttachmentDispatchOptions,
   VersionFallbackInfo,
 } from "../parser/group-dispatch.ts";
@@ -75,13 +76,58 @@ function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
   return cold === "txt" || cold === "bny";
 }
 
-export class CesrParserCore {
+/**
+ * Streaming CESR parser for message-domain and CESR-native body-group streams.
+ * Handles chunk boundaries, pending frames, and attachment continuation.
+ *
+ * @param options - Parser options
+ * @param options.framed - Whether input is externally frame-delimited
+ * @param options.attachmentDispatchMode - Attachment dispatch mode ('strict' version handling or 'compat' version parsing fallback)
+ * @param options.onAttachmentVersionFallback - Callback for attachment version fallback
+ */
+export class CesrParser {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
+  /**
+   * Determines how frame (CESR Message of body + atc) boundaries are established.
+   *
+   * - `false` (default): unframed stream mode.
+   *   Parser infers boundaries from CESR structure, greedily parses trailing
+   *   attachment groups, and may defer body-only end-of-buffer emission until
+   *   more bytes arrive or `flush()` is called.
+   *
+   * - `true`: externally framed mode.
+   *   Caller is expected to provide frame-delimited input. Parser prefers early
+   *   emission and bounded work per `feed()` call instead of greedy lookahead.
+   *
+   * Use `true` only when frame boundaries are known by the caller.
+   * Note: `true` is an emission policy, not a completeness guarantee; shortages
+   * still defer emission.
+   */
   private readonly framed: boolean;
-  private readonly attachmentDispatchMode: AttachmentDispatchOptions["mode"];
+  /**
+   * Controls how attachment groups are parsed based on the major CESR version.
+   *
+   * - `strict`: no version fallback; strict mode throws on unknown codes.
+   * - `compat`: version fallback; tries v1 parse if v2 fails.
+   *   Use when caller wants to tolerate version mismatches but prefers v2 parsing.
+   */
+  private readonly attachmentDispatchMode: AttachmentDispatchMode;
+  /**
+   * Callback for attachment version fallback.
+   *
+   * - `info`: version fallback information
+   *   Use when caller wants to be notified of version fallback.
+   */
   private readonly onAttachmentVersionFallback?: (
     info: VersionFallbackInfo,
   ) => void;
+
+  /**
+   * Pending frame to be emitted when more bytes are available.
+   *
+   * - `frame`: the CESrMessage
+   * - `version`: the version of the CESR Message
+   */
   private pendingFrame:
     | { frame: CesrMessage; version: Versionage }
     | null = null;
@@ -195,8 +241,6 @@ export class CesrParserCore {
           attachments,
         };
 
-        // TODO what does framed mean?
-        //   use labeled groups of booleans to make if statements clear
         if (
           !this.framed && attachments.length === 0 &&
           this.state.buffer.length === 0
@@ -225,8 +269,8 @@ export class CesrParserCore {
 
   /**
    * TODO document this function and what the whole pending frame / frame / framed idea is.
-   * @param out 
-   * @returns 
+   * @param out
+   * @returns
    */
   private resumePendingFrame(out: CesrFrame[]): boolean {
     if (!this.pendingFrame) return false;
@@ -779,8 +823,8 @@ export class CesrParserCore {
 }
 
 /** CESR parser factory function. */
-export function createParser(options: ParserOptions = {}): CesrParserCore {
-  return new CesrParserCore(options);
+export function createParser(options: ParserOptions = {}): CesrParser {
+  return new CesrParser(options);
 }
 
 /** Parse a buffer of bytes into a list of frames. */

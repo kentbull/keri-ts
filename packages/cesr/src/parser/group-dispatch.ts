@@ -33,7 +33,7 @@ type PrimitiveKind = "matter" | "indexer";
  * strict = do not allow version fallback to v1 when v2 parsing fails
  * compat = fall back to try v1 parse if v2 fails
  */
-type AttachmentDispatchMode = "strict" | "compat";
+export type AttachmentDispatchMode = "strict" | "compat";
 
 export interface VersionFallbackInfo {
   from: Versionage;
