@@ -1,5 +1,5 @@
 import { concatBytes } from "./bytes.ts";
-import type { CesrFrame, ParseEmission, ParserState } from "./types.ts";
+import type { CesrMessage, CesrFrame, ParserState } from "./types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
@@ -83,7 +83,7 @@ export class CesrParserCore {
     info: VersionFallbackInfo,
   ) => void;
   private pendingFrame:
-    | { frame: CesrFrame; version: Versionage }
+    | { frame: CesrMessage; version: Versionage }
     | null = null;
 
   constructor(options: ParserOptions = {}) {
@@ -93,14 +93,14 @@ export class CesrParserCore {
   }
 
   /** Append bytes and emit any complete parse events. */
-  feed(chunk: Uint8Array): ParseEmission[] {
+  feed(chunk: Uint8Array): CesrFrame[] {
     this.state.buffer = concatBytes(this.state.buffer, chunk);
     return this.drain();
   }
 
   /** Flush pending state at end-of-stream, emitting frame/error if needed. */
-  flush(): ParseEmission[] {
-    const out: ParseEmission[] = [];
+  flush(): CesrFrame[] {
+    const out: CesrFrame[] = [];
     if (this.pendingFrame) {
       out.push({ type: "frame", frame: this.pendingFrame.frame });
       this.pendingFrame = null;
@@ -127,8 +127,8 @@ export class CesrParserCore {
    * Keeps state machine behavior explicit: consume separators, parse a base
    * frame, then greedily collect trailing attachment groups.
    */
-  private drain(): ParseEmission[] {
-    const out: ParseEmission[] = [];
+  private drain(): CesrFrame[] {
+    const out: CesrFrame[] = [];
 
     while (this.state.buffer.length > 0) {
       try {
@@ -178,7 +178,7 @@ export class CesrParserCore {
         } catch (error) {
           if (error instanceof ShortageError) {
             this.pendingFrame = {
-              frame: { serder: base.frame.serder, attachments },
+              frame: { body: base.frame.body, attachments },
               version,
             };
             pausedForAttachmentShortage = true;
@@ -190,8 +190,8 @@ export class CesrParserCore {
           break;
         }
 
-        const completed: CesrFrame = {
-          serder: base.frame.serder,
+        const completed: CesrMessage = {
+          body: base.frame.body,
           attachments,
         };
 
@@ -221,7 +221,7 @@ export class CesrParserCore {
     return out;
   }
 
-  private resumePendingFrame(out: ParseEmission[]): boolean {
+  private resumePendingFrame(out: CesrFrame[]): boolean {
     if (!this.pendingFrame) return false;
     if (this.state.buffer.length === 0) return false;
 
@@ -241,7 +241,7 @@ export class CesrParserCore {
       );
     }
 
-    if (this.pendingFrame.frame.serder.kind === Kinds.cesr) {
+    if (this.pendingFrame.frame.body.kind === Kinds.cesr) {
       const peek = parseCounter(
         this.state.buffer,
         this.pendingFrame.version,
@@ -313,7 +313,7 @@ export class CesrParserCore {
   private parseFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     let offset = 0;
     let activeVersion = inheritedVersion;
 
@@ -340,7 +340,7 @@ export class CesrParserCore {
     if (cold === "msg") {
       const { serder, consumed } = reapSerder(input.slice(offset));
       return {
-        frame: { serder, attachments: [] },
+        frame: { body: serder, attachments: [] },
         consumed: offset + consumed,
         version: serder.gvrsn ?? serder.pvrsn,
       };
@@ -405,7 +405,7 @@ export class CesrParserCore {
     count: number,
     unit: number,
     version: Versionage,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -421,7 +421,7 @@ export class CesrParserCore {
     return {
       frame: nested.frame,
       consumed: offset + total,
-      version: nested.frame.serder.gvrsn ?? nested.frame.serder.pvrsn,
+      version: nested.frame.body.gvrsn ?? nested.frame.body.pvrsn,
     };
   }
 
@@ -434,7 +434,7 @@ export class CesrParserCore {
     unit: number,
     cold: "txt" | "bny",
     version: Versionage,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     const matter = parseMatter(input.slice(offset + headerSize), cold);
     const bodySize = tokenSize(matter, cold);
     const payloadSize = count * unit;
@@ -447,7 +447,7 @@ export class CesrParserCore {
     try {
       const { serder } = reapSerder(matter.raw);
       return {
-        frame: { serder, attachments: [] },
+        frame: { body: serder, attachments: [] },
         consumed: offset + headerSize + bodySize,
         version: serder.gvrsn ?? serder.pvrsn,
       };
@@ -457,7 +457,7 @@ export class CesrParserCore {
       // continue with conservative metadata instead of failing the frame parse.
       return {
         frame: {
-          serder: {
+          body: {
             raw: matter.raw,
             ked: null,
             proto: Protocols.keri,
@@ -486,7 +486,7 @@ export class CesrParserCore {
     cold: "txt" | "bny",
     version: Versionage,
     bodyCode: string,
-  ): { frame: CesrFrame; consumed: number; version: Versionage } {
+  ): { frame: CesrMessage; consumed: number; version: Versionage } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -497,7 +497,7 @@ export class CesrParserCore {
     const fields = this.extractNativeFields(raw, cold, version);
     return {
       frame: {
-        serder: {
+        body: {
           raw,
           ked: null,
           proto: metadata.proto,
@@ -714,10 +714,10 @@ export class CesrParserCore {
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
     stopAtNextMessage = true,
-  ): { frame: CesrFrame; consumed: number } {
+  ): { frame: CesrMessage; consumed: number } {
     const base = this.parseFrame(input, inheritedVersion);
     const version = base.version;
-    const attachments: CesrFrame["attachments"] = [];
+    const attachments: CesrMessage["attachments"] = [];
     let offset = base.consumed;
 
     while (offset < input.length) {
@@ -754,20 +754,22 @@ export class CesrParserCore {
     }
 
     return {
-      frame: { serder: base.frame.serder, attachments },
+      frame: { body: base.frame.body, attachments },
       consumed: offset,
     };
   }
 }
 
+/** CESR parser factory function. */
 export function createParser(options: ParserOptions = {}): CesrParserCore {
   return new CesrParserCore(options);
 }
 
+/** Parse a buffer of bytes into a list of frames. */
 export function parseBytes(
   bytes: Uint8Array,
   options: ParserOptions = {},
-): ParseEmission[] {
+): CesrFrame[] {
   const parser = createParser(options);
   return [...parser.feed(bytes), ...parser.flush()];
 }

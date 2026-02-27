@@ -18,7 +18,7 @@
     "start": "cd packages/keri && deno task start",
     "dev": "cd packages/keri && deno task dev",
     "tufa": "cd packages/keri && deno task tufa",
-    "test": "cd packages/keri && deno task test",
+    "test": "cd packages/keri && deno task test && cd ../cesr && deno task test",
     "test:quality": "cd packages/keri && deno task test:quality",
     "test:integration:server": "cd packages/keri && deno task test:integration:server",
     "test:cesr": "cd packages/cesr && deno task test",

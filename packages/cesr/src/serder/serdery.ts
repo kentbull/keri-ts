@@ -1,11 +1,11 @@
 import { smell } from "./smell.ts";
 import { parseSerder } from "./serder.ts";
-import type { SerderEnvelope } from "../core/types.ts";
+import type { CesrBody } from "../core/types.ts";
 import { ShortageError } from "../core/errors.ts";
 
 export function reapSerder(
   input: Uint8Array,
-): { serder: SerderEnvelope; consumed: number } {
+): { serder: CesrBody; consumed: number } {
   const { smellage } = smell(input);
   if (input.length < smellage.size) {
     throw new ShortageError(smellage.size, input.length);

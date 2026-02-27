@@ -1,11 +1,11 @@
-import type { SerderEnvelope } from "../core/types.ts";
+import type { CesrBody } from "../core/types.ts";
 import type { Smellage } from "../core/types.ts";
 import { DeserializeError } from "../core/errors.ts";
 
 export function parseSerder(
   raw: Uint8Array,
   smellage: Smellage,
-): SerderEnvelope {
+): CesrBody {
   const { proto, kind, pvrsn, gvrsn, size } = smellage;
   let ked: Record<string, unknown> | null = null;
   let ilk: string | null = null;

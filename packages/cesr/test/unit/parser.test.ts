@@ -76,15 +76,15 @@ Deno.test("parser emits frame with nested attachment group", () => {
   const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
 
   const parser = createParser();
-  const emissions = parser.feed(encode(ims));
+  const frames = parser.feed(encode(ims));
 
-  assertEquals(emissions.length, 1);
-  assertEquals(emissions[0].type, "frame");
-  if (emissions[0].type === "frame") {
-    assertEquals(emissions[0].frame.serder.ilk, "icp");
-    assertEquals(emissions[0].frame.attachments.length, 1);
-    assertEquals(emissions[0].frame.attachments[0].code, "-V");
-    assertEquals(emissions[0].frame.attachments[0].count, nested.length / 4);
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "frame");
+  if (frames[0].type === "frame") {
+    assertEquals(frames[0].frame.body.ilk, "icp");
+    assertEquals(frames[0].frame.attachments.length, 1);
+    assertEquals(frames[0].frame.attachments[0].code, "-V");
+    assertEquals(frames[0].frame.attachments[0].count, nested.length / 4);
   }
 });
 
@@ -93,8 +93,8 @@ Deno.test("parser fail-fast on malformed attachment stream", () => {
   const ims = `${body}-AAB`; // truncated group payload
 
   const parser = createParser();
-  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
-  assertEquals(emissions.some((e) => e.type === "error"), true);
+  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
+  assertEquals(frames.some((e) => e.type === "error"), true);
 });
 
 Deno.test("parser strict mode rejects mixed-version attachments that need fallback", () => {
@@ -105,8 +105,8 @@ Deno.test("parser strict mode rejects mixed-version attachments that need fallba
   const ims = `${body}${v2OnlyAttachment}`;
 
   const parser = createParser({ attachmentDispatchMode: "strict" });
-  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
-  assertEquals(emissions.some((e) => e.type === "error"), true);
+  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
+  assertEquals(frames.some((e) => e.type === "error"), true);
 });
 
 Deno.test("parser compat mode uses fallback callback for mixed-version attachments", () => {
@@ -123,12 +123,12 @@ Deno.test("parser compat mode uses fallback callback for mixed-version attachmen
       fallbackCalls.push({ from: info.from.major, to: info.to.major });
     },
   });
-  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
-  const frames = emissions.filter((e) => e.type === "frame");
-  const errors = emissions.filter((e) => e.type === "error");
+  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
+  const messages = frames.filter((e) => e.type === "frame");
+  const errors = frames.filter((e) => e.type === "error");
 
   assertEquals(errors.length, 0);
-  assertEquals(frames.length, 1);
+  assertEquals(messages.length, 1);
   assertEquals(fallbackCalls.length, 1);
   assertEquals(fallbackCalls[0].from, 1);
   assertEquals(fallbackCalls[0].to, 2);
@@ -137,9 +137,9 @@ Deno.test("parser compat mode uses fallback callback for mixed-version attachmen
 Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => {
   const ims = `-HAB${sigerToken()}`; // declares 1 quadlet, provides much larger body token
   const parser = createParser();
-  const emissions = parser.feed(encode(ims));
-  assertEquals(emissions.length, 1);
-  assertEquals(emissions[0].type, "error");
+  const frames = parser.feed(encode(ims));
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "error");
 });
 
 Deno.test("parser handles chunked input", () => {
@@ -167,19 +167,19 @@ Deno.test("native frame emission is split-boundary deterministic", () => {
   assertEquals(second.length, 1);
   assertEquals(second[0].type, "frame");
   if (second[0].type === "frame") {
-    assertEquals(second[0].frame.serder.kind, "CESR");
-    assertEquals(second[0].frame.serder.ilk, "icp");
+    assertEquals(second[0].frame.body.kind, "CESR");
+    assertEquals(second[0].frame.body.ilk, "icp");
   }
 });
 
 Deno.test("parser ignores annotation-domain separator bytes between frames", () => {
   const parser = createParser();
   const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}\n`;
-  const emissions = [...parser.feed(encode(ims)), ...parser.flush()];
-  const frames = emissions.filter((e) => e.type === "frame");
-  const errors = emissions.filter((e) => e.type === "error");
+  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
+  const messages = frames.filter((e) => e.type === "frame");
+  const errors = frames.filter((e) => e.type === "error");
   assertEquals(errors.length, 0);
-  assertEquals(frames.length, 1);
+  assertEquals(messages.length, 1);
 });
 
 Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
@@ -187,8 +187,8 @@ Deno.test("parser fail-fast on malformed native fix-body payload tokenization", 
   const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${
     KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)
   }`;
-  const emissions = [...parser.feed(encode(bad)), ...parser.flush()];
-  assertEquals(emissions.some((e) => e.type === "error"), true);
+  const frames = [...parser.feed(encode(bad)), ...parser.flush()];
+  assertEquals(frames.some((e) => e.type === "error"), true);
 });
 
 Deno.test("sniff throws on empty buffer", () => {

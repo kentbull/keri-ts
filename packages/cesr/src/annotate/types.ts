@@ -1,4 +1,4 @@
-import type { CesrFrame } from "../core/types.ts";
+import type { CesrMessage } from "../core/types.ts";
 
 export interface AnnotateOptions {
   commentMode?: "inline" | "above";
@@ -11,6 +11,6 @@ export interface AnnotateOptions {
 
 export interface AnnotatedFrame {
   index: number;
-  frame: CesrFrame;
+  frame: CesrMessage;
   lines: string[];
 }

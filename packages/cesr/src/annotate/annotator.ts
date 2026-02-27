@@ -1,5 +1,5 @@
 import { parseBytes } from "../core/parser-engine.ts";
-import type { ParseEmission } from "../core/types.ts";
+import type { CesrFrame } from "../core/types.ts";
 import { renderAnnotatedFrames } from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
@@ -19,15 +19,15 @@ function resolveOptions(options?: AnnotateOptions): Required<AnnotateOptions> {
   };
 }
 
-function framesOrThrow(emissions: ParseEmission[]) {
-  const frames = [];
-  for (const emission of emissions) {
-    if (emission.type === "error") {
-      throw emission.error;
+function framesOrThrow(frames: CesrFrame[]) {
+  const messages = [];
+  for (const frame of frames) {
+    if (frame.type === "error") {
+      throw frame.error;
     }
-    frames.push(emission.frame);
+    messages.push(frame.frame);
   }
-  return frames;
+  return messages;
 }
 
 export function annotateFrames(

@@ -11,5 +11,5 @@ export {
 
 export { toAsyncFrames } from "../../../../cesr/src/adapters/async-iterable.ts";
 export { toEffectionFrames, type FrameChannel } from "../../../../cesr/src/adapters/effection.ts";
-export type { CesrFrame, ParseEmission, ParserState } from "../../../../cesr/src/core/types.ts";
+export type { CesrMessage, CesrFrame, ParserState } from "../../../../cesr/src/core/types.ts";
 
