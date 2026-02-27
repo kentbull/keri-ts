@@ -36,6 +36,8 @@ Deliverables:
 
 - parity-oriented test matrix
 - documented current behavior assumptions and edge cases
+- matrix document:
+  - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 
 Exit criteria:
 
@@ -193,4 +195,3 @@ Keep each PR focused on one concern class:
 6. Phase 5
 
 No phase should start before the previous phase exit criteria are met.
-
