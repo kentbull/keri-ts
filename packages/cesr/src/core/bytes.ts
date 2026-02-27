@@ -3,7 +3,16 @@ export const decoder = new TextDecoder();
 const B64_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
+/**
+ * Concatenates Uint8Array byte arrays into one byte array
+ * TODO Is this really the right, reasonably efficient way to concatenate byte arrays?
+ *   Maybe we should have a function that just concatenates two and use that unless we really
+ *   need this one. Maybe it's not that big of a perf drag if it's only two.
+ * 
+ * @param chunks chunks to concatenate
+ * @returns concatenated bytearray
+ */
+  export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;

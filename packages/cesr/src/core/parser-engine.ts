@@ -1,5 +1,5 @@
 import { concatBytes } from "./bytes.ts";
-import type { CesrMessage, CesrFrame, ParserState } from "./types.ts";
+import type { CesrMessage, CesrFrame, ParserState, AttachmentGroup } from "./types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
@@ -195,6 +195,8 @@ export class CesrParserCore {
           attachments,
         };
 
+        // TODO what does framed mean?
+        //   use labeled groups of booleans to make if statements clear
         if (
           !this.framed && attachments.length === 0 &&
           this.state.buffer.length === 0
@@ -221,6 +223,11 @@ export class CesrParserCore {
     return out;
   }
 
+  /**
+   * TODO document this function and what the whole pending frame / frame / framed idea is.
+   * @param out 
+   * @returns 
+   */
   private resumePendingFrame(out: CesrFrame[]): boolean {
     if (!this.pendingFrame) return false;
     if (this.state.buffer.length === 0) return false;
@@ -241,6 +248,7 @@ export class CesrParserCore {
       );
     }
 
+    // CESR native
     if (this.pendingFrame.frame.body.kind === Kinds.cesr) {
       const peek = parseCounter(
         this.state.buffer,
@@ -258,6 +266,8 @@ export class CesrParserCore {
         this.pendingFrame = null;
         return true;
       }
+      // TODO do we need to throw an error here or do a continue?
+      //   Does this only happen when a CESR native frame has a group code but no fields/atc?
     }
 
     const { group, consumed } = parseAttachmentGroup(
@@ -292,6 +302,8 @@ export class CesrParserCore {
       this.pendingFrame = null;
       return true;
     }
+    // TODO when would this happen? As in, when would the afterCold be something other than
+    //   ano or msg and get to this point?
     return true;
   }
 
@@ -335,10 +347,15 @@ export class CesrParserCore {
         }
         cold = sniff(input.slice(offset));
       }
+      // TODO what happens if peek.code is not GENUS_VERSION_CODE (v2)?
+      //   Do we need to handle v1? Is this only a v2 thing? How does KERIpy do it?
     }
 
     if (cold === "msg") {
       const { serder, consumed } = reapSerder(input.slice(offset));
+      // TODO why are we returning a parse frame with no attachments?
+      //  I can see a perf or chunking argument here, though it likely makes the most
+      //  sense to wait until all attachments are parsed up until the next message or EOF.
       return {
         frame: { body: serder, attachments: [] },
         consumed: offset + consumed,
@@ -356,6 +373,7 @@ export class CesrParserCore {
     const headerSize = tokenSize(counter, cold);
     const unit = quadletUnit(cold);
 
+    // TODO how does KERIpy handle these checks? Similarly?
     if (BODY_WITH_ATTACH_CODES.has(counter.code)) {
       return this.parseBodyWithAttachmentGroup(
         input,
@@ -717,7 +735,7 @@ export class CesrParserCore {
   ): { frame: CesrMessage; consumed: number } {
     const base = this.parseFrame(input, inheritedVersion);
     const version = base.version;
-    const attachments: CesrMessage["attachments"] = [];
+    const attachments: AttachmentGroup[] = [];
     let offset = base.consumed;
 
     while (offset < input.length) {
