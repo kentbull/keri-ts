@@ -45,7 +45,9 @@ flowchart TD
     L --> M{"Need to defer?"}
     M -- "yes" --> N["Set pendingFrame"]
     M -- "no" --> O["Emit completed frame"]
-    G --> O
+    G --> G1{"pending frame emitted?"}
+    G1 -- "yes" --> O
+    G1 -- "no (continue hold or wait)" --> D
     O --> D
     I --> D
     D --> P["Return CesrFrame events"]
@@ -66,19 +68,22 @@ flowchart TD
     C -- "msg" --> D["reapSerder()"]
     D --> E["Return frame body, consumed, version, streamVersion"]
 
-    C -- "txt or bny" --> F["Peek first counter"]
-    F --> G{"Counter is KERIACDCGenusVersion?"}
-    G -- "yes" --> H["Decode counter and update active stream version"]
-    H --> I["Re-read cold domain at new offset"]
-    G -- "no" --> I
-
-    I --> J{"Frame start type"}
+    C -- "txt or bny" --> F{"Leading selector is KERIACDCGenusVersion?"}
+    F -- "yes" --> G["Decode selector and update active stream version"]
+    F -- "no" --> H["Keep inherited active stream version"]
+    G --> I["resolveFrameStartCounter(preferred major, alternate major)"]
+    H --> I
+    I --> J{"Frame start type (counter.name)"}
     J -- "BodyWithAttachmentGroup" --> K["parseBodyWithAttachmentGroup()"]
     J -- "NonNativeBodyGroup" --> L["parseNonNativeBodyGroup()"]
     J -- "FixBodyGroup or MapBodyGroup" --> M["parseNativeBodyGroup()"]
     J -- "GenericGroup" --> N["parseGenericGroup()"]
     J -- "other" --> O["ColdStartError"]
 ```
+
+`resolveFrameStartCounter(...)` is intentionally counter-name based. It prefers
+the inherited major version, then tries the alternate major if needed, and
+accepts the first parsed counter when no frame-start name is found.
 
 ## Atomic Nested Group Boundaries
 
@@ -186,8 +191,8 @@ mutable nested parse stack.
 ## Emission and Deferral Rules
 
 1. `queuedFrames` (from `GenericGroup`) are emitted before new parse work.
-2. `pendingFrame` is used when a frame is complete enough to hold but attachment
-   continuation is unresolved by current bytes.
+2. `pendingFrame` is used both for unresolved attachment continuation and for
+   unframed no-lookahead holds after a complete body parse with no attachments.
 3. `flush()` emits:
    - queued frames
    - pending frame
@@ -204,4 +209,3 @@ mutable nested parse stack.
 If production workloads require lower latency and progressive nested emission for
 large counted groups, add an explicit incremental parser strategy as a separate
 module/mode (per ADR-0001).
-
