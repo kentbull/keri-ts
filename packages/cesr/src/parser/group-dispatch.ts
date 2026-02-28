@@ -17,8 +17,10 @@ import { b64ToInt, intToB64 } from "../core/bytes.ts";
  *
  * Design notes:
  * - Dispatch is table-driven by major CESR version.
- * - Wrapper groups attempt nested parsing and preserve unknown remainder as opaque
- *   payload instead of hard-failing (except true boundary violations).
+ * - Wrapper groups attempt nested parsing.
+ *   - `strict` mode: fail-fast on any nested parse error.
+ *   - `compat` mode: preserve unknown remainder as opaque payload
+ *     (except true boundary violations).
  * - `parseAttachmentDispatchCompat` is intentionally version-tolerant for real-world
  *   mixed streams where wrappers and nested groups may differ by major version.
  */
@@ -230,6 +232,9 @@ function parseQuadletGroup(
           error instanceof ShortageError ||
           error instanceof GroupSizeError
         ) {
+          throw error;
+        }
+        if (context.mode === "strict") {
           throw error;
         }
         // Intentional recovery point: keep unread wrapper tail as opaque units.
