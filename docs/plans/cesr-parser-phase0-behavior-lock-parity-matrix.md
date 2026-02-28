@@ -24,12 +24,12 @@ This document is the Phase 0 working matrix:
 Executed in `packages/cesr`:
 
 ```sh
-deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts test/unit/parser-pending-frame.test.ts test/unit/parser-wrapper-map-errors.test.ts test/unit/parser-mixed-stream.test.ts
+deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts test/unit/parser-pending-frame.test.ts test/unit/parser-wrapper-map-errors.test.ts test/unit/parser-mixed-stream.test.ts test/unit/parser-wrapper-big-count-parity.test.ts test/unit/parser-wrapper-version-context.test.ts test/unit/parser-boundary-shortage.test.ts
 ```
 
 Result:
 
-- 53 passed
+- 58 passed
 - 0 failed
 
 ## Parity Scope
@@ -60,16 +60,17 @@ Status legend:
 | Basic parse of message + attachment counters      | `test_parser_v1_basic` (`keripy/tests/core/test_parsing.py:31`)                               | `parser.test.ts`, `parity.test.ts`, `external-fixtures.test.ts`            | LOCKED  | Core happy-path exists.                                                                         |
 | Strict vs compat major-version fallback           | KERIpy versioned counter behavior in v1/v2 tests                                              | `parser.test.ts`, `parity.test.ts`                                         | LOCKED  | Callback path covered.                                                                          |
 | Chunk split determinism                           | KERIpy generator/yield behavior across shortages                                              | `chunk-fuzz.test.ts`                                                       | LOCKED  | Single and two-split fuzz on key streams.                                                       |
-| BodyWithAttachmentGroup parse (txt + qb2)         | `test_parser_v1_enclosed_message` (line ~938), `test_parser_v2_enclosed_message` (line ~3024) | `external-fixtures.test.ts`, `chunk-fuzz.test.ts`                          | PARTIAL | Core wrapped-body parse covered; version-stack variants missing.                                |
+| BodyWithAttachmentGroup parse (txt + qb2)         | `test_parser_v1_enclosed_message` (line ~938), `test_parser_v2_enclosed_message` (line ~3024) | `external-fixtures.test.ts`, `chunk-fuzz.test.ts`, `parser-wrapper-big-count-parity.test.ts` | PARTIAL | Core wrapped-body parse plus big-wrapper parity are covered; deeper version-stack variants remain. |
 | NonNativeBodyGroup behavior                       | `test_parser_v1_non_native_message` (line ~1350), enclosed-message tests                      | `parser.test.ts`, `annotate.test.ts`                                       | LOCKED  | Both size-mismatch error and size-consistent opaque fallback behavior are now lock-tested.      |
 | Native FixBody/MapBody parse                      | `test_parse_native_cesr_fixed_field` (line ~4399)                                             | `external-fixtures.test.ts`, `parser.test.ts`, `primitives-native.test.ts`, `parser-wrapper-map-errors.test.ts` | PARTIAL | Positive paths plus dangling-label and boundary-mismatch error paths are covered; deeper variants remain. |
 | Annotation-byte (`ano`) handling                  | KERIpy `sniff`/stream-state semantics                                                         | `parser.test.ts`                                                           | LOCKED  | Inter-frame and leading/repeated `ano` handling are lock-tested, including chunked continuation. |
-| Attachment wrapper nested-group recovery          | KERIpy wrapper/enclosed attachment semantics                                                  | `parity.test.ts`, `annotate.test.ts`, `parser-wrapper-map-errors.test.ts`   | PARTIAL | Strict/parity fail-fast behavior is lock-tested; compat-mode opaque-tail recovery is covered as supplemental behavior. |
+| Attachment wrapper nested-group recovery          | KERIpy wrapper/enclosed attachment semantics                                                  | `parity.test.ts`, `annotate.test.ts`, `parser-wrapper-map-errors.test.ts`, `parser-wrapper-version-context.test.ts` | PARTIAL | Strict/parity fail-fast behavior, nested mixed-version strict rejection, and multi-genus wrapper transitions are lock-tested. |
 | Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                             | PARTIAL | V-P0-001 and V-P0-002 are locked; deeper re-entry/version-context variants still pending.       |
 | Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | `parser-version-context.test.ts`                                           | PARTIAL | V-P0-003/004/005 locked; additional mixed-format/version-stack permutations still pending.      |
 | Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | `parser-framed-mode.test.ts`                                               | LOCKED  | V-P0-007 locks bounded one-frame-per-drain-cycle emission for multi-frame feeds.               |
 | Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                     | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics.                |
-| Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`                | PARTIAL | Native and JSON+attachments parity are covered; broader random/corpus parity remains.           |
+| Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`, `parser-wrapper-big-count-parity.test.ts` | PARTIAL | Native, JSON+attachments, and big-wrapper parity are covered; broader random/corpus parity remains. |
+| Exact-cut shortage boundaries                      | KERIpy shortage/yield behavior at token boundaries                                            | `parser-boundary-shortage.test.ts`                                         | LOCKED  | V-P1-009 locks deterministic behavior after-header, mid-payload, and just-before-complete cuts. |
 | Multi-message mixed stream ordering               | KERIpy top-level counter/message boundary behavior                                             | `parser-mixed-stream.test.ts`                                              | LOCKED  | V-P1-005 locks deterministic order for JSON + native + wrapped frame sequences.                 |
 
 ## Missing Test Vector Catalog
@@ -189,25 +190,10 @@ Notation:
 
 ### P1 Vectors (Next Up)
 
-1. `V-P1-006` Big-counter parity for wrapper groups (`--A`/`--B`/`--C`) in both `txt` and `bny` domains.
-- Why: big-count header/size arithmetic is a distinct boundary path and regression-prone.
-
-2. `V-P1-007` `GenericGroup` payload with enclosed genus-version override and multiple enclosed frames.
-- Why: locks combined version-context + `queuedFrames` emission semantics.
-
-3. `V-P1-008` Strict-mode nested mixed-version wrapper behavior (no fallback allowed).
-- Why: parser-engine nested path should honor strict/compat policy boundaries explicitly.
-
-4. `V-P1-009` Boundary-shortage matrix at exact cut points (after header, mid-payload, just-before-complete).
-- Why: protects against off-by-one and resume/flush ordering regressions.
-
-5. `V-P1-010` Multiple genus-version counters inside one wrapper payload (latest override applies to subsequent nested groups).
-- Why: locks in-wrapper version transition semantics.
-
-6. `V-P1-011` Recovery contract after parser error (`reset` and subsequent clean feed).
+1. `V-P1-011` Recovery contract after parser error (`reset` and subsequent clean feed).
 - Why: hardens long-lived parser usage in stream processors.
 
-7. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
+2. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
 - Why: protects callers against accidental duplicate frame/error processing.
 
 ### Completed P1 Vectors
@@ -230,6 +216,26 @@ Notation:
 
 5. `V-P1-005` Multi-message mixed stream (JSON frame + native frame + wrapped frame) deterministic ordering.
 - Implemented in: `packages/cesr/test/unit/parser-mixed-stream.test.ts`.
+- Status: passing.
+
+6. `V-P1-006` Big-counter parity for wrapper groups (`--A`/`--B`/`--C`) in both `txt` and `bny` domains.
+- Implemented in: `packages/cesr/test/unit/parser-wrapper-big-count-parity.test.ts`.
+- Status: passing.
+
+7. `V-P1-007` `GenericGroup` payload with enclosed genus-version override and multiple enclosed frames.
+- Implemented in: `packages/cesr/test/unit/parser-wrapper-version-context.test.ts`.
+- Status: passing.
+
+8. `V-P1-008` Strict-mode nested mixed-version wrapper behavior (no fallback allowed).
+- Implemented in: `packages/cesr/test/unit/parser-wrapper-version-context.test.ts`.
+- Status: passing.
+
+9. `V-P1-009` Boundary-shortage matrix at exact cut points (after header, mid-payload, just-before-complete).
+- Implemented in: `packages/cesr/test/unit/parser-boundary-shortage.test.ts`.
+- Status: passing.
+
+10. `V-P1-010` Multiple genus-version counters inside one wrapper payload (latest override applies to subsequent nested groups).
+- Implemented in: `packages/cesr/test/unit/parser-wrapper-version-context.test.ts`.
 - Status: passing.
 
 ### P2 Vectors (Scale and Hardening)
@@ -261,6 +267,9 @@ Notation:
 - `packages/cesr/test/unit/parser-pending-frame.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-wrapper-map-errors.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-mixed-stream.test.ts` (completed, P1)
+- `packages/cesr/test/unit/parser-wrapper-big-count-parity.test.ts` (completed, P1)
+- `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (completed, P1)
+- `packages/cesr/test/unit/parser-boundary-shortage.test.ts` (completed, P1)
 
 If preferred, vectors may be added into existing files, but separate files improve review clarity for parity-only additions.
 
