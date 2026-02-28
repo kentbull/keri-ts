@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Point 1 completed on 2026-02-28; Point 2 decomposition is next).
+1. CESR parser readability roadmap execution (Points 1 and 2 completed on 2026-02-28; Point 3 policy extraction is next).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -51,7 +51,8 @@ This keeps context focused and avoids long-thread drift.
 2. P0/P1 parity vectors are complete; breadth moved to dedicated P2 hardening plan.
 3. Stream-order rule is explicit when `pendingFrame` and `queuedFrames` coexist.
 4. Docs now link architecture, plans, ADR, and lifecycle contract as a coherent set.
-5. Ten-point readability plan milestone status is explicit: Point 1 complete, Point 2 next.
+5. `CesrParser` orchestration now delegates to focused collaborators for stream state, frame parsing, attachment continuation, and deferred-frame lifecycle.
+6. Ten-point readability plan milestone status is explicit: Points 1 and 2 complete, Point 3 next.
 
 ## New Thread Kickoff Template
 

@@ -235,3 +235,20 @@ Keep each PR focused on one concern class:
 6. Phase 5
 
 No phase should start before the previous phase exit criteria are met.
+
+## Deferred Low-Priority Backlog
+
+1. **Version-context layering hardening (`gvrsn` vs `pvrsn`)**
+   - Priority: low (post-Phase-5 unless interop evidence raises urgency).
+   - Context:
+     - Current parser frame-attachment context may use `gvrsn ?? pvrsn` as a compatibility bridge in legacy/no-selector paths.
+     - CESR/KERI abstractions model genus-version and protocol-version as distinct fields; using protocol-version as fallback is pragmatic but not ideal for strict layering.
+     - KERIpy keeps explicit genus-version context in parser state/version-stack flows and enforces compatibility checks in Serder reaping paths.
+   - Why track:
+     - Preserve current interoperability while reducing ambiguity when protocol-version and genus-version may diverge.
+     - Ensure attachment/code-table dispatch remains grounded in genus-version semantics.
+   - Proposed follow-up:
+     - Introduce explicit genus-version parse context in frame parse results (separate from protocol version fields).
+     - Restrict `pvrsn` fallback to an explicit legacy policy path, not implicit default behavior.
+     - Add parity/contract tests for divergence and mismatch scenarios (including wrapper-scoped nested version transitions).
+     - Decide strict-vs-compat mismatch handling (reject, warn+fallback, or policy-controlled) and document contract updates.

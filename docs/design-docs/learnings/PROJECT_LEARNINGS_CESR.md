@@ -10,7 +10,8 @@ Persistent CESR parser memory for `keri-ts`.
 
 1. **Ten-point plan status**
 - Point 1 (`Publish an explicit parser state machine contract`) is complete as of 2026-02-28.
-- Point 2 (`Decompose CesrParser into focused collaborators`) is the active next step.
+- Point 2 (`Decompose CesrParser into focused collaborators`) is complete as of 2026-02-28.
+- Point 3 (`Replace boolean policy branching with strategy interfaces`) is the active next step.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -67,7 +68,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Begin Point 2 of ten-point plan (structural decomposition).
+1. Begin Point 3 of ten-point plan (policy extraction and strategy interfaces).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
 
@@ -103,3 +104,23 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Maintain milestone/status sync as Point 2 decomposition work lands.
+
+### 2026-02-28 - Point 2 CesrParser Collaborator Decomposition
+- What changed:
+  - Split parser responsibilities into focused collaborators:
+    - `packages/cesr/src/core/parser-stream-state.ts` (buffer/cursor + stream version state),
+    - `packages/cesr/src/core/parser-deferred-frames.ts` (`pendingFrame`/`queuedFrames` lifecycle),
+    - `packages/cesr/src/core/parser-frame-parser.ts` (frame-start and body-group parsing),
+    - `packages/cesr/src/core/parser-attachment-collector.ts` (attachment continuation/collection),
+    - `packages/cesr/src/core/parser-constants.ts` (shared parser constants/helpers).
+  - Reduced `packages/cesr/src/core/parser-engine.ts` to orchestration control flow over collaborators.
+  - Preserved lifecycle contract behavior including pending-vs-queued ordering and split determinism.
+- Why:
+  - Complete Point 2 readability milestone by isolating responsibilities and reducing branch fan-out in parser orchestration.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `118 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+- Risks/TODO:
+  - Point 3 policy extraction should avoid changing default strict/compat semantics while introducing strategy interfaces.

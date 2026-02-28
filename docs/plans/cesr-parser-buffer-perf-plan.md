@@ -63,6 +63,17 @@ type ParserState = {
 5. Add compaction/growth policy and thresholds.
 6. Compare benchmark and memory profiles before/after.
 
+## Targeted TODO Tasks
+
+1. Replace `input.slice(offset)` hot-path probes with non-copy views or offset helpers:
+   - introduce `sniffAt(input, offset)` and similar offset-based helpers where practical
+   - otherwise use `subarray(offset)` instead of `slice(offset)` for parse lookahead
+2. Audit collaborator modules for avoidable tail-copy patterns in tight loops:
+   - `packages/cesr/src/core/parser-frame-parser.ts`
+   - `packages/cesr/src/core/parser-attachment-collector.ts`
+   - `packages/cesr/src/core/parser-stream-state.ts`
+3. Add a micro-benchmark specifically for chunked streams with frequent boundary probing to verify reduced allocation churn.
+
 ## Acceptance Criteria
 
 - no parser behavior regressions in existing unit/integration tests

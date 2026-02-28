@@ -7,7 +7,8 @@
 - Priority: high
 - Ten-point progress:
   - Completed: Point 1 (`Publish an explicit parser state machine contract`)
-  - Next: Point 2 (`Decompose CesrParser into focused collaborators`)
+  - Completed: Point 2 (`Decompose CesrParser into focused collaborators`)
+  - Next: Point 3 (`Replace boolean policy branching with strategy interfaces`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -100,7 +101,16 @@ Why:
 
 Status:
 
-- Next active point (post-Point-1 milestone).
+- Completed on 2026-02-28.
+- Completion evidence:
+  - Collaborator modules added in `packages/cesr/src/core/`:
+    - `parser-stream-state.ts`
+    - `parser-deferred-frames.ts`
+    - `parser-frame-parser.ts`
+    - `parser-attachment-collector.ts`
+    - `parser-constants.ts`
+  - `packages/cesr/src/core/parser-engine.ts` reduced to orchestration-focused control flow.
+  - Full suite verification in `packages/cesr`: `deno task test` (`118 passed, 0 failed`).
 
 Refactor `CesrParser` orchestration to delegate responsibilities to small units:
 
