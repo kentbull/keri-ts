@@ -132,6 +132,12 @@ Why:
 
 ### 3) Replace boolean policy branching with strategy interfaces
 
+Status:
+
+- Next active point.
+- Scope calibrated after Point 2 decomposition:
+  inject policies at collaborator boundaries (`parser-engine`, `attachment-collector`, and dispatch entrypoints) instead of broad parser-core rewrites.
+
 Current behavior gates (`framed`, compat/strict fallback handling) should become injected policy objects:
 
 - `FrameBoundaryPolicy`
@@ -148,6 +154,14 @@ Why:
 
 ### 4) Replace `unknown[]` attachment payloads with discriminated types
 
+Status:
+
+- In progress (partial).
+- Progress to date:
+  - internal dispatch payload typing has been narrowed in `group-dispatch.ts` (`GroupItem` model).
+- Remaining:
+  - public `AttachmentGroup.items` still exposes `unknown[]` and needs a compatibility-aware migration to discriminated unions.
+
 `AttachmentGroup.items: unknown[]` should become typed structures keyed by attachment kind/code.
 
 Deliverables:
@@ -161,6 +175,12 @@ Why:
 - readers and downstream users can understand payload meaning from types, not source spelunking
 
 ### 5) Convert dispatch definitions to a single declarative spec
+
+Status:
+
+- Pending (still high-value after Point 2).
+- Calibration:
+  current v1/v2 maps remain explicit and readable, but descriptor-driven construction is still the best path to reduce repetition/drift.
 
 Keep table-driven dispatch, but define groups from one source of truth (descriptor table), then derive maps.
 
@@ -176,6 +196,12 @@ Why:
 
 ### 6) Make recovery behavior explicit, configurable, and observable
 
+Status:
+
+- Pending.
+- Calibration:
+  existing compat fallback behavior is retained, but diagnostics flow still includes default console warning behavior and should move behind explicit policy/hook wiring.
+
 Current fallback/recovery behavior (mixed-version compat, opaque wrapper tails) should be governed by explicit policy and emitted as structured diagnostics.
 
 Deliverables:
@@ -189,6 +215,12 @@ Why:
 - operationally safer and easier to justify in ecosystem integration
 
 ### 7) Separate syntax parsing from semantic interpretation
+
+Status:
+
+- Pending (later-phase refinement).
+- Calibration:
+  Point 2 established useful boundaries, but syntax-vs-semantic responsibilities are still partially interleaved inside frame/group parsing paths.
 
 Split token-level extraction from semantic interpretation (ilk/said/labels/native metadata).
 
@@ -204,6 +236,14 @@ Why:
 - avoids hidden coupling between tokenization and semantic guesses
 
 ### 8) Add parity-oriented behavioral lock tests against `keripy`
+
+Status:
+
+- Partially complete.
+- Completed:
+  - P0/P1 vectors and split-determinism coverage are implemented and passing.
+- Remaining:
+  - P2 breadth/hardening vectors and broader interop fixture expansion.
 
 Add vectors and property-like split tests that validate behavior in areas where parser logic is subtle.
 
@@ -235,6 +275,12 @@ Progress note:
 
 ### 9) Apply naming and terminology normalization pass
 
+Status:
+
+- Pending (narrowed scope).
+- Calibration:
+  focus on targeted terminology cleanup and glossary-level alignment; avoid broad churn unless ambiguity materially affects maintenance/review.
+
 Standardize terms used in code and docs:
 
 - frame vs message
@@ -252,6 +298,12 @@ Why:
 - naming clarity lowers future cognitive load more than micro-optimizations
 
 ### 10) Gate performance optimization behind readability-first abstractions
+
+Status:
+
+- Pending (deferred by design).
+- Calibration:
+  no change in priority; proceed only after readability/policy/type-model phases and with benchmark evidence.
 
 Apply buffer optimizations only after state contracts and decomposition are complete.
 
@@ -275,7 +327,7 @@ Why:
 
 - parser behavior is preserved or changes are explicitly documented and tested
 - code paths for frame boundaries and fallback behavior are explainable from docs without deep source reading
-- dispatch and payload representations are strongly typed and reviewable
+- dispatch and payload representations are progressively typed and reviewable with explicit migration checkpoints
 - maintainers can map each behavior to tests and policy choices
 
 ## Related Docs
