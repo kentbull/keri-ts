@@ -5,6 +5,9 @@
 - Created: 2026-02-27
 - Updated: 2026-02-28
 - Priority: high
+- Ten-point progress:
+  - Completed: Point 1 (`Publish an explicit parser state machine contract`)
+  - Next: Point 2 (`Decompose CesrParser into focused collaborators`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -26,6 +29,10 @@ The plan is informed by comparison against `keripy` main (`keripy/src/keri/core/
 
 The parser now includes several concrete behaviors that should be treated as baseline constraints for readability refactors:
 
+- Point 1 deliverables are complete as of 2026-02-28:
+  - canonical lifecycle contract (`docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`)
+  - parser lifecycle comments and transition invariants
+  - explicit ordering and flush behavior lock tests (including `V-P1-014`)
 - Explicit two-track frame lifecycle:
   - `pendingFrame` for in-progress top-level frame continuation across chunk boundaries.
   - `queuedFrames` for additional complete enclosed frames extracted from one `GenericGroup` payload.
@@ -61,6 +68,14 @@ These are now part of the intended parser behavior and must remain readable and 
 
 ### 1) Publish an explicit parser state machine contract
 
+Status:
+
+- Completed on 2026-02-28.
+- Completion evidence:
+  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+  - `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-014`, `V-P1-012`, `V-P0-008`, `V-P0-009`)
+  - parser lifecycle comment/invariant updates in `packages/cesr/src/core/parser-engine.ts`
+
 Document and codify parser states, transitions, and emission rules currently spread across:
 
 - `drain()`
@@ -82,6 +97,10 @@ Why:
 - makes `pendingFrame` vs `queuedFrames` lifecycle explicit and reviewable
 
 ### 2) Decompose `CesrParser` into focused collaborators
+
+Status:
+
+- Next active point (post-Point-1 milestone).
 
 Refactor `CesrParser` orchestration to delegate responsibilities to small units:
 
