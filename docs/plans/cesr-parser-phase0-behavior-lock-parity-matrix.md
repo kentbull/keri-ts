@@ -60,16 +60,16 @@ Status legend:
 | Basic parse of message + attachment counters      | `test_parser_v1_basic` (`keripy/tests/core/test_parsing.py:31`)                               | `parser.test.ts`, `parity.test.ts`, `external-fixtures.test.ts`                                                     | LOCKED  | Core happy-path exists.                                                                                                       |
 | Strict vs compat major-version fallback           | KERIpy versioned counter behavior in v1/v2 tests                                              | `parser.test.ts`, `parity.test.ts`                                                                                  | LOCKED  | Callback path covered.                                                                                                        |
 | Chunk split determinism                           | KERIpy generator/yield behavior across shortages                                              | `chunk-fuzz.test.ts`                                                                                                | LOCKED  | Single and two-split fuzz on key streams.                                                                                     |
-| BodyWithAttachmentGroup parse (txt + qb2)         | `test_parser_v1_enclosed_message` (line ~938), `test_parser_v2_enclosed_message` (line ~3024) | `external-fixtures.test.ts`, `chunk-fuzz.test.ts`, `parser-wrapper-big-count-parity.test.ts`                        | PARTIAL | Core wrapped-body parse plus big-wrapper parity are covered; deeper version-stack variants remain.                            |
+| BodyWithAttachmentGroup parse (txt + qb2)         | `test_parser_v1_enclosed_message` (line ~938), `test_parser_v2_enclosed_message` (line ~3024) | `external-fixtures.test.ts`, `chunk-fuzz.test.ts`, `parser-wrapper-big-count-parity.test.ts`                        | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | NonNativeBodyGroup behavior                       | `test_parser_v1_non_native_message` (line ~1350), enclosed-message tests                      | `parser.test.ts`, `annotate.test.ts`                                                                                | LOCKED  | Both size-mismatch error and size-consistent opaque fallback behavior are now lock-tested.                                    |
-| Native FixBody/MapBody parse                      | `test_parse_native_cesr_fixed_field` (line ~4399)                                             | `external-fixtures.test.ts`, `parser.test.ts`, `primitives-native.test.ts`, `parser-wrapper-map-errors.test.ts`     | PARTIAL | Positive paths plus dangling-label and boundary-mismatch error paths are covered; deeper variants remain.                     |
+| Native FixBody/MapBody parse                      | `test_parse_native_cesr_fixed_field` (line ~4399)                                             | `external-fixtures.test.ts`, `parser.test.ts`, `primitives-native.test.ts`, `parser-wrapper-map-errors.test.ts`     | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | Annotation-byte (`ano`) handling                  | KERIpy `sniff`/stream-state semantics                                                         | `parser.test.ts`                                                                                                    | LOCKED  | Inter-frame and leading/repeated `ano` handling are lock-tested, including chunked continuation.                              |
-| Attachment wrapper nested-group recovery          | KERIpy wrapper/enclosed attachment semantics                                                  | `parity.test.ts`, `annotate.test.ts`, `parser-wrapper-map-errors.test.ts`, `parser-wrapper-version-context.test.ts` | PARTIAL | Strict/parity fail-fast behavior, nested mixed-version strict rejection, and multi-genus wrapper transitions are lock-tested. |
-| Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                                                                      | PARTIAL | V-P0-001 and V-P0-002 are locked; deeper re-entry/version-context variants still pending.                                     |
-| Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | `parser-version-context.test.ts`                                                                                    | PARTIAL | V-P0-003/004/005 locked; additional mixed-format/version-stack permutations still pending.                                    |
+| Attachment wrapper nested-group recovery          | KERIpy wrapper/enclosed attachment semantics                                                  | `parity.test.ts`, `annotate.test.ts`, `parser-wrapper-map-errors.test.ts`, `parser-wrapper-version-context.test.ts` | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
+| Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                                                                      | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
+| Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | `parser-version-context.test.ts`                                                                                    | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | `parser-framed-mode.test.ts`                                                                                        | LOCKED  | V-P0-007 locks bounded one-frame-per-drain-cycle emission for multi-frame feeds.                                              |
 | Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                                                              | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics.                                              |
-| Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`, `parser-wrapper-big-count-parity.test.ts`               | PARTIAL | Native, JSON+attachments, and big-wrapper parity are covered; broader random/corpus parity remains.                           |
+| Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`, `parser-wrapper-big-count-parity.test.ts`               | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | Exact-cut shortage boundaries                     | KERIpy shortage/yield behavior at token boundaries                                            | `parser-boundary-shortage.test.ts`                                                                                  | LOCKED  | V-P1-009 locks deterministic behavior after-header, mid-payload, and just-before-complete cuts.                               |
 | Legacy implicit-v1 (no selector) compatibility    | Deployed v1 streams without `KERIACDCGenusVersion`                                            | `parser-legacy-v1-implicit-version.test.ts`                                                                         | LOCKED  | Legacy top-level v1 body/group streams are lock-tested without context/version selector counters.                             |
 | Multi-message mixed stream ordering               | KERIpy top-level counter/message boundary behavior                                            | `parser-mixed-stream.test.ts`                                                                                       | LOCKED  | V-P1-005 locks deterministic order for JSON + native + wrapped frame sequences.                                               |
@@ -247,25 +247,11 @@ None currently.
 - Implemented in: `packages/cesr/test/unit/parser-binary-serder.test.ts`.
 - Status: passing.
 
-### P2 Vectors (Scale and Hardening)
+### P2 Hardening
 
-1. `V-P2-001` Differential corpus tests against KERIpy across generated valid streams.
-- Why: broad semantic parity confidence beyond curated fixtures.
+Breadth/scale/parity-hardening coverage is tracked in:
 
-2. `V-P2-002` Counter-codex coverage matrix for all supported v1/v2 body and attachment group counters.
-- Why: ensures each codex path is exercised at least once.
-
-3. `V-P2-003` Property-based qb64/qb2 semantic equivalence over randomized valid streams.
-- Why: validates domain-equivalence invariants at scale.
-
-4. `V-P2-004` Large-payload soak tests (latency/memory bounds) under atomic bounded parsing.
-- Why: validates operational safety envelope and documents expected performance profile.
-
-5. `V-P2-005` Annotate/denot robustness matrix across wrappers, opaque fallbacks, and mixed-version streams.
-- Why: protects human-facing tooling correctness and round-trip invariants.
-
-6. `V-P2-006` Malformed-stream fuzzing with deterministic error-class assertions.
-- Why: prevents silent parser drift in failure paths.
+- `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 
 ## Proposed Parity Test File Additions
 

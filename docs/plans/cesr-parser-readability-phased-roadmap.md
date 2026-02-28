@@ -3,6 +3,7 @@
 ## Status
 
 - Created: 2026-02-27
+- Updated: 2026-02-28
 - Priority: high
 - Depends on: `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Related: `docs/plans/cesr-parser-buffer-perf-plan.md` (deferred perf work)
@@ -17,6 +18,24 @@ Execute parser readability improvements in small, defensible phases so each chan
 
 This roadmap references and sequences the ten-point plan. Point numbers below map directly to that plan.
 
+## Implementation Snapshot (As Of 2026-02-28)
+
+Completed baseline work that this roadmap now builds on:
+
+- Phase 0 parity lock vectors (P0 and P1) implemented and passing.
+- Parser lifecycle docs/comments improved for:
+  - `parseFrame()`
+  - `parseCompleteFrame()`
+  - `resumePendingFrame()`
+  - `parseFrameSequence()`
+- GenericGroup enclosed-frame queue semantics implemented (`queuedFrames`).
+- Version/context selector parity vectors implemented for top-level and nested wrappers.
+- Legacy implicit-v1 behavior and binary Serder cold-start vectors implemented.
+- P2 breadth/hardening backlog split to a dedicated plan:
+  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+- Atomic bounded-substream parser decision captured in ADR:
+  - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+
 ## Phase Structure
 
 ### Phase 0: Baseline and Evidence Capture
@@ -25,6 +44,10 @@ Points covered:
 
 - 8 (test lock foundation)
 - supporting prep for all points
+
+Status:
+
+- Completed
 
 Scope:
 
@@ -38,6 +61,8 @@ Deliverables:
 - documented current behavior assumptions and edge cases
 - matrix document:
   - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+  - plus deferred breadth backlog:
+    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 
 Exit criteria:
 
@@ -51,11 +76,16 @@ Points covered:
 - 1 (state machine contract)
 - 9 (naming/terminology normalization, docs-first subset)
 
+Status:
+
+- In progress (core lifecycle docs landed; formal state table/glossary still pending)
+
 Scope:
 
 - document parser state transitions and invariants
 - remove TODO ambiguity by turning implicit behavior into explicit documented rules
 - align names/comments for frame and continuation lifecycle
+- explicitly document `pendingFrame` vs `queuedFrames` responsibilities and emission order
 
 Deliverables:
 
@@ -67,6 +97,7 @@ Exit criteria:
 
 - no functional deltas in output
 - state transitions can be explained from docs without tracing all source branches
+- `queuedFrames` and bounded GenericGroup substream behavior are documented as first-class lifecycle rules
 
 ### Phase 2: Structural Decomposition (No externally visible behavior changes)
 
@@ -80,11 +111,15 @@ Scope:
 - split `CesrParser` into orchestration + focused collaborators
 - isolate cursor/state handling from parsing decisions
 - isolate frame-start and attachment-collection logic
+- isolate enclosed-frame sequence/queue lifecycle from top-level pending-frame continuation
 
 Deliverables:
 
 - reduced `parser-engine.ts` complexity and method size
 - new focused modules with targeted unit tests
+- explicit collaborator boundary between:
+  - incremental top-level continuation (`pendingFrame`)
+  - bounded enclosed sequence parsing and queueing (`queuedFrames`)
 
 Exit criteria:
 
@@ -151,11 +186,14 @@ Scope:
 - produce maintainer-facing rationale and change summary by phase
 - include behavior matrix (before/after) and policy compatibility notes
 - confirm readiness for perf follow-up behind stable abstractions
+- execute and report high-priority P2 hardening vectors before broad ecosystem rollout
 
 Deliverables:
 
 - review packet for maintainers (design rationale + behavior evidence)
 - explicit bridge to deferred perf plan
+- P2 hardening evidence summary keyed to:
+  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 
 Exit criteria:
 

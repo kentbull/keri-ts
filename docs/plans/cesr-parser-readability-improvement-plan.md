@@ -3,6 +3,7 @@
 ## Status
 
 - Created: 2026-02-27
+- Updated: 2026-02-28
 - Priority: high
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
@@ -21,6 +22,33 @@ This plan defines ten concrete parser-readability improvements for `keri-ts` CES
 
 The plan is informed by comparison against `keripy` main (`keripy/src/keri/core/parsing.py`), while keeping the `keri-ts` architectural advantage of parse-only responsibilities and no direct event-processing side effects.
 
+## Current Baseline (Implemented Since Plan Creation)
+
+The parser now includes several concrete behaviors that should be treated as baseline constraints for readability refactors:
+
+- Explicit two-track frame lifecycle:
+  - `pendingFrame` for in-progress top-level frame continuation across chunk boundaries.
+  - `queuedFrames` for additional complete enclosed frames extracted from one `GenericGroup` payload.
+- Bounded enclosed parsing:
+  - `parseFrameSequence()` parses all enclosed frames inside one size-bounded `GenericGroup` payload slice.
+  - `parseGenericGroup()` emits first enclosed frame immediately and queues the remainder for deterministic ordered emission.
+- Coherent frame contract functions:
+  - `parseFrame()` (body-start parse + stream version/context updates),
+  - `parseCompleteFrame()` (bounded full frame parse),
+  - `resumePendingFrame()` (incremental top-level continuation),
+  - `parseFrameSequence()` (bounded enclosed multi-frame sequence parse).
+- Version/context behavior:
+  - leading genus-version selectors supported at top-level and inside wrappers,
+  - legacy implicit-v1 stream handling is lock-tested.
+- Recovery and boundary behavior:
+  - strict/compat attachment dispatch mode with fallback callback,
+  - `flush()` terminal-shortage idempotency,
+  - reset-and-recover behavior lock tests.
+- Binary message support:
+  - cold-start Serder decode parity support for JSON/CBOR/MGPK bodies (library-backed decoding).
+
+These are now part of the intended parser behavior and must remain readable and explainable through documentation and tests.
+
 ## Design Principles
 
 - Single Responsibility: parsing, boundary policy, version fallback, and semantic interpretation should not be interleaved.
@@ -38,6 +66,7 @@ Document and codify parser states, transitions, and emission rules currently spr
 - `drain()`
 - `parseFrame()`
 - `resumePendingFrame()`
+- `parseFrameSequence()`
 - `flush()`
 
 Deliverables:
@@ -50,6 +79,7 @@ Why:
 
 - highest readability gain per line changed
 - reduces maintainers needing to infer behavior from nested branches
+- makes `pendingFrame` vs `queuedFrames` lifecycle explicit and reviewable
 
 ### 2) Decompose `CesrParser` into focused collaborators
 
@@ -59,11 +89,13 @@ Refactor `CesrParser` orchestration to delegate responsibilities to small units:
 - frame start parsing (message, native, wrapped body groups)
 - attachment continuation/collection
 - version context management
+- enclosed-frame queue and emission policy (`GenericGroup` first-vs-rest behavior)
 
 Deliverables:
 
 - reduced method size and branch fan-out in `parser-engine.ts`
 - collaborator interfaces with tight responsibilities
+- dedicated helper or collaborator for queued enclosed-frame lifecycle (to avoid drift between pending and queued semantics)
 
 Why:
 
@@ -153,6 +185,8 @@ Target cases:
 - generic group nesting and re-entry
 - mixed-version wrapper payloads
 - attachment continuation across chunk boundaries
+- legacy implicit-v1 streams (without context/version selector counters)
+- binary Serder cold-start parity (JSON/CBOR/MGPK)
 
 Deliverables:
 
@@ -162,6 +196,13 @@ Deliverables:
 Why:
 
 - provides maintainers high confidence that readability refactors preserve semantics
+
+Progress note:
+
+- P0/P1 parity vectors are implemented and tracked in:
+  - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+- Deferred breadth hardening is tracked in:
+  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 
 ### 9) Apply naming and terminology normalization pass
 
@@ -210,6 +251,8 @@ Why:
 
 ## Related Docs
 
+- `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 - `docs/plans/cesr-parser-buffer-perf-plan.md`
+- `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+- `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 - `packages/cesr/test/unit/parser.test.ts`
-
