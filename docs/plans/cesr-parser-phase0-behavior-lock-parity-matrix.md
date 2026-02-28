@@ -24,12 +24,12 @@ This document is the Phase 0 working matrix:
 Executed in `packages/cesr`:
 
 ```sh
-deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts
+deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts
 ```
 
 Result:
 
-- 40 passed
+- 46 passed
 - 0 failed
 
 ## Parity Scope
@@ -61,14 +61,14 @@ Status legend:
 | Strict vs compat major-version fallback           | KERIpy versioned counter behavior in v1/v2 tests                                              | `parser.test.ts`, `parity.test.ts`                                         | LOCKED  | Callback path covered.                                                                          |
 | Chunk split determinism                           | KERIpy generator/yield behavior across shortages                                              | `chunk-fuzz.test.ts`                                                       | LOCKED  | Single and two-split fuzz on key streams.                                                       |
 | BodyWithAttachmentGroup parse (txt + qb2)         | `test_parser_v1_enclosed_message` (line ~938), `test_parser_v2_enclosed_message` (line ~3024) | `external-fixtures.test.ts`, `chunk-fuzz.test.ts`                          | PARTIAL | Core wrapped-body parse covered; version-stack variants missing.                                |
-| NonNativeBodyGroup behavior                       | `test_parser_v1_non_native_message` (line ~1350), enclosed-message tests                      | `parser.test.ts`                                                           | PARTIAL | Payload mismatch error covered; opaque fallback success path not covered.                       |
+| NonNativeBodyGroup behavior                       | `test_parser_v1_non_native_message` (line ~1350), enclosed-message tests                      | `parser.test.ts`, `annotate.test.ts`                                       | LOCKED  | Both size-mismatch error and size-consistent opaque fallback behavior are now lock-tested.      |
 | Native FixBody/MapBody parse                      | `test_parse_native_cesr_fixed_field` (line ~4399)                                             | `external-fixtures.test.ts`, `parser.test.ts`, `primitives-native.test.ts` | PARTIAL | Positive paths covered; negative map-boundary cases missing.                                    |
-| Annotation-byte (`ano`) handling                  | KERIpy `sniff`/stream-state semantics                                                         | `parser.test.ts`                                                           | PARTIAL | Inter-frame newline covered; leading/multiple `ano` and continuation cases missing.             |
+| Annotation-byte (`ano`) handling                  | KERIpy `sniff`/stream-state semantics                                                         | `parser.test.ts`                                                           | LOCKED  | Inter-frame and leading/repeated `ano` handling are lock-tested, including chunked continuation. |
 | Attachment wrapper nested-group recovery          | KERIpy wrapper/enclosed attachment semantics                                                  | `parity.test.ts`, `annotate.test.ts`                                       | PARTIAL | Some nested and opaque cases covered in annotator path; parser-engine lock coverage incomplete. |
 | Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                             | PARTIAL | V-P0-001 and V-P0-002 are locked; deeper re-entry/version-context variants still pending.       |
 | Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | `parser-version-context.test.ts`                                           | PARTIAL | V-P0-003/004/005 locked; additional mixed-format/version-stack permutations still pending.      |
-| Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | none (explicit)                                                            | MISSING | Need deterministic bounded-emission locks.                                                      |
-| Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | none (explicit)                                                            | MISSING | Must lock EOS behavior before refactors.                                                        |
+| Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | `parser-framed-mode.test.ts`                                               | LOCKED  | V-P0-007 locks bounded one-frame-per-drain-cycle emission for multi-frame feeds.               |
+| Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                     | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics.                |
 | Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | partial in fixtures                                                        | PARTIAL | Coverage exists for selected streams; broaden matrix.                                           |
 
 ## Missing Test Vector Catalog
@@ -80,30 +80,7 @@ Priority legend:
 
 ### P0 Vectors (Must Add)
 
-1. `V-P0-006` `NonNativeBodyGroup` with size-consistent but non-serder payload.
-- Why: locks intended TS recovery behavior (opaque CESR body fallback).
-- Expected: frame emitted with `kind: CESR`, `ked: null`, no hard error.
-- Suggested file: `parser.test.ts`.
-
-2. `V-P0-007` `framed=true` with two complete frames in one `feed`.
-- Why: locks bounded emission policy behavior.
-- Expected: first `feed` emits one frame; remaining frame emitted on subsequent drain/feed/flush.
-- Suggested file: `parser-framed-mode.test.ts`.
-
-3. `V-P0-008` EOS flush when `pendingFrame` exists and no remainder.
-- Why: locks deferred emission semantics.
-- Expected: `flush()` emits frame and no error.
-- Suggested file: `parser-flush.test.ts`.
-
-4. `V-P0-009` EOS flush when `pendingFrame` exists and truncated tail bytes remain.
-- Why: locks frame+error emission ordering and shortage reporting.
-- Expected: `flush()` emits frame then `ShortageError`.
-- Suggested file: `parser-flush.test.ts`.
-
-5. `V-P0-010` Leading and repeated annotation bytes before first frame.
-- Why: ensures `ano` normalization parity at stream head.
-- Expected: parser ignores leading `ano` and emits same frame result.
-- Suggested file: `parser.test.ts`.
+- None remaining. `V-P0-001` through `V-P0-010` are implemented and passing.
 
 ## P0 Codex Visual Map (KERIpy Entry Mapping)
 
@@ -189,6 +166,26 @@ Notation:
 - Implemented in: `packages/cesr/test/unit/parser-version-context.test.ts`.
 - Status: passing.
 
+6. `V-P0-006` `NonNativeBodyGroup` with size-consistent but non-serder payload.
+- Implemented in: `packages/cesr/test/unit/parser.test.ts`.
+- Status: passing.
+
+7. `V-P0-007` `framed=true` with two complete frames in one `feed`.
+- Implemented in: `packages/cesr/test/unit/parser-framed-mode.test.ts`.
+- Status: passing.
+
+8. `V-P0-008` EOS flush when `pendingFrame` exists and no remainder.
+- Implemented in: `packages/cesr/test/unit/parser-flush.test.ts`.
+- Status: passing.
+
+9. `V-P0-009` EOS flush when `pendingFrame` exists and truncated tail bytes remain.
+- Implemented in: `packages/cesr/test/unit/parser-flush.test.ts`.
+- Status: passing.
+
+10. `V-P0-010` Leading and repeated annotation bytes before first frame.
+- Implemented in: `packages/cesr/test/unit/parser.test.ts`.
+- Status: passing.
+
 ### P1 Vectors (Next Up)
 
 1. `V-P1-001` Pending-frame continuation where next token is body-group counter (new frame boundary).
@@ -209,9 +206,9 @@ Notation:
 ## Proposed Phase 0 Test File Additions
 
 - `packages/cesr/test/unit/parity-generic-group.test.ts` (completed)
-- `packages/cesr/test/unit/parser-version-context.test.ts`
-- `packages/cesr/test/unit/parser-framed-mode.test.ts`
-- `packages/cesr/test/unit/parser-flush.test.ts`
+- `packages/cesr/test/unit/parser-version-context.test.ts` (completed)
+- `packages/cesr/test/unit/parser-framed-mode.test.ts` (completed)
+- `packages/cesr/test/unit/parser-flush.test.ts` (completed)
 
 If preferred, vectors may be added into existing files, but separate files improve review clarity for parity-only additions.
 

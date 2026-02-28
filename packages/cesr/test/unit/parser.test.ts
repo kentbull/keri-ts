@@ -142,6 +142,24 @@ Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => 
   assertEquals(frames[0].type, "error");
 });
 
+Deno.test("V-P0-006: parser emits opaque CESR body for size-consistent NonNativeBodyGroup non-serder payload", () => {
+  const ims = `${CtrDexV2.NonNativeBodyGroup}ABMAAA`; // count=1 quadlet, payload decodes to raw non-serder bytes
+  const parser = createParser();
+  const events = [...parser.feed(encode(ims)), ...parser.flush()];
+  const errors = events.filter((event) => event.type === "error");
+  const frames = events.filter((event) => event.type === "frame");
+
+  assertEquals(errors.length, 0);
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].frame.attachments.length, 0);
+  assertEquals(frames[0].frame.body.kind, "CESR");
+  assertEquals(frames[0].frame.body.ked, null);
+  assertEquals(frames[0].frame.body.ilk, null);
+  assertEquals(frames[0].frame.body.said, null);
+  assertEquals(frames[0].frame.body.pvrsn.major, 2);
+  assertEquals(frames[0].frame.body.raw.length, 2);
+});
+
 Deno.test("parser handles chunked input", () => {
   const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   const nested = `-AAB${sigerToken()}`;
@@ -180,6 +198,52 @@ Deno.test("parser ignores annotation-domain separator bytes between frames", () 
   const errors = frames.filter((e) => e.type === "error");
   assertEquals(errors.length, 0);
   assertEquals(messages.length, 1);
+});
+
+Deno.test("V-P0-010: parser ignores leading and repeated annotation bytes before first frame", () => {
+  const baselineParser = createParser();
+  const baseline = [
+    ...baselineParser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY)),
+    ...baselineParser.flush(),
+  ];
+  const baselineFrames = baseline.filter((event) => event.type === "frame");
+  const baselineErrors = baseline.filter((event) => event.type === "error");
+  assertEquals(baselineErrors.length, 0);
+  assertEquals(baselineFrames.length, 1);
+
+  const prefixed = `\n\n\n${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+  const prefixedParser = createParser();
+  const prefixedEvents = [
+    ...prefixedParser.feed(encode(prefixed)),
+    ...prefixedParser.flush(),
+  ];
+  const prefixedFrames = prefixedEvents.filter((event) => event.type === "frame");
+  const prefixedErrors = prefixedEvents.filter((event) => event.type === "error");
+  assertEquals(prefixedErrors.length, 0);
+  assertEquals(prefixedFrames.length, 1);
+
+  const dec = new TextDecoder();
+  assertEquals(
+    dec.decode(prefixedFrames[0].frame.body.raw),
+    dec.decode(baselineFrames[0].frame.body.raw),
+  );
+
+  // Chunked continuation case: leading annotation bytes may arrive separately.
+  const chunkedParser = createParser();
+  const first = chunkedParser.feed(encode("\n\n"));
+  const second = chunkedParser.feed(
+    encode(`\n${KERIPY_NATIVE_V2_ICP_FIX_BODY}`),
+  );
+  const tail = chunkedParser.flush();
+  const chunkedEvents = [...first, ...second, ...tail];
+  const chunkedFrames = chunkedEvents.filter((event) => event.type === "frame");
+  const chunkedErrors = chunkedEvents.filter((event) => event.type === "error");
+  assertEquals(chunkedErrors.length, 0);
+  assertEquals(chunkedFrames.length, 1);
+  assertEquals(
+    dec.decode(chunkedFrames[0].frame.body.raw),
+    dec.decode(baselineFrames[0].frame.body.raw),
+  );
 });
 
 Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
