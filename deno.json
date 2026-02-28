@@ -36,5 +36,6 @@
       "deno.ns",
       "dom"
     ]
-  }
+  },
+  "allowScripts": ["npm:cbor-extract@2.2.0", "npm:lmdb@3.4.4", "npm:msgpackr-extract@3.0.3"]
 }
