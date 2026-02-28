@@ -15,6 +15,24 @@ function encode(input: string): Uint8Array {
   return new TextEncoder().encode(input);
 }
 
+function v1Version(kind: "JSON" | "MGPK" | "CBOR", size: number): string {
+  return `KERI10${kind}${size.toString(16).padStart(6, "0")}_`;
+}
+
+function minimalV1MgpkBody(): Uint8Array {
+  // msgpack: map(1), key "v", value short-str(version)
+  const size = 1 + 2 + 1 + 17;
+  const vs = encode(v1Version("MGPK", size));
+  return Uint8Array.from([0x81, 0xa1, 0x76, 0xb1, ...vs]);
+}
+
+function minimalV1CborBody(): Uint8Array {
+  // cbor: map(1), key "v", value text(version)
+  const size = 1 + 2 + 1 + 17;
+  const vs = encode(v1Version("CBOR", size));
+  return Uint8Array.from([0xa1, 0x61, 0x76, 0x71, ...vs]);
+}
+
 function v1ify(raw: string): string {
   const size = new TextEncoder().encode(raw).length;
   const sizeHex = size.toString(16).padStart(6, "0");
@@ -60,6 +78,9 @@ function selectV2OnlyQuadletGroupCode(): string {
 Deno.test("sniff detects message and text counters", () => {
   assertEquals(sniff(encode("{")), "msg");
   assertEquals(sniff(encode("-AAB")), "txt");
+  assertEquals(sniff(minimalV1MgpkBody()), "msg");
+  assertEquals(sniff(minimalV1CborBody()), "msg");
+  assertEquals(sniff(Uint8Array.from([0xde])), "msg"); // mgpk2 tritet
 });
 
 Deno.test("smell parses v1 version string", () => {
@@ -68,6 +89,37 @@ Deno.test("smell parses v1 version string", () => {
   assertEquals(result.smellage.proto, "KERI");
   assertEquals(result.smellage.kind, "JSON");
   assertEquals(result.smellage.pvrsn.major, 1);
+});
+
+Deno.test("smell parses v1 MGPK/CBOR version strings at cold start", () => {
+  const mgpk = smell(minimalV1MgpkBody()).smellage;
+  assertEquals(mgpk.kind, "MGPK");
+  assertEquals(mgpk.size, minimalV1MgpkBody().length);
+  assertEquals(mgpk.pvrsn.major, 1);
+
+  const cbor = smell(minimalV1CborBody()).smellage;
+  assertEquals(cbor.kind, "CBOR");
+  assertEquals(cbor.size, minimalV1CborBody().length);
+  assertEquals(cbor.pvrsn.major, 1);
+});
+
+Deno.test("parser emits frames for cold-start MGPK/CBOR bodies", () => {
+  const parser = createParser();
+  const out = [
+    ...parser.feed(minimalV1MgpkBody()),
+    ...parser.feed(minimalV1CborBody()),
+    ...parser.flush(),
+  ];
+  const frames = out.filter((event) => event.type === "frame");
+  assertEquals(frames.length, 2);
+  if (frames[0].type === "frame") {
+    assertEquals(frames[0].frame.body.kind, "MGPK");
+    assertEquals(frames[0].frame.body.raw.length, minimalV1MgpkBody().length);
+  }
+  if (frames[1].type === "frame") {
+    assertEquals(frames[1].frame.body.kind, "CBOR");
+    assertEquals(frames[1].frame.body.raw.length, minimalV1CborBody().length);
+  }
 });
 
 Deno.test("parser emits frame with nested attachment group", () => {

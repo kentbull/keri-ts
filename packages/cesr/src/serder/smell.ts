@@ -2,7 +2,8 @@ import { b64ToInt } from "../core/bytes.ts";
 import { ShortageError, VersionError } from "../core/errors.ts";
 import type { Smellage } from "../core/types.ts";
 
-const MAXVSOFFSET = 8;
+// KERIpy parity: allow version token to begin within the first 12 bytes.
+const MAXVSOFFSET = 12;
 const VER1 =
   /(?<proto1>[A-Z]{4})(?<major1>[0-9a-f])(?<minor1>[0-9a-f])(?<kind1>[A-Z]{4})(?<size1>[0-9a-f]{6})_/;
 const VER2 =

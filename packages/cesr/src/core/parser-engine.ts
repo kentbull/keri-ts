@@ -28,7 +28,7 @@ import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { parseMapperBody } from "../primitives/mapper.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
+import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { b64ToInt, intToB64 } from "./bytes.ts";
 import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 
@@ -40,35 +40,9 @@ export interface ParserOptions {
 
 const DEFAULT_VERSION: Versionage = { major: 2, minor: 0 };
 
-const BODY_WITH_ATTACH_CODES = new Set([
-  CtrDexV1.BodyWithAttachmentGroup,
-  CtrDexV1.BigBodyWithAttachmentGroup,
-  CtrDexV2.BodyWithAttachmentGroup,
-  CtrDexV2.BigBodyWithAttachmentGroup,
-]);
-
-const NON_NATIVE_BODY_CODES = new Set([
-  CtrDexV1.NonNativeBodyGroup,
-  CtrDexV1.BigNonNativeBodyGroup,
-  CtrDexV2.NonNativeBodyGroup,
-  CtrDexV2.BigNonNativeBodyGroup,
-]);
-
-const FIX_BODY_CODES = new Set([
-  CtrDexV2.FixBodyGroup,
-  CtrDexV2.BigFixBodyGroup,
-]);
-
 const MAP_BODY_CODES = new Set([
   CtrDexV2.MapBodyGroup,
   CtrDexV2.BigMapBodyGroup,
-]);
-
-const GENERIC_GROUP_CODES = new Set([
-  CtrDexV1.GenericGroup,
-  CtrDexV1.BigGenericGroup,
-  CtrDexV2.GenericGroup,
-  CtrDexV2.BigGenericGroup,
 ]);
 
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
@@ -109,6 +83,19 @@ const FRAME_BOUNDARY_COUNTER_NAMES = new Set([
 function isFrameBoundaryCounter(counter: Counter): boolean {
   return FRAME_BOUNDARY_COUNTER_NAMES.has(counter.name);
 }
+
+const FRAME_START_GROUP_NAMES = new Set([
+  "BodyWithAttachmentGroup",
+  "BigBodyWithAttachmentGroup",
+  "NonNativeBodyGroup",
+  "BigNonNativeBodyGroup",
+  "FixBodyGroup",
+  "BigFixBodyGroup",
+  "MapBodyGroup",
+  "BigMapBodyGroup",
+  "GenericGroup",
+  "BigGenericGroup",
+]);
 
 /**
  * Streaming CESR parser for message-domain and CESR-native body-group streams.
@@ -510,24 +497,37 @@ export class CesrParser {
       );
     }
 
-    const counter = parseCounter(input.slice(offset), activeVersion, cold);
+    const {
+      counter,
+      version: frameVersion,
+    } = this.resolveFrameStartCounter(
+      input.slice(offset),
+      activeVersion,
+      cold,
+    );
     const headerSize = tokenSize(counter, cold);
     const unit = quadletUnit(cold);
 
     // Body-group counters identify frame starts in CESR-native streams.
-    if (BODY_WITH_ATTACH_CODES.has(counter.code)) {
+    if (
+      counter.name === "BodyWithAttachmentGroup" ||
+      counter.name === "BigBodyWithAttachmentGroup"
+    ) {
       return this.parseBodyWithAttachmentGroup(
         input,
         offset,
         headerSize,
         counter.count,
         unit,
-        activeVersion,
-        activeVersion,
+        frameVersion,
+        frameVersion,
       );
     }
 
-    if (NON_NATIVE_BODY_CODES.has(counter.code)) {
+    if (
+      counter.name === "NonNativeBodyGroup" ||
+      counter.name === "BigNonNativeBodyGroup"
+    ) {
       return this.parseNonNativeBodyGroup(
         input,
         offset,
@@ -535,12 +535,17 @@ export class CesrParser {
         counter.count,
         unit,
         cold,
-        activeVersion,
-        activeVersion,
+        frameVersion,
+        frameVersion,
       );
     }
 
-    if (FIX_BODY_CODES.has(counter.code) || MAP_BODY_CODES.has(counter.code)) {
+    if (
+      counter.name === "FixBodyGroup" ||
+      counter.name === "BigFixBodyGroup" ||
+      counter.name === "MapBodyGroup" ||
+      counter.name === "BigMapBodyGroup"
+    ) {
       return this.parseNativeBodyGroup(
         input,
         offset,
@@ -548,20 +553,23 @@ export class CesrParser {
         counter.count,
         unit,
         cold,
-        activeVersion,
+        frameVersion,
         counter.code,
-        activeVersion,
+        frameVersion,
       );
     }
-    if (GENERIC_GROUP_CODES.has(counter.code)) {
+    if (
+      counter.name === "GenericGroup" ||
+      counter.name === "BigGenericGroup"
+    ) {
       return this.parseGenericGroup(
         input,
         offset,
         headerSize,
         counter.count,
         unit,
-        activeVersion,
-        activeVersion,
+        frameVersion,
+        frameVersion,
       );
     }
 
@@ -902,6 +910,58 @@ export class CesrParser {
       }
     }
     return null;
+  }
+
+  /**
+   * Resolve top-level frame-start counter with major-version fallback.
+   * Prefers the inherited stream version, but if that parse yields a non-frame
+   * counter name, tries the alternate major before failing.
+   */
+  private resolveFrameStartCounter(
+    input: Uint8Array,
+    preferredVersion: Versionage,
+    cold: "txt" | "bny",
+  ): { counter: Counter; version: Versionage } {
+    const alternate: Versionage = preferredVersion.major >= 2
+      ? { major: 1, minor: 0 }
+      : { major: 2, minor: 0 };
+    const attempts = [preferredVersion, alternate];
+    let firstParsed: { counter: Counter; version: Versionage } | null = null;
+    let firstError: Error | null = null;
+
+    for (const attempt of attempts) {
+      try {
+        const counter = parseCounter(input, attempt, cold);
+        if (!firstParsed) {
+          firstParsed = { counter, version: attempt };
+        }
+        if (FRAME_START_GROUP_NAMES.has(counter.name)) {
+          return { counter, version: attempt };
+        }
+      } catch (error) {
+        if (error instanceof ShortageError) {
+          throw error;
+        }
+        if (
+          error instanceof UnknownCodeError ||
+          error instanceof DeserializeError
+        ) {
+          if (!firstError) {
+            firstError = error;
+          }
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (firstParsed) {
+      return firstParsed;
+    }
+    if (firstError) {
+      throw firstError;
+    }
+    throw new ColdStartError("Unable to resolve frame-start counter");
   }
 
   /**

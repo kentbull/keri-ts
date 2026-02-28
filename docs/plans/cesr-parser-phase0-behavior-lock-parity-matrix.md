@@ -24,12 +24,12 @@ This document is the Phase 0 working matrix:
 Executed in `packages/cesr`:
 
 ```sh
-deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts test/unit/parser-pending-frame.test.ts test/unit/parser-wrapper-map-errors.test.ts test/unit/parser-mixed-stream.test.ts test/unit/parser-wrapper-big-count-parity.test.ts test/unit/parser-wrapper-version-context.test.ts test/unit/parser-boundary-shortage.test.ts
+deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts test/unit/parser-pending-frame.test.ts test/unit/parser-wrapper-map-errors.test.ts test/unit/parser-mixed-stream.test.ts test/unit/parser-wrapper-big-count-parity.test.ts test/unit/parser-wrapper-version-context.test.ts test/unit/parser-boundary-shortage.test.ts test/unit/parser-legacy-v1-implicit-version.test.ts
 ```
 
 Result:
 
-- 58 passed
+- 60 passed
 - 0 failed
 
 ## Parity Scope
@@ -71,6 +71,7 @@ Status legend:
 | Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                     | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics.                |
 | Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`, `parser-wrapper-big-count-parity.test.ts` | PARTIAL | Native, JSON+attachments, and big-wrapper parity are covered; broader random/corpus parity remains. |
 | Exact-cut shortage boundaries                      | KERIpy shortage/yield behavior at token boundaries                                            | `parser-boundary-shortage.test.ts`                                         | LOCKED  | V-P1-009 locks deterministic behavior after-header, mid-payload, and just-before-complete cuts. |
+| Legacy implicit-v1 (no selector) compatibility    | Deployed v1 streams without `KERIACDCGenusVersion`                                            | `parser-legacy-v1-implicit-version.test.ts`                                | LOCKED  | Legacy top-level v1 body/group streams are lock-tested without context/version selector counters. |
 | Multi-message mixed stream ordering               | KERIpy top-level counter/message boundary behavior                                             | `parser-mixed-stream.test.ts`                                              | LOCKED  | V-P1-005 locks deterministic order for JSON + native + wrapped frame sequences.                 |
 
 ## Missing Test Vector Catalog
@@ -196,6 +197,9 @@ Notation:
 2. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
 - Why: protects callers against accidental duplicate frame/error processing.
 
+3. `V-P1-013` Cold-start MGPK/CBOR Serder body-deserialization parity (`ked`/`ilk`/`said` extraction parity with KERIpy behavior).
+- Why: current parser framing/version parity exists for MGPK/CBOR, but body field extraction parity is needed for full interop behavior.
+
 ### Completed P1 Vectors
 
 1. `V-P1-001` Pending-frame continuation where next token is body-group counter (new frame boundary).
@@ -270,6 +274,7 @@ Notation:
 - `packages/cesr/test/unit/parser-wrapper-big-count-parity.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-boundary-shortage.test.ts` (completed, P1)
+- `packages/cesr/test/unit/parser-legacy-v1-implicit-version.test.ts` (completed, compatibility lock)
 
 If preferred, vectors may be added into existing files, but separate files improve review clarity for parity-only additions.
 
