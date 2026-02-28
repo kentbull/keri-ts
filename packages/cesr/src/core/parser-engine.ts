@@ -88,14 +88,26 @@ function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
   return cold === "txt" || cold === "bny";
 }
 
-/** Counter codes that begin a new frame domain rather than an attachment domain. */
-function isFrameBoundaryCounterCode(code: string): boolean {
-  return BODY_WITH_ATTACH_CODES.has(code) ||
-    NON_NATIVE_BODY_CODES.has(code) ||
-    FIX_BODY_CODES.has(code) ||
-    MAP_BODY_CODES.has(code) ||
-    GENERIC_GROUP_CODES.has(code) ||
-    code === GENUS_VERSION_CODE;
+/**
+ * Counter names that begin a new top-level frame domain.
+ * Name-based matching avoids v1/v2 code collisions (e.g., `-A`).
+ */
+const FRAME_BOUNDARY_COUNTER_NAMES = new Set([
+  "BodyWithAttachmentGroup",
+  "BigBodyWithAttachmentGroup",
+  "NonNativeBodyGroup",
+  "BigNonNativeBodyGroup",
+  "FixBodyGroup",
+  "BigFixBodyGroup",
+  "MapBodyGroup",
+  "BigMapBodyGroup",
+  "GenericGroup",
+  "BigGenericGroup",
+  "KERIACDCGenusVersion",
+]);
+
+function isFrameBoundaryCounter(counter: Counter): boolean {
+  return FRAME_BOUNDARY_COUNTER_NAMES.has(counter.name);
 }
 
 /**
@@ -255,14 +267,13 @@ export class CesrParser {
               );
             }
             if (
-              base.frame.body.kind === Kinds.cesr &&
-              this.isNativeFrameBoundaryAhead(
+              this.isFrameBoundaryAhead(
                 this.state.buffer,
                 streamVersion,
                 nextCold,
               )
             ) {
-              // Native streams may begin a new top-level frame with counter codes.
+              // Top-level streams may begin a new frame with counter codes.
               break;
             }
             const { group, consumed } = parseAttachmentGroup(
@@ -351,21 +362,18 @@ export class CesrParser {
       );
     }
 
-    // CESR native
-    if (this.pendingFrame.frame.body.kind === Kinds.cesr) {
-      if (
-        this.isNativeFrameBoundaryAhead(
-          this.state.buffer,
-          this.streamVersion,
-          nextCold,
-        )
-      ) {
-        out.push({ type: "frame", frame: this.pendingFrame.frame });
-        this.pendingFrame = null;
-        return true;
-      }
-      // Otherwise treat the next token as attachment material for this frame.
+    if (
+      this.isFrameBoundaryAhead(
+        this.state.buffer,
+        this.streamVersion,
+        nextCold,
+      )
+    ) {
+      out.push({ type: "frame", frame: this.pendingFrame.frame });
+      this.pendingFrame = null;
+      return true;
     }
+    // Otherwise treat the next token as attachment material for this frame.
 
     const consumed = this.appendAttachmentGroup(
       this.pendingFrame.frame.attachments,
@@ -410,14 +418,14 @@ export class CesrParser {
     }
   }
 
-  /** Probe whether next token is a native-body/frame boundary counter. */
-  private isNativeFrameBoundaryAhead(
+  /** Probe whether next token is a top-level frame-boundary counter. */
+  private isFrameBoundaryAhead(
     input: Uint8Array,
     version: Versionage,
     cold: "txt" | "bny",
   ): boolean {
-    const peek = parseCounter(input, version, cold);
-    return isFrameBoundaryCounterCode(peek.code);
+    const peek = this.tryParseCounter(input, version, cold);
+    return peek !== null && isFrameBoundaryCounter(peek);
   }
 
   /** Parse one attachment group and append it to `target`. */
@@ -491,7 +499,8 @@ export class CesrParser {
         frame: { body: serder, attachments: [] },
         consumed: offset + consumed,
         version: serder.gvrsn ?? serder.pvrsn,
-        streamVersion: activeVersion,
+        // Message-domain frames set top-level stream context to their own version.
+        streamVersion: serder.gvrsn ?? serder.pvrsn,
       };
     }
 
@@ -981,17 +990,15 @@ export class CesrParser {
           );
         }
 
-        if (base.frame.body.kind === Kinds.cesr) {
-          if (
-            this.isNativeFrameBoundaryAhead(
-              input.slice(offset),
-              streamVersion,
-              nextCold,
-            )
-          ) {
-            // Native streams may begin a new frame with counter codes.
-            break;
-          }
+        if (
+          this.isFrameBoundaryAhead(
+            input.slice(offset),
+            streamVersion,
+            nextCold,
+          )
+        ) {
+          // Top-level streams may begin a new frame with counter codes.
+          break;
         }
 
         const consumed = this.appendAttachmentGroup(

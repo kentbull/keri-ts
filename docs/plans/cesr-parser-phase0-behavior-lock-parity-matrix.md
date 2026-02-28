@@ -24,12 +24,12 @@ This document is the Phase 0 working matrix:
 Executed in `packages/cesr`:
 
 ```sh
-deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts test/unit/parser-pending-frame.test.ts test/unit/parser-wrapper-map-errors.test.ts
+deno test test/unit/parser.test.ts test/unit/parity.test.ts test/unit/chunk-fuzz.test.ts test/unit/external-fixtures.test.ts test/unit/parity-generic-group.test.ts test/unit/annotate.test.ts test/unit/parser-version-context.test.ts test/unit/parser-framed-mode.test.ts test/unit/parser-flush.test.ts test/unit/parser-pending-frame.test.ts test/unit/parser-wrapper-map-errors.test.ts test/unit/parser-mixed-stream.test.ts
 ```
 
 Result:
 
-- 51 passed
+- 53 passed
 - 0 failed
 
 ## Parity Scope
@@ -69,7 +69,8 @@ Status legend:
 | Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | `parser-version-context.test.ts`                                           | PARTIAL | V-P0-003/004/005 locked; additional mixed-format/version-stack permutations still pending.      |
 | Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | `parser-framed-mode.test.ts`                                               | LOCKED  | V-P0-007 locks bounded one-frame-per-drain-cycle emission for multi-frame feeds.               |
 | Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                     | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics.                |
-| Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | partial in fixtures                                                        | PARTIAL | Coverage exists for selected streams; broaden matrix.                                           |
+| Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`                | PARTIAL | Native and JSON+attachments parity are covered; broader random/corpus parity remains.           |
+| Multi-message mixed stream ordering               | KERIpy top-level counter/message boundary behavior                                             | `parser-mixed-stream.test.ts`                                              | LOCKED  | V-P1-005 locks deterministic order for JSON + native + wrapped frame sequences.                 |
 
 ## Missing Test Vector Catalog
 
@@ -188,31 +189,25 @@ Notation:
 
 ### P1 Vectors (Next Up)
 
-1. `V-P1-004` Mixed qb64/qb2 parity for JSON+attachments stream (not only native fixtures).
-- Why: broadens domain parity confidence.
-
-2. `V-P1-005` Multi-message mixed stream (JSON frame + native frame + wrapped frame) deterministic ordering.
-- Why: stream interoperability hardening.
-
-3. `V-P1-006` Big-counter parity for wrapper groups (`--A`/`--B`/`--C`) in both `txt` and `bny` domains.
+1. `V-P1-006` Big-counter parity for wrapper groups (`--A`/`--B`/`--C`) in both `txt` and `bny` domains.
 - Why: big-count header/size arithmetic is a distinct boundary path and regression-prone.
 
-4. `V-P1-007` `GenericGroup` payload with enclosed genus-version override and multiple enclosed frames.
+2. `V-P1-007` `GenericGroup` payload with enclosed genus-version override and multiple enclosed frames.
 - Why: locks combined version-context + `queuedFrames` emission semantics.
 
-5. `V-P1-008` Strict-mode nested mixed-version wrapper behavior (no fallback allowed).
+3. `V-P1-008` Strict-mode nested mixed-version wrapper behavior (no fallback allowed).
 - Why: parser-engine nested path should honor strict/compat policy boundaries explicitly.
 
-6. `V-P1-009` Boundary-shortage matrix at exact cut points (after header, mid-payload, just-before-complete).
+4. `V-P1-009` Boundary-shortage matrix at exact cut points (after header, mid-payload, just-before-complete).
 - Why: protects against off-by-one and resume/flush ordering regressions.
 
-7. `V-P1-010` Multiple genus-version counters inside one wrapper payload (latest override applies to subsequent nested groups).
+5. `V-P1-010` Multiple genus-version counters inside one wrapper payload (latest override applies to subsequent nested groups).
 - Why: locks in-wrapper version transition semantics.
 
-8. `V-P1-011` Recovery contract after parser error (`reset` and subsequent clean feed).
+6. `V-P1-011` Recovery contract after parser error (`reset` and subsequent clean feed).
 - Why: hardens long-lived parser usage in stream processors.
 
-9. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
+7. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
 - Why: protects callers against accidental duplicate frame/error processing.
 
 ### Completed P1 Vectors
@@ -227,6 +222,14 @@ Notation:
 
 3. `V-P1-003` Map-body dangling label and boundary mismatch errors.
 - Implemented in: `packages/cesr/test/unit/parser-wrapper-map-errors.test.ts`.
+- Status: passing.
+
+4. `V-P1-004` Mixed qb64/qb2 parity for JSON+attachments stream (not only native fixtures).
+- Implemented in: `packages/cesr/test/unit/parser-mixed-stream.test.ts`.
+- Status: passing.
+
+5. `V-P1-005` Multi-message mixed stream (JSON frame + native frame + wrapped frame) deterministic ordering.
+- Implemented in: `packages/cesr/test/unit/parser-mixed-stream.test.ts`.
 - Status: passing.
 
 ### P2 Vectors (Scale and Hardening)
@@ -257,6 +260,7 @@ Notation:
 - `packages/cesr/test/unit/parser-flush.test.ts` (completed)
 - `packages/cesr/test/unit/parser-pending-frame.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-wrapper-map-errors.test.ts` (completed, P1)
+- `packages/cesr/test/unit/parser-mixed-stream.test.ts` (completed, P1)
 
 If preferred, vectors may be added into existing files, but separate files improve review clarity for parity-only additions.
 
