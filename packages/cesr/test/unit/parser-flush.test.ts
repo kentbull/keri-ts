@@ -42,3 +42,35 @@ Deno.test("V-P0-009: flush emits pending frame then ShortageError when truncated
     assertEquals(flushed[1].error instanceof ShortageError, true);
   }
 });
+
+Deno.test("V-P1-012: flush idempotency emits pending frame only once", () => {
+  const parser = createParser();
+  const feedOut = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
+  assertEquals(feedOut.length, 0);
+
+  const first = parser.flush();
+  assertEquals(first.length, 1);
+  assertEquals(first[0].type, "frame");
+
+  const second = parser.flush();
+  assertEquals(second.length, 0);
+});
+
+Deno.test("V-P1-012: flush idempotency emits terminal shortage only once", () => {
+  const parser = createParser();
+  const truncatedAttachment = "-CAB";
+  const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${truncatedAttachment}`;
+  const feedOut = parser.feed(encode(stream));
+  assertEquals(feedOut.length, 0);
+
+  const first = parser.flush();
+  assertEquals(first.length, 2);
+  assertEquals(first[0].type, "frame");
+  assertEquals(first[1].type, "error");
+  if (first[1].type === "error") {
+    assertEquals(first[1].error instanceof ShortageError, true);
+  }
+
+  const second = parser.flush();
+  assertEquals(second.length, 0);
+});

@@ -191,13 +191,7 @@ Notation:
 
 ### P1 Vectors (Next Up)
 
-1. `V-P1-011` Recovery contract after parser error (`reset` and subsequent clean feed).
-- Why: hardens long-lived parser usage in stream processors.
-
-2. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
-- Why: protects callers against accidental duplicate frame/error processing.
-
-3. `V-P1-013` Cold-start MGPK/CBOR Serder body-deserialization parity (`ked`/`ilk`/`said` extraction parity with KERIpy behavior).
+1. `V-P1-013` Cold-start MGPK/CBOR Serder body-deserialization parity (`ked`/`ilk`/`said` extraction parity with KERIpy behavior).
 - Why: current parser framing/version parity exists for MGPK/CBOR, but body field extraction parity is needed for full interop behavior.
 
 ### Completed P1 Vectors
@@ -242,6 +236,14 @@ Notation:
 - Implemented in: `packages/cesr/test/unit/parser-wrapper-version-context.test.ts`.
 - Status: passing.
 
+11. `V-P1-011` Recovery contract after parser error (`reset` and subsequent clean feed).
+- Implemented in: `packages/cesr/test/unit/parser-recovery.test.ts`.
+- Status: passing.
+
+12. `V-P1-012` Flush idempotency (`flush()` called repeatedly does not duplicate emissions).
+- Implemented in: `packages/cesr/test/unit/parser-flush.test.ts`.
+- Status: passing.
+
 ### P2 Vectors (Scale and Hardening)
 
 1. `V-P2-001` Differential corpus tests against KERIpy across generated valid streams.
@@ -274,6 +276,7 @@ Notation:
 - `packages/cesr/test/unit/parser-wrapper-big-count-parity.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-boundary-shortage.test.ts` (completed, P1)
+- `packages/cesr/test/unit/parser-recovery.test.ts` (completed, P1)
 - `packages/cesr/test/unit/parser-legacy-v1-implicit-version.test.ts` (completed, compatibility lock)
 
 If preferred, vectors may be added into existing files, but separate files improve review clarity for parity-only additions.

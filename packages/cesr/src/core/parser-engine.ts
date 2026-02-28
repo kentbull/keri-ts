@@ -184,14 +184,18 @@ export class CesrParser {
       this.pendingFrame = null;
     }
     if (this.state.buffer.length === 0) return out;
+    const remainder = this.state.buffer.length;
     out.push({
       type: "error",
       error: new ShortageError(
-        this.state.buffer.length + 1,
-        this.state.buffer.length,
+        remainder + 1,
+        remainder,
         this.state.offset,
       ),
     });
+    // End-of-stream is terminal for buffered remainder; clear it so repeated
+    // flush() calls are idempotent and do not duplicate terminal errors.
+    this.consume(remainder);
     return out;
   }
 
