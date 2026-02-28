@@ -35,6 +35,8 @@ Completed baseline work that this roadmap now builds on:
   - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 - Atomic bounded-substream parser decision captured in ADR:
   - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+- Canonical parser lifecycle contract now defined in:
+  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 
 ## Phase Structure
 

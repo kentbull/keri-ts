@@ -6,6 +6,10 @@ This document is the maintainer-oriented map for the CESR parser and annotation
 stack in `packages/cesr`. It focuses on readability, extension points, and
 invariants that should stay stable as we push toward full KERIpy parity.
 
+Canonical parser lifecycle/state-machine contract:
+
+- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+
 ## Module map
 
 - `packages/cesr/src/core/parser-engine.ts`

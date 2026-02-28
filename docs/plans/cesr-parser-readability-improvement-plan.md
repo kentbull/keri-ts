@@ -252,6 +252,7 @@ Why:
 ## Related Docs
 
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 - `docs/plans/cesr-parser-buffer-perf-plan.md`
 - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`

@@ -16,6 +16,10 @@ Scope:
 - `packages/cesr/src/core/parser-engine.ts`
 - `packages/cesr/src/parser/group-dispatch.ts`
 
+Canonical lifecycle contract:
+
+- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+
 ## Core Idea
 
 For counted nested groups (`GenericGroup`, `BodyWithAttachmentGroup`,

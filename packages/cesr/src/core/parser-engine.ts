@@ -107,6 +107,13 @@ const FRAME_START_GROUP_NAMES = new Set([
  * @param options.onAttachmentVersionFallback - Callback for attachment version fallback
  */
 export class CesrParser {
+  /**
+   * Parser state contract (normative):
+   * `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+   *
+   * Keep state transitions and emission ordering aligned with that contract and
+   * its contract-to-test matrix.
+   */
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
   /** Active top-level stream version (affected by leading genus-version counters). */
   private streamVersion: Versionage = DEFAULT_VERSION;
@@ -172,16 +179,17 @@ export class CesrParser {
   /** Flush pending state at end-of-stream, emitting frame/error if needed. */
   flush(): CesrFrame[] {
     const out: CesrFrame[] = [];
-    // Queued GenericGroup frames are complete and safe to emit first.
+    // Stream-order invariant: when both pending and queued exist, emit pending
+    // first because it was encountered before queued enclosed siblings.
+    if (this.pendingFrame) {
+      out.push({ type: "frame", frame: this.pendingFrame.frame });
+      this.pendingFrame = null;
+    }
     while (this.queuedFrames.length > 0) {
       const frame = this.queuedFrames.shift();
       if (frame) {
         out.push({ type: "frame", frame });
       }
-    }
-    if (this.pendingFrame) {
-      out.push({ type: "frame", frame: this.pendingFrame.frame });
-      this.pendingFrame = null;
     }
     if (this.state.buffer.length === 0) return out;
     const remainder = this.state.buffer.length;
@@ -210,6 +218,10 @@ export class CesrParser {
    * Core streaming loop.
    * Keeps state machine behavior explicit: consume separators, parse a base
    * frame, then greedily collect trailing attachment groups.
+   *
+   * Contract invariants:
+   * - `pendingFrame` is always resumed before any queued enclosed frame emits.
+   * - `queuedFrames` are emitted before starting a new parse from `buffer`.
    */
   private drain(): CesrFrame[] {
     const out: CesrFrame[] = [];
@@ -227,7 +239,8 @@ export class CesrParser {
           }
           continue;
         }
-        // Emit deferred enclosed frames extracted from prior GenericGroup payload.
+        // Deferred enclosed frames from a prior GenericGroup emit only when no
+        // older pending top-level frame remains.
         if (this.queuedFrames.length > 0) {
           const frame = this.queuedFrames.shift();
           if (frame) {
@@ -332,6 +345,9 @@ export class CesrParser {
    * Returns:
    * - `true`: caller may continue drain loop immediately.
    * - `false`: parser should pause and wait for more bytes.
+   *
+   * Contract invariant: this method never emits queued enclosed frames; it only
+   * resolves or extends the existing pending top-level frame.
    */
   private resumePendingFrame(out: CesrFrame[]): boolean {
     if (!this.pendingFrame) return false;
@@ -971,6 +987,8 @@ export class CesrParser {
   /**
    * Parse GenericGroup payload into enclosed frames.
    * Returns the first enclosed frame and queues any remaining frames for emission.
+   *
+   * Contract invariant: `first` preserves encounter order relative to `rest`.
    */
   private parseGenericGroup(
     input: Uint8Array,
@@ -1016,6 +1034,9 @@ export class CesrParser {
   /**
    * Parse every frame inside one GenericGroup payload slice.
    * Input is already size-bounded by the GenericGroup counter.
+   *
+   * Contract invariant: consumes only the bounded payload slice and preserves
+   * enclosed frame order.
    */
   private parseFrameSequence(
     input: Uint8Array,

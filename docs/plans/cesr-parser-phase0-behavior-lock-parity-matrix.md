@@ -68,7 +68,7 @@ Status legend:
 | Top-level GenericGroup nesting and re-entry       | `test_parse_generic_group` (line ~3466), `test_group_parsator` (line ~3916)                   | `parity-generic-group.test.ts`                                                                                      | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | Version-stack behavior inside nested groups       | `test_parser_v1_version` (line ~404), enclosed/group tests with `KERIACDCGenusVersion`        | `parser-version-context.test.ts`                                                                                    | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | Framed-mode emission policy (`framed=true`)       | KERIpy framed parser mode used broadly                                                        | `parser-framed-mode.test.ts`                                                                                        | LOCKED  | V-P0-007 locks bounded one-frame-per-drain-cycle emission for multi-frame feeds.                                              |
-| Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                                                              | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics.                                              |
+| Flush behavior on pending frame + shortage tail   | KERIpy parsator extraction/shortage conventions                                               | `parser-flush.test.ts`                                                                                              | LOCKED  | V-P0-008 and V-P0-009 lock flush frame emission and shortage ordering semantics; V-P1-014 locks pending+queued stream-order preservation. |
 | Full-frame qb64/qb2 parity (same semantic result) | KERIpy txt/bny equivalence assumptions                                                        | `external-fixtures.test.ts`, `parser-mixed-stream.test.ts`, `parser-wrapper-big-count-parity.test.ts`               | PARTIAL | Core lock is complete for P0/P1; additional breadth is deferred to P2 hardening (`cesr-parser-p2-hardening-interop-plan.md`). |
 | Exact-cut shortage boundaries                     | KERIpy shortage/yield behavior at token boundaries                                            | `parser-boundary-shortage.test.ts`                                                                                  | LOCKED  | V-P1-009 locks deterministic behavior after-header, mid-payload, and just-before-complete cuts.                               |
 | Legacy implicit-v1 (no selector) compatibility    | Deployed v1 streams without `KERIACDCGenusVersion`                                            | `parser-legacy-v1-implicit-version.test.ts`                                                                         | LOCKED  | Legacy top-level v1 body/group streams are lock-tested without context/version selector counters.                             |
@@ -245,6 +245,10 @@ None currently.
 
 13. `V-P1-013` Cold-start MGPK/CBOR Serder body-deserialization parity (`ked`/`ilk`/`said` extraction parity with KERIpy behavior).
 - Implemented in: `packages/cesr/test/unit/parser-binary-serder.test.ts`.
+- Status: passing.
+
+14. `V-P1-014` `pendingFrame` + `queuedFrames` coexistence preserves stream order at flush (pending first, then queued).
+- Implemented in: `packages/cesr/test/unit/parser-flush.test.ts`.
 - Status: passing.
 
 ### P2 Hardening
