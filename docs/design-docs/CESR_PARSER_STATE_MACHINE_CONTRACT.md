@@ -105,7 +105,10 @@ reason about lifecycle behavior without re-deriving rules from control flow.
 
 These scopes are function-bounded and avoid a global mutable nested version stack.
 
-Remember, v1 streams do not have the `KERIACDCGenusVersion` indicator at stream start and instead in a cold start scenario rely on reading genus version from the first message body at the front of athe stream.
+Legacy note:
+
+- Deployed v1 streams may omit `KERIACDCGenusVersion` selectors at stream start.
+- In those cases, version context is inferred from the first parsed message/body semantics.
 
 ## Framed vs Unframed
 
