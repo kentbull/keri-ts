@@ -10,6 +10,7 @@ import {
   UnknownCodeError,
 } from "../core/errors.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
+import { b64ToInt, intToB64 } from "../core/bytes.ts";
 
 /**
  * Counter-group dispatcher for attachment payload parsing.
@@ -87,6 +88,8 @@ const WRAPPER_GROUP_CODES_V2 = new Set([
   CtrDexV2.BigBodyWithAttachmentGroup,
 ]);
 
+const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
+
 function primitiveSize(
   primitive: { fullSize: number; fullSizeB2: number },
   domain: ParseDomain,
@@ -100,6 +103,18 @@ function counterHeaderSize(counter: Counter, domain: ParseDomain): number {
 
 function quadletUnitSize(domain: ParseDomain): number {
   return domain === "bny" ? 3 : 4;
+}
+
+function decodeVersionCounter(counter: Counter): Versionage {
+  const triplet = counter.qb64.length >= 3
+    ? counter.qb64.slice(-3)
+    : intToB64(counter.count, 3);
+  const majorRaw = b64ToInt(triplet[0] ?? "A");
+  const minorRaw = b64ToInt(triplet[1] ?? "A");
+  return {
+    major: majorRaw === 1 ? 1 : 2,
+    minor: minorRaw,
+  };
 }
 
 function parseTuple(
@@ -181,13 +196,21 @@ function parseQuadletGroup(
     // Wrapper payload is a packed stream of nested groups (best effort).
     const items: unknown[] = [];
     let offset = 0;
+    let nestedVersion = version;
     while (offset < payload.length) {
       try {
+        const nestedCounter = parseCounter(payload.slice(offset), nestedVersion, domain);
+        if (nestedCounter.code === GENUS_VERSION_CODE) {
+          // Wrapper-scoped version override for subsequent nested groups.
+          offset += counterHeaderSize(nestedCounter, domain);
+          nestedVersion = decodeVersionCounter(nestedCounter);
+          continue;
+        }
         const nested = parseAttachmentDispatchCompat(
           // Allow mixed-version nested groups inside wrapper payloads.
           // Some real-world streams wrap v2 groups inside v1 wrappers.
           payload.slice(offset),
-          version,
+          nestedVersion,
           domain,
           context,
         );

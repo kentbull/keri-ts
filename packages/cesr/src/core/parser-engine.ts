@@ -109,6 +109,8 @@ function isFrameBoundaryCounterCode(code: string): boolean {
  */
 export class CesrParser {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
+  /** Active top-level stream version (affected by leading genus-version counters). */
+  private streamVersion: Versionage = DEFAULT_VERSION;
   /**
    * Determines how frame (CESR Message of body + atc) boundaries are established.
    *
@@ -198,6 +200,7 @@ export class CesrParser {
     this.state = { buffer: new Uint8Array(0), offset: 0 };
     this.pendingFrame = null;
     this.queuedFrames = [];
+    this.streamVersion = DEFAULT_VERSION;
   }
 
   /**
@@ -231,10 +234,12 @@ export class CesrParser {
           continue;
         }
 
-        const base = this.parseFrame(this.state.buffer);
+        const base = this.parseFrame(this.state.buffer, this.streamVersion);
         this.consume(base.consumed);
+        this.streamVersion = base.streamVersion;
         const attachments = [...base.frame.attachments];
         const version = base.version;
+        const streamVersion = base.streamVersion;
         let pausedForAttachmentShortage = false;
         try {
           while (this.state.buffer.length > 0) {
@@ -248,6 +253,17 @@ export class CesrParser {
               throw new ColdStartError(
                 `Unsupported attachment cold code ${nextCold}`,
               );
+            }
+            if (
+              base.frame.body.kind === Kinds.cesr &&
+              this.isNativeFrameBoundaryAhead(
+                this.state.buffer,
+                streamVersion,
+                nextCold,
+              )
+            ) {
+              // Native streams may begin a new top-level frame with counter codes.
+              break;
             }
             const { group, consumed } = parseAttachmentGroup(
               this.state.buffer,
@@ -340,7 +356,7 @@ export class CesrParser {
       if (
         this.isNativeFrameBoundaryAhead(
           this.state.buffer,
-          this.pendingFrame.version,
+          this.streamVersion,
           nextCold,
         )
       ) {
@@ -438,7 +454,12 @@ export class CesrParser {
   private parseFrame(
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
-  ): { frame: CesrMessage; consumed: number; version: Versionage } {
+  ): {
+    frame: CesrMessage;
+    consumed: number;
+    version: Versionage;
+    streamVersion: Versionage;
+  } {
     let offset = 0;
     let activeVersion = inheritedVersion;
 
@@ -470,6 +491,7 @@ export class CesrParser {
         frame: { body: serder, attachments: [] },
         consumed: offset + consumed,
         version: serder.gvrsn ?? serder.pvrsn,
+        streamVersion: activeVersion,
       };
     }
 
@@ -492,6 +514,7 @@ export class CesrParser {
         counter.count,
         unit,
         activeVersion,
+        activeVersion,
       );
     }
 
@@ -503,6 +526,7 @@ export class CesrParser {
         counter.count,
         unit,
         cold,
+        activeVersion,
         activeVersion,
       );
     }
@@ -517,6 +541,7 @@ export class CesrParser {
         cold,
         activeVersion,
         counter.code,
+        activeVersion,
       );
     }
     if (GENERIC_GROUP_CODES.has(counter.code)) {
@@ -526,6 +551,7 @@ export class CesrParser {
         headerSize,
         counter.count,
         unit,
+        activeVersion,
         activeVersion,
       );
     }
@@ -543,7 +569,13 @@ export class CesrParser {
     count: number,
     unit: number,
     version: Versionage,
-  ): { frame: CesrMessage; consumed: number; version: Versionage } {
+    streamVersion: Versionage,
+  ): {
+    frame: CesrMessage;
+    consumed: number;
+    version: Versionage;
+    streamVersion: Versionage;
+  } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -560,6 +592,7 @@ export class CesrParser {
       frame: nested.frame,
       consumed: offset + total,
       version: nested.frame.body.gvrsn ?? nested.frame.body.pvrsn,
+      streamVersion,
     };
   }
 
@@ -572,7 +605,13 @@ export class CesrParser {
     unit: number,
     cold: "txt" | "bny",
     version: Versionage,
-  ): { frame: CesrMessage; consumed: number; version: Versionage } {
+    streamVersion: Versionage,
+  ): {
+    frame: CesrMessage;
+    consumed: number;
+    version: Versionage;
+    streamVersion: Versionage;
+  } {
     const matter = parseMatter(input.slice(offset + headerSize), cold);
     const bodySize = tokenSize(matter, cold);
     const payloadSize = count * unit;
@@ -588,6 +627,7 @@ export class CesrParser {
         frame: { body: serder, attachments: [] },
         consumed: offset + headerSize + bodySize,
         version: serder.gvrsn ?? serder.pvrsn,
+        streamVersion,
       };
     } catch (_error) {
       // Intentional recovery: NonNativeBodyGroup payload is opaque CESR body data.
@@ -610,6 +650,7 @@ export class CesrParser {
         },
         consumed: offset + headerSize + bodySize,
         version,
+        streamVersion,
       };
     }
   }
@@ -624,7 +665,13 @@ export class CesrParser {
     cold: "txt" | "bny",
     version: Versionage,
     bodyCode: string,
-  ): { frame: CesrMessage; consumed: number; version: Versionage } {
+    streamVersion: Versionage,
+  ): {
+    frame: CesrMessage;
+    consumed: number;
+    version: Versionage;
+    streamVersion: Versionage;
+  } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -654,6 +701,7 @@ export class CesrParser {
       },
       consumed: offset + total,
       version,
+      streamVersion,
     };
   }
 
@@ -858,7 +906,13 @@ export class CesrParser {
     count: number,
     unit: number,
     version: Versionage,
-  ): { frame: CesrMessage; consumed: number; version: Versionage } {
+    streamVersion: Versionage,
+  ): {
+    frame: CesrMessage;
+    consumed: number;
+    version: Versionage;
+    streamVersion: Versionage;
+  } {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
     if (input.length < offset + total) {
@@ -882,6 +936,7 @@ export class CesrParser {
       frame: first,
       consumed: offset + total,
       version: first.body.gvrsn ?? first.body.pvrsn,
+      streamVersion,
     };
   }
 
@@ -908,6 +963,7 @@ export class CesrParser {
       const base = this.parseFrame(input.slice(offset), activeVersion);
       offset += base.consumed;
       const frameVersion = base.version;
+      const streamVersion = base.streamVersion;
       const attachments = [...base.frame.attachments];
 
       while (offset < input.length) {
@@ -929,7 +985,7 @@ export class CesrParser {
           if (
             this.isNativeFrameBoundaryAhead(
               input.slice(offset),
-              frameVersion,
+              streamVersion,
               nextCold,
             )
           ) {
@@ -951,7 +1007,7 @@ export class CesrParser {
         body: base.frame.body,
         attachments,
       });
-      activeVersion = frameVersion;
+      activeVersion = base.streamVersion;
     }
 
     return out;

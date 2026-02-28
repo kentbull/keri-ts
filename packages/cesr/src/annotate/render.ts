@@ -338,6 +338,19 @@ function renderMessageBody(
   options: Required<AnnotateOptions>,
 ): void {
   const rawBody = TEXT_DECODER.decode(frame.body.raw);
+  const isOpaqueCesrBody = frame.body.kind === "CESR" && frame.body.ked === null;
+
+  if (isOpaqueCesrBody) {
+    emitLine(
+      lines,
+      rawBody,
+      `OPAQUE CESR body (non-serder fallback, hex=${toHex(frame.body.raw)})`,
+      0,
+      options,
+    );
+    return;
+  }
+
   let body = rawBody;
   if (options.pretty && frame.body.kind === "JSON") {
     try {

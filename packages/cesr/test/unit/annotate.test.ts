@@ -2,7 +2,7 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { annotateCli } from "../../src/annotate/cli.ts";
-import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   COUNTER_SIZES_V1,
   COUNTER_SIZES_V2,
@@ -30,6 +30,13 @@ function counterV1(code: string, count: number): string {
   const sizage = COUNTER_SIZES_V1.get(code);
   if (!sizage) throw new Error(`Unknown counter code ${code}`);
   return `${code}${intToB64(count, sizage.ss)}`;
+}
+
+function genusVersionCounter(major: 1 | 2, minor = 0): string {
+  const patch = 0;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
+    intToB64(minor, 1)
+  }${intToB64(patch, 1)}`;
 }
 
 function v1ify(raw: string): string {
@@ -127,6 +134,17 @@ Deno.test("annotate supports legacy v1 SadPathSig inside attachment wrapper", ()
   assertStringIncludes(annotated, "SadPathSig");
   assertStringIncludes(annotated, "TransIdxSigGroups");
   assertEquals(annotated.includes("opaque wrapper payload"), false);
+});
+
+Deno.test("annotate labels non-serder CESR fallback body as opaque (not SERDER)", () => {
+  const nonNativeV1 = `${counterV1(CtrDexV1.NonNativeBodyGroup, 1)}MAAA`;
+  const enclosed = `${genusVersionCounter(1)}${nonNativeV1}`;
+  const wrapped = `${counterV2(CtrDexV2.BodyWithAttachmentGroup, enclosed.length / 4)}${enclosed}`;
+  const ims = `${wrapped}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+
+  const annotated = annotate(ims);
+  assertStringIncludes(annotated, "OPAQUE CESR body (non-serder fallback");
+  assertEquals(annotated.includes("SERDER KERI CESR"), false);
 });
 
 Deno.test("annotateCli --pretty pretty-prints JSON body", async () => {
