@@ -14,6 +14,7 @@ import { reapSerder } from "../serder/serdery.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 import { b64ToInt, intToB64 } from "./bytes.ts";
+import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import {
   ColdStartError,
   DeserializeError,
@@ -42,6 +43,7 @@ interface FrameParserOptions {
   frameBoundaryPolicy: FrameBoundaryPolicy;
   attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
   onEnclosedFrames: (frames: CesrMessage[]) => void;
+  recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 }
 
 /** Parsed frame-start result consumed by top-level parser orchestration. */
@@ -65,12 +67,14 @@ export class FrameParser {
   private readonly attachmentVersionFallbackPolicy:
     AttachmentVersionFallbackPolicy;
   private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
+  private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
   constructor(options: FrameParserOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
     this.attachmentVersionFallbackPolicy =
       options.attachmentVersionFallbackPolicy;
     this.onEnclosedFrames = options.onEnclosedFrames;
+    this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
   }
 
   /** Probe whether the next token is a top-level frame boundary counter. */
@@ -428,6 +432,7 @@ export class FrameParser {
           nextCold,
           {
             versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+            onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
           },
         );
         attachments.push(group);
@@ -482,6 +487,7 @@ export class FrameParser {
         nextCold,
         {
           versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+          onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
         },
       );
       attachments.push(group);

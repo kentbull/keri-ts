@@ -2,6 +2,7 @@ export * from "./core/types.ts";
 export * from "./core/errors.ts";
 export * from "./core/parser-engine.ts";
 export * from "./core/parser-policy.ts";
+export * from "./core/recovery-diagnostics.ts";
 export * from "./parser/cold-start.ts";
 export * from "./parser/group-dispatch.ts";
 export * from "./serder/smell.ts";

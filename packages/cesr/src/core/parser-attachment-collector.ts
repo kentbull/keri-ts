@@ -7,12 +7,14 @@ import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isAttachmentDomain } from "./parser-constants.ts";
 import type { FrameBoundaryPolicy } from "./parser-policy.ts";
+import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import type { AttachmentGroup, CesrMessage } from "./types.ts";
 
 /** Dependency-injected attachment collection policies and hooks. */
 interface AttachmentCollectorOptions {
   frameBoundaryPolicy: FrameBoundaryPolicy;
   attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   isFrameBoundaryAhead: (
     input: Uint8Array,
     version: Versionage,
@@ -43,6 +45,7 @@ export class AttachmentCollector {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
   private readonly attachmentVersionFallbackPolicy:
     AttachmentVersionFallbackPolicy;
+  private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
     version: Versionage,
@@ -53,6 +56,7 @@ export class AttachmentCollector {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
     this.attachmentVersionFallbackPolicy =
       options.attachmentVersionFallbackPolicy;
+    this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }
 
@@ -101,6 +105,7 @@ export class AttachmentCollector {
           nextCold,
           {
             versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+            onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
           },
         );
         attachments.push(group);
@@ -178,6 +183,7 @@ export class AttachmentCollector {
       nextCold,
       {
         versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+        onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
       },
     );
     pendingFrame.attachments.push(group);

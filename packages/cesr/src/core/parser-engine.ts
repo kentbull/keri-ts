@@ -15,6 +15,10 @@ import {
   createFrameBoundaryPolicy,
   type FrameBoundaryPolicy,
 } from "./parser-policy.ts";
+import {
+  composeRecoveryDiagnosticObserver,
+  type RecoveryDiagnosticObserver,
+} from "./recovery-diagnostics.ts";
 
 export interface ParserOptions {
   /** Legacy framed toggle; used only when `frameBoundaryPolicy` is not injected. */
@@ -24,8 +28,10 @@ export interface ParserOptions {
    * `attachmentVersionFallbackPolicy` is not injected.
    */
   attachmentDispatchMode?: AttachmentDispatchOptions["mode"];
-  /** Optional observer used by default compat fallback policy construction. */
+  /** Legacy fallback observer; adapted from structured diagnostics events. */
   onAttachmentVersionFallback?: (info: VersionFallbackInfo) => void;
+  /** Structured recovery diagnostics observer (preferred observability path). */
+  onRecoveryDiagnostic?: RecoveryDiagnosticObserver;
   /** Explicit frame-boundary strategy override (preferred for new integrations). */
   frameBoundaryPolicy?: FrameBoundaryPolicy;
   /**
@@ -51,6 +57,7 @@ export class CesrParser {
   private readonly deferred: DeferredFrameLifecycle;
   private readonly frameParser: FrameParser;
   private readonly attachmentCollector: AttachmentCollector;
+  private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
   /**
    * Compose parser collaborators with injected policy strategies.
@@ -62,11 +69,16 @@ export class CesrParser {
   constructor(options: ParserOptions = {}) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy ??
       createFrameBoundaryPolicy(options.framed ?? false);
+    this.recoveryDiagnosticObserver = composeRecoveryDiagnosticObserver({
+      onRecoveryDiagnostic: options.onRecoveryDiagnostic,
+      onAttachmentVersionFallback: options.attachmentVersionFallbackPolicy
+        ? undefined
+        : options.onAttachmentVersionFallback,
+    });
     const attachmentVersionFallbackPolicy =
       options.attachmentVersionFallbackPolicy ??
         createAttachmentVersionFallbackPolicy({
           mode: options.attachmentDispatchMode,
-          onVersionFallback: options.onAttachmentVersionFallback,
         });
 
     this.stream = new ParserStreamState(DEFAULT_VERSION);
@@ -75,10 +87,12 @@ export class CesrParser {
       frameBoundaryPolicy: this.frameBoundaryPolicy,
       attachmentVersionFallbackPolicy,
       onEnclosedFrames: (frames) => this.deferred.enqueueQueued(frames),
+      recoveryDiagnosticObserver: this.recoveryDiagnosticObserver,
     });
     this.attachmentCollector = new AttachmentCollector({
       frameBoundaryPolicy: this.frameBoundaryPolicy,
       attachmentVersionFallbackPolicy,
+      recoveryDiagnosticObserver: this.recoveryDiagnosticObserver,
       isFrameBoundaryAhead: (input, version, cold) =>
         this.frameParser.isFrameBoundaryAhead(input, version, cold),
     });
@@ -223,6 +237,12 @@ export class CesrParser {
         const normalized = error instanceof ParserError
           ? error
           : new ParserError(String(error), this.stream.offset);
+        this.recoveryDiagnosticObserver?.({
+          type: "parser-error-reset",
+          offset: this.stream.offset,
+          errorName: normalized.name,
+          reason: normalized.message,
+        });
         out.push({ type: "error", error: normalized });
         this.reset();
         break;

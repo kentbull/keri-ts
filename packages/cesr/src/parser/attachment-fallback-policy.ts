@@ -200,20 +200,13 @@ class CompatAttachmentVersionFallbackPolicy
   }
 
   /**
-   * Emit fallback event through callback, otherwise default warning.
+   * Emit fallback event through optional callback.
    *
    * Why:
-   * keeps observability caller-controlled while preserving legacy warning
-   * behavior when no callback is supplied.
+   * keeps observability side effects caller-controlled.
    */
   onVersionFallback(info: VersionFallbackInfo): void {
-    if (this.fallbackObserver) {
-      this.fallbackObserver(info);
-      return;
-    }
-    console.warn(
-      `CESR attachment dispatch fallback ${info.from.major}.${info.from.minor} -> ${info.to.major}.${info.to.minor} (${info.domain}): ${info.reason}`,
-    );
+    this.fallbackObserver?.(info);
   }
 
   /**

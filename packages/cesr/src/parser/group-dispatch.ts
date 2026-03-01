@@ -15,6 +15,10 @@ import {
 } from "../tables/counter-version-registry.ts";
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import {
+  composeRecoveryDiagnosticObserver,
+  type RecoveryDiagnosticObserver,
+} from "../core/recovery-diagnostics.ts";
+import {
   type AttachmentDispatchDomain,
   type AttachmentVersionFallbackPolicy,
   type AttachmentVersionFallbackPolicyOptions,
@@ -72,17 +76,25 @@ function nestedGroupItem(
   return { kind: "group", code, name, count };
 }
 
+/** Normalize unknown throwables to an `Error` for diagnostic emission. */
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 /**
  * Public options for attachment dispatch behavior and fallback observability.
  *
  * Precedence:
  * 1) `versionFallbackPolicy` when provided (fully explicit strategy injection)
- * 2) otherwise build default strategy from `mode` + `onVersionFallback`
+ * 2) otherwise build default strategy from `mode` and adapt
+ *    `onVersionFallback` into structured diagnostics.
  */
 export interface AttachmentDispatchOptions
   extends AttachmentVersionFallbackPolicyOptions {
   /** Explicit strategy override for fallback + wrapper remainder decisions. */
   versionFallbackPolicy?: AttachmentVersionFallbackPolicy;
+  /** Structured recovery diagnostics observer. */
+  onRecoveryDiagnostic?: RecoveryDiagnosticObserver;
 }
 
 /**
@@ -94,6 +106,7 @@ export interface AttachmentDispatchOptions
  */
 interface AttachmentDispatchPolicyContext {
   versionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 }
 
 /** Parser contract for one attachment-group counter code. */
@@ -681,22 +694,32 @@ function parseQuadletGroup(
         }
         offset += nested.consumed;
       } catch (error) {
+        const normalized = asError(error);
         if (
-          error instanceof ShortageError ||
-          error instanceof GroupSizeError
+          normalized instanceof ShortageError ||
+          normalized instanceof GroupSizeError
         ) {
-          throw error;
+          throw normalized;
         }
         if (
           !context.versionFallbackPolicy.shouldPreserveWrapperRemainder(
-            error as Error,
+            normalized,
           )
         ) {
-          throw error;
+          throw normalized;
         }
         // Intentional recovery point: keep unread wrapper tail as opaque units.
         const remainder = payload.slice(offset);
         const opaque = splitOpaqueUnits(remainder, domain, undefined, true);
+        context.recoveryDiagnosticObserver?.({
+          type: "wrapper-opaque-tail-preserved",
+          version: nestedVersion,
+          domain,
+          wrapperCode: counter.code,
+          opaqueItemCount: opaque.length,
+          errorName: normalized.name,
+          reason: normalized.message,
+        });
         items.push(...opaque);
         offset = payload.length;
       }
@@ -1057,14 +1080,29 @@ function parseAttachmentDispatchWithPolicy(
   try {
     return parseAttachmentDispatchWithVersion(input, version, domain, context);
   } catch (error) {
+    const normalized = asError(error);
     const decision = context.versionFallbackPolicy.onVersionDispatchFailure(
-      error as Error,
+      normalized,
       version,
       domain,
     );
     if (decision.action === "throw") {
-      throw error;
+      context.recoveryDiagnosticObserver?.({
+        type: "version-fallback-rejected",
+        version,
+        domain,
+        errorName: normalized.name,
+        reason: normalized.message,
+      });
+      throw normalized;
     }
+    context.recoveryDiagnosticObserver?.({
+      type: "version-fallback-accepted",
+      from: decision.info.from,
+      to: decision.info.to,
+      domain: decision.info.domain,
+      reason: decision.info.reason,
+    });
     context.versionFallbackPolicy.onVersionFallback(decision.info);
     return parseAttachmentDispatchWithVersion(
       input,
@@ -1091,10 +1129,16 @@ export function parseAttachmentDispatchCompat(
   const versionFallbackPolicy = options.versionFallbackPolicy ??
     createAttachmentVersionFallbackPolicy({
       mode: options.mode,
-      onVersionFallback: options.onVersionFallback,
     });
+  const recoveryDiagnosticObserver = composeRecoveryDiagnosticObserver({
+    onRecoveryDiagnostic: options.onRecoveryDiagnostic,
+    onAttachmentVersionFallback: options.versionFallbackPolicy
+      ? undefined
+      : options.onVersionFallback,
+  });
   const context: AttachmentDispatchPolicyContext = {
     versionFallbackPolicy,
+    recoveryDiagnosticObserver,
   };
   return parseAttachmentDispatchWithPolicy(input, version, domain, context);
 }

@@ -14,7 +14,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
 - Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
 - Point 5 (`Convert dispatch definitions to a single declarative spec`) is complete as of 2026-03-01.
-- Point 6 (`Make recovery behavior explicit, configurable, and observable`) remains pending and re-scoped to diagnostics/observability after explicit/configurable baseline landed via Points 3/4.
+- Point 6 (`Make recovery behavior explicit, configurable, and observable`) is complete as of 2026-03-01 with structured recovery diagnostics and removal of default warning side effects.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -45,7 +45,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 8. **Dispatch behavior**
 - `strict`: no major fallback.
-- `compat`: fallback on unknown/deserialize errors with callback support (default warning fallback remains transitional until Point 6 observability slice lands).
+- `compat`: fallback on unknown/deserialize errors with structured diagnostics; legacy fallback callback is adapter-backed for backward compatibility.
 - v1/v2 dispatch maps, wrapper-code sets, and siger-list allowances are generated from one declarative descriptor spec.
 
 9. **Flush semantics**
@@ -71,11 +71,11 @@ Persistent CESR parser memory for `keri-ts`.
 - Legacy v1 `-J/-K` compatibility aliases are explicitly tracked as allowlisted exceptions (not first-class entries in `CtrDexByVersion`), with invariants ensuring auditable behavior.
 
 14. **Readability plan tail (Points 6-10) recalibrated**
-- Point 6 is now explicitly the next active implementation step and is scoped to structured diagnostics/observability for existing recovery semantics.
+- Point 6 is complete with one `RecoveryDiagnostic` contract (`version-fallback-accepted`, `version-fallback-rejected`, `wrapper-opaque-tail-preserved`, `parser-error-reset`) at parser/dispatch boundaries.
 - Point 7 remains pending but narrowed to targeted syntax-artifact extraction in high-coupling paths rather than a global two-pass rewrite.
 - Point 8 status is now “in progress” with completed Phase 5 parity/invariant coverage acknowledged and P2 breadth still remaining.
 - Point 9 remains docs-first and targeted (no broad rename churn).
-- Point 10 remains deferred and benchmark-gated after Point 6 + critical Point 8 hardening.
+- Point 10 remains deferred and benchmark-gated after critical Point 8 hardening.
 
 ## Key Docs
 
@@ -89,10 +89,10 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Implement re-scoped Point 6 observability slice (typed recovery diagnostics + removal of default warning side effects).
-2. Keep lifecycle contract matrix synchronized with new tests/behavior.
-3. Execute P2 hardening vectors prior to broad ecosystem rollout.
-4. Execute narrowed Point 7 targeted syntax/semantic boundary extraction after Point 6 stabilizes.
+1. Keep lifecycle contract matrix synchronized with diagnostics and recovery behavior tests.
+2. Execute P2 hardening vectors prior to broad ecosystem rollout.
+3. Execute narrowed Point 7 targeted syntax/semantic boundary extraction.
+4. Monitor downstream migration from legacy `onAttachmentVersionFallback` toward `onRecoveryDiagnostic`.
 
 ## Handoff Log
 
@@ -347,3 +347,24 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Keep phased roadmap and improvement-plan status language synchronized as Point 6 implementation lands.
+
+### 2026-03-01 - Point 6 Recovery Observability Implementation
+- What changed:
+  - Added typed `RecoveryDiagnostic` contract and observer adapter in `packages/cesr/src/core/recovery-diagnostics.ts`.
+  - Wired parser/dispatch observability hooks so recovery emits structured diagnostics for:
+    - accepted version fallback retry,
+    - rejected version fallback,
+    - wrapper opaque-tail preservation,
+    - parser non-shortage error + reset.
+  - Removed default `console.warn` behavior from compat fallback policy and preserved callback compatibility through diagnostics adapter wiring.
+  - Added focused diagnostics tests in `packages/cesr/test/unit/parser-recovery-diagnostics.test.ts`.
+- Why:
+  - Complete Point 6 by unifying recovery observability under one typed contract while preserving strict/compat semantics.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `132 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Keep `onAttachmentVersionFallback` adapter behavior stable until downstream consumers migrate to `onRecoveryDiagnostic`.

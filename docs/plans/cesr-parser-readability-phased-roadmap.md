@@ -48,6 +48,10 @@ Completed baseline work that this roadmap now builds on:
 - Point 5 declarative dispatch spec landed:
   - `group-dispatch.ts` now defines one descriptor source for dispatch metadata.
   - v1/v2 dispatch maps and related wrapper/siger sets are mechanically derived from descriptors.
+- Point 6 recovery observability landed:
+  - parser and dispatch now emit typed `RecoveryDiagnostic` events for fallback accepted/rejected, wrapper opaque-tail preservation, and parser error-reset context,
+  - legacy fallback callback remains adapter-compatible,
+  - default compat warning side effects were removed.
 - Phase 5 minor-version model + codex subset parity landed:
   - version-aware `(major, minor)` codex/table registries and resolver semantics are now explicit,
   - `CtrDexByVersion` / `UniDexByVersion` / `SUDexByVersion` / `MUDexByVersion` are exported,
@@ -152,18 +156,18 @@ Points covered:
 
 Status:
 
-- Partially complete (Point 3 complete on 2026-03-01; Point 6 narrowed to observability work and queued after Phase 5).
+- Completed on 2026-03-01 (Point 3 policy extraction + Point 6 recovery observability).
 
 Scope:
 
 - completed: replace boolean behavior branching with injected policies
-- pending: convert existing fallback/recovery decisions into structured diagnostics outcomes
-- pending: remove default warning side effects in fallback policy paths by routing through explicit diagnostics observers
+- completed: convert existing fallback/recovery decisions into structured diagnostics outcomes
+- completed: remove default warning side effects in fallback policy paths by routing through explicit diagnostics observers
 
 Deliverables:
 
 - completed: policy interfaces and default implementations
-- pending: structured fallback/recovery events and diagnostics hooks
+- completed: structured fallback/recovery events and diagnostics hooks
 
 Exit criteria:
 

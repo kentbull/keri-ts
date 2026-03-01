@@ -11,8 +11,9 @@
   - Completed: Point 3 (`Replace boolean policy branching with strategy interfaces`)
   - Completed: Point 4 (`Replace unknown[] attachment payloads with discriminated types`)
   - Completed: Point 5 (`Convert dispatch definitions to a single declarative spec`)
-  - Next: Point 6 (`Make recovery behavior explicit, configurable, and observable`)
-    - Re-scoped on 2026-03-01: explicit/configurable baseline landed in Points 3 and 4; remaining scope is structured recovery observability.
+  - Completed: Point 6 (`Make recovery behavior explicit, configurable, and observable`)
+    - Completed on 2026-03-01 with structured diagnostics contract + observer wiring.
+  - Next: Point 7 (`Separate syntax parsing from semantic interpretation`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -53,7 +54,7 @@ The parser now includes several concrete behaviors that should be treated as bas
   - leading genus-version selectors supported at top-level and inside wrappers,
   - legacy implicit-v1 stream handling is lock-tested.
 - Recovery and boundary behavior:
-  - strict/compat attachment dispatch mode with fallback callback,
+  - strict/compat attachment dispatch mode with structured recovery diagnostics and legacy fallback callback adapter,
   - `flush()` terminal-shortage idempotency,
   - reset-and-recover behavior lock tests.
 - Binary message support:
@@ -223,15 +224,18 @@ Why:
 
 Status:
 
-- Pending (next active implementation step after Phase 5 completion).
-- Calibration:
-  - Explicit/configurable recovery baseline is already in place:
-    - Point 3 introduced injected `AttachmentVersionFallbackPolicy` strategies for strict/compat dispatch retry and wrapper-remainder decisions.
-    - Point 4 made wrapper-tail recovery artifacts explicit via typed `AttachmentItem` payloads with `opaque: true`.
-  - Phase 5 completion hardened version/codex semantics, reducing ambiguity in where recovery decisions originate.
-  - Remaining gap is observability normalization: recovery decisions are still surfaced via callback-or-warning behavior rather than one structured diagnostics contract.
-
-Remaining work in this point focuses on observability for existing recovery behavior (mixed-version compat and opaque wrapper tails), not on introducing new fallback semantics.
+- Completed on 2026-03-01.
+- Completion evidence:
+  - `packages/cesr/src/core/recovery-diagnostics.ts` (`RecoveryDiagnostic` union + diagnostics/callback observer adapter)
+  - diagnostics observer wiring in:
+    - `packages/cesr/src/core/parser-engine.ts`
+    - `packages/cesr/src/core/parser-frame-parser.ts`
+    - `packages/cesr/src/core/parser-attachment-collector.ts`
+    - `packages/cesr/src/parser/group-dispatch.ts`
+  - `packages/cesr/src/parser/attachment-fallback-policy.ts` default warning side-effect removal.
+  - Focused diagnostics contract tests:
+    - `packages/cesr/test/unit/parser-recovery-diagnostics.test.ts`
+  - Full suite verification in `packages/cesr`: `deno task test` (`132 passed, 0 failed`).
 
 Deliverables:
 
@@ -243,7 +247,7 @@ Deliverables:
 - Backward-compatible adapter path from existing `onAttachmentVersionFallback` to new diagnostics hook contract.
 - Remove default `console.warn` fallback path from policy implementations in favor of explicit observer wiring.
 - Focused tests that lock diagnostics emission shape/count/order in strict and compat modes.
-- Keep strict/compat as the baseline recovery modes; defer any new permissive mode until interop evidence requires it.
+- Keep strict/compat as the baseline recovery modes; any new permissive mode remains deferred until interop evidence requires it.
 
 Why:
 

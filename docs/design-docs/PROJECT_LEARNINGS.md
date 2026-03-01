@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1, 2, 3, 4, and 5 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is now implemented; Point 6 recovery observability diagnostics is the critical next parser milestone).
+1. CESR parser readability roadmap execution (Points 1-6 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is implemented; Point 7 targeted syntax/semantic boundary extraction is now the next parser milestone).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -58,7 +58,7 @@ This keeps context focused and avoids long-thread drift.
 
 1. Point 3 policy extraction is complete with injected `FrameBoundaryPolicy` and `AttachmentVersionFallbackPolicy` strategy interfaces.
 2. Core parser collaborators now delegate framed/unframed cadence decisions through policy methods instead of boolean branches.
-3. Attachment dispatch strict/compat behavior is strategy-driven and still preserves existing default fallback semantics and callback/warning behavior.
+3. Attachment dispatch strict/compat behavior is strategy-driven and now emits structured recovery diagnostics instead of default warning side effects.
 4. Legacy parser options remain backward-compatible by constructing default policies from `framed`, `attachmentDispatchMode`, and `onAttachmentVersionFallback`.
 5. Full CESR suite remains green after refactor (`119 passed, 0 failed`).
 6. Follow-up modularization moved fallback policy implementations to `parser/attachment-fallback-policy.ts`, reducing `group-dispatch.ts` scope while preserving exports/behavior.
@@ -69,9 +69,12 @@ This keeps context focused and avoids long-thread drift.
 11. `AGENTS.md` now explicitly encodes learner/maintainer-first and compile-time-typed deterministic parser design bias for future task threads.
 12. Phased roadmap has been re-sequenced so minor-version model rectification and codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs) is explicit Phase 5 and the former hardening phase is now Phase 6.
 13. `semanticShape` metadata is now enforced by invariants (parser-kind/flag contracts and shape-coverage assertions), shifting it from documentation-only to auditable specification.
-14. Point 6 recovery task definition has been recalibrated: strict/compat policy injection and typed opaque recovery artifacts are already complete; remaining scope is unified structured diagnostics and removal of default warning side effects.
+14. Point 6 recovery task definition was recalibrated before implementation: strict/compat policy injection and typed opaque recovery artifacts were already complete, so remaining work was narrowed to diagnostics and warning-side-effect removal.
 15. Phase 5 is now implemented in code/tests: parser counter and dispatch lookup paths resolve through explicit major/minor registries, and `CtrDex`/`UniDex`/`SUDex`/`MUDex` subset parity plus legacy alias allowances are invariant-locked.
-16. Readability plan steps 6-10 have been recalibrated to match current maturity: Point 6 is immediate and diagnostics-focused, Point 7 is narrowed to targeted boundary extraction, Point 8 is in-progress with Phase 5 parity/invariants complete, and Points 9/10 remain intentionally constrained.
+16. Readability plan steps 6-10 remain calibrated to current maturity: Point 6 is now complete (diagnostics-focused), Point 7 is narrowed to targeted boundary extraction, Point 8 is in-progress with Phase 5 parity/invariants complete, and Points 9/10 remain intentionally constrained.
+17. Point 6 is now implemented in code/tests: parser and dispatch layers share one typed `RecoveryDiagnostic` observer contract covering fallback accepted/rejected, wrapper opaque-tail preservation, and parser error-reset recovery context.
+18. Legacy `onAttachmentVersionFallback` behavior remains backward-compatible via diagnostics adapter wiring, while default compat fallback warning side effects (`console.warn`) are removed.
+19. Full CESR suite remains green after Point 6 implementation (`132 passed, 0 failed`).
 
 ## New Thread Kickoff Template
 
