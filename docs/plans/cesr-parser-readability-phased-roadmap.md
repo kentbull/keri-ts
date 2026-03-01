@@ -43,6 +43,9 @@ Completed baseline work that this roadmap now builds on:
 - Point 4 typed payload migration landed:
   - `AttachmentGroup.items` now uses discriminated `AttachmentItem` unions.
   - Wrapper-tail recovery items are explicitly tagged as opaque.
+- Point 5 declarative dispatch spec landed:
+  - `group-dispatch.ts` now defines one descriptor source for dispatch metadata.
+  - v1/v2 dispatch maps and related wrapper/siger sets are mechanically derived from descriptors.
 
 ## Phase Structure
 
@@ -171,7 +174,7 @@ Points covered:
 
 Status:
 
-- In progress (Point 4 complete on 2026-03-01; Points 5 and 7 work remains).
+- In progress (Points 4 and 5 complete on 2026-03-01; Point 7 work remains).
 
 Scope:
 

@@ -10,7 +10,8 @@
   - Completed: Point 2 (`Decompose CesrParser into focused collaborators`)
   - Completed: Point 3 (`Replace boolean policy branching with strategy interfaces`)
   - Completed: Point 4 (`Replace unknown[] attachment payloads with discriminated types`)
-  - Next: Point 5 (`Convert dispatch definitions to a single declarative spec`)
+  - Completed: Point 5 (`Convert dispatch definitions to a single declarative spec`)
+  - Next: Point 6 (`Make recovery behavior explicit, configurable, and observable`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -112,7 +113,7 @@ Status:
     - `parser-attachment-collector.ts`
     - `parser-constants.ts`
   - `packages/cesr/src/core/parser-engine.ts` reduced to orchestration-focused control flow.
-  - Full suite verification in `packages/cesr`: `deno task test` (`118 passed, 0 failed`).
+  - Full suite verification in `packages/cesr`: `deno task test` (`119 passed, 0 failed`).
 
 Refactor `CesrParser` orchestration to delegate responsibilities to small units:
 
@@ -195,9 +196,15 @@ Why:
 
 Status:
 
-- Pending (still high-value after Point 2).
-- Calibration:
-  current v1/v2 maps remain explicit and readable, but descriptor-driven construction is still the best path to reduce repetition/drift.
+- Completed on 2026-03-01.
+- Completion evidence:
+  - `packages/cesr/src/parser/group-dispatch.ts` now defines one canonical `ATTACHMENT_DISPATCH_SPEC` descriptor model and derives:
+    - major-version dispatch maps
+    - wrapper-group code sets
+    - siger-list allowance sets
+  - Descriptor schema includes version, parser kind, semantic shape, and tuple/wrapper/siger metadata.
+  - Invariant lock test added: `packages/cesr/test/unit/dispatch-spec-invariants.test.ts` validates generated table coverage/uniqueness and explicit legacy v1 `-J/-K` compatibility allowance.
+  - Full suite verification in `packages/cesr`: `deno task test` (`118 passed, 0 failed`).
 
 Keep table-driven dispatch, but define groups from one source of truth (descriptor table), then derive maps.
 

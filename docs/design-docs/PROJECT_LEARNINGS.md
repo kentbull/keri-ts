@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1, 2, 3, and 4 completed as of 2026-03-01; Point 5 dispatch descriptor model is next).
+1. CESR parser readability roadmap execution (Points 1, 2, 3, 4, and 5 completed as of 2026-03-01; Point 6 recovery observability is next).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -60,10 +60,12 @@ This keeps context focused and avoids long-thread drift.
 2. Core parser collaborators now delegate framed/unframed cadence decisions through policy methods instead of boolean branches.
 3. Attachment dispatch strict/compat behavior is strategy-driven and still preserves existing default fallback semantics and callback/warning behavior.
 4. Legacy parser options remain backward-compatible by constructing default policies from `framed`, `attachmentDispatchMode`, and `onAttachmentVersionFallback`.
-5. Full CESR suite remains green after refactor (`118 passed, 0 failed`).
+5. Full CESR suite remains green after refactor (`119 passed, 0 failed`).
 6. Follow-up modularization moved fallback policy implementations to `parser/attachment-fallback-policy.ts`, reducing `group-dispatch.ts` scope while preserving exports/behavior.
 7. Fallback policy API was simplified to one factory (`createAttachmentVersionFallbackPolicy`) by removing unused strict/compat convenience wrappers.
 8. Point 4 typed attachment payload migration is complete: `AttachmentGroup.items` now uses discriminated `AttachmentItem` unions and wrapper opaque-tail fallback units are explicitly tagged.
+9. Point 5 declarative dispatch-spec migration is complete: `group-dispatch.ts` now derives v1/v2 dispatch maps, wrapper-code sets, and siger-list allowances from one descriptor model keyed by version/parser-kind/semantic-shape metadata.
+10. New dispatch-spec invariant test locks mapping integrity: every generated `(major, code)` must appear exactly once in `ATTACHMENT_DISPATCH_SPEC`, with explicit long-term legacy compatibility allowance for v1 `-J/-K` sad-path aliases.
 
 ## New Thread Kickoff Template
 

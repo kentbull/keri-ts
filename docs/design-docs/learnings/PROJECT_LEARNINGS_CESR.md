@@ -13,7 +13,8 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 2 (`Decompose CesrParser into focused collaborators`) is complete as of 2026-02-28.
 - Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
 - Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
-- Point 5 (`Convert dispatch definitions to a single declarative spec`) is the active next step.
+- Point 5 (`Convert dispatch definitions to a single declarative spec`) is complete as of 2026-03-01.
+- Point 6 (`Make recovery behavior explicit, configurable, and observable`) is the active next step.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -45,6 +46,7 @@ Persistent CESR parser memory for `keri-ts`.
 8. **Dispatch behavior**
 - `strict`: no major fallback.
 - `compat`: fallback on unknown/deserialize errors with callback support.
+- v1/v2 dispatch maps, wrapper-code sets, and siger-list allowances are generated from one declarative descriptor spec.
 
 9. **Flush semantics**
 - Terminal remainder shortage emitted once.
@@ -75,7 +77,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Begin Point 5 of ten-point plan (declarative attachment dispatch descriptors).
+1. Begin Point 6 of ten-point plan (recovery observability and structured diagnostics).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
 
@@ -195,3 +197,34 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Downstream users that depended on raw `string | Uint8Array | object | array` item shapes must migrate to discriminant checks.
+
+### 2026-03-01 - Point 5 Declarative Dispatch Spec Conversion
+- What changed:
+  - Replaced manual v1/v2 dispatch maps in `packages/cesr/src/parser/group-dispatch.ts` with descriptor-driven construction from one canonical `ATTACHMENT_DISPATCH_SPEC`.
+  - Introduced a typed dispatch descriptor schema capturing version, parser kind, and semantic shape metadata, with tuple/wrapper/siger flags.
+  - Derived wrapper-group code sets and siger-list allowance sets from descriptors to remove separate hand-maintained code lists.
+- Why:
+  - Complete Point 5 by removing duplicated dispatch wiring and reducing drift risk between parser code tables and behavior expectations.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `118 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Point 6 still needs structured recovery diagnostics so compat fallbacks stop relying on warning-style side effects.
+
+### 2026-03-01 - Dispatch Spec Invariant Lock Test (Generated Tables + Legacy SAD Path Aliases)
+- What changed:
+  - Added `packages/cesr/test/unit/dispatch-spec-invariants.test.ts` to enforce dispatch integrity against generated counter tables.
+  - Exported `ATTACHMENT_DISPATCH_SPEC` from `packages/cesr/src/parser/group-dispatch.ts` so invariants can assert coverage/uniqueness directly from the canonical spec.
+  - Added explicit compatibility allowance for legacy v1 `-J/-K` entries so these remain required in dispatch routing even if future generated codex tables stop listing them.
+- Why:
+  - Prevent silent dispatch drift (duplicates/omissions) and preserve long-term backwards compatibility for deployed sad-path alias streams.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `119 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+- Risks/TODO:
+  - If new intentional compatibility-only aliases are added, update invariant allowlist explicitly to keep intent auditable.
