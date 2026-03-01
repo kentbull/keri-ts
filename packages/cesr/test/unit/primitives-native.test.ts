@@ -22,32 +22,13 @@ import { parseBlinder } from "../../src/primitives/blinder.ts";
 import { parseMediar } from "../../src/primitives/mediar.ts";
 import { parseCompactor } from "../../src/primitives/compactor.ts";
 import { parseAggor } from "../../src/primitives/aggor.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
-import { MATTER_SIZES } from "../../src/tables/matter.tables.generated.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function token(code: string): string {
-  const sizage = MATTER_SIZES.get(code);
-  if (!sizage || sizage.fs === null) {
-    throw new Error(`Need fixed-size code ${code}`);
-  }
-  return code + "A".repeat(sizage.fs - code.length);
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import { counterV2, token } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("verser parses KERI v2 token", () => {
   const verser = parseVerser(encode("0OKERICAACAA"), "txt");
@@ -92,9 +73,8 @@ Deno.test("mapper parses map body with interleaved labels", () => {
   const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${
     payload.slice(12, 16)
   }VAAA${payload.slice(16)}`;
-  const sizage = COUNTER_SIZES_V2.get(CtrDexV2.MapBodyGroup)!;
-  const mapBody = `${CtrDexV2.MapBodyGroup}${
-    intToB64(mapPayload.length / 4, sizage.ss)
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
   }${mapPayload}`;
 
   const mapper = parseMapperBody(

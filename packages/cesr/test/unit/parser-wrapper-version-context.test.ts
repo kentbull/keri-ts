@@ -2,42 +2,19 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function v1ify(raw: string): string {
-  const size = encode(raw).length;
-  const sizeHex = size.toString(16).padStart(6, "0");
-  return raw.replace("KERI10JSON000000_", `KERI10JSON${sizeHex}_`);
-}
-
-function counterV1(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V1.get(code);
-  if (!sizage) throw new Error(`Unknown v1 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
+import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
     intToB64(minor, 1)
   }${intToB64(0, 1)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
 }
 
 function wrapQuadletGroupV2(code: string, payload: string): string {

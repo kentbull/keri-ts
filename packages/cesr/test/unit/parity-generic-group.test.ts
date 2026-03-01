@@ -1,27 +1,10 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { annotate, type CesrFrame, denot } from "../../src/index.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-/** Encode qb64 fixture material into parser input bytes. */
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-/** Build a v2 counter token with code-specific size encoding. */
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-/** Deterministic fixed-size indexer token used in attachment fixtures. */
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
+import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 
 /** Wrap payload with a quadlet-counted v2 group counter. */
 function wrapQuadletGroup(code: string, payload: string): string {
@@ -29,21 +12,6 @@ function wrapQuadletGroup(code: string, payload: string): string {
     throw new Error(`Payload must be quadlet-aligned for ${code}`);
   }
   return `${counterV2(code, payload.length / 4)}${payload}`;
-}
-
-/** Slice input into deterministic feed chunks at provided split boundaries. */
-function chunkByBoundaries(
-  input: Uint8Array,
-  boundaries: number[],
-): Uint8Array[] {
-  const chunks: Uint8Array[] = [];
-  let start = 0;
-  for (const end of boundaries) {
-    chunks.push(input.slice(start, end));
-    start = end;
-  }
-  chunks.push(input.slice(start));
-  return chunks;
 }
 
 /**

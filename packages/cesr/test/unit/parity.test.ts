@@ -8,6 +8,8 @@ import { UnknownCodeError } from "../../src/core/errors.ts";
 import {
   COUNTER_CODE_NAMES_V1,
   COUNTER_CODE_NAMES_V2,
+  COUNTER_SIZES_V1,
+  COUNTER_SIZES_V2,
 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {

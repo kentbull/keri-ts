@@ -3,46 +3,26 @@ import { annotate } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { annotateCli } from "../../src/annotate/cli.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
 import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
+import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function counterV1(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V1.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
   return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
     intToB64(minor, 1)
   }${intToB64(patch, 1)}`;
-}
-
-function v1ify(raw: string): string {
-  const size = new TextEncoder().encode(raw).length;
-  const sizeHex = size.toString(16).padStart(6, "0");
-  return raw.replace("KERI10JSON000000_", `KERI10JSON${sizeHex}_`);
 }
 
 Deno.test("annotate + denot roundtrip for CESR text stream", () => {
@@ -139,7 +119,9 @@ Deno.test("annotate supports legacy v1 SadPathSig inside attachment wrapper", ()
 Deno.test("annotate labels non-serder CESR fallback body as opaque (not SERDER)", () => {
   const nonNativeV1 = `${counterV1(CtrDexV1.NonNativeBodyGroup, 1)}MAAA`;
   const enclosed = `${genusVersionCounter(1)}${nonNativeV1}`;
-  const wrapped = `${counterV2(CtrDexV2.BodyWithAttachmentGroup, enclosed.length / 4)}${enclosed}`;
+  const wrapped = `${
+    counterV2(CtrDexV2.BodyWithAttachmentGroup, enclosed.length / 4)
+  }${enclosed}`;
   const ims = `${wrapped}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
 
   const annotated = annotate(ims);

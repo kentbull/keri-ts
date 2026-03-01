@@ -6,15 +6,13 @@ import {
 import { intToB64 } from "../../src/core/bytes.ts";
 import { annotate, CesrFrame } from "../../src/index.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 function parseAll(
   stream: string,
@@ -24,27 +22,11 @@ function parseAll(
   return [...parser.feed(encode(stream)), ...parser.flush()];
 }
 
-function counterV1(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V1.get(code);
-  if (!sizage) throw new Error(`Unknown v1 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
   return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
     intToB64(minor, 1)
   }${intToB64(patch, 1)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
 }
 
 function wrapQuadletGroupV2(code: string, payload: string): string {

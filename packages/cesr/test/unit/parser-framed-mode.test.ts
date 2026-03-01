@@ -1,10 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("V-P0-007: framed=true emits one frame per drain cycle when feed contains two complete frames", () => {
   const parser = createParser({ framed: true });
@@ -33,4 +30,3 @@ Deno.test("V-P0-007: framed=true emits one frame per drain cycle when feed conta
   const tail = parser.flush();
   assertEquals(tail.length, 0);
 });
-

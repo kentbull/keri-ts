@@ -1,33 +1,21 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { CtrDexV1 } from "../../src/tables/counter-codex.ts";
-import { COUNTER_SIZES_V1 } from "../../src/tables/counter.tables.generated.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function counterV1(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V1.get(code);
-  if (!sizage) throw new Error(`Unknown v1 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import { counterV1 } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
+import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function v1OpaqueNonNativeFrame(): string {
   // Legacy v1 stream shape with no leading genus-version selector.
   return `${counterV1(CtrDexV1.NonNativeBodyGroup, 1)}MAAA`;
 }
 
-function v1ify(raw: string): string {
-  const size = new TextEncoder().encode(raw).length;
-  const sizeHex = size.toString(16).padStart(6, "0");
-  return raw.replace("KERI10JSON000000_", `KERI10JSON${sizeHex}_`);
-}
-
 Deno.test("legacy implicit-v1: top-level v1 NonNativeBodyGroup parses as v1 without genus-version selector", () => {
   const parser = createParser();
-  const events = [...parser.feed(encode(v1OpaqueNonNativeFrame())), ...parser.flush()];
+  const events = [
+    ...parser.feed(encode(v1OpaqueNonNativeFrame())),
+    ...parser.flush(),
+  ];
   const errors = events.filter((event) => event.type === "error");
   const frames = events.filter((event) => event.type === "frame");
 
@@ -41,7 +29,9 @@ Deno.test("legacy implicit-v1: top-level v1 NonNativeBodyGroup parses as v1 with
 
 Deno.test("legacy implicit-v1: v1 GenericGroup payload parses enclosed frames without genus-version selector", () => {
   const enclosed = `${v1OpaqueNonNativeFrame()}${v1OpaqueNonNativeFrame()}`;
-  const generic = `${counterV1(CtrDexV1.GenericGroup, enclosed.length / 4)}${enclosed}`;
+  const generic = `${
+    counterV1(CtrDexV1.GenericGroup, enclosed.length / 4)
+  }${enclosed}`;
   const parser = createParser();
   const events = [...parser.feed(encode(generic)), ...parser.flush()];
   const errors = events.filter((event) => event.type === "error");

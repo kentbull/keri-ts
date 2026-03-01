@@ -1,29 +1,13 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import type { RecoveryDiagnostic } from "../../src/core/recovery-diagnostics.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../src/core/errors.ts";
 import { parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  COUNTER_CODE_NAMES_V1,
-  COUNTER_SIZES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
+import { COUNTER_CODE_NAMES_V1 } from "../../src/tables/counter.tables.generated.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
+import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {
   const candidates = [
@@ -141,7 +125,10 @@ Deno.test("recovery diagnostics: parser non-shortage error emits reset event", (
   const firstErrors = first.filter((event) => event.type === "error");
   assertEquals(firstErrors.length, 1);
 
-  const next = [...parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY)), ...parser.flush()];
+  const next = [
+    ...parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY)),
+    ...parser.flush(),
+  ];
   const nextErrors = next.filter((event) => event.type === "error");
   const nextFrames = next.filter((event) => event.type === "frame");
   assertEquals(nextErrors.length, 0);

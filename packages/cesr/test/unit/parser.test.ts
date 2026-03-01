@@ -1,59 +1,23 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { sniff } from "../../src/parser/cold-start.ts";
 import { smell } from "../../src/serder/smell.ts";
 import {
   COUNTER_CODE_NAMES_V1,
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function v1Version(kind: "JSON" | "MGPK" | "CBOR", size: number): string {
-  return `KERI10${kind}${size.toString(16).padStart(6, "0")}_`;
-}
-
-function minimalV1MgpkBody(): Uint8Array {
-  // msgpack: map(1), key "v", value short-str(version)
-  const size = 1 + 2 + 1 + 17;
-  const vs = encode(v1Version("MGPK", size));
-  return Uint8Array.from([0x81, 0xa1, 0x76, 0xb1, ...vs]);
-}
-
-function minimalV1CborBody(): Uint8Array {
-  // cbor: map(1), key "v", value text(version)
-  const size = 1 + 2 + 1 + 17;
-  const vs = encode(v1Version("CBOR", size));
-  return Uint8Array.from([0xa1, 0x61, 0x76, 0x71, ...vs]);
-}
-
-function v1ify(raw: string): string {
-  const size = new TextEncoder().encode(raw).length;
-  const sizeHex = size.toString(16).padStart(6, "0");
-  return raw.replace("KERI10JSON000000_", `KERI10JSON${sizeHex}_`);
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
-
-function counterV1(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V1.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
+import {
+  minimalV1CborBody,
+  minimalV1MgpkBody,
+  v1ify,
+} from "../fixtures/versioned-body-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {
   const candidates = [
@@ -269,8 +233,12 @@ Deno.test("V-P0-010: parser ignores leading and repeated annotation bytes before
     ...prefixedParser.feed(encode(prefixed)),
     ...prefixedParser.flush(),
   ];
-  const prefixedFrames = prefixedEvents.filter((event) => event.type === "frame");
-  const prefixedErrors = prefixedEvents.filter((event) => event.type === "error");
+  const prefixedFrames = prefixedEvents.filter((event) =>
+    event.type === "frame"
+  );
+  const prefixedErrors = prefixedEvents.filter((event) =>
+    event.type === "error"
+  );
   assertEquals(prefixedErrors.length, 0);
   assertEquals(prefixedFrames.length, 1);
 

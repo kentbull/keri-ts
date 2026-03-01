@@ -1,10 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("V-P1-011: parser recovers after error when reset is called, then parses subsequent clean frame", () => {
   const parser = createParser();

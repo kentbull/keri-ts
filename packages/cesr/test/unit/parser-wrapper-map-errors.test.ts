@@ -1,23 +1,9 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
+import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside AttachmentGroup wrapper payload", () => {
   const nested = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;

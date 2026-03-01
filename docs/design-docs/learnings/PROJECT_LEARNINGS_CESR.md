@@ -77,6 +77,13 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 9 remains docs-first and targeted (no broad rename churn).
 - Point 10 remains deferred and benchmark-gated after critical Point 8 hardening.
 
+15. **Test fixture organization**
+- Common CESR test builders are centralized in descriptive fixture modules:
+  - `test/fixtures/stream-byte-fixtures.ts`
+  - `test/fixtures/counter-token-fixtures.ts`
+  - `test/fixtures/versioned-body-fixtures.ts`
+- Unit tests no longer duplicate local `encode`/`counterV*`/`sigerToken`/`v*ify` helper definitions.
+
 ## Key Docs
 
 1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
@@ -368,3 +375,20 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Keep `onAttachmentVersionFallback` adapter behavior stable until downstream consumers migrate to `onRecoveryDiagnostic`.
+
+### 2026-03-01 - Test Fixture Consolidation for Repeated CESR Unit Builders
+- What changed:
+  - Added descriptive shared fixture modules for repeated test constructors:
+    - `packages/cesr/test/fixtures/stream-byte-fixtures.ts`
+    - `packages/cesr/test/fixtures/counter-token-fixtures.ts`
+    - `packages/cesr/test/fixtures/versioned-body-fixtures.ts`
+  - Migrated unit tests to import these fixtures instead of redefining local `encode`, `counterV1/counterV2`, `sigerToken`, `token`, `v1ify/v2ify`, `minimalV1MgpkBody/minimalV1CborBody`, and chunk-boundary builders.
+- Why:
+  - Reduce test duplication and keep fixture behavior consistent across parity, parser, annotate, and primitive suites.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `132 passed, 0 failed`
+- Contracts/plans touched:
+  - none (test-only refactor)
+- Risks/TODO:
+  - Remaining inline `new TextEncoder().encode(...)` calls in `qb2.test.ts` are intentionally left as direct call-site clarity for parser primitive equivalence cases.

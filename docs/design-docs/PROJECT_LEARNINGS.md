@@ -75,6 +75,7 @@ This keeps context focused and avoids long-thread drift.
 17. Point 6 is now implemented in code/tests: parser and dispatch layers share one typed `RecoveryDiagnostic` observer contract covering fallback accepted/rejected, wrapper opaque-tail preservation, and parser error-reset recovery context.
 18. Legacy `onAttachmentVersionFallback` behavior remains backward-compatible via diagnostics adapter wiring, while default compat fallback warning side effects (`console.warn`) are removed.
 19. Full CESR suite remains green after Point 6 implementation (`132 passed, 0 failed`).
+20. CESR unit tests now share descriptive fixture builders for stream bytes, counter/token construction, and versioned-body construction, replacing repeated local helper definitions across test files.
 
 ## New Thread Kickoff Template
 

@@ -1,5 +1,4 @@
 import { assertEquals } from "jsr:@std/assert";
-import { MATTER_SIZES } from "../../src/tables/matter.tables.generated.ts";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import {
   parseMatterFromBinary,
@@ -35,25 +34,12 @@ import { parseCompactor } from "../../src/primitives/compactor.ts";
 import { parseAggor } from "../../src/primitives/aggor.ts";
 import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
 import { PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
-
-function token(code: string): string {
-  const sizage = MATTER_SIZES.get(code);
-  if (!sizage || sizage.fs === null) throw new Error(`Need fixed code ${code}`);
-  return code + "A".repeat(sizage.fs - code.length);
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import {
+  counterV2,
+  sigerToken,
+  token,
+} from "../fixtures/counter-token-fixtures.ts";
 
 Deno.test("counter qb2 parsing matches qb64 parsing", () => {
   const qb64 = "-KAB";

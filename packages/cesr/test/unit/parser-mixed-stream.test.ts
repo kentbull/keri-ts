@@ -1,47 +1,18 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { concatBytes, decodeB64, intToB64 } from "../../src/core/bytes.ts";
+import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function v2ify(raw: string): string {
-  const size = new TextEncoder().encode(raw).length;
-  const sizeHex = size.toString(16).padStart(6, "0");
-  return raw.replace("KERI20JSON000000_", `KERI20JSON${sizeHex}_`);
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
-
-function chunkByBoundaries(
-  input: Uint8Array,
-  boundaries: number[],
-): Uint8Array[] {
-  const chunks: Uint8Array[] = [];
-  let start = 0;
-  for (const end of boundaries) {
-    chunks.push(input.slice(start, end));
-    start = end;
-  }
-  chunks.push(input.slice(start));
-  return chunks;
-}
+import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
+import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
 
 /** Parse stream chunks and require error-free frame output for parity assertions. */
-function parseFrames(input: Uint8Array, boundaries: number[]): Array<CesrFrame> {
+function parseFrames(
+  input: Uint8Array,
+  boundaries: number[],
+): Array<CesrFrame> {
   const parser = createParser({
     onAttachmentVersionFallback: () => {
       // Keep split-matrix output deterministic/noiseless in test logs.
@@ -71,7 +42,9 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
 
 Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", () => {
   const body = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
-  const attachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const attachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
 
   // Same semantic frame, two attachment domains:
   // - txt stream carries qb64 attachments.
@@ -88,13 +61,16 @@ Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", 
 
 Deno.test("V-P1-005: multi-message mixed stream ordering is split-deterministic", () => {
   const jsonBody = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
-  const jsonAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const jsonAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
   const jsonFrame = `${jsonBody}${jsonAttachment}`;
 
-  const wrappedNestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${
-    sigerToken()
-  }`;
-  const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
+  const wrappedNestedAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
+  const wrappedPayload =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
   const wrappedFrame = `${
     counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)
   }${wrappedPayload}`;
