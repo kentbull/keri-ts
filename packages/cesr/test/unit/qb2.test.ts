@@ -40,12 +40,13 @@ import {
   sigerToken,
   token,
 } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("counter qb2 parsing matches qb64 parsing", () => {
   const qb64 = "-KAB";
   const qb2 = decodeB64(qb64);
 
-  const txt = parseCounterFromText(new TextEncoder().encode(qb64), {
+  const txt = parseCounterFromText(encode(qb64), {
     major: 2,
     minor: 0,
   });
@@ -59,7 +60,7 @@ Deno.test("matter qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("A");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseMatterFromText(new TextEncoder().encode(qb64));
+  const txt = parseMatterFromText(encode(qb64));
   const bny = parseMatterFromBinary(qb2);
 
   assertEquals(bny.code, txt.code);
@@ -82,7 +83,7 @@ Deno.test("indexer qb2 parsing matches qb64 parsing", () => {
     "AABg3q8uNg1A2jhEAdbKGf-QupQhNnmZQx3zIyPLWBe6qqLT5ynytivf9EwJhxyhy87a0x2cezDdil4SsM2xxs0O";
   const qb2 = decodeB64(qb64);
 
-  const txt = parseIndexerFromText(new TextEncoder().encode(qb64));
+  const txt = parseIndexerFromText(encode(qb64));
   const bny = parseIndexerFromBinary(qb2);
 
   assertEquals(bny.code, txt.code);
@@ -94,7 +95,7 @@ Deno.test("number qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("M");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseNumber(new TextEncoder().encode(qb64), "txt");
+  const txt = parseNumber(encode(qb64), "txt");
   const bny = parseNumber(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -106,7 +107,7 @@ Deno.test("seqner qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("0A");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseSeqner(new TextEncoder().encode(qb64), "txt");
+  const txt = parseSeqner(encode(qb64), "txt");
   const bny = parseSeqner(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -120,7 +121,7 @@ Deno.test("dater qb2 parsing matches qb64 parsing", () => {
   );
   const qb2 = decodeB64(qb64);
 
-  const txt = parseDater(new TextEncoder().encode(qb64), "txt");
+  const txt = parseDater(encode(qb64), "txt");
   const bny = parseDater(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -132,7 +133,7 @@ Deno.test("diger qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("E");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseDiger(new TextEncoder().encode(qb64), "txt");
+  const txt = parseDiger(encode(qb64), "txt");
   const bny = parseDiger(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -144,7 +145,7 @@ Deno.test("prefixer qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("B");
   const qb2 = decodeB64(qb64);
 
-  const txt = parsePrefixer(new TextEncoder().encode(qb64), "txt");
+  const txt = parsePrefixer(encode(qb64), "txt");
   const bny = parsePrefixer(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -155,7 +156,7 @@ Deno.test("noncer qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("0A");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseNoncer(new TextEncoder().encode(qb64), "txt");
+  const txt = parseNoncer(encode(qb64), "txt");
   const bny = parseNoncer(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -166,7 +167,7 @@ Deno.test("saider qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("E");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseSaider(new TextEncoder().encode(qb64), "txt");
+  const txt = parseSaider(encode(qb64), "txt");
   const bny = parseSaider(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -178,7 +179,7 @@ Deno.test("bexter qb2 parsing matches qb64 parsing", () => {
   const qb64 = "4AABabcd";
   const qb2 = decodeB64(qb64);
 
-  const txt = parseBexter(new TextEncoder().encode(qb64), "txt");
+  const txt = parseBexter(encode(qb64), "txt");
   const bny = parseBexter(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -189,7 +190,7 @@ Deno.test("cigar qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("0B");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseCigar(new TextEncoder().encode(qb64), "txt");
+  const txt = parseCigar(encode(qb64), "txt");
   const bny = parseCigar(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -201,7 +202,7 @@ Deno.test("verfer qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("B");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseVerfer(new TextEncoder().encode(qb64), "txt");
+  const txt = parseVerfer(encode(qb64), "txt");
   const bny = parseVerfer(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -213,7 +214,7 @@ Deno.test("traitor qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("X");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseTraitor(new TextEncoder().encode(qb64), "txt");
+  const txt = parseTraitor(encode(qb64), "txt");
   const bny = parseTraitor(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -224,7 +225,7 @@ Deno.test("tholder qb2 parsing matches qb64 parsing", () => {
   const qb64 = token("M");
   const qb2 = decodeB64(qb64);
 
-  const txt = parseTholder(new TextEncoder().encode(qb64), "txt");
+  const txt = parseTholder(encode(qb64), "txt");
   const bny = parseTholder(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -235,7 +236,7 @@ Deno.test("labeler qb2 parsing matches qb64 parsing", () => {
   const qb64 = "VAAA";
   const qb2 = decodeB64(qb64);
 
-  const txt = parseLabeler(new TextEncoder().encode(qb64), "txt");
+  const txt = parseLabeler(encode(qb64), "txt");
   const bny = parseLabeler(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -248,7 +249,7 @@ Deno.test("texter qb2 parsing matches qb64 parsing", () => {
   const qb64 = "4BABAAAA";
   const qb2 = decodeB64(qb64);
 
-  const txt = parseTexter(new TextEncoder().encode(qb64), "txt");
+  const txt = parseTexter(encode(qb64), "txt");
   const bny = parseTexter(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -259,7 +260,7 @@ Deno.test("pather qb2 parsing matches qb64 parsing", () => {
   const qb64 = "4AABabcd";
   const qb2 = decodeB64(qb64);
 
-  const txt = parsePather(new TextEncoder().encode(qb64), "txt");
+  const txt = parsePather(encode(qb64), "txt");
   const bny = parsePather(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
@@ -272,7 +273,7 @@ Deno.test("sealer qb2 parsing matches qb64 parsing", () => {
   }`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseSealer(new TextEncoder().encode(qb64), {
+  const txt = parseSealer(encode(qb64), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -289,7 +290,7 @@ Deno.test("blinder qb2 parsing matches qb64 parsing", () => {
   }${token("D")}${token("M")}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseBlinder(new TextEncoder().encode(qb64), {
+  const txt = parseBlinder(encode(qb64), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -306,7 +307,7 @@ Deno.test("mediar qb2 parsing matches qb64 parsing", () => {
   }${token("D")}${token("M")}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseMediar(new TextEncoder().encode(qb64), {
+  const txt = parseMediar(encode(qb64), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -324,7 +325,7 @@ Deno.test("compactor qb2 parsing matches qb64 parsing", () => {
   }${payload}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseCompactor(new TextEncoder().encode(qb64), {
+  const txt = parseCompactor(encode(qb64), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -346,7 +347,7 @@ Deno.test("mapper nested map qb2 parsing matches qb64 parsing", () => {
   }${outerPayload}`;
   const qb2 = decodeB64(qb64);
 
-  const txt = parseCompactor(new TextEncoder().encode(qb64), {
+  const txt = parseCompactor(encode(qb64), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -365,7 +366,7 @@ Deno.test("aggor qb2 parsing matches qb64 parsing", () => {
   const qb2 = decodeB64(qb64);
 
   const txt = parseAggor(
-    new TextEncoder().encode(qb64),
+    encode(qb64),
     { major: 2, minor: 0 },
     "txt",
   );

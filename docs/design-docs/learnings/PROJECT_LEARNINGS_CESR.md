@@ -391,4 +391,4 @@ Persistent CESR parser memory for `keri-ts`.
 - Contracts/plans touched:
   - none (test-only refactor)
 - Risks/TODO:
-  - Remaining inline `new TextEncoder().encode(...)` calls in `qb2.test.ts` are intentionally left as direct call-site clarity for parser primitive equivalence cases.
+  - none
