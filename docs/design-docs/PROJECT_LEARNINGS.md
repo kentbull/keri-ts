@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1, 2, 3, 4, and 5 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is the critical next step before Point 6 recovery observability).
+1. CESR parser readability roadmap execution (Points 1, 2, 3, 4, and 5 completed as of 2026-03-01; Point 6 is re-scoped to recovery observability diagnostics because explicit/configurable recovery baseline landed in Points 3/4; roadmap Phase 5 minor-version model rectification + codex subset parity remains the critical immediate next step).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -69,6 +69,7 @@ This keeps context focused and avoids long-thread drift.
 11. `AGENTS.md` now explicitly encodes learner/maintainer-first and compile-time-typed deterministic parser design bias for future task threads.
 12. Phased roadmap has been re-sequenced so minor-version model rectification and codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs) is explicit Phase 5 and the former hardening phase is now Phase 6.
 13. `semanticShape` metadata is now enforced by invariants (parser-kind/flag contracts and shape-coverage assertions), shifting it from documentation-only to auditable specification.
+14. Point 6 recovery task definition has been recalibrated: strict/compat policy injection and typed opaque recovery artifacts are already complete; remaining scope is unified structured diagnostics and removal of default warning side effects.
 
 ## New Thread Kickoff Template
 

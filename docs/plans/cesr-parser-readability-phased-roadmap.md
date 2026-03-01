@@ -148,22 +148,23 @@ Points covered:
 
 Status:
 
-- In progress (Point 3 complete on 2026-03-01; Point 6 pending).
+- Partially complete (Point 3 complete on 2026-03-01; Point 6 narrowed to observability work and queued after Phase 5).
 
 Scope:
 
-- replace boolean behavior branching with injected policies
-- convert fallback/recovery behaviors into structured policy outcomes
-- remove parser-core side effects like direct warnings
+- completed: replace boolean behavior branching with injected policies
+- pending: convert existing fallback/recovery decisions into structured diagnostics outcomes
+- pending: remove default warning side effects in fallback policy paths by routing through explicit diagnostics observers
 
 Deliverables:
 
-- policy interfaces and default implementations
-- structured fallback/recovery events and diagnostics hooks
+- completed: policy interfaces and default implementations
+- pending: structured fallback/recovery events and diagnostics hooks
 
 Exit criteria:
 
 - strict/compat behavior is policy-driven and testable in isolation
+- parser recovery observability uses structured diagnostics hooks (not default warning side effects)
 - no behavior regressions in default policy mode
 
 ### Phase 4: Typed Payload Model and Dispatch Specification
@@ -200,7 +201,7 @@ Exit criteria:
 Points covered:
 
 - Cross-cutting gap closure discovered after Point 5 completion
-- Supports Point 8 parity and Point 6 policy work by hardening version semantics
+- Supports Point 8 parity and Point 6 observability work by hardening version semantics
 
 Status:
 

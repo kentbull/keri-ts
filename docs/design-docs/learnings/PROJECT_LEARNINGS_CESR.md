@@ -14,7 +14,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
 - Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
 - Point 5 (`Convert dispatch definitions to a single declarative spec`) is complete as of 2026-03-01.
-- Point 6 (`Make recovery behavior explicit, configurable, and observable`) remains the next ten-point item, but roadmap execution now prioritizes Phase 5 minor-version model rectification and codex subset parity as a prerequisite.
+- Point 6 (`Make recovery behavior explicit, configurable, and observable`) is now explicitly re-scoped: explicit/configurable baseline landed via Points 3/4, while remaining work is structured recovery diagnostics/observability after Phase 5 minor-version rectification.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -45,7 +45,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 8. **Dispatch behavior**
 - `strict`: no major fallback.
-- `compat`: fallback on unknown/deserialize errors with callback support.
+- `compat`: fallback on unknown/deserialize errors with callback support (default warning fallback remains transitional until Point 6 observability slice lands).
 - v1/v2 dispatch maps, wrapper-code sets, and siger-list allowances are generated from one declarative descriptor spec.
 
 9. **Flush semantics**
@@ -80,6 +80,7 @@ Persistent CESR parser memory for `keri-ts`.
 1. Execute roadmap Phase 5: minor-version model rectification + codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
+4. Implement re-scoped Point 6 observability slice (typed recovery diagnostics + removal of default warning side effects) after Phase 5 completes.
 
 ## Handoff Log
 
@@ -277,3 +278,19 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Risks/TODO:
   - If new semantic shapes are introduced in Phase 5/6 work, extend invariants intentionally in the same PR to preserve exhaustive coverage.
+
+### 2026-03-01 - Point 6 Task Definition Recalibration After Points 3/4 Overlap Review
+- What changed:
+  - Re-scoped Point 6 in readability planning docs from broad policy+mode work to a focused observability/diagnostics slice.
+  - Recorded that explicit/configurable recovery baseline already exists through Point 3 strategy injection and Point 4 typed opaque wrapper-tail payloads.
+  - Updated roadmap Phase 3 wording to mark policy extraction complete and keep remaining Point 6 work queued after Phase 5.
+- Why:
+  - Prevent duplicate implementation effort and keep remaining recovery work aligned with actual code gaps (`console.warn` fallback path and lack of unified structured recovery diagnostics).
+- Tests:
+  - Command: not run (documentation-only recalibration)
+  - Result: n/a
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Ensure final Point 6 implementation adds a concrete diagnostics contract before removing legacy warning behavior so downstream observability is not regressed.

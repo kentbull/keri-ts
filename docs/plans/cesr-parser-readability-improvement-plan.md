@@ -12,6 +12,7 @@
   - Completed: Point 4 (`Replace unknown[] attachment payloads with discriminated types`)
   - Completed: Point 5 (`Convert dispatch definitions to a single declarative spec`)
   - Next: Point 6 (`Make recovery behavior explicit, configurable, and observable`)
+    - Re-scoped on 2026-03-01: explicit/configurable baseline landed in Points 3 and 4; remaining scope is structured recovery observability.
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -222,17 +223,24 @@ Why:
 
 Status:
 
-- Pending.
+- Pending (re-scoped on 2026-03-01 after overlap review with Points 3 and 4).
 - Calibration:
-  fallback behavior is now policy-injected, but diagnostics still default to warning-or-callback and should evolve to structured policy outcomes/telemetry.
+  - Explicit/configurable recovery baseline is already in place:
+    - Point 3 introduced injected `AttachmentVersionFallbackPolicy` strategies for strict/compat dispatch retry and wrapper-remainder decisions.
+    - Point 4 made wrapper-tail recovery artifacts explicit via typed `AttachmentItem` payloads with `opaque: true`.
+  - Remaining gap is observability normalization: recovery decisions are still surfaced via callback-or-warning behavior rather than one structured diagnostics contract.
 
-Current fallback/recovery behavior (mixed-version compat, opaque wrapper tails) should be governed by explicit policy and emitted as structured diagnostics.
+Remaining work in this point focuses on observability for existing recovery behavior (mixed-version compat and opaque wrapper tails), not on introducing new fallback semantics.
 
 Deliverables:
 
-- `RecoveryPolicy` modes (strict/compat/permissive)
-- structured hooks/telemetry events for fallback and opaque recovery
-- no direct `console.warn` in parser core
+- `RecoveryDiagnostic` contract (typed event union) that covers at minimum:
+  - version-dispatch fallback decisions (accepted retry and terminal reject),
+  - wrapper opaque-tail preservation decisions,
+  - parser non-shortage error/reset recovery emission context.
+- Structured diagnostics hook(s) at parser/dispatch boundaries that can be adapted to existing callbacks without changing default parse semantics.
+- Remove default `console.warn` fallback path from policy implementations in favor of explicit observer wiring.
+- Keep strict/compat as the baseline recovery modes; defer any new permissive mode until interop evidence requires it.
 
 Why:
 
