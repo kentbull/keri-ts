@@ -3,6 +3,7 @@
 ## Status
 
 - Created: 2026-02-28
+- Updated: 2026-03-01
 - Priority: medium (post P0/P1 parity closure, pre broad ecosystem rollout)
 - Source backlog: extracted from `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md` PARTIAL rows
 
@@ -20,6 +21,21 @@ Track breadth-oriented parser hardening and interop vectors separately from P0/P
 - P0/P1 matrix: `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 
 This document is the dedicated backlog for deferred breadth and hardening vectors.
+
+## Implementation Progress (2026-03-01)
+
+Completed:
+
+- `V-P2-017` in `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
+  with KERIpy-derived fixture corpus txt/qb2 parity and split-determinism assertions.
+- `V-P2-018` in `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
+  with selected KERIpy codex/subset drift sentinel assertions.
+- `V-P2-019` in `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
+  with historical implicit-v1 compatibility stream lock test.
+
+Remaining:
+
+- `V-P2-001`..`V-P2-016`, `V-P2-020`, `V-P2-021`.
 
 ## Scope
 

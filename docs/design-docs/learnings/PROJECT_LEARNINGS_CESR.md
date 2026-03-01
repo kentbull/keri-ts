@@ -73,7 +73,7 @@ Persistent CESR parser memory for `keri-ts`.
 14. **Readability plan tail (Points 6-10) recalibrated**
 - Point 6 is complete with one `RecoveryDiagnostic` contract (`version-fallback-accepted`, `version-fallback-rejected`, `wrapper-opaque-tail-preserved`, `parser-error-reset`) at parser/dispatch boundaries.
 - Point 7 is complete with targeted syntax-artifact extraction in high-coupling paths (frame start + native body + mapper tokenization), without a global two-pass rewrite.
-- Point 8 status is now “in progress” with completed Phase 5 parity/invariant coverage acknowledged and P2 breadth still remaining.
+- Point 8 status remains “in progress”; initial KERIpy evidence-pack vectors (`V-P2-017`..`019`) are now lock-tested and remaining scope is broader P2 breadth vectors.
 - Point 9 remains docs-first and targeted (no broad rename churn).
 - Point 10 remains deferred and benchmark-gated after critical Point 8 hardening.
 
@@ -89,6 +89,11 @@ Persistent CESR parser memory for `keri-ts`.
 - Native body parsing now builds syntax artifacts first, then projects metadata/fields in dedicated semantic helpers.
 - Mapper now exposes first-class syntax (`parseMapperBodySyntax`) and semantic (`interpretMapperBodySyntax`) APIs.
 - Boundary-specific error classes now distinguish token/syntax failures (`SyntaxParseError`) from semantic projection failures (`SemanticInterpretationError`).
+
+17. **Point 8 KERIpy parity hardening progress**
+- Added a dedicated hardening suite `test/hardening/parser-keripy-golden-corpus.test.ts`.
+- Vectors `V-P2-017`, `V-P2-018`, and `V-P2-019` are now implemented and passing.
+- KERIpy-derived v1 JSON ICP fixture material is now pinned in `test/fixtures/external-vectors.ts`.
 
 ## Key Docs
 
@@ -423,3 +428,24 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Maintain current classification boundary for parser-level errors to avoid accidental drift in downstream expectations during Point 8 hardening.
+
+### 2026-03-01 - Point 8 KERIpy Parity Hardening: Initial Evidence-Pack Locks
+- What changed:
+  - Added `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts` with three Point 8 P2 vectors:
+    - `V-P2-017`: KERIpy-derived golden corpus txt/qb2 parity and split-determinism locks.
+    - `V-P2-018`: selected KERIpy codex/subset drift sentinel locks (`CtrDex`, `UniDex`, `SUDex`, `MUDex`).
+    - `V-P2-019`: historical implicit-v1 stream sample lock (no selector counters).
+  - Added `KERIPY_V1_JSON_ICP_BODY` fixture in `packages/cesr/test/fixtures/external-vectors.ts` from `keripy/tests/core/test_parsing.py`.
+  - Updated Point 8 status/progress language in:
+    - `docs/plans/cesr-parser-readability-improvement-plan.md`
+    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+- Why:
+  - Expand Point 8 parity evidence with explicit KERIpy-oriented behavioral locks while keeping remaining P2 breadth vectors visible and scoped.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `138 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+- Risks/TODO:
+  - Remaining P2 vectors (`V-P2-001`..`016`, `V-P2-020`, `V-P2-021`) are still pending before broad rollout confidence.

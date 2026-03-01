@@ -78,6 +78,8 @@ This keeps context focused and avoids long-thread drift.
 20. CESR unit tests now share descriptive fixture builders for stream bytes, counter/token construction, and versioned-body construction, replacing repeated local helper definitions across test files.
 21. Point 7 is now complete in targeted scope: frame-start and native-body flows parse explicit syntax artifacts first and perform semantic interpretation in second-phase helpers (including mapper syntax/semantic APIs), with explicit `SyntaxParseError` vs `SemanticInterpretationError` boundaries.
 22. Full CESR suite remains green after Point 7 implementation (`135 passed, 0 failed`).
+23. Point 8 parity hardening has initial P2 cross-implementation evidence locks implemented (`V-P2-017`..`V-P2-019`) in a dedicated hardening suite (`parser-keripy-golden-corpus.test.ts`) with txt/qb2 corpus parity, codex/subset sentinels, and historical implicit-v1 stream coverage.
+24. Full CESR suite remains green after initial Point 8 hardening additions (`138 passed, 0 failed`).
 
 ## New Thread Kickoff Template
 

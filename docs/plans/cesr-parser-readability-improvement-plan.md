@@ -296,8 +296,14 @@ Status:
 - Completed:
   - P0/P1 vectors and split-determinism coverage are implemented and passing.
   - Phase 5 codex/minor-version parity invariants and subset-alignment tests are implemented and passing.
+  - Initial P2 KERIpy evidence-pack vectors are now lock-tested in
+    `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`:
+    - `V-P2-017` golden corpus txt/qb2 parity + split determinism
+    - `V-P2-018` selected KERIpy codex/subset drift sentinel
+    - `V-P2-019` historical implicit-v1 compatibility stream sample
 - Remaining:
-  - P2 breadth/hardening vectors and broader interop fixture expansion.
+  - Remaining P2 breadth/hardening vectors (`V-P2-001`..`V-P2-016`,
+    `V-P2-020`, `V-P2-021`) and broader interop fixture expansion.
 
 Add vectors and property-like split tests that validate behavior in areas where parser logic is subtle.
 
@@ -327,6 +333,10 @@ Progress note:
 - Phase 5 invariants are implemented in:
   - `packages/cesr/test/unit/counter-version-registry.test.ts`
   - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts`
+- Initial P2 KERIpy evidence-pack vectors are implemented in:
+  - `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
+  - with fixture updates in:
+    - `packages/cesr/test/fixtures/external-vectors.ts`
 - Deferred breadth hardening is tracked in:
   - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 
