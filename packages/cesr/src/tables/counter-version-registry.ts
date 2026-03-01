@@ -8,17 +8,57 @@ import {
 import { CtrDexV1, CtrDexV2 } from "./counter-codex.ts";
 import type { Cizage, VersionMajor, Versionage } from "./table-types.ts";
 
-/** Minor-version keyed registry for one major CESR version family. */
+/**
+ * Minor-version keyed registry for one major CESR version family.
+ *
+ * Why this is `minor -> single T` (not `minor -> T[]`):
+ * each `(major, minor)` identifies one authoritative registry snapshot.
+ * Multiple values per minor would introduce ordering/precedence ambiguity.
+ *
+ * Example (`T = CounterCodex`):
+ * {
+ *   0: { GenericGroup: "-A", AttachmentGroup: "-C" },
+ *   1: { GenericGroup: "-A", AttachmentGroup: "-C", NewCode: "-d" }
+ * }
+ */
 export type MinorVersionRegistry<T> = Readonly<Record<number, T>>;
-/** Major+minor keyed CESR registry model. */
+/**
+ * Major+minor keyed CESR registry model.
+ *
+ * There is one `MinorVersionRegistry<T>` branch per major version.
+ *
+ * Example (`T = CounterCodex`):
+ * {
+ *   1: { 0: { GenericGroup: "-T" } },
+ *   2: { 0: { GenericGroup: "-A" }, 1: { GenericGroup: "-A", NewCode: "-d" } }
+ * }
+ */
 export type VersionedRegistry<T> = Readonly<
   Record<VersionMajor, MinorVersionRegistry<T>>
 >;
 
-/** Canonical codex shape: symbolic names mapped to CESR counter codes. */
+/**
+ * Canonical codex shape: symbolic names mapped to CESR counter codes.
+ *
+ * Example:
+ * {
+ *   GenericGroup: "-A",
+ *   AttachmentGroup: "-C"
+ * }
+ */
 export type CounterCodex = Readonly<Record<string, string>>;
 
-/** Resolution result for a requested major/minor against a versioned registry. */
+/**
+ * Resolution result for a requested major/minor against a versioned registry.
+ *
+ * Example:
+ * {
+ *   value: { GenericGroup: "-A", AttachmentGroup: "-C" },
+ *   resolvedMajor: 2,
+ *   resolvedMinor: 1,
+ *   latestMinor: 1
+ * }
+ */
 export interface VersionedResolution<T> {
   value: T;
   resolvedMajor: VersionMajor;
