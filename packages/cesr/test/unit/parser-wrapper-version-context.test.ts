@@ -60,7 +60,11 @@ Deno.test("V-P1-007: GenericGroup enclosed genus-version override applies across
 
   assertEquals(errors.length, 0);
   assertEquals(frames.length, 3);
-  if (frames[0].type === "frame" && frames[1].type === "frame" && frames[2].type === "frame") {
+  if (
+    frames[0].type === "frame" &&
+    frames[1].type === "frame" &&
+    frames[2].type === "frame"
+  ) {
     assertEquals(frames[0].frame.body.pvrsn.major, 1);
     assertEquals(frames[1].frame.body.pvrsn.major, 1);
     // GenericGroup override is enclosed-only; top-level context remains v2.
@@ -73,7 +77,9 @@ Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups tha
   const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   // Use a v2-only counter token that fails immediately under v1 dispatch.
   const v2OnlyNested = counterV2(CtrDexV2.BigBlindedStateQuadruples, 1);
-  const wrappedV1Attachment = `${counterV1(CtrDexV1.AttachmentGroup, v2OnlyNested.length / 4)}${v2OnlyNested}`;
+  const wrappedV1Attachment = `${
+    counterV1(CtrDexV1.AttachmentGroup, v2OnlyNested.length / 4)
+  }${v2OnlyNested}`;
   const stream = `${body}${wrappedV1Attachment}`;
 
   const parser = createParser({ attachmentDispatchMode: "strict" });
@@ -92,7 +98,9 @@ Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups tha
 Deno.test("V-P1-010: latest genus-version inside wrapper payload controls subsequent nested groups", () => {
   const nestedV1 = `${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`;
   const nestedV2 = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
-  const payload = `${genusVersionCounter(1)}${nestedV1}${genusVersionCounter(2)}${nestedV2}`;
+  const payload = `${genusVersionCounter(1)}${nestedV1}${
+    genusVersionCounter(2)
+  }${nestedV2}`;
   const wrapper = wrapQuadletGroupV2(CtrDexV2.AttachmentGroup, payload);
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrapper}`;
 
@@ -109,11 +117,15 @@ Deno.test("V-P1-010: latest genus-version inside wrapper payload controls subseq
     assertEquals(attachmentGroup.code, CtrDexV2.AttachmentGroup);
     assertEquals(attachmentGroup.items.length, 2);
 
-    const first = attachmentGroup.items[0] as { code?: string; name?: string };
-    const second = attachmentGroup.items[1] as { code?: string; name?: string };
-    assertEquals(first.name, "ControllerIdxSigs");
-    assertEquals(first.code, CtrDexV1.ControllerIdxSigs);
-    assertEquals(second.name, "ControllerIdxSigs");
-    assertEquals(second.code, CtrDexV2.ControllerIdxSigs);
+    const first = attachmentGroup.items[0];
+    const second = attachmentGroup.items[1];
+    assertEquals(first.kind, "group");
+    assertEquals(second.kind, "group");
+    if (first.kind === "group" && second.kind === "group") {
+      assertEquals(first.name, "ControllerIdxSigs");
+      assertEquals(first.code, CtrDexV1.ControllerIdxSigs);
+      assertEquals(second.name, "ControllerIdxSigs");
+      assertEquals(second.code, CtrDexV2.ControllerIdxSigs);
+    }
   }
 });

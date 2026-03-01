@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { AttachmentItem, ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
@@ -27,7 +27,7 @@ export interface Sealer {
   code: string;
   name: string;
   count: number;
-  items: unknown[];
+  items: AttachmentItem[];
   raw: Uint8Array;
   consumed: number;
 }

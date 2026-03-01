@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1, 2, and 3 completed as of 2026-03-01; Point 4 typed payload model is next).
+1. CESR parser readability roadmap execution (Points 1, 2, 3, and 4 completed as of 2026-03-01; Point 5 dispatch descriptor model is next).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -63,6 +63,7 @@ This keeps context focused and avoids long-thread drift.
 5. Full CESR suite remains green after refactor (`118 passed, 0 failed`).
 6. Follow-up modularization moved fallback policy implementations to `parser/attachment-fallback-policy.ts`, reducing `group-dispatch.ts` scope while preserving exports/behavior.
 7. Fallback policy API was simplified to one factory (`createAttachmentVersionFallbackPolicy`) by removing unused strict/compat convenience wrappers.
+8. Point 4 typed attachment payload migration is complete: `AttachmentGroup.items` now uses discriminated `AttachmentItem` unions and wrapper opaque-tail fallback units are explicitly tagged.
 
 ## New Thread Kickoff Template
 

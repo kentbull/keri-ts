@@ -9,7 +9,8 @@
   - Completed: Point 1 (`Publish an explicit parser state machine contract`)
   - Completed: Point 2 (`Decompose CesrParser into focused collaborators`)
   - Completed: Point 3 (`Replace boolean policy branching with strategy interfaces`)
-  - Next: Point 4 (`Replace unknown[] attachment payloads with discriminated types`)
+  - Completed: Point 4 (`Replace unknown[] attachment payloads with discriminated types`)
+  - Next: Point 5 (`Convert dispatch definitions to a single declarative spec`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -165,11 +166,18 @@ Why:
 
 Status:
 
-- In progress (partial).
-- Progress to date:
-  - internal dispatch payload typing has been narrowed in `group-dispatch.ts` (`GroupItem` model).
-- Remaining:
-  - public `AttachmentGroup.items` still exposes `unknown[]` and needs a compatibility-aware migration to discriminated unions.
+- Completed on 2026-03-01.
+- Completion evidence:
+  - `packages/cesr/src/core/types.ts` (`AttachmentItem` discriminated union + `AttachmentGroup.items: AttachmentItem[]`)
+  - `packages/cesr/src/parser/group-dispatch.ts` (discriminated payload emission for qb64/qb2/tuple/group items and opaque-wrapper-tail tagging)
+  - `packages/cesr/src/annotate/render.ts` (discriminant-driven attachment rendering)
+  - Primitive wrapper type updates:
+    - `packages/cesr/src/primitives/sealer.ts`
+    - `packages/cesr/src/primitives/blinder.ts`
+    - `packages/cesr/src/primitives/mediar.ts`
+    - `packages/cesr/src/primitives/aggor.ts`
+  - Focused wrapper/version-context tests migrated to discriminant checks.
+  - Full suite verification in `packages/cesr`: `deno task test` (`118 passed, 0 failed`).
 
 `AttachmentGroup.items: unknown[]` should become typed structures keyed by attachment kind/code.
 

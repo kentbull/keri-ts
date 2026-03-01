@@ -12,7 +12,8 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 1 (`Publish an explicit parser state machine contract`) is complete as of 2026-02-28.
 - Point 2 (`Decompose CesrParser into focused collaborators`) is complete as of 2026-02-28.
 - Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
-- Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is the active next step.
+- Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
+- Point 5 (`Convert dispatch definitions to a single declarative spec`) is the active next step.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -57,6 +58,11 @@ Persistent CESR parser memory for `keri-ts`.
 - P0 and P1 vectors complete and passing.
 - P2 breadth/hardening tracked separately.
 
+12. **Attachment payload type model**
+- `AttachmentGroup.items` now uses a discriminated `AttachmentItem` union (`qb64`, `qb2`, `tuple`, `group`).
+- Wrapper opaque-tail fallback units are explicit via `opaque: true` on `qb64`/`qb2` items.
+- Primitive wrappers (`Sealer`, `Blinder`, `Mediar`, `Aggor` list mode) now expose typed items instead of `unknown[]`.
+
 ## Key Docs
 
 1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
@@ -69,7 +75,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Begin Point 4 of ten-point plan (typed attachment payload model migration).
+1. Begin Point 5 of ten-point plan (declarative attachment dispatch descriptors).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
 
@@ -172,3 +178,20 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - If external downstream users rely on removed wrappers, add explicit migration notes in the next release notes pass.
+
+### 2026-03-01 - Point 4 Typed Attachment Payload Migration
+- What changed:
+  - Replaced `AttachmentGroup.items: unknown[]` with a discriminated `AttachmentItem` union in `packages/cesr/src/core/types.ts`.
+  - Refactored `packages/cesr/src/parser/group-dispatch.ts` to emit tagged payload items (`qb64`, `qb2`, `tuple`, `group`) across tuple/repeated/wrapper paths.
+  - Preserved compatibility behavior for wrapper-tail recovery by tagging preserved opaque units with `opaque: true`.
+  - Updated consumers (`annotate/render`, `sealer`, `blinder`, `mediar`, `aggor`) and focused tests to use discriminants instead of runtime casts.
+- Why:
+  - Complete Point 4 deliverables so attachment payload semantics are explicit in the public type model.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `118 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Downstream users that depended on raw `string | Uint8Array | object | array` item shapes must migrate to discriminant checks.

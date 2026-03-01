@@ -40,6 +40,9 @@ Completed baseline work that this roadmap now builds on:
 - Point 3 policy extraction landed:
   - `FrameBoundaryPolicy` and `AttachmentVersionFallbackPolicy` strategies are injected at parser/deferred-dispatch boundaries.
   - Legacy options still map to default strict/compat and framed/unframed policy implementations.
+- Point 4 typed payload migration landed:
+  - `AttachmentGroup.items` now uses discriminated `AttachmentItem` unions.
+  - Wrapper-tail recovery items are explicitly tagged as opaque.
 
 ## Phase Structure
 
@@ -165,6 +168,10 @@ Points covered:
 - 4 (typed attachment payloads)
 - 5 (declarative dispatch spec)
 - remaining 7 (syntax vs semantic interpretation separation)
+
+Status:
+
+- In progress (Point 4 complete on 2026-03-01; Points 5 and 7 work remains).
 
 Scope:
 

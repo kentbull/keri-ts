@@ -4,7 +4,7 @@ import {
   type ParserOptions,
 } from "../../src/core/parser-engine.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
-import { annotate, CesrFrame } from '../../src/index.ts'
+import { annotate, CesrFrame } from "../../src/index.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   COUNTER_SIZES_V1,
@@ -75,7 +75,10 @@ Deno.test("V-P0-003: top-level genus-version counter persists stream version for
 
 Deno.test("V-P0-004: BodyWithAttachmentGroup payload-leading genus-version applies only within enclosed frame", () => {
   const enclosed = `${genusVersionCounter(1)}${v1OpaqueNonNativeFrame()}`;
-  const wrapped = wrapQuadletGroupV2(CtrDexV2.BodyWithAttachmentGroup, enclosed);
+  const wrapped = wrapQuadletGroupV2(
+    CtrDexV2.BodyWithAttachmentGroup,
+    enclosed,
+  );
   const stream = `${wrapped}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   const out = parseAll(stream);
 
@@ -112,24 +115,16 @@ Deno.test("V-P0-005: enclosed AttachmentGroup payload-leading genus-version over
   assertEquals(attachment.code, CtrDexV2.AttachmentGroup);
   assertEquals(
     attachment.items.some(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        "name" in item &&
-        (item as { name: string }).name === "KERIACDCGenusVersion",
+      (item) => item.kind === "group" && item.name === "KERIACDCGenusVersion",
     ),
     false,
   );
 
   const nestedControllerSigs = attachment.items.find(
     (item) =>
-      typeof item === "object" &&
-      item !== null &&
-      "name" in item &&
-      "code" in item &&
-      (item as { name: string; code: string }).name === "ControllerIdxSigs" &&
-      (item as { name: string; code: string }).code ===
-        CtrDexV1.ControllerIdxSigs,
+      item.kind === "group" &&
+      item.name === "ControllerIdxSigs" &&
+      item.code === CtrDexV1.ControllerIdxSigs,
   );
   assert(nestedControllerSigs);
 });

@@ -1,4 +1,4 @@
-import type { AttachmentGroup, CesrMessage } from "../core/types.ts";
+import type { AttachmentItem, CesrMessage } from "../core/types.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
@@ -170,46 +170,51 @@ function decodeVersionCounter(
 
 function renderGroupItems(
   lines: string[],
-  items: unknown[],
+  items: AttachmentItem[],
   version: Versionage,
   indent: number,
   options: Required<AnnotateOptions>,
 ): void {
   for (const item of items) {
-    if (typeof item === "string") {
-      const parsed = describeToken(item, "txt", version);
-      emitLine(lines, item, parsed.comment, indent, options);
+    if (item.kind === "qb64") {
+      const parsed = describeToken(item.qb64, "txt", version);
+      const comment = item.opaque
+        ? OPAQUE_WRAPPER_PAYLOAD_COMMENT
+        : parsed.comment;
+      emitLine(lines, item.qb64, comment, indent, options);
       continue;
     }
 
-    if (item instanceof Uint8Array) {
+    if (item.kind === "qb2") {
       emitLine(
         lines,
-        `0x${toHex(item)}`,
-        "raw qb2 quadlet fragment",
+        `0x${toHex(item.qb2)}`,
+        item.opaque ? OPAQUE_WRAPPER_PAYLOAD_COMMENT : "raw qb2 triplet token",
         indent,
         options,
       );
       continue;
     }
 
-    if (Array.isArray(item)) {
-      renderGroupItems(lines, item, version, indent + options.indent, options);
+    if (item.kind === "tuple") {
+      renderGroupItems(
+        lines,
+        item.items,
+        version,
+        indent + options.indent,
+        options,
+      );
       continue;
     }
 
-    if (item && typeof item === "object") {
-      const nested = item as Partial<AttachmentGroup>;
-      if (typeof nested.code === "string" && typeof nested.name === "string") {
-        emitLine(
-          lines,
-          `${nested.code}`,
-          `${nested.name} nested group`,
-          indent,
-          options,
-        );
-      }
-      continue;
+    if (item.kind === "group") {
+      emitLine(
+        lines,
+        `${item.code}`,
+        `${item.name} nested group`,
+        indent,
+        options,
+      );
     }
   }
 }
@@ -338,7 +343,8 @@ function renderMessageBody(
   options: Required<AnnotateOptions>,
 ): void {
   const rawBody = TEXT_DECODER.decode(frame.body.raw);
-  const isOpaqueCesrBody = frame.body.kind === "CESR" && frame.body.ked === null;
+  const isOpaqueCesrBody = frame.body.kind === "CESR" &&
+    frame.body.ked === null;
 
   if (isOpaqueCesrBody) {
     emitLine(

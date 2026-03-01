@@ -44,6 +44,41 @@ export interface CesrBody {
   };
 }
 
+/** Discriminated model for one parsed attachment payload unit. */
+export type AttachmentItem =
+  | AttachmentQb64Item
+  | AttachmentQb2Item
+  | AttachmentTupleItem
+  | AttachmentNestedGroupItem;
+
+/** Text-domain unit (single qb64 token or opaque quadlet). */
+export interface AttachmentQb64Item {
+  kind: "qb64";
+  qb64: string;
+  opaque: boolean;
+}
+
+/** Binary-domain unit (single qb2 token or opaque triplet). */
+export interface AttachmentQb2Item {
+  kind: "qb2";
+  qb2: Uint8Array;
+  opaque: boolean;
+}
+
+/** Tuple/repeated payload unit preserving source ordering. */
+export interface AttachmentTupleItem {
+  kind: "tuple";
+  items: AttachmentItem[];
+}
+
+/** Wrapper-enclosed nested group summary. */
+export interface AttachmentNestedGroupItem {
+  kind: "group";
+  code: string;
+  name: string;
+  count: number;
+}
+
 /**
  * CESR attachment group that comes after a CESR body.
  */
@@ -52,7 +87,7 @@ export interface AttachmentGroup {
   name: string;
   count: number;
   raw: Uint8Array;
-  items: unknown[];
+  items: AttachmentItem[];
 }
 
 /**
