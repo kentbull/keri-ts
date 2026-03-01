@@ -56,6 +56,9 @@ Completed baseline work that this roadmap now builds on:
   - parser and dispatch now emit typed `RecoveryDiagnostic` events for fallback accepted/rejected, wrapper opaque-tail preservation, and parser error-reset context,
   - legacy fallback callback remains adapter-compatible,
   - default compat warning side effects were removed.
+- Point 9 naming/terminology normalization landed (targeted scope):
+  - parser docs now include explicit glossary entries for frame/message, body-group/attachment-group, `ano`, and deferred-frame lifecycle terms,
+  - targeted identifier/comment cleanup reduced frame/message ambiguity without broad rename churn.
 - Phase 5 minor-version model + codex subset parity landed:
   - version-aware `(major, minor)` codex/table registries and resolver semantics are now explicit,
   - `CtrDexByVersion` / `UniDexByVersion` / `SUDexByVersion` / `MUDexByVersion` are exported,
@@ -103,7 +106,7 @@ Points covered:
 
 Status:
 
-- In progress (core lifecycle docs landed; formal state table/glossary still pending)
+- Completed on 2026-03-01 (state table + glossary + targeted terminology alignment)
 
 Scope:
 

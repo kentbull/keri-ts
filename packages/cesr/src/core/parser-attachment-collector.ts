@@ -61,8 +61,8 @@ export class AttachmentCollector {
   }
 
   /**
-   * Collect attachments from the current stream head until a boundary, message
-   * start, or shortage pause is reached.
+   * Collect attachments from the current stream head until a frame boundary
+   * (including `msg` message-domain frame start) or shortage pause is reached.
    */
   collectTrailingAttachments(
     input: Uint8Array,

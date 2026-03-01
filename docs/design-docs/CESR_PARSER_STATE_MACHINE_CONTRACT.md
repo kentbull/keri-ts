@@ -15,6 +15,28 @@
 Define the normative parser state machine for `CesrParser` so maintainers can
 reason about lifecycle behavior without re-deriving rules from control flow.
 
+## Terminology (Normative)
+
+- Frame:
+  one parser emission unit (`CesrFrame` event with `type: "frame"`).
+- `CesrMessage`:
+  historical public payload type name for that frame unit (`body` +
+  `attachments`), retained for API compatibility.
+- Message-domain frame:
+  frame whose body starts with cold-start code `msg` and is parsed through
+  Serder reaping.
+- Body group:
+  counter-declared frame-start payload form that defines or encloses frame body
+  bytes (`GenericGroup`, `BodyWithAttachmentGroup`, native fixed/map groups).
+- Attachment group:
+  post-body trailing group parsed by attachment dispatch.
+- Annotation separator byte (`ano`):
+  delimiter byte consumed between parse units, not itself a frame payload unit.
+- Deferred frame lifecycle:
+  `pendingFrame` is the oldest incomplete top-level frame continuation;
+  `queuedFrames` are additional already-complete enclosed frames emitted after
+  `pendingFrame` to preserve stream order.
+
 ## State Variables
 
 - `state.buffer`:

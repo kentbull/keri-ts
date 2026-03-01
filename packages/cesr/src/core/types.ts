@@ -11,9 +11,7 @@ export interface Smellage {
 
 export type ColdCode = "msg" | "txt" | "bny" | "ano";
 
-/**
- * The body of a CESR message, an envelope for a Serder KERI or ACDC payload.
- */
+/** Body payload for one parsed CESR frame. */
 export interface CesrBody {
   /** The raw bytes of the body. */
   raw: Uint8Array;
@@ -79,9 +77,7 @@ export interface AttachmentNestedGroupItem {
   count: number;
 }
 
-/**
- * CESR attachment group that comes after a CESR body.
- */
+/** Trailing attachment group parsed after a frame body. */
 export interface AttachmentGroup {
   code: string;
   name: string;
@@ -91,7 +87,11 @@ export interface AttachmentGroup {
 }
 
 /**
- * A single unit of parsed CESR data including message and attachments.
+ * Historical public type name for one parsed frame payload.
+ *
+ * Terminology note: parser docs use "frame" for the emitted unit
+ * (`body` + trailing `attachments`), while this exported type name
+ * remains `CesrMessage` for backward compatibility.
  */
 export interface CesrMessage {
   body: CesrBody;
@@ -107,9 +107,7 @@ export interface ParserState {
   offset: number;
 }
 
-/**
- * A single frame of parsed CESR data containing either a successfully parsed message or error.
- */
+/** Parser stream event union: parsed frame payload or parse error. */
 export type CesrFrame =
   | { type: "frame"; frame: CesrMessage }
   | { type: "error"; error: Error };

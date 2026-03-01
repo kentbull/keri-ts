@@ -15,6 +15,8 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
 - Point 5 (`Convert dispatch definitions to a single declarative spec`) is complete as of 2026-03-01.
 - Point 6 (`Make recovery behavior explicit, configurable, and observable`) is complete as of 2026-03-01 with structured recovery diagnostics and removal of default warning side effects.
+- Point 7 (`Separate syntax parsing from semantic interpretation`) is complete as of 2026-03-01 in targeted high-coupling paths.
+- Point 9 (`Apply naming and terminology normalization pass`) is complete as of 2026-03-01 with glossary-first docs alignment and targeted ambiguity-reducing cleanup.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -74,7 +76,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 6 is complete with one `RecoveryDiagnostic` contract (`version-fallback-accepted`, `version-fallback-rejected`, `wrapper-opaque-tail-preserved`, `parser-error-reset`) at parser/dispatch boundaries.
 - Point 7 is complete with targeted syntax-artifact extraction in high-coupling paths (frame start + native body + mapper tokenization), without a global two-pass rewrite.
 - Point 8 status remains “in progress”; initial KERIpy evidence-pack vectors (`V-P2-017`..`019`) are now lock-tested and remaining scope is broader P2 breadth vectors.
-- Point 9 remains docs-first and targeted (no broad rename churn).
+- Point 9 is complete in docs-first targeted scope (glossary + selective ambiguity cleanup; no broad rename churn).
 - Point 10 remains deferred and benchmark-gated after critical Point 8 hardening.
 
 15. **Test fixture organization**
@@ -449,3 +451,28 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 - Risks/TODO:
   - Remaining P2 vectors (`V-P2-001`..`016`, `V-P2-020`, `V-P2-021`) are still pending before broad rollout confidence.
+
+### 2026-03-01 - Point 9 Naming and Terminology Normalization (Targeted Docs-First Pass)
+- What changed:
+  - Added explicit parser terminology glossaries and normalized wording in:
+    - `docs/design-docs/CESR_PARSER_MAINTAINER_GUIDE.md`
+    - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+  - Clarified frame/message terminology boundary without public API churn:
+    - `packages/cesr/src/core/types.ts` now documents `CesrMessage` as a historical compatibility name for frame payload objects.
+  - Applied targeted ambiguity-reducing cleanup in parser/annotate code:
+    - `packages/cesr/src/annotate/annotator.ts` (`framesOrThrow` -> `parsedFramesOrThrow`, `messages` -> `parsedFrames`)
+    - `packages/cesr/src/core/parser-attachment-collector.ts` comment normalization for frame-boundary semantics.
+  - Updated plan/roadmap status to mark Point 9 complete and Phase 1 docs/terminology work complete:
+    - `docs/plans/cesr-parser-readability-improvement-plan.md`
+    - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Why:
+  - Complete Point 9 with glossary-led terminology alignment and reduce review friction around frame/message naming while avoiding broad rename-only churn.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `138 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Preserve `CesrMessage` exported type name for compatibility until a deliberate public API migration path is approved.

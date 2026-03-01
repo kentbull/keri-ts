@@ -15,6 +15,8 @@
     - Completed on 2026-03-01 with structured diagnostics contract + observer wiring.
   - Completed: Point 7 (`Separate syntax parsing from semantic interpretation`)
     - Completed on 2026-03-01 with targeted frame-start/native-body syntax artifact extraction and mapper syntax/semantic split.
+  - Completed: Point 9 (`Apply naming and terminology normalization pass`)
+    - Completed on 2026-03-01 with glossary-first terminology alignment in parser docs and targeted ambiguity-reducing identifier/comment cleanup.
   - Next: Point 8 (`Add parity-oriented behavioral lock tests against keripy`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
@@ -344,10 +346,18 @@ Progress note:
 
 Status:
 
-- Pending (narrowed scope; documentation-first).
-- Calibration:
-  - readability gains from Points 1-5 + Phase 5 reduce need for broad renaming churn.
-  - focus on targeted terminology cleanup and glossary-level alignment; avoid broad churn unless ambiguity materially affects maintenance/review.
+- Completed on 2026-03-01 (documentation-first, targeted scope).
+- Completion evidence:
+  - parser terminology glossaries added/aligned in:
+    - `docs/design-docs/CESR_PARSER_MAINTAINER_GUIDE.md`
+    - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+  - targeted ambiguity-reducing identifier/comment normalization in:
+    - `packages/cesr/src/annotate/annotator.ts`
+    - `packages/cesr/src/core/parser-attachment-collector.ts`
+    - `packages/cesr/src/core/types.ts`
+- Calibration retained:
+  - readability gains from Points 1-7 + Phase 5 made broad rename churn unnecessary.
+  - this pass intentionally stayed narrow and glossary-led unless ambiguity materially affected maintenance/review.
 
 Standardize terms used in code and docs:
 

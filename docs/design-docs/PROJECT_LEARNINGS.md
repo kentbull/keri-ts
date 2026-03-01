@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1-7 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is implemented; Point 8 parity hardening breadth is now the next parser milestone).
+1. CESR parser readability roadmap execution (Points 1-7 and 9 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is implemented; Point 8 parity hardening breadth is now the next parser milestone).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -80,6 +80,7 @@ This keeps context focused and avoids long-thread drift.
 22. Full CESR suite remains green after Point 7 implementation (`135 passed, 0 failed`).
 23. Point 8 parity hardening has initial P2 cross-implementation evidence locks implemented (`V-P2-017`..`V-P2-019`) in a dedicated hardening suite (`parser-keripy-golden-corpus.test.ts`) with txt/qb2 corpus parity, codex/subset sentinels, and historical implicit-v1 stream coverage.
 24. Full CESR suite remains green after initial Point 8 hardening additions (`138 passed, 0 failed`).
+25. Point 9 naming/terminology normalization is complete in targeted docs-first scope: parser glossary alignment is now explicit and selective identifier/comment cleanup reduced frame/message ambiguity without broad rename churn.
 
 ## New Thread Kickoff Template
 
