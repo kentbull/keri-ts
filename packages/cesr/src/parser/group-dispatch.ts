@@ -9,6 +9,10 @@ import {
   UnknownCodeError,
 } from "../core/errors.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
+import {
+  resolveVersionedRegistryValue,
+  type VersionedRegistry,
+} from "../tables/counter-version-registry.ts";
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import {
   type AttachmentDispatchDomain,
@@ -474,18 +478,18 @@ const ATTACHMENT_DISPATCH_DESCRIPTORS = expandDispatchSpec(
 );
 
 /** Siger-list counter codes by major version (for nested trans sig group parsing). */
-const SIGER_LIST_CODES_BY_VERSION = buildCodeSetByVersion(
+const SIGER_LIST_CODES_BY_MAJOR = buildCodeSetByVersion(
   ATTACHMENT_DISPATCH_DESCRIPTORS,
   (descriptor) => descriptor.allowsSigerList,
 );
 
 /** Wrapper counters by major version whose payloads recurse as nested groups. */
-const WRAPPER_GROUP_CODES_BY_VERSION = buildCodeSetByVersion(
+const WRAPPER_GROUP_CODES_BY_MAJOR = buildCodeSetByVersion(
   ATTACHMENT_DISPATCH_DESCRIPTORS,
   (descriptor) => descriptor.wrapperGroup,
 );
-const WRAPPER_GROUP_CODES_V1 = WRAPPER_GROUP_CODES_BY_VERSION[1];
-const WRAPPER_GROUP_CODES_V2 = WRAPPER_GROUP_CODES_BY_VERSION[2];
+const WRAPPER_GROUP_CODES_V1 = WRAPPER_GROUP_CODES_BY_MAJOR[1];
+const WRAPPER_GROUP_CODES_V2 = WRAPPER_GROUP_CODES_BY_MAJOR[2];
 
 /** Universal genus-version counter code (v1/v2 compatible encoding semantics). */
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
@@ -588,7 +592,11 @@ function parseSigerList(
   domain: ParseDomain,
 ): { items: AttachmentItem[]; consumed: number } {
   const counter = parseCounter(input, version, domain);
-  const allowed = SIGER_LIST_CODES_BY_VERSION[version.major];
+  const allowed = resolveVersionedRegistryValue(
+    SIGER_LIST_CODES_BY_VERSION,
+    version,
+    "siger-list code set",
+  ).value;
   if (!allowed.has(counter.code)) {
     throw new UnknownCodeError(
       `Expected siger-list counter but got ${counter.code}`,
@@ -961,17 +969,39 @@ function buildDispatchByVersion(
 }
 
 /** Generated dispatch maps keyed by major version. */
-const DISPATCH_BY_VERSION = buildDispatchByVersion(
+const DISPATCH_BY_MAJOR = buildDispatchByVersion(
   ATTACHMENT_DISPATCH_DESCRIPTORS,
 );
-/** Generated v1 routing table (derived, not hand-maintained). */
-const V1_DISPATCH = DISPATCH_BY_VERSION[1];
-/** Generated v2 routing table (derived, not hand-maintained). */
-const V2_DISPATCH = DISPATCH_BY_VERSION[2];
 
-/** Select major-version dispatch table (v2 for major >= 2). */
+/**
+ * Lift major-indexed artifacts into a major+minor registry.
+ *
+ * Current parser supports one minor (`0`) per major, but this keeps lookup
+ * contracts explicit and ready for minor-version progression.
+ */
+function asMinorZeroRegistry<T>(
+  byMajor: Record<DispatchVersion, T>,
+): VersionedRegistry<T> {
+  return Object.freeze({
+    1: Object.freeze({ 0: byMajor[1] }),
+    2: Object.freeze({ 0: byMajor[2] }),
+  });
+}
+
+/** Siger-list counter code sets resolved by major+minor stream version. */
+const SIGER_LIST_CODES_BY_VERSION = asMinorZeroRegistry(
+  SIGER_LIST_CODES_BY_MAJOR,
+);
+/** Attachment-group dispatch registry resolved by major+minor stream version. */
+const DISPATCH_BY_VERSION = asMinorZeroRegistry(DISPATCH_BY_MAJOR);
+
+/** Resolve attachment dispatch table for the requested stream version. */
 function getDispatch(version: Versionage): Map<string, GroupParser> {
-  return version.major >= 2 ? V2_DISPATCH : V1_DISPATCH;
+  return resolveVersionedRegistryValue(
+    DISPATCH_BY_VERSION,
+    version,
+    "attachment dispatch registry",
+  ).value;
 }
 
 /** Parse one attachment group with an explicit version (no version fallback). */

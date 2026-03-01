@@ -11,14 +11,14 @@ import {
   UnknownCodeError,
 } from "../core/errors.ts";
 import {
-  COUNTER_CODE_NAMES_V1,
-  COUNTER_CODE_NAMES_V2,
   COUNTER_HARDS,
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
 } from "../tables/counter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { ColdCode } from "../core/types.ts";
+import {
+  resolveCounterCodeNameTable,
+  resolveCounterSizeTable,
+} from "../tables/counter-version-registry.ts";
 
 export interface Counter {
   code: string;
@@ -38,10 +38,8 @@ const COUNTER_BARDS = new Map<string, number>(
 );
 
 function getTables(version: Versionage) {
-  const sizeTable = version.major >= 2 ? COUNTER_SIZES_V2 : COUNTER_SIZES_V1;
-  const nameTable = version.major >= 2
-    ? COUNTER_CODE_NAMES_V2
-    : COUNTER_CODE_NAMES_V1;
+  const sizeTable = resolveCounterSizeTable(version);
+  const nameTable = resolveCounterCodeNameTable(version);
   return { sizeTable, nameTable };
 }
 
@@ -88,7 +86,7 @@ export function parseCounterFromText(
   }
 
   const count = b64ToInt(txt.slice(sizage.hs, sizage.hs + sizage.ss));
-  const name = nameTable[code as keyof typeof nameTable] ?? "UnknownCounter";
+  const name = nameTable[code] ?? "UnknownCounter";
 
   return {
     code,
@@ -136,7 +134,7 @@ export function parseCounterFromBinary(
 
   const qb64 = codeB2ToB64(input, sizage.fs);
   const count = b64ToInt(qb64.slice(sizage.hs, sizage.fs));
-  const name = nameTable[code as keyof typeof nameTable] ?? "UnknownCounter";
+  const name = nameTable[code] ?? "UnknownCounter";
 
   return {
     code,

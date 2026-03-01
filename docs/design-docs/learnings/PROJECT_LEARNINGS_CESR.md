@@ -14,7 +14,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
 - Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
 - Point 5 (`Convert dispatch definitions to a single declarative spec`) is complete as of 2026-03-01.
-- Point 6 (`Make recovery behavior explicit, configurable, and observable`) is now explicitly re-scoped: explicit/configurable baseline landed via Points 3/4, while remaining work is structured recovery diagnostics/observability after Phase 5 minor-version rectification.
+- Point 6 (`Make recovery behavior explicit, configurable, and observable`) remains pending and re-scoped to diagnostics/observability after explicit/configurable baseline landed via Points 3/4.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -65,6 +65,11 @@ Persistent CESR parser memory for `keri-ts`.
 - Wrapper opaque-tail fallback units are explicit via `opaque: true` on `qb64`/`qb2` items.
 - Primitive wrappers (`Sealer`, `Blinder`, `Mediar`, `Aggor` list mode) now expose typed items instead of `unknown[]`.
 
+13. **Phase 5 minor-version + codex subset parity**
+- `CtrDexByVersion`, `UniDexByVersion`, `SUDexByVersion`, and `MUDexByVersion` are now explicit `(major, minor)` registries with resolver semantics aligned to KERIpy-style latest-compatible-minor binding.
+- `parseCounter` and attachment dispatch/siger-set lookup now resolve through versioned registries instead of `major >= 2` branching.
+- Legacy v1 `-J/-K` compatibility aliases are explicitly tracked as allowlisted exceptions (not first-class entries in `CtrDexByVersion`), with invariants ensuring auditable behavior.
+
 ## Key Docs
 
 1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
@@ -77,10 +82,9 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Execute roadmap Phase 5: minor-version model rectification + codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs).
+1. Implement re-scoped Point 6 observability slice (typed recovery diagnostics + removal of default warning side effects).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
-4. Implement re-scoped Point 6 observability slice (typed recovery diagnostics + removal of default warning side effects) after Phase 5 completes.
 
 ## Handoff Log
 
@@ -294,3 +298,27 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Ensure final Point 6 implementation adds a concrete diagnostics contract before removing legacy warning behavior so downstream observability is not regressed.
+
+### 2026-03-01 - Phase 5 Minor-Version Model + Codex Subset Parity Implementation
+- What changed:
+  - Added `packages/cesr/src/tables/counter-version-registry.ts` with explicit versioned codex registries:
+    - `CtrDexByVersion`
+    - `UniDexByVersion`
+    - `SUDexByVersion`
+    - `MUDexByVersion`
+  - Added generic major/minor resolver semantics (`resolveVersionedRegistryValue`) that bind to latest supported compatible minor within a major and reject unsupported future minor requests.
+  - Wired `packages/cesr/src/primitives/counter.ts` to resolve size/name tables via versioned registries instead of `major >= 2` branching.
+  - Wired `packages/cesr/src/parser/group-dispatch.ts` to resolve dispatch maps and siger-list code sets via versioned registries instead of major-only table selection.
+  - Added explicit legacy compatibility alias allowlist (`LEGACY_COMPAT_COUNTER_CODES_BY_VERSION`) for v1 `-J/-K` sad-path entries.
+  - Added invariants/tests:
+    - `packages/cesr/test/unit/counter-version-registry.test.ts`
+    - extended `packages/cesr/test/unit/dispatch-spec-invariants.test.ts` with codex/subset/legacy alias coverage and dispatch-to-codex alignment checks.
+- Why:
+  - Complete roadmap Phase 5 so version semantics and codex subset concepts are explicit, auditable, and aligned with KERIpy conceptual layering.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `128 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Point 6 observability work still needs to remove default warning side effects and introduce one structured diagnostics contract.

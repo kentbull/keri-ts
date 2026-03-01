@@ -1,6 +1,13 @@
 import { assertEquals } from "jsr:@std/assert";
 import { ATTACHMENT_DISPATCH_SPEC } from "../../src/parser/group-dispatch.ts";
 import {
+  CtrDexByVersion,
+  LEGACY_COMPAT_COUNTER_CODES_BY_VERSION,
+  MUDexByVersion,
+  SUDexByVersion,
+  UniDexByVersion,
+} from "../../src/tables/counter-version-registry.ts";
+import {
   COUNTER_CODE_NAMES_V1,
   COUNTER_CODE_NAMES_V2,
 } from "../../src/tables/counter.tables.generated.ts";
@@ -9,6 +16,10 @@ type DispatchMajor = 1 | 2;
 
 function keyFor(major: DispatchMajor, code: string): string {
   return `${major}:${code}`;
+}
+
+function keyForMinor(major: DispatchMajor, minor: number, code: string): string {
+  return `${major}.${minor}:${code}`;
 }
 
 function collectDispatchCounts(): Map<string, number> {
@@ -33,6 +44,62 @@ function expectedCodeSetFromTables(): Set<string> {
     expected.add(keyFor(2, code));
   }
   return expected;
+}
+
+function collectCodexCounts(): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const major of [1, 2] as const) {
+    for (const [minorText, codex] of Object.entries(CtrDexByVersion[major])) {
+      const minor = Number(minorText);
+      for (const code of Object.values(codex)) {
+        const key = keyForMinor(major, minor, code);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+function expectedCodeSetFromTablesByMinorZero(): Set<string> {
+  const expected = new Set<string>();
+  for (const code of Object.keys(COUNTER_CODE_NAMES_V1)) {
+    expected.add(keyForMinor(1, 0, code));
+  }
+  for (const code of Object.keys(COUNTER_CODE_NAMES_V2)) {
+    expected.add(keyForMinor(2, 0, code));
+  }
+  return expected;
+}
+
+function collectLegacyCompatKeysByMinor(): Set<string> {
+  const keys = new Set<string>();
+  for (const major of [1, 2] as const) {
+    for (
+      const [minorText, compatCodes] of Object.entries(
+        LEGACY_COMPAT_COUNTER_CODES_BY_VERSION[major],
+      )
+    ) {
+      const minor = Number(minorText);
+      for (const code of compatCodes) {
+        keys.add(keyForMinor(major, minor, code));
+      }
+    }
+  }
+  return keys;
+}
+
+function collectLegacyCompatKeysByMajor(): Set<string> {
+  const keys = new Set<string>();
+  for (const major of [1, 2] as const) {
+    for (
+      const compatCodes of Object.values(LEGACY_COMPAT_COUNTER_CODES_BY_VERSION[major])
+    ) {
+      for (const code of compatCodes) {
+        keys.add(keyFor(major, code));
+      }
+    }
+  }
+  return keys;
 }
 
 type DispatchFamily = (typeof ATTACHMENT_DISPATCH_SPEC)[number];
@@ -66,13 +133,7 @@ Deno.test(
       "Every generated (major, code) must be represented in ATTACHMENT_DISPATCH_SPEC",
     );
 
-    // Long-term compatibility allowance:
-    // v1 -J/-K SadPath aliases must remain dispatchable even if future generated
-    // codex tables stop listing them as first-class v1 entries.
-    const legacyCompatExtras = new Set([
-      keyFor(1, "-J"),
-      keyFor(1, "-K"),
-    ]);
+    const legacyCompatExtras = collectLegacyCompatKeysByMajor();
 
     const unexpected = [...actual]
       .filter((key) => !expected.has(key))
@@ -196,6 +257,108 @@ Deno.test(
         "sadPathSignatureGroup",
       ]),
       "All semanticShape categories must remain represented in ATTACHMENT_DISPATCH_SPEC",
+    );
+  },
+);
+
+Deno.test(
+  "codex registry invariant: versioned CtrDex coverage is complete except explicit legacy aliases",
+  () => {
+    const counts = collectCodexCounts();
+    const duplicates = [...counts.entries()]
+      .filter(([_key, count]) => count > 1)
+      .map(([key]) => key)
+      .sort();
+    assertEquals(
+      duplicates,
+      [],
+      "Each (major, minor, code) in CtrDexByVersion must be unique",
+    );
+
+    const expected = expectedCodeSetFromTablesByMinorZero();
+    const actual = new Set(counts.keys());
+    const legacyCompat = collectLegacyCompatKeysByMinor();
+
+    const missing = [...expected].filter((key) => !actual.has(key)).sort();
+    assertEquals(
+      missing,
+      [...legacyCompat].sort(),
+      "Only explicit legacy compatibility aliases may be omitted from CtrDexByVersion",
+    );
+
+    const unexpected = [...actual].filter((key) => !expected.has(key)).sort();
+    assertEquals(
+      unexpected,
+      [],
+      "CtrDexByVersion must not define codes absent from generated tables",
+    );
+  },
+);
+
+Deno.test(
+  "codex subset invariant: SUDex/MUDex/UniDex relationships remain strict",
+  () => {
+    for (const major of [1, 2] as const) {
+      for (const minorText of Object.keys(CtrDexByVersion[major])) {
+        const minor = Number(minorText);
+        const ctr = CtrDexByVersion[major][minor];
+        const uni = UniDexByVersion[major][minor];
+        const su = SUDexByVersion[major][minor];
+        const mu = MUDexByVersion[major][minor];
+
+        const ctrCodes = new Set(Object.values(ctr));
+        const uniCodes = new Set(Object.values(uni));
+        const suCodes = new Set(Object.values(su));
+        const muCodes = new Set(Object.values(mu));
+
+        for (const code of uniCodes) {
+          assertEquals(
+            ctrCodes.has(code),
+            true,
+            `UniDex code ${code} must exist in CtrDex (${major}.${minor})`,
+          );
+        }
+        for (const code of suCodes) {
+          assertEquals(
+            uniCodes.has(code),
+            true,
+            `SUDex code ${code} must exist in UniDex (${major}.${minor})`,
+          );
+        }
+        for (const code of muCodes) {
+          assertEquals(
+            uniCodes.has(code),
+            true,
+            `MUDex code ${code} must exist in UniDex (${major}.${minor})`,
+          );
+        }
+      }
+    }
+  },
+);
+
+Deno.test(
+  "dispatch/codex invariant: dispatch routes are backed by CtrDex or explicit legacy alias allowances",
+  () => {
+    const dispatch = new Set(collectDispatchCounts().keys());
+    const codexMajorKeys = new Set<string>();
+    for (const major of [1, 2] as const) {
+      for (const codex of Object.values(CtrDexByVersion[major])) {
+        for (const code of Object.values(codex)) {
+          codexMajorKeys.add(keyFor(major, code));
+        }
+      }
+    }
+
+    const legacyCompat = collectLegacyCompatKeysByMajor();
+    const disallowed = [...dispatch]
+      .filter((key) => !codexMajorKeys.has(key))
+      .filter((key) => !legacyCompat.has(key))
+      .sort();
+    assertEquals(
+      disallowed,
+      [],
+      "Dispatch routes must resolve to CtrDexByVersion entries or explicit legacy alias allowances",
     );
   },
 );

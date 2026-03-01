@@ -48,6 +48,10 @@ Completed baseline work that this roadmap now builds on:
 - Point 5 declarative dispatch spec landed:
   - `group-dispatch.ts` now defines one descriptor source for dispatch metadata.
   - v1/v2 dispatch maps and related wrapper/siger sets are mechanically derived from descriptors.
+- Phase 5 minor-version model + codex subset parity landed:
+  - version-aware `(major, minor)` codex/table registries and resolver semantics are now explicit,
+  - `CtrDexByVersion` / `UniDexByVersion` / `SUDexByVersion` / `MUDexByVersion` are exported,
+  - counter-table and dispatch lookups now resolve via versioned registries instead of `major >= 2` branching.
 
 ## Phase Structure
 
@@ -205,7 +209,13 @@ Points covered:
 
 Status:
 
-- Not started (critical next phase).
+- Completed on 2026-03-01.
+- Completion evidence:
+  - `packages/cesr/src/tables/counter-version-registry.ts`
+  - `packages/cesr/src/primitives/counter.ts` (versioned table lookup resolver wiring)
+  - `packages/cesr/src/parser/group-dispatch.ts` (versioned dispatch/siger-set resolver wiring)
+  - `packages/cesr/test/unit/counter-version-registry.test.ts`
+  - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts` (codex/subset/legacy alias invariants)
 
 Scope:
 
