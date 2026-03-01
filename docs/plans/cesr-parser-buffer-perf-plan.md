@@ -3,8 +3,24 @@
 ## Status
 
 - Created: 2026-02-27
-- Priority: deferred until current feature work is completed
+- Updated: 2026-03-01
+- Priority: benchmark-gated (baseline flows implemented; optimization still deferred)
 - Scope: `packages/cesr/src/core/parser-engine.ts`, `packages/cesr/src/core/bytes.ts`
+
+## Benchmark Baseline Flow
+
+Baseline benchmark execution is now standardized and must be run before any buffer-optimization change:
+
+1. `deno task bench:cesr`
+2. `deno task bench:cesr:parser --in <path>`
+3. `tufa benchmark cesr --in <path>` (or stdin stream)
+
+Repository benchmark entrypoints:
+
+- `packages/cesr/bench/parser.bench.ts`
+- `packages/cesr/src/bench/parser-benchmark.ts`
+- `packages/cesr/src/bench/cli-deno.ts`
+- `packages/keri/src/app/cli/benchmark.ts`
 
 ## Context
 
@@ -80,6 +96,13 @@ type ParserState = {
 - benchmark improvement in small-chunk streaming workload
 - fewer total allocations/copies under sustained incremental input
 - code remains readable and explicitly documented
+
+## Rollback Criteria
+
+Any perf-oriented buffer change should be reverted or reworked when either condition holds:
+
+1. Throughput gain is less than 10% in chunked benchmark mode while complexity (state branches or mutable lifecycle coupling) increases materially.
+2. Any parser lifecycle contract/parity test regresses, even if benchmark numbers improve.
 
 ## Notes on `concatBytes`
 

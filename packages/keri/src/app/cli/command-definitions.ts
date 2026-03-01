@@ -2,6 +2,7 @@ import { Command } from "npm:commander@^10.0.1";
 import { type Operation } from "npm:effection@^3.6.0";
 import { agentCommand } from "./agent.ts";
 import { annotateCommand } from "./annotate.ts";
+import { benchmarkCommand } from "./benchmark.ts";
 import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
 import { dumpEvts } from "./db-dump.ts";
 import { exportCommand } from "./export.ts";
@@ -16,6 +17,7 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["export", (args: CommandArgs) => exportCommand(args)],
     ["agent", (args: CommandArgs) => agentCommand(args)],
     ["annotate", (args: CommandArgs) => annotateCommand(args)],
+    ["benchmark.cesr", (args: CommandArgs) => benchmarkCommand(args)],
     ["db.dump", (args: CommandArgs) => dumpEvts(args)],
     ["interact", interactCommand],
     ["witness", witnessCommand],
@@ -33,6 +35,7 @@ export function registerCmds(program: Command, dispatch: CommandDispatch): void 
   regExportCmd(program, dispatch);
   regAnnotateCmd(program, dispatch);
   regAgentCmd(program, dispatch);
+  regBenchmarkSubCmd(program, dispatch);
 
   // sub commands
   regDbDumpSubCmd(program, dispatch);
@@ -278,6 +281,53 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
         name: "agent",
         args: {
           port: options.port ? Number(options.port) : 8000,
+        },
+      });
+      return Promise.resolve();
+    });
+}
+
+/**
+ * Registers benchmark subcommands with the program.
+ *
+ * @param program The tufa Commander program instance
+ * @param dispatch The command dispatch function
+ */
+function regBenchmarkSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const benchmarkCommand = program.command("benchmark").description("Benchmark operations");
+  regBenchmarkCesrCmd(benchmarkCommand, dispatch);
+}
+
+/**
+ * Registers the CESR benchmark command.
+ *
+ * @param benchmarkCommand The benchmark sub-command instance
+ * @param dispatch The command dispatch function
+ */
+function regBenchmarkCesrCmd(benchmarkCommand: Command, dispatch: CommandDispatch): void {
+  benchmarkCommand
+    .command("cesr")
+    .description("Benchmark CESR parser from file or stdin")
+    .option("--in <path>", "Input file path (defaults to stdin)")
+    .option("--iterations <count>", "Measured benchmark iterations", (value: string) => Number(value), 50)
+    .option("--warmup <count>", "Warmup iterations before measurement", (value: string) => Number(value), 5)
+    .option("--chunk-size <bytes>", "Chunk size for simulated streaming input", (value: string) => Number(value), 0)
+    .option("--framed", "Use framed parser mode")
+    .option("--compat", "Use compat attachment dispatch mode")
+    .option("--allow-errors", "Do not fail benchmark if parse errors are emitted")
+    .option("--json", "Emit benchmark result as one JSON line")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "benchmark.cesr",
+        args: {
+          inPath: options.in,
+          iterations: options.iterations,
+          warmupIterations: options.warmup,
+          chunkSize: options.chunkSize,
+          framed: options.framed || false,
+          compat: options.compat || false,
+          allowErrors: options.allowErrors || false,
+          json: options.json || false,
         },
       });
       return Promise.resolve();

@@ -12,6 +12,8 @@
   },
   "tasks": {
     "test": "deno test",
+    "bench": "deno bench bench",
+    "bench:parser": "deno run --allow-read src/bench/cli-deno.ts",
     "annotate": "deno run --allow-read --allow-write src/annotate/cli-deno.ts",
     "version:generate": "deno run -A ../../scripts/generate_versions.ts --only cesr",
     "version:check": "deno run -A ../../scripts/generate_versions.ts --check --only cesr",

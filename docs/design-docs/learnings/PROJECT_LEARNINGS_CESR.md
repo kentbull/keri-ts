@@ -17,6 +17,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 6 (`Make recovery behavior explicit, configurable, and observable`) is complete as of 2026-03-01 with structured recovery diagnostics and removal of default warning side effects.
 - Point 7 (`Separate syntax parsing from semantic interpretation`) is complete as of 2026-03-01 in targeted high-coupling paths.
 - Point 9 (`Apply naming and terminology normalization pass`) is complete as of 2026-03-01 with glossary-first docs alignment and targeted ambiguity-reducing cleanup.
+- Point 10 (`Gate performance optimization behind readability-first abstractions`) is complete as of 2026-03-01 with baseline benchmark flows and deferred perf rollback criteria.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -77,7 +78,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 7 is complete with targeted syntax-artifact extraction in high-coupling paths (frame start + native body + mapper tokenization), without a global two-pass rewrite.
 - Point 8 status remains “in progress”; initial KERIpy evidence-pack vectors (`V-P2-017`..`019`) are now lock-tested and remaining scope is broader P2 breadth vectors.
 - Point 9 is complete in docs-first targeted scope (glossary + selective ambiguity cleanup; no broad rename churn).
-- Point 10 remains deferred and benchmark-gated after critical Point 8 hardening.
+- Point 10 baseline gating is complete: parser benchmark flows are standardized and wired into `tufa`, while optimization implementation remains deferred behind benchmark evidence and rollback criteria.
 
 15. **Test fixture organization**
 - Common CESR test builders are centralized in descriptive fixture modules:
@@ -476,3 +477,35 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Preserve `CesrMessage` exported type name for compatibility until a deliberate public API migration path is approved.
+
+### 2026-03-01 - Point 10 Benchmark Gating and `tufa` CESR Benchmark Command
+- What changed:
+  - Added reusable benchmark abstraction for parser runs and metrics:
+    - `packages/cesr/src/bench/parser-benchmark.ts`
+  - Added standard benchmark flows in `packages/cesr`:
+    - baseline suite `packages/cesr/bench/parser.bench.ts`
+    - arbitrary-stream CLI `packages/cesr/src/bench/cli-deno.ts`
+    - tasks `deno task bench:cesr` and `deno task bench:cesr:parser`.
+  - Wired benchmark execution into `tufa`:
+    - `tufa benchmark cesr --in <path>` or stdin stream.
+  - Added focused tests:
+    - `packages/cesr/test/unit/parser-benchmark.test.ts`
+    - `packages/keri/test/unit/app/benchmark.test.ts`
+  - Updated readability/perf planning docs to mark Point 10 complete and document rollback criteria.
+- Why:
+  - Establish benchmark evidence as the required gate before any parser buffer optimization, while keeping optimization internals behind readable abstractions and stable command entrypoints.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `140 passed, 0 failed`
+  - Command: `deno test --allow-all --unstable-ffi test/unit/app/benchmark.test.ts` (in `packages/keri`)
+  - Result: `2 passed, 0 failed`
+  - Command: `deno task bench:cesr`
+  - Result: benchmark suite executed and reported parser baseline timings
+  - Command: `deno task tufa benchmark cesr --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr --iterations 1 --warmup 0 --chunk-size 128`
+  - Result: benchmark command executed successfully and emitted metrics
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr-parser-buffer-perf-plan.md`
+- Risks/TODO:
+  - Remaining Point 8 P2 breadth vectors are still pending and remain the next parser hardening milestone in Phase 6.

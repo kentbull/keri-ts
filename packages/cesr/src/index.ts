@@ -47,3 +47,4 @@ export * from "./annotate/comments.ts";
 export * from "./annotate/render.ts";
 export * from "./annotate/annotator.ts";
 export * from "./annotate/denot.ts";
+export * from "./bench/parser-benchmark.ts";

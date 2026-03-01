@@ -289,6 +289,12 @@ Points covered:
 - 8 (final parity confidence)
 - 10 (handoff to deferred perf plan)
 
+Status:
+
+- In progress on 2026-03-01.
+- Point 10 baseline deliverables are complete (standard benchmark flow + `tufa benchmark cesr` bridge + deferred perf rollback gating criteria).
+- Point 8 breadth hardening vectors remain the outstanding Phase 6 parser milestone.
+
 Scope:
 
 - produce maintainer-facing rationale and change summary by phase

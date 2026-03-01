@@ -28,6 +28,28 @@ tufa annotate --in ./mystream.cesr
 cat ./mystream.cesr | tufa annotate
 ```
 
+## Benchmark CESR parser
+
+Benchmark any CESR stream from file or stdin:
+
+```bash
+# Benchmark a stream file
+tufa benchmark cesr --in ./mystream.cesr
+
+# Benchmark from stdin with explicit chunk simulation
+cat ./mystream.cesr | tufa benchmark cesr --chunk-size 256 --iterations 25 --warmup 5
+```
+
+- `--in <path>`: input file path (defaults to stdin)
+- `--iterations <count>`: measured benchmark runs (default `50`)
+- `--warmup <count>`: warmup runs before measurement (default `5`)
+- `--chunk-size <bytes>`: chunk size for streaming simulation (`0` = full
+  stream)
+- `--framed`: benchmark parser in framed mode
+- `--compat`: benchmark parser with compat attachment dispatch mode
+- `--allow-errors`: continue benchmark even when parse errors are emitted
+- `--json`: print one JSON result line
+
 ## Annotate options
 
 ```bash

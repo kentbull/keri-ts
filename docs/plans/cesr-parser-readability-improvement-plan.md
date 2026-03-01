@@ -17,6 +17,8 @@
     - Completed on 2026-03-01 with targeted frame-start/native-body syntax artifact extraction and mapper syntax/semantic split.
   - Completed: Point 9 (`Apply naming and terminology normalization pass`)
     - Completed on 2026-03-01 with glossary-first terminology alignment in parser docs and targeted ambiguity-reducing identifier/comment cleanup.
+  - Completed: Point 10 (`Gate performance optimization behind readability-first abstractions`)
+    - Completed on 2026-03-01 with baseline parser benchmark flows (`deno bench`, reusable benchmark abstraction, and `tufa benchmark cesr`) plus rollback-gating criteria in deferred perf plan docs.
   - Next: Point 8 (`Add parity-oriented behavioral lock tests against keripy`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
@@ -380,10 +382,14 @@ Why:
 
 Status:
 
-- Pending (deferred by design; gated after Point 6 and critical Point 8 hardening).
-- Calibration:
-  - no change in priority; proceed only with benchmark evidence and without weakening maintainability contracts.
-  - parser readability and version-model baseline are now strong enough to support eventual targeted perf work without architectural churn.
+- Completed on 2026-03-01.
+- Completion evidence:
+  - Standard CESR parser baseline benchmarks are now runnable in-repo via `deno task bench:cesr` (`packages/cesr/bench/parser.bench.ts`).
+  - Reusable readability-first benchmark abstraction is available at `packages/cesr/src/bench/parser-benchmark.ts`.
+  - Arbitrary-stream benchmark execution is now available through:
+    - `deno task bench:cesr:parser --in <path>`
+    - `tufa benchmark cesr --in <path>` (or stdin).
+  - Deferred perf plan now has explicit benchmark commands and rollback gating criteria.
 
 Apply buffer optimizations only after state contracts and decomposition are complete.
 
