@@ -1,16 +1,30 @@
-import type { AttachmentGroup, ColdCode } from "../core/types.ts";
+import type { AttachmentGroup } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Counter, parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
 import {
-  DeserializeError,
   GroupSizeError,
   ShortageError,
   UnknownCodeError,
 } from "../core/errors.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
+import {
+  type AttachmentDispatchDomain,
+  type AttachmentVersionFallbackPolicy,
+  type AttachmentVersionFallbackPolicyOptions,
+  createAttachmentVersionFallbackPolicy,
+} from "./attachment-fallback-policy.ts";
+export {
+  createAttachmentVersionFallbackPolicy,
+} from "./attachment-fallback-policy.ts";
+export type {
+  AttachmentDispatchMode,
+  AttachmentVersionFallbackPolicy,
+  VersionDispatchDecision,
+  VersionFallbackInfo,
+} from "./attachment-fallback-policy.ts";
 
 /**
  * Counter-group dispatcher for attachment payload parsing.
@@ -30,7 +44,7 @@ interface ParsedGroup {
 }
 
 /** Attachment parsing can only proceed in counter domains. */
-type ParseDomain = Extract<ColdCode, "txt" | "bny">;
+type ParseDomain = AttachmentDispatchDomain;
 /** Primitive token families used by tuple/repetition parsers. */
 type PrimitiveKind = "matter" | "indexer";
 
@@ -52,28 +66,27 @@ interface NestedGroupRef {
 type GroupItem = string | Uint8Array | NestedGroupRef | GroupItem[];
 
 /**
- * strict = do not allow version fallback to v1 when v2 parsing fails
- * compat = fall back to try v1 parse if v2 fails
+ * Public options for attachment dispatch behavior and fallback observability.
+ *
+ * Precedence:
+ * 1) `versionFallbackPolicy` when provided (fully explicit strategy injection)
+ * 2) otherwise build default strategy from `mode` + `onVersionFallback`
  */
-export type AttachmentDispatchMode = "strict" | "compat";
-
-export interface VersionFallbackInfo {
-  from: Versionage;
-  to: Versionage;
-  domain: ParseDomain;
-  reason: string;
+export interface AttachmentDispatchOptions
+  extends AttachmentVersionFallbackPolicyOptions {
+  /** Explicit strategy override for fallback + wrapper remainder decisions. */
+  versionFallbackPolicy?: AttachmentVersionFallbackPolicy;
 }
 
-/** Public options for attachment dispatch behavior and fallback observability. */
-export interface AttachmentDispatchOptions {
-  mode?: AttachmentDispatchMode;
-  onVersionFallback?: (info: VersionFallbackInfo) => void;
-}
-
-/** Internal execution context propagated across nested dispatch calls. */
-interface DispatchContext {
-  mode: AttachmentDispatchMode;
-  onVersionFallback?: (info: VersionFallbackInfo) => void;
+/**
+ * Policy context propagated through nested attachment-group dispatch recursion.
+ *
+ * This currently carries only fallback/recovery policy, but remains a named
+ * object so additional policy knobs can be threaded without widening every
+ * parser signature again.
+ */
+interface AttachmentDispatchPolicyContext {
+  versionFallbackPolicy: AttachmentVersionFallbackPolicy;
 }
 
 /** Parser contract for one attachment-group counter code. */
@@ -82,7 +95,7 @@ type GroupParser = (
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  context: DispatchContext,
+  context: AttachmentDispatchPolicyContext,
 ) => ParsedGroup;
 
 /** Siger-list counter codes by major version (for nested trans sig group parsing). */
@@ -248,7 +261,7 @@ function parseQuadletGroup(
   version: Versionage,
   wrapperCodes: Set<string>,
   domain: ParseDomain,
-  context: DispatchContext,
+  context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   const unitSize = quadletUnitSize(domain);
   const payloadSize = counter.count * unitSize;
@@ -304,7 +317,11 @@ function parseQuadletGroup(
         ) {
           throw error;
         }
-        if (context.mode === "strict") {
+        if (
+          !context.versionFallbackPolicy.shouldPreserveWrapperRemainder(
+            error as Error,
+          )
+        ) {
           throw error;
         }
         // Intentional recovery point: keep unread wrapper tail as opaque units.
@@ -334,7 +351,7 @@ function repeatTupleParser(kinds: PrimitiveKind[]): GroupParser {
     counter: Counter,
     _version: Versionage,
     domain: ParseDomain,
-    _context: DispatchContext,
+    _context: AttachmentDispatchPolicyContext,
   ): ParsedGroup => {
     const headerSize = counterHeaderSize(counter, domain);
     const parsed = parseRepeated(
@@ -353,7 +370,7 @@ function transIdxSigGroupsParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  _context: DispatchContext,
+  _context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   const items: GroupItem[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -377,7 +394,7 @@ function transLastIdxSigGroupsParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  _context: DispatchContext,
+  _context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   const items: GroupItem[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -397,7 +414,7 @@ function sadPathSigParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  context: DispatchContext,
+  context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   const items: GroupItem[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -426,7 +443,7 @@ function sadPathSigGroupParser(
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  context: DispatchContext,
+  context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   const items: GroupItem[] = [];
   let offset = counterHeaderSize(counter, domain);
@@ -460,7 +477,7 @@ function genusVersionParser(
   counter: Counter,
   _version: Versionage,
   domain: ParseDomain,
-  _context: DispatchContext,
+  _context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   return {
     items: [counter.qb64],
@@ -675,7 +692,7 @@ function parseAttachmentDispatchWithVersion(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
-  context: DispatchContext,
+  context: AttachmentDispatchPolicyContext,
 ): { group: AttachmentGroup; consumed: number } {
   const counter = parseCounter(input, version, domain);
   const parser = getDispatch(version).get(counter.code);
@@ -707,51 +724,34 @@ function parseAttachmentDispatchWithVersion(
 }
 
 /**
- * Parse one attachment group using strict/compat mode semantics.
+ * Parse one attachment group using an injected fallback strategy.
  *
- * Compat mode retries parse with alternate major version only on unknown-code or
- * deserialize failures, and reports fallback via callback or warning.
+ * Flow:
+ * 1) attempt parse with provided version
+ * 2) ask policy whether failure is terminal or retryable
+ * 3) on retry, emit fallback observation and parse with policy-selected version
  */
-function parseAttachmentDispatchByMode(
+function parseAttachmentDispatchWithPolicy(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
-  context: DispatchContext,
+  context: AttachmentDispatchPolicyContext,
 ): { group: AttachmentGroup; consumed: number } {
-  if (context.mode === "strict") {
-    return parseAttachmentDispatchWithVersion(input, version, domain, context);
-  }
-
-  // support version fallback with the alternate version, usually 1.0, and warn
-  // or call the version fallback callback defined by the caller.
   try {
     return parseAttachmentDispatchWithVersion(input, version, domain, context);
   } catch (error) {
-    if (
-      !(error instanceof UnknownCodeError) &&
-      !(error instanceof DeserializeError)
-    ) {
+    const decision = context.versionFallbackPolicy.onVersionDispatchFailure(
+      error as Error,
+      version,
+      domain,
+    );
+    if (decision.action === "throw") {
       throw error;
     }
-    const alternate: Versionage = version.major >= 2
-      ? { major: 1, minor: 0 }
-      : { major: 2, minor: 0 };
-    const info: VersionFallbackInfo = {
-      from: version,
-      to: alternate,
-      domain,
-      reason: error.message,
-    };
-    if (context.onVersionFallback) {
-      context.onVersionFallback(info);
-    } else {
-      console.warn(
-        `CESR attachment dispatch fallback ${version.major}.${version.minor} -> ${alternate.major}.${alternate.minor} (${domain}): ${error.message}`,
-      );
-    }
+    context.versionFallbackPolicy.onVersionFallback(decision.info);
     return parseAttachmentDispatchWithVersion(
       input,
-      alternate,
+      decision.retryVersion,
       domain,
       context,
     );
@@ -759,8 +759,11 @@ function parseAttachmentDispatchByMode(
 }
 
 /**
- * Parse with primary version, then retry with the alternate major on unknown
- * code/deserialize failures. This mirrors real-world mixed-stream tolerance.
+ * Parse one attachment group with policy-aware fallback behavior.
+ *
+ * By default this uses compat policy semantics to mirror historical
+ * `parseAttachmentDispatchCompat` behavior unless overridden via
+ * `options.versionFallbackPolicy`.
  */
 export function parseAttachmentDispatchCompat(
   input: Uint8Array,
@@ -768,20 +771,32 @@ export function parseAttachmentDispatchCompat(
   domain: ParseDomain,
   options: AttachmentDispatchOptions = {},
 ): { group: AttachmentGroup; consumed: number } {
-  const context: DispatchContext = {
-    mode: options.mode ?? "compat",
-    onVersionFallback: options.onVersionFallback,
+  const versionFallbackPolicy = options.versionFallbackPolicy ??
+    createAttachmentVersionFallbackPolicy({
+      mode: options.mode,
+      onVersionFallback: options.onVersionFallback,
+    });
+  const context: AttachmentDispatchPolicyContext = {
+    versionFallbackPolicy,
   };
-  return parseAttachmentDispatchByMode(input, version, domain, context);
+  return parseAttachmentDispatchWithPolicy(input, version, domain, context);
 }
 
-/** Strict versioned attachment-group dispatch (no major-version fallback). */
+/**
+ * Parse one attachment group with strict fail-fast semantics.
+ *
+ * Why:
+ * this API guarantees no major-version fallback and no wrapper opaque-tail
+ * preservation, matching parity/validation use cases.
+ */
 export function parseAttachmentDispatch(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
 ): { group: AttachmentGroup; consumed: number } {
-  return parseAttachmentDispatchByMode(input, version, domain, {
-    mode: "strict",
+  return parseAttachmentDispatchWithPolicy(input, version, domain, {
+    versionFallbackPolicy: createAttachmentVersionFallbackPolicy({
+      mode: "strict",
+    }),
   });
 }

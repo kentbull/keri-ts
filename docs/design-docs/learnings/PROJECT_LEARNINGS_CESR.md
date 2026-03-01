@@ -6,12 +6,13 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current State
 
-### 2026-02-28
+### 2026-03-01
 
 1. **Ten-point plan status**
 - Point 1 (`Publish an explicit parser state machine contract`) is complete as of 2026-02-28.
 - Point 2 (`Decompose CesrParser into focused collaborators`) is complete as of 2026-02-28.
-- Point 3 (`Replace boolean policy branching with strategy interfaces`) is the active next step.
+- Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
+- Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is the active next step.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -68,7 +69,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Begin Point 3 of ten-point plan (policy extraction and strategy interfaces).
+1. Begin Point 4 of ten-point plan (typed attachment payload model migration).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
 
@@ -124,3 +125,50 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Point 3 policy extraction should avoid changing default strict/compat semantics while introducing strategy interfaces.
+
+### 2026-03-01 - Point 3 Strategy Interface Extraction
+- What changed:
+  - Added `FrameBoundaryPolicy` strategy interface and default implementations in `packages/cesr/src/core/parser-policy.ts`.
+  - Refactored `parser-engine`, `parser-frame-parser`, and `parser-attachment-collector` to consume injected `FrameBoundaryPolicy` instead of branching on `framed`.
+  - Added `AttachmentVersionFallbackPolicy` strategy interface with strict/compat implementations and factories in `packages/cesr/src/parser/group-dispatch.ts`.
+  - Refactored attachment dispatch and wrapper recovery paths to delegate strict/compat behavior to fallback policy strategies instead of mode branching.
+  - Preserved API compatibility by mapping legacy options (`framed`, `attachmentDispatchMode`, `onAttachmentVersionFallback`) into default strategy instances.
+- Why:
+  - Complete Point 3 by removing scattered policy conditionals and making parser behavior choices explicit, injectable, and testable.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `118 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Point 4 still needs compatibility-aware migration from `AttachmentGroup.items: unknown[]` to discriminated payload types.
+
+### 2026-03-01 - Policy Module Extraction Follow-Up
+- What changed:
+  - Moved attachment fallback policy strategy types/implementations from `packages/cesr/src/parser/group-dispatch.ts` into dedicated module `packages/cesr/src/parser/attachment-fallback-policy.ts`.
+  - Kept `group-dispatch.ts` API compatibility by re-exporting fallback policy types/factories from the new module and preserving strict/compat behavior wiring.
+- Why:
+  - Reduce `group-dispatch.ts` length and keep policy concerns isolated from dispatch-table mechanics.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `118 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+- Risks/TODO:
+  - Continue keeping strategy modules focused as Point 4 typed payload refactors land.
+
+### 2026-03-01 - Fallback Factory Surface Simplification
+- What changed:
+  - Removed unused convenience wrappers `createStrictAttachmentVersionFallbackPolicy` and `createCompatAttachmentVersionFallbackPolicy` from `packages/cesr/src/parser/attachment-fallback-policy.ts`.
+  - Kept `createAttachmentVersionFallbackPolicy({ mode, onVersionFallback })` as the single public fallback policy factory path.
+  - Preserved strict parsing entrypoint behavior in `group-dispatch.ts` by constructing strict policy via `createAttachmentVersionFallbackPolicy({ mode: "strict" })`.
+- Why:
+  - Reduce API surface area and avoid parallel factory paths that encode the same behavior.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `118 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+- Risks/TODO:
+  - If external downstream users rely on removed wrappers, add explicit migration notes in the next release notes pass.

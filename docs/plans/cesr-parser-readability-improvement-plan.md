@@ -3,12 +3,13 @@
 ## Status
 
 - Created: 2026-02-27
-- Updated: 2026-02-28
+- Updated: 2026-03-01
 - Priority: high
 - Ten-point progress:
   - Completed: Point 1 (`Publish an explicit parser state machine contract`)
   - Completed: Point 2 (`Decompose CesrParser into focused collaborators`)
-  - Next: Point 3 (`Replace boolean policy branching with strategy interfaces`)
+  - Completed: Point 3 (`Replace boolean policy branching with strategy interfaces`)
+  - Next: Point 4 (`Replace unknown[] attachment payloads with discriminated types`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -134,9 +135,17 @@ Why:
 
 Status:
 
-- Next active point.
-- Scope calibrated after Point 2 decomposition:
-  inject policies at collaborator boundaries (`parser-engine`, `attachment-collector`, and dispatch entrypoints) instead of broad parser-core rewrites.
+- Completed on 2026-03-01.
+- Completion evidence:
+  - `packages/cesr/src/core/parser-policy.ts` (`FrameBoundaryPolicy` + default framed/unframed strategies)
+  - `packages/cesr/src/parser/attachment-fallback-policy.ts` (`AttachmentVersionFallbackPolicy` + strict/compat strategy factories)
+  - `packages/cesr/src/parser/group-dispatch.ts` (dispatch wiring that consumes/re-exports fallback policies)
+  - Follow-up API simplification: single factory path `createAttachmentVersionFallbackPolicy({ mode, onVersionFallback })`; removed redundant strict/compat convenience wrappers.
+  - Policy-injected refactors in:
+    - `packages/cesr/src/core/parser-engine.ts`
+    - `packages/cesr/src/core/parser-frame-parser.ts`
+    - `packages/cesr/src/core/parser-attachment-collector.ts`
+  - Full suite verification in `packages/cesr`: `deno task test` (`118 passed, 0 failed`).
 
 Current behavior gates (`framed`, compat/strict fallback handling) should become injected policy objects:
 
@@ -200,7 +209,7 @@ Status:
 
 - Pending.
 - Calibration:
-  existing compat fallback behavior is retained, but diagnostics flow still includes default console warning behavior and should move behind explicit policy/hook wiring.
+  fallback behavior is now policy-injected, but diagnostics still default to warning-or-callback and should evolve to structured policy outcomes/telemetry.
 
 Current fallback/recovery behavior (mixed-version compat, opaque wrapper tails) should be governed by explicit policy and emitted as structured diagnostics.
 

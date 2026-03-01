@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1 and 2 completed on 2026-02-28; Point 3 policy extraction is next).
+1. CESR parser readability roadmap execution (Points 1, 2, and 3 completed as of 2026-03-01; Point 4 typed payload model is next).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -53,6 +53,16 @@ This keeps context focused and avoids long-thread drift.
 4. Docs now link architecture, plans, ADR, and lifecycle contract as a coherent set.
 5. `CesrParser` orchestration now delegates to focused collaborators for stream state, frame parsing, attachment continuation, and deferred-frame lifecycle.
 6. Ten-point readability plan milestone status is explicit: Points 1 and 2 complete, Point 3 next.
+
+### 2026-03-01
+
+1. Point 3 policy extraction is complete with injected `FrameBoundaryPolicy` and `AttachmentVersionFallbackPolicy` strategy interfaces.
+2. Core parser collaborators now delegate framed/unframed cadence decisions through policy methods instead of boolean branches.
+3. Attachment dispatch strict/compat behavior is strategy-driven and still preserves existing default fallback semantics and callback/warning behavior.
+4. Legacy parser options remain backward-compatible by constructing default policies from `framed`, `attachmentDispatchMode`, and `onAttachmentVersionFallback`.
+5. Full CESR suite remains green after refactor (`118 passed, 0 failed`).
+6. Follow-up modularization moved fallback policy implementations to `parser/attachment-fallback-policy.ts`, reducing `group-dispatch.ts` scope while preserving exports/behavior.
+7. Fallback policy API was simplified to one factory (`createAttachmentVersionFallbackPolicy`) by removing unused strict/compat convenience wrappers.
 
 ## New Thread Kickoff Template
 

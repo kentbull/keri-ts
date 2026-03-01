@@ -1,8 +1,9 @@
 import type { CesrFrame, CesrMessage } from "./types.ts";
-import type {
-  AttachmentDispatchMode,
-  AttachmentDispatchOptions,
-  VersionFallbackInfo,
+import {
+  type AttachmentDispatchOptions,
+  type AttachmentVersionFallbackPolicy,
+  createAttachmentVersionFallbackPolicy,
+  type VersionFallbackInfo,
 } from "../parser/group-dispatch.ts";
 import { ParserError, ShortageError } from "./errors.ts";
 import { DEFAULT_VERSION } from "./parser-constants.ts";
@@ -10,11 +11,30 @@ import { ParserStreamState } from "./parser-stream-state.ts";
 import { DeferredFrameLifecycle } from "./parser-deferred-frames.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
 import { AttachmentCollector } from "./parser-attachment-collector.ts";
+import {
+  createFrameBoundaryPolicy,
+  type FrameBoundaryPolicy,
+} from "./parser-policy.ts";
 
 export interface ParserOptions {
+  /** Legacy framed toggle; used only when `frameBoundaryPolicy` is not injected. */
   framed?: boolean;
+  /**
+   * Legacy strict/compat selector; used only when
+   * `attachmentVersionFallbackPolicy` is not injected.
+   */
   attachmentDispatchMode?: AttachmentDispatchOptions["mode"];
+  /** Optional observer used by default compat fallback policy construction. */
   onAttachmentVersionFallback?: (info: VersionFallbackInfo) => void;
+  /** Explicit frame-boundary strategy override (preferred for new integrations). */
+  frameBoundaryPolicy?: FrameBoundaryPolicy;
+  /**
+   * Explicit attachment fallback strategy override.
+   *
+   * When provided, this supersedes `attachmentDispatchMode` and
+   * `onAttachmentVersionFallback`.
+   */
+  attachmentVersionFallbackPolicy?: AttachmentVersionFallbackPolicy;
 }
 
 /**
@@ -26,29 +46,39 @@ export class CesrParser {
    * Parser state contract (normative):
    * `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
    */
-  private readonly framed: boolean;
+  private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
   private readonly stream: ParserStreamState;
   private readonly deferred: DeferredFrameLifecycle;
   private readonly frameParser: FrameParser;
   private readonly attachmentCollector: AttachmentCollector;
 
+  /**
+   * Compose parser collaborators with injected policy strategies.
+   *
+   * Policy precedence:
+   * 1) explicit policy objects from `ParserOptions`
+   * 2) derived defaults from legacy `framed` and strict/compat options
+   */
   constructor(options: ParserOptions = {}) {
-    this.framed = options.framed ?? false;
-    const attachmentDispatchMode: AttachmentDispatchMode =
-      options.attachmentDispatchMode ?? "compat";
+    this.frameBoundaryPolicy = options.frameBoundaryPolicy ??
+      createFrameBoundaryPolicy(options.framed ?? false);
+    const attachmentVersionFallbackPolicy =
+      options.attachmentVersionFallbackPolicy ??
+        createAttachmentVersionFallbackPolicy({
+          mode: options.attachmentDispatchMode,
+          onVersionFallback: options.onAttachmentVersionFallback,
+        });
 
     this.stream = new ParserStreamState(DEFAULT_VERSION);
     this.deferred = new DeferredFrameLifecycle();
     this.frameParser = new FrameParser({
-      framed: this.framed,
-      attachmentDispatchMode,
-      onAttachmentVersionFallback: options.onAttachmentVersionFallback,
+      frameBoundaryPolicy: this.frameBoundaryPolicy,
+      attachmentVersionFallbackPolicy,
       onEnclosedFrames: (frames) => this.deferred.enqueueQueued(frames),
     });
     this.attachmentCollector = new AttachmentCollector({
-      framed: this.framed,
-      attachmentDispatchMode,
-      onAttachmentVersionFallback: options.onAttachmentVersionFallback,
+      frameBoundaryPolicy: this.frameBoundaryPolicy,
+      attachmentVersionFallbackPolicy,
       isFrameBoundaryAhead: (input, version, cold) =>
         this.frameParser.isFrameBoundaryAhead(input, version, cold),
     });
@@ -126,7 +156,9 @@ export class CesrParser {
           const frame = this.deferred.shiftQueued();
           if (frame) {
             out.push({ type: "frame", frame });
-            if (this.framed) {
+            if (
+              this.frameBoundaryPolicy.shouldStopAfterQueuedFrameEmission()
+            ) {
               break;
             }
           }
@@ -167,8 +199,10 @@ export class CesrParser {
         // been received then set the current base frame as the pending frame to
         // wait for attachments to arrive.
         if (
-          !this.framed && completed.attachments.length === 0 &&
-          this.stream.buffer.length === 0
+          this.frameBoundaryPolicy.shouldDeferBodyOnlyFrame(
+            completed.attachments.length,
+            this.stream.buffer.length,
+          )
         ) {
           this.deferred.setPending(completed, base.version);
           break;
@@ -176,7 +210,7 @@ export class CesrParser {
 
         // Once all attachments have arrived then emit the current completed frame
         out.push({ type: "frame", frame: completed });
-        if (this.framed) {
+        if (this.frameBoundaryPolicy.shouldStopAfterCompletedFrameEmission()) {
           break;
         }
       } catch (error) {

@@ -3,7 +3,7 @@
 ## Status
 
 - Created: 2026-02-27
-- Updated: 2026-02-28
+- Updated: 2026-03-01
 - Priority: high
 - Depends on: `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Related: `docs/plans/cesr-parser-buffer-perf-plan.md` (deferred perf work)
@@ -18,7 +18,7 @@ Execute parser readability improvements in small, defensible phases so each chan
 
 This roadmap references and sequences the ten-point plan. Point numbers below map directly to that plan.
 
-## Implementation Snapshot (As Of 2026-02-28)
+## Implementation Snapshot (As Of 2026-03-01)
 
 Completed baseline work that this roadmap now builds on:
 
@@ -37,6 +37,9 @@ Completed baseline work that this roadmap now builds on:
   - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 - Canonical parser lifecycle contract now defined in:
   - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+- Point 3 policy extraction landed:
+  - `FrameBoundaryPolicy` and `AttachmentVersionFallbackPolicy` strategies are injected at parser/deferred-dispatch boundaries.
+  - Legacy options still map to default strict/compat and framed/unframed policy implementations.
 
 ## Phase Structure
 
@@ -134,6 +137,10 @@ Points covered:
 
 - 3 (strategy interfaces)
 - 6 (explicit/configurable recovery)
+
+Status:
+
+- In progress (Point 3 complete on 2026-03-01; Point 6 pending).
 
 Scope:
 

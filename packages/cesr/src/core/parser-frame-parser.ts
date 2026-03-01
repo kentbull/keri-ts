@@ -1,8 +1,7 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
 import type {
-  AttachmentDispatchMode,
-  VersionFallbackInfo,
+  AttachmentVersionFallbackPolicy,
 } from "../parser/group-dispatch.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
@@ -35,13 +34,13 @@ import {
   quadletUnit,
   tokenSize,
 } from "./parser-constants.ts";
+import type { FrameBoundaryPolicy } from "./parser-policy.ts";
 import type { CesrMessage } from "./types.ts";
 
 /** Dependency-injected options for frame parsing behavior and hooks. */
 interface FrameParserOptions {
-  framed: boolean;
-  attachmentDispatchMode: AttachmentDispatchMode;
-  onAttachmentVersionFallback?: (info: VersionFallbackInfo) => void;
+  frameBoundaryPolicy: FrameBoundaryPolicy;
+  attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
   onEnclosedFrames: (frames: CesrMessage[]) => void;
 }
 
@@ -62,17 +61,15 @@ export interface ParsedFrameStart {
  * - emit enclosed GenericGroup siblings through callback for deferred handling
  */
 export class FrameParser {
-  private readonly framed: boolean;
-  private readonly attachmentDispatchMode: AttachmentDispatchMode;
-  private readonly onAttachmentVersionFallback?: (
-    info: VersionFallbackInfo,
-  ) => void;
+  private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
+  private readonly attachmentVersionFallbackPolicy:
+    AttachmentVersionFallbackPolicy;
   private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
 
   constructor(options: FrameParserOptions) {
-    this.framed = options.framed;
-    this.attachmentDispatchMode = options.attachmentDispatchMode;
-    this.onAttachmentVersionFallback = options.onAttachmentVersionFallback;
+    this.frameBoundaryPolicy = options.frameBoundaryPolicy;
+    this.attachmentVersionFallbackPolicy =
+      options.attachmentVersionFallbackPolicy;
     this.onEnclosedFrames = options.onEnclosedFrames;
   }
 
@@ -430,8 +427,7 @@ export class FrameParser {
           frameVersion,
           nextCold,
           {
-            mode: this.attachmentDispatchMode,
-            onVersionFallback: this.onAttachmentVersionFallback,
+            versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
           },
         );
         attachments.push(group);
@@ -485,13 +481,12 @@ export class FrameParser {
         version,
         nextCold,
         {
-          mode: this.attachmentDispatchMode,
-          onVersionFallback: this.onAttachmentVersionFallback,
+          versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
         },
       );
       attachments.push(group);
       offset += consumed;
-      if (this.framed) {
+      if (this.frameBoundaryPolicy.shouldStopAfterAttachmentGroupCollection()) {
         break;
       }
     }

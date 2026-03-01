@@ -1,19 +1,18 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
 import type {
-  AttachmentDispatchMode,
-  VersionFallbackInfo,
+  AttachmentVersionFallbackPolicy,
 } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isAttachmentDomain } from "./parser-constants.ts";
+import type { FrameBoundaryPolicy } from "./parser-policy.ts";
 import type { AttachmentGroup, CesrMessage } from "./types.ts";
 
 /** Dependency-injected attachment collection policies and hooks. */
 interface AttachmentCollectorOptions {
-  framed: boolean;
-  attachmentDispatchMode: AttachmentDispatchMode;
-  onAttachmentVersionFallback?: (info: VersionFallbackInfo) => void;
+  frameBoundaryPolicy: FrameBoundaryPolicy;
+  attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
   isFrameBoundaryAhead: (
     input: Uint8Array,
     version: Versionage,
@@ -41,11 +40,9 @@ export interface ResumePendingResult {
  * - pending-frame continuation after shortage pauses
  */
 export class AttachmentCollector {
-  private readonly framed: boolean;
-  private readonly attachmentDispatchMode: AttachmentDispatchMode;
-  private readonly onAttachmentVersionFallback?: (
-    info: VersionFallbackInfo,
-  ) => void;
+  private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
+  private readonly attachmentVersionFallbackPolicy:
+    AttachmentVersionFallbackPolicy;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
     version: Versionage,
@@ -53,9 +50,9 @@ export class AttachmentCollector {
   ) => boolean;
 
   constructor(options: AttachmentCollectorOptions) {
-    this.framed = options.framed;
-    this.attachmentDispatchMode = options.attachmentDispatchMode;
-    this.onAttachmentVersionFallback = options.onAttachmentVersionFallback;
+    this.frameBoundaryPolicy = options.frameBoundaryPolicy;
+    this.attachmentVersionFallbackPolicy =
+      options.attachmentVersionFallbackPolicy;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }
 
@@ -103,13 +100,14 @@ export class AttachmentCollector {
           version,
           nextCold,
           {
-            mode: this.attachmentDispatchMode,
-            onVersionFallback: this.onAttachmentVersionFallback,
+            versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
           },
         );
         attachments.push(group);
         offset += consumed;
-        if (this.framed) {
+        if (
+          this.frameBoundaryPolicy.shouldStopAfterAttachmentGroupCollection()
+        ) {
           break;
         }
       } catch (error) {
@@ -179,14 +177,13 @@ export class AttachmentCollector {
       version,
       nextCold,
       {
-        mode: this.attachmentDispatchMode,
-        onVersionFallback: this.onAttachmentVersionFallback,
+        versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
       },
     );
     pendingFrame.attachments.push(group);
     offset += consumed;
 
-    if (this.framed) {
+    if (this.frameBoundaryPolicy.shouldEmitPendingAfterAttachmentResume()) {
       return { consumed: offset, emitPending: true, shouldContinue: false };
     }
 
