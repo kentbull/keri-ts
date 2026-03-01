@@ -48,6 +48,10 @@ Completed baseline work that this roadmap now builds on:
 - Point 5 declarative dispatch spec landed:
   - `group-dispatch.ts` now defines one descriptor source for dispatch metadata.
   - v1/v2 dispatch maps and related wrapper/siger sets are mechanically derived from descriptors.
+- Point 7 targeted syntax/semantic separation landed:
+  - frame-start parsing now separates token syntax extraction from semantic dispatch interpretation,
+  - native body parsing now separates syntax artifact extraction from metadata/field interpretation,
+  - mapper parsing now exposes syntax (`parseMapperBodySyntax`) and semantic (`interpretMapperBodySyntax`) phases.
 - Point 6 recovery observability landed:
   - parser and dispatch now emit typed `RecoveryDiagnostic` events for fallback accepted/rejected, wrapper opaque-tail preservation, and parser error-reset context,
   - legacy fallback callback remains adapter-compatible,
@@ -181,11 +185,11 @@ Points covered:
 
 - 4 (typed attachment payloads)
 - 5 (declarative dispatch spec)
-- remaining 7 (syntax vs semantic interpretation separation)
+- 7 (syntax vs semantic interpretation separation)
 
 Status:
 
-- In progress (Points 4 and 5 complete on 2026-03-01; Point 7 work remains).
+- Completed on 2026-03-01 (Points 4, 5, and 7 complete).
 
 Scope:
 

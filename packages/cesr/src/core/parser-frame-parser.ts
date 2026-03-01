@@ -8,7 +8,11 @@ import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { parseMatter } from "../primitives/matter.ts";
-import { parseMapperBody } from "../primitives/mapper.ts";
+import {
+  interpretMapperBodySyntax,
+  parseMapperBodySyntax,
+  type MapperBodySyntax,
+} from "../primitives/mapper.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -18,7 +22,9 @@ import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import {
   ColdStartError,
   DeserializeError,
+  SemanticInterpretationError,
   ShortageError,
+  SyntaxParseError,
   UnknownCodeError,
 } from "./errors.ts";
 import {
@@ -52,6 +58,72 @@ export interface ParsedFrameStart {
   consumed: number;
   version: Versionage;
   streamVersion: Versionage;
+}
+
+/** Frame-start classification produced by syntax parsing before behavior dispatch. */
+type FrameStartSyntaxKind =
+  | "message"
+  | "bodyWithAttachmentGroup"
+  | "nonNativeBodyGroup"
+  | "nativeBodyGroup"
+  | "genericGroup";
+
+/** Token-level frame-start artifact before semantic dispatch interpretation. */
+interface FrameStartSyntaxArtifact {
+  /** Routed semantic branch for frame interpretation. */
+  kind: FrameStartSyntaxKind;
+  /** Byte offset where frame material begins after optional annotation bytes/selectors. */
+  offset: number;
+  /** Cold-start domain at frame start (`msg` or attachment domain). */
+  cold: "msg" | "txt" | "bny";
+  /** Stream version context after optional leading genus-version selector handling. */
+  streamVersion: Versionage;
+  /** Parsed body-group counter for non-message frame kinds. */
+  counter?: Counter;
+  /** Frame-local version selected while resolving frame-start counter. */
+  frameVersion?: Versionage;
+  /** Serialized header size of `counter` in active domain. */
+  headerSize?: number;
+  /** Payload unit width (`4` for qb64, `3` for qb2) used with counter counts. */
+  unit?: number;
+}
+
+/**
+ * Advisory metadata token syntax extracted from native body streams.
+ *
+ * All fields are optional because metadata extraction is best-effort and should
+ * never fail native-body parsing if tokens are absent/malformed.
+ */
+interface NativeMetadataSyntaxArtifact {
+  verser?: ReturnType<typeof parseVerser>;
+  ilker?: ReturnType<typeof parseIlker>;
+  saider?: ReturnType<typeof parseMatter>;
+}
+
+/**
+ * One syntax-level token entry from a non-map native body payload.
+ *
+ * Labels are preserved as separate tokens; label/value pairing is resolved only
+ * during semantic interpretation.
+ */
+type NativeFieldSyntaxEntry =
+  | { kind: "label"; label: string; code: string; qb64: string }
+  | { kind: "value"; code: string; qb64: string };
+
+/**
+ * Native field syntax representation.
+ *
+ * - `map`: delegates to mapper syntax artifacts for strict map payload parsing.
+ * - `fixed`: preserves raw label/value token order for later semantic pairing.
+ */
+type NativeFieldSyntaxArtifact =
+  | { kind: "map"; mapper: MapperBodySyntax }
+  | { kind: "fixed"; entries: NativeFieldSyntaxEntry[] };
+
+/** Combined syntax artifact for native-body metadata + field tokenization. */
+interface NativeBodySyntaxArtifact {
+  metadata: NativeMetadataSyntaxArtifact;
+  fields: NativeFieldSyntaxArtifact;
 }
 
 /**
@@ -95,19 +167,32 @@ export class FrameParser {
     input: Uint8Array,
     inheritedVersion: Versionage = DEFAULT_VERSION,
   ): ParsedFrameStart {
+    const syntax = this.parseFrameStartSyntax(input, inheritedVersion);
+    return this.interpretFrameStartSyntax(input, syntax);
+  }
+
+  /**
+   * Parse frame-start tokens into a syntax artifact.
+   *
+   * Non-goal: this is not a global two-pass parser rewrite. It only separates
+   * the highest-coupling frame-start syntax extraction from semantic dispatch.
+   */
+  private parseFrameStartSyntax(
+    input: Uint8Array,
+    inheritedVersion: Versionage,
+  ): FrameStartSyntaxArtifact {
     let offset = 0;
     let activeVersion = inheritedVersion;
 
     let cold = sniff(input.slice(offset));
     while (cold === "ano") {
-      // consume leading annotation marker bytes until a new message type is detected.
       offset += 1;
       if (input.length <= offset) {
         throw new ShortageError(offset + 1, input.length);
       }
       cold = sniff(input.slice(offset));
     }
-    // Handle optional leading KERIACDCGenusVersion selector before real frame start
+
     if (cold === "txt" || cold === "bny") {
       const peek = parseCounter(input.slice(offset), activeVersion, cold);
       if (peek.code === GENUS_VERSION_CODE) {
@@ -121,12 +206,11 @@ export class FrameParser {
     }
 
     if (cold === "msg") {
-      const { serder, consumed } = reapSerder(input.slice(offset));
       return {
-        frame: { body: serder, attachments: [] },
-        consumed: offset + consumed,
-        version: serder.gvrsn ?? serder.pvrsn,
-        streamVersion: serder.gvrsn ?? serder.pvrsn,
+        kind: "message",
+        offset,
+        cold,
+        streamVersion: activeVersion,
       };
     }
 
@@ -147,64 +231,154 @@ export class FrameParser {
     const headerSize = tokenSize(counter, cold);
     const unit = quadletUnit(cold);
 
-    // Category 1: wrapper groups that enclose one complete body+attachments frame.
     if (BODY_WITH_ATTACHMENT_GROUP_NAMES.has(counter.name)) {
-      return this.parseBodyWithAttachmentGroup(
-        input,
+      return {
+        kind: "bodyWithAttachmentGroup",
         offset,
+        cold,
+        streamVersion: frameVersion,
+        counter,
+        frameVersion,
         headerSize,
-        counter.count,
         unit,
-        frameVersion,
-        frameVersion,
-      );
+      };
     }
-
-    // Category 2: non-native message-body groups (texter-wrapped body payload).
     if (NON_NATIVE_BODY_GROUP_NAMES.has(counter.name)) {
-      return this.parseNonNativeBodyGroup(
-        input,
+      return {
+        kind: "nonNativeBodyGroup",
         offset,
-        headerSize,
-        counter.count,
-        unit,
         cold,
+        streamVersion: frameVersion,
+        counter,
         frameVersion,
-        frameVersion,
-      );
+        headerSize,
+        unit,
+      };
     }
-
-    // Category 3: native body groups (fixed-field and map-body forms).
     if (NATIVE_BODY_GROUP_NAMES.has(counter.name)) {
-      return this.parseNativeBodyGroup(
-        input,
+      return {
+        kind: "nativeBodyGroup",
         offset,
-        headerSize,
-        counter.count,
-        unit,
         cold,
+        streamVersion: frameVersion,
+        counter,
         frameVersion,
-        counter.code,
-        frameVersion,
-      );
-    }
-
-    // Category 4: generic enclosing groups that carry one or more full frames.
-    if (GENERIC_GROUP_NAMES.has(counter.name)) {
-      return this.parseGenericGroup(
-        input,
-        offset,
         headerSize,
-        counter.count,
         unit,
+      };
+    }
+    if (GENERIC_GROUP_NAMES.has(counter.name)) {
+      return {
+        kind: "genericGroup",
+        offset,
+        cold,
+        streamVersion: frameVersion,
+        counter,
         frameVersion,
-        frameVersion,
-      );
+        headerSize,
+        unit,
+      };
     }
 
     throw new ColdStartError(
       `Unsupported body-group counter at frame start: ${counter.code}`,
     );
+  }
+
+  /** Interpret frame-start syntax artifacts into semantic parse behavior. */
+  private interpretFrameStartSyntax(
+    input: Uint8Array,
+    syntax: FrameStartSyntaxArtifact,
+  ): ParsedFrameStart {
+    const requireGroupMetadata = () => {
+      const counter = syntax.counter;
+      const frameVersion = syntax.frameVersion;
+      const headerSize = syntax.headerSize;
+      const unit = syntax.unit;
+      if (!counter || !frameVersion || !headerSize || !unit) {
+        throw new SemanticInterpretationError(
+          "Frame-start syntax artifact missing required group metadata",
+        );
+      }
+      return { counter, frameVersion, headerSize, unit };
+    };
+
+    switch (syntax.kind) {
+      case "message": {
+        const { serder, consumed } = reapSerder(input.slice(syntax.offset));
+        return {
+          frame: { body: serder, attachments: [] },
+          consumed: syntax.offset + consumed,
+          version: serder.gvrsn ?? serder.pvrsn,
+          streamVersion: serder.gvrsn ?? serder.pvrsn,
+        };
+      }
+      case "bodyWithAttachmentGroup": {
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
+        return this.parseBodyWithAttachmentGroup(
+          input,
+          syntax.offset,
+          headerSize,
+          counter.count,
+          unit,
+          frameVersion,
+          syntax.streamVersion,
+        );
+      }
+      case "nonNativeBodyGroup": {
+        if (syntax.cold !== "txt" && syntax.cold !== "bny") {
+          throw new SemanticInterpretationError(
+            `Expected attachment domain for non-native body but got ${syntax.cold}`,
+          );
+        }
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
+        return this.parseNonNativeBodyGroup(
+          input,
+          syntax.offset,
+          headerSize,
+          counter.count,
+          unit,
+          syntax.cold,
+          frameVersion,
+          syntax.streamVersion,
+        );
+      }
+      case "nativeBodyGroup": {
+        if (syntax.cold !== "txt" && syntax.cold !== "bny") {
+          throw new SemanticInterpretationError(
+            `Expected attachment domain for native body but got ${syntax.cold}`,
+          );
+        }
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
+        return this.parseNativeBodyGroup(
+          input,
+          syntax.offset,
+          headerSize,
+          counter.count,
+          unit,
+          syntax.cold,
+          frameVersion,
+          counter.code,
+          syntax.streamVersion,
+        );
+      }
+      case "genericGroup": {
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
+        return this.parseGenericGroup(
+          input,
+          syntax.offset,
+          headerSize,
+          counter.count,
+          unit,
+          frameVersion,
+          syntax.streamVersion,
+        );
+      }
+    }
   }
 
   /** Parse nested `BodyWithAttachmentGroup` payload as one complete enclosed frame. */
@@ -310,8 +484,9 @@ export class FrameParser {
       throw new ShortageError(offset + total, input.length);
     }
     const raw = input.slice(offset, offset + total);
-    const metadata = this.extractNativeMetadata(raw, cold, version);
-    const fields = this.extractNativeFields(raw, cold, version);
+    const syntax = this.parseNativeBodySyntax(raw, cold, version);
+    const metadata = this.interpretNativeMetadataSyntax(syntax.metadata, version);
+    const fields = this.interpretNativeFieldSyntax(syntax.fields);
     return {
       frame: {
         body: {
@@ -517,10 +692,81 @@ export class FrameParser {
     };
   }
 
-  /** Best-effort native metadata extraction used for advisory body fields. */
-  private extractNativeMetadata(
+  /** Build native-body syntax artifacts used by semantic interpretation phase. */
+  private parseNativeBodySyntax(
     raw: Uint8Array,
     cold: "txt" | "bny",
+    fallbackVersion: Versionage,
+  ): NativeBodySyntaxArtifact {
+    try {
+      const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+      return {
+        metadata: this.parseNativeMetadataSyntax(
+          raw,
+          cold,
+          fallbackVersion,
+          bodyCounter.code,
+        ),
+        fields: this.parseNativeFieldSyntax(raw, cold, fallbackVersion, bodyCounter.code),
+      };
+    } catch (error) {
+      if (
+        error instanceof ShortageError ||
+        error instanceof UnknownCodeError ||
+        error instanceof DeserializeError
+      ) {
+        throw new SyntaxParseError(
+          `Native body syntax parse failed: ${error.message}`,
+          error,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /** Parse advisory native metadata tokens without semantic projection. */
+  private parseNativeMetadataSyntax(
+    raw: Uint8Array,
+    cold: "txt" | "bny",
+    fallbackVersion: Versionage,
+    bodyCode: string,
+  ): NativeMetadataSyntaxArtifact {
+    const out: NativeMetadataSyntaxArtifact = {};
+    let offset = 0;
+
+    try {
+      const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+      offset += tokenSize(bodyCounter, cold);
+
+      if (MAP_BODY_CODES.has(bodyCode)) {
+        offset = this.skipNativeLabelers(raw, offset, cold);
+      }
+
+      out.verser = parseVerser(raw.slice(offset), cold);
+      offset += tokenSize(out.verser, cold);
+
+      if (MAP_BODY_CODES.has(bodyCode)) {
+        offset = this.skipNativeLabelers(raw, offset, cold);
+      }
+
+      out.ilker = parseIlker(raw.slice(offset), cold);
+      offset += tokenSize(out.ilker, cold);
+
+      if (MAP_BODY_CODES.has(bodyCode)) {
+        offset = this.skipNativeLabelers(raw, offset, cold);
+      }
+
+      out.saider = parseMatter(raw.slice(offset), cold);
+    } catch (_error) {
+      // metadata parse remains advisory; do not fail native-body parse when absent.
+    }
+
+    return out;
+  }
+
+  /** Interpret advisory metadata syntax into projected body metadata fields. */
+  private interpretNativeMetadataSyntax(
+    syntax: NativeMetadataSyntaxArtifact,
     fallbackVersion: Versionage,
   ): {
     proto: "KERI" | "ACDC";
@@ -529,48 +775,117 @@ export class FrameParser {
     ilk: string | null;
     said: string | null;
   } {
-    let offset = 0;
-    let proto: "KERI" | "ACDC" = Protocols.keri;
-    let pvrsn = fallbackVersion;
-    let gvrsn = fallbackVersion;
-    let ilk: string | null = null;
-    let said: string | null = null;
+    return {
+      proto: (syntax.verser?.proto as Protocol | undefined) ?? Protocols.keri,
+      pvrsn: syntax.verser?.pvrsn ?? fallbackVersion,
+      gvrsn: syntax.verser?.gvrsn ?? fallbackVersion,
+      ilk: syntax.ilker?.ilk ?? null,
+      said: syntax.saider?.code.startsWith("E") ? syntax.saider.qb64 : null,
+    };
+  }
 
-    try {
-      const bodyCounter = parseCounter(raw, fallbackVersion, cold);
-      offset += cold === "bny" ? bodyCounter.fullSizeB2 : bodyCounter.fullSize;
-
-      if (MAP_BODY_CODES.has(bodyCounter.code)) {
-        offset = this.skipNativeLabelers(raw, offset, cold);
-      }
-
-      const verser = parseVerser(raw.slice(offset), cold);
-      offset += tokenSize(verser, cold);
-      proto = verser.proto as Protocol;
-      pvrsn = verser.pvrsn;
-      gvrsn = verser.gvrsn;
-
-      if (MAP_BODY_CODES.has(bodyCounter.code)) {
-        offset = this.skipNativeLabelers(raw, offset, cold);
-      }
-
-      const ilker = parseIlker(raw.slice(offset), cold);
-      offset += tokenSize(ilker, cold);
-      ilk = ilker.ilk;
-
-      if (MAP_BODY_CODES.has(bodyCounter.code)) {
-        offset = this.skipNativeLabelers(raw, offset, cold);
-      }
-
-      const saider = parseMatter(raw.slice(offset), cold);
-      if (saider.code.startsWith("E")) {
-        said = saider.qb64;
-      }
-    } catch (_error) {
-      // Metadata extraction is advisory and intentionally best-effort.
+  /** Parse native field tokens without resolving label/value pairing semantics. */
+  private parseNativeFieldSyntax(
+    raw: Uint8Array,
+    cold: "txt" | "bny",
+    fallbackVersion: Versionage,
+    bodyCode: string,
+  ): NativeFieldSyntaxArtifact {
+    if (MAP_BODY_CODES.has(bodyCode)) {
+      return { kind: "map", mapper: parseMapperBodySyntax(raw, fallbackVersion, cold) };
     }
 
-    return { proto, pvrsn, gvrsn, ilk, said };
+    const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+    const total = tokenSize(bodyCounter, cold);
+    const payloadBytes = bodyCounter.count * quadletUnit(cold);
+    const start = total;
+    const end = start + payloadBytes;
+    const entries: NativeFieldSyntaxEntry[] = [];
+    let offset = start;
+
+    while (offset < end) {
+      const at = raw.slice(offset, end);
+      const ctr = this.tryParseCounter(at, fallbackVersion, cold);
+      if (ctr) {
+        const size = tokenSize(ctr, cold);
+        entries.push({
+          kind: "value",
+          code: ctr.code,
+          qb64: ctr.qb64,
+        });
+        offset += size;
+        continue;
+      }
+
+      const token = parseMatter(at, cold);
+      const size = tokenSize(token, cold);
+      offset += size;
+
+      if (isLabelerCode(token.code)) {
+        entries.push({
+          kind: "label",
+          label: parseLabeler(at, cold).label,
+          code: token.code,
+          qb64: token.qb64,
+        });
+        continue;
+      }
+
+      entries.push({
+        kind: "value",
+        code: token.code,
+        qb64: token.qb64,
+      });
+    }
+
+    if (offset !== end) {
+      throw new ShortageError(end, offset);
+    }
+    return { kind: "fixed", entries };
+  }
+
+  /** Interpret native field syntax into semantic fields with label/value pairing. */
+  private interpretNativeFieldSyntax(
+    syntax: NativeFieldSyntaxArtifact,
+  ): Array<{ label: string | null; code: string; qb64: string }> {
+    if (syntax.kind === "map") {
+      try {
+        return interpretMapperBodySyntax(syntax.mapper).map((field) => ({
+          label: field.label,
+          code: field.code,
+          qb64: field.qb64,
+        }));
+      } catch (error) {
+        if (error instanceof SemanticInterpretationError) {
+          throw new SemanticInterpretationError(
+            `Native body semantic interpretation failed: ${(error as Error).message}`,
+            error,
+          );
+        }
+        throw error;
+      }
+    }
+
+    const out: Array<{ label: string | null; code: string; qb64: string }> = [];
+    let pendingLabel: string | null = null;
+    for (const entry of syntax.entries) {
+      if (entry.kind === "label") {
+        pendingLabel = entry.label;
+        continue;
+      }
+      out.push({
+        label: pendingLabel,
+        code: entry.code,
+        qb64: entry.qb64,
+      });
+      pendingLabel = null;
+    }
+    if (pendingLabel !== null) {
+      throw new SemanticInterpretationError(
+        "Dangling native map label without value",
+      );
+    }
+    return out;
   }
 
   /** Skip consecutive labeler tokens in native map-body parsing context. */
@@ -588,73 +903,6 @@ export class FrameParser {
       out += tokenSize(item, cold);
     }
     return out;
-  }
-
-  /** Strict native field extraction used for annotation and downstream semantics. */
-  private extractNativeFields(
-    raw: Uint8Array,
-    cold: "txt" | "bny",
-    fallbackVersion: Versionage,
-  ): Array<{ label: string | null; code: string; qb64: string }> {
-    const bodyCounter = parseCounter(raw, fallbackVersion, cold);
-    if (MAP_BODY_CODES.has(bodyCounter.code)) {
-      const mapper = parseMapperBody(raw, fallbackVersion, cold);
-      return mapper.fields.map((field) => ({
-        label: field.label,
-        code: field.code,
-        qb64: field.qb64,
-      }));
-    }
-
-    const fields: Array<{ label: string | null; code: string; qb64: string }> =
-      [];
-    const total = tokenSize(bodyCounter, cold);
-    const payloadBytes = bodyCounter.count * quadletUnit(cold);
-    const start = total;
-    const end = start + payloadBytes;
-    let offset = start;
-    let pendingLabel: string | null = null;
-
-    while (offset < end) {
-      const at = raw.slice(offset, end);
-      const ctr = this.tryParseCounter(at, fallbackVersion, cold);
-      if (ctr) {
-        const size = tokenSize(ctr, cold);
-        offset += size;
-        fields.push({
-          label: pendingLabel,
-          code: ctr.code,
-          qb64: ctr.qb64,
-        });
-        pendingLabel = null;
-        continue;
-      }
-
-      const token = parseMatter(at, cold);
-      const size = tokenSize(token, cold);
-      offset += size;
-
-      if (isLabelerCode(token.code)) {
-        pendingLabel = parseLabeler(at, cold).label;
-        continue;
-      }
-
-      fields.push({
-        label: pendingLabel,
-        code: token.code,
-        qb64: token.qb64,
-      });
-      pendingLabel = null;
-    }
-
-    if (offset !== end) {
-      throw new ShortageError(end, offset);
-    }
-    if (pendingLabel !== null) {
-      throw new ColdStartError("Dangling native map label without value");
-    }
-
-    return fields;
   }
 
   /** Probe parseCounter with ordered major-version fallback. */

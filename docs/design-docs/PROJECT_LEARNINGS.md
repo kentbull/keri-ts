@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1-6 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is implemented; Point 7 targeted syntax/semantic boundary extraction is now the next parser milestone).
+1. CESR parser readability roadmap execution (Points 1-7 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is implemented; Point 8 parity hardening breadth is now the next parser milestone).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -76,6 +76,8 @@ This keeps context focused and avoids long-thread drift.
 18. Legacy `onAttachmentVersionFallback` behavior remains backward-compatible via diagnostics adapter wiring, while default compat fallback warning side effects (`console.warn`) are removed.
 19. Full CESR suite remains green after Point 6 implementation (`132 passed, 0 failed`).
 20. CESR unit tests now share descriptive fixture builders for stream bytes, counter/token construction, and versioned-body construction, replacing repeated local helper definitions across test files.
+21. Point 7 is now complete in targeted scope: frame-start and native-body flows parse explicit syntax artifacts first and perform semantic interpretation in second-phase helpers (including mapper syntax/semantic APIs), with explicit `SyntaxParseError` vs `SemanticInterpretationError` boundaries.
+22. Full CESR suite remains green after Point 7 implementation (`135 passed, 0 failed`).
 
 ## New Thread Kickoff Template
 

@@ -13,7 +13,9 @@
   - Completed: Point 5 (`Convert dispatch definitions to a single declarative spec`)
   - Completed: Point 6 (`Make recovery behavior explicit, configurable, and observable`)
     - Completed on 2026-03-01 with structured diagnostics contract + observer wiring.
-  - Next: Point 7 (`Separate syntax parsing from semantic interpretation`)
+  - Completed: Point 7 (`Separate syntax parsing from semantic interpretation`)
+    - Completed on 2026-03-01 with targeted frame-start/native-body syntax artifact extraction and mapper syntax/semantic split.
+  - Next: Point 8 (`Add parity-oriented behavioral lock tests against keripy`)
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -257,10 +259,20 @@ Why:
 
 Status:
 
-- Pending (later-phase refinement, narrowed scope).
-- Calibration:
-  - Points 2/4/5 improved structure and type clarity, so a full two-pass rewrite is no longer justified.
-  - Syntax-vs-semantic responsibilities are still partially interleaved in selected paths (frame-start/native-body parsing and nested map/list extraction).
+- Completed on 2026-03-01.
+- Completion evidence:
+  - `packages/cesr/src/core/parser-frame-parser.ts`
+    - `parseFrame()` now executes as `parseFrameStartSyntax(...)` + `interpretFrameStartSyntax(...)`.
+    - Native-body parsing now executes as `parseNativeBodySyntax(...)` + metadata/field interpretation helpers.
+    - Explicit non-goal statement added in code comments: no broad global two-pass parser rewrite in this phase.
+  - `packages/cesr/src/primitives/mapper.ts`
+    - Added explicit syntax artifact path (`parseMapperBodySyntax`) and semantic interpretation path (`interpretMapperBodySyntax`), with compatibility wrapper retained in `parseMapperBody`.
+  - `packages/cesr/src/core/errors.ts`
+    - Added `SyntaxParseError` and `SemanticInterpretationError` for boundary-classified failures.
+  - Tests:
+    - `packages/cesr/test/unit/primitives-native.test.ts` (syntax artifact + classified error tests)
+    - `packages/cesr/test/unit/parser-wrapper-map-errors.test.ts` (parser-level classification assertions)
+    - Full suite verification: `deno task test` (`135 passed, 0 failed`).
 
 Split token-level extraction from semantic interpretation (ilk/said/labels/native metadata).
 

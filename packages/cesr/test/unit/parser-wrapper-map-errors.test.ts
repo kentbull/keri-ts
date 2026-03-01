@@ -70,7 +70,7 @@ Deno.test("V-P1-003: parser rejects MapBodyGroup with dangling label and no valu
   assertEquals(frames.length, 0);
   assertEquals(errors.length, 1);
   if (errors[0].type === "error") {
-    assertEquals(errors[0].error.name, "UnknownCodeError");
+    assertEquals(errors[0].error.name, "SemanticInterpretationError");
     assertStringIncludes(errors[0].error.message, "Dangling map label");
   }
 });
@@ -86,7 +86,7 @@ Deno.test("V-P1-003: parser rejects MapBodyGroup boundary-mismatched nested valu
   assertEquals(frames.length, 0);
   assertEquals(errors.length, 1);
   if (errors[0].type === "error") {
-    assertEquals(errors[0].error.name, "DeserializeError");
+    assertEquals(errors[0].error.name, "SyntaxParseError");
     assertStringIncludes(errors[0].error.message, "Empty indexer input");
   }
 });

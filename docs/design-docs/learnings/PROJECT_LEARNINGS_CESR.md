@@ -72,7 +72,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 14. **Readability plan tail (Points 6-10) recalibrated**
 - Point 6 is complete with one `RecoveryDiagnostic` contract (`version-fallback-accepted`, `version-fallback-rejected`, `wrapper-opaque-tail-preserved`, `parser-error-reset`) at parser/dispatch boundaries.
-- Point 7 remains pending but narrowed to targeted syntax-artifact extraction in high-coupling paths rather than a global two-pass rewrite.
+- Point 7 is complete with targeted syntax-artifact extraction in high-coupling paths (frame start + native body + mapper tokenization), without a global two-pass rewrite.
 - Point 8 status is now “in progress” with completed Phase 5 parity/invariant coverage acknowledged and P2 breadth still remaining.
 - Point 9 remains docs-first and targeted (no broad rename churn).
 - Point 10 remains deferred and benchmark-gated after critical Point 8 hardening.
@@ -83,6 +83,12 @@ Persistent CESR parser memory for `keri-ts`.
   - `test/fixtures/counter-token-fixtures.ts`
   - `test/fixtures/versioned-body-fixtures.ts`
 - Unit tests no longer duplicate local `encode`/`counterV*`/`sigerToken`/`v*ify` helper definitions.
+
+16. **Point 7 syntax/semantic boundary model**
+- `parseFrame()` now runs through explicit syntax artifact extraction then semantic frame-kind interpretation.
+- Native body parsing now builds syntax artifacts first, then projects metadata/fields in dedicated semantic helpers.
+- Mapper now exposes first-class syntax (`parseMapperBodySyntax`) and semantic (`interpretMapperBodySyntax`) APIs.
+- Boundary-specific error classes now distinguish token/syntax failures (`SyntaxParseError`) from semantic projection failures (`SemanticInterpretationError`).
 
 ## Key Docs
 
@@ -98,7 +104,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 1. Keep lifecycle contract matrix synchronized with diagnostics and recovery behavior tests.
 2. Execute P2 hardening vectors prior to broad ecosystem rollout.
-3. Execute narrowed Point 7 targeted syntax/semantic boundary extraction.
+3. Continue Point 8 parity hardening vectors (P2 breadth) now that Point 7 boundary extraction is complete.
 4. Monitor downstream migration from legacy `onAttachmentVersionFallback` toward `onRecoveryDiagnostic`.
 
 ## Handoff Log
@@ -392,3 +398,28 @@ Persistent CESR parser memory for `keri-ts`.
   - none (test-only refactor)
 - Risks/TODO:
   - none
+
+### 2026-03-01 - Point 7 Syntax/Semantic Boundary Separation (Targeted Scope)
+- What changed:
+  - Refactored frame-start parsing in `packages/cesr/src/core/parser-frame-parser.ts` into explicit syntax extraction (`parseFrameStartSyntax`) followed by semantic interpretation (`interpretFrameStartSyntax`).
+  - Refactored native-body parsing in `packages/cesr/src/core/parser-frame-parser.ts` into syntax artifact construction (`parseNativeBodySyntax` + token helpers) and semantic projection (`interpretNativeMetadataSyntax` / `interpretNativeFieldSyntax`).
+  - Added mapper-level syntax/semantic split in `packages/cesr/src/primitives/mapper.ts`:
+    - `parseMapperBodySyntax` for token artifacts
+    - `interpretMapperBodySyntax` for labeled semantic fields
+    - `parseMapperBody` retained as compatibility wrapper.
+  - Added explicit boundary error classes in `packages/cesr/src/core/errors.ts`:
+    - `SyntaxParseError`
+    - `SemanticInterpretationError`
+  - Added/updated tests:
+    - `packages/cesr/test/unit/primitives-native.test.ts`
+    - `packages/cesr/test/unit/parser-wrapper-map-errors.test.ts`
+- Why:
+  - Complete Point 7 by separating token parsing from semantic interpretation in the highest-coupling paths while preserving bounded atomic parser architecture.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `135 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+- Risks/TODO:
+  - Maintain current classification boundary for parser-level errors to avoid accidental drift in downstream expectations during Point 8 hardening.
