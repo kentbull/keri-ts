@@ -262,3 +262,18 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Risks/TODO:
   - Improvement plan (`cesr-parser-readability-improvement-plan.md`) still treats Point 6 as next ten-point item; keep phase-plan and ten-point-plan sequencing language synchronized during Phase 5 execution kickoff.
+
+### 2026-03-01 - semanticShape Invariants Activated (Metadata-to-Contract Upgrade)
+- What changed:
+  - Extended `packages/cesr/test/unit/dispatch-spec-invariants.test.ts` with semantic-shape contract checks over `ATTACHMENT_DISPATCH_SPEC`.
+  - Added invariant assertions that each `semanticShape` enforces expected parser-kind/flag structure (e.g., wrapper vs tuple vs genus marker semantics).
+  - Added full shape-presence assertion so all semantic categories remain represented and auditable as the dispatch spec evolves.
+- Why:
+  - `semanticShape` was previously informational metadata; invariants now make it an enforceable contract for maintainability and review safety.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `120 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Risks/TODO:
+  - If new semantic shapes are introduced in Phase 5/6 work, extend invariants intentionally in the same PR to preserve exhaustive coverage.

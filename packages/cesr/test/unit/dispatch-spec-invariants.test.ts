@@ -35,6 +35,12 @@ function expectedCodeSetFromTables(): Set<string> {
   return expected;
 }
 
+type DispatchFamily = (typeof ATTACHMENT_DISPATCH_SPEC)[number];
+
+function tupleKey(tupleKinds: readonly string[] | undefined): string {
+  return (tupleKinds ?? []).join("|");
+}
+
 Deno.test(
   "dispatch spec invariant: generated table entries appear exactly once (with explicit legacy compat allowance)",
   () => {
@@ -87,5 +93,109 @@ Deno.test(
         `Legacy compatibility entry ${legacyKey} must appear exactly once`,
       );
     }
+  },
+);
+
+Deno.test(
+  "dispatch spec invariant: semanticShape drives parser-kind/flag contracts",
+  () => {
+    const seenShapes = new Set<string>();
+
+    for (const family of ATTACHMENT_DISPATCH_SPEC) {
+      const f = family as DispatchFamily;
+      const shape = f.semanticShape;
+      seenShapes.add(shape);
+
+      switch (shape) {
+        case "genusVersionMarker":
+          assertEquals(f.parserKind, "genusVersion");
+          assertEquals(f.wrapperGroup ?? false, false);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        case "countedGroupPayload":
+          assertEquals(f.parserKind, "quadlet");
+          assertEquals(f.wrapperGroup ?? false, false);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        case "wrapperGroupPayload":
+          assertEquals(f.parserKind, "quadlet");
+          assertEquals(f.wrapperGroup ?? false, true);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        case "primitiveTuples":
+          assertEquals(f.parserKind, "repeatTuple");
+          assertEquals((f.tupleKinds?.length ?? 0) > 0, true);
+          assertEquals(f.wrapperGroup ?? false, false);
+          if (f.allowsSigerList === true) {
+            // Only controller/witness indexer tuple families should advertise
+            // siger-list compatibility for nested signature-group parsing.
+            assertEquals(tupleKey(f.tupleKinds), "indexer");
+          }
+          break;
+
+        case "signatureGroupTuples":
+          assertEquals(f.parserKind, "transIdxSigGroups");
+          assertEquals(f.wrapperGroup ?? false, false);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        case "lastSignatureGroupTuples":
+          assertEquals(f.parserKind, "transLastIdxSigGroups");
+          assertEquals(f.wrapperGroup ?? false, false);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        case "sadPathSignatures":
+          assertEquals(f.parserKind, "sadPathSig");
+          assertEquals(f.wrapperGroup ?? false, false);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        case "sadPathSignatureGroup":
+          assertEquals(f.parserKind, "sadPathSigGroup");
+          assertEquals(f.wrapperGroup ?? false, false);
+          assertEquals(f.allowsSigerList ?? false, false);
+          assertEquals(tupleKey(f.tupleKinds), "");
+          break;
+
+        default: {
+          // Exhaustiveness guard for future shape additions.
+          const _exhaustive: never = shape;
+          throw new Error(`Unhandled semantic shape: ${_exhaustive}`);
+        }
+      }
+
+      const v1Count = f.codesByVersion[1]?.length ?? 0;
+      const v2Count = f.codesByVersion[2]?.length ?? 0;
+      assertEquals(
+        v1Count + v2Count > 0,
+        true,
+        `semantic shape ${shape} must declare at least one routed code`,
+      );
+    }
+
+    assertEquals(
+      seenShapes,
+      new Set([
+        "genusVersionMarker",
+        "countedGroupPayload",
+        "wrapperGroupPayload",
+        "primitiveTuples",
+        "signatureGroupTuples",
+        "lastSignatureGroupTuples",
+        "sadPathSignatures",
+        "sadPathSignatureGroup",
+      ]),
+      "All semanticShape categories must remain represented in ATTACHMENT_DISPATCH_SPEC",
+    );
   },
 );

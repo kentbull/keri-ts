@@ -68,6 +68,7 @@ This keeps context focused and avoids long-thread drift.
 10. New dispatch-spec invariant test locks mapping integrity: every generated `(major, code)` must appear exactly once in `ATTACHMENT_DISPATCH_SPEC`, with explicit long-term legacy compatibility allowance for v1 `-J/-K` sad-path aliases.
 11. `AGENTS.md` now explicitly encodes learner/maintainer-first and compile-time-typed deterministic parser design bias for future task threads.
 12. Phased roadmap has been re-sequenced so minor-version model rectification and codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs) is explicit Phase 5 and the former hardening phase is now Phase 6.
+13. `semanticShape` metadata is now enforced by invariants (parser-kind/flag contracts and shape-coverage assertions), shifting it from documentation-only to auditable specification.
 
 ## New Thread Kickoff Template
 
