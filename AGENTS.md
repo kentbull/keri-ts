@@ -76,3 +76,13 @@ For new modules/classes/functions introduced during feature work:
   otherwise.
 - Do not introduce perf-oriented complexity unless tied to an approved perf
   plan/phase.
+
+## Design Bias (Learner/Maintainer First)
+
+- Treat learner/maintainer comprehension as a primary design objective for
+  parser and codex work. Favor explicit, reviewable structure over cleverness.
+- In TypeScript, prefer compile-time typed contracts and exhaustive mappings
+  over runtime string indirection or implicit introspection.
+- For low-level CESR/TLV parsing, prioritize deterministic behavior and explicit
+  invariants. Flexibility should be policy-gated and intentional, not an
+  emergent side effect of dynamic dispatch.

@@ -228,3 +228,18 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - If new intentional compatibility-only aliases are added, update invariant allowlist explicitly to keep intent auditable.
+
+### 2026-03-01 - Learner/Maintainer-First Design Bias Captured In Startup Instructions
+- What changed:
+  - Updated `AGENTS.md` with explicit guidance to prioritize learner/maintainer comprehension for parser/codex work.
+  - Added explicit TypeScript bias toward compile-time typed contracts and exhaustive mappings over runtime indirection.
+  - Added explicit deterministic-parser guidance for CESR/TLV behavior with policy-gated flexibility.
+- Why:
+  - Keep architecture choices consistent across future agent sessions and reduce drift toward dynamic but harder-to-review dispatch patterns.
+- Tests:
+  - Command: not run (docs-only update)
+  - Result: n/a
+- Contracts/plans touched:
+  - `AGENTS.md`
+- Risks/TODO:
+  - Revisit wording if future roadmap phases intentionally require more dynamic plugin-style dispatch.
