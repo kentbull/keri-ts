@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1, 2, 3, 4, and 5 completed as of 2026-03-01; Point 6 recovery observability is next).
+1. CESR parser readability roadmap execution (Points 1, 2, 3, 4, and 5 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is the critical next step before Point 6 recovery observability).
 2. KERIpy parity preservation via normative parser contract + parity matrix updates.
 
 ## Topic Learnings Index
@@ -67,6 +67,7 @@ This keeps context focused and avoids long-thread drift.
 9. Point 5 declarative dispatch-spec migration is complete: `group-dispatch.ts` now derives v1/v2 dispatch maps, wrapper-code sets, and siger-list allowances from one descriptor model keyed by version/parser-kind/semantic-shape metadata.
 10. New dispatch-spec invariant test locks mapping integrity: every generated `(major, code)` must appear exactly once in `ATTACHMENT_DISPATCH_SPEC`, with explicit long-term legacy compatibility allowance for v1 `-J/-K` sad-path aliases.
 11. `AGENTS.md` now explicitly encodes learner/maintainer-first and compile-time-typed deterministic parser design bias for future task threads.
+12. Phased roadmap has been re-sequenced so minor-version model rectification and codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs) is explicit Phase 5 and the former hardening phase is now Phase 6.
 
 ## New Thread Kickoff Template
 

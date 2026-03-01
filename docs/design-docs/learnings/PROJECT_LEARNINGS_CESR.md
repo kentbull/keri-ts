@@ -14,7 +14,7 @@ Persistent CESR parser memory for `keri-ts`.
 - Point 3 (`Replace boolean policy branching with strategy interfaces`) is complete as of 2026-03-01.
 - Point 4 (`Replace unknown[] attachment payloads with discriminated types`) is complete as of 2026-03-01.
 - Point 5 (`Convert dispatch definitions to a single declarative spec`) is complete as of 2026-03-01.
-- Point 6 (`Make recovery behavior explicit, configurable, and observable`) is the active next step.
+- Point 6 (`Make recovery behavior explicit, configurable, and observable`) remains the next ten-point item, but roadmap execution now prioritizes Phase 5 minor-version model rectification and codex subset parity as a prerequisite.
 
 2. **Architecture direction**
 - Atomic bounded-substream parser is intentional and documented.
@@ -77,7 +77,7 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Begin Point 6 of ten-point plan (recovery observability and structured diagnostics).
+1. Execute roadmap Phase 5: minor-version model rectification + codex subset parity (`UniDex`/`SUDex`/`MUDex` analogs).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
 
@@ -243,3 +243,22 @@ Persistent CESR parser memory for `keri-ts`.
   - `AGENTS.md`
 - Risks/TODO:
   - Revisit wording if future roadmap phases intentionally require more dynamic plugin-style dispatch.
+
+### 2026-03-01 - Roadmap Rephase: Minor-Version Modeling + Codex Subset Parity Elevated To Phase 5
+- What changed:
+  - Updated `docs/plans/cesr-parser-readability-phased-roadmap.md` to insert a new Phase 5 focused on:
+    - explicit major/minor codex modeling aligned with KERIpy minor-version progression semantics,
+    - codex subset concepts (`UniDex`/`SUDex`/`MUDex` analogs),
+    - invariant coverage for subset/dispatch integrity and compatibility aliases.
+  - Renumbered previous hardening/review handoff phase from Phase 5 to Phase 6.
+  - Added an illustrative TypeScript subset-alias model sketch to make planned naming-indirection formalization concrete.
+- Why:
+  - Minor-version parity and codex-subset readability are now critical interoperability requirements, not deferred backlog.
+- Tests:
+  - Command: not run (documentation-only update)
+  - Result: n/a
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Risks/TODO:
+  - Improvement plan (`cesr-parser-readability-improvement-plan.md`) still treats Point 6 as next ten-point item; keep phase-plan and ten-point-plan sequencing language synchronized during Phase 5 execution kickoff.

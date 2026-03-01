@@ -16,7 +16,9 @@ Execute parser readability improvements in small, defensible phases so each chan
 - easy to explain and justify
 - behavior-safe by default
 
-This roadmap references and sequences the ten-point plan. Point numbers below map directly to that plan.
+This roadmap references and sequences the ten-point plan.
+Point numbers below map directly to that plan except Phase 5, which is an
+explicit gap-closure phase discovered during implementation review.
 
 ## Implementation Snapshot (As Of 2026-03-01)
 
@@ -193,7 +195,72 @@ Exit criteria:
 - payload structures are self-describing via type system
 - adding a new group code requires descriptor updates, not parser branch rewrites
 
-### Phase 5: Hardening, Maintainer Review Pack, and Deferred Perf Hand-off
+### Phase 5: Minor-Version Model Rectification and Codex Subset Parity
+
+Points covered:
+
+- Cross-cutting gap closure discovered after Point 5 completion
+- Supports Point 8 parity and Point 6 policy work by hardening version semantics
+
+Status:
+
+- Not started (critical next phase).
+
+Scope:
+
+- add explicit major+minor codex modeling for parser dispatch and codex lookup
+- align selection semantics with KERIpy-style minor compatibility progression
+  (versioned registries where parser may bind to latest supported compatible
+  minor within a major)
+- add codex subset concepts in `keri-ts` analogous to KERIpy:
+  - `UniDex`-style universal subsets
+  - `SUDex`-style special universal subsets
+  - `MUDex`-style message universal subsets
+- preserve legacy compatibility aliases (including v1 `-J/-K` sad-path entries)
+  with explicit allowlists and tests
+
+Deliverables:
+
+- version-aware codex registries keyed by major/minor with explicit resolution
+  contract for parser/runtime context
+- stable subset alias exports for readability and boundary checks
+- invariant tests covering:
+  - no duplicate `(major, minor, code)` entries in routing registries
+  - full coverage between generated tables and dispatch/codex subset layers
+  - explicit compatibility-only aliases as auditable exceptions
+
+Exit criteria:
+
+- parser and dispatch behavior can be reasoned about at major+minor granularity
+- subset membership checks are explicit and readable (no ad-hoc code lists)
+- KERIpy maintainers can map `CtrDex/UniDex/SUDex/MUDex` concepts directly to
+  `keri-ts` equivalents without source spelunking
+
+Proposed TypeScript alias model (illustrative):
+
+```ts
+export const CtrDexByVersion = {
+  1: { 0: CtrDexV1 },
+  2: { 0: CtrDexV2 },
+} as const;
+
+export const UniDexByVersion = {
+  1: { 0: UniDexV1 },
+  2: { 0: UniDexV2 },
+} as const;
+
+export const SUDexByVersion = {
+  1: { 0: SUDexV1 },
+  2: { 0: SUDexV2 },
+} as const;
+
+export const MUDexByVersion = {
+  1: { 0: MUDexV1 },
+  2: { 0: MUDexV2 },
+} as const;
+```
+
+### Phase 6: Hardening, Maintainer Review Pack, and Deferred Perf Hand-off
 
 Points covered:
 
@@ -233,6 +300,7 @@ Exit criteria:
 - Target one PR per phase, except:
   - Phase 0 may be split into two PRs if fixture creation is large.
   - Phase 4 may be split into type-model PR then dispatch-spec PR if review load is high.
+  - Phase 5 may be split into codex/subset model PR then parser-wiring PR if review load is high.
 
 Keep each PR focused on one concern class:
 
@@ -250,13 +318,14 @@ Keep each PR focused on one concern class:
 4. Phase 3
 5. Phase 4
 6. Phase 5
+7. Phase 6
 
 No phase should start before the previous phase exit criteria are met.
 
 ## Deferred Low-Priority Backlog
 
-1. **Version-context layering hardening (`gvrsn` vs `pvrsn`)**
-   - Priority: low (post-Phase-5 unless interop evidence raises urgency).
+1. **Residual version-context layering hardening (`gvrsn` vs `pvrsn`)**
+   - Priority: low (after Phase 5 baseline rectification unless interop evidence raises urgency).
    - Context:
      - Current parser frame-attachment context may use `gvrsn ?? pvrsn` as a compatibility bridge in legacy/no-selector paths.
      - CESR/KERI abstractions model genus-version and protocol-version as distinct fields; using protocol-version as fallback is pragmatic but not ideal for strict layering.
