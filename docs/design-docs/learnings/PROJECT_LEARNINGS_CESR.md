@@ -70,6 +70,13 @@ Persistent CESR parser memory for `keri-ts`.
 - `parseCounter` and attachment dispatch/siger-set lookup now resolve through versioned registries instead of `major >= 2` branching.
 - Legacy v1 `-J/-K` compatibility aliases are explicitly tracked as allowlisted exceptions (not first-class entries in `CtrDexByVersion`), with invariants ensuring auditable behavior.
 
+14. **Readability plan tail (Points 6-10) recalibrated**
+- Point 6 is now explicitly the next active implementation step and is scoped to structured diagnostics/observability for existing recovery semantics.
+- Point 7 remains pending but narrowed to targeted syntax-artifact extraction in high-coupling paths rather than a global two-pass rewrite.
+- Point 8 status is now “in progress” with completed Phase 5 parity/invariant coverage acknowledged and P2 breadth still remaining.
+- Point 9 remains docs-first and targeted (no broad rename churn).
+- Point 10 remains deferred and benchmark-gated after Point 6 + critical Point 8 hardening.
+
 ## Key Docs
 
 1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
@@ -85,6 +92,7 @@ Persistent CESR parser memory for `keri-ts`.
 1. Implement re-scoped Point 6 observability slice (typed recovery diagnostics + removal of default warning side effects).
 2. Keep lifecycle contract matrix synchronized with new tests/behavior.
 3. Execute P2 hardening vectors prior to broad ecosystem rollout.
+4. Execute narrowed Point 7 targeted syntax/semantic boundary extraction after Point 6 stabilizes.
 
 ## Handoff Log
 
@@ -322,3 +330,20 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Point 6 observability work still needs to remove default warning side effects and introduce one structured diagnostics contract.
+
+### 2026-03-01 - Readability Plan Steps 6-10 Recalibration (Post-Phase 5)
+- What changed:
+  - Updated `docs/plans/cesr-parser-readability-improvement-plan.md` sections 6-10 to match the current readability baseline and completed Phase 5 work.
+  - Clarified Point 6 as the immediate next active implementation step (diagnostics-focused, no new fallback semantics).
+  - Narrowed Point 7 to targeted syntax-artifact boundary extraction in high-coupling paths.
+  - Updated Point 8 status to “in progress” with completed Phase 5 parity/invariant tests acknowledged.
+  - Reaffirmed Point 9 docs-first targeted naming cleanup and Point 10 benchmark-gated deferred perf posture.
+- Why:
+  - Keep remaining roadmap scope realistic and avoid over-scoping now that parser readability and version-model clarity have materially improved.
+- Tests:
+  - Command: not run (docs-only recalibration)
+  - Result: n/a
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+- Risks/TODO:
+  - Keep phased roadmap and improvement-plan status language synchronized as Point 6 implementation lands.

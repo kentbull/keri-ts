@@ -223,11 +223,12 @@ Why:
 
 Status:
 
-- Pending (re-scoped on 2026-03-01 after overlap review with Points 3 and 4).
+- Pending (next active implementation step after Phase 5 completion).
 - Calibration:
   - Explicit/configurable recovery baseline is already in place:
     - Point 3 introduced injected `AttachmentVersionFallbackPolicy` strategies for strict/compat dispatch retry and wrapper-remainder decisions.
     - Point 4 made wrapper-tail recovery artifacts explicit via typed `AttachmentItem` payloads with `opaque: true`.
+  - Phase 5 completion hardened version/codex semantics, reducing ambiguity in where recovery decisions originate.
   - Remaining gap is observability normalization: recovery decisions are still surfaced via callback-or-warning behavior rather than one structured diagnostics contract.
 
 Remaining work in this point focuses on observability for existing recovery behavior (mixed-version compat and opaque wrapper tails), not on introducing new fallback semantics.
@@ -239,7 +240,9 @@ Deliverables:
   - wrapper opaque-tail preservation decisions,
   - parser non-shortage error/reset recovery emission context.
 - Structured diagnostics hook(s) at parser/dispatch boundaries that can be adapted to existing callbacks without changing default parse semantics.
+- Backward-compatible adapter path from existing `onAttachmentVersionFallback` to new diagnostics hook contract.
 - Remove default `console.warn` fallback path from policy implementations in favor of explicit observer wiring.
+- Focused tests that lock diagnostics emission shape/count/order in strict and compat modes.
 - Keep strict/compat as the baseline recovery modes; defer any new permissive mode until interop evidence requires it.
 
 Why:
@@ -250,17 +253,19 @@ Why:
 
 Status:
 
-- Pending (later-phase refinement).
+- Pending (later-phase refinement, narrowed scope).
 - Calibration:
-  Point 2 established useful boundaries, but syntax-vs-semantic responsibilities are still partially interleaved inside frame/group parsing paths.
+  - Points 2/4/5 improved structure and type clarity, so a full two-pass rewrite is no longer justified.
+  - Syntax-vs-semantic responsibilities are still partially interleaved in selected paths (frame-start/native-body parsing and nested map/list extraction).
 
 Split token-level extraction from semantic interpretation (ilk/said/labels/native metadata).
 
 Deliverables:
 
-- syntax pass produces typed parse artifacts
-- semantic pass derives metadata from artifacts
-- clearer error classes for syntax failures vs semantic interpretation failures
+- extract targeted syntax-artifact types for highest-coupling paths (frame start + native body field/value tokenization)
+- keep semantic derivation as a second step in those paths without forcing a global parser architecture rewrite
+- clearer error classes for syntax failures vs semantic interpretation failures where separation lands
+- explicit non-goal statement in code/docs for unchanged paths to avoid implied broad refactor scope
 
 Why:
 
@@ -271,15 +276,16 @@ Why:
 
 Status:
 
-- Partially complete.
+- In progress.
 - Completed:
   - P0/P1 vectors and split-determinism coverage are implemented and passing.
+  - Phase 5 codex/minor-version parity invariants and subset-alignment tests are implemented and passing.
 - Remaining:
   - P2 breadth/hardening vectors and broader interop fixture expansion.
 
 Add vectors and property-like split tests that validate behavior in areas where parser logic is subtle.
 
-Target cases:
+Target remaining cases:
 
 - genus-version counters and version stack behavior
 - BodyWithAttachmentGroup nesting
@@ -302,6 +308,9 @@ Progress note:
 
 - P0/P1 parity vectors are implemented and tracked in:
   - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+- Phase 5 invariants are implemented in:
+  - `packages/cesr/test/unit/counter-version-registry.test.ts`
+  - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts`
 - Deferred breadth hardening is tracked in:
   - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 
@@ -309,9 +318,10 @@ Progress note:
 
 Status:
 
-- Pending (narrowed scope).
+- Pending (narrowed scope; documentation-first).
 - Calibration:
-  focus on targeted terminology cleanup and glossary-level alignment; avoid broad churn unless ambiguity materially affects maintenance/review.
+  - readability gains from Points 1-5 + Phase 5 reduce need for broad renaming churn.
+  - focus on targeted terminology cleanup and glossary-level alignment; avoid broad churn unless ambiguity materially affects maintenance/review.
 
 Standardize terms used in code and docs:
 
@@ -323,7 +333,8 @@ Standardize terms used in code and docs:
 Deliverables:
 
 - terminology glossary in parser docs
-- renamed identifiers where ambiguity exists
+- renamed identifiers where ambiguity materially impacts review/comprehension
+- avoid large rename-only diffs; fold naming cleanups into behavior-bearing PRs when practical
 
 Why:
 
@@ -333,9 +344,10 @@ Why:
 
 Status:
 
-- Pending (deferred by design).
+- Pending (deferred by design; gated after Point 6 and critical Point 8 hardening).
 - Calibration:
-  no change in priority; proceed only after readability/policy/type-model phases and with benchmark evidence.
+  - no change in priority; proceed only with benchmark evidence and without weakening maintainability contracts.
+  - parser readability and version-model baseline are now strong enough to support eventual targeted perf work without architectural churn.
 
 Apply buffer optimizations only after state contracts and decomposition are complete.
 
@@ -344,6 +356,8 @@ Deliverables:
 - use and extend deferred perf plan:
   - `docs/plans/cesr-parser-buffer-perf-plan.md`
 - ensure optimized internals remain hidden behind readable abstractions
+- add/refresh microbenchmark baselines before introducing optimization deltas
+- include rollback criteria when complexity increase is not justified by measured gains
 
 Why:
 

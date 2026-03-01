@@ -71,6 +71,7 @@ This keeps context focused and avoids long-thread drift.
 13. `semanticShape` metadata is now enforced by invariants (parser-kind/flag contracts and shape-coverage assertions), shifting it from documentation-only to auditable specification.
 14. Point 6 recovery task definition has been recalibrated: strict/compat policy injection and typed opaque recovery artifacts are already complete; remaining scope is unified structured diagnostics and removal of default warning side effects.
 15. Phase 5 is now implemented in code/tests: parser counter and dispatch lookup paths resolve through explicit major/minor registries, and `CtrDex`/`UniDex`/`SUDex`/`MUDex` subset parity plus legacy alias allowances are invariant-locked.
+16. Readability plan steps 6-10 have been recalibrated to match current maturity: Point 6 is immediate and diagnostics-focused, Point 7 is narrowed to targeted boundary extraction, Point 8 is in-progress with Phase 5 parity/invariants complete, and Points 9/10 remain intentionally constrained.
 
 ## New Thread Kickoff Template
 
