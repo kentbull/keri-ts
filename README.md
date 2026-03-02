@@ -76,3 +76,8 @@ Release/versioning and maintainer workflows are documented in:
 
 - `MAINTAINER-README.md`
 - `docs/release-versioning.md`
+
+## License
+
+Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See
+`LICENSE`.
