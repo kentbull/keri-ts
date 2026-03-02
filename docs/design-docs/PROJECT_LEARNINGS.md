@@ -77,6 +77,9 @@ This keeps context focused and avoids long-thread drift.
 8. `tufa annotate --colored` is now implemented in `packages/keri` with
    stdout-only ANSI styling, guaranteed plain `--out` file output, and optional
    user palette overrides from `$HOME/.tufa/annot-color.yaml|yml`.
+9. Follow-up bugfix completed: `--colored --pretty` now colors all pretty JSON
+   body lines for SERDER output, with regression coverage in
+   `packages/keri/test/unit/app/annotate.test.ts`.
 
 ### 2026-02-28
 

@@ -47,6 +47,31 @@ Deno.test("CLI - tufa annotate --colored applies ANSI styling on stdout", async 
   assertMatch(captured, /\x1b\[[0-9;]*m/);
 });
 
+Deno.test("CLI - tufa annotate --colored --pretty colors pretty JSON body lines", async () => {
+  const dir = await Deno.makeTempDir();
+  const inPath = `${dir}/in.cesr`;
+  const cesr = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  await Deno.writeTextFile(inPath, cesr);
+
+  const originalLog = console.log;
+  let captured = "";
+  console.log = (...values: unknown[]) => {
+    captured += `${values.map(String).join(" ")}\n`;
+  };
+
+  try {
+    await run(() =>
+      tufa(["annotate", "--in", inPath, "--colored", "--pretty"])
+    );
+  } finally {
+    console.log = originalLog;
+    await Deno.remove(dir, { recursive: true });
+  }
+
+  assertStringIncludes(captured, '"v": "KERI10JSON00002e_"');
+  assertMatch(captured, /\x1b\[[0-9;]*m  "v":/);
+});
+
 Deno.test("CLI - tufa annotate --colored never colors --out file output", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;

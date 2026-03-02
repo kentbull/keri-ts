@@ -236,7 +236,43 @@ function colorizeLine(
  */
 export function colorizeAnnotatedOutput(annotated: string): string {
   const colors = toAnsiColors(readUserColorConfig());
-  return annotated.split("\n").map((line) => colorizeLine(line, colors)).join(
-    "\n",
-  );
+  const lines = annotated.split("\n");
+  const out: string[] = [];
+  let inPrettyJsonBody = false;
+
+  // support colorizing lines even with --pretty arg
+  for (const line of lines) {
+    const idx = line.indexOf(COMMENT_DELIM);
+    const value = idx === -1 ? line : line.slice(0, idx);
+    const comment = idx === -1 ? null : line.slice(idx + COMMENT_DELIM.length);
+    const trimmed = value.trim();
+
+    if (comment && /SERDER/.test(comment)) {
+      if (trimmed === "}" || trimmed === "]") {
+        const valueTinted = color(value, colors.body);
+        const commentTinted = colorizeComment(comment, colors);
+        out.push(`${valueTinted}${COMMENT_DELIM}${commentTinted}`);
+        inPrettyJsonBody = false;
+        continue;
+      }
+      out.push(colorizeLine(line, colors));
+      inPrettyJsonBody = false;
+      continue;
+    }
+
+    if (inPrettyJsonBody && idx === -1) {
+      out.push(color(line, colors.body));
+      continue;
+    }
+
+    if (idx === -1 && (trimmed === "{" || trimmed === "[")) {
+      inPrettyJsonBody = true;
+      out.push(color(line, colors.body));
+      continue;
+    }
+
+    out.push(colorizeLine(line, colors));
+  }
+
+  return out.join("\n");
 }

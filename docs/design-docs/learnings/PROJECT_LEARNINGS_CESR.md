@@ -1007,3 +1007,28 @@ Persistent CESR parser memory for `keri-ts`.
     subset (`key: value`) for offline/no-dependency robustness.
   - If broader YAML features are required later (anchors, nested maps, etc.),
     migrate to a full parser dependency with explicit runtime availability.
+
+### 2026-03-02 - `--colored --pretty` JSON Body Coloring Fix
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Fixed colorizer behavior so pretty-printed multi-line SERDER JSON bodies are
+    fully colored (not just opening/closing lines) when `tufa annotate` is run
+    with both `--colored` and `--pretty`.
+  - Added regression coverage in `packages/keri/test/unit/app/annotate.test.ts`:
+    - `CLI - tufa annotate --colored --pretty colors pretty JSON body lines`
+- Why:
+  - Align colored output behavior with user expectations for readable JSON body
+    highlighting in pretty mode.
+- Tests:
+  - Command:
+    `deno test --allow-all --unstable-ffi test/unit/app/annotate.test.ts` (in
+    `packages/keri`)
+  - Result: `5 passed, 0 failed`
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Pretty-body detection currently uses line-oriented heuristics tied to
+    annotate output shape; if annotate formatting modes expand, keep this state
+    path covered by regression tests.
