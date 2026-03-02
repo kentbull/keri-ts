@@ -200,6 +200,9 @@ Exit criteria:
    - For each mapped function/class, add direct parity tests where practical.
 2. Workflow interop tests:
    - Use parent-plan Gate scenarios across two controllers.
+   - Harness source:
+     - `packages/keri/test/integration/app/interop-gates-harness.test.ts`
+     - `docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`
 3. Database evidence tests:
    - Expand `tufa db dump` and compare DB evidence with KERIpy ground truth.
 4. Encrypted-store tests:

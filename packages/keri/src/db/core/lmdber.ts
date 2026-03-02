@@ -495,6 +495,30 @@ export class LMDBer {
 }
 
 /**
+ * Remove a databaser directory recursively.
+ * Mirrors KERIpy `clearDatabaserDir` behavior and ignores missing paths.
+ */
+export function clearDatabaserDir(path: string): void {
+  try {
+    Deno.removeSync(path, { recursive: true });
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * KERIpy-parity helper alias for creating and opening an LMDBer.
+ */
+export function* openLMDB(
+  options: LMDBerOptions = {},
+  defaults?: Partial<LMDBerDefaults>,
+): Operation<LMDBer> {
+  return yield* createLMDBer(options, defaults);
+}
+
+/**
  * Create and open an LMDBer instance.
  *
  * Constructors cannot be async, so call this factory where an opened LMDBer is required.

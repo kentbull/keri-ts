@@ -147,6 +147,15 @@ Across `cha1`/`cha2`:
 - Add matrix for KERIpy command parity and expected output shape.
 - Seed DB parity matrix from `lmdb-dumper.md` and KERIpy module APIs.
 
+P0 tracking artifacts:
+
+- `docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`
+- `packages/keri/test/integration/app/interop-gates-harness.test.ts`
+- `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+- `docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`
+- `docs/plans/keri/DB_LAYER_KV_GATE_H_BACKLOG.csv`
+
 ## P1 - DB Core (`dbing.py`) Parity Slice
 
 - LMDB environment lifecycle, DB open/close/reopen, iterators, dup behavior,

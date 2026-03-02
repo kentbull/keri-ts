@@ -172,3 +172,39 @@ Use this doc for:
 - Risks/TODO:
   - Some rows span multiple gates by design; if needed, add a future
     `primary_gate` column to simplify burn-down sequencing.
+
+### 2026-03-02 - P0 Closure + Initial P1 DB Core Slice
+
+- Topic docs updated:
+  - `docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- What changed:
+  - Added explicit Gate A-G command/output parity matrix for KLI vs tufa.
+  - Added a matrix-driven Gate A-G interop harness scaffold with executable
+    parity checks for current `init/incept/export` coverage and pending vectors
+    for `list/aid/ends/oobi/challenge` surfaces.
+  - Started P1 `dbing.py` parity by implementing missing core symbols:
+    `splitOnKey`, `openLMDB`, and `clearDatabaserDir`.
+  - Updated D0 parity matrix statuses for these symbols from `Missing` to
+    `Partial` with direct test evidence references.
+- Why:
+  - P0 was still incomplete after DB matrix upgrades; harness and command-output
+    parity tracking were missing.
+  - Starting with low-risk `dbing.py` helper parity provides immediate progress
+    into P1 without cross-module churn.
+- Tests:
+  - Command: `deno test --allow-all --unstable-ffi test/unit/db/core/keys.test.ts test/unit/db/core/lmdber-helpers.test.ts`
+  - Result: `5 passed, 0 failed`
+  - Command: `deno test --allow-all --unstable-ffi test/integration/app/interop-gates-harness.test.ts`
+  - Result: `2 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- Risks/TODO:
+  - Harness has pending scenarios for blocked command surfaces and currently
+    executes one ready parity flow.
+  - P1 still needs broader LMDB lifecycle/iterator/dup semantics parity and
+    migration/version behavior validation beyond helper-symbol closure.

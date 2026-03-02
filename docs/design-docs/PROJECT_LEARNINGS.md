@@ -106,6 +106,14 @@ This keeps context focused and avoids long-thread drift.
 16. Gate A-G worklist rows now include explicit gate assignments and rationale
     columns (`gate`, `gate_rationale`) instead of heuristic-only classification,
     so each prioritized K/V row is directly traceable to gates A through G.
+17. Phase 2 P0 closure now includes an explicit KLI/tufa command-output parity
+    matrix (`docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`) and a
+    matrix-driven Gate A-G interop harness
+    (`packages/keri/test/integration/app/interop-gates-harness.test.ts`).
+18. Phase 2 P1 has started with initial `dbing.py` symbol closure:
+    `splitOnKey`, `openLMDB`, and `clearDatabaserDir` are implemented in
+    `keri-ts` and moved from `Missing` to `Partial` in the DB parity matrix
+    with passing unit/integration evidence.
 
 ### 2026-02-28
 
