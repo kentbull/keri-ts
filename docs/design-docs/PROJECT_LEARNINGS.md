@@ -45,6 +45,12 @@ This keeps context focused and avoids long-thread drift.
 
 ## Cross-Topic Snapshot
 
+### 2026-03-02
+
+1. Design-doc path references were synchronized with the `docs/design-docs/cesr-parser/` and `docs/design-docs/cesr-parser/initial-plan-docs/` reorganization.
+2. Top-level and topic learnings now reference the moved reconciliation/comparison/completeness artifacts at their new locations.
+3. Remaining unresolved historical references are confined to legacy analysis docs (`CESR_IMPLEMENTATION_ANALYSIS_*`, `codex-plan.md`) that are not part of the current learnings/design-doc routing set.
+
 ### 2026-02-28
 
 1. Canonical parser state-machine contract is established and test-mapped.
@@ -84,9 +90,9 @@ This keeps context focused and avoids long-thread drift.
 26. Point 10 benchmark gating is complete: standardized parser benchmark flows (`deno task bench:cesr`, arbitrary-stream benchmark CLI, and `tufa benchmark cesr`) plus rollback criteria now gate future perf optimization complexity.
 27. CESR parser high-priority P2 hardening vectors are now complete and passing (`V-P2-001`, `002`, `005`, `008`, `011`, `012`, `014`, `015`, plus prior `017`), with a new dedicated hardening suite in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`.
 28. Formal reconciliation artifacts are now published for parser readiness:
-  - `docs/design-docs/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 29. Cross-implementation comparison confirms no open `S0/S1` mismatch against KERIpy baseline; divergences in KERIox/libkeri/cesrixir/cesride/CESRox/kerits/keride are classified advisory.
 30. Parser completeness gate decision is `GO`; remaining medium/low P2 vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) are tracked as `S2` non-blocking hardening debt while upper-layer infrastructure work proceeds.
 

@@ -105,9 +105,9 @@ Persistent CESR parser memory for `keri-ts`.
 
 19. **Formal reconciliation and completeness decision are published**
 - Added evidence artifacts:
-  - `docs/design-docs/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Current formal decision for parser completeness gate is `GO` (no open `S0/S1` vs KERIpy baseline).
 
 20. **Regression baseline updated after reconciliation**
@@ -152,12 +152,16 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Handoff Log
 
+### 2026-03-02 - Design-Doc Reorg Link Synchronization
+- What changed:
+  - Updated stale CESR design-doc path references in:
+  - Updated AGENTS shorthand routing references to fully qualified `docs/design-docs/PROJECT_LEARNINGS.md`.
 ### 2026-03-01 - keride Added to Cross-Impl and Dependency/Engine Check
 - What changed:
   - Added `keride` to:
-    - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md` (baseline list, evidence inputs, capability matrix, implementation notes, advisory divergences)
+    - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md` (baseline list, evidence inputs, capability matrix, implementation notes, advisory divergences)
   - Synced comparator summary mentions in:
-    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
     - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Why:
   - Capture explicit comparator status for KERIde and answer whether it currently consumes CESRide and whether it provides a unified stream parser engine contract.
@@ -165,17 +169,17 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: not run (documentation/evidence reconciliation update)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Risks/TODO:
   - If the goal is true CESRide reuse in KERIde, plan a packaging/integration step to replace vendored CESR/parside modules with explicit dependency boundaries and compatibility tests.
 
 ### 2026-03-01 - cesride Added to Cross-Impl + CESRide/KERIde Alignment Notes
 - What changed:
-  - Updated `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md` to add `cesride` as an advisory baseline with capability ratings, implementation notes, and advisory divergence items.
+  - Updated `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md` to add `cesride` as an advisory baseline with capability ratings, implementation notes, and advisory divergence items.
   - Added a new section documenting CESRide/KERIde alignment risks and a proposed granular follow-on capability matrix.
   - Synced comparator-summary mentions in:
-    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
     - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Why:
   - Support near-term CESRide/KERIde update planning with explicit evidence of current coupling and parser-scope boundaries.
@@ -183,8 +187,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: not run (documentation/evidence reconciliation update)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Risks/TODO:
   - Build the proposed granular matrix with executable per-row vectors before CESRide/KERIde synchronization work starts.
 
@@ -194,16 +198,16 @@ Persistent CESR parser memory for `keri-ts`.
     - `cesrox` (`/Users/kbull/code/keri/kentbull/cesrox`)
     - `kerits` (`/Users/kbull/code/keri/kentbull/kerits`)
   - Updated:
-    - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Why:
   - Expand comparator coverage as requested and confirm whether added implementation deltas change parser completeness gate status.
 - Tests:
   - Command: not run (documentation/evidence reconciliation update)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Risks/TODO:
   - Continue treating KERIpy as blocking baseline; keep non-KERIpy comparator deltas advisory unless they expose KERIpy/spec mismatch.
 
@@ -214,9 +218,9 @@ Persistent CESR parser memory for `keri-ts`.
   - Implemented vectors:
     - `V-P2-001`, `V-P2-002`, `V-P2-005`, `V-P2-008`, `V-P2-011`, `V-P2-012`, `V-P2-014`, `V-P2-015`
   - Added dated reconciliation artifacts:
-    - `docs/design-docs/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
-    - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
   - Updated P2 backlog status document:
     - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
 - Why:
@@ -250,7 +254,7 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-02-28 - Point 1 Completion Reflected in Learnings/Plan
 - What changed:
   - Explicitly recorded Point 1 completion and Point 2 next-step status in CESR learnings current-state section.
-  - Synced milestone language with `cesr-parser-readability-improvement-plan.md`.
+  - Synced milestone language with `docs/plans/cesr-parser-readability-improvement-plan.md`.
 - Why:
   - Keep thread handoff state unambiguous and aligned across learnings + execution plan docs.
 - Tests:
@@ -408,7 +412,7 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr-parser-readability-phased-roadmap.md`
   - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Risks/TODO:
-  - Improvement plan (`cesr-parser-readability-improvement-plan.md`) still treats Point 6 as next ten-point item; keep phase-plan and ten-point-plan sequencing language synchronized during Phase 5 execution kickoff.
+  - Improvement plan (`docs/plans/cesr-parser-readability-improvement-plan.md`) still treats Point 6 as next ten-point item; keep phase-plan and ten-point-plan sequencing language synchronized during Phase 5 execution kickoff.
 
 ### 2026-03-01 - semanticShape Invariants Activated (Metadata-to-Contract Upgrade)
 - What changed:
@@ -569,7 +573,7 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-03-01 - Point 9 Naming and Terminology Normalization (Targeted Docs-First Pass)
 - What changed:
   - Added explicit parser terminology glossaries and normalized wording in:
-    - `docs/design-docs/CESR_PARSER_MAINTAINER_GUIDE.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_MAINTAINER_GUIDE.md`
     - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
   - Clarified frame/message terminology boundary without public API churn:
     - `packages/cesr/src/core/types.ts` now documents `CesrMessage` as a historical compatibility name for frame payload objects.

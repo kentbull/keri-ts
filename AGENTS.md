@@ -11,7 +11,7 @@ At the start of each new task thread, read these files first:
 
 1. `AGENTS.md` (this file)
 2. `docs/design-docs/PROJECT_LEARNINGS.md` (top-level index)
-3. Topic learnings docs listed under "Current Focus" in `PROJECT_LEARNINGS.md`
+3. Topic learnings docs listed under "Current Focus" in `docs/design-docs/PROJECT_LEARNINGS.md`
 4. Any task-specific contract/ADR/plan docs referenced by those topic docs
 5. As needed, remember to refer, on a task by task basis, to the KERIpy python
    reference implementation stored at `$HOME/code/keri/kentbull/keripy` for
@@ -33,7 +33,7 @@ Before final response, update:
 3. Relevant ADRs, architectural, or design docs from `docs/adr`,
    `docs/design-docs`, or otherwise.
 
-Use the handoff templates in `PROJECT_LEARNINGS.md`.
+Use the handoff templates in `docs/design-docs/PROJECT_LEARNINGS.md`.
 
 ## Learnings Document Policy
 
