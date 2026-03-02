@@ -80,6 +80,21 @@ This keeps context focused and avoids long-thread drift.
 9. Follow-up bugfix completed: `--colored --pretty` now colors all pretty JSON
    body lines for SERDER output, with regression coverage in
    `packages/keri/test/unit/app/annotate.test.ts`.
+10. KERI reconciliation planning was expanded from init/incept-only to a
+    usability-first, two-controller interop arc in
+    `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`, adding early parity
+    gates for `list`, `aid`, `ends add`, OOBI generate/resolve, direct+mailbox
+    communication, and challenge generate/respond/verify.
+11. Directory policy is now explicit in plan scope: preserve default `.tufa`
+    isolation while providing opt-in KLI compatibility mode (`.keri`) via
+    CLI/config for cross-implementation interoperability.
+12. Phase 2 planning now includes a dedicated DB reconciliation artifact at
+    `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`, with explicit parity
+    workstreams for `dbing.py`, `subing.py`, `koming.py`, `basing.py`, and
+    `escrowing.py`.
+13. DB-layer sequencing is now hard-gated: complete LMDB feature-by-feature
+    parity first (including Suber/Komer/databaser/escrow paths), then implement
+    provider abstraction for pluggable backends.
 
 ### 2026-02-28
 
