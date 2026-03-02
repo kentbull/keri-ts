@@ -53,7 +53,7 @@ npx tufa version
 ```bash
 # Run CLI from workspace
 deno task tufa version
-deno task tufa annotate --in samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
+deno task tufa annotate --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
 
 # Run standard CESR parser benchmark baselines
 deno task bench:cesr
