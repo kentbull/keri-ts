@@ -63,6 +63,8 @@ A dedicated DB sub-plan is part of this phase:
 - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
 - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
 - `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+- `docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`
+- `docs/plans/keri/DB_LAYER_KV_GATE_H_BACKLOG.csv`
 
 It tracks detailed parity for classes/functions from KERIpy DB modules and the
 K/V surface from `docs/design-docs/db/lmdb-dumper.md`.

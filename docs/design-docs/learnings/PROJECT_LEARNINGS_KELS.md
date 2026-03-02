@@ -115,3 +115,60 @@ Use this doc for:
 - Risks/TODO:
   - Symbol-level `Partial` rows still require explicit behavior parity tests
     before any status can be promoted to `Equivalent`.
+
+### 2026-03-02 - D0 Inventory Matrix Upgraded (Owners + Gate Worklists)
+
+- Topic docs updated:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`
+  - `docs/plans/keri/DB_LAYER_KV_GATE_H_BACKLOG.csv`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+- What changed:
+  - Upgraded the D0 parity matrix from skeleton to a usable workbook with owner
+    lanes (`DB-CORE`, `DB-SUBER`, `DB-KOMER`, `DB-BASER`, `DB-ESCROW`) and
+    concrete proposed `keri-ts` file/symbol targets per KERIpy symbol row.
+  - Added D0 snapshot counts for symbol statuses and K/V worklist sizes.
+  - Split K/V parity matrix into two actionable lists:
+    - Gate A-G worklist: current rows with `priority=P1` or `status=Partial`
+    - Gate H backlog: remaining rows
+- Why:
+  - Move D0 from inventory capture to execution-ready backlog segmentation so
+    work can proceed in gate order without losing full-parity traceability.
+- Tests:
+  - Command: generation/validation via `rg` + `sed` + `awk` + file checks
+  - Result: 67 symbol rows maintained; K/V split = 33 Gate A-G, 97 Gate H
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+- Risks/TODO:
+  - Gate A-G classification currently uses a heuristic (`P1/Partial`) and
+    should be refined to explicit per-gate mapping before status promotions.
+
+### 2026-03-02 - Gate A-G Worklist Explicit Gate Mapping Added
+
+- Topic docs updated:
+  - `docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+- What changed:
+  - Added explicit per-row gate mapping in the Gate A-G K/V worklist via new
+    columns: `gate` and `gate_rationale`.
+  - Mapped all current Gate A-G rows to concrete gate sets (e.g. `A|B|C`,
+    `A|E`, `A|F|G`) with rationale text describing why each K/V row belongs.
+  - Updated matrix/reconciliation docs to describe this as explicit mapping,
+    replacing prior heuristic wording in the matrix artifact notes.
+- Why:
+  - Make Gate A-G execution auditable at key granularity and avoid ambiguous
+    priority-driven grouping when validating feature readiness by gate.
+- Tests:
+  - Command: deterministic mapping pass over Gate A-G CSV with zero-unmatched
+    row check
+  - Result: `33` rows mapped, `0` unmatched
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+- Risks/TODO:
+  - Some rows span multiple gates by design; if needed, add a future
+    `primary_gate` column to simplify burn-down sequencing.

@@ -47,6 +47,8 @@ Initial D0 artifacts (seeded):
 
 - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
 - `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+- `docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`
+- `docs/plans/keri/DB_LAYER_KV_GATE_H_BACKLOG.csv`
 
 ## Non-Negotiable Rules
 
@@ -71,9 +73,13 @@ Deliverables:
 - Mapping to target `keri-ts` files/classes.
 - Status columns: `Missing`, `Partial`, `Equivalent`, `Tested`.
 - K/V inventory table seeded from `lmdb-dumper.md`.
-- Published skeleton artifacts:
+- Gate-scoped K/V classification for current-phase execution:
+  - explicit `gate` and `gate_rationale` columns in Gate A-G worklist rows.
+- Published D0 artifacts:
   - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
   - `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+  - `docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`
+  - `docs/plans/keri/DB_LAYER_KV_GATE_H_BACKLOG.csv`
 
 Exit criteria:
 

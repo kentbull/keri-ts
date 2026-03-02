@@ -99,6 +99,13 @@ This keeps context focused and avoids long-thread drift.
     (`docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`) and a K/V inventory matrix
     CSV (`docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`) generated from
     KERIpy DB modules and `docs/design-docs/db/lmdb-dumper.md`.
+15. D0 parity workbook was upgraded with owner lanes and concrete TS symbol
+    targets, and the K/V inventory is now split into execution worklists for
+    Gate A-G (`DB_LAYER_KV_GATE_AG_WORKLIST.csv`) vs Gate H backlog
+    (`DB_LAYER_KV_GATE_H_BACKLOG.csv`) using current `P1/Partial` heuristics.
+16. Gate A-G worklist rows now include explicit gate assignments and rationale
+    columns (`gate`, `gate_rationale`) instead of heuristic-only classification,
+    so each prioritized K/V row is directly traceable to gates A through G.
 
 ### 2026-02-28
 
