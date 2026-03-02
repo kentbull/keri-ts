@@ -219,10 +219,10 @@ Persistent CESR parser memory for `keri-ts`.
 
 1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 2. `docs/design-docs/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
-3. `docs/plans/cesr-parser-readability-improvement-plan.md`
-4. `docs/plans/cesr-parser-readability-phased-roadmap.md`
-5. `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
-6. `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+3. `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+4. `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
+5. `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+6. `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 7. `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 
 ## Current Follow-Ups
@@ -249,8 +249,8 @@ Persistent CESR parser memory for `keri-ts`.
     - `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
       (`V-P2-009`, `010`, `013`, `016`, `020`, `021`)
   - Updated closure/status docs:
-    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
-    - `docs/plans/cesr-parser-readability-improvement-plan.md`
+    - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+    - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
     - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
     - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Why:
@@ -264,8 +264,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `158 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
   - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
   - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 - Risks/TODO:
@@ -364,7 +364,7 @@ Persistent CESR parser memory for `keri-ts`.
     - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
     - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
   - Updated P2 backlog status document:
-    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+    - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 - Why:
   - Complete the parser-completeness gate using KERIpy-first reconciliation and
     determine if upper-layer LMDB/KEL/witness-watcher work can proceed.
@@ -372,7 +372,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `148 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
   - reconciliation/comparison/decision docs listed above
 - Risks/TODO:
   - Remaining P2 medium/low vectors (`V-P2-003`, `004`, `006`, `007`, `009`,
@@ -403,7 +403,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Explicitly recorded Point 1 completion and Point 2 next-step status in CESR
     learnings current-state section.
   - Synced milestone language with
-    `docs/plans/cesr-parser-readability-improvement-plan.md`.
+    `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`.
 - Why:
   - Keep thread handoff state unambiguous and aligned across learnings +
     execution plan docs.
@@ -411,7 +411,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: not run (documentation-only update)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Maintain milestone/status sync as Point 2 decomposition work lands.
 
@@ -440,7 +440,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `118 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Point 3 policy extraction should avoid changing default strict/compat
     semantics while introducing strategy interfaces.
@@ -469,8 +469,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `118 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Point 4 still needs compatibility-aware migration from
     `AttachmentGroup.items: unknown[]` to discriminated payload types.
@@ -491,7 +491,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `118 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Continue keeping strategy modules focused as Point 4 typed payload refactors
     land.
@@ -515,7 +515,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `118 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - If external downstream users rely on removed wrappers, add explicit
     migration notes in the next release notes pass.
@@ -539,8 +539,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `118 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Downstream users that depended on raw `string | Uint8Array | object | array`
     item shapes must migrate to discriminant checks.
@@ -562,8 +562,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `118 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Point 6 still needs structured recovery diagnostics so compat fallbacks stop
     relying on warning-style side effects.
@@ -586,7 +586,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `119 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - If new intentional compatibility-only aliases are added, update invariant
     allowlist explicitly to keep intent auditable.
@@ -615,7 +615,7 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-03-01 - Roadmap Rephase: Minor-Version Modeling + Codex Subset Parity Elevated To Phase 5
 
 - What changed:
-  - Updated `docs/plans/cesr-parser-readability-phased-roadmap.md` to insert a
+  - Updated `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md` to insert a
     new Phase 5 focused on:
     - explicit major/minor codex modeling aligned with KERIpy minor-version
       progression semantics,
@@ -632,10 +632,10 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: not run (documentation-only update)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
   - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Risks/TODO:
-  - Improvement plan (`docs/plans/cesr-parser-readability-improvement-plan.md`)
+  - Improvement plan (`docs/plans/cesr/cesr-parser-readability-improvement-plan.md`)
     still treats Point 6 as next ten-point item; keep phase-plan and
     ten-point-plan sequencing language synchronized during Phase 5 execution
     kickoff.
@@ -679,8 +679,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: not run (documentation-only recalibration)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Ensure final Point 6 implementation adds a concrete diagnostics contract
     before removing legacy warning behavior so downstream observability is not
@@ -716,7 +716,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `128 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Point 6 observability work still needs to remove default warning side
     effects and introduce one structured diagnostics contract.
@@ -724,7 +724,7 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-03-01 - Readability Plan Steps 6-10 Recalibration (Post-Phase 5)
 
 - What changed:
-  - Updated `docs/plans/cesr-parser-readability-improvement-plan.md` sections
+  - Updated `docs/plans/cesr/cesr-parser-readability-improvement-plan.md` sections
     6-10 to match the current readability baseline and completed Phase 5 work.
   - Clarified Point 6 as the immediate next active implementation step
     (diagnostics-focused, no new fallback semantics).
@@ -741,7 +741,7 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: not run (docs-only recalibration)
   - Result: n/a
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - Risks/TODO:
   - Keep phased roadmap and improvement-plan status language synchronized as
     Point 6 implementation lands.
@@ -768,8 +768,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `132 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Keep `onAttachmentVersionFallback` adapter behavior stable until downstream
     consumers migrate to `onRecoveryDiagnostic`.
@@ -825,8 +825,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `135 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Maintain current classification boundary for parser-level errors to avoid
     accidental drift in downstream expectations during Point 8 hardening.
@@ -846,8 +846,8 @@ Persistent CESR parser memory for `keri-ts`.
     `packages/cesr/test/fixtures/external-vectors.ts` from
     `keripy/tests/core/test_parsing.py`.
   - Updated Point 8 status/progress language in:
-    - `docs/plans/cesr-parser-readability-improvement-plan.md`
-    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+    - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+    - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 - Why:
   - Expand Point 8 parity evidence with explicit KERIpy-oriented behavioral
     locks while keeping remaining P2 breadth vectors visible and scoped.
@@ -855,8 +855,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `138 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 - Risks/TODO:
   - Remaining P2 vectors (`V-P2-001`..`016`, `V-P2-020`, `V-P2-021`) are still
     pending before broad rollout confidence.
@@ -877,8 +877,8 @@ Persistent CESR parser memory for `keri-ts`.
       normalization for frame-boundary semantics.
   - Updated plan/roadmap status to mark Point 9 complete and Phase 1
     docs/terminology work complete:
-    - `docs/plans/cesr-parser-readability-improvement-plan.md`
-    - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+    - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+    - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Why:
   - Complete Point 9 with glossary-led terminology alignment and reduce review
     friction around frame/message naming while avoiding broad rename-only churn.
@@ -887,8 +887,8 @@ Persistent CESR parser memory for `keri-ts`.
   - Result: `138 passed, 0 failed`
 - Contracts/plans touched:
   - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - Risks/TODO:
   - Preserve `CesrMessage` exported type name for compatibility until a
     deliberate public API migration path is approved.
@@ -926,9 +926,9 @@ Persistent CESR parser memory for `keri-ts`.
     `deno task tufa benchmark cesr --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr --iterations 1 --warmup 0 --chunk-size 128`
   - Result: benchmark command executed successfully and emitted metrics
 - Contracts/plans touched:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
-  - `docs/plans/cesr-parser-buffer-perf-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-buffer-perf-plan.md`
 - Risks/TODO:
   - Remaining Point 8 P2 breadth vectors are still pending and remain the next
     parser hardening milestone in Phase 6.

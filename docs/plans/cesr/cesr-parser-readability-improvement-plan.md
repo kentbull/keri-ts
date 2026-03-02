@@ -425,7 +425,7 @@ Why:
 Progress note:
 
 - P0/P1 parity vectors are implemented and tracked in:
-  - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+  - `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 - Phase 5 invariants are implemented in:
   - `packages/cesr/test/unit/counter-version-registry.test.ts`
   - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts`
@@ -434,7 +434,7 @@ Progress note:
   - with fixture updates in:
     - `packages/cesr/test/fixtures/external-vectors.ts`
 - Deferred breadth hardening is tracked in:
-  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 
 ### 9) Apply naming and terminology normalization pass
 
@@ -495,7 +495,7 @@ complete.
 Deliverables:
 
 - use and extend deferred perf plan:
-  - `docs/plans/cesr-parser-buffer-perf-plan.md`
+  - `docs/plans/cesr/cesr-parser-buffer-perf-plan.md`
 - ensure optimized internals remain hidden behind readable abstractions
 - add/refresh microbenchmark baselines before introducing optimization deltas
 - include rollback criteria when complexity increase is not justified by
@@ -526,7 +526,7 @@ Why:
 
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-- `docs/plans/cesr-parser-buffer-perf-plan.md`
-- `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
-- `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+- `docs/plans/cesr/cesr-parser-buffer-perf-plan.md`
+- `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+- `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 - `packages/cesr/test/unit/parser.test.ts`

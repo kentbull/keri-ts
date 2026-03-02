@@ -6,7 +6,7 @@ conversation appropriately.
 
 ```text
 Use AGENTS.md startup protocol.
-Read PROJECT_LEARNINGS.md and relevant topic learnings docs.
+Read docs/design-docs/PROJECT_LEARNINGS.md and relevant topic learnings docs.
 Summarize current state in 10 bullets.
 Then do task: <TASK>.
 ```
