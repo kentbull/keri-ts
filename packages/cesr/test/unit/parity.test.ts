@@ -4,9 +4,7 @@ import {
   parseAttachmentDispatchCompat,
 } from "../../src/parser/group-dispatch.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../src/core/errors.ts";
-import { MATTER_SIZES } from "../../src/tables/matter.tables.generated.ts";
 import {
   COUNTER_CODE_NAMES_V1,
   COUNTER_CODE_NAMES_V2,
@@ -14,24 +12,12 @@ import {
   COUNTER_SIZES_V2,
 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-
-function token(code: string): string {
-  const sizage = MATTER_SIZES.get(code);
-  if (!sizage || sizage.fs === null) {
-    throw new Error(`Need fixed-size code for token, got ${code}`);
-  }
-  return code + "A".repeat(sizage.fs - code.length);
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import {
+  counterV2,
+  sigerToken,
+  token,
+} from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {
   const candidates = [
@@ -64,7 +50,7 @@ Deno.test("primitive registry includes extended KERIpy codex entries", () => {
 
 Deno.test("dispatch parses v2 controller indexed signatures group", () => {
   const ims = `-KAB${sigerToken()}`;
-  const parsed = parseAttachmentDispatch(new TextEncoder().encode(ims), {
+  const parsed = parseAttachmentDispatch(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -75,7 +61,7 @@ Deno.test("dispatch parses v2 controller indexed signatures group", () => {
 
 Deno.test("dispatch parses v2 trans indexed sig group", () => {
   const ims = `-XAB${token("B")}${token("M")}${token("E")}-KAB${sigerToken()}`;
-  const parsed = parseAttachmentDispatch(new TextEncoder().encode(ims), {
+  const parsed = parseAttachmentDispatch(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -87,7 +73,7 @@ Deno.test("dispatch parses v2 trans indexed sig group", () => {
 Deno.test("dispatch parses nested attachment wrapper", () => {
   const nested = `-KAB${sigerToken()}`;
   const ims = `${counterV2("-C", nested.length / 4)}${nested}`;
-  const parsed = parseAttachmentDispatch(new TextEncoder().encode(ims), {
+  const parsed = parseAttachmentDispatch(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
@@ -109,7 +95,7 @@ Deno.test("strict attachment dispatch does not fallback across major versions", 
 
   assertThrows(
     () =>
-      parseAttachmentDispatch(new TextEncoder().encode(ims), {
+      parseAttachmentDispatch(encode(ims), {
         major: 1,
         minor: 0,
       }, "txt"),
@@ -117,7 +103,7 @@ Deno.test("strict attachment dispatch does not fallback across major versions", 
   );
 });
 
-Deno.test("compat attachment dispatch falls back and reports warning callback", () => {
+Deno.test("compat attachment dispatch falls back and reports callback", () => {
   const code = selectV2OnlyQuadletGroupCode();
   const ims = `${counterV2(code, 1)}AAAA`;
   const fallbackEvents: Array<{
@@ -128,7 +114,7 @@ Deno.test("compat attachment dispatch falls back and reports warning callback", 
   }> = [];
 
   const parsed = parseAttachmentDispatchCompat(
-    new TextEncoder().encode(ims),
+    encode(ims),
     { major: 1, minor: 0 },
     "txt",
     {

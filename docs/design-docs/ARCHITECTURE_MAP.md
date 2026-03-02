@@ -5,6 +5,10 @@
 This map defines current module boundaries, public API surfaces, and
 internal-only implementation areas so refactors can preserve stable contracts.
 
+## Relevant ADRs
+
+- `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+
 ## Top-Level Boundaries
 
 - `mod.ts`

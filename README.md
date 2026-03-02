@@ -18,6 +18,9 @@ tufa annotate --in samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
 
 # Annotate from stdin
 cat samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr | tufa annotate
+
+# Benchmark CESR parser on any stream
+tufa benchmark cesr --in samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
 ```
 
 `tufa annotate` supports:
@@ -44,6 +47,12 @@ npx tufa version
 # Run CLI from workspace
 deno task tufa version
 deno task tufa annotate --in samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
+
+# Run standard CESR parser benchmark baselines
+deno task bench:cesr
+
+# Benchmark parser on any stream from source
+deno task bench:cesr:parser --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
 
 # Run quality checks
 deno task quality

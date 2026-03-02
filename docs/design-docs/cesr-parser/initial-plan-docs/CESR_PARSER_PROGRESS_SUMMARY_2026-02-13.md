@@ -184,7 +184,7 @@ To support long-term correctness and maintainability:
 
 - Added architecture and quality-pass planning docs:
   - `docs/design-docs/ARCHITECTURE_MAP.md`
-  - `docs/design-docs/CODEBASE_QUALITY_PASS_PLAN.md`
+  - `docs/design-docs/archived-plan-docs/CODEBASE_QUALITY_PASS_PLAN.md`
 - Added quality gate tasks and static debt reporting:
   - `deno task quality`
   - `deno task quality:report`

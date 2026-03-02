@@ -34,6 +34,21 @@ npx cesr-annotate --in mystream.cesr --pretty
 deno task cesr:annotate --in mystream.cesr --pretty
 ```
 
+## Benchmarking (from source)
+
+Run standard parser benchmark baselines:
+
+```bash
+deno task bench:cesr
+```
+
+Run a benchmark on an arbitrary stream:
+
+```bash
+deno task bench:cesr:parser --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
+cat ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr | deno task bench:cesr:parser --iterations 20 --warmup 3
+```
+
 ## Using cesr-ts through tufa
 
 `keri-ts` exposes CESR annotation through `tufa annotate`, which is often the

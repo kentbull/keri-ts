@@ -1,6 +1,9 @@
 import { parseBytes } from "../core/parser-engine.ts";
 import type { CesrFrame } from "../core/types.ts";
-import { renderAnnotatedFrames } from "./render.ts";
+import {
+  renderAnnotatedFrames,
+  renderWrapperAnnotatedStream,
+} from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
 const DEFAULT_OPTIONS: Required<AnnotateOptions> = Object.freeze({
@@ -19,15 +22,15 @@ function resolveOptions(options?: AnnotateOptions): Required<AnnotateOptions> {
   };
 }
 
-function framesOrThrow(frames: CesrFrame[]) {
-  const messages = [];
+function parsedFramesOrThrow(frames: CesrFrame[]) {
+  const parsedFrames = [];
   for (const frame of frames) {
     if (frame.type === "error") {
       throw frame.error;
     }
-    messages.push(frame.frame);
+    parsedFrames.push(frame.frame);
   }
-  return messages;
+  return parsedFrames;
 }
 
 export function annotateFrames(
@@ -38,7 +41,7 @@ export function annotateFrames(
   const bytes = typeof input === "string"
     ? new TextEncoder().encode(input)
     : input;
-  const frames = framesOrThrow(parseBytes(bytes));
+  const frames = parsedFramesOrThrow(parseBytes(bytes));
   return renderAnnotatedFrames(frames, opts);
 }
 
@@ -46,6 +49,14 @@ export function annotate(
   input: Uint8Array | string,
   options?: AnnotateOptions,
 ): string {
-  const frames = annotateFrames(input, options);
+  const opts = resolveOptions(options);
+  const bytes = typeof input === "string"
+    ? new TextEncoder().encode(input)
+    : input;
+  const wrapperAnnotated = renderWrapperAnnotatedStream(bytes, opts);
+  if (wrapperAnnotated !== null) {
+    return wrapperAnnotated;
+  }
+  const frames = annotateFrames(bytes, opts);
   return frames.map((frame) => frame.lines.join("\n")).join("\n");
 }

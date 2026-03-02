@@ -1,53 +1,16 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
-import {
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
+import { decodeB64 } from "../../src/core/bytes.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-import { CesrFrame } from '../../src/index.ts'
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function v1ify(raw: string): string {
-  const size = new TextEncoder().encode(raw).length;
-  const sizeHex = size.toString(16).padStart(6, "0");
-  return raw.replace("KERI10JSON000000_", `KERI10JSON${sizeHex}_`);
-}
-
-function counterV1(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V1.get(code);
-  if (!sizage) throw new Error(`Unknown v1 counter ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
-
-function chunkByBoundaries(
-  input: Uint8Array,
-  boundaries: number[],
-): Uint8Array[] {
-  const chunks: Uint8Array[] = [];
-  let start = 0;
-  for (const end of boundaries) {
-    chunks.push(input.slice(start, end));
-    start = end;
-  }
-  chunks.push(input.slice(start));
-  return chunks;
-}
+import { CesrFrame } from "../../src/index.ts";
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
+import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
+import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
   const parser = createParser();
@@ -71,7 +34,9 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
       };
       attachments: Array<{ code: string; count: number }>;
     };
-    const atts = message.attachments.map((a) => `${a.code}:${a.count}`).join(",");
+    const atts = message.attachments.map((a) => `${a.code}:${a.count}`).join(
+      ",",
+    );
     const native = message.body.native
       ? `${message.body.native.bodyCode}:${message.body.native.fields.length}`
       : "none";

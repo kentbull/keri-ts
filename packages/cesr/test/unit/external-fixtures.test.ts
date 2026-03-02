@@ -6,22 +6,9 @@ import {
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function makeCounterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown v2 counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
-
-function sigerToken(): string {
-  return `A${"A".repeat(87)}`;
-}
+import { decodeB64 } from "../../src/core/bytes.ts";
+import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("parside fixtures parse as expected CESR groups", () => {
   const cases: Array<{ vector: string; code: string; name: string }> = [
@@ -117,7 +104,7 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
   assertEquals(payload.length % 4, 0);
 
   const wrapped = `${
-    makeCounterV2(
+    counterV2(
       CtrDexV2.BodyWithAttachmentGroup,
       payload.length / 4,
     )
@@ -136,13 +123,13 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
 
 Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with attachments", () => {
   const nestedAttachment = `${
-    makeCounterV2(CtrDexV2.ControllerIdxSigs, 1)
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
   }${sigerToken()}`;
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   assertEquals(payload.length % 4, 0);
 
   const wrapped = `${
-    makeCounterV2(
+    counterV2(
       CtrDexV2.BodyWithAttachmentGroup,
       payload.length / 4,
     )
@@ -181,7 +168,7 @@ Deno.test("native MapBodyGroup supports labels between primitives", () => {
     payload.slice(12, 16)
   }VAAA${payload.slice(16)}`;
   const mapBody = `${
-    makeCounterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
+    counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
   }${mapPayload}`;
 
   const parser = createParser();

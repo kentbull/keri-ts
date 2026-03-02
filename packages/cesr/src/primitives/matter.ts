@@ -56,7 +56,7 @@ function parseMatterCodeFromText(txt: string): { code: string; hs: number } {
 export function parseMatterFromText(input: Uint8Array): Matter {
   const txt = String.fromCharCode(...input);
   if (txt.length === 0) {
-    throw new DeserializeError("Empty matter input");
+    throw new ShortageError(1, 0);
   }
 
   const { code } = parseMatterCodeFromText(txt);

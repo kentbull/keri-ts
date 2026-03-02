@@ -1,11 +1,15 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { parseVerser } from "../../src/primitives/verser.ts";
 import { parseIlker } from "../../src/primitives/ilker.ts";
 import { parseLabeler } from "../../src/primitives/labeler.ts";
 import { parseTexter } from "../../src/primitives/texter.ts";
 import { parseBexter } from "../../src/primitives/bexter.ts";
 import { parsePather } from "../../src/primitives/pather.ts";
-import { parseMapperBody } from "../../src/primitives/mapper.ts";
+import {
+  interpretMapperBodySyntax,
+  parseMapperBody,
+  parseMapperBodySyntax,
+} from "../../src/primitives/mapper.ts";
 import { parseNumber } from "../../src/primitives/number.ts";
 import { parseSeqner } from "../../src/primitives/seqner.ts";
 import { parseDater } from "../../src/primitives/dater.ts";
@@ -22,32 +26,17 @@ import { parseBlinder } from "../../src/primitives/blinder.ts";
 import { parseMediar } from "../../src/primitives/mediar.ts";
 import { parseCompactor } from "../../src/primitives/compactor.ts";
 import { parseAggor } from "../../src/primitives/aggor.ts";
-import { intToB64 } from "../../src/core/bytes.ts";
-import { MATTER_SIZES } from "../../src/tables/matter.tables.generated.ts";
-import { COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import {
+  SemanticInterpretationError,
+  SyntaxParseError,
+} from "../../src/core/errors.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
-
-function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
-}
-
-function token(code: string): string {
-  const sizage = MATTER_SIZES.get(code);
-  if (!sizage || sizage.fs === null) {
-    throw new Error(`Need fixed-size code ${code}`);
-  }
-  return code + "A".repeat(sizage.fs - code.length);
-}
-
-function counterV2(code: string, count: number): string {
-  const sizage = COUNTER_SIZES_V2.get(code);
-  if (!sizage) throw new Error(`Unknown counter code ${code}`);
-  return `${code}${intToB64(count, sizage.ss)}`;
-}
+import { counterV2, token } from "../fixtures/counter-token-fixtures.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("verser parses KERI v2 token", () => {
   const verser = parseVerser(encode("0OKERICAACAA"), "txt");
@@ -92,9 +81,8 @@ Deno.test("mapper parses map body with interleaved labels", () => {
   const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${
     payload.slice(12, 16)
   }VAAA${payload.slice(16)}`;
-  const sizage = COUNTER_SIZES_V2.get(CtrDexV2.MapBodyGroup)!;
-  const mapBody = `${CtrDexV2.MapBodyGroup}${
-    intToB64(mapPayload.length / 4, sizage.ss)
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
   }${mapPayload}`;
 
   const mapper = parseMapperBody(
@@ -125,6 +113,61 @@ Deno.test("mapper recursively parses nested map values", () => {
   assertEquals(mapper.fields.length, 2);
   assertEquals(mapper.fields[0].isCounter, true);
   assertEquals((mapper.fields[0].children?.length ?? 0) > 0, true);
+});
+
+Deno.test("mapper syntax parse emits ordered label/value token artifacts", () => {
+  const payload = `VAAA${token("B")}VAAA${token("E")}`;
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
+  }${payload}`;
+
+  const syntax = parseMapperBodySyntax(
+    encode(mapBody),
+    { major: 2, minor: 0 },
+    "txt",
+  );
+  assertEquals(syntax.entries.length, 4);
+  assertEquals(syntax.entries[0].kind, "label");
+  assertEquals(syntax.entries[1].kind, "value");
+  assertEquals(syntax.entries[2].kind, "label");
+  assertEquals(syntax.entries[3].kind, "value");
+});
+
+Deno.test("mapper syntax parse classifies malformed map tokenization as SyntaxParseError", () => {
+  const malformed = `${CtrDexV2.MapBodyGroup}ACVAAA-KAB`;
+  assertThrows(
+    () =>
+      parseMapperBodySyntax(
+        encode(malformed),
+        { major: 2, minor: 0 },
+        "txt",
+      ),
+    SyntaxParseError,
+  );
+});
+
+Deno.test("mapper semantic interpretation rejects dangling label artifacts", () => {
+  assertThrows(
+    () =>
+      interpretMapperBodySyntax({
+        code: CtrDexV2.MapBodyGroup,
+        count: 1,
+        fullSize: 4,
+        fullSizeB2: 3,
+        totalSize: 8,
+        totalSizeB2: 6,
+        entries: [
+          {
+            kind: "label",
+            code: "V",
+            qb64: "VAAA",
+            label: "",
+            consumed: 4,
+          },
+        ],
+      }),
+    SemanticInterpretationError,
+  );
 });
 
 Deno.test("number parses numeric primitive", () => {

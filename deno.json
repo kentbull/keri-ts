@@ -22,6 +22,8 @@
     "test:quality": "cd packages/keri && deno task test:quality",
     "test:integration:server": "cd packages/keri && deno task test:integration:server",
     "test:cesr": "cd packages/cesr && deno task test",
+    "bench:cesr": "cd packages/cesr && deno task bench",
+    "bench:cesr:parser": "cd packages/cesr && deno task bench:parser",
     "cesr:annotate": "cd packages/cesr && deno task annotate",
     "cesr:build:npm": "deno task version:generate && cd packages/cesr && deno task build:npm",
     "npm:build:all": "deno task build:npm && deno task cesr:build:npm"
@@ -36,5 +38,10 @@
       "deno.ns",
       "dom"
     ]
-  }
+  },
+  "allowScripts": [
+    "npm:cbor-extract@2.2.0",
+    "npm:lmdb@3.4.4",
+    "npm:msgpackr-extract@3.0.3"
+  ]
 }
