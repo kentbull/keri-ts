@@ -3,6 +3,7 @@
   "version": "0.2.2",
   "private": true,
   "description": "Monorepo workspace and release tooling for keri-ts and cesr-ts",
+  "license": "Apache-2.0",
   "workspaces": [
     "packages/keri",
     "packages/cesr"
