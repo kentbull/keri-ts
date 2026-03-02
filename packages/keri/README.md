@@ -61,6 +61,14 @@ tufa annotate --qb2 --in <binary.qb2> --out <annotation.txt>
 - `--out <path>`: output file path (defaults to stdout)
 - `--qb2`: parse input as qb2 binary
 - `--pretty`: pretty-print annotation output
+- `--colored`: colorize annotation output on stdout only (ignored with `--out`)
+
+Optional color overrides:
+
+- File: `$HOME/.tufa/annot-color.yaml` or `$HOME/.tufa/annot-color.yml`
+- Keys: `counter`, `group`, `body`, `signature`, `said`, `opaque`, `comment`
+- Values: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
+  or bright variants (`brightBlack` ... `brightWhite`)
 
 ## Package entrypoints
 

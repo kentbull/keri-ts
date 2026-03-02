@@ -29,6 +29,13 @@ tufa benchmark cesr --in samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
 - `--out <path>` output file (defaults to stdout)
 - `--qb2` treat input as qb2 binary
 - `--pretty` pretty-print annotation output
+- `--colored` colorize annotation output on stdout only (ignored with `--out`)
+
+Color overrides can be provided in `$HOME/.tufa/annot-color.yaml` or
+`$HOME/.tufa/annot-color.yml` with keys: `counter`, `group`, `body`,
+`signature`, `said`, `opaque`, `comment`. Allowed values: `black`, `red`,
+`green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and bright variants
+(`brightBlack` ... `brightWhite`).
 
 ## Install
 
