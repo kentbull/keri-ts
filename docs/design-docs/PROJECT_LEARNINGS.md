@@ -13,8 +13,8 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser readability roadmap execution (Points 1-7, 9, and 10 completed as of 2026-03-01; roadmap Phase 5 minor-version model rectification + codex subset parity is implemented; Point 8 parity hardening breadth is now the next parser milestone).
-2. KERIpy parity preservation via normative parser contract + parity matrix updates.
+1. CESR parser completeness is now reconciled with a formal `GO` verdict for moving up-stack to LMDB/key-management/KEL/witness-watcher implementation, with remaining P2 medium/low vectors tracked as non-blocking hardening debt.
+2. KERIpy parity preservation remains the blocking parser gate for future parser-adjacent changes.
 
 ## Topic Learnings Index
 
@@ -82,6 +82,13 @@ This keeps context focused and avoids long-thread drift.
 24. Full CESR suite remains green after initial Point 8 hardening additions (`138 passed, 0 failed`).
 25. Point 9 naming/terminology normalization is complete in targeted docs-first scope: parser glossary alignment is now explicit and selective identifier/comment cleanup reduced frame/message ambiguity without broad rename churn.
 26. Point 10 benchmark gating is complete: standardized parser benchmark flows (`deno task bench:cesr`, arbitrary-stream benchmark CLI, and `tufa benchmark cesr`) plus rollback criteria now gate future perf optimization complexity.
+27. CESR parser high-priority P2 hardening vectors are now complete and passing (`V-P2-001`, `002`, `005`, `008`, `011`, `012`, `014`, `015`, plus prior `017`), with a new dedicated hardening suite in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`.
+28. Formal reconciliation artifacts are now published for parser readiness:
+  - `docs/design-docs/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+29. Cross-implementation comparison confirms no open `S0/S1` mismatch against KERIpy baseline; divergences in KERIox/libkeri/cesrixir/cesride/CESRox/kerits/keride are classified advisory.
+30. Parser completeness gate decision is `GO`; remaining medium/low P2 vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) are tracked as `S2` non-blocking hardening debt while upper-layer infrastructure work proceeds.
 
 ## New Thread Kickoff Template
 

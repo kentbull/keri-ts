@@ -98,6 +98,41 @@ Persistent CESR parser memory for `keri-ts`.
 - Vectors `V-P2-017`, `V-P2-018`, and `V-P2-019` are now implemented and passing.
 - KERIpy-derived v1 JSON ICP fixture material is now pinned in `test/fixtures/external-vectors.ts`.
 
+18. **Point 8 high-priority breadth vectors are now complete**
+- Added `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`.
+- Implemented and passing: `V-P2-001`, `V-P2-002`, `V-P2-005`, `V-P2-008`, `V-P2-011`, `V-P2-012`, `V-P2-014`, `V-P2-015`.
+- Combined with earlier `V-P2-017`, all current P2 `H` vectors are now lock-tested.
+
+19. **Formal reconciliation and completeness decision are published**
+- Added evidence artifacts:
+  - `docs/design-docs/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Current formal decision for parser completeness gate is `GO` (no open `S0/S1` vs KERIpy baseline).
+
+20. **Regression baseline updated after reconciliation**
+- `deno task test` in `packages/cesr` now reports `148 passed, 0 failed`.
+- Pre-hardening baseline captured during reconciliation was `140 passed, 0 failed`.
+
+21. **Remaining parser hardening debt is now explicit and non-blocking**
+- Open P2 medium/low vectors: `V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`.
+- Classified as `S2` breadth debt for ongoing hardening, not a blocker for LMDB/KEL layer progression.
+
+22. **Cross-implementation advisory scope expanded**
+- Added full advisory reconciliation for `CESRox` and `kerits` to the cross-implementation comparison artifact.
+- Both are currently assessed as useful interoperability references with narrower parser-contract breadth than `KERIpy`, and any divergences remain `S3` advisory under the KERIpy-first gate.
+
+23. **CESRide and KERIde alignment context added**
+- Added `cesride` to the advisory comparator set with deeper notes on primitive-level strength vs stream-parser contract scope limits.
+- Added explicit CESRide/KERIde coupling notes: KERIde currently vendors CESR/parside code in-tree rather than consuming CESRide as a package dependency.
+- Added a recommended next-pass granular comparison matrix for future CESRide/KERIde upgrade planning.
+
+24. **KERIde added as an explicit comparator implementation**
+- Added `keride` to the cross-implementation capability matrix and advisory divergences.
+- Captured direct dependency and architecture findings:
+  - KERIde does not currently depend on external `cesride` in `Cargo.toml`.
+  - KERIde exposes `from_stream_bytes` parser entry points but no unified `feed()/flush()` parser-engine lifecycle contract.
+
 ## Key Docs
 
 1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
@@ -111,11 +146,89 @@ Persistent CESR parser memory for `keri-ts`.
 ## Current Follow-Ups
 
 1. Keep lifecycle contract matrix synchronized with diagnostics and recovery behavior tests.
-2. Execute P2 hardening vectors prior to broad ecosystem rollout.
-3. Continue Point 8 parity hardening vectors (P2 breadth) now that Point 7 boundary extraction is complete.
+2. Execute remaining P2 medium/low hardening vectors in parallel with upper-layer implementation work.
+3. Continue Point 8 parity hardening breadth now that all P2 `H` vectors are complete.
 4. Monitor downstream migration from legacy `onAttachmentVersionFallback` toward `onRecoveryDiagnostic`.
 
 ## Handoff Log
+
+### 2026-03-01 - keride Added to Cross-Impl and Dependency/Engine Check
+- What changed:
+  - Added `keride` to:
+    - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md` (baseline list, evidence inputs, capability matrix, implementation notes, advisory divergences)
+  - Synced comparator summary mentions in:
+    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+    - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Why:
+  - Capture explicit comparator status for KERIde and answer whether it currently consumes CESRide and whether it provides a unified stream parser engine contract.
+- Tests:
+  - Command: not run (documentation/evidence reconciliation update)
+  - Result: n/a
+- Contracts/plans touched:
+  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Risks/TODO:
+  - If the goal is true CESRide reuse in KERIde, plan a packaging/integration step to replace vendored CESR/parside modules with explicit dependency boundaries and compatibility tests.
+
+### 2026-03-01 - cesride Added to Cross-Impl + CESRide/KERIde Alignment Notes
+- What changed:
+  - Updated `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md` to add `cesride` as an advisory baseline with capability ratings, implementation notes, and advisory divergence items.
+  - Added a new section documenting CESRide/KERIde alignment risks and a proposed granular follow-on capability matrix.
+  - Synced comparator-summary mentions in:
+    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+    - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Why:
+  - Support near-term CESRide/KERIde update planning with explicit evidence of current coupling and parser-scope boundaries.
+- Tests:
+  - Command: not run (documentation/evidence reconciliation update)
+  - Result: n/a
+- Contracts/plans touched:
+  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Risks/TODO:
+  - Build the proposed granular matrix with executable per-row vectors before CESRide/KERIde synchronization work starts.
+
+### 2026-03-01 - Cross-Impl Scope Expansion (CESRox + kerits)
+- What changed:
+  - Extended cross-implementation reconciliation to include:
+    - `cesrox` (`/Users/kbull/code/keri/kentbull/cesrox`)
+    - `kerits` (`/Users/kbull/code/keri/kentbull/kerits`)
+  - Updated:
+    - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Why:
+  - Expand comparator coverage as requested and confirm whether added implementation deltas change parser completeness gate status.
+- Tests:
+  - Command: not run (documentation/evidence reconciliation update)
+  - Result: n/a
+- Contracts/plans touched:
+  - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+  - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Risks/TODO:
+  - Continue treating KERIpy as blocking baseline; keep non-KERIpy comparator deltas advisory unless they expose KERIpy/spec mismatch.
+
+### 2026-03-01 - CESR Parser Reconciliation, Cross-Impl Comparison, and Completeness Decision
+- What changed:
+  - Added high-priority P2 hardening suite:
+    - `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  - Implemented vectors:
+    - `V-P2-001`, `V-P2-002`, `V-P2-005`, `V-P2-008`, `V-P2-011`, `V-P2-012`, `V-P2-014`, `V-P2-015`
+  - Added dated reconciliation artifacts:
+    - `docs/design-docs/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+    - `docs/design-docs/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+    - `docs/design-docs/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+  - Updated P2 backlog status document:
+    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+- Why:
+  - Complete the parser-completeness gate using KERIpy-first reconciliation and determine if upper-layer LMDB/KEL/witness-watcher work can proceed.
+- Tests:
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `148 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - reconciliation/comparison/decision docs listed above
+- Risks/TODO:
+  - Remaining P2 medium/low vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) remain as `S2` hardening debt.
 
 ### 2026-02-28 - Point 1 State Contract Implementation
 - What changed:

@@ -26,6 +26,22 @@ This document is the dedicated backlog for deferred breadth and hardening vector
 
 Completed:
 
+- `V-P2-001` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with big-count `BodyWithAttachmentGroup` txt/qb2 parity on large payload.
+- `V-P2-002` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with deep nested `GenericGroup` chain split-determinism lock.
+- `V-P2-005` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with fixed-body mapped primitive-category coverage lock using KERIpy fixture.
+- `V-P2-008` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with alternating nested genus-version selector stress lock.
+- `V-P2-011` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with long heterogeneous stream ordering lock (`JSON`/`MGPK`/`CBOR`/native/wrapper).
+- `V-P2-012` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with wrapper-heavy corpus txt/qb2 semantic parity lock.
+- `V-P2-014` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with large-count early-EOF flush/shortage idempotency lock.
+- `V-P2-015` in `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`
+  with strict fail-fast vs compat recovery contract lock for malformed wrapper payload tails.
 - `V-P2-017` in `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
   with KERIpy-derived fixture corpus txt/qb2 parity and split-determinism assertions.
 - `V-P2-018` in `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
@@ -35,7 +51,8 @@ Completed:
 
 Remaining:
 
-- `V-P2-001`..`V-P2-016`, `V-P2-020`, `V-P2-021`.
+- `V-P2-003`, `V-P2-004`, `V-P2-006`, `V-P2-007`, `V-P2-009`,
+  `V-P2-010`, `V-P2-013`, `V-P2-016`, `V-P2-020`, `V-P2-021`.
 
 ## Scope
 
