@@ -11,7 +11,9 @@ import { CommandHandler, type CommandSelection } from "./command-types.ts";
  */
 function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
-  program.name("tufa").version(DISPLAY_VERSION).description("Trust Utilities for Agents CLI");
+  program.name("tufa").version(DISPLAY_VERSION).description(
+    "Trust Utilities for Agents CLI",
+  );
 
   // Prevent Commander from exiting automatically so we can run Effection operations
   program.exitOverride();

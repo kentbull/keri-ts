@@ -210,6 +210,6 @@ mutable nested parse stack.
 
 ## When To Revisit
 
-If production workloads require lower latency and progressive nested emission for
-large counted groups, add an explicit incremental parser strategy as a separate
-module/mode (per ADR-0001).
+If production workloads require lower latency and progressive nested emission
+for large counted groups, add an explicit incremental parser strategy as a
+separate module/mode (per ADR-0001).

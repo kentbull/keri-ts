@@ -1,6 +1,8 @@
 # Using AI Agents effectively
 
-Given that this repo already has AGENTS.md referencing the startup context then just copy and paste the following invocation in each new chat to prime the conversation appropriately.
+Given that this repo already has AGENTS.md referencing the startup context then
+just copy and paste the following invocation in each new chat to prime the
+conversation appropriately.
 
 ```text
 Use AGENTS.md startup protocol.

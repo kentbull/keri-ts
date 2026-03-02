@@ -30,7 +30,11 @@ Deno.test(
       4,
     );
     // All extracted frames remain native `FixBodyGroup` payloads.
-    assertEquals(summary.filter((frame) => frame.nativeBodyCode === CtrDexV2.FixBodyGroup).length, 6);
+    assertEquals(
+      summary.filter((frame) => frame.nativeBodyCode === CtrDexV2.FixBodyGroup)
+        .length,
+      6,
+    );
   },
 );
 
@@ -44,7 +48,10 @@ Deno.test(
     // Contract: exact payload-end => next-wrapper-start transition is stable
     // across deterministic chunk cuts.
     const firstCut = Math.max(1, Math.floor(bytes.length / 2));
-    const secondCut = Math.max(firstCut + 1, Math.floor((bytes.length * 3) / 4));
+    const secondCut = Math.max(
+      firstCut + 1,
+      Math.floor((bytes.length * 3) / 4),
+    );
     const splitSummary = summarizeFrames(
       parseFramesNoError(bytes, [firstCut, secondCut]),
     );

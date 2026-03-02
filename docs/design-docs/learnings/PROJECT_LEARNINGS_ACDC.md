@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Persistent learnings for ACDC modeling, issuance/exchange behavior, and credential interoperability.
+Persistent learnings for ACDC modeling, issuance/exchange behavior, and
+credential interoperability.
 
 ## Current Status
 

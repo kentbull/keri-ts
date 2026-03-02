@@ -149,7 +149,14 @@ export class Hab {
   pre = "";
   kever: KeverState | null = null;
 
-  constructor(name: string, db: Baser, ks: Keeper, mgr: Manager, ns?: string, pre = "") {
+  constructor(
+    name: string,
+    db: Baser,
+    ks: Keeper,
+    mgr: Manager,
+    ns?: string,
+    pre = "",
+  ) {
     this.name = name;
     this.db = db;
     this.ks = ks;
@@ -232,7 +239,9 @@ export class Hab {
     }
 
     const msg = new TextEncoder().encode(
-      `${new TextDecoder().decode(raw)}${encodeCounterV1("-V", atc.length / 4)}${atc}`,
+      `${new TextDecoder().decode(raw)}${
+        encodeCounterV1("-V", atc.length / 4)
+      }${atc}`,
     );
 
     this.db.putEvt(new TextEncoder().encode(`${pre}:0`), msg);
@@ -280,7 +289,14 @@ export class Signator {
       this.pre = hab.pre;
       this.db.pinHby(SIGNER, this.pre);
     } else {
-      const hab = new Hab(SIGNER, habery.db, habery.ks, habery.mgr, undefined, spre);
+      const hab = new Hab(
+        SIGNER,
+        habery.db,
+        habery.ks,
+        habery.mgr,
+        undefined,
+        spre,
+      );
       this.hab = hab;
       this.pre = spre;
     }

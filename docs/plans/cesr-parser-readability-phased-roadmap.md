@@ -10,15 +10,16 @@
 
 ## Objective
 
-Execute parser readability improvements in small, defensible phases so each change set is:
+Execute parser readability improvements in small, defensible phases so each
+change set is:
 
 - reviewable by `keri-ts` and `keripy` maintainers
 - easy to explain and justify
 - behavior-safe by default
 
-This roadmap references and sequences the ten-point plan.
-Point numbers below map directly to that plan except Phase 5, which is an
-explicit gap-closure phase discovered during implementation review.
+This roadmap references and sequences the ten-point plan. Point numbers below
+map directly to that plan except Phase 5, which is an explicit gap-closure phase
+discovered during implementation review.
 
 ## Implementation Snapshot (As Of 2026-03-01)
 
@@ -31,7 +32,8 @@ Completed baseline work that this roadmap now builds on:
   - `resumePendingFrame()`
   - `parseFrameSequence()`
 - GenericGroup enclosed-frame queue semantics implemented (`queuedFrames`).
-- Version/context selector parity vectors implemented for top-level and nested wrappers.
+- Version/context selector parity vectors implemented for top-level and nested
+  wrappers.
 - Legacy implicit-v1 behavior and binary Serder cold-start vectors implemented.
 - P2 breadth/hardening backlog split to a dedicated plan:
   - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
@@ -40,29 +42,42 @@ Completed baseline work that this roadmap now builds on:
 - Canonical parser lifecycle contract now defined in:
   - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 - Point 3 policy extraction landed:
-  - `FrameBoundaryPolicy` and `AttachmentVersionFallbackPolicy` strategies are injected at parser/deferred-dispatch boundaries.
-  - Legacy options still map to default strict/compat and framed/unframed policy implementations.
+  - `FrameBoundaryPolicy` and `AttachmentVersionFallbackPolicy` strategies are
+    injected at parser/deferred-dispatch boundaries.
+  - Legacy options still map to default strict/compat and framed/unframed policy
+    implementations.
 - Point 4 typed payload migration landed:
   - `AttachmentGroup.items` now uses discriminated `AttachmentItem` unions.
   - Wrapper-tail recovery items are explicitly tagged as opaque.
 - Point 5 declarative dispatch spec landed:
   - `group-dispatch.ts` now defines one descriptor source for dispatch metadata.
-  - v1/v2 dispatch maps and related wrapper/siger sets are mechanically derived from descriptors.
+  - v1/v2 dispatch maps and related wrapper/siger sets are mechanically derived
+    from descriptors.
 - Point 7 targeted syntax/semantic separation landed:
-  - frame-start parsing now separates token syntax extraction from semantic dispatch interpretation,
-  - native body parsing now separates syntax artifact extraction from metadata/field interpretation,
-  - mapper parsing now exposes syntax (`parseMapperBodySyntax`) and semantic (`interpretMapperBodySyntax`) phases.
+  - frame-start parsing now separates token syntax extraction from semantic
+    dispatch interpretation,
+  - native body parsing now separates syntax artifact extraction from
+    metadata/field interpretation,
+  - mapper parsing now exposes syntax (`parseMapperBodySyntax`) and semantic
+    (`interpretMapperBodySyntax`) phases.
 - Point 6 recovery observability landed:
-  - parser and dispatch now emit typed `RecoveryDiagnostic` events for fallback accepted/rejected, wrapper opaque-tail preservation, and parser error-reset context,
+  - parser and dispatch now emit typed `RecoveryDiagnostic` events for fallback
+    accepted/rejected, wrapper opaque-tail preservation, and parser error-reset
+    context,
   - legacy fallback callback remains adapter-compatible,
   - default compat warning side effects were removed.
 - Point 9 naming/terminology normalization landed (targeted scope):
-  - parser docs now include explicit glossary entries for frame/message, body-group/attachment-group, `ano`, and deferred-frame lifecycle terms,
-  - targeted identifier/comment cleanup reduced frame/message ambiguity without broad rename churn.
+  - parser docs now include explicit glossary entries for frame/message,
+    body-group/attachment-group, `ano`, and deferred-frame lifecycle terms,
+  - targeted identifier/comment cleanup reduced frame/message ambiguity without
+    broad rename churn.
 - Phase 5 minor-version model + codex subset parity landed:
-  - version-aware `(major, minor)` codex/table registries and resolver semantics are now explicit,
-  - `CtrDexByVersion` / `UniDexByVersion` / `SUDexByVersion` / `MUDexByVersion` are exported,
-  - counter-table and dispatch lookups now resolve via versioned registries instead of `major >= 2` branching.
+  - version-aware `(major, minor)` codex/table registries and resolver semantics
+    are now explicit,
+  - `CtrDexByVersion` / `UniDexByVersion` / `SUDexByVersion` / `MUDexByVersion`
+    are exported,
+  - counter-table and dispatch lookups now resolve via versioned registries
+    instead of `major >= 2` branching.
 
 ## Phase Structure
 
@@ -80,7 +95,8 @@ Status:
 Scope:
 
 - inventory current parser behavior contracts in tests
-- add missing vectors for chunk boundaries, mixed-version fallback, wrapper recovery, and nested groups
+- add missing vectors for chunk boundaries, mixed-version fallback, wrapper
+  recovery, and nested groups
 - capture baseline parser outputs for known fixtures
 
 Deliverables:
@@ -106,14 +122,17 @@ Points covered:
 
 Status:
 
-- Completed on 2026-03-01 (state table + glossary + targeted terminology alignment)
+- Completed on 2026-03-01 (state table + glossary + targeted terminology
+  alignment)
 
 Scope:
 
 - document parser state transitions and invariants
-- remove TODO ambiguity by turning implicit behavior into explicit documented rules
+- remove TODO ambiguity by turning implicit behavior into explicit documented
+  rules
 - align names/comments for frame and continuation lifecycle
-- explicitly document `pendingFrame` vs `queuedFrames` responsibilities and emission order
+- explicitly document `pendingFrame` vs `queuedFrames` responsibilities and
+  emission order
 
 Deliverables:
 
@@ -124,8 +143,10 @@ Deliverables:
 Exit criteria:
 
 - no functional deltas in output
-- state transitions can be explained from docs without tracing all source branches
-- `queuedFrames` and bounded GenericGroup substream behavior are documented as first-class lifecycle rules
+- state transitions can be explained from docs without tracing all source
+  branches
+- `queuedFrames` and bounded GenericGroup substream behavior are documented as
+  first-class lifecycle rules
 
 ### Phase 2: Structural Decomposition (No externally visible behavior changes)
 
@@ -139,7 +160,8 @@ Scope:
 - split `CesrParser` into orchestration + focused collaborators
 - isolate cursor/state handling from parsing decisions
 - isolate frame-start and attachment-collection logic
-- isolate enclosed-frame sequence/queue lifecycle from top-level pending-frame continuation
+- isolate enclosed-frame sequence/queue lifecycle from top-level pending-frame
+  continuation
 
 Deliverables:
 
@@ -163,13 +185,16 @@ Points covered:
 
 Status:
 
-- Completed on 2026-03-01 (Point 3 policy extraction + Point 6 recovery observability).
+- Completed on 2026-03-01 (Point 3 policy extraction + Point 6 recovery
+  observability).
 
 Scope:
 
 - completed: replace boolean behavior branching with injected policies
-- completed: convert existing fallback/recovery decisions into structured diagnostics outcomes
-- completed: remove default warning side effects in fallback policy paths by routing through explicit diagnostics observers
+- completed: convert existing fallback/recovery decisions into structured
+  diagnostics outcomes
+- completed: remove default warning side effects in fallback policy paths by
+  routing through explicit diagnostics observers
 
 Deliverables:
 
@@ -179,7 +204,8 @@ Deliverables:
 Exit criteria:
 
 - strict/compat behavior is policy-driven and testable in isolation
-- parser recovery observability uses structured diagnostics hooks (not default warning side effects)
+- parser recovery observability uses structured diagnostics hooks (not default
+  warning side effects)
 - no behavior regressions in default policy mode
 
 ### Phase 4: Typed Payload Model and Dispatch Specification
@@ -209,24 +235,29 @@ Deliverables:
 Exit criteria:
 
 - payload structures are self-describing via type system
-- adding a new group code requires descriptor updates, not parser branch rewrites
+- adding a new group code requires descriptor updates, not parser branch
+  rewrites
 
 ### Phase 5: Minor-Version Model Rectification and Codex Subset Parity
 
 Points covered:
 
 - Cross-cutting gap closure discovered after Point 5 completion
-- Supports Point 8 parity and Point 6 observability work by hardening version semantics
+- Supports Point 8 parity and Point 6 observability work by hardening version
+  semantics
 
 Status:
 
 - Completed on 2026-03-01.
 - Completion evidence:
   - `packages/cesr/src/tables/counter-version-registry.ts`
-  - `packages/cesr/src/primitives/counter.ts` (versioned table lookup resolver wiring)
-  - `packages/cesr/src/parser/group-dispatch.ts` (versioned dispatch/siger-set resolver wiring)
+  - `packages/cesr/src/primitives/counter.ts` (versioned table lookup resolver
+    wiring)
+  - `packages/cesr/src/parser/group-dispatch.ts` (versioned dispatch/siger-set
+    resolver wiring)
   - `packages/cesr/test/unit/counter-version-registry.test.ts`
-  - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts` (codex/subset/legacy alias invariants)
+  - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts`
+    (codex/subset/legacy alias invariants)
 
 Scope:
 
@@ -292,15 +323,18 @@ Points covered:
 Status:
 
 - In progress on 2026-03-01.
-- Point 10 baseline deliverables are complete (standard benchmark flow + `tufa benchmark cesr` bridge + deferred perf rollback gating criteria).
-- Point 8 breadth hardening vectors remain the outstanding Phase 6 parser milestone.
+- Point 10 baseline deliverables are complete (standard benchmark flow +
+  `tufa benchmark cesr` bridge + deferred perf rollback gating criteria).
+- Point 8 breadth hardening vectors remain the outstanding Phase 6 parser
+  milestone.
 
 Scope:
 
 - produce maintainer-facing rationale and change summary by phase
 - include behavior matrix (before/after) and policy compatibility notes
 - confirm readiness for perf follow-up behind stable abstractions
-- execute and report high-priority P2 hardening vectors before broad ecosystem rollout
+- execute and report high-priority P2 hardening vectors before broad ecosystem
+  rollout
 
 Deliverables:
 
@@ -312,7 +346,8 @@ Deliverables:
 Exit criteria:
 
 - maintainers can evaluate changes from documented contracts and tests
-- parser internals are ready for cursor-based optimization work without readability regressions
+- parser internals are ready for cursor-based optimization work without
+  readability regressions
 
 ## Risk Management
 
@@ -327,8 +362,10 @@ Exit criteria:
 
 - Target one PR per phase, except:
   - Phase 0 may be split into two PRs if fixture creation is large.
-  - Phase 4 may be split into type-model PR then dispatch-spec PR if review load is high.
-  - Phase 5 may be split into codex/subset model PR then parser-wiring PR if review load is high.
+  - Phase 4 may be split into type-model PR then dispatch-spec PR if review load
+    is high.
+  - Phase 5 may be split into codex/subset model PR then parser-wiring PR if
+    review load is high.
 
 Keep each PR focused on one concern class:
 
@@ -353,16 +390,27 @@ No phase should start before the previous phase exit criteria are met.
 ## Deferred Low-Priority Backlog
 
 1. **Residual version-context layering hardening (`gvrsn` vs `pvrsn`)**
-   - Priority: low (after Phase 5 baseline rectification unless interop evidence raises urgency).
+   - Priority: low (after Phase 5 baseline rectification unless interop evidence
+     raises urgency).
    - Context:
-     - Current parser frame-attachment context may use `gvrsn ?? pvrsn` as a compatibility bridge in legacy/no-selector paths.
-     - CESR/KERI abstractions model genus-version and protocol-version as distinct fields; using protocol-version as fallback is pragmatic but not ideal for strict layering.
-     - KERIpy keeps explicit genus-version context in parser state/version-stack flows and enforces compatibility checks in Serder reaping paths.
+     - Current parser frame-attachment context may use `gvrsn ?? pvrsn` as a
+       compatibility bridge in legacy/no-selector paths.
+     - CESR/KERI abstractions model genus-version and protocol-version as
+       distinct fields; using protocol-version as fallback is pragmatic but not
+       ideal for strict layering.
+     - KERIpy keeps explicit genus-version context in parser state/version-stack
+       flows and enforces compatibility checks in Serder reaping paths.
    - Why track:
-     - Preserve current interoperability while reducing ambiguity when protocol-version and genus-version may diverge.
-     - Ensure attachment/code-table dispatch remains grounded in genus-version semantics.
+     - Preserve current interoperability while reducing ambiguity when
+       protocol-version and genus-version may diverge.
+     - Ensure attachment/code-table dispatch remains grounded in genus-version
+       semantics.
    - Proposed follow-up:
-     - Introduce explicit genus-version parse context in frame parse results (separate from protocol version fields).
-     - Restrict `pvrsn` fallback to an explicit legacy policy path, not implicit default behavior.
-     - Add parity/contract tests for divergence and mismatch scenarios (including wrapper-scoped nested version transitions).
-     - Decide strict-vs-compat mismatch handling (reject, warn+fallback, or policy-controlled) and document contract updates.
+     - Introduce explicit genus-version parse context in frame parse results
+       (separate from protocol version fields).
+     - Restrict `pvrsn` fallback to an explicit legacy policy path, not implicit
+       default behavior.
+     - Add parity/contract tests for divergence and mismatch scenarios
+       (including wrapper-scoped nested version transitions).
+     - Decide strict-vs-compat mismatch handling (reject, warn+fallback, or
+       policy-controlled) and document contract updates.

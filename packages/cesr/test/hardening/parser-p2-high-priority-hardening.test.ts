@@ -109,7 +109,9 @@ Deno.test(
     assertEquals(txtSummary.length, 1);
     assertEquals(txtSummary[0].kind, "CESR");
     assertEquals(txtSummary[0].ilk, "");
-    assertEquals(txtSummary[0].attachments, [`${CtrDexV2.ControllerIdxSigs}:20`]);
+    assertEquals(txtSummary[0].attachments, [
+      `${CtrDexV2.ControllerIdxSigs}:20`,
+    ]);
   },
 );
 
@@ -156,8 +158,10 @@ Deno.test(
     );
     assertEquals(baseline.filter((frame) => frame.ilk === "").length, 2);
     assertEquals(
-      baseline.filter((frame) => frame.said ===
-        "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN").length,
+      baseline.filter((frame) =>
+        frame.said ===
+          "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN"
+      ).length,
       4,
     );
   },
@@ -226,7 +230,9 @@ Deno.test(
     const part2 = minimalV1MgpkBody();
     const part3 = minimalV1CborBody();
     const part4 = encode(
-      `${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNative}`,
+      `${
+        genusVersionCounter(2)
+      }${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNative}`,
     );
 
     const stream = concatBytes(part1, part2, part3, part4);
@@ -284,7 +290,9 @@ Deno.test(
 
     assertEquals(qb2Summary, txtSummary);
     assertEquals(txtSummary.length, 3);
-    assertEquals(txtSummary[0].attachments, [`${CtrDexV2.ControllerIdxSigs}:2`]);
+    assertEquals(txtSummary[0].attachments, [
+      `${CtrDexV2.ControllerIdxSigs}:2`,
+    ]);
   },
 );
 
@@ -292,9 +300,9 @@ Deno.test(
   "V-P2-014: large declared attachment counts with early EOF emit one terminal shortage and no duplicate flush frames",
   () => {
     const declared = 20;
-    const fullAttachment = `${
-      counterV2(CtrDexV2.ControllerIdxSigs, declared)
-    }${Array.from({ length: declared }, () => sigerToken()).join("")}`;
+    const fullAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, declared)}${
+      Array.from({ length: declared }, () => sigerToken()).join("")
+    }`;
     const truncated = encode(
       `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
         fullAttachment.slice(0, fullAttachment.length - 1)
@@ -329,9 +337,8 @@ Deno.test(
     const wrappedAttachmentGroup = `${
       counterV2(CtrDexV2.AttachmentGroup, malformedPayload.length / 4)
     }${malformedPayload}`;
-    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}${
-      KERIPY_NATIVE_V2_ICP_FIX_BODY
-    }`;
+    const stream =
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
 
     const strictEvents = parseEvents(
       encode(stream),

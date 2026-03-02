@@ -1,6 +1,6 @@
 {
   "name": "keri-ts",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "exports": {
     ".": "./mod.ts"
   },
@@ -30,6 +30,10 @@
     "cesr-ts": "npm:cesr-ts@^0.2.3"
   },
   "compilerOptions": {
-    "lib": ["deno.window", "deno.ns", "dom"]
+    "lib": [
+      "deno.window",
+      "deno.ns",
+      "dom"
+    ]
   }
 }

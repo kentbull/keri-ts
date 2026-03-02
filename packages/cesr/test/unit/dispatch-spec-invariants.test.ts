@@ -18,7 +18,11 @@ function keyFor(major: DispatchMajor, code: string): string {
   return `${major}:${code}`;
 }
 
-function keyForMinor(major: DispatchMajor, minor: number, code: string): string {
+function keyForMinor(
+  major: DispatchMajor,
+  minor: number,
+  code: string,
+): string {
   return `${major}.${minor}:${code}`;
 }
 
@@ -92,7 +96,9 @@ function collectLegacyCompatKeysByMajor(): Set<string> {
   const keys = new Set<string>();
   for (const major of [1, 2] as const) {
     for (
-      const compatCodes of Object.values(LEGACY_COMPAT_COUNTER_CODES_BY_VERSION[major])
+      const compatCodes of Object.values(
+        LEGACY_COMPAT_COUNTER_CODES_BY_VERSION[major],
+      )
     ) {
       for (const code of compatCodes) {
         keys.add(keyFor(major, code));

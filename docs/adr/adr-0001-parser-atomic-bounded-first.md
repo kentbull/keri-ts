@@ -16,26 +16,30 @@
 - human readability and reviewability
 - maintainable semantics for contributors and AI agents
 
-For counted nested groups (for example `GenericGroup`, `BodyWithAttachmentGroup`,
-and `AttachmentGroup` wrappers), there are two architectural options:
+For counted nested groups (for example `GenericGroup`,
+`BodyWithAttachmentGroup`, and `AttachmentGroup` wrappers), there are two
+architectural options:
 
 1. Parse counted nested payloads atomically once complete bytes are available.
-2. Parse nested payloads incrementally across chunk boundaries with resumable state.
+2. Parse nested payloads incrementally across chunk boundaries with resumable
+   state.
 
-Incremental nested parsing can reduce latency and peak buffering in some workloads,
-but it introduces materially higher state-machine complexity.
+Incremental nested parsing can reduce latency and peak buffering in some
+workloads, but it introduces materially higher state-machine complexity.
 
 ## Decision
 
-We intentionally choose **atomic bounded substream parsing** as the default parser
-architecture for initial `keri-ts` CESR parser evolution.
+We intentionally choose **atomic bounded substream parsing** as the default
+parser architecture for initial `keri-ts` CESR parser evolution.
 
 Concretely:
 
-- a counted nested group is parsed from a size-bounded payload slice once completely received (bytes have all arrived from I/O layer)
-- nested version overrides are handled with local, function scoped state in bounded parses
-- parser behavior is optimized first for clarity and semantic predictability, not
-  maximum throughput
+- a counted nested group is parsed from a size-bounded payload slice once
+  completely received (bytes have all arrived from I/O layer)
+- nested version overrides are handled with local, function scoped state in
+  bounded parses
+- parser behavior is optimized first for clarity and semantic predictability,
+  not maximum throughput
 
 ## Rationale
 
@@ -58,8 +62,8 @@ Negative:
 - potentially higher transient memory use for large enclosed payloads
 - less opportunity for progressive emission from nested content
 - coarser-grained parse units reduce opportunities for fine-grained CPU
-  pipelining across nested-group parse stages (compared to resumable
-  incremental parsing)
+  pipelining across nested-group parse stages (compared to resumable incremental
+  parsing)
 
 ## Non-Goals (Current Phase)
 
@@ -72,12 +76,13 @@ Re-open this ADR when one or more are true:
 
 1. Production evidence shows parser latency or memory pressure attributable to
    atomic nested parsing.
-2. Adoption scale justifies complexity cost for a higher-performance parser mode.
+2. Adoption scale justifies complexity cost for a higher-performance parser
+   mode.
 3. Benchmarks show a clear gain from resumable nested parsing that matters for
    real workloads.
 
-If revisited, prefer introducing incremental nested parsing as a **separate parser
-strategy/module**, not by replacing the readable atomic path in-place.
+If revisited, prefer introducing incremental nested parsing as a **separate
+parser strategy/module**, not by replacing the readable atomic path in-place.
 
 ## Appendix A: Incremental Nested Parser Cognitive Stub (Future)
 
@@ -134,6 +139,7 @@ On `flush()`:
 
 1. Add behind feature flag or explicit parser mode.
 2. Reuse the existing parity matrix vectors first.
-3. Add dedicated interruption matrix: every split boundary through nested groups.
+3. Add dedicated interruption matrix: every split boundary through nested
+   groups.
 4. Keep atomic strategy as reference implementation until incremental reaches
    parity and benchmark goals.

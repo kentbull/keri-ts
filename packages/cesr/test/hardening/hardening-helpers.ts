@@ -194,7 +194,8 @@ export function mutateTextStream(
   variants = 24,
 ): string[] {
   if (base.length < 4) return [];
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!~";
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!~";
   let state = seed >>> 0;
   const nextU32 = () => {
     state = (1664525 * state + 1013904223) >>> 0;
@@ -231,7 +232,9 @@ export function wrapQuadletGroupV2(code: string, payload: string): string {
 /** Build `KERIACDCGenusVersion` selector token for explicit version-context vectors. */
 export function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
+    intToB64(minor, 1)
+  }${intToB64(patch, 1)}`;
 }
 
 /**
@@ -241,7 +244,9 @@ export function genusVersionCounter(major: 1 | 2, minor = 0): string {
  * attachment wrappers to maximize parser-surface coverage per fixture.
  */
 export function wrapperHeavyV2Stream(): string {
-  const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedSigGroup = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
   const shortGeneric = wrapQuadletGroupV2(
     CtrDexV2.GenericGroup,
     KERIPY_NATIVE_V2_ICP_FIX_BODY,
@@ -279,7 +284,8 @@ export function wrapperHeavyV2Stream(): string {
 export function buildNestedMapBodyV2(): string {
   const innerPayload = `VAAA${sigerToken()}`;
   const innerMap = wrapQuadletGroupV2(CtrDexV2.MapBodyGroup, innerPayload);
-  const outerPayload = `VAAA${innerMap}VAAA${sigerToken()}VAAA${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+  const outerPayload =
+    `VAAA${innerMap}VAAA${sigerToken()}VAAA${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   return wrapQuadletGroupV2(CtrDexV2.MapBodyGroup, outerPayload);
 }
 

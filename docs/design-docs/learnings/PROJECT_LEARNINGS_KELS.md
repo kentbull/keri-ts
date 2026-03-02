@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Persistent learnings for KEL processing, event-state transitions, and replay/verification semantics.
+Persistent learnings for KEL processing, event-state transitions, and
+replay/verification semantics.
 
 ## Current Status
 

@@ -10,11 +10,15 @@ import {
   parseFramesNoError,
   splitIntoThirds,
   summarizeFrames,
-  wrapQuadletGroupV2,
   wrapperHeavyV2Stream,
+  wrapQuadletGroupV2,
 } from "./hardening-helpers.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import {
   minimalV1MgpkBody,
@@ -39,10 +43,17 @@ Deno.test(
   () => {
     // v1 wrapper intentionally carries explicit v2 selector + v2 body to lock
     // context transition behavior in mixed legacy/explicit streams.
-    const v1WrapperPayload = `${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
-    const explicitV2Wrapped = `${counterV1(CtrDexV1.GenericGroup, v1WrapperPayload.length / 4)}${v1WrapperPayload}`;
+    const v1WrapperPayload = `${
+      genusVersionCounter(2)
+    }${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const explicitV2Wrapped = `${
+      counterV1(CtrDexV1.GenericGroup, v1WrapperPayload.length / 4)
+    }${v1WrapperPayload}`;
     const stream = `${v1OpaqueNonNativeFrame()}${explicitV2Wrapped}`;
-    const frames = parseFramesNoError(encode(stream), splitIntoThirds(encode(stream)));
+    const frames = parseFramesNoError(
+      encode(stream),
+      splitIntoThirds(encode(stream)),
+    );
 
     assertEquals(frames.length, 2);
     if (frames[0].type !== "frame" || frames[1].type !== "frame") {
@@ -60,9 +71,12 @@ Deno.test(
     // alter subsequent top-level frame version resolution.
     const nestedSelectorAttachment = wrapQuadletGroupV2(
       CtrDexV2.AttachmentGroup,
-      `${genusVersionCounter(1)}${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`,
+      `${genusVersionCounter(1)}${
+        counterV1(CtrDexV1.ControllerIdxSigs, 1)
+      }${sigerToken()}`,
     );
-    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSelectorAttachment}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const stream =
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSelectorAttachment}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const frames = parseFramesNoError(encode(stream));
 
     assertEquals(frames.length, 2);
@@ -80,11 +94,15 @@ Deno.test(
   () => {
     // JSON + CESR-wrapper + MGPK with `ano` separators exercises domain
     // transitions that commonly break if `ano` skipping becomes stateful/leaky.
-    const json = encode(v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}'));
+    const json = encode(
+      v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}'),
+    );
     const wrapped = encode(
       wrapQuadletGroupV2(
         CtrDexV2.BodyWithAttachmentGroup,
-        `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`,
+        `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
+          counterV2(CtrDexV2.ControllerIdxSigs, 1)
+        }${sigerToken()}`,
       ),
     );
     const mgpk = minimalV1MgpkBody();
@@ -122,13 +140,18 @@ Deno.test(
     parser.reset();
 
     // After reset, lifecycle must return to normal deterministic extraction.
-    const cleanStream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const cleanStream =
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const fed = parser.feed(encode(cleanStream));
     const flushed = parser.flush();
     const flushedAgain = parser.flush();
 
-    const frames = [...fed, ...flushed].filter((event) => event.type === "frame");
-    const errors = [...fed, ...flushed].filter((event) => event.type === "error");
+    const frames = [...fed, ...flushed].filter((event) =>
+      event.type === "frame"
+    );
+    const errors = [...fed, ...flushed].filter((event) =>
+      event.type === "error"
+    );
     assertEquals(errors.length, 0);
     assertEquals(frames.length, 2);
     assertEquals(flushedAgain.length, 0);
@@ -160,7 +183,9 @@ Deno.test(
     const baseCorpus = [
       wrapperHeavyV2Stream(),
       `${v1OpaqueNonNativeFrame()}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`,
-      `${genusVersionCounter(1)}${v1OpaqueNonNativeFrame()}${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`,
+      `${genusVersionCounter(1)}${v1OpaqueNonNativeFrame()}${
+        genusVersionCounter(2)
+      }${KERIPY_NATIVE_V2_ICP_FIX_BODY}`,
     ];
 
     for (const base of baseCorpus) {
@@ -169,8 +194,12 @@ Deno.test(
         const bytes = encode(mutated);
         const parser = createParser({ attachmentDispatchMode: "strict" });
         const events = [
-          ...parser.feed(bytes.slice(0, Math.max(1, Math.floor(bytes.length / 2)))),
-          ...parser.feed(bytes.slice(Math.max(1, Math.floor(bytes.length / 2)))),
+          ...parser.feed(
+            bytes.slice(0, Math.max(1, Math.floor(bytes.length / 2))),
+          ),
+          ...parser.feed(
+            bytes.slice(Math.max(1, Math.floor(bytes.length / 2))),
+          ),
           ...parser.flush(),
         ];
         // Contract: parser may fail, but only with known bounded error classes.

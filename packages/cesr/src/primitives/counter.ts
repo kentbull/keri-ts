@@ -10,9 +10,7 @@ import {
   ShortageError,
   UnknownCodeError,
 } from "../core/errors.ts";
-import {
-  COUNTER_HARDS,
-} from "../tables/counter.tables.generated.ts";
+import { COUNTER_HARDS } from "../tables/counter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { ColdCode } from "../core/types.ts";
 import {

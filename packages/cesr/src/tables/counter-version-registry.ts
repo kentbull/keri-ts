@@ -6,7 +6,7 @@ import {
   COUNTER_SIZES_V2,
 } from "./counter.tables.generated.ts";
 import { CtrDexV1, CtrDexV2 } from "./counter-codex.ts";
-import type { Cizage, VersionMajor, Versionage } from "./table-types.ts";
+import type { Cizage, Versionage, VersionMajor } from "./table-types.ts";
 
 /**
  * Minor-version keyed registry for one major CESR version family.

@@ -299,7 +299,13 @@ export function parseMapperBodySyntax(
       throw new ShortageError(total, input.length);
     }
 
-    const entries = parseMapPayloadSyntax(input, version, domain, header, total);
+    const entries = parseMapPayloadSyntax(
+      input,
+      version,
+      domain,
+      header,
+      total,
+    );
 
     return {
       code: counter.code,
