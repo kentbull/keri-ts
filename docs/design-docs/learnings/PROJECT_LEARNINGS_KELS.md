@@ -82,3 +82,36 @@ Use this doc for:
 - Risks/TODO:
   - Detailed per-function/per-class parity matrix rows still need to be filled
     during D0 execution.
+
+### 2026-03-02 - D0 Parity Matrix Skeleton Generated
+
+- Topic docs updated:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+- What changed:
+  - Generated initial function/class parity matrix skeleton from KERIpy DB
+    module symbols in `dbing.py`, `subing.py`, `koming.py`, `basing.py`, and
+    `escrowing.py`.
+  - Generated initial K/V parity inventory CSV from
+    `docs/design-docs/db/lmdb-dumper.md` with domain, key, class, schemas,
+    proposed TS target, phase, status, and priority columns.
+  - Seeded current-state statuses (`Partial` for currently present `LMDBer`,
+    key helpers, `Baser`, and existing Keeper/Baser key slices) and left
+    remaining inventory rows `Missing` by default.
+  - Linked these artifacts directly into the DB reconciliation plan D0 section
+    as published skeleton deliverables.
+- Why:
+  - Create a concrete D0 execution baseline that can be incrementally promoted
+    from inventory to parity-validated implementation evidence.
+- Tests:
+  - Command: `rg`/`awk`/`sed` extraction and file generation checks
+  - Result: Artifacts generated with `67` module symbols and `130` K/V rows
+    seeded.
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+- Risks/TODO:
+  - Symbol-level `Partial` rows still require explicit behavior parity tests
+    before any status can be promoted to `Equivalent`.

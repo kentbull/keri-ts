@@ -43,6 +43,11 @@ K/V inventory reference:
 
 - `docs/design-docs/db/lmdb-dumper.md`
 
+Initial D0 artifacts (seeded):
+
+- `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
+
 ## Non-Negotiable Rules
 
 1. LMDB parity first:
@@ -66,6 +71,9 @@ Deliverables:
 - Mapping to target `keri-ts` files/classes.
 - Status columns: `Missing`, `Partial`, `Equivalent`, `Tested`.
 - K/V inventory table seeded from `lmdb-dumper.md`.
+- Published skeleton artifacts:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`
 
 Exit criteria:
 

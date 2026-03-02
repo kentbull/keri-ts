@@ -95,6 +95,10 @@ This keeps context focused and avoids long-thread drift.
 13. DB-layer sequencing is now hard-gated: complete LMDB feature-by-feature
     parity first (including Suber/Komer/databaser/escrow paths), then implement
     provider abstraction for pluggable backends.
+14. D0 DB parity artifacts are now seeded: a module-symbol parity workbook
+    (`docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`) and a K/V inventory matrix
+    CSV (`docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`) generated from
+    KERIpy DB modules and `docs/design-docs/db/lmdb-dumper.md`.
 
 ### 2026-02-28
 
