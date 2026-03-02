@@ -1,5 +1,6 @@
 import { annotate } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
+import { colorizeAnnotatedOutput } from "./annotate-color.ts";
 
 const TEXT_DECODER = new TextDecoder();
 
@@ -20,6 +21,10 @@ interface AnnotateArgs {
    * Whether to pretty-print JSON objects in annotation output
    */
   pretty?: boolean;
+  /**
+   * Whether to colorize stdout annotation output
+   */
+  colored?: boolean;
 }
 
 /**
@@ -62,6 +67,7 @@ export function* annotateCommand(
     outPath: args.outPath as string | undefined,
     qb2: args.qb2 as boolean | undefined,
     pretty: args.pretty as boolean | undefined,
+    colored: args.colored as boolean | undefined,
   };
 
   const inputBytes = options.inPath
@@ -80,5 +86,8 @@ export function* annotateCommand(
     return;
   }
 
-  console.log(annotated);
+  const output = options.colored
+    ? colorizeAnnotatedOutput(annotated)
+    : annotated;
+  console.log(output);
 }

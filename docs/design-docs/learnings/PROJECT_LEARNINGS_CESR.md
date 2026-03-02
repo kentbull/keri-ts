@@ -932,3 +932,78 @@ Persistent CESR parser memory for `keri-ts`.
 - Risks/TODO:
   - Remaining Point 8 P2 breadth vectors are still pending and remain the next
     parser hardening milestone in Phase 6.
+
+### 2026-03-02 - `tufa annotate --colored` Feasibility Assessment
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Assessed implementation scope for adding optional ANSI colorized output to
+    `tufa annotate` (`--colored`) with semantic emphasis on counters/groups,
+    message body, signatures/indexers, and SAID metadata.
+  - Mapped likely touchpoints:
+    - `packages/keri/src/app/cli/command-definitions.ts`
+    - `packages/keri/src/app/cli/annotate.ts`
+    - optionally `packages/cesr/src/annotate/cli.ts` for CLI parity
+    - a new annotate colorizer utility module in `packages/cesr/src/annotate/`
+      or `packages/keri/src/app/cli/`.
+  - Identified main design constraint: preserve deterministic plain annotation
+    output and `annotate`/`denot` contracts by keeping colorization as an opt-in
+    presentation layer, not a renderer/parser contract change.
+- Why:
+  - Capture decision-ready effort/risk guidance before implementation so
+    maintainers can choose MVP (post-render coloring) vs deeper semantic
+    renderer integration.
+- Tests:
+  - Command: not run (analysis-only task)
+  - Result: n/a
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Keep file output and non-TTY behavior explicit for `--colored` (avoid
+    unwanted ANSI escape persistence unless user opts in).
+  - If future requirements demand precise token-level coloring inside JSON
+    bodies and comments, consider introducing typed color segments at renderer
+    boundaries instead of regex-only post-processing.
+
+### 2026-03-02 - `tufa annotate --colored` Implementation
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Added `--colored` flag to `tufa annotate` command wiring and command args.
+  - Added CLI-only annotation colorizer utility:
+    - `packages/keri/src/app/cli/annotate-color.ts`
+  - Implemented optional user color configuration loading from:
+    - `$HOME/.tufa/annot-color.yaml`
+    - `$HOME/.tufa/annot-color.yml`
+  - Enforced output contract:
+    - ANSI colorization is applied only when `--colored` is set and output is
+      stdout.
+    - `--out` file writes always remain plain, uncolored annotation text.
+  - Added tests in `packages/keri/test/unit/app/annotate.test.ts` for:
+    - stdout ANSI output when `--colored` is enabled
+    - no ANSI in `--out` output even with `--colored`
+    - valid HOME YAML override application
+  - Updated user docs:
+    - `README.md`
+    - `packages/keri/README.md`
+- Why:
+  - Improve human readability for CESR annotation output while preserving
+    deterministic plain-text annotation and existing annotate/denot behavior for
+    files and downstream tooling.
+- Tests:
+  - Command:
+    `deno test --allow-all --unstable-ffi test/unit/app/annotate.test.ts` (in
+    `packages/keri`)
+  - Result: `4 passed, 0 failed`
+  - Command: `deno check src/app/cli/annotate.ts src/app/cli/annotate-color.ts`
+    (in `packages/keri`)
+  - Result: type check passed
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Current config parser intentionally supports a strict simple YAML mapping
+    subset (`key: value`) for offline/no-dependency robustness.
+  - If broader YAML features are required later (anchors, nested maps, etc.),
+    migrate to a full parser dependency with explicit runtime availability.

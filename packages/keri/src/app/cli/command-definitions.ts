@@ -281,9 +281,16 @@ function regAnnotateCmd(program: Command, dispatch: CommandDispatch): void {
     .option("--out <path>", "Output file path (defaults to stdout)")
     .option("--qb2", "Treat input as qb2 binary instead of text CESR")
     .option("--pretty", "Pretty-print annotation output")
+    .option("--colored", "Colorize annotation output (stdout only)")
     .action(
       (
-        options: { in?: string; out?: string; qb2?: boolean; pretty?: boolean },
+        options: {
+          in?: string;
+          out?: string;
+          qb2?: boolean;
+          pretty?: boolean;
+          colored?: boolean;
+        },
       ) => {
         dispatch({
           name: "annotate",
@@ -292,6 +299,7 @@ function regAnnotateCmd(program: Command, dispatch: CommandDispatch): void {
             outPath: options.out,
             qb2: options.qb2 || false,
             pretty: options.pretty || false,
+            colored: options.colored || false,
           },
         });
         return Promise.resolve();

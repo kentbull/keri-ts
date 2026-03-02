@@ -70,6 +70,13 @@ This keeps context focused and avoids long-thread drift.
 6. `docs/release-versioning.md` now starts with a maintainer quick release
    checklist that compresses the operational release path (`keri-ts` only vs
    joint `cesr-ts` + `keri-ts`) into one no-fluff sequence.
+7. `tufa annotate --colored` feasibility was assessed with a presentation-layer
+   approach preferred: keep core annotate/denot deterministic and add opt-in
+   ANSI styling in CLI output paths (`packages/keri` first, optional
+   `packages/cesr` parity).
+8. `tufa annotate --colored` is now implemented in `packages/keri` with
+   stdout-only ANSI styling, guaranteed plain `--out` file output, and optional
+   user palette overrides from `$HOME/.tufa/annot-color.yaml|yml`.
 
 ### 2026-02-28
 
