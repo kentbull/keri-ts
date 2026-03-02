@@ -5,8 +5,8 @@
 - Created: 2026-02-27
 - Updated: 2026-03-01
 - Priority: high
-- Depends on: `docs/plans/cesr-parser-readability-improvement-plan.md`
-- Related: `docs/plans/cesr-parser-buffer-perf-plan.md` (deferred perf work)
+- Depends on: `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+- Related: `docs/plans/cesr/cesr-parser-buffer-perf-plan.md` (deferred perf work)
 
 ## Objective
 
@@ -36,7 +36,7 @@ Completed baseline work that this roadmap now builds on:
   wrappers.
 - Legacy implicit-v1 behavior and binary Serder cold-start vectors implemented.
 - P2 breadth/hardening backlog split to a dedicated plan:
-  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 - Atomic bounded-substream parser decision captured in ADR:
   - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 - Canonical parser lifecycle contract now defined in:
@@ -104,9 +104,9 @@ Deliverables:
 - parity-oriented test matrix
 - documented current behavior assumptions and edge cases
 - matrix document:
-  - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+  - `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
   - plus deferred breadth backlog:
-    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+    - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 
 Exit criteria:
 
@@ -341,7 +341,7 @@ Deliverables:
 - review packet for maintainers (design rationale + behavior evidence)
 - explicit bridge to deferred perf plan
 - P2 hardening evidence summary keyed to:
-  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
 
 Exit criteria:
 

@@ -4,9 +4,9 @@
 - Date: 2026-02-28
 - Scope: `packages/cesr` parser architecture
 - Related:
-  - `docs/plans/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr-parser-readability-phased-roadmap.md`
-  - `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
+  - `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 
 ## Context
 
