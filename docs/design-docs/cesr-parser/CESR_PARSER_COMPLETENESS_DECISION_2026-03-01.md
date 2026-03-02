@@ -20,7 +20,7 @@ This decision is based on:
 ## GO Criteria Check
 
 | GO Criterion                                                                     | Result | Evidence                                                                  |
-|----------------------------------------------------------------------------------|--------|---------------------------------------------------------------------------|
+| -------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
 | No open `S0/S1` items vs KERIpy baseline                                         | Pass   | Cross-implementation comparison (`KERIpy` blocking gate)                  |
 | P2 high-priority vectors completed and passing                                   | Pass   | `V-P2-001`, `002`, `005`, `008`, `011`, `012`, `014`, `015`, `017`        |
 | P2 medium/low vectors completed and passing                                      | Pass   | `V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021` |
@@ -31,7 +31,8 @@ This decision is based on:
 - `S0 Blocker`: none
 - `S1 Major`: none
 - `S2 Minor`: none
-- `S3 Informational`: comparator-only divergences in KERIox/libkeri/cesrixir/cesride/CESRox/kerits/keride
+- `S3 Informational`: comparator-only divergences in
+  KERIox/libkeri/cesrixir/cesride/CESRox/kerits/keride
 
 ## Open Items (Non-Blocking)
 
@@ -57,10 +58,15 @@ Remaining parser hardening vectors in this decision scope are closed:
 
 ## Risk Statement
 
-Residual risk is concentrated in comparator-only advisory divergences (`S3`) and future change management, not uncovered parser breadth vectors. Parser completeness remains sufficient to move up-stack.
+Residual risk is concentrated in comparator-only advisory divergences (`S3`) and
+future change management, not uncovered parser breadth vectors. Parser
+completeness remains sufficient to move up-stack.
 
 ## Execution Guidance After GO
 
-1. Start LMDB/key-management/KEL/witness-watcher implementation on the current parser baseline.
-2. Treat the current full-vector parser suite baseline (`158 passed`) as the regression floor for parser-adjacent changes.
-3. Keep KERIpy parity checks active whenever parser behavior-adjacent changes are introduced by upper-layer work.
+1. Start LMDB/key-management/KEL/witness-watcher implementation on the current
+   parser baseline.
+2. Treat the current full-vector parser suite baseline (`158 passed`) as the
+   regression floor for parser-adjacent changes.
+3. Keep KERIpy parity checks active whenever parser behavior-adjacent changes
+   are introduced by upper-layer work.

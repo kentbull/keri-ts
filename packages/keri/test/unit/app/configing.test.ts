@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { basename, dirname } from "jsr:@std/path";
-import { createConfiger, type Configer } from "../../../src/app/configing.ts";
+import { type Configer, createConfiger } from "../../../src/app/configing.ts";
 
 async function reopenAndReadExistingConfig(
   cf: Configer,

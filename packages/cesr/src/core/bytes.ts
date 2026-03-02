@@ -5,11 +5,11 @@ const B64_ALPHABET =
 
 /**
  * Concatenates Uint8Array byte arrays into one byte array
- * 
+ *
  * @param chunks chunks to concatenate
  * @returns concatenated bytearray
  */
-  export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
+export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;

@@ -1,7 +1,10 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { basename, dirname, join } from "jsr:@std/path";
 import { ValidationError } from "../core/errors.ts";
-import { PathManager, type PathManagerOptions } from "../db/core/path-manager.ts";
+import {
+  PathManager,
+  type PathManagerOptions,
+} from "../db/core/path-manager.ts";
 
 interface ConfigerDefaults {
   tailDirPath: string;

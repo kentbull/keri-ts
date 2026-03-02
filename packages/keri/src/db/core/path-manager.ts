@@ -132,7 +132,10 @@ export class PathManager {
   // logger instance for logging
   private readonly logger: Logger;
 
-  constructor(options: PathManagerOptions = {}, defaults?: Partial<PathManagerDefaults>) {
+  constructor(
+    options: PathManagerOptions = {},
+    defaults?: Partial<PathManagerDefaults>,
+  ) {
     this.defaults = { ...PATH_DEFAULTS, ...defaults };
 
     this._name = options.name || "main";
@@ -159,14 +162,18 @@ export class PathManager {
   set name(value: string) {
     // Check if path is absolute
     if (isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value)) {
-      throw new InvalidPathNameError(`Not relative name=${value} path.`, { name: value });
+      throw new InvalidPathNameError(`Not relative name=${value} path.`, {
+        name: value,
+      });
     }
     this._name = value;
   }
 
   _getTempPath(): string {
-    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") || Deno.env.get("TEMP") || "/tmp";
-    const tempName = `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
+    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") ||
+      Deno.env.get("TEMP") || "/tmp";
+    const tempName =
+      `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
     return join(tempDir, tempName);
   }
 
@@ -241,7 +248,9 @@ export class PathManager {
    * @param options path creation options
    * @returns File path to a persistent file or directory
    */
-  _getPersistentPaths(options: Partial<PathManagerOptions> = {}): [string, string] {
+  _getPersistentPaths(
+    options: Partial<PathManagerOptions> = {},
+  ): [string, string] {
     const headDirPath = options.headDirPath ?? this.headDirPath;
     const clean = options.clean || false;
 
@@ -250,7 +259,9 @@ export class PathManager {
     return [primary, alt];
   }
 
-  _getPaths(options: Partial<PathManagerOptions> = {}): [string, string, string] {
+  _getPaths(
+    options: Partial<PathManagerOptions> = {},
+  ): [string, string, string] {
     const [primary, alt] = this._getPersistentPaths(options);
     const tempPath = this._getTempPath();
     return [primary, alt, tempPath];
@@ -316,7 +327,9 @@ export class PathManager {
     });
   }
 
-  *statFileOp(path: string): Operation<{ isDirectory: boolean; isFile: boolean }> {
+  *statFileOp(
+    path: string,
+  ): Operation<{ isDirectory: boolean; isFile: boolean }> {
     return yield* action((resolve, reject) => {
       Deno.stat(path)
         .then((stats) => {
@@ -355,9 +368,19 @@ export class PathManager {
     const reuse = options.reuse || false;
     const clear = options.clear || false;
 
-    const [primary, alt, tempPath] = this._getPaths({ ...options, headDirPath, clean });
+    const [primary, alt, tempPath] = this._getPaths({
+      ...options,
+      headDirPath,
+      clean,
+    });
 
-    const resolved = yield* this._resolvePath({ primary, alt, tempPath, headDirPath, reuse });
+    const resolved = yield* this._resolvePath({
+      primary,
+      alt,
+      tempPath,
+      headDirPath,
+      reuse,
+    });
     this.headDirPath = resolved.headDirPath;
 
     if (clear) {
@@ -397,10 +420,18 @@ export class PathManager {
     }
 
     if (params.reuse) {
-      return yield* this._reuseOrFallback(params.primary, params.alt, params.headDirPath);
+      return yield* this._reuseOrFallback(
+        params.primary,
+        params.alt,
+        params.headDirPath,
+      );
     }
 
-    return yield* this._createOrFallback(params.primary, params.alt, params.headDirPath);
+    return yield* this._createOrFallback(
+      params.primary,
+      params.alt,
+      params.headDirPath,
+    );
   }
 
   /**
@@ -448,7 +479,9 @@ export class PathManager {
       return { path: primary, headDirPath };
     }
 
-    this.logger.info(`Reuse path unavailable, attempting to (re)create primary path`);
+    this.logger.info(
+      `Reuse path unavailable, attempting to (re)create primary path`,
+    );
     const primaryReady = yield* this._ensurePathAccessible(primary);
     if (primaryReady) {
       return { path: primary, headDirPath };

@@ -4,12 +4,15 @@
 
 - Created: 2026-02-27
 - Updated: 2026-03-01
-- Priority: benchmark-gated (baseline flows implemented; optimization still deferred)
-- Scope: `packages/cesr/src/core/parser-engine.ts`, `packages/cesr/src/core/bytes.ts`
+- Priority: benchmark-gated (baseline flows implemented; optimization still
+  deferred)
+- Scope: `packages/cesr/src/core/parser-engine.ts`,
+  `packages/cesr/src/core/bytes.ts`
 
 ## Benchmark Baseline Flow
 
-Baseline benchmark execution is now standardized and must be run before any buffer-optimization change:
+Baseline benchmark execution is now standardized and must be run before any
+buffer-optimization change:
 
 1. `deno task bench:cesr`
 2. `deno task bench:cesr:parser --in <path>`
@@ -27,14 +30,17 @@ Repository benchmark entrypoints:
 Current parser streaming behavior appends and consumes by copying:
 
 - append path: `feed()` calls `concatBytes(this.state.buffer, chunk)`
-- consume path: `consume()` uses `this.state.buffer = this.state.buffer.slice(length)`
+- consume path: `consume()` uses
+  `this.state.buffer = this.state.buffer.slice(length)`
 
-`concatBytes` itself is already reasonable for general `Uint8Array` concatenation:
+`concatBytes` itself is already reasonable for general `Uint8Array`
+concatenation:
 
 - one pass to compute total length
 - one pass to copy bytes into a single exact-size allocation
 
-The bigger performance risk is repeated full-buffer copies across many small chunks.
+The bigger performance risk is repeated full-buffer copies across many small
+chunks.
 
 ## Decision
 
@@ -43,7 +49,8 @@ Do not optimize this now. Revisit only after the next feature batch is complete.
 Reason:
 
 - near-term priority is feature delivery and API/readability improvements
-- parser buffer internals are easy to destabilize if changed without focused tests/benchmarks
+- parser buffer internals are easy to destabilize if changed without focused
+  tests/benchmarks
 
 ## Proposed Optimization Direction (When Revisited)
 
@@ -81,14 +88,18 @@ type ParserState = {
 
 ## Targeted TODO Tasks
 
-1. Replace `input.slice(offset)` hot-path probes with non-copy views or offset helpers:
-   - introduce `sniffAt(input, offset)` and similar offset-based helpers where practical
-   - otherwise use `subarray(offset)` instead of `slice(offset)` for parse lookahead
+1. Replace `input.slice(offset)` hot-path probes with non-copy views or offset
+   helpers:
+   - introduce `sniffAt(input, offset)` and similar offset-based helpers where
+     practical
+   - otherwise use `subarray(offset)` instead of `slice(offset)` for parse
+     lookahead
 2. Audit collaborator modules for avoidable tail-copy patterns in tight loops:
    - `packages/cesr/src/core/parser-frame-parser.ts`
    - `packages/cesr/src/core/parser-attachment-collector.ts`
    - `packages/cesr/src/core/parser-stream-state.ts`
-3. Add a micro-benchmark specifically for chunked streams with frequent boundary probing to verify reduced allocation churn.
+3. Add a micro-benchmark specifically for chunked streams with frequent boundary
+   probing to verify reduced allocation churn.
 
 ## Acceptance Criteria
 
@@ -99,13 +110,18 @@ type ParserState = {
 
 ## Rollback Criteria
 
-Any perf-oriented buffer change should be reverted or reworked when either condition holds:
+Any perf-oriented buffer change should be reverted or reworked when either
+condition holds:
 
-1. Throughput gain is less than 10% in chunked benchmark mode while complexity (state branches or mutable lifecycle coupling) increases materially.
-2. Any parser lifecycle contract/parity test regresses, even if benchmark numbers improve.
+1. Throughput gain is less than 10% in chunked benchmark mode while complexity
+   (state branches or mutable lifecycle coupling) increases materially.
+2. Any parser lifecycle contract/parity test regresses, even if benchmark
+   numbers improve.
 
 ## Notes on `concatBytes`
 
 - Keep `concatBytes` for general utility usage.
-- If needed later, add a two-argument helper for hot paths, but only with benchmark evidence.
-- Do not prematurely optimize `reduce` vs `for`; the dominant cost is byte copying, not length summation.
+- If needed later, add a two-argument helper for hot paths, but only with
+  benchmark evidence.
+- Do not prematurely optimize `reduce` vs `for`; the dominant cost is byte
+  copying, not length summation.

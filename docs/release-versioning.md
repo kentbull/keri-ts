@@ -1,5 +1,43 @@
 # Versioning and release process
 
+## Maintainer quick release checklist
+
+1. Ensure `master` is up to date and working tree is clean.
+2. Decide release scope:
+   - `keri-ts` only
+   - `cesr-ts` and `keri-ts` together
+3. Create changeset(s):
+   - `deno task release:changeset` (once for `keri-ts` only)
+   - `deno task release:changeset` twice (one per package for joint release)
+4. Apply version/changelog/runtime version updates:
+   - `deno task release:version`
+5. Validate generated versions are in sync:
+   - `deno task version:check`
+6. Run quality/build checks:
+   - `keri-ts` only: `deno task quality` and `deno task build:npm`
+   - joint release: `deno task quality` and `deno task npm:build:all`
+7. Smoke test keri npm artifact:
+   - `deno task smoke:keri:npm`
+8. Commit release changes:
+   - `git add -A`
+   - `git commit -m "release: ..."`
+9. Tag exact release versions:
+   - `git tag keri-v<keri-version>`
+   - `git tag cesr-v<cesr-version>` (joint release only)
+10. Push commit and tags:
+    - `git push origin master --follow-tags`
+11. Confirm GitHub release workflow success:
+    - `.github/workflows/keri-ts-npm-release.yml`
+    - `.github/workflows/cesr-npm-release.yml` (if `cesr-ts` released)
+
+Rules that must hold:
+
+- Tag version must match package manifest version for each package.
+- `keri-ts` and `cesr-ts` are independently versioned; matching versions are
+  optional.
+- `deno task release:version` already runs `changeset version`, `manifest:sync`,
+  and `version:generate`.
+
 ## Version model
 
 - `keri-ts` and `cesr-ts` are versioned independently.

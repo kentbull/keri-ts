@@ -6,9 +6,11 @@
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
 - Architecture:
-  - Atomic bounded substream parser (`docs/adr/adr-0001-parser-atomic-bounded-first.md`)
+  - Atomic bounded substream parser
+    (`docs/adr/adr-0001-parser-atomic-bounded-first.md`)
 - Contract strictness:
-  - Normative and test-mapped. Behavior changes require updates to this document and mapped tests.
+  - Normative and test-mapped. Behavior changes require updates to this document
+    and mapped tests.
 
 ## Purpose
 
@@ -17,62 +19,47 @@ reason about lifecycle behavior without re-deriving rules from control flow.
 
 ## Terminology (Normative)
 
-- Frame:
-  one parser emission unit (`CesrFrame` event with `type: "frame"`).
-- `CesrMessage`:
-  historical public payload type name for that frame unit (`body` +
-  `attachments`), retained for API compatibility.
-- Message-domain frame:
-  frame whose body starts with cold-start code `msg` and is parsed through
-  Serder reaping.
-- Body group:
-  counter-declared frame-start payload form that defines or encloses frame body
-  bytes (`GenericGroup`, `BodyWithAttachmentGroup`, native fixed/map groups).
-- Attachment group:
-  post-body trailing group parsed by attachment dispatch.
-- Annotation separator byte (`ano`):
-  delimiter byte consumed between parse units, not itself a frame payload unit.
-- Deferred frame lifecycle:
-  `pendingFrame` is the oldest incomplete top-level frame continuation;
-  `queuedFrames` are additional already-complete enclosed frames emitted after
-  `pendingFrame` to preserve stream order.
+- Frame: one parser emission unit (`CesrFrame` event with `type: "frame"`).
+- `CesrMessage`: historical public payload type name for that frame unit
+  (`body` + `attachments`), retained for API compatibility.
+- Message-domain frame: frame whose body starts with cold-start code `msg` and
+  is parsed through Serder reaping.
+- Body group: counter-declared frame-start payload form that defines or encloses
+  frame body bytes (`GenericGroup`, `BodyWithAttachmentGroup`, native fixed/map
+  groups).
+- Attachment group: post-body trailing group parsed by attachment dispatch.
+- Annotation separator byte (`ano`): delimiter byte consumed between parse
+  units, not itself a frame payload unit.
+- Deferred frame lifecycle: `pendingFrame` is the oldest incomplete top-level
+  frame continuation; `queuedFrames` are additional already-complete enclosed
+  frames emitted after `pendingFrame` to preserve stream order.
 
 ## State Variables
 
-- `state.buffer`:
-  unconsumed stream bytes.
-- `state.offset`:
-  absolute consumed-byte position. Must be monotonic.
-- `streamVersion`:
-  active top-level version context.
-- `pendingFrame`:
-  older top-level frame waiting for continuation bytes or terminal flush.
-- `queuedFrames`:
-  additional complete enclosed frames parsed from one `GenericGroup` payload.
-- `framed`:
-  emission policy mode (`true` bounded, `false` greedy/unframed).
+- `state.buffer`: unconsumed stream bytes.
+- `state.offset`: absolute consumed-byte position. Must be monotonic.
+- `streamVersion`: active top-level version context.
+- `pendingFrame`: older top-level frame waiting for continuation bytes or
+  terminal flush.
+- `queuedFrames`: additional complete enclosed frames parsed from one
+  `GenericGroup` payload.
+- `framed`: emission policy mode (`true` bounded, `false` greedy/unframed).
 
 ## Derived Parser States
 
-- `Idle`:
-  `buffer` empty, `pendingFrame` null, `queuedFrames` empty.
-- `Buffered`:
-  `buffer` non-empty with no deferred frame state.
-- `PendingOnly`:
-  `pendingFrame` set, `queuedFrames` empty.
-- `QueuedOnly`:
-  `pendingFrame` null, `queuedFrames` non-empty.
-- `PendingAndQueued`:
-  both `pendingFrame` and `queuedFrames` set.
-- `ErroredAndReset`:
-  non-shortage error emitted; parser state reset to defaults.
-- `Flushed`:
-  after `flush()` returns, terminal remainder is consumed; repeated flush is idempotent.
+- `Idle`: `buffer` empty, `pendingFrame` null, `queuedFrames` empty.
+- `Buffered`: `buffer` non-empty with no deferred frame state.
+- `PendingOnly`: `pendingFrame` set, `queuedFrames` empty.
+- `QueuedOnly`: `pendingFrame` null, `queuedFrames` non-empty.
+- `PendingAndQueued`: both `pendingFrame` and `queuedFrames` set.
+- `ErroredAndReset`: non-shortage error emitted; parser state reset to defaults.
+- `Flushed`: after `flush()` returns, terminal remainder is consumed; repeated
+  flush is idempotent.
 
 ## Transition Table
 
 | Trigger                            | Precondition                                  | Action                                                                                                       | Postcondition                              | Emits                         |
-|------------------------------------|-----------------------------------------------|--------------------------------------------------------------------------------------------------------------|--------------------------------------------|-------------------------------|
+| ---------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------- |
 | `feed(chunk)`                      | any                                           | append to `buffer`, call `drain()`                                                                           | depends on `drain()` loop                  | zero or more `frame`/`error`  |
 | `drain()` start                    | `buffer` has leading `ano`                    | consume separators                                                                                           | stays in current deferred state            | none                          |
 | `drain()` pending branch           | `pendingFrame` exists                         | call `resumePendingFrame()`                                                                                  | pending resolved, extended, or paused      | maybe one `frame`             |
@@ -92,57 +79,65 @@ reason about lifecycle behavior without re-deriving rules from control flow.
 
 ## Emission Rules (Normative)
 
-1. During `drain()`, `pendingFrame` always has higher priority than `queuedFrames`.
-2. During `drain()`, `queuedFrames` emit before starting a new parse from `buffer`.
+1. During `drain()`, `pendingFrame` always has higher priority than
+   `queuedFrames`.
+2. During `drain()`, `queuedFrames` emit before starting a new parse from
+   `buffer`.
 3. During `flush()`, deferred frame order preserves stream order:
    - emit `pendingFrame` first,
    - then emit `queuedFrames`.
-4. `flush()` emits at most one terminal `ShortageError`, only when remainder bytes still exist.
-5. Repeated `flush()` calls after terminal emission are idempotent (no duplicate frame/error emission).
+4. `flush()` emits at most one terminal `ShortageError`, only when remainder
+   bytes still exist.
+5. Repeated `flush()` calls after terminal emission are idempotent (no duplicate
+   frame/error emission).
 
 ## Invariants
 
 - `state.offset` is monotonic and increases only through `consume(...)`.
-- No silent byte loss: bytes are either consumed into parsed artifacts or retained for later continuation/terminal shortage.
-- Counted group parse is bounded and atomic for nested payloads (`GenericGroup`, wrapper groups, body+attachment groups).
-- Enclosed frame order is preserved (`parseFrameSequence()` and queued emission ordering).
+- No silent byte loss: bytes are either consumed into parsed artifacts or
+  retained for later continuation/terminal shortage.
+- Counted group parse is bounded and atomic for nested payloads (`GenericGroup`,
+  wrapper groups, body+attachment groups).
+- Enclosed frame order is preserved (`parseFrameSequence()` and queued emission
+  ordering).
 - Stream order is preserved when both `pendingFrame` and `queuedFrames` exist.
 
 ## Error Semantics
 
-- `ShortageError` in `feed` path is non-terminal:
-  parser pauses and waits for more bytes.
-- `ShortageError` in `flush` path is terminal for buffered remainder:
-  error emitted once, remainder consumed.
+- `ShortageError` in `feed` path is non-terminal: parser pauses and waits for
+  more bytes.
+- `ShortageError` in `flush` path is terminal for buffered remainder: error
+  emitted once, remainder consumed.
 - Non-shortage parser errors emit one `error` event and trigger `reset()`.
 
 ## Version Context Semantics
 
-- Top-level stream scope:
-  `streamVersion`, affected by leading `KERIACDCGenusVersion` at frame start.
-- Current frame scope:
-  `version` used for that frame's attachment parse.
-- Nested wrapper scope:
-  wrapper-local nested version context in dispatch parsing.
+- Top-level stream scope: `streamVersion`, affected by leading
+  `KERIACDCGenusVersion` at frame start.
+- Current frame scope: `version` used for that frame's attachment parse.
+- Nested wrapper scope: wrapper-local nested version context in dispatch
+  parsing.
 
-These scopes are function-bounded and avoid a global mutable nested version stack.
+These scopes are function-bounded and avoid a global mutable nested version
+stack.
 
 Legacy note:
 
 - Deployed v1 streams may omit `KERIACDCGenusVersion` selectors at stream start.
-- In those cases, version context is inferred from the first parsed message/body semantics.
+- In those cases, version context is inferred from the first parsed message/body
+  semantics.
 
 ## Framed vs Unframed
 
-- `framed=false`:
-  greedy lookahead and attachment collection; may defer body-only end-of-buffer frame until more bytes or `flush()`.
-- `framed=true`:
-  bounded emission per drain cycle; may emit earlier and stop after first frame/attachment boundary work unit.
+- `framed=false`: greedy lookahead and attachment collection; may defer
+  body-only end-of-buffer frame until more bytes or `flush()`.
+- `framed=true`: bounded emission per drain cycle; may emit earlier and stop
+  after first frame/attachment boundary work unit.
 
 ## Contract-to-Test Matrix
 
 | Contract Item                                                               | Test Coverage                                                                                         |
-|-----------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Pending continuation treats body-group counter as new frame boundary        | `packages/cesr/test/unit/parser-pending-frame.test.ts` (`V-P1-001`)                                   |
 | Flush emits pending frame without remainder error                           | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-008`)                                           |
 | Flush emits pending frame then terminal shortage when tail remains          | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-009`)                                           |

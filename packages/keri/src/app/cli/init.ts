@@ -66,7 +66,9 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
 
   // Handle passcode input if not provided and not using nopasscode
   if (!nopasscode && !bran) {
-    console.log("Creating encrypted keystore, please enter your 22 character passcode:");
+    console.log(
+      "Creating encrypted keystore, please enter your 22 character passcode:",
+    );
 
     // For now, we'll use a simple prompt since Deno doesn't have getpass equivalent
     // In a real implementation, you'd want to use a proper password input library
@@ -109,7 +111,9 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       if (temp || !(error instanceof PathError)) {
         throw error;
       }
-      console.log("Persistent keystore path unavailable, retrying with temporary keystore mode.");
+      console.log(
+        "Persistent keystore path unavailable, retrying with temporary keystore mode.",
+      );
       hby = yield* createHabery({
         name,
         base,

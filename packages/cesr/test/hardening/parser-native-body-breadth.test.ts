@@ -8,9 +8,7 @@ import {
   splitIntoThirds,
   summarizeFrames,
 } from "./hardening-helpers.ts";
-import {
-  KERIPY_NATIVE_V2_ICP_FIX_BODY,
-} from "../fixtures/external-vectors.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 /**
@@ -38,7 +36,8 @@ Deno.test(
     assertEquals(frame.frame.body.native?.bodyCode, CtrDexV2.MapBodyGroup);
     assertEquals((frame.frame.body.native?.fields.length ?? 0) >= 3, true);
     assertEquals(
-      (frame.frame.body.native?.fields.some((field) => field.label !== null) ?? false),
+      frame.frame.body.native?.fields.some((field) => field.label !== null) ??
+        false,
       true,
     );
   },
@@ -49,11 +48,14 @@ Deno.test(
   () => {
     // Two native frames keep the round-trip assertion focused on semantic
     // stability, not on preserving literal source-token formatting.
-    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const stream =
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const annotated = annotate(stream);
     const restored = new TextDecoder().decode(denot(annotated));
     const originalSummary = summarizeFrames(parseFramesNoError(encode(stream)));
-    const restoredSummary = summarizeFrames(parseFramesNoError(encode(restored)));
+    const restoredSummary = summarizeFrames(
+      parseFramesNoError(encode(restored)),
+    );
     // Contract: annotate+denot must preserve parser-observable frame semantics.
     assertEquals(restoredSummary, originalSummary);
     assertEquals(restoredSummary.length, 2);

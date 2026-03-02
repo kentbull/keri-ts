@@ -12,28 +12,22 @@ Canonical parser lifecycle/state-machine contract:
 
 ## Parser terminology (normative)
 
-- Frame:
-  one parser emission unit (`type: "frame"`) containing one body plus zero or
-  more trailing attachment groups.
-- `CesrMessage`:
-  historical public type name for the frame payload object (`body` +
-  `attachments`); retained for API stability.
-- Message-domain frame:
-  frame whose body starts with cold-start code `msg` and is parsed via Serder
-  reaping.
-- Body group:
-  counter-declared frame-start payload form (`GenericGroup`,
+- Frame: one parser emission unit (`type: "frame"`) containing one body plus
+  zero or more trailing attachment groups.
+- `CesrMessage`: historical public type name for the frame payload object
+  (`body` + `attachments`); retained for API stability.
+- Message-domain frame: frame whose body starts with cold-start code `msg` and
+  is parsed via Serder reaping.
+- Body group: counter-declared frame-start payload form (`GenericGroup`,
   `BodyWithAttachmentGroup`, or native fixed/map group) that defines or encloses
   the frame body.
-- Attachment group:
-  trailing post-body group parsed by attachment dispatch; may include nested
-  wrapper groups.
-- Annotation separator byte (`ano`):
-  delimiter byte consumed between tokens; not a frame payload unit.
-- Deferred lifecycle terms:
-  `pendingFrame` is the oldest incomplete top-level frame continuation;
-  `queuedFrames` are younger, already-complete enclosed frames emitted after the
-  pending frame to preserve stream order.
+- Attachment group: trailing post-body group parsed by attachment dispatch; may
+  include nested wrapper groups.
+- Annotation separator byte (`ano`): delimiter byte consumed between tokens; not
+  a frame payload unit.
+- Deferred lifecycle terms: `pendingFrame` is the oldest incomplete top-level
+  frame continuation; `queuedFrames` are younger, already-complete enclosed
+  frames emitted after the pending frame to preserve stream order.
 
 ## Module map
 

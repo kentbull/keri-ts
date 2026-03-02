@@ -3,7 +3,11 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { agentCommand } from "./agent.ts";
 import { annotateCommand } from "./annotate.ts";
 import { benchmarkCommand } from "./benchmark.ts";
-import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
+import {
+  type CommandArgs,
+  type CommandDispatch,
+  type CommandHandler,
+} from "./command-types.ts";
 import { dumpEvts } from "./db-dump.ts";
 import { exportCommand } from "./export.ts";
 import { inceptCommand } from "./incept.ts";
@@ -27,7 +31,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
 /**
  * registers core commands with the program
  */
-export function registerCmds(program: Command, dispatch: CommandDispatch): void {
+export function registerCmds(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
   // top level commands
   regVersionCmd(program);
   regInitCmd(program, dispatch);
@@ -70,15 +77,24 @@ function regInitCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("init")
     .description("Create a database and keystore")
-    .option("-n, --name <name>", "Keystore name and file location of KERI keystore (required)")
-    .option("-b, --base <base>", "Additional optional prefix to file location of KERI keystore")
+    .option(
+      "-n, --name <name>",
+      "Keystore name and file location of KERI keystore (required)",
+    )
+    .option(
+      "-b, --base <base>",
+      "Additional optional prefix to file location of KERI keystore",
+    )
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
     .option("-t, --temp", "Create a temporary keystore, used for testing")
     .option("-s, --salt <salt>", "Qualified base64 salt for creating key pairs")
-    .option("-c, --config-dir <dir>", "Directory override for configuration data")
+    .option(
+      "-c, --config-dir <dir>",
+      "Directory override for configuration data",
+    )
     .option("--config-file <file>", "Configuration filename override")
     .option(
       "-p, --passcode <passcode>",
@@ -125,16 +141,28 @@ function regInceptCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("incept")
     .description("Initialize a prefix")
-    .requiredOption("-n, --name <name>", "Keystore name and file location of KERI keystore")
-    .option("-b, --base <base>", "Additional optional prefix to file location of KERI keystore")
+    .requiredOption(
+      "-n, --name <name>",
+      "Keystore name and file location of KERI keystore",
+    )
+    .option(
+      "-b, --base <base>",
+      "Additional optional prefix to file location of KERI keystore",
+    )
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
     .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .requiredOption("-a, --alias <alias>", "Human readable alias for the new identifier prefix")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for the new identifier prefix",
+    )
     .option("-f, --file <file>", "Filename to use to create the identifier", "")
-    .option("-tf, --transferable", "Whether the prefix is transferable or non-transferable")
+    .option(
+      "-tf, --transferable",
+      "Whether the prefix is transferable or non-transferable",
+    )
     .option(
       "-w, --wits <prefix>",
       "New set of witnesses, replaces all existing witnesses",
@@ -210,7 +238,10 @@ function regExportCmd(program: Command, dispatch: CommandDispatch): void {
     .command("export")
     .description("Export key events in CESR stream format")
     .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-a, --alias <alias>", "Human readable alias for identifier to export")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for identifier to export",
+    )
     .option("-b, --base <base>", "Optional base path prefix")
     .option(
       "--head-dir <dir>",
@@ -250,18 +281,22 @@ function regAnnotateCmd(program: Command, dispatch: CommandDispatch): void {
     .option("--out <path>", "Output file path (defaults to stdout)")
     .option("--qb2", "Treat input as qb2 binary instead of text CESR")
     .option("--pretty", "Pretty-print annotation output")
-    .action((options: { in?: string; out?: string; qb2?: boolean; pretty?: boolean }) => {
-      dispatch({
-        name: "annotate",
-        args: {
-          inPath: options.in,
-          outPath: options.out,
-          qb2: options.qb2 || false,
-          pretty: options.pretty || false,
-        },
-      });
-      return Promise.resolve();
-    });
+    .action(
+      (
+        options: { in?: string; out?: string; qb2?: boolean; pretty?: boolean },
+      ) => {
+        dispatch({
+          name: "annotate",
+          args: {
+            inPath: options.in,
+            outPath: options.out,
+            qb2: options.qb2 || false,
+            pretty: options.pretty || false,
+          },
+        });
+        return Promise.resolve();
+      },
+    );
 }
 
 /**
@@ -274,7 +309,11 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("agent")
     .description("Start the KERI agent server")
-    .option("-p, --port <port>", "Port number for the server (default: 8000)", "8000")
+    .option(
+      "-p, --port <port>",
+      "Port number for the server (default: 8000)",
+      "8000",
+    )
     .action(function (this: Command) {
       const options = this.opts();
       dispatch({
@@ -294,7 +333,9 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
  * @param dispatch The command dispatch function
  */
 function regBenchmarkSubCmd(program: Command, dispatch: CommandDispatch): void {
-  const benchmarkCommand = program.command("benchmark").description("Benchmark operations");
+  const benchmarkCommand = program.command("benchmark").description(
+    "Benchmark operations",
+  );
   regBenchmarkCesrCmd(benchmarkCommand, dispatch);
 }
 
@@ -304,17 +345,38 @@ function regBenchmarkSubCmd(program: Command, dispatch: CommandDispatch): void {
  * @param benchmarkCommand The benchmark sub-command instance
  * @param dispatch The command dispatch function
  */
-function regBenchmarkCesrCmd(benchmarkCommand: Command, dispatch: CommandDispatch): void {
+function regBenchmarkCesrCmd(
+  benchmarkCommand: Command,
+  dispatch: CommandDispatch,
+): void {
   benchmarkCommand
     .command("cesr")
     .description("Benchmark CESR parser from file or stdin")
     .option("--in <path>", "Input file path (defaults to stdin)")
-    .option("--iterations <count>", "Measured benchmark iterations", (value: string) => Number(value), 50)
-    .option("--warmup <count>", "Warmup iterations before measurement", (value: string) => Number(value), 5)
-    .option("--chunk-size <bytes>", "Chunk size for simulated streaming input", (value: string) => Number(value), 0)
+    .option(
+      "--iterations <count>",
+      "Measured benchmark iterations",
+      (value: string) => Number(value),
+      50,
+    )
+    .option(
+      "--warmup <count>",
+      "Warmup iterations before measurement",
+      (value: string) => Number(value),
+      5,
+    )
+    .option(
+      "--chunk-size <bytes>",
+      "Chunk size for simulated streaming input",
+      (value: string) => Number(value),
+      0,
+    )
     .option("--framed", "Use framed parser mode")
     .option("--compat", "Use compat attachment dispatch mode")
-    .option("--allow-errors", "Do not fail benchmark if parse errors are emitted")
+    .option(
+      "--allow-errors",
+      "Do not fail benchmark if parse errors are emitted",
+    )
     .option("--json", "Emit benchmark result as one JSON line")
     .action((options: Record<string, unknown>) => {
       dispatch({
@@ -378,7 +440,10 @@ function regDbDumpCmd(dbCommand: Command, dispatch: CommandDispatch): void {
  * @param program The tufa Commander program instance
  * @param dispatch The command dispatch function
  */
-function regExperimentalSubCmd(program: Command, dispatch: CommandDispatch): void {
+function regExperimentalSubCmd(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
   const experimentalCommand = program
     .command("experimental")
     .description("Experimental or placeholder commands");
@@ -386,7 +451,10 @@ function regExperimentalSubCmd(program: Command, dispatch: CommandDispatch): voi
   regWitnessCmd(experimentalCommand, dispatch);
 }
 
-function regInteractCmd(experimentalCommand: Command, dispatch: CommandDispatch): void {
+function regInteractCmd(
+  experimentalCommand: Command,
+  dispatch: CommandDispatch,
+): void {
   experimentalCommand
     .command("interact")
     .description("Create an interaction event (placeholder)")
@@ -396,7 +464,10 @@ function regInteractCmd(experimentalCommand: Command, dispatch: CommandDispatch)
     });
 }
 
-function regWitnessCmd(experimentalCommand: Command, dispatch: CommandDispatch): void {
+function regWitnessCmd(
+  experimentalCommand: Command,
+  dispatch: CommandDispatch,
+): void {
   experimentalCommand
     .command("witness")
     .description("Start a witness server (placeholder)")

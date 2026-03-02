@@ -2,14 +2,16 @@
 
 ## Purpose
 
-Persistent learnings for crypto primitives, key material, and signing/verification behavior in `keri-ts`.
+Persistent learnings for crypto primitives, key material, and
+signing/verification behavior in `keri-ts`.
 
 ## Current Status
 
 ### 2026-02-28
 
 1. No dedicated deep-dive updates captured yet in this cycle.
-2. Keep this file for crypto-focused tasks to avoid mixing details into CESR parser notes.
+2. Keep this file for crypto-focused tasks to avoid mixing details into CESR
+   parser notes.
 
 ## Scope Checklist
 

@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Persistent learnings for witness/watcher/observer infrastructure, deployment, and operations interoperability.
+Persistent learnings for witness/watcher/observer infrastructure, deployment,
+and operations interoperability.
 
 ## Current Status
 

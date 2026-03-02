@@ -10,8 +10,8 @@ import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import {
   interpretMapperBodySyntax,
-  parseMapperBodySyntax,
   type MapperBodySyntax,
+  parseMapperBodySyntax,
 } from "../primitives/mapper.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { reapSerder } from "../serder/serdery.ts";
@@ -485,7 +485,10 @@ export class FrameParser {
     }
     const raw = input.slice(offset, offset + total);
     const syntax = this.parseNativeBodySyntax(raw, cold, version);
-    const metadata = this.interpretNativeMetadataSyntax(syntax.metadata, version);
+    const metadata = this.interpretNativeMetadataSyntax(
+      syntax.metadata,
+      version,
+    );
     const fields = this.interpretNativeFieldSyntax(syntax.fields);
     return {
       frame: {
@@ -707,7 +710,12 @@ export class FrameParser {
           fallbackVersion,
           bodyCounter.code,
         ),
-        fields: this.parseNativeFieldSyntax(raw, cold, fallbackVersion, bodyCounter.code),
+        fields: this.parseNativeFieldSyntax(
+          raw,
+          cold,
+          fallbackVersion,
+          bodyCounter.code,
+        ),
       };
     } catch (error) {
       if (
@@ -792,7 +800,10 @@ export class FrameParser {
     bodyCode: string,
   ): NativeFieldSyntaxArtifact {
     if (MAP_BODY_CODES.has(bodyCode)) {
-      return { kind: "map", mapper: parseMapperBodySyntax(raw, fallbackVersion, cold) };
+      return {
+        kind: "map",
+        mapper: parseMapperBodySyntax(raw, fallbackVersion, cold),
+      };
     }
 
     const bodyCounter = parseCounter(raw, fallbackVersion, cold);
@@ -858,7 +869,9 @@ export class FrameParser {
       } catch (error) {
         if (error instanceof SemanticInterpretationError) {
           throw new SemanticInterpretationError(
-            `Native body semantic interpretation failed: ${(error as Error).message}`,
+            `Native body semantic interpretation failed: ${
+              (error as Error).message
+            }`,
             error,
           );
         }
