@@ -3,7 +3,7 @@
 ## Status
 
 - Created: 2026-02-28
-- Updated: 2026-03-01
+- Updated: 2026-03-02
 - Priority: medium (post P0/P1 parity closure, pre broad ecosystem rollout)
 - Source backlog: extracted from `docs/plans/cesr-parser-phase0-behavior-lock-parity-matrix.md` PARTIAL rows
 
@@ -48,11 +48,29 @@ Completed:
   with selected KERIpy codex/subset drift sentinel assertions.
 - `V-P2-019` in `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts`
   with historical implicit-v1 compatibility stream lock test.
+- `V-P2-003` in `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts`
+  with mixed short/big wrapper counters (`-A/--A/-B/--B/-C/--C`) parity lock.
+- `V-P2-004` in `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts`
+  with wrapper-boundary split determinism lock at immediate next-wrapper starts.
+- `V-P2-006` in `packages/cesr/test/hardening/parser-native-body-breadth.test.ts`
+  with multi-label nested `MapBodyGroup` boundary stability lock.
+- `V-P2-007` in `packages/cesr/test/hardening/parser-native-body-breadth.test.ts`
+  with annotate/denot native-body round-trip semantic stability lock.
+- `V-P2-009` in `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  with implicit-v1 outer frame + explicit selector wrapper version-context lock.
+- `V-P2-010` in `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  with selector non-bleed assertion for subsequent non-wrapper frames.
+- `V-P2-013` in `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  with interleaved `ano` handling across heterogeneous frame domains.
+- `V-P2-016` in `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  with post-error reset/flush idempotency lock in multi-frame flow.
+- `V-P2-020` in `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  with deterministic 3-8 split-plan fuzz on wrapper-heavy streams.
+- `V-P2-021` in `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  with deterministic mutation fuzz and bounded parser-error-class assertions.
 
 Remaining:
-
-- `V-P2-003`, `V-P2-004`, `V-P2-006`, `V-P2-007`, `V-P2-009`,
-  `V-P2-010`, `V-P2-013`, `V-P2-016`, `V-P2-020`, `V-P2-021`.
+- None.
 
 ## Scope
 
@@ -125,16 +143,15 @@ Priority legend:
 
 ## Suggested Test Organization
 
-- `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts` (`V-P2-001`..`004`)
-- `packages/cesr/test/hardening/parser-native-body-breadth.test.ts` (`V-P2-005`..`007`)
-- `packages/cesr/test/hardening/parser-version-context-hardening.test.ts` (`V-P2-008`..`010`)
-- `packages/cesr/test/hardening/parser-mixed-interop-hardening.test.ts` (`V-P2-011`..`013`)
-- `packages/cesr/test/hardening/parser-recovery-hardening.test.ts` (`V-P2-014`..`016`)
+- `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts` (`V-P2-001`, `002`, `005`, `008`, `011`, `012`, `014`, `015`)
+- `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts` (`V-P2-003`, `V-P2-004`)
+- `packages/cesr/test/hardening/parser-native-body-breadth.test.ts` (`V-P2-006`, `V-P2-007`)
+- `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts` (`V-P2-009`, `010`, `013`, `016`, `020`, `021`)
 - `packages/cesr/test/hardening/parser-keripy-golden-corpus.test.ts` (`V-P2-017`..`019`)
-- `packages/cesr/test/hardening/parser-fuzz-hardening.test.ts` (`V-P2-020`..`021`)
 
 ## Exit Criteria
 
 - All `H` vectors pass in CI for default parser mode.
 - At least one golden-corpus suite demonstrates stable parity summaries against KERIpy-derived fixtures.
 - No unbounded parser-loop or duplicate-emission defects in fuzz and shortage hardening vectors.
+- Full `M/L` vector set is lock-tested in-repo (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`).

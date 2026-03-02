@@ -76,7 +76,7 @@ Persistent CESR parser memory for `keri-ts`.
 14. **Readability plan tail (Points 6-10) recalibrated**
 - Point 6 is complete with one `RecoveryDiagnostic` contract (`version-fallback-accepted`, `version-fallback-rejected`, `wrapper-opaque-tail-preserved`, `parser-error-reset`) at parser/dispatch boundaries.
 - Point 7 is complete with targeted syntax-artifact extraction in high-coupling paths (frame start + native body + mapper tokenization), without a global two-pass rewrite.
-- Point 8 status remains “in progress”; initial KERIpy evidence-pack vectors (`V-P2-017`..`019`) are now lock-tested and remaining scope is broader P2 breadth vectors.
+- Point 8 is complete: initial KERIpy evidence-pack vectors (`V-P2-017`..`019`) plus remaining medium/low breadth vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) are now lock-tested.
 - Point 9 is complete in docs-first targeted scope (glossary + selective ambiguity cleanup; no broad rename churn).
 - Point 10 baseline gating is complete: parser benchmark flows are standardized and wired into `tufa`, while optimization implementation remains deferred behind benchmark evidence and rollback criteria.
 
@@ -111,12 +111,13 @@ Persistent CESR parser memory for `keri-ts`.
 - Current formal decision for parser completeness gate is `GO` (no open `S0/S1` vs KERIpy baseline).
 
 20. **Regression baseline updated after reconciliation**
-- `deno task test` in `packages/cesr` now reports `148 passed, 0 failed`.
+- `deno task test` in `packages/cesr` now reports `158 passed, 0 failed`.
 - Pre-hardening baseline captured during reconciliation was `140 passed, 0 failed`.
 
-21. **Remaining parser hardening debt is now explicit and non-blocking**
-- Open P2 medium/low vectors: `V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`.
-- Classified as `S2` breadth debt for ongoing hardening, not a blocker for LMDB/KEL layer progression.
+21. **Point 8 closure and P2 breadth completion are now explicit**
+- Remaining P2 medium/low vectors are now complete and passing:
+  `V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`.
+- Reconciliation rows `REQ-CESR-020`, `REQ-CESR-022`, and `REQ-CESR-024` are now `Implemented+Tested`.
 
 22. **Cross-implementation advisory scope expanded**
 - Added full advisory reconciliation for `CESRox` and `kerits` to the cross-implementation comparison artifact.
@@ -146,11 +147,38 @@ Persistent CESR parser memory for `keri-ts`.
 ## Current Follow-Ups
 
 1. Keep lifecycle contract matrix synchronized with diagnostics and recovery behavior tests.
-2. Execute remaining P2 medium/low hardening vectors in parallel with upper-layer implementation work.
-3. Continue Point 8 parity hardening breadth now that all P2 `H` vectors are complete.
+2. Keep medium/low hardening vectors in CI as locked regression coverage while upper-layer implementation work proceeds.
+3. Preserve full P2 vector coverage as regression floor (`V-P2-001`..`021`).
 4. Monitor downstream migration from legacy `onAttachmentVersionFallback` toward `onRecoveryDiagnostic`.
 
 ## Handoff Log
+
+### 2026-03-02 - Point 8 Closure and REQ-CESR-020/022/024 Completion
+- What changed:
+  - Added new hardening suites and shared helpers:
+    - `packages/cesr/test/hardening/hardening-helpers.ts`
+    - `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts` (`V-P2-003`, `V-P2-004`)
+    - `packages/cesr/test/hardening/parser-native-body-breadth.test.ts` (`V-P2-006`, `V-P2-007`)
+    - `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts` (`V-P2-009`, `010`, `013`, `016`, `020`, `021`)
+  - Updated closure/status docs:
+    - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+    - `docs/plans/cesr-parser-readability-improvement-plan.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+    - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Why:
+  - Close Point 8 parity breadth, complete all remaining medium/low P2 vectors, and resolve reconciliation rows `REQ-CESR-020`, `REQ-CESR-022`, and `REQ-CESR-024` to `Implemented+Tested`.
+- Tests:
+  - Command: `deno test test/hardening/parser-wrapper-breadth.test.ts test/hardening/parser-native-body-breadth.test.ts test/hardening/parser-version-recovery-fuzz-hardening.test.ts`
+  - Result: `10 passed, 0 failed`
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `158 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/plans/cesr-parser-readability-improvement-plan.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+  - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+- Risks/TODO:
+  - Maintain deterministic split/mutation fuzz seeds to avoid CI flake while preserving breadth stress value.
 
 ### 2026-03-02 - Design-Doc Reorg Link Synchronization
 - What changed:

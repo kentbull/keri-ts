@@ -3,7 +3,7 @@
 ## Status
 
 - Created: 2026-02-27
-- Updated: 2026-03-01
+- Updated: 2026-03-02
 - Priority: high
 - Ten-point progress:
   - Completed: Point 1 (`Publish an explicit parser state machine contract`)
@@ -19,7 +19,8 @@
     - Completed on 2026-03-01 with glossary-first terminology alignment in parser docs and targeted ambiguity-reducing identifier/comment cleanup.
   - Completed: Point 10 (`Gate performance optimization behind readability-first abstractions`)
     - Completed on 2026-03-01 with baseline parser benchmark flows (`deno bench`, reusable benchmark abstraction, and `tufa benchmark cesr`) plus rollback-gating criteria in deferred perf plan docs.
-  - Next: Point 8 (`Add parity-oriented behavioral lock tests against keripy`)
+  - Completed: Point 8 (`Add parity-oriented behavioral lock tests against keripy`)
+    - Completed on 2026-03-02 with all remaining `V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021` hardening vectors implemented and passing.
 - Scope:
   - `packages/cesr/src/core/parser-engine.ts`
   - `packages/cesr/src/parser/group-dispatch.ts`
@@ -296,7 +297,7 @@ Why:
 
 Status:
 
-- In progress.
+- Completed on 2026-03-02.
 - Completed:
   - P0/P1 vectors and split-determinism coverage are implemented and passing.
   - Phase 5 codex/minor-version parity invariants and subset-alignment tests are implemented and passing.
@@ -305,9 +306,15 @@ Status:
     - `V-P2-017` golden corpus txt/qb2 parity + split determinism
     - `V-P2-018` selected KERIpy codex/subset drift sentinel
     - `V-P2-019` historical implicit-v1 compatibility stream sample
-- Remaining:
-  - Remaining P2 breadth/hardening vectors (`V-P2-001`..`V-P2-016`,
-    `V-P2-020`, `V-P2-021`) and broader interop fixture expansion.
+  - Remaining medium/low hardening vectors are now lock-tested in:
+    - `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts`:
+      `V-P2-003`, `V-P2-004`
+    - `packages/cesr/test/hardening/parser-native-body-breadth.test.ts`:
+      `V-P2-006`, `V-P2-007`
+    - `packages/cesr/test/hardening/parser-version-recovery-fuzz-hardening.test.ts`:
+      `V-P2-009`, `V-P2-010`, `V-P2-013`, `V-P2-016`, `V-P2-020`, `V-P2-021`
+  - Full CESR suite baseline after Point 8 closure:
+    - `deno task test` in `packages/cesr` => `158 passed, 0 failed`
 
 Add vectors and property-like split tests that validate behavior in areas where parser logic is subtle.
 

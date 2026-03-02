@@ -13,7 +13,7 @@ Use it to:
 
 ## Current Focus
 
-1. CESR parser completeness is now reconciled with a formal `GO` verdict for moving up-stack to LMDB/key-management/KEL/witness-watcher implementation, with remaining P2 medium/low vectors tracked as non-blocking hardening debt.
+1. CESR parser completeness is reconciled with a formal `GO` verdict for moving up-stack to LMDB/key-management/KEL/witness-watcher implementation, and Point 8 parity breadth closure is now complete across all P2 vectors.
 2. KERIpy parity preservation remains the blocking parser gate for future parser-adjacent changes.
 
 ## Topic Learnings Index
@@ -50,6 +50,8 @@ This keeps context focused and avoids long-thread drift.
 1. Design-doc path references were synchronized with the `docs/design-docs/cesr-parser/` and `docs/design-docs/cesr-parser/initial-plan-docs/` reorganization.
 2. Top-level and topic learnings now reference the moved reconciliation/comparison/completeness artifacts at their new locations.
 3. Remaining unresolved historical references are confined to legacy analysis docs (`CESR_IMPLEMENTATION_ANALYSIS_*`, `codex-plan.md`) that are not part of the current learnings/design-doc routing set.
+4. Point 8 parity hardening is now fully closed: medium/low vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) were implemented in new hardening suites.
+5. Reconciliation rows `REQ-CESR-020`, `REQ-CESR-022`, and `REQ-CESR-024` are now `Implemented+Tested`, and full CESR suite baseline is `158 passed, 0 failed`.
 
 ### 2026-02-28
 
@@ -94,7 +96,7 @@ This keeps context focused and avoids long-thread drift.
   - `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
   - `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 29. Cross-implementation comparison confirms no open `S0/S1` mismatch against KERIpy baseline; divergences in KERIox/libkeri/cesrixir/cesride/CESRox/kerits/keride are classified advisory.
-30. Parser completeness gate decision is `GO`; remaining medium/low P2 vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) are tracked as `S2` non-blocking hardening debt while upper-layer infrastructure work proceeds.
+30. Parser completeness gate decision is `GO`; medium/low P2 vectors (`V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`) are now implemented and regression-locked.
 
 ## New Thread Kickoff Template
 
