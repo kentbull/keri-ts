@@ -56,7 +56,7 @@ proposed TypeScript symbol targets.
 | `dbing.py`     | `def`       | `unsuffix`          |         229 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/keys.ts`             | `unsuffix`                | `D1`  | `Partial` | Exists in TS key helpers; parity validation pending                                             |
 | `dbing.py`     | `def`       | `clearDatabaserDir` |         252 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/lmdber.ts`           | `clearDatabaserDir`       | `D1`  | `Partial` | Added helper + idempotency test in `test/unit/db/core/lmdber-helpers.test.ts`                   |
 | `dbing.py`     | `def`       | `openLMDB`          |         261 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/lmdber.ts`           | `openLMDB`                | `D1`  | `Partial` | Added parity alias to opened LMDBer factory; test in `test/unit/db/core/lmdber-helpers.test.ts` |
-| `dbing.py`     | `class`     | `LMDBer`            |         296 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/lmdber.ts`           | `LMDBer`                  | `D1`  | `Partial` | Exists in TS; parity validation pending                                                         |
+| `dbing.py`     | `class`     | `LMDBer`            |         296 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/lmdber.ts`           | `LMDBer`                  | `D1`  | `Partial` | Core branch methods `cntTop/cntAll/delTop` and lifecycle/version parity tests added; broader `dbing.py` method surface remains |
 | `subing.py`    | `class`     | `SuberBase`         |         109 | `DB-SUBER`  | `keripy/src/keri/db/subing.py`    | `packages/keri/src/db/subing.ts (planned)`      | `SuberBase`               | `D2`  | `Missing` | Top-level symbol inventory row                                                                  |
 | `subing.py`    | `class`     | `Suber`             |         365 | `DB-SUBER`  | `keripy/src/keri/db/subing.py`    | `packages/keri/src/db/subing.ts (planned)`      | `Suber`                   | `D2`  | `Missing` | Top-level symbol inventory row                                                                  |
 | `subing.py`    | `class`     | `OnSuberBase`       |         460 | `DB-SUBER`  | `keripy/src/keri/db/subing.py`    | `packages/keri/src/db/subing.ts (planned)`      | `OnSuberBase`             | `D2`  | `Missing` | Top-level symbol inventory row                                                                  |
@@ -120,6 +120,19 @@ proposed TypeScript symbol targets.
 - K/V rows inventoried: **130**
 - K/V Gate A-G worklist rows: **33** (`docs/plans/keri/DB_LAYER_KV_GATE_AG_WORKLIST.csv`)
 - K/V Gate H backlog rows: **97** (`docs/plans/keri/DB_LAYER_KV_GATE_H_BACKLOG.csv`)
+
+## D1 Progress Snapshot (2026-03-03)
+
+1. `LMDBer` gained KERIpy-aligned branch primitives:
+   - `cntTop` (branch count),
+   - `cntAll` (full-db alias),
+   - `delTop` (branch delete).
+2. Reopen/version behavior now stamps `__version__` for temp/new writeable DB
+   opens, matching KERIpy temp-db versioning intent.
+3. Evidence tests:
+   - `test/unit/db/core/lmdber-core-parity.test.ts`
+   - `test/unit/db/core/lmdber-helpers.test.ts`
+   - `test/unit/db/core/keys.test.ts`
 
 ## K/V Inventory Artifacts
 

@@ -18,6 +18,19 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
 2. Stable `tufa init`/`tufa incept`/communication behavior.
 3. A clean foundation for later pluggable storage providers.
 
+## Execution Status (2026-03-03)
+
+1. `D0` is complete for its defined exit criteria:
+   - symbol inventory matrix published for all baseline DB modules,
+   - K/V inventory seeded and split into Gate A-G worklist vs Gate H backlog,
+   - gate mappings and rationales published for Gate A-G rows.
+2. `D1` is in progress:
+   - `LMDBer` now includes `cntTop`, `cntAll`, and `delTop` branch primitives.
+   - lifecycle behavior now stamps `__version__` metadata for temp/new writeable
+     DB opens (closer to KERIpy `LMDBer.reopen` behavior).
+   - unit parity coverage exists for lifecycle reopen/version behavior and
+     branch count/iteration/delete semantics in both non-dup and dupsort DBs.
+
 ## Scope Sources (Parity Baseline)
 
 Primary KERIpy references:

@@ -1,8 +1,5 @@
 /**
- * LMDBer - Core LMDB database manager
- *
- * Manages LMDB database environments and provides CRUD operations.
- * Uses composition with PathManager instead of inheritance.
+ * Core LMDB manager used by higher-level DB abstractions.
  */
 
 import { type Operation } from "npm:effection@^3.6.0";
@@ -23,14 +20,12 @@ import {
 export type BinVal = Uint8Array;
 export type BinKey = Uint8Array;
 
-// Module-level encoder/decoder instances (stateless, reusable)
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// Short helpers for string ↔ Uint8Array conversion
-// bytes from string/text (UTF-8)
+/** UTF-8 string -> bytes helper. */
 export const b = (t: string): Uint8Array => encoder.encode(t);
-// text/string from bytes (UTF-8)
+/** UTF-8 bytes -> string helper. */
 export const t = (b: Uint8Array): string => decoder.decode(b);
 
 export interface LMDBerOptions extends PathManagerOptions {
@@ -61,10 +56,9 @@ export const LMDBER_DEFAULTS: LMDBerDefaults = {
   mapSize: 4 * 1024 * 1024 * 1024, // 4GB default
 };
 
-/**
- * LMDBer manages LMDB database environments
- * Uses composition with PathManager for path management
- */
+const DEFAULT_DB_VERSION = "1.0.0";
+
+/** LMDB env lifecycle + core CRUD/branch operations. */
 export class LMDBer {
   private pathManager: PathManager;
   public env: RootDatabase<any, Key> | null;
@@ -128,6 +122,13 @@ export class LMDBer {
     return this.pathManager.path;
   }
 
+  private requireEnv(): RootDatabase<any, Key> {
+    if (!this.env) {
+      throw new DatabaseNotOpenError("LMDB environment is not open");
+    }
+    return this.env;
+  }
+
   private formatDbKeyError(key: Uint8Array, error: unknown): DatabaseKeyError {
     const message = error instanceof Error ? error.message : String(error);
     return new DatabaseKeyError(
@@ -139,10 +140,8 @@ export class LMDBer {
   }
 
   /**
-   * Reopen the LMDB database. LMDBer relies on PathManager to create the containing directory and
-   * then the LMDB library creates the data.mdb and lock.mdb files.
-   *
-   * Closes existing database if open before opening a new one to prevent double-free errors
+   * Reopen the LMDB environment with updated options.
+   * Closes any existing env first, then opens at the resolved path.
    */
   *reopen(options: Partial<LMDBerOptions> = {}): Operation<boolean> {
     const readonly = options.readonly ?? this.readonly;
@@ -217,11 +216,9 @@ export class LMDBer {
       this.env = open(dbConfig);
       this.logger.info(`LMDB environment opened successfully`);
 
-      // Set version if new database and not readonly
-      if (this.opened && !readonly && !dbExists && !this.temp) {
-        // Set version for new database
-        const version = "1.0.0"; // Default version
-        this.setVer(version);
+      // KERIpy parity: stamp version metadata on newly-created DBs and temp DBs.
+      if (this.opened && !readonly && (!dbExists || this.temp)) {
+        this.setVer(DEFAULT_DB_VERSION);
       }
 
       return this.opened;
@@ -239,11 +236,7 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Check if database files exist in the path directory
-   * LMDB creates data.mdb and lock.mdb files. lock.mdb might not exist if there are no active transactions
-   * Returns Effection Operation with true if data.mdb exists
-   */
+  /** True if the current env path already has a `data.mdb` file. */
   private *checkDatabaseExists(): Operation<boolean> {
     if (!this.pathManager.path) {
       return false;
@@ -255,9 +248,7 @@ export class LMDBer {
     return pathStat.isFile ?? false;
   }
 
-  /**
-   * Close the LMDB database
-   */
+  /** Close the env and path manager. Optionally clear backing files. */
   *close(clear = false): Operation<boolean> {
     if (this.env) {
       try {
@@ -275,11 +266,9 @@ export class LMDBer {
     return true;
   }
 
-  /**
-   * Get database version
-   */
+  /** Read the `__version__` marker from the root DB. */
   getVer(): string | null {
-    const env = this.env!;
+    const env = this.requireEnv();
 
     try {
       const versionBytes: Uint8Array = env.get(b("__version__"));
@@ -291,11 +280,9 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Set database version
-   */
+  /** Write the `__version__` marker in the root DB. */
   setVer(val: string): void {
-    const env = this.env!;
+    const env = this.requireEnv();
 
     try {
       env.transactionSync(() => {
@@ -312,11 +299,9 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Open a named sub-database
-   */
+  /** Open a named sub-database with binary key/value encoding. */
   openDB(name: string, dupsort = false): Database<BinVal, BinKey> {
-    const env = this.env!;
+    const env = this.requireEnv();
     return env.openDB(name, {
       keyEncoding: "binary",
       encoding: "binary", // Use binary encoding for values (raw bytes) to match KERIpy
@@ -324,20 +309,13 @@ export class LMDBer {
     });
   }
 
-  /**
-   * Put value (no overwrite)
-   *
-   * @param db - Named sub-database
-   * @param key - Key bytes
-   * @param val - Value bytes
-   * @returns True if successfully written, False if key already exists
-   */
+  /** Insert key/value only if key is absent. Returns `false` on existing key. */
   putVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
     val: Uint8Array,
   ): boolean {
-    const env = this.env!;
+    const env = this.requireEnv();
 
     try {
       const result = env.transactionSync(() => {
@@ -354,20 +332,13 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Set value (overwrite allowed)
-   *
-   * @param db - Named sub-database
-   * @param key - Key bytes
-   * @param val - Value bytes
-   * @returns True if successfully written
-   */
+  /** Upsert key/value. Overwrites existing value. */
   setVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
     val: Uint8Array,
   ): boolean {
-    const env = this.env!;
+    const env = this.requireEnv();
 
     try {
       env.transactionSync(() => {
@@ -379,13 +350,7 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Get value
-   *
-   * @param db - Named sub-database
-   * @param key - Key bytes
-   * @returns Value bytes or null if not found
-   */
+  /** Fetch value by key. Returns `null` when missing. */
   getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
     try {
       const val = db.get(key);
@@ -399,15 +364,9 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Delete value
-   *
-   * @param db - Named sub-database
-   * @param key - Key bytes
-   * @returns True if key existed, False otherwise
-   */
+  /** Delete one key. Returns `true` only when the key existed. */
   delVal(db: Database<BinVal, BinKey>, key: Uint8Array): boolean {
-    const env = this.env!;
+    const env = this.requireEnv();
 
     try {
       const result = env.transactionSync(() => {
@@ -423,12 +382,7 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Count all values in database
-   *
-   * @param db - Named sub-database
-   * @returns Count of entries
-   */
+  /** Count all entries in the sub-database. */
   cnt(db: Database<BinVal, BinKey>): number {
     try {
       let count = 0;
@@ -445,21 +399,86 @@ export class LMDBer {
   }
 
   /**
-   * Iterates over branch of db given by top key
-   *
-   * Returns iterator of (full key, val) tuples over a branch of the db given by top key
-   * where: full key is full database key for val not truncated top key.
-   *
-   * Works for both dupsort==False and dupsort==True
-   * Because cursor.iternext() advances cursor after returning item its safe
-   * to delete the item within the iteration loop.
-   *
-   * @param db - Named sub-database
-   * @param top - Truncated top key, a key space prefix to get all the items
-   *              from multiple branches of the key space. If top key is
-   *              empty then gets all items in database.
-   *              Empty Uint8Array matches all keys (like str.startswith('') always returns True)
-   * @returns Generator yielding (key, val) tuples
+   * Count values for keys that share the given byte-prefix (`top`).
+   * Empty `top` counts the whole database.
+   * Example: `top=b("alpha.")` counts `alpha.1`, `alpha.2`, ...
+   */
+  cntTop(
+    db: Database<BinVal, BinKey>,
+    top: Uint8Array = new Uint8Array(0),
+  ): number {
+    try {
+      let count = 0;
+      const startKey = top.length > 0 ? top : undefined;
+      for (const entry of db.getRange({ start: startKey })) {
+        const keyBytes = entry.key as Uint8Array;
+        if (top.length > 0 && !startsWith(keyBytes, top)) {
+          break;
+        }
+        count++;
+      }
+      return count;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseOperationError(
+        `Failed to count database branch: ${message}`,
+        {
+          top: Array.from(top),
+        },
+      );
+    }
+  }
+
+  /** KERIpy parity alias for `cnt`. */
+  cntAll(db: Database<BinVal, BinKey>): number {
+    return this.cnt(db);
+  }
+
+  /**
+   * Delete entries whose keys share the given byte-prefix (`top`).
+   * Empty `top` deletes the whole database.
+   */
+  delTop(
+    db: Database<BinVal, BinKey>,
+    top: Uint8Array = new Uint8Array(0),
+  ): boolean {
+    const env = this.requireEnv();
+    try {
+      const keys: Uint8Array[] = [];
+      const startKey = top.length > 0 ? top : undefined;
+      for (const entry of db.getRange({ start: startKey })) {
+        const keyBytes = entry.key as Uint8Array;
+        if (top.length > 0 && !startsWith(keyBytes, top)) {
+          break;
+        }
+        keys.push(new Uint8Array(keyBytes));
+      }
+
+      if (keys.length === 0) {
+        return false;
+      }
+
+      env.transactionSync(() => {
+        for (const key of keys) {
+          db.remove(key);
+        }
+      });
+
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new DatabaseOperationError(
+        `Failed to delete database branch: ${message}`,
+        {
+          top: Array.from(top),
+        },
+      );
+    }
+  }
+
+  /**
+   * Iterate `(key, value)` entries whose keys share the prefix `top`.
+   * Empty `top` iterates the whole database.
    */
   *getTopItemIter(
     db: Database<BinVal, BinKey>,
@@ -508,9 +527,7 @@ export function clearDatabaserDir(path: string): void {
   }
 }
 
-/**
- * KERIpy-parity helper alias for creating and opening an LMDBer.
- */
+/** KERIpy-parity alias for creating/opening an `LMDBer`. */
 export function* openLMDB(
   options: LMDBerOptions = {},
   defaults?: Partial<LMDBerDefaults>,
@@ -518,11 +535,7 @@ export function* openLMDB(
   return yield* createLMDBer(options, defaults);
 }
 
-/**
- * Create and open an LMDBer instance.
- *
- * Constructors cannot be async, so call this factory where an opened LMDBer is required.
- */
+/** Create and open an `LMDBer` (constructor-safe async factory). */
 export function* createLMDBer(
   options: LMDBerOptions = {},
   defaults?: Partial<LMDBerDefaults>,

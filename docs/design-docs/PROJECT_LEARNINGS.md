@@ -51,6 +51,24 @@ This keeps context focused and avoids long-thread drift.
 
 ## Cross-Topic Snapshot
 
+### 2026-03-03
+
+1. Phase 2 reconciliation checkpoints were revalidated against current
+   artifacts: P0 (`harness + parity matrices`) and D0 (`inventory + parity
+   matrix`) satisfy their documented exit criteria; D1 is the active DB-layer
+   workstream.
+2. D1 `dbing.py` parity advanced in code with new `LMDBer` core branch methods
+   (`cntTop`, `cntAll`, `delTop`) and lifecycle parity refinement for
+   `__version__` stamping on temp/new writeable opens.
+3. New db-core parity tests now lock lifecycle reopen/version behavior plus
+   branch iteration/count/delete semantics for both non-dup and dupsort
+   databases (`8 passed, 0 failed` on the targeted db-core suite).
+4. A new cross-topic DB design reference is now published at
+   `docs/design-docs/db/db-architecture.md`, documenting KERIpy
+   DB architecture and required `keri-ts` parity semantics, including a
+   normative DB invariants contract, and is now linked from KELS/ACDC/
+   Witness-Watcher-Observer learnings docs.
+
 ### 2026-03-02
 
 1. Design-doc path references were synchronized with the

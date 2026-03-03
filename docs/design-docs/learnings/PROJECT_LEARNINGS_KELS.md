@@ -21,6 +21,12 @@ Use this doc for:
 3. key state transition constraints,
 4. compatibility nuances with KERIpy KEL behavior.
 
+## Cross-Topic Design References
+
+1. DB architecture and parity contract (normative for DB/index ordering
+   semantics used by KEL state and escrow paths):
+   - `docs/design-docs/db/db-architecture.md`
+
 ## Planned Sections
 
 1. Decision log
@@ -208,3 +214,76 @@ Use this doc for:
     executes one ready parity flow.
   - P1 still needs broader LMDB lifecycle/iterator/dup semantics parity and
     migration/version behavior validation beyond helper-symbol closure.
+
+### 2026-03-03 - DB Reconciliation Checkpoint (P0/D0 Confirmed, D1 Advanced)
+
+- Topic docs updated:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- What changed:
+  - Revalidated Phase 2 sequencing and marked P0/D0 as complete for their
+    stated exit criteria, with D1 as the active workstream.
+  - Implemented additional `dbing.py` core parity in `LMDBer`:
+    `cntTop`, `cntAll`, and `delTop`.
+  - Tightened lifecycle parity by stamping `__version__` metadata on temp/new
+    writeable DB opens in `LMDBer.reopen`, matching KERIpy temp/new DB intent.
+  - Added db-core parity tests for lifecycle reopen/version and branch
+    count/iteration/delete semantics in both non-dup and dupsort sub-databases.
+- Why:
+  - Move from D1 helper-only progress to concrete core branch/lifecycle parity
+    needed before Suber/Komer migration work.
+- Tests:
+  - Command:
+    `deno test --allow-all --unstable-ffi test/unit/db/core/keys.test.ts test/unit/db/core/lmdber-helpers.test.ts test/unit/db/core/lmdber-core-parity.test.ts`
+  - Result: `8 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- Risks/TODO:
+  - `LMDBer` remains `Partial` because broader `dbing.py` surface (ordinal,
+    dupset/io-dup helpers, and migration breadth) still needs parity closure in
+    subsequent D1 slices.
+
+### 2026-03-03 - LMDB `dupsort` Design Doc Published
+
+- Topic docs updated:
+  - `docs/design-docs/db/db-architecture.md`
+- What changed:
+  - Added a dedicated DB design doc documenting KERIpy `dupsort=True` semantics
+    and required `keri-ts` parity behavior for `Dup`/`IoDup`/`IoSet`/`On*` class
+    families.
+  - Linked this learnings file to the design doc as a cross-topic reference for
+    KEL workstreams.
+- Why:
+  - KEL indexing and escrow state rely on correct duplicate ordering and
+    idempotence semantics; this centralizes the design contract for future work.
+- Tests:
+  - Command: N/A (design documentation update only)
+  - Result: N/A
+- Contracts/plans touched:
+  - `docs/design-docs/db/db-architecture.md`
+- Risks/TODO:
+  - Keep the design doc synchronized with future D1/D2 parity implementation
+    decisions and test evidence.
+
+### 2026-03-03 - DB Architecture Contract Rewrite + Invariants Added
+
+- Topic docs updated:
+  - `docs/design-docs/db/db-architecture.md`
+- What changed:
+  - Rewrote the doc from a dupsort-focused note into a broader DB architecture
+    contract covering KERIpy vs `keri-ts` layering, storage models, and
+    implementation policy.
+  - Added a normative `DB Invariants Contract` section with ordering,
+    idempotence, serialization, keyspace, lifecycle, and interop invariants.
+- Why:
+  - Make DB-level design decisions and parity constraints easier to reason about
+    across KEL features than a single-feature dupsort narrative.
+- Tests:
+  - Command: N/A (design documentation update only)
+  - Result: N/A
+- Contracts/plans touched:
+  - `docs/design-docs/db/db-architecture.md`
+- Risks/TODO:
+  - Keep invariant clauses aligned with future D1-D7 parity evidence and any
+    documented KERIpy divergence decisions.

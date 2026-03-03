@@ -1,9 +1,4 @@
-/**
- * Baser - KERI Event Log Database
- *
- * Manages KEL events and related data using composition with LMDBer.
- * Sets up named sub-databases for key event logs.
- */
+/** KERI event-log databaser built on `LMDBer` composition. */
 
 import { type Operation } from "npm:effection@^3.6.0";
 import { Database } from "npm:lmdb@^3.4.4";
@@ -18,10 +13,7 @@ export interface BaserOptions extends LMDBerOptions {
   // Baser-specific options can be added here
 }
 
-/**
- * Baser manages KERI event logs
- * Uses composition with LMDBer instead of inheritance
- */
+/** High-level wrapper around core KEL-related sub-databases. */
 export class Baser {
   private lmdber: LMDBer;
   private readonly logger: Logger;
@@ -73,9 +65,7 @@ export class Baser {
     return this.lmdber.env;
   }
 
-  /**
-   * Reopen the database and initialize sub-databases
-   */
+  /** Reopen base LMDB env and bind named sub-databases. */
   *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
     const opened = yield* this.lmdber.reopen(options);
 
@@ -101,93 +91,77 @@ export class Baser {
     }
   }
 
-  /**
-   * Close the database
-   */
+  /** Close the underlying LMDB resources. */
   *close(clear = false): Operation<boolean> {
     return yield* this.lmdber.close(clear);
   }
 
-  /**
-   * Get version
-   */
+  /** Read root DB version marker. */
   getVer(): string | null {
     return this.lmdber.getVer();
   }
 
-  /**
-   * Set version
-   */
+  /** Write root DB version marker. */
   setVer(val: string): void {
     this.lmdber.setVer(val);
   }
 
-  /**
-   * Count entries in evts sub-database
-   */
+  /** Count event entries in `evts.`. */
   cntEvts(): number {
     return this.lmdber.cnt(this.evts);
   }
 
-  /**
-   * Put value in evts sub-database
-   */
+  /** Insert event value at key if absent. */
   putEvt(key: Uint8Array, val: Uint8Array): boolean {
     return this.lmdber.putVal(this.evts, key, val);
   }
 
-  /**
-   * Set value in evts sub-database
-   */
+  /** Upsert event value at key. */
   setEvt(key: Uint8Array, val: Uint8Array): boolean {
     return this.lmdber.setVal(this.evts, key, val);
   }
 
-  /**
-   * Get value from evts sub-database
-   */
+  /** Fetch event value by key. */
   getEvt(key: Uint8Array): Uint8Array | null {
     return this.lmdber.getVal(this.evts, key);
   }
 
-  /**
-   * Delete value from evts sub-database
-   */
+  /** Delete event value by key. */
   delEvt(key: Uint8Array): boolean {
     return this.lmdber.delVal(this.evts, key);
   }
 
-  /**
-   * Get iterator over items in evts sub-database
-   *
-   * @param top - Key prefix to filter by (empty to get all items)
-   * @returns Generator yielding (key, val) tuples
-   */
+  /** Iterate `evts.` entries with optional byte-prefix filter. */
   *getAllEvtsIter(
     top: Uint8Array = new Uint8Array(0),
   ): Generator<[Uint8Array, Uint8Array]> {
     yield* this.lmdber.getTopItemIter(this.evts, top);
   }
 
+  /** UTF-8 encode helper. */
   private encodeText(text: string): Uint8Array {
     return new TextEncoder().encode(text);
   }
 
+  /** UTF-8 decode helper; returns `null` on missing bytes. */
   private decodeText(bytes: Uint8Array | null): string | null {
     if (bytes === null) return null;
     return new TextDecoder().decode(bytes);
   }
 
+  /** JSON encode helper. */
   private encodeJson(value: unknown): Uint8Array {
     return this.encodeText(JSON.stringify(value));
   }
 
+  /** JSON decode helper; returns `null` on missing bytes. */
   private decodeJson<T>(bytes: Uint8Array | null): T | null {
     const text = this.decodeText(bytes);
     if (text === null) return null;
     return JSON.parse(text) as T;
   }
 
+  /** Insert habitat record for prefix if absent. */
   putHab(pre: string, record: unknown): boolean {
     return this.lmdber.putVal(
       this.habs,
@@ -196,6 +170,7 @@ export class Baser {
     );
   }
 
+  /** Upsert habitat record for prefix. */
   pinHab(pre: string, record: unknown): boolean {
     return this.lmdber.setVal(
       this.habs,
@@ -204,12 +179,14 @@ export class Baser {
     );
   }
 
+  /** Read habitat record for prefix. */
   getHab<T>(pre: string): T | null {
     return this.decodeJson<T>(
       this.lmdber.getVal(this.habs, this.encodeText(pre)),
     );
   }
 
+  /** Insert namespace/name -> prefix mapping if absent. */
   putName(ns: string, name: string, pre: string): boolean {
     const key = `${ns}:${name}`;
     return this.lmdber.putVal(
@@ -219,6 +196,7 @@ export class Baser {
     );
   }
 
+  /** Upsert namespace/name -> prefix mapping. */
   pinName(ns: string, name: string, pre: string): boolean {
     const key = `${ns}:${name}`;
     return this.lmdber.setVal(
@@ -228,6 +206,7 @@ export class Baser {
     );
   }
 
+  /** Read namespace/name -> prefix mapping. */
   getName(ns: string, name: string): string | null {
     const key = `${ns}:${name}`;
     return this.decodeText(
@@ -235,6 +214,7 @@ export class Baser {
     );
   }
 
+  /** Upsert habery-scoped string setting in `hbys.`. */
   pinHby(name: string, value: string): boolean {
     return this.lmdber.setVal(
       this.hbys,
@@ -243,6 +223,7 @@ export class Baser {
     );
   }
 
+  /** Read habery-scoped string setting from `hbys.`. */
   getHby(name: string): string | null {
     return this.decodeText(
       this.lmdber.getVal(this.hbys, this.encodeText(name)),
@@ -250,11 +231,7 @@ export class Baser {
   }
 }
 
-/**
- * Create and open a Baser instance.
- *
- * Constructors cannot be async, so call this factory where an opened Baser is required.
- */
+/** Create/open a `Baser` (constructor-safe async factory). */
 export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
   const baser = new Baser(options);
   const opened = yield* baser.reopen(options);
