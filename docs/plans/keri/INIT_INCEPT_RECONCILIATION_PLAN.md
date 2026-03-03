@@ -5,7 +5,8 @@
 This is Phase 2 of a 4-phase project.
 
 - Phase 1 (completed): CESR parser completeness/parity.
-- Phase 2 (this plan): KERIpy DB layer parity + usable controller interoperability.
+- Phase 2 (this plan): KERIpy DB layer parity + usable controller
+  interoperability.
 - Later phases: broader KERI/AIDC feature expansion (rotation/witness/watcher,
   multisig, ACDC, IPEX, and beyond).
 
@@ -197,7 +198,8 @@ P0 tracking artifacts:
 
 ## P9 - Direct + Mailbox Communications
 
-- Implement both transport tracks for interop with KERIpy participants/mailboxes.
+- Implement both transport tracks for interop with KERIpy
+  participants/mailboxes.
 
 ## P10 - Challenge Commands
 

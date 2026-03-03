@@ -615,8 +615,8 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-03-01 - Roadmap Rephase: Minor-Version Modeling + Codex Subset Parity Elevated To Phase 5
 
 - What changed:
-  - Updated `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md` to insert a
-    new Phase 5 focused on:
+  - Updated `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md` to
+    insert a new Phase 5 focused on:
     - explicit major/minor codex modeling aligned with KERIpy minor-version
       progression semantics,
     - codex subset concepts (`UniDex`/`SUDex`/`MUDex` analogs),
@@ -635,10 +635,10 @@ Persistent CESR parser memory for `keri-ts`.
   - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
   - `docs/design-docs/PROJECT_LEARNINGS.md`
 - Risks/TODO:
-  - Improvement plan (`docs/plans/cesr/cesr-parser-readability-improvement-plan.md`)
-    still treats Point 6 as next ten-point item; keep phase-plan and
-    ten-point-plan sequencing language synchronized during Phase 5 execution
-    kickoff.
+  - Improvement plan
+    (`docs/plans/cesr/cesr-parser-readability-improvement-plan.md`) still treats
+    Point 6 as next ten-point item; keep phase-plan and ten-point-plan
+    sequencing language synchronized during Phase 5 execution kickoff.
 
 ### 2026-03-01 - semanticShape Invariants Activated (Metadata-to-Contract Upgrade)
 
@@ -724,8 +724,9 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-03-01 - Readability Plan Steps 6-10 Recalibration (Post-Phase 5)
 
 - What changed:
-  - Updated `docs/plans/cesr/cesr-parser-readability-improvement-plan.md` sections
-    6-10 to match the current readability baseline and completed Phase 5 work.
+  - Updated `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
+    sections 6-10 to match the current readability baseline and completed Phase
+    5 work.
   - Clarified Point 6 as the immediate next active implementation step
     (diagnostics-focused, no new fallback semantics).
   - Narrowed Point 7 to targeted syntax-artifact boundary extraction in

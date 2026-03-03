@@ -79,5 +79,4 @@ Release/versioning and maintainer workflows are documented in:
 
 ## License
 
-Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See
-`LICENSE`.
+Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See `LICENSE`.

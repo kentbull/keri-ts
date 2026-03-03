@@ -61,5 +61,5 @@ tufa annotate --in mystream.cesr --pretty
 
 ## License
 
-Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See the
-top-level `LICENSE` file in this repository.
+Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See the top-level
+`LICENSE` file in this repository.

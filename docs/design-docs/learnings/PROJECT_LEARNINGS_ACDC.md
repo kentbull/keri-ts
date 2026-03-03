@@ -23,8 +23,8 @@ Use this doc for:
 
 ## Cross-Topic Design References
 
-1. DB architecture and parity contract (required context for credential indexing and
-   storage-shape decisions that depend on duplicate ordering semantics):
+1. DB architecture and parity contract (required context for credential indexing
+   and storage-shape decisions that depend on duplicate ordering semantics):
    - `docs/design-docs/db/db-architecture.md`
 
 ## Planned Sections
@@ -53,5 +53,5 @@ Use this doc for:
 - Contracts/plans touched:
   - `docs/design-docs/db/db-architecture.md`
 - Risks/TODO:
-  - Revisit ACDC-specific DB mappings against this design once D2/D3 parity
-    work lands.
+  - Revisit ACDC-specific DB mappings against this design once D2/D3 parity work
+    lands.

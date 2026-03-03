@@ -23,8 +23,9 @@ Use this doc for:
 
 ## Cross-Topic Design References
 
-1. DB architecture and parity contract (required context for mailbox/topic/receipt
-   indexing behaviors that rely on duplicate and insertion-order semantics):
+1. DB architecture and parity contract (required context for
+   mailbox/topic/receipt indexing behaviors that rely on duplicate and
+   insertion-order semantics):
    - `docs/design-docs/db/db-architecture.md`
 
 ## Planned Sections
