@@ -2,23 +2,45 @@ import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
-import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
-import type { GroupEntry } from "./primitive.ts";
+import type { CounterGroupLike } from "./primitive.ts";
+import { parseStructor, Structor } from "./structor.ts";
 
-const BLINDER_CODES = new Set([
+const BLINDER_CODES = new Set<string>([
   CtrDexV2.BlindedStateQuadruples,
   CtrDexV2.BigBlindedStateQuadruples,
   CtrDexV2.BoundStateSextuples,
   CtrDexV2.BigBoundStateSextuples,
 ]);
 
-export interface Blinder {
-  code: string;
-  name: string;
-  count: number;
-  items: readonly GroupEntry[];
-  raw: Uint8Array;
-  consumed: number;
+/** True when counter code belongs to blinded/bound state tuple families. */
+export function isBlinderCode(code: string): boolean {
+  return BLINDER_CODES.has(code);
+}
+
+/**
+ * Blinded-state structor primitive.
+ *
+ * KERIpy substance: `Blinder` materializes blinded/bound state tuple groups
+ * used for blindable ACDC/TEL state disclosures.
+ */
+export class Blinder extends Structor {
+  constructor(init: Structor | ConstructorParameters<typeof Structor>[0]) {
+    const structor = init instanceof Structor ? init : new Structor(init);
+    super(structor);
+    if (!isBlinderCode(this.code)) {
+      throw new UnknownCodeError(
+        `Expected blinder group code, got ${this.code}`,
+      );
+    }
+  }
+
+  /** Hydrate a `Blinder` from an already parsed counter-group node. */
+  static override fromGroup(
+    group: CounterGroupLike,
+    sourceDomain: Extract<ColdCode, "txt" | "bny"> = "txt",
+  ): Blinder {
+    return new Blinder({ group, sourceDomain });
+  }
 }
 
 /** Parse and validate blinded-state attachment groups. */
@@ -27,18 +49,7 @@ export function parseBlinder(
   version: Versionage,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Blinder {
-  const parsed = parseAttachmentDispatch(input, version, cold);
-  if (!BLINDER_CODES.has(parsed.group.code)) {
-    throw new UnknownCodeError(
-      `Expected blinder group code, got ${parsed.group.code}`,
-    );
-  }
-  return {
-    code: parsed.group.code,
-    name: parsed.group.name,
-    count: parsed.group.count,
-    items: parsed.group.items,
-    raw: parsed.group.raw,
-    consumed: parsed.consumed,
-  };
+  return new Blinder(
+    parseStructor(input, version, cold, BLINDER_CODES, "blinder"),
+  );
 }

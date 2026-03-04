@@ -45,6 +45,7 @@ export * from "./primitives/blinder.ts";
 export * from "./primitives/mediar.ts";
 export * from "./primitives/compactor.ts";
 export * from "./primitives/aggor.ts";
+export * from "./primitives/structor.ts";
 export * from "./primitives/registry.ts";
 export * from "./adapters/async-iterable.ts";
 export * from "./adapters/effection.ts";

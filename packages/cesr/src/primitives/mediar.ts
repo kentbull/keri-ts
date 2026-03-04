@@ -2,21 +2,43 @@ import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
-import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
-import type { GroupEntry } from "./primitive.ts";
+import type { CounterGroupLike } from "./primitive.ts";
+import { parseStructor, Structor } from "./structor.ts";
 
-const MEDIAR_CODES = new Set([
+const MEDIAR_CODES = new Set<string>([
   CtrDexV2.TypedMediaQuadruples,
   CtrDexV2.BigTypedMediaQuadruples,
 ]);
 
-export interface Mediar {
-  code: string;
-  name: string;
-  count: number;
-  items: readonly GroupEntry[];
-  raw: Uint8Array;
-  consumed: number;
+/** True when counter code belongs to typed-media tuple families. */
+export function isMediarCode(code: string): boolean {
+  return MEDIAR_CODES.has(code);
+}
+
+/**
+ * Typed-media structor primitive.
+ *
+ * KERIpy substance: `Mediar` materializes media metadata/value tuple groups
+ * used in blinded media attachments and related CESR payload envelopes.
+ */
+export class Mediar extends Structor {
+  constructor(init: Structor | ConstructorParameters<typeof Structor>[0]) {
+    const structor = init instanceof Structor ? init : new Structor(init);
+    super(structor);
+    if (!isMediarCode(this.code)) {
+      throw new UnknownCodeError(
+        `Expected mediar group code, got ${this.code}`,
+      );
+    }
+  }
+
+  /** Hydrate a `Mediar` from an already parsed counter-group node. */
+  static override fromGroup(
+    group: CounterGroupLike,
+    sourceDomain: Extract<ColdCode, "txt" | "bny"> = "txt",
+  ): Mediar {
+    return new Mediar({ group, sourceDomain });
+  }
 }
 
 /** Parse and validate typed-media attachment groups. */
@@ -25,18 +47,7 @@ export function parseMediar(
   version: Versionage,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Mediar {
-  const parsed = parseAttachmentDispatch(input, version, cold);
-  if (!MEDIAR_CODES.has(parsed.group.code)) {
-    throw new UnknownCodeError(
-      `Expected mediar group code, got ${parsed.group.code}`,
-    );
-  }
-  return {
-    code: parsed.group.code,
-    name: parsed.group.name,
-    count: parsed.group.count,
-    items: parsed.group.items,
-    raw: parsed.group.raw,
-    consumed: parsed.consumed,
-  };
+  return new Mediar(
+    parseStructor(input, version, cold, MEDIAR_CODES, "mediar"),
+  );
 }

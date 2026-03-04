@@ -61,6 +61,23 @@ This keeps context focused and avoids long-thread drift.
    (`Matter`, `Indexer`, `Counter`) and verifier/signature primitives
    (`Verfer`/`Cigar`/`Diger`/`Siger`) so all classes/functions touched in the
    primitive-first wave have explicit maintainer docs.
+3. Primitive-per-file CESR test migration is now complete (one test file per
+   primitive module) with aggregate primitive suites reduced to smoke coverage,
+   and parser wrapper-shape tests updated to assert primitive-first graph types
+   (`CounterGroup`/`UnknownPrimitive`/tuple narrowing) instead of legacy wrapper
+   object fields.
+4. Primitive serialization parity gaps discovered during migration were closed:
+   `Matter` qb2 raw extraction now matches text exfil semantics for non-zero
+   code-pad widths, and `Dater.dts` now follows KERIpy text projection behavior
+   from qualified token payload text.
+5. Annotate native-body rendering now tokenizes from raw native body bytes so
+   annotate/denot output remains deterministic and parseable under primitive
+   hydration, and CESR package baseline is green at `228 passed, 0 failed`
+   (`deno task test` in `packages/cesr`).
+6. Structor-family and Serder-integration tests were expanded with
+   KERIpy-main-derived vectors and nested wrapper projection assertions, raising
+   CESR package baseline to `244 passed, 0 failed` while explicitly tracking a
+   follow-up on canonical v2 tuple-family counter-count parity.
 
 ### 2026-03-03
 

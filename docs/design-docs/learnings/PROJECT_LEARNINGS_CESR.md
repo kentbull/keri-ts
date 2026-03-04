@@ -1162,9 +1162,48 @@ Persistent CESR parser memory for `keri-ts`.
   - Command: `deno task test` (in `packages/cesr`)
   - Result: `228 passed, 0 failed`
 - Contracts/plans touched:
-  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md` (no semantic
-    change required; contract coverage restored by migrated tests)
+  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md` (no semantic change
+    required; contract coverage restored by migrated tests)
 - Risks/TODO:
   - Interop/KLI flows may still be pinned to KERIpy `v1.3.4` while primitive
     parity work tracks KERIpy `main`; keep this split explicit in future test
     expectations until upstream main stabilizes for those flows.
+
+### 2026-03-04 - Structor Family + Serder Integration Test Expansion
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Added KERIpy-main-derived structor vectors to
+    `packages/cesr/test/fixtures/keripy-primitive-vectors.ts` (`Aggor`
+    empty-list baseline, `Sealer`/`Blinder`/`Mediar` payload vectors).
+  - Expanded per-primitive suites:
+    - `test/unit/primitives/structor.test.ts`
+    - `test/unit/primitives/aggor.test.ts`
+    - `test/unit/primitives/sealer.test.ts`
+    - `test/unit/primitives/blinder.test.ts`
+    - `test/unit/primitives/mediar.test.ts`
+  - Expanded `test/unit/serder-classes.test.ts` with:
+    - `SerderKERI`/`SerderACDC` constructor-domain rejection coverage
+    - nested-wrapper structor projection coverage (`sealer` + `other`)
+    - malformed JSON decode error wrapping coverage.
+- Why:
+  - Increase KERIpy-reference evidence depth for the newly introduced `Structor`
+    family and lock parser-to-serder integration behavior through typed
+    projection assertions.
+- Tests:
+  - Command:
+    `deno test test/unit/primitives/structor.test.ts test/unit/primitives/aggor.test.ts test/unit/primitives/sealer.test.ts test/unit/primitives/blinder.test.ts test/unit/primitives/mediar.test.ts test/unit/serder-classes.test.ts`
+    (in `packages/cesr`)
+  - Result: `25 passed, 0 failed`
+  - Command: `deno test test/unit/primitives` (in `packages/cesr`)
+  - Result: `126 passed, 0 failed`
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `244 passed, 0 failed`
+- Contracts/plans touched:
+  - none (test/fixture scope only)
+- Risks/TODO:
+  - Canonical KERIpy enclosed v2 vectors for some tuple-family counters
+    (`-W/-a/-c`) currently require counter normalization in TS tests; parser
+    parity for native v2 quadlet-count semantics on these tuple families should
+    be closed in a follow-up parser workstream.

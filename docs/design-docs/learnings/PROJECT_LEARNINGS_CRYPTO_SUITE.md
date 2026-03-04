@@ -134,3 +134,30 @@ Use this doc for:
   - Keep constructor-code auto-selection parity (for variable-length decimal
     encodings) tracked as an explicit follow-up where TS contract remains
     narrower than full KERIpy convenience behavior.
+
+### 2026-03-04 - Structor-Family Primitive Test Deepening
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+- What changed:
+  - Added KERIpy-main-derived structor payload vectors for
+    `Sealer`/`Blinder`/`Mediar` and expanded their per-primitive tests to assert
+    class hydration against those payloads.
+  - Expanded `Structor` and `Aggor` tests with qb64/qb2 group projection
+    assertions and KERIpy empty-list baseline vector coverage.
+- Why:
+  - Strengthen parity confidence for typed attachment primitive families beyond
+    smoke-level synthetic vectors.
+- Tests:
+  - Command:
+    `deno test test/unit/primitives/structor.test.ts test/unit/primitives/aggor.test.ts test/unit/primitives/sealer.test.ts test/unit/primitives/blinder.test.ts test/unit/primitives/mediar.test.ts`
+    (in `packages/cesr`)
+  - Result: `19 passed, 0 failed`
+  - Command: `deno test test/unit/primitives` (in `packages/cesr`)
+  - Result: `126 passed, 0 failed`
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Full canonical-v2 counter-count parity for structor tuple families remains a
+    parser-layer follow-up (tests currently use normalized counters for these
+    payloads).

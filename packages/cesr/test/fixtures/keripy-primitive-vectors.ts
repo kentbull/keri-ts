@@ -2,7 +2,7 @@
  * KERIpy `main` primitive vectors and codex constants.
  *
  * Source baseline:
- * - repo: /Users/kbull/code/keri/kentbull/keripy
+ * - repo: /Users/kbull/code/keri/wot/keripy
  * - branch: main
  * - commit: 5a5597e8b7f7
  *
@@ -34,8 +34,7 @@ export const KERIPY_MATTER_VECTORS = {
   verferEcdsaR1: "1AAJA3cK_P2CDlh-_EMFPvyqTPI1POkw-dr14DANx5JEXDCZ",
   cigarEcdsaR1:
     "0ICM-rRAAdKrSrzFlouiZXbNUZ07QMM1IXOaG-gv4TAo4QeQCKZC1z82jJYy_wFkAxgIhbikl3a-nOTXxecF2lEj",
-  saiderAcdc:
-    "EMRvS7lGxc1eDleXBkvSHkFs8vUrslRcla6UXOJdcczw",
+  saiderAcdc: "EMRvS7lGxc1eDleXBkvSHkFs8vUrslRcla6UXOJdcczw",
   numberShort: "MPd_",
   seqnerZero: "0AAAAAAAAAAAAAAAAAAAAAAA",
   seqnerFive: "0AAAAAAAAAAAAAAAAAAAAAAF",
@@ -97,4 +96,21 @@ export const KERIPY_CODE_VECTORS = {
   decrypterCode: "O",
   taggerCodeIlk: "X",
   verserCodes: ["Y", "0O"],
+} as const;
+
+/** Selected Structor/Aggor family vectors from `tests/core/test_structing.py` + `test_mapping.py`. */
+export const KERIPY_STRUCTOR_VECTORS = {
+  aggorEmptyList: "-JAA",
+  sealerTypedDigestEnclosed:
+    "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  sealerTypedDigestPayload:
+    "YOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  blinderBlindStateEnclosed:
+    "-aAjEBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0Missued",
+  blinderBlindStatePayload:
+    "EBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0Missued",
+  mediarTypedMediaEnclosed:
+    "-cAjEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
+  mediarTypedMediaPayload:
+    "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
 } as const;
