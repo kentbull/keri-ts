@@ -11,7 +11,7 @@ import {
 import { sniff } from "../parser/cold-start.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
-import { Matter } from "../primitives/matter.ts";
+import { Matter, parseMatter } from "../primitives/matter.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import {
   isCounterGroupLike,
@@ -300,18 +300,46 @@ function renderNativeBody(
     options,
   );
 
-  for (const field of frame.body.native?.fields ?? []) {
-    const label = nativeLabelName(field.label);
-    const primitive = field.primitive;
-    const primitiveComment = primitive instanceof Counter
-      ? `${counterCodeNameForVersion(primitive.code, version)} counter`
-      : primitive instanceof Indexer
-      ? `Indexer ${primitive.code}`
-      : matterCodeName(primitive.code);
-    const comment = label
-      ? `${label} (${primitiveComment})`
-      : primitiveComment;
-    emitLine(lines, primitive.qb64, comment, options.indent, options);
+  const unit = domain === "bny" ? 3 : 4;
+  const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  const payloadSize = counter.count * unit;
+  const end = Math.min(raw.length, headerSize + payloadSize);
+  let offset = headerSize;
+
+  while (offset < end) {
+    const slice = raw.slice(offset, end);
+    try {
+      const nestedCounter = parseCounterCompat(slice, version, domain);
+      const nestedCounterSize = domain === "bny"
+        ? nestedCounter.fullSizeB2
+        : nestedCounter.fullSize;
+      emitLine(
+        lines,
+        nestedCounter.qb64,
+        `${counterCodeNameForVersion(nestedCounter.code, version)} counter`,
+        options.indent,
+        options,
+      );
+      offset += nestedCounterSize;
+      continue;
+    } catch (error) {
+      if (!isRecoverableParseError(error)) {
+        throw error;
+      }
+    }
+
+    const matter = parseMatter(slice, domain);
+    const matterSize = domain === "bny" ? matter.fullSizeB2 : matter.fullSize;
+    const field = frame.body.native?.fields.find((candidate) =>
+      candidate.primitive.qb64 === matter.qb64
+    );
+    const label = field ? nativeLabelName(field.label) : null;
+    const primitiveComment = matter instanceof Indexer
+      ? `Indexer ${matter.code}`
+      : matterCodeName(matter.code);
+    const comment = label ? `${label} (${primitiveComment})` : primitiveComment;
+    emitLine(lines, matter.qb64, comment, options.indent, options);
+    offset += matterSize;
   }
 }
 

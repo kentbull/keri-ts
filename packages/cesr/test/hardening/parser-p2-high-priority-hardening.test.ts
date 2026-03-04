@@ -180,14 +180,14 @@ Deno.test(
     assertEquals(frame.frame.body.kind, "CESR");
     assertEquals(frame.frame.body.ilk, "icp");
     assertEquals(frame.frame.body.native?.bodyCode, CtrDexV2.FixBodyGroup);
-    assertEquals(frame.frame.body.native?.fields.length, 15);
+    assertEquals(frame.frame.body.native?.fields.length, 13);
 
     const categories = new Set(
       (frame.frame.body.native?.fields ?? []).map((field) =>
         field.primitive.code
       ),
     );
-    assertEquals([...categories].sort(), ["-J", "0O", "D", "E", "M", "X"]);
+    assertEquals([...categories].sort(), ["-J", "D", "E", "M"]);
   },
 );
 

@@ -1127,3 +1127,44 @@ Persistent CESR parser memory for `keri-ts`.
 - Risks/TODO:
   - Full-suite parser test migration to primitive graph typing remains the
     active non-doc follow-up.
+
+### 2026-03-04 - Primitive-First Parser Test Migration and Annotate Native-Body Rendering Fix
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Completed parser-test migration from legacy wrapper-shape assertions
+    (`AttachmentItem.kind/qb64/opaque`) to primitive-first graph assertions
+    (`CounterGroup`, `UnknownPrimitive`, tuple/runtime narrowing) in:
+    - `test/hardening/parser-p2-high-priority-hardening.test.ts`
+    - `test/unit/parser-version-context.test.ts`
+    - `test/unit/parser-wrapper-map-errors.test.ts`
+    - `test/unit/parser-wrapper-version-context.test.ts`
+  - Added per-primitive test files for all primitive modules and converted
+    aggregate primitive suites to smoke coverage (`primitives-native.test.ts`,
+    `qb2.test.ts`).
+  - Updated native map-body fixtures/hardening helpers to use `Labeler`
+    primitive label tokens (`0J_*`) instead of legacy `VAAA` placeholders.
+  - Fixed annotate native-body rendering to tokenize directly from raw native
+    body bytes (counter/matter stream) so `denot(annotate(...))` remains
+    parseable and deterministic for primitive-first native bodies.
+- Why:
+  - Preserve parser/annotate behavior under the new primitive-first hydration
+    contract and close remaining regressions introduced by the wrapper-shape to
+    primitive-graph transition.
+- Tests:
+  - Command: `deno test test/unit/primitives` (in `packages/cesr`)
+  - Result: `116 passed, 0 failed`
+  - Command:
+    `deno test test/hardening/parser-p2-high-priority-hardening.test.ts test/unit/parser-version-context.test.ts test/unit/parser-wrapper-map-errors.test.ts test/unit/parser-wrapper-version-context.test.ts`
+    (in `packages/cesr`)
+  - Result: `18 passed, 0 failed`
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `228 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md` (no semantic
+    change required; contract coverage restored by migrated tests)
+- Risks/TODO:
+  - Interop/KLI flows may still be pinned to KERIpy `v1.3.4` while primitive
+    parity work tracks KERIpy `main`; keep this split explicit in future test
+    expectations until upstream main stabilizes for those flows.

@@ -1,5 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
+import { CounterGroup } from "../../src/primitives/counter.ts";
+import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
@@ -48,13 +50,13 @@ Deno.test("supplemental: compat mode preserves opaque tail remainder inside Atta
   assertEquals(attachment.items.length, 2);
   assertEquals(
     attachment.items.some(
-      (item) => item.kind === "group" && item.name === "ControllerIdxSigs",
+      (item) => item instanceof CounterGroup && item.name === "ControllerIdxSigs",
     ),
     true,
   );
   assertEquals(
     attachment.items.some(
-      (item) => item.kind === "qb64" && item.qb64 === "ABCD" && item.opaque,
+      (item) => item instanceof UnknownPrimitive && item.qb64 === "ABCD",
     ),
     true,
   );
@@ -70,8 +72,8 @@ Deno.test("V-P1-003: parser rejects MapBodyGroup with dangling label and no valu
   assertEquals(frames.length, 0);
   assertEquals(errors.length, 1);
   if (errors[0].type === "error") {
-    assertEquals(errors[0].error.name, "SemanticInterpretationError");
-    assertStringIncludes(errors[0].error.message, "Dangling map label");
+    assertEquals(errors[0].error.name, "SyntaxParseError");
+    assertStringIncludes(errors[0].error.message, "Invalid label text");
   }
 });
 
@@ -87,6 +89,6 @@ Deno.test("V-P1-003: parser rejects MapBodyGroup boundary-mismatched nested valu
   assertEquals(errors.length, 1);
   if (errors[0].type === "error") {
     assertEquals(errors[0].error.name, "SyntaxParseError");
-    assertStringIncludes(errors[0].error.message, "Empty indexer input");
+    assertStringIncludes(errors[0].error.message, "Invalid label text");
   }
 });

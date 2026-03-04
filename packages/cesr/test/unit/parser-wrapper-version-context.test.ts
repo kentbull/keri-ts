@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
+import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import {
@@ -96,9 +97,9 @@ Deno.test("V-P1-010: latest genus-version inside wrapper payload controls subseq
 
     const first = attachmentGroup.items[0];
     const second = attachmentGroup.items[1];
-    assertEquals(first.kind, "group");
-    assertEquals(second.kind, "group");
-    if (first.kind === "group" && second.kind === "group") {
+    assertEquals(first instanceof CounterGroup, true);
+    assertEquals(second instanceof CounterGroup, true);
+    if (first instanceof CounterGroup && second instanceof CounterGroup) {
       assertEquals(first.name, "ControllerIdxSigs");
       assertEquals(first.code, CtrDexV1.ControllerIdxSigs);
       assertEquals(second.name, "ControllerIdxSigs");

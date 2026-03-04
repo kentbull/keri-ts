@@ -105,3 +105,32 @@ Use this doc for:
 - Risks/TODO:
   - Documentation coverage is now complete for this wave; behavioral parity
     risks remain in pending parser test migration, not in primitive docs.
+
+### 2026-03-04 - Primitive Serialization Parity Fixes During Per-Primitive Test Migration
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+- What changed:
+  - Fixed `Matter` qb2 hydration parity for codes with non-zero code-pad width
+    by aligning binary exfil raw-byte derivation with text exfil semantics
+    (`parseMatterFromBinaryData` now applies equivalent prepad handling before
+    raw extraction).
+  - Aligned `Dater.dts` projection with KERIpy behavior by deriving datetime
+    text from qualified token text (`qb64` payload slice) instead of decoding
+    `.raw` bytes as UTF-8.
+  - Updated per-primitive tests to cover these paths explicitly (`Number`,
+    `Seqner`, `Tholder`, `Dater`) in txt/qb2 parity assertions.
+- Why:
+  - Close newly surfaced primitive parity gaps found while converting from
+    aggregate primitive suites to dedicated per-primitive files.
+- Tests:
+  - Command: `deno test test/unit/primitives` (in `packages/cesr`)
+  - Result: `116 passed, 0 failed`
+  - Command: `deno task test` (in `packages/cesr`)
+  - Result: `228 passed, 0 failed`
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Keep constructor-code auto-selection parity (for variable-length decimal
+    encodings) tracked as an explicit follow-up where TS contract remains
+    narrower than full KERIpy convenience behavior.
