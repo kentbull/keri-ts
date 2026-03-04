@@ -5,6 +5,7 @@ import {
 } from "../../src/core/parser-engine.ts";
 import { concatBytes, decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
+import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import {
@@ -182,7 +183,9 @@ Deno.test(
     assertEquals(frame.frame.body.native?.fields.length, 15);
 
     const categories = new Set(
-      (frame.frame.body.native?.fields ?? []).map((field) => field.code),
+      (frame.frame.body.native?.fields ?? []).map((field) =>
+        field.primitive.code
+      ),
     );
     assertEquals([...categories].sort(), ["-J", "0O", "D", "E", "M", "X"]);
   },
@@ -361,7 +364,7 @@ Deno.test(
       const items = compatFrames[0].frame.attachments[0].items;
       assert(
         items.some((item) =>
-          item.kind === "qb64" && item.qb64 === "ABCD" && item.opaque
+          item instanceof UnknownPrimitive && item.qb64 === "ABCD"
         ),
       );
     }

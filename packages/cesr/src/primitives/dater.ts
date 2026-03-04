@@ -1,6 +1,9 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import {
+  MATTER_CODE_NAMES,
+  MATTER_SIZES,
+} from "../tables/matter.tables.generated.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
 /** Project compact CESR datetime encoding to RFC3339/ISO-8601 text form. */
@@ -27,7 +30,11 @@ export class Dater extends Matter {
   }
 
   get dts(): string {
-    return new TextDecoder().decode(this.raw);
+    const sizage = MATTER_SIZES.get(this.code);
+    if (!sizage) {
+      throw new UnknownCodeError(`Unknown dater code ${this.code}`);
+    }
+    return this.qb64.slice(sizage.hs);
   }
 
   get iso8601(): string {

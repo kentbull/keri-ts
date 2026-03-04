@@ -163,7 +163,8 @@ function parseMatterFromBinaryData(input: Uint8Array): MatterData {
   }
 
   const qb64 = codeB2ToB64(qb2, fs);
-  const raw = decodeB64(qb64.slice(cs)).slice(sizage.ls);
+  const paw = decodeB64("A".repeat(ps) + qb64.slice(cs));
+  const raw = paw.slice(ps + sizage.ls);
 
   return {
     code: hard,
