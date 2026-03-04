@@ -56,3 +56,30 @@ Use this doc for:
 - Risks/TODO:
   - Validate infra-specific DB slices against this design during Gate F/G and
     Gate H parity closure.
+
+### 2026-03-03 - CI Formatter Policy Locked to `deno fmt`
+
+- Topic docs updated:
+  - `.github/workflows/ci.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/cesr-npm-release.yml`
+  - `.github/workflows/changesets-version-pr.yml`
+- What changed:
+  - Added a dedicated CI workflow that runs `deno fmt --check` on PRs and
+    pushes to `master`.
+  - Added a workflow-policy guard that fails if CI workflow files reference
+    non-Deno formatters (`prettier`, `biome`, `dprint`).
+  - Added explicit `deno fmt --check` steps to existing release/version
+    workflows.
+- Why:
+  - Ensure formatting policy is enforced consistently across CI entry points and
+    prevent accidental formatter drift.
+- Tests:
+  - Command: `rg -n "deno fmt --check|prettier|biome|dprint" .github/workflows/*.yml`
+  - Result: `deno fmt --check` present in all workflow paths; non-Deno
+    formatter references only appear in the new policy-guard regex.
+- Contracts/plans touched:
+  - N/A
+- Risks/TODO:
+  - If additional workflow files are added later, they should keep this
+    formatter policy and pass the guard.

@@ -125,15 +125,12 @@ KERIpy usage:
 
 ## Serialization Families and Intent
 
-1. `Cesr*`:
-   CESR primitive object serialization/deserialization.
-2. `CatCesr*`:
-   concatenated CESR primitive tuple payloads in one stored value.
-3. `B64*`:
-   qb64-focused tuple/value handling for identifier/index-heavy paths when full
-   object rehydration is unnecessary.
-4. `Komer`:
-   key-to-structured-object mappings for non-CESR dataclass-like records.
+1. `Cesr*`: CESR primitive object serialization/deserialization.
+2. `CatCesr*`: concatenated CESR primitive tuple payloads in one stored value.
+3. `B64*`: qb64-focused tuple/value handling for identifier/index-heavy paths
+   when full object rehydration is unnecessary.
+4. `Komer`: key-to-structured-object mappings for non-CESR dataclass-like
+   records.
 
 Design intent:
 
@@ -148,7 +145,7 @@ Design intent:
    are relied on by replay/escrow logic.
 3. Treat key-order semantics as protocol behavior, not implementation detail.
    This is critically important since KERI and ACDC data structures depend on
-   insertion ordering for consistent self addressing identifier (SAID) and 
+   insertion ordering for consistent self addressing identifier (SAID) and
    digest computation.
 
 ## KERIpy vs `keri-ts`: Current Architectural Differences
@@ -230,15 +227,15 @@ These invariants are mandatory for parity-compatible DB behavior in `keri-ts`.
 
 ## Implementation Policy for `keri-ts`
 
-1. Parity-first:
-   complete LMDB parity behavior before provider abstraction implementation.
-2. Abstraction correctness over convenience:
-   do not collapse distinct families (`IoDup` vs `IoSet`) if semantics differ.
-3. Backend API translation:
-   when using `lmdb-js` range APIs, preserve KERIpy cursor behavior contracts by
-   explicit boundary conditions and mutation discipline.
-4. Performance decisions:
-   optimize only after parity tests prove no behavioral regressions.
+1. Parity-first: complete LMDB parity behavior before provider abstraction
+   implementation.
+2. Abstraction correctness over convenience: do not collapse distinct families
+   (`IoDup` vs `IoSet`) if semantics differ.
+3. Backend API translation: when using `lmdb-js` range APIs, preserve KERIpy
+   cursor behavior contracts by explicit boundary conditions and mutation
+   discipline.
+4. Performance decisions: optimize only after parity tests prove no behavioral
+   regressions.
 
 ## Decision Matrix for New DB Mappings
 

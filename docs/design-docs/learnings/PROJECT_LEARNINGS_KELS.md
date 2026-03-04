@@ -43,8 +43,8 @@ Use this doc for:
 - What changed:
   - Expanded the reconciliation scope from init/incept-only to a usable
     bootstrap arc aligned with KERIpy `scripts/demo/basic/challenge.sh`.
-  - Added parity gates for `list`/`aid` visibility checks, `ends add`,
-    OOBI generate/resolve, direct+mailbox transport interop, and challenge
+  - Added parity gates for `list`/`aid` visibility checks, `ends add`, OOBI
+    generate/resolve, direct+mailbox transport interop, and challenge
     generate/respond/verify.
   - Prioritized phase ordering so early work lands a two-controller usable
     interop baseline before broader feature domains (rotation/witness/multisig/
@@ -52,9 +52,9 @@ Use this doc for:
   - Preserved explicit path policy: default `.tufa` isolation plus opt-in KLI
     compatibility mode (`.keri`) via CLI/config.
 - Why:
-  - Move from narrow parity toward a practical interop harness that can
-    validate meaningful controller-to-controller workflows and de-risk later
-    KEL/comms features.
+  - Move from narrow parity toward a practical interop harness that can validate
+    meaningful controller-to-controller workflows and de-risk later KEL/comms
+    features.
 - Tests:
   - Command: N/A (planning/documentation update only)
   - Result: N/A
@@ -102,9 +102,9 @@ Use this doc for:
   - Generated initial K/V parity inventory CSV from
     `docs/design-docs/db/lmdb-dumper.md` with domain, key, class, schemas,
     proposed TS target, phase, status, and priority columns.
-  - Seeded current-state statuses (`Partial` for currently present `LMDBer`,
-    key helpers, `Baser`, and existing Keeper/Baser key slices) and left
-    remaining inventory rows `Missing` by default.
+  - Seeded current-state statuses (`Partial` for currently present `LMDBer`, key
+    helpers, `Baser`, and existing Keeper/Baser key slices) and left remaining
+    inventory rows `Missing` by default.
   - Linked these artifacts directly into the DB reconciliation plan D0 section
     as published skeleton deliverables.
 - Why:
@@ -149,8 +149,8 @@ Use this doc for:
   - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
   - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
 - Risks/TODO:
-  - Gate A-G classification currently uses a heuristic (`P1/Partial`) and
-    should be refined to explicit per-gate mapping before status promotions.
+  - Gate A-G classification currently uses a heuristic (`P1/Partial`) and should
+    be refined to explicit per-gate mapping before status promotions.
 
 ### 2026-03-02 - Gate A-G Worklist Explicit Gate Mapping Added
 
@@ -161,8 +161,8 @@ Use this doc for:
 - What changed:
   - Added explicit per-row gate mapping in the Gate A-G K/V worklist via new
     columns: `gate` and `gate_rationale`.
-  - Mapped all current Gate A-G rows to concrete gate sets (e.g. `A|B|C`,
-    `A|E`, `A|F|G`) with rationale text describing why each K/V row belongs.
+  - Mapped all current Gate A-G rows to concrete gate sets (e.g. `A|B|C`, `A|E`,
+    `A|F|G`) with rationale text describing why each K/V row belongs.
   - Updated matrix/reconciliation docs to describe this as explicit mapping,
     replacing prior heuristic wording in the matrix artifact notes.
 - Why:
@@ -201,9 +201,11 @@ Use this doc for:
   - Starting with low-risk `dbing.py` helper parity provides immediate progress
     into P1 without cross-module churn.
 - Tests:
-  - Command: `deno test --allow-all --unstable-ffi test/unit/db/core/keys.test.ts test/unit/db/core/lmdber-helpers.test.ts`
+  - Command:
+    `deno test --allow-all --unstable-ffi test/unit/db/core/keys.test.ts test/unit/db/core/lmdber-helpers.test.ts`
   - Result: `5 passed, 0 failed`
-  - Command: `deno test --allow-all --unstable-ffi test/integration/app/interop-gates-harness.test.ts`
+  - Command:
+    `deno test --allow-all --unstable-ffi test/integration/app/interop-gates-harness.test.ts`
   - Result: `2 passed, 0 failed`
 - Contracts/plans touched:
   - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
@@ -221,10 +223,10 @@ Use this doc for:
   - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
   - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
 - What changed:
-  - Revalidated Phase 2 sequencing and marked P0/D0 as complete for their
-    stated exit criteria, with D1 as the active workstream.
-  - Implemented additional `dbing.py` core parity in `LMDBer`:
-    `cntTop`, `cntAll`, and `delTop`.
+  - Revalidated Phase 2 sequencing and marked P0/D0 as complete for their stated
+    exit criteria, with D1 as the active workstream.
+  - Implemented additional `dbing.py` core parity in `LMDBer`: `cntTop`,
+    `cntAll`, and `delTop`.
   - Tightened lifecycle parity by stamping `__version__` metadata on temp/new
     writeable DB opens in `LMDBer.reopen`, matching KERIpy temp/new DB intent.
   - Added db-core parity tests for lifecycle reopen/version and branch
@@ -287,3 +289,102 @@ Use this doc for:
 - Risks/TODO:
   - Keep invariant clauses aligned with future D1-D7 parity evidence and any
     documented KERIpy divergence decisions.
+
+### 2026-03-03 - D1 `LMDBer` Core Family Parity Expansion
+
+- Topic docs updated:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- What changed:
+  - Expanded `keri-ts` `LMDBer` to cover the broader `dbing.py` core method
+    families required for downstream Suber migration: `On*`/`OnAll*`,
+    `IoSet*`/`OnIoSet*`, `dup*`, `IoDup*`, and `OnIoDup*` APIs.
+  - Added new parity unit coverage for ordinal-key semantics, io-set semantics,
+    and dup/io-dup semantics in addition to prior lifecycle/branch coverage.
+- Why:
+  - D2 Suber migration requires these DB-core primitives; they are part of D1
+    scope and not deferred to later phases.
+- Tests:
+  - Command:
+    `deno test --allow-all --unstable-ffi packages/keri/test/unit/db/core/keys.test.ts packages/keri/test/unit/db/core/lmdber-helpers.test.ts packages/keri/test/unit/db/core/lmdber-core-parity.test.ts`
+  - Result: `11 passed, 0 failed`
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- Risks/TODO:
+  - `LMDBer` remains `Partial` pending deeper edge-case parity sweeps and
+    evidence expansion against KERIpy behavior under mixed-key and backward-iter
+    corner cases.
+
+### 2026-03-03 - D1 Oracle Pass (Backward Iterators + Mixed-Key Edges)
+
+- Topic docs updated:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- What changed:
+  - Added strict KERIpy-oracle vectors for tricky backward/mixed-key behavior in
+    `OnIoSet` and `OnIoDup` iterator families.
+  - Added a unit-test representation sweep to ensure every current `LMDBer`
+    method has at least one direct unit-test call site.
+  - Added direct unit coverage for `createLMDBer` factory alias.
+- Why:
+  - Remove ambiguity before manual reconciliation review and make D1 method
+    surface auditable at function level.
+- Tests:
+  - Command:
+    `deno test --allow-all --unstable-ffi packages/keri/test/unit/db/core/keys.test.ts packages/keri/test/unit/db/core/lmdber-helpers.test.ts packages/keri/test/unit/db/core/lmdber-core-parity.test.ts`
+  - Result: `14 passed, 0 failed`
+  - Coverage check (method-name scan): `81` LMDBer methods, `0` missing from
+    test references.
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- Risks/TODO:
+  - Representation coverage is now complete, but behavioral equivalence still
+    needs continued method-by-method oracle vectors for non-tricky families as
+    D1 closes.
+
+### 2026-03-03 - LMDBer Helper/Test Doc Pass
+
+- Topic docs updated:
+  - `packages/keri/src/db/core/lmdber.ts`
+  - `packages/keri/test/unit/db/core/lmdber-core-parity.test.ts`
+  - `packages/keri/test/unit/db/core/lmdber-helpers.test.ts`
+- What changed:
+  - Added concise maintainer-oriented docs to the top `LMDBer` helper layer
+    (`toBytes`, byte dedupe helpers, and IoDup proem helpers), including short
+    examples where practical.
+  - Added concise intent comments in coverage/oracle unit tests to make parity
+    scope and oracle provenance explicit for manual review.
+- Why:
+  - Improve readability for method-by-method reconciliation and reduce context
+    loss while reviewing parity logic.
+- Tests:
+  - Command:
+    `deno test --allow-all --unstable-ffi packages/keri/test/unit/db/core/keys.test.ts packages/keri/test/unit/db/core/lmdber-helpers.test.ts packages/keri/test/unit/db/core/lmdber-core-parity.test.ts`
+  - Result: `14 passed, 0 failed`
+- Contracts/plans touched:
+  - N/A (documentation/readability update only)
+- Risks/TODO:
+  - Continue keeping helper/test docs synchronized as D1 edge-case vectors
+    expand.
+
+### 2026-03-03 - Post-Gate Review Flag for `cntTop`/`cntAll`
+
+- Topic docs updated:
+  - `packages/keri/src/db/core/lmdber.ts`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- What changed:
+  - Added explicit review flags in code/docs to re-evaluate `LMDBer.cntTop` and
+    `LMDBer.cntAll` after `kli init/incept/rotate` implementation.
+- Why:
+  - Keep API surface lean unless usage or clarity benefits justify sugar APIs.
+- Tests:
+  - Command: N/A (tracking note only)
+  - Result: N/A
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+- Risks/TODO:
+  - Execute this review once `init/incept/rotate` DB call graph is stable.

@@ -28,8 +28,17 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
    - `LMDBer` now includes `cntTop`, `cntAll`, and `delTop` branch primitives.
    - lifecycle behavior now stamps `__version__` metadata for temp/new writeable
      DB opens (closer to KERIpy `LMDBer.reopen` behavior).
-   - unit parity coverage exists for lifecycle reopen/version behavior and
-     branch count/iteration/delete semantics in both non-dup and dupsort DBs.
+   - `LMDBer` now covers the remaining `dbing.py` core method families needed
+     before Suber migration (`On*`, `OnAll*`, `IoSet*`, `OnIoSet*`, `dup*`,
+     `IoDup*`, and `OnIoDup*` surfaces).
+   - unit parity coverage now includes lifecycle reopen/version behavior, branch
+     count/iteration/delete semantics, ordinal-key semantics, io-set semantics,
+     and dup/io-dup semantics in non-dup + dupsort DBs.
+   - strict oracle vectors from KERIpy now lock backward-iterator and mixed-key
+     edge behavior for `OnIoSet` and `OnIoDup` iterator families.
+   - every current `LMDBer` method now has representation in unit tests.
+   - post `kli init/incept/rotate` review queued: verify continued need for
+     helper sugar methods `cntTop` and `cntAll` vs removing unused API surface.
 
 ## Scope Sources (Parity Baseline)
 
@@ -105,8 +114,8 @@ Deliverables:
 
 - LMDB environment lifecycle parity (open/close/reopen semantics).
 - Key encoding/decoding helpers and iterator behavior parity.
-- Duplicate-set and ordered iteration semantics parity where used by
-  downstream classes.
+- Duplicate-set and ordered iteration semantics parity where used by downstream
+  classes.
 - Versioning/migration hooks needed by DB open/reopen paths.
 
 Exit criteria:

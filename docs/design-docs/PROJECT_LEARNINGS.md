@@ -54,9 +54,10 @@ This keeps context focused and avoids long-thread drift.
 ### 2026-03-03
 
 1. Phase 2 reconciliation checkpoints were revalidated against current
-   artifacts: P0 (`harness + parity matrices`) and D0 (`inventory + parity
-   matrix`) satisfy their documented exit criteria; D1 is the active DB-layer
-   workstream.
+   artifacts: P0 (`harness + parity matrices`) and D0
+   (`inventory + parity
+   matrix`) satisfy their documented exit criteria; D1
+   is the active DB-layer workstream.
 2. D1 `dbing.py` parity advanced in code with new `LMDBer` core branch methods
    (`cntTop`, `cntAll`, `delTop`) and lifecycle parity refinement for
    `__version__` stamping on temp/new writeable opens.
@@ -64,10 +65,28 @@ This keeps context focused and avoids long-thread drift.
    branch iteration/count/delete semantics for both non-dup and dupsort
    databases (`8 passed, 0 failed` on the targeted db-core suite).
 4. A new cross-topic DB design reference is now published at
-   `docs/design-docs/db/db-architecture.md`, documenting KERIpy
-   DB architecture and required `keri-ts` parity semantics, including a
-   normative DB invariants contract, and is now linked from KELS/ACDC/
-   Witness-Watcher-Observer learnings docs.
+   `docs/design-docs/db/db-architecture.md`, documenting KERIpy DB architecture
+   and required `keri-ts` parity semantics, including a normative DB invariants
+   contract, and is now linked from KELS/ACDC/ Witness-Watcher-Observer
+   learnings docs.
+5. D1 `dbing.py` core parity advanced substantially: `LMDBer` now includes the
+   `On*`/`OnAll*`, `IoSet*`/`OnIoSet*`, `dup*`, `IoDup*`, and `OnIoDup*` method
+   families with parity tests expanded to `11 passed, 0 failed` across db-core
+   key/helper/parity suites.
+6. D1 oracle pass now includes direct KERIpy vectors for backward-iterator and
+   mixed-key edge behavior (`OnIoSet`/`OnIoDup` families), and LMDBer unit-test
+   representation coverage is now complete (`81` methods referenced, `0`
+   missing).
+7. A follow-up maintainer-doc pass now documents the `LMDBer` top helper layer
+   (byte/proem helpers) and clarifies parity-test intent/provenance in unit
+   tests, with db-core suites still green (`14 passed, 0 failed`).
+8. CI formatting policy is now explicit and enforced: a new PR/master CI
+   workflow runs `deno fmt --check`, release/version workflows also run
+   `deno fmt --check`, and CI guardrails fail on non-Deno formatter references
+   in workflow files.
+9. DB-core API hygiene tracking now explicitly flags `LMDBer.cntTop` and
+   `LMDBer.cntAll` for post `kli init/incept/rotate` keep-vs-remove review to
+   avoid unnecessary surface growth.
 
 ### 2026-03-02
 
@@ -114,9 +133,9 @@ This keeps context focused and avoids long-thread drift.
     parity first (including Suber/Komer/databaser/escrow paths), then implement
     provider abstraction for pluggable backends.
 14. D0 DB parity artifacts are now seeded: a module-symbol parity workbook
-    (`docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`) and a K/V inventory matrix
-    CSV (`docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`) generated from
-    KERIpy DB modules and `docs/design-docs/db/lmdb-dumper.md`.
+    (`docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`) and a K/V inventory matrix CSV
+    (`docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`) generated from KERIpy DB
+    modules and `docs/design-docs/db/lmdb-dumper.md`.
 15. D0 parity workbook was upgraded with owner lanes and concrete TS symbol
     targets, and the K/V inventory is now split into execution worklists for
     Gate A-G (`DB_LAYER_KV_GATE_AG_WORKLIST.csv`) vs Gate H backlog
@@ -128,10 +147,10 @@ This keeps context focused and avoids long-thread drift.
     matrix (`docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`) and a
     matrix-driven Gate A-G interop harness
     (`packages/keri/test/integration/app/interop-gates-harness.test.ts`).
-18. Phase 2 P1 has started with initial `dbing.py` symbol closure:
-    `splitOnKey`, `openLMDB`, and `clearDatabaserDir` are implemented in
-    `keri-ts` and moved from `Missing` to `Partial` in the DB parity matrix
-    with passing unit/integration evidence.
+18. Phase 2 P1 has started with initial `dbing.py` symbol closure: `splitOnKey`,
+    `openLMDB`, and `clearDatabaserDir` are implemented in `keri-ts` and moved
+    from `Missing` to `Partial` in the DB parity matrix with passing
+    unit/integration evidence.
 
 ### 2026-02-28
 
