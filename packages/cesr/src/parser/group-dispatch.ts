@@ -1,8 +1,10 @@
-import type { AttachmentGroup, AttachmentItem } from "../core/types.ts";
+import type { AttachmentGroup } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { type Counter, parseCounter } from "../primitives/counter.ts";
+import { Counter, CounterGroup, parseCounter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
+import type { GroupEntry } from "../primitives/primitive.ts";
+import { UnknownPrimitive } from "../primitives/unknown.ts";
 import {
   GroupSizeError,
   ShortageError,
@@ -47,7 +49,7 @@ export type {
  *   mixed streams where wrappers and nested groups may differ by major version.
  */
 interface ParsedGroup {
-  items: AttachmentItem[];
+  items: GroupEntry[];
   consumed: number;
 }
 
@@ -56,24 +58,8 @@ type ParseDomain = AttachmentDispatchDomain;
 /** Primitive token families used by tuple/repetition parsers. */
 type PrimitiveKind = "matter" | "indexer";
 
-function qb64Item(qb64: string, opaque = false): AttachmentItem {
-  return { kind: "qb64", qb64, opaque };
-}
-
-function qb2Item(qb2: Uint8Array, opaque = false): AttachmentItem {
-  return { kind: "qb2", qb2, opaque };
-}
-
-function tupleItem(items: AttachmentItem[]): AttachmentItem {
-  return { kind: "tuple", items };
-}
-
-function nestedGroupItem(
-  code: string,
-  name: string,
-  count: number,
-): AttachmentItem {
-  return { kind: "group", code, name, count };
+function tupleItem(items: GroupEntry[]): GroupEntry {
+  return items;
 }
 
 /** Normalize unknown throwables to an `Error` for diagnostic emission. */
@@ -543,14 +529,14 @@ function parseTuple(
   input: Uint8Array,
   kinds: readonly PrimitiveKind[],
   domain: ParseDomain,
-): { items: AttachmentItem[]; consumed: number } {
-  const items: AttachmentItem[] = [];
+): { items: GroupEntry[]; consumed: number } {
+  const items: GroupEntry[] = [];
   let offset = 0;
   for (const kind of kinds) {
     const part = kind === "indexer"
       ? parseIndexer(input.slice(offset), domain)
       : parseMatter(input.slice(offset), domain);
-    items.push(qb64Item(part.qb64));
+    items.push(part);
     offset += primitiveSize(part, domain);
   }
   return { items, consumed: offset };
@@ -563,7 +549,7 @@ function parseRepeated(
   kinds: readonly PrimitiveKind[],
   domain: ParseDomain,
 ): ParsedGroup {
-  const items: AttachmentItem[] = [];
+  const items: GroupEntry[] = [];
   let offset = 0;
   for (let i = 0; i < count; i++) {
     const tuple = parseTuple(input.slice(offset), kinds, domain);
@@ -578,13 +564,15 @@ function splitOpaqueUnits(
   payload: Uint8Array,
   domain: ParseDomain,
   expectedCount?: number,
-  opaque = false,
-): AttachmentItem[] {
+): GroupEntry[] {
   if (domain === "bny") {
     const count = expectedCount ?? Math.floor(payload.length / 3);
     return Array.from(
       { length: count },
-      (_v, i) => qb2Item(payload.slice(i * 3, i * 3 + 3), opaque),
+      (_v, i) => UnknownPrimitive.fromPayload(
+        payload.slice(i * 3, i * 3 + 3),
+        domain,
+      ),
     );
   }
 
@@ -592,10 +580,16 @@ function splitOpaqueUnits(
   if (expectedCount !== undefined) {
     return Array.from(
       { length: expectedCount },
-      (_v, i) => qb64Item(text.slice(i * 4, i * 4 + 4), opaque),
+      (_v, i) =>
+        UnknownPrimitive.fromPayload(
+          new TextEncoder().encode(text.slice(i * 4, i * 4 + 4)),
+          domain,
+        ),
     );
   }
-  return (text.match(/.{1,4}/g) ?? []).map((token) => qb64Item(token, opaque));
+  return (text.match(/.{1,4}/g) ?? []).map((token) =>
+    UnknownPrimitive.fromPayload(new TextEncoder().encode(token), domain)
+  );
 }
 
 /** Parse nested siger-list group headed by a version-appropriate siger counter. */
@@ -603,7 +597,7 @@ function parseSigerList(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
-): { items: AttachmentItem[]; consumed: number } {
+): { items: GroupEntry[]; consumed: number } {
   const counter = parseCounter(input, version, domain);
   const allowed = resolveVersionedRegistryValue(
     SIGER_LIST_CODES_BY_VERSION,
@@ -616,11 +610,11 @@ function parseSigerList(
     );
   }
 
-  const items: AttachmentItem[] = [];
+  const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const part = parseIndexer(input.slice(offset), domain);
-    items.push(qb64Item(part.qb64));
+    items.push(part);
     offset += primitiveSize(part, domain);
   }
 
@@ -656,7 +650,7 @@ function parseQuadletGroup(
 
   if (wrapperCodes.has(counter.code)) {
     // Wrapper payload is a packed stream of nested groups (best effort).
-    const items: AttachmentItem[] = [];
+    const items: GroupEntry[] = [];
     let offset = 0;
     let nestedVersion = version;
     while (offset < payload.length) {
@@ -680,13 +674,7 @@ function parseQuadletGroup(
           domain,
           context,
         );
-        items.push(
-          nestedGroupItem(
-            nested.group.code,
-            nested.group.name,
-            nested.group.count,
-          ),
-        );
+        items.push(nested.group);
         if (nested.consumed === 0) {
           throw new GroupSizeError(
             "Nested attachment parser consumed zero bytes",
@@ -710,7 +698,7 @@ function parseQuadletGroup(
         }
         // Intentional recovery point: keep unread wrapper tail as opaque units.
         const remainder = payload.slice(offset);
-        const opaque = splitOpaqueUnits(remainder, domain, undefined, true);
+        const opaque = splitOpaqueUnits(remainder, domain);
         context.recoveryDiagnosticObserver?.({
           type: "wrapper-opaque-tail-preserved",
           version: nestedVersion,
@@ -765,7 +753,7 @@ function transIdxSigGroupsParser(
   domain: ParseDomain,
   _context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
-  const items: AttachmentItem[] = [];
+  const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const header = parseTuple(input.slice(offset), [
@@ -789,7 +777,7 @@ function transLastIdxSigGroupsParser(
   domain: ParseDomain,
   _context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
-  const items: AttachmentItem[] = [];
+  const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const header = parseTuple(input.slice(offset), ["matter"], domain);
@@ -809,7 +797,7 @@ function sadPathSigParser(
   domain: ParseDomain,
   context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
-  const items: AttachmentItem[] = [];
+  const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const path = parseMatter(input.slice(offset), domain);
@@ -823,12 +811,8 @@ function sadPathSigParser(
     offset += sigGroup.consumed;
     items.push(
       tupleItem([
-        qb64Item(path.qb64),
-        nestedGroupItem(
-          sigGroup.group.code,
-          sigGroup.group.name,
-          sigGroup.group.count,
-        ),
+        path,
+        sigGroup.group,
       ]),
     );
   }
@@ -843,12 +827,12 @@ function sadPathSigGroupParser(
   domain: ParseDomain,
   context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
-  const items: AttachmentItem[] = [];
+  const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
 
   const root = parseMatter(input.slice(offset), domain);
   offset += primitiveSize(root, domain);
-  items.push(qb64Item(root.qb64));
+  items.push(root);
 
   for (let i = 0; i < counter.count; i++) {
     const path = parseMatter(input.slice(offset), domain);
@@ -862,12 +846,8 @@ function sadPathSigGroupParser(
     offset += sigGroup.consumed;
     items.push(
       tupleItem([
-        qb64Item(path.qb64),
-        nestedGroupItem(
-          sigGroup.group.code,
-          sigGroup.group.name,
-          sigGroup.group.count,
-        ),
+        path,
+        sigGroup.group,
       ]),
     );
   }
@@ -883,7 +863,7 @@ function genusVersionParser(
   _context: AttachmentDispatchPolicyContext,
 ): ParsedGroup {
   return {
-    items: [qb64Item(counter.qb64)],
+    items: [counter],
     consumed: counterHeaderSize(counter, domain),
   };
 }
@@ -1052,13 +1032,11 @@ function parseAttachmentDispatchWithVersion(
   }
 
   return {
-    group: {
-      code: counter.code,
-      name: counter.name,
-      count: counter.count,
-      raw: input.slice(0, parsed.consumed),
-      items: parsed.items,
-    },
+    group: new CounterGroup(
+      counter,
+      input.slice(0, parsed.consumed),
+      parsed.items,
+    ),
     consumed: parsed.consumed,
   };
 }

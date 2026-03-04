@@ -1,5 +1,10 @@
 import type { Kind, Protocol } from "../tables/versions.ts";
 import type { Versionage } from "../tables/table-types.ts";
+import type {
+  CounterGroupLike,
+  GroupEntry,
+  Primitive,
+} from "../primitives/primitive.ts";
 
 export interface Smellage {
   proto: Protocol;
@@ -37,54 +42,16 @@ export interface CesrBody {
   native?: {
     /** The body code of the native fields. */
     bodyCode: string;
-    /** The fields of the native fields. */
-    fields: Array<{ label: string | null; code: string; qb64: string }>;
+    /** Parsed native fields as hydrated primitives. */
+    fields: Array<{ label: string | null; primitive: Primitive }>;
   };
 }
 
-/** Discriminated model for one parsed attachment payload unit. */
-export type AttachmentItem =
-  | AttachmentQb64Item
-  | AttachmentQb2Item
-  | AttachmentTupleItem
-  | AttachmentNestedGroupItem;
-
-/** Text-domain unit (single qb64 token or opaque quadlet). */
-export interface AttachmentQb64Item {
-  kind: "qb64";
-  qb64: string;
-  opaque: boolean;
-}
-
-/** Binary-domain unit (single qb2 token or opaque triplet). */
-export interface AttachmentQb2Item {
-  kind: "qb2";
-  qb2: Uint8Array;
-  opaque: boolean;
-}
-
-/** Tuple/repeated payload unit preserving source ordering. */
-export interface AttachmentTupleItem {
-  kind: "tuple";
-  items: AttachmentItem[];
-}
-
-/** Wrapper-enclosed nested group summary. */
-export interface AttachmentNestedGroupItem {
-  kind: "group";
-  code: string;
-  name: string;
-  count: number;
-}
+/** One parsed attachment-group entry. */
+export type AttachmentItem = GroupEntry;
 
 /** Trailing attachment group parsed after a frame body. */
-export interface AttachmentGroup {
-  code: string;
-  name: string;
-  count: number;
-  raw: Uint8Array;
-  items: AttachmentItem[];
-}
+export interface AttachmentGroup extends CounterGroupLike {}
 
 /**
  * Historical public type name for one parsed frame payload.

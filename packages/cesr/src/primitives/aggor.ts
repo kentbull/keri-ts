@@ -1,11 +1,12 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { AttachmentItem, ColdCode } from "../core/types.ts";
+import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import { parseCompactor } from "./compactor.ts";
 import { parseCounter } from "./counter.ts";
 import type { MapperField } from "./mapper.ts";
+import type { GroupEntry } from "./primitive.ts";
 
 const AGGOR_LIST_CODES = new Set([
   CtrDexV2.GenericGroup,
@@ -25,11 +26,17 @@ export interface Aggor {
   code: string;
   count: number;
   kind: "list" | "map";
-  listItems?: AttachmentItem[];
+  listItems?: readonly GroupEntry[];
   mapFields?: MapperField[];
   consumed: number;
 }
 
+/**
+ * Parse aggregate attachment groups as list/map semantic containers.
+ *
+ * KERIpy substance: aggregate counters can represent generic lists or map-body
+ * structures; this helper normalizes both into one discriminated result.
+ */
 export function parseAggor(
   input: Uint8Array,
   version: Versionage,

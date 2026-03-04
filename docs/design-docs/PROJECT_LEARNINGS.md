@@ -51,6 +51,17 @@ This keeps context focused and avoids long-thread drift.
 
 ## Cross-Topic Snapshot
 
+### 2026-03-04
+
+1. CESR/crypto primitive modules now include maintainer-oriented class/function
+   docstrings that capture KERIpy-substance (purpose, invariants, semantic
+   projections, and parser/crypto boundary contracts) across the new
+   primitive-first hydration classes.
+2. Follow-up doc completion closed remaining gaps in core primitive families
+   (`Matter`, `Indexer`, `Counter`) and verifier/signature primitives
+   (`Verfer`/`Cigar`/`Diger`/`Siger`) so all classes/functions touched in the
+   primitive-first wave have explicit maintainer docs.
+
 ### 2026-03-03
 
 1. Phase 2 reconciliation checkpoints were revalidated against current
@@ -87,6 +98,10 @@ This keeps context focused and avoids long-thread drift.
 9. DB-core API hygiene tracking now explicitly flags `LMDBer.cntTop` and
    `LMDBer.cntAll` for post `kli init/incept/rotate` keep-vs-remove review to
    avoid unnecessary surface growth.
+10. CESR primitive parity was refreshed against KERIpy `main` (`5a5597e8`):
+    `Tagger`/`Decimer` were added, `Verser`/`Noncer`/`Labeler` hierarchy and
+    codex semantics were aligned to current KERIpy behavior, and targeted
+    primitive txt/qb2 suites now pass (`52 passed, 0 failed`).
 
 ### 2026-03-02
 

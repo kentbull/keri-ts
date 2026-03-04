@@ -8,6 +8,7 @@ import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { parseMatter } from "../primitives/matter.ts";
+import type { Primitive } from "../primitives/primitive.ts";
 import {
   interpretMapperBodySyntax,
   type MapperBodySyntax,
@@ -107,8 +108,8 @@ interface NativeMetadataSyntaxArtifact {
  * during semantic interpretation.
  */
 type NativeFieldSyntaxEntry =
-  | { kind: "label"; label: string; code: string; qb64: string }
-  | { kind: "value"; code: string; qb64: string };
+  | { kind: "label"; label: string; primitive: Primitive }
+  | { kind: "value"; primitive: Primitive };
 
 /**
  * Native field syntax representation.
@@ -821,8 +822,7 @@ export class FrameParser {
         const size = tokenSize(ctr, cold);
         entries.push({
           kind: "value",
-          code: ctr.code,
-          qb64: ctr.qb64,
+          primitive: ctr,
         });
         offset += size;
         continue;
@@ -836,16 +836,14 @@ export class FrameParser {
         entries.push({
           kind: "label",
           label: parseLabeler(at, cold).label,
-          code: token.code,
-          qb64: token.qb64,
+          primitive: token,
         });
         continue;
       }
 
       entries.push({
         kind: "value",
-        code: token.code,
-        qb64: token.qb64,
+        primitive: token,
       });
     }
 
@@ -858,13 +856,12 @@ export class FrameParser {
   /** Interpret native field syntax into semantic fields with label/value pairing. */
   private interpretNativeFieldSyntax(
     syntax: NativeFieldSyntaxArtifact,
-  ): Array<{ label: string | null; code: string; qb64: string }> {
+  ): Array<{ label: string | null; primitive: Primitive }> {
     if (syntax.kind === "map") {
       try {
         return interpretMapperBodySyntax(syntax.mapper).map((field) => ({
           label: field.label,
-          code: field.code,
-          qb64: field.qb64,
+          primitive: field.primitive,
         }));
       } catch (error) {
         if (error instanceof SemanticInterpretationError) {
@@ -879,7 +876,7 @@ export class FrameParser {
       }
     }
 
-    const out: Array<{ label: string | null; code: string; qb64: string }> = [];
+    const out: Array<{ label: string | null; primitive: Primitive }> = [];
     let pendingLabel: string | null = null;
     for (const entry of syntax.entries) {
       if (entry.kind === "label") {
@@ -888,8 +885,7 @@ export class FrameParser {
       }
       out.push({
         label: pendingLabel,
-        code: entry.code,
-        qb64: entry.qb64,
+        primitive: entry.primitive,
       });
       pendingLabel = null;
     }

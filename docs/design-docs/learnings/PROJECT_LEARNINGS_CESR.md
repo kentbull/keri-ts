@@ -1033,3 +1033,97 @@ Persistent CESR parser memory for `keri-ts`.
   - Pretty-body detection currently uses line-oriented heuristics tied to
     annotate output shape; if annotate formatting modes expand, keep this state
     path covered by regression tests.
+
+### 2026-03-03 - KERIpy `main` Primitive Parity Refresh
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Revalidated primitive codex/class behavior against `keripy` `main`
+    (`5a5597e8`) and aligned known drifts in `packages/cesr/src/primitives`.
+  - Added missing primitive classes:
+    - `Tagger` (`tagger.ts`)
+    - `Decimer` (`decimer.ts`)
+  - Added shared code-subset registry (`primitives/codex.ts`) for semantic codex
+    checks (`DIGEST_CODES`, `NONCE_CODES`, `TAG_CODES`, `LABELER_CODES`,
+    `DECIMAL_CODES`, etc.) to avoid ambiguous one-name-per-code assumptions.
+  - Updated class hierarchy/validators to reflect KERIpy `main` behavior:
+    - `Noncer` now extends `Diger` (non-strict digest validation path) and
+      validates full `NonceCodex` subset.
+    - `Verser` now extends `Tagger`, validates `Tag7/Tag10` (`Y`/`0O`) and
+      parses protocol/pvrsn/gvrsn from tag semantics.
+    - `Ilker` and `Traitor` now leverage `Tagger` tag semantics directly;
+      `Traitor` validates against `TraitDex` values (`EO`, `DND`, `RB`, `NB`,
+      `NRB`, `DID`).
+    - `Labeler` now validates against expanded `LabelCodex` and decodes tag/bext
+      text semantics instead of `V/W`-only assumptions.
+  - Updated `Bexter`/`Pather` decode behavior to use KERIpy-like rawify/derawify
+    handling for `StrB64*` codes.
+  - Export surface updated in `src/index.ts` for new primitives/codex module.
+- Why:
+  - Ensure primitive-first hydration work tracks the newest KERIpy primitive
+    model and does not retain v1.3.4-specific assumptions in semantic
+    validators.
+- Tests:
+  - Command: `deno check src/index.ts` (in `packages/cesr`)
+  - Result: type check passed
+  - Command:
+    `deno test test/unit/primitives-native.test.ts test/unit/qb2.test.ts` (in
+    `packages/cesr`)
+  - Result: `52 passed, 0 failed`
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Full-suite migration to primitive-graph attachment assertions remains
+    in-flight; several parser wrapper tests still require update from legacy
+    wrapper-item expectations to `Primitive`/`CounterGroup` graph assertions.
+
+### 2026-03-04 - Primitive Maintainer Docstrings (KERIpy-Substance Pass)
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Added principal-engineer/maintainer-oriented docstrings to newly added and
+    newly aligned CESR primitive modules (`UnknownPrimitive`, `Tagger`,
+    `Decimer`, `Labeler`, `Bexter`, `Pather`, `Noncer`, `Verser`, `Ilker`,
+    `Traitor`, plus signer/cipher key-material subclasses).
+  - Docstrings explicitly capture KERIpy-substance at class/function boundaries:
+    responsibility, codex invariants, semantic projections, and parse boundary
+    contracts.
+  - Added/expanded method-level docs for non-obvious behavior (for example:
+    `Labeler.label/text` distinction, `Bexter.rawify/derawify`, `Verser`
+    `pvrsn/gvrsn` decoding, `Noncer` empty-nonce roundtrip contract).
+- Why:
+  - Make primitive architecture and invariants reviewable for maintainers during
+    the ongoing primitive-first hydration migration.
+- Tests:
+  - Command: `deno check src/index.ts` (in `packages/cesr`)
+  - Result: type check passed
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Remaining parser test migration from legacy wrapper item shapes to
+    primitive-graph typing is still pending and unaffected by doc-only updates.
+
+### 2026-03-04 - Primitive Doc Completion Follow-up
+
+- Topic docs updated:
+  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Completed missing docstrings for primitives/functions still lacking docs
+    after the initial pass, including `Verfer` and core base families (`Matter`,
+    `Indexer`, `Counter`) plus grouped primitive parsers
+    (`Aggor`/`Blinder`/`Mediar`/`Sealer`).
+  - Added class/function docs with KERIpy-substance for role/invariants and
+    parse-domain boundary contracts.
+- Why:
+  - Close remaining maintainer-documentation gaps in the primitive-first
+    hydration refactor so review context is complete at primitive boundaries.
+- Tests:
+  - Command: `deno check src/index.ts` (in `packages/cesr`)
+  - Result: type check passed
+- Contracts/plans touched:
+  - none
+- Risks/TODO:
+  - Full-suite parser test migration to primitive graph typing remains the
+    active non-doc follow-up.

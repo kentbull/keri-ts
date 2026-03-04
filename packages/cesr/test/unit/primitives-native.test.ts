@@ -39,10 +39,11 @@ import { counterV2, token } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("verser parses KERI v2 token", () => {
-  const verser = parseVerser(encode("0OKERICAACAA"), "txt");
+  const verser = parseVerser(encode("YKERICAA"), "txt");
   assertEquals(verser.proto, "KERI");
   assertEquals(verser.pvrsn.major, 2);
   assertEquals(verser.pvrsn.minor, 0);
+  assertEquals(verser.gvrsn, null);
 });
 
 Deno.test("ilker parses native ilk token", () => {
@@ -51,11 +52,10 @@ Deno.test("ilker parses native ilk token", () => {
 });
 
 Deno.test("labeler parses map label token", () => {
-  const labeler = parseLabeler(encode("VAAA"), "txt");
-  assertEquals(labeler.code, "V");
-  assertEquals(labeler.token, "VAAA");
-  assertEquals(labeler.label.length > 0, true);
-  assertEquals(labeler.index, 0);
+  const labeler = parseLabeler(encode("0J_i"), "txt");
+  assertEquals(labeler.code, "0J");
+  assertEquals(labeler.token, "0J_i");
+  assertEquals(labeler.label, "i");
 });
 
 Deno.test("texter parses bytes token", () => {
@@ -73,14 +73,14 @@ Deno.test("bexter parses strb64 token", () => {
 Deno.test("pather parses strb64 token", () => {
   const pather = parsePather(encode("4AABabcd"), "txt");
   assertEquals(pather.code, "4A");
-  assertEquals(pather.path, "ABabcd");
+  assertEquals(pather.path, "bcd");
 });
 
 Deno.test("mapper parses map body with interleaved labels", () => {
   const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(4);
-  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${
+  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${
     payload.slice(12, 16)
-  }VAAA${payload.slice(16)}`;
+  }0J_d${payload.slice(16)}`;
   const mapBody = `${
     counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
   }${mapPayload}`;
@@ -96,11 +96,11 @@ Deno.test("mapper parses map body with interleaved labels", () => {
 });
 
 Deno.test("mapper recursively parses nested map values", () => {
-  const innerPayload = `VAAA${token("B")}`;
+  const innerPayload = `0J_i${token("B")}`;
   const innerMap = `${
     counterV2(CtrDexV2.MapBodyGroup, innerPayload.length / 4)
   }${innerPayload}`;
-  const outerPayload = `VAAA${innerMap}VAAA${token("E")}`;
+  const outerPayload = `0J_a${innerMap}0J_d${token("E")}`;
   const outerMap = `${
     counterV2(CtrDexV2.MapBodyGroup, outerPayload.length / 4)
   }${outerPayload}`;
@@ -116,7 +116,7 @@ Deno.test("mapper recursively parses nested map values", () => {
 });
 
 Deno.test("mapper syntax parse emits ordered label/value token artifacts", () => {
-  const payload = `VAAA${token("B")}VAAA${token("E")}`;
+  const payload = `0J_i${token("B")}0J_d${token("E")}`;
   const mapBody = `${
     counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
   }${payload}`;
@@ -159,9 +159,8 @@ Deno.test("mapper semantic interpretation rejects dangling label artifacts", () 
         entries: [
           {
             kind: "label",
-            code: "V",
-            qb64: "VAAA",
-            label: "",
+            primitive: parseLabeler(encode("0J_i"), "txt"),
+            label: "i",
             consumed: 4,
           },
         ],
@@ -230,9 +229,9 @@ Deno.test("verfer parses verification key primitive", () => {
 });
 
 Deno.test("traitor parses trait primitive", () => {
-  const traitor = parseTraitor(encode(token("X")), "txt");
-  assertEquals(traitor.code, "X");
-  assertEquals(traitor.trait.startsWith("Tag"), true);
+  const traitor = parseTraitor(encode("0KEO"), "txt");
+  assertEquals(traitor.code, "0K");
+  assertEquals(traitor.trait, "EO");
 });
 
 Deno.test("tholder parses threshold primitive", () => {
@@ -272,7 +271,7 @@ Deno.test("mediar parses typed media quadruples group", () => {
 });
 
 Deno.test("compactor parses map body group", () => {
-  const payload = `VAAA${token("B")}VAAA${token("E")}`;
+  const payload = `0J_i${token("B")}0J_d${token("E")}`;
   const ims = `${
     counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
   }${payload}`;

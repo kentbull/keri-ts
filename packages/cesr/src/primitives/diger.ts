@@ -1,39 +1,42 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
 import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { DIGEST_CODES } from "./codex.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
-export interface Diger {
-  code: string;
-  qb64: string;
-  digest: Uint8Array;
-  algorithm: string;
-  fullSize: number;
-  fullSizeB2: number;
+interface DigerOptions {
+  strict?: boolean;
 }
 
-function isDigestName(name: string): boolean {
-  return name.startsWith("Blake") || name.startsWith("SHA2_") ||
-    name.startsWith("SHA3_");
+/**
+ * Digest primitive family.
+ *
+ * KERIpy substance: `Diger` encapsulates self-addressing digest material and
+ * optionally constrains codes to digest codex membership (`strict=true`).
+ */
+export class Diger extends Matter {
+  constructor(init: Matter | MatterInit, options: DigerOptions = {}) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    if ((options.strict ?? true) && !DIGEST_CODES.has(this.code)) {
+      throw new UnknownCodeError(`Expected digest code, got ${this.code}`);
+    }
+  }
+
+  get digest(): Uint8Array {
+    return this.raw;
+  }
+
+  get algorithm(): string {
+    return MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
+      "UnknownDigest";
+  }
 }
 
+/** Parse and hydrate `Diger` from txt/qb2 bytes. */
 export function parseDiger(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Diger {
-  const matter = parseMatter(input, cold);
-  const name =
-    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
-  if (!isDigestName(name)) {
-    throw new UnknownCodeError(`Expected digest code, got ${matter.code}`);
-  }
-
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    digest: matter.raw,
-    algorithm: name,
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-  };
+  return new Diger(parseMatter(input, cold));
 }

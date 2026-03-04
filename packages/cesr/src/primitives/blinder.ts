@@ -1,8 +1,9 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { AttachmentItem, ColdCode } from "../core/types.ts";
+import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
+import type { GroupEntry } from "./primitive.ts";
 
 const BLINDER_CODES = new Set([
   CtrDexV2.BlindedStateQuadruples,
@@ -15,11 +16,12 @@ export interface Blinder {
   code: string;
   name: string;
   count: number;
-  items: AttachmentItem[];
+  items: readonly GroupEntry[];
   raw: Uint8Array;
   consumed: number;
 }
 
+/** Parse and validate blinded-state attachment groups. */
 export function parseBlinder(
   input: Uint8Array,
   version: Versionage,

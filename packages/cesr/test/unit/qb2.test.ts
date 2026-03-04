@@ -160,7 +160,8 @@ Deno.test("noncer qb2 parsing matches qb64 parsing", () => {
   const bny = parseNoncer(qb2, "bny");
 
   assertEquals(bny.code, txt.code);
-  assertEquals([...bny.nonce], [...txt.nonce]);
+  assertEquals(bny.nonce, txt.nonce);
+  assertEquals([...bny.nonceb], [...txt.nonceb]);
 });
 
 Deno.test("saider qb2 parsing matches qb64 parsing", () => {
@@ -211,7 +212,7 @@ Deno.test("verfer qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("traitor qb2 parsing matches qb64 parsing", () => {
-  const qb64 = token("X");
+  const qb64 = "0KEO";
   const qb2 = decodeB64(qb64);
 
   const txt = parseTraitor(encode(qb64), "txt");
@@ -233,7 +234,7 @@ Deno.test("tholder qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("labeler qb2 parsing matches qb64 parsing", () => {
-  const qb64 = "VAAA";
+  const qb64 = "0J_i";
   const qb2 = decodeB64(qb64);
 
   const txt = parseLabeler(encode(qb64), "txt");
@@ -241,8 +242,8 @@ Deno.test("labeler qb2 parsing matches qb64 parsing", () => {
 
   assertEquals(bny.code, txt.code);
   assertEquals(bny.token, txt.token);
-  assertEquals(bny.index, txt.index);
   assertEquals(bny.label, txt.label);
+  assertEquals(bny.text, txt.text);
 });
 
 Deno.test("texter qb2 parsing matches qb64 parsing", () => {
@@ -319,7 +320,7 @@ Deno.test("mediar qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("compactor qb2 parsing matches qb64 parsing", () => {
-  const payload = `VAAA${token("B")}VAAA${token("E")}`;
+  const payload = `0J_i${token("B")}0J_d${token("E")}`;
   const qb64 = `${
     counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
   }${payload}`;
@@ -337,11 +338,11 @@ Deno.test("compactor qb2 parsing matches qb64 parsing", () => {
 });
 
 Deno.test("mapper nested map qb2 parsing matches qb64 parsing", () => {
-  const innerPayload = `VAAA${token("B")}`;
+  const innerPayload = `0J_i${token("B")}`;
   const innerMap = `${
     counterV2(CtrDexV2.MapBodyGroup, innerPayload.length / 4)
   }${innerPayload}`;
-  const outerPayload = `VAAA${innerMap}VAAA${token("E")}`;
+  const outerPayload = `0J_a${innerMap}0J_d${token("E")}`;
   const qb64 = `${
     counterV2(CtrDexV2.MapBodyGroup, outerPayload.length / 4)
   }${outerPayload}`;

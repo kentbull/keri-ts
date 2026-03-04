@@ -1,40 +1,44 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
 import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
-export interface Dater {
-  code: string;
-  qb64: string;
-  dts: string;
-  iso8601: string;
-  fullSize: number;
-  fullSizeB2: number;
-}
-
+/** Project compact CESR datetime encoding to RFC3339/ISO-8601 text form. */
 function toIso8601(dts: string): string {
   return dts.replaceAll("c", ":").replaceAll("d", ".").replaceAll("p", "+");
 }
 
+/**
+ * Datetime primitive for compact RFC3339/ISO-8601 representations.
+ *
+ * KERIpy substance: `Dater` encodes datetime text by substituting non-base64
+ * characters (`:`, `.`, `+`) with base64-safe symbols (`c`, `d`, `p`).
+ */
+export class Dater extends Matter {
+  constructor(init: Matter | MatterInit) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    const name = MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES];
+    if (name !== "DateTime") {
+      throw new UnknownCodeError(
+        `Expected dater DateTime code, got ${this.code}`,
+      );
+    }
+  }
+
+  get dts(): string {
+    return new TextDecoder().decode(this.raw);
+  }
+
+  get iso8601(): string {
+    return toIso8601(this.dts);
+  }
+}
+
+/** Parse and hydrate `Dater` from txt/qb2 bytes. */
 export function parseDater(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Dater {
-  const matter = parseMatter(input, cold);
-  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES];
-  if (name !== "DateTime") {
-    throw new UnknownCodeError(
-      `Expected dater DateTime code, got ${matter.code}`,
-    );
-  }
-
-  const dts = new TextDecoder().decode(matter.raw);
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    dts,
-    iso8601: toIso8601(dts),
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-  };
+  return new Dater(parseMatter(input, cold));
 }
