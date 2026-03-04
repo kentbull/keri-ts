@@ -29,7 +29,7 @@
     "npm:build:all": "deno task build:npm && deno task cesr:build:npm"
   },
   "imports": {
-    "cesr-ts": "npm:cesr-ts@^0.2.3"
+    "cesr-ts": "./packages/cesr/mod.ts"
   },
   "nodeModulesDir": "auto",
   "compilerOptions": {

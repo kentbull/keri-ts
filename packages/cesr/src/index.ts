@@ -8,6 +8,7 @@ export * from "./parser/group-dispatch.ts";
 export * from "./serder/smell.ts";
 export * from "./serder/serder.ts";
 export * from "./serder/serdery.ts";
+export * from "./serder/saidify.ts";
 export * from "./primitives/matter.ts";
 export * from "./primitives/counter.ts";
 export * from "./primitives/indexer.ts";

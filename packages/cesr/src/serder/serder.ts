@@ -1,7 +1,8 @@
 import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
-import { DeserializeError } from "../core/errors.ts";
-import { decode as decodeMsgpack } from "@msgpack/msgpack";
+import { DeserializeError, SerializeError } from "../core/errors.ts";
+import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { decode as decodeCbor } from "cbor-x/decode";
+import { encode as encodeCbor } from "cbor-x/encode";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import { Mediar, isMediarCode } from "../primitives/mediar.ts";
@@ -12,7 +13,27 @@ import {
   isPrimitiveTuple,
 } from "../primitives/primitive.ts";
 import { Sealer, isSealerCode } from "../primitives/sealer.ts";
-import { Protocols } from "../tables/versions.ts";
+import { type Kind, Protocols } from "../tables/versions.ts";
+
+/**
+ * Serializes a key event dictionary into raw bytes.
+ * Complement of {@link parseSerder}.
+ */
+export function serializeBody(
+  ked: Record<string, unknown>,
+  kind: Kind,
+): Uint8Array {
+  if (kind === "JSON") {
+    return new TextEncoder().encode(JSON.stringify(ked));
+  }
+  if (kind === "CBOR") {
+    return new Uint8Array(encodeCbor(ked));
+  }
+  if (kind === "MGPK") {
+    return new Uint8Array(encodeMsgpack(ked));
+  }
+  throw new SerializeError(`Unsupported serialization kind: ${kind}`);
+}
 
 function normalizeDecodedMap(
   value: unknown,

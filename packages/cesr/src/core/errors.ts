@@ -24,6 +24,7 @@ export class VersionError extends ParserError {}
 export class UnknownCodeError extends ParserError {}
 export class GroupSizeError extends ParserError {}
 export class DeserializeError extends ParserError {}
+export class SerializeError extends ParserError {}
 /** Failure while constructing syntax artifacts from token bytes. */
 export class SyntaxParseError extends ParserError {
   constructor(
