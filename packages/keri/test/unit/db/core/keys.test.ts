@@ -5,11 +5,12 @@ import {
   splitKeyON,
   splitOnKey,
 } from "../../../../src/db/core/keys.ts";
+import { t } from '../../../../../cesr/mod.ts'
 
 Deno.test("db/core keys - splitKey uses rightmost separator", () => {
   const [top, suffix] = splitKey("alpha.beta.gamma", ".");
-  assertEquals(new TextDecoder().decode(top), "alpha.beta");
-  assertEquals(new TextDecoder().decode(suffix), "gamma");
+  assertEquals(t(top), "alpha.beta");
+  assertEquals(t(suffix), "gamma");
 });
 
 Deno.test("db/core keys - splitOnKey alias matches splitKeyON", () => {
@@ -19,8 +20,8 @@ Deno.test("db/core keys - splitOnKey alias matches splitKeyON", () => {
 
   assertEquals(onA, 15);
   assertEquals(onB, 15);
-  assertEquals(new TextDecoder().decode(topA), "aid.prefix.with.dot");
-  assertEquals(new TextDecoder().decode(topA), new TextDecoder().decode(topB));
+  assertEquals(t(topA), "aid.prefix.with.dot");
+  assertEquals(t(topA), t(topB));
 });
 
 Deno.test("db/core keys - splitKey rejects unsplittable keys", () => {

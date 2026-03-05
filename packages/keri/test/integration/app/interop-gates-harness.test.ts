@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
+import { t } from '../../../../cesr/mod.ts'
 
 interface CmdResult {
   code: number;
@@ -39,8 +40,8 @@ async function runCmd(
   }).output();
   return {
     code: out.code,
-    stdout: new TextDecoder().decode(out.stdout),
-    stderr: new TextDecoder().decode(out.stderr),
+    stdout: t(out.stdout),
+    stderr: t(out.stderr),
   };
 }
 
@@ -133,7 +134,7 @@ async function detectDenoDir(): Promise<string | undefined> {
     if (out.code !== 0) {
       return undefined;
     }
-    const parsed = JSON.parse(new TextDecoder().decode(out.stdout)) as {
+    const parsed = JSON.parse(t(out.stdout)) as {
       denoDir?: string;
     };
     return parsed.denoDir;

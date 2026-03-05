@@ -6,6 +6,7 @@ import {
 } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { b, t } from '../../../cesr/mod.ts'
 
 export interface KeeperOptions extends LMDBerOptions {}
 
@@ -109,12 +110,12 @@ export class Keeper {
   }
 
   private enc(text: string): Uint8Array {
-    return new TextEncoder().encode(text);
+    return b(text);
   }
 
   private dec(bytes: Uint8Array | null): string | null {
     if (bytes === null) return null;
-    return new TextDecoder().decode(bytes);
+    return t(bytes);
   }
 
   private encJson(value: unknown): Uint8Array {

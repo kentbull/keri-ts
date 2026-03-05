@@ -1,4 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
+import { t } from '../../../../cesr/mod.ts'
 
 interface CmdResult {
   code: number;
@@ -21,8 +22,8 @@ async function runCmd(
   }).output();
   return {
     code: out.code,
-    stdout: new TextDecoder().decode(out.stdout),
-    stderr: new TextDecoder().decode(out.stderr),
+    stdout: t(out.stdout),
+    stderr: t(out.stderr),
   };
 }
 

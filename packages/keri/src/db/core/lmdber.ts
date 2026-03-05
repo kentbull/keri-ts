@@ -2,33 +2,22 @@
  * Core LMDB manager used by higher-level DB abstractions.
  */
 
-import { type Operation } from "npm:effection@^3.6.0";
-import { Database, Key, open, RootDatabase } from "npm:lmdb@^3.4.4";
-import { startsWith } from "../../core/bytes.ts";
+import { type Operation } from 'npm:effection@^3.6.0'
+import { Database, Key, open, RootDatabase } from 'npm:lmdb@^3.4.4'
+import { startsWith } from '../../core/bytes.ts'
 import {
   DatabaseKeyError,
   DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../../core/errors.ts";
-import { consoleLogger, type Logger } from "../../core/logger.ts";
-import { onKey, splitOnKey, suffix, unsuffix } from "./keys.ts";
-import {
-  PathManager,
-  PathManagerDefaults,
-  PathManagerOptions,
-} from "./path-manager.ts";
+  DatabaseOperationError
+} from '../../core/errors.ts'
+import { consoleLogger, type Logger } from '../../core/logger.ts'
+import { onKey, splitOnKey, suffix, unsuffix } from './keys.ts'
+import { PathManager, PathManagerDefaults, PathManagerOptions } from './path-manager.ts'
+import { b, bytesEqual, bytesHex, t, toBytes } from '../../../../cesr/mod.ts'
 
 // type aliases for the binary keys and values of LMDB
 export type BinKey = Uint8Array;
 export type BinVal = Uint8Array;
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-/** UTF-8 string -> bytes helper. */
-export const b = (t: string): Uint8Array => encoder.encode(t);
-/** UTF-8 bytes -> string helper. */
-export const t = (b: Uint8Array): string => decoder.decode(b);
 
 /** Default separator used by ordinal/suffix key helpers (`onKey`, `suffix`). */
 const DOT_SEP = b(".");
@@ -36,40 +25,6 @@ const DOT_SEP = b(".");
 const IODUP_PROEM_HEX_SIZE = 32;
 /** Full IoDup proem size: 32-hex ordinal + `.` separator. */
 const IODUP_PROEM_SIZE = 33;
-
-/**
- * Normalize lmdb-js key/value payloads to `Uint8Array`.
- * Example: converts Node `Buffer`-like values from `getRange()`.
- */
-function toBytes(value: unknown): Uint8Array {
-  if (value instanceof Uint8Array) {
-    return value;
-  }
-  return new Uint8Array(value as ArrayLike<number>);
-}
-
-/** Constant-time-ish byte equality for small DB keys/values. */
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  for (let i = 0; i < left.length; i++) {
-    if (left[i] !== right[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** Stable hex fingerprint used for set-membership dedupe of binary values. */
-function bytesHex(value: Uint8Array): string {
-  // deno-fmt-ignore
-  return Array.from(value)
-    .map((byte) =>
-            byte.toString(16)
-                .padStart(2, "0"))
-    .join("");
-}
 
 /**
  * Dedupe binary values while preserving first-seen order.

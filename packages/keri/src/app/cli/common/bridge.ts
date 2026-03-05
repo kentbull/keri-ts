@@ -8,6 +8,7 @@ import {
   type Subscription,
   withResolvers,
 } from "npm:effection@^3.6.0";
+import { t } from '../../../../../cesr/mod.ts'
 
 export interface KliExecResult {
   code: number;
@@ -30,8 +31,8 @@ export async function runKli(
     const out = await cmd.output();
     return {
       code: out.code,
-      stdout: new TextDecoder().decode(out.stdout),
-      stderr: new TextDecoder().decode(out.stderr),
+      stdout: t(out.stdout),
+      stderr: t(out.stderr),
     };
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {

@@ -16,16 +16,17 @@ import {
 } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
+import { b } from '../../src/index.ts'
 
 function v1ifyAcdc(raw: string): string {
-  const size = new TextEncoder().encode(raw).length;
+  const size = b(raw).length;
   const sizeHex = size.toString(16).padStart(6, "0");
   return raw.replace("ACDC10JSON000000_", `ACDC10JSON${sizeHex}_`);
 }
 
 Deno.test("serder: parseSerder hydrates SerderKERI for KERI payloads", () => {
   const body = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
-  const raw = new TextEncoder().encode(body);
+  const raw = b(body);
   const { smellage } = smell(raw);
 
   const serder = parseSerder(raw, smellage);
@@ -38,7 +39,7 @@ Deno.test("serder: parseSerder hydrates SerderKERI for KERI payloads", () => {
 
 Deno.test("serder: parseSerder hydrates SerderACDC for ACDC payloads", () => {
   const body = v1ifyAcdc('{"v":"ACDC10JSON000000_","d":"Eacdcsaid","a":{}}');
-  const raw = new TextEncoder().encode(body);
+  const raw = b(body);
   const { smellage } = smell(raw);
 
   const serder = parseSerder(raw, smellage);
@@ -49,7 +50,7 @@ Deno.test("serder: parseSerder hydrates SerderACDC for ACDC payloads", () => {
 });
 
 Deno.test("serder: subtype constructors reject wrong protocol domains", () => {
-  const raw = new TextEncoder().encode('{"v":"KERI20JSON000000_","d":"Eabc"}');
+  const raw = b('{"v":"KERI20JSON000000_","d":"Eabc"}');
   const smellage = {
     proto: "ACDC" as const,
     kind: "JSON" as const,
@@ -100,7 +101,7 @@ Deno.test("serder: structor projection classifies attachment families", () => {
 
   const parser = createParser();
   const events = [
-    ...parser.feed(new TextEncoder().encode(stream)),
+    ...parser.feed(b(stream)),
     ...parser.flush(),
   ];
   const frame = events.find((event) => event.type === "frame");
@@ -135,7 +136,7 @@ Deno.test("serder: projection traverses nested wrapper groups and preserves othe
 
   const parser = createParser();
   const events = [
-    ...parser.feed(new TextEncoder().encode(stream)),
+    ...parser.feed(b(stream)),
     ...parser.flush(),
   ];
   const frame = events.find((event) => event.type === "frame");
@@ -155,7 +156,7 @@ Deno.test("serder: projection traverses nested wrapper groups and preserves othe
 
 Deno.test("serder: parseSerder wraps malformed JSON decode failures", () => {
   const bad = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"');
-  const raw = new TextEncoder().encode(bad);
+  const raw = b(bad);
   const { smellage } = smell(raw);
   assertThrows(() => parseSerder(raw, smellage), DeserializeError);
 });

@@ -1,4 +1,4 @@
-import { codeB64ToB2, encodeB64 } from "../core/bytes.ts";
+import { b, codeB64ToB2, encodeB64, t } from '../core/bytes.ts'
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
@@ -11,7 +11,7 @@ import type { Versionage } from "../tables/table-types.ts";
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 
 function toText(input: Uint8Array): string {
-  return new TextDecoder().decode(input);
+  return t(input);
 }
 
 function serializeEntryQb64(entry: GroupEntry): string {
@@ -30,7 +30,7 @@ function inferSerialized(
 ): Uint8Array {
   const qb64 = `${group.qb64}${group.items.map((item) => serializeEntryQb64(item)).join("")}`;
   return sourceDomain === "txt"
-    ? new TextEncoder().encode(qb64)
+    ? b(qb64)
     : codeB64ToB2(qb64);
 }
 

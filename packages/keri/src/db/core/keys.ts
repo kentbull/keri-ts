@@ -7,6 +7,8 @@
 
 import { DatabaseKeyError, ValidationError } from "../../core/errors.ts";
 
+import { b, t } from '../../../../cesr/mod.ts'
+
 /**
  * Create a digest key: prefix.digest
  *
@@ -19,50 +21,50 @@ export function dgKey(
   dig: string | Uint8Array,
 ): Uint8Array {
   const preBytes = typeof pre === "string"
-    ? new TextEncoder().encode(pre)
+    ? b(pre)
     : pre;
   const digBytes = typeof dig === "string"
-    ? new TextEncoder().encode(dig)
+    ? b(dig)
     : dig;
 
   const result = new Uint8Array(preBytes.length + 1 + digBytes.length);
   result.set(preBytes, 0);
-  result.set(new TextEncoder().encode("."), preBytes.length);
+  result.set(b("."), preBytes.length);
   result.set(digBytes, preBytes.length + 1);
 
   return result;
 }
 
 /**
- * Create an ordinal key: prefix.separator + 32-char hex ordinal
+ * Create an ordinal key: top.separator + 32-char hex ordinal
  *
- * @param pre - Prefix (string or Uint8Array)
- * @param sn - Sequence number or ordinal number
+ * @param top - top key (string or Uint8Array)
+ * @param on - Ordinal number to be converted to 32 hex bytes
  * @param sep - Separator (default '.')
  * @returns Uint8Array key with separator and zero-padded hex ordinal
  */
 export function onKey(
-  pre: string | Uint8Array,
-  sn: number,
+  top: string | Uint8Array,
+  on: number,
   sep: string | Uint8Array = ".",
 ): Uint8Array {
-  const preBytes = typeof pre === "string"
-    ? new TextEncoder().encode(pre)
-    : pre;
+  const topBytes = typeof top === "string"
+    ? b(top)
+    : top;
   const sepBytes = typeof sep === "string"
-    ? new TextEncoder().encode(sep)
+    ? b(sep)
     : sep;
 
   // Format ordinal as 32-char hex, zero-padded
-  const ordinalHex = sn.toString(16).padStart(32, "0");
-  const ordinalBytes = new TextEncoder().encode(ordinalHex);
+  const ordinalHex = on.toString(16).padStart(32, "0");
+  const ordinalBytes = b(ordinalHex);
 
   const result = new Uint8Array(
-    preBytes.length + sepBytes.length + ordinalBytes.length,
+    topBytes.length + sepBytes.length + ordinalBytes.length,
   );
-  result.set(preBytes, 0);
-  result.set(sepBytes, preBytes.length);
-  result.set(ordinalBytes, preBytes.length + sepBytes.length);
+  result.set(topBytes, 0);
+  result.set(sepBytes, topBytes.length);
+  result.set(ordinalBytes, topBytes.length + sepBytes.length);
 
   return result;
 }
@@ -91,13 +93,13 @@ export function riKey(pre: string | Uint8Array, ri: number): Uint8Array {
  */
 export function dtKey(pre: string | Uint8Array, dts: string): Uint8Array {
   const preBytes = typeof pre === "string"
-    ? new TextEncoder().encode(pre)
+    ? b(pre)
     : pre;
-  const dtsBytes = new TextEncoder().encode(dts);
+  const dtsBytes = b(dts);
 
   const result = new Uint8Array(preBytes.length + 1 + dtsBytes.length);
   result.set(preBytes, 0);
-  result.set(new TextEncoder().encode("|"), preBytes.length);
+  result.set(b("|"), preBytes.length);
   result.set(dtsBytes, preBytes.length + 1);
 
   return result;
@@ -116,14 +118,14 @@ export function splitKey(
   sep: string | Uint8Array = ".",
 ): [Uint8Array, Uint8Array] {
   const keyBytes = typeof key === "string"
-    ? new TextEncoder().encode(key)
+    ? b(key)
     : key;
   const sepBytes = typeof sep === "string"
-    ? new TextEncoder().encode(sep)
+    ? b(sep)
     : sep;
 
-  const sepStr = new TextDecoder().decode(sepBytes);
-  const keyStr = new TextDecoder().decode(keyBytes);
+  const sepStr = t(sepBytes);
+  const keyStr = t(keyBytes);
 
   const splitAt = keyStr.lastIndexOf(sepStr);
   if (splitAt <= 0 || splitAt + sepStr.length >= keyStr.length) {
@@ -134,8 +136,8 @@ export function splitKey(
   }
 
   return [
-    new TextEncoder().encode(keyStr.slice(0, splitAt)),
-    new TextEncoder().encode(keyStr.slice(splitAt + sepStr.length)),
+    b(keyStr.slice(0, splitAt)),
+    b(keyStr.slice(splitAt + sepStr.length)),
   ];
 }
 
@@ -151,7 +153,7 @@ export function splitKeyON(
   sep: string | Uint8Array = ".",
 ): [Uint8Array, number] {
   const [prefix, suffix] = splitKey(key, sep);
-  const suffixStr = new TextDecoder().decode(suffix);
+  const suffixStr = t(suffix);
   const ordinal = parseInt(suffixStr, 16);
   return [prefix, ordinal];
 }
@@ -171,7 +173,7 @@ export const splitOnKey = splitKeyON;
  */
 export function splitKeyDT(key: Uint8Array | string): [Uint8Array, string] {
   const [prefix, suffix] = splitKey(key, "|");
-  const datetimeStr = new TextDecoder().decode(suffix);
+  const datetimeStr = t(suffix);
   return [prefix, datetimeStr];
 }
 
@@ -189,14 +191,14 @@ export function suffix(
   sep: string | Uint8Array = ".",
 ): Uint8Array {
   const keyBytes = typeof key === "string"
-    ? new TextEncoder().encode(key)
+    ? b(key)
     : key;
   const sepBytes = typeof sep === "string"
-    ? new TextEncoder().encode(sep)
+    ? b(sep)
     : sep;
 
   const ordinalHex = ion.toString(16).padStart(32, "0");
-  const ordinalBytes = new TextEncoder().encode(ordinalHex);
+  const ordinalBytes = b(ordinalHex);
 
   const result = new Uint8Array(
     keyBytes.length + sepBytes.length + ordinalBytes.length,
@@ -220,14 +222,14 @@ export function unsuffix(
   sep: string | Uint8Array = ".",
 ): [Uint8Array, number] {
   const iokeyBytes = typeof iokey === "string"
-    ? new TextEncoder().encode(iokey)
+    ? b(iokey)
     : iokey;
   const sepBytes = typeof sep === "string"
-    ? new TextEncoder().encode(sep)
+    ? b(sep)
     : sep;
 
-  const sepStr = new TextDecoder().decode(sepBytes);
-  const iokeyStr = new TextDecoder().decode(iokeyBytes);
+  const sepStr = t(sepBytes);
+  const iokeyStr = t(iokeyBytes);
 
   const lastSepIndex = iokeyStr.lastIndexOf(sepStr);
   if (lastSepIndex === -1) {
@@ -241,7 +243,7 @@ export function unsuffix(
   const suffixStr = iokeyStr.substring(lastSepIndex + sepStr.length);
   const ordinal = parseInt(suffixStr, 16);
 
-  return [new TextEncoder().encode(keyStr), ordinal];
+  return [b(keyStr), ordinal];
 }
 
 // Constants
