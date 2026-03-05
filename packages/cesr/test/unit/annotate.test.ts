@@ -103,7 +103,7 @@ Deno.test("annotate handles v1 wrapper carrying v2 -J generic list payload", () 
   const annotated = annotate(ims);
   assertStringIncludes(annotated, "AttachmentGroup");
   assertStringIncludes(annotated, "GenericListGroup");
-  assertStringIncludes(annotated, "opaque token");
+  assertStringIncludes(annotated, "opaque wrapper payload");
 });
 
 Deno.test("annotate supports legacy v1 SadPathSig inside attachment wrapper", () => {

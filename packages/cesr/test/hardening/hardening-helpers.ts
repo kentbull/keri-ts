@@ -282,10 +282,10 @@ export function wrapperHeavyV2Stream(): string {
  * syntax/semantic boundary handling under chunked parsing.
  */
 export function buildNestedMapBodyV2(): string {
-  const innerPayload = `VAAA${sigerToken()}`;
+  const innerPayload = `0J_i${sigerToken()}`;
   const innerMap = wrapQuadletGroupV2(CtrDexV2.MapBodyGroup, innerPayload);
   const outerPayload =
-    `VAAA${innerMap}VAAA${sigerToken()}VAAA${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    `0J_a${innerMap}0J_b${sigerToken()}0J_c${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   return wrapQuadletGroupV2(CtrDexV2.MapBodyGroup, outerPayload);
 }
 

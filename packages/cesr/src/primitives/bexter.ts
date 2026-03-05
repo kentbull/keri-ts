@@ -1,37 +1,73 @@
+import { decodeB64, encodeB64 } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
+import { BEXTER_CODES } from "./codex.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
-export interface Bexter {
-  code: string;
-  qb64: string;
-  bext: string;
-  fullSize: number;
-  fullSizeB2: number;
+/** Resolve lead-byte width (`ls`) used by StrB64 code family conversions. */
+function getLeadSize(code: string): number {
+  const sizage = MATTER_SIZES.get(code);
+  if (!sizage) {
+    throw new UnknownCodeError(`Unknown bexter code ${code}`);
+  }
+  return sizage.ls;
 }
 
-function isBexterCode(code: string): boolean {
-  const name = MATTER_CODE_NAMES[code as keyof typeof MATTER_CODE_NAMES] ?? "";
-  return name.startsWith("StrB64_") || name.startsWith("StrB64_Big_");
+/** True when code belongs to KERIpy `BextCodex`/StrB64 family. */
+export function isBexterCode(code: string): boolean {
+  return BEXTER_CODES.has(code);
 }
 
+export class Bexter extends Matter {
+  /**
+   * Base64-text primitive (`bext`) with compact CESR encoding.
+   *
+   * KERIpy semantics: values are constrained to Base64 URL-safe characters and
+   * encoded more compactly than generic UTF-8 text payloads.
+   * Invariant: code must be in StrB64 codex family.
+   */
+  /** Convert bext text into CESR raw payload bytes. */
+  static rawify(bext: string): Uint8Array {
+    const ts = bext.length % 4;
+    const ws = (4 - ts) % 4;
+    const ls = (3 - ts) % 3;
+    return decodeB64("A".repeat(ws) + bext).slice(ls);
+  }
+
+  /** Decode CESR raw payload bytes back into bext text. */
+  static derawify(raw: Uint8Array, code: string): string {
+    const ls = getLeadSize(code);
+    const bext = encodeB64(new Uint8Array([...new Uint8Array(ls), ...raw]));
+    const ws = ls === 0 && bext.startsWith("A") ? 1 : (ls + 1) % 4;
+    return bext.slice(ws);
+  }
+
+  constructor(init: Matter | MatterInit) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    if (!isBexterCode(this.code)) {
+      throw new UnknownCodeError(
+        `Expected bexter strb64 code, got ${this.code}`,
+      );
+    }
+  }
+
+  /** Base64 text payload value without CESR code prefix. */
+  get bext(): string {
+    return Bexter.derawify(this.raw, this.code);
+  }
+}
+
+/**
+ * Parse and hydrate a `Bexter` from txt/qb2 bytes.
+ *
+ * Boundary contract: parser chooses domain from `cold`, while this constructor
+ * enforces codex membership and exposes semantic `bext` accessors.
+ */
 export function parseBexter(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Bexter {
-  const matter = parseMatter(input, cold);
-  if (!isBexterCode(matter.code)) {
-    throw new UnknownCodeError(
-      `Expected bexter strb64 code, got ${matter.code}`,
-    );
-  }
-
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    bext: new TextDecoder().decode(matter.raw),
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-  };
+  return new Bexter(parseMatter(input, cold));
 }

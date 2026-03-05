@@ -125,17 +125,17 @@ export function splitKey(
   const sepStr = new TextDecoder().decode(sepBytes);
   const keyStr = new TextDecoder().decode(keyBytes);
 
-  const parts = keyStr.split(sepStr);
-  if (parts.length !== 2) {
+  const splitAt = keyStr.lastIndexOf(sepStr);
+  if (splitAt <= 0 || splitAt + sepStr.length >= keyStr.length) {
     throw new ValidationError(
-      `Key must split into exactly 2 parts, got ${parts.length}`,
-      { key: keyStr, separator: sepStr, parts: parts.length },
+      `Key must split into exactly 2 parts at rightmost separator`,
+      { key: keyStr, separator: sepStr },
     );
   }
 
   return [
-    new TextEncoder().encode(parts[0]),
-    new TextEncoder().encode(parts[1]),
+    new TextEncoder().encode(keyStr.slice(0, splitAt)),
+    new TextEncoder().encode(keyStr.slice(splitAt + sepStr.length)),
   ];
 }
 
@@ -161,6 +161,7 @@ export const splitSnKey = splitKeyON;
 export const splitFnKey = splitKeyON;
 export const splitKeySN = splitKeyON;
 export const splitKeyFN = splitKeyON;
+export const splitOnKey = splitKeyON;
 
 /**
  * Split a datetime key and parse the datetime

@@ -6,7 +6,8 @@
 - Updated: 2026-03-01
 - Priority: high
 - Depends on: `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
-- Related: `docs/plans/cesr/cesr-parser-buffer-perf-plan.md` (deferred perf work)
+- Related: `docs/plans/cesr/cesr-parser-buffer-perf-plan.md` (deferred perf
+  work)
 
 ## Objective
 

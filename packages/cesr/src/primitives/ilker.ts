@@ -1,28 +1,33 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
+import { Tagger } from "./tagger.ts";
 
-export interface Ilker {
-  code: string;
-  qb64: string;
-  fullSize: number;
-  fullSizeB2: number;
-  ilk: string;
+/**
+ * Message-type primitive (`ilk`) encoded via Tagger compact tag semantics.
+ *
+ * KERIpy semantics: `Ilker` is restricted to Tag3 (`X`) values that carry
+ * compact Base64 ilk identifiers.
+ */
+export class Ilker extends Tagger {
+  constructor(init: Matter | MatterInit) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    if (this.code !== "X") {
+      throw new UnknownCodeError(`Expected ilker code X, got ${this.code}`);
+    }
+  }
+
+  /** Decoded ilk value (alias of tag payload for this subclass). */
+  get ilk(): string {
+    return this.tag;
+  }
 }
 
+/** Parse and hydrate `Ilker` from txt/qb2 bytes. */
 export function parseIlker(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Ilker {
-  const matter = parseMatter(input, cold);
-  if (matter.code !== "X") {
-    throw new UnknownCodeError(`Expected ilker code X, got ${matter.code}`);
-  }
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-    ilk: matter.qb64.slice(matter.code.length),
-  };
+  return new Ilker(parseMatter(input, cold));
 }

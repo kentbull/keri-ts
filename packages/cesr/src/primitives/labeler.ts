@@ -1,52 +1,95 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
-
-export interface Labeler {
-  code: string;
-  qb64: string;
-  fullSize: number;
-  fullSizeB2: number;
-  token: string;
-  label: string;
-  index: number;
-  bytes: Uint8Array;
-}
+import { BEXTER_CODES, isAttLabel, LABELER_CODES, TAG_CODES } from "./codex.ts";
+import { Bexter } from "./bexter.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
+import { Tagger } from "./tagger.ts";
 
 const TEXT_DECODER = new TextDecoder();
-const LABELER_CODES = new Set(["V", "W"]);
 
+/** True when code belongs to KERIpy `LabelCodex` accepted by native map labels. */
 export function isLabelerCode(code: string): boolean {
   return LABELER_CODES.has(code);
 }
 
-/** Parse a V/W label primitive into decoded map-label metadata. */
+/**
+ * Decode a label/text token according to LabelCodex encoding rules.
+ *
+ * Tag/Bext encodings require specialized decoding logic; all other label forms
+ * project directly from raw bytes.
+ */
+function decodeLabelText(matter: Matter): string {
+  if (TAG_CODES.has(matter.code)) {
+    return new Tagger(matter).tag;
+  }
+  if (BEXTER_CODES.has(matter.code)) {
+    const bext = Bexter.derawify(matter.raw, matter.code);
+    return bext.startsWith("-") && isAttLabel(bext.slice(1))
+      ? bext.slice(1)
+      : bext;
+  }
+  return TEXT_DECODER.decode(matter.raw);
+}
+
+/**
+ * Label/text primitive used for native map keys and textual field values.
+ *
+ * KERIpy semantics: `Labeler` accepts Tag/Bext/Bytes families (plus compact
+ * label codes) and provides both strict attribute-label projection (`label`)
+ * and generic text projection (`text`).
+ */
+export class Labeler extends Matter {
+  constructor(init: Matter | MatterInit) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    if (!isLabelerCode(this.code)) {
+      throw new UnknownCodeError(`Expected labeler code, got ${this.code}`);
+    }
+  }
+
+  /** Canonical qb64 token for emit/roundtrip paths. */
+  get token(): string {
+    return this.qb64;
+  }
+
+  /** Attribute-safe label projection used for map key semantics. */
+  get label(): string {
+    const label = decodeLabelText(this);
+    if (!isAttLabel(label)) {
+      throw new UnknownCodeError(`Invalid label text: ${label}`);
+    }
+    return label;
+  }
+
+  /** Raw text projection without attribute-name validation. */
+  get text(): string {
+    return decodeLabelText(this);
+  }
+
+  /** Numeric projection helper used for compact fixed-width label values. */
+  get index(): number {
+    let index = 0;
+    for (const b of this.raw) {
+      index = (index << 8) | b;
+    }
+    return index;
+  }
+
+  /** Raw decoded bytes backing the label/text token. */
+  get bytes(): Uint8Array {
+    return this.raw;
+  }
+}
+
+/**
+ * Parse and hydrate a `Labeler` from txt/qb2 bytes.
+ *
+ * Boundary contract: parsing is syntactic; semantic label validity is enforced
+ * when `label` accessor is read.
+ */
 export function parseLabeler(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Labeler {
-  // Labelers are fixed-size matter primitives used as map field keys.
-  const matter = parseMatter(input, cold);
-  if (!isLabelerCode(matter.code)) {
-    throw new UnknownCodeError(
-      `Expected labeler code (V/W), got ${matter.code}`,
-    );
-  }
-  let index = 0;
-  for (const b of matter.raw) {
-    index = (index << 8) | b;
-  }
-  const text = TEXT_DECODER.decode(matter.raw).replace(/\u0000/g, "");
-  const label = text.length > 0 ? text : matter.qb64.slice(matter.code.length);
-
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-    token: matter.qb64,
-    label,
-    index,
-    bytes: matter.raw,
-  };
+  return new Labeler(parseMatter(input, cold));
 }

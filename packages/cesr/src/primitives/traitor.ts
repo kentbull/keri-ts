@@ -1,36 +1,34 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { TRAIT_TAGS } from "./codex.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
+import { Tagger } from "./tagger.ts";
 
-export interface Traitor {
-  code: string;
-  qb64: string;
-  trait: string;
-  fullSize: number;
-  fullSizeB2: number;
+/**
+ * Configuration-trait primitive for key-event trait tags.
+ *
+ * KERIpy semantics: trait values are compact tags validated against `TraitDex`
+ * symbols (`EO`, `DND`, `RB`, `NB`, `NRB`, `DID`).
+ */
+export class Traitor extends Tagger {
+  constructor(init: Matter | MatterInit) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    if (!TRAIT_TAGS.has(this.tag)) {
+      throw new UnknownCodeError(`Invalid trait tag for Traitor: ${this.tag}`);
+    }
+  }
+
+  /** Trait string token (alias of validated tag payload). */
+  get trait(): string {
+    return this.tag;
+  }
 }
 
-function isTraitName(name: string): boolean {
-  return name.startsWith("Tag") || name === "No" || name === "Yes";
-}
-
+/** Parse and hydrate `Traitor` from txt/qb2 bytes. */
 export function parseTraitor(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Traitor {
-  const matter = parseMatter(input, cold);
-  const name =
-    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ?? "";
-  if (!isTraitName(name)) {
-    throw new UnknownCodeError(`Expected trait code, got ${matter.code}`);
-  }
-
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    trait: name,
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-  };
+  return new Traitor(parseMatter(input, cold));
 }

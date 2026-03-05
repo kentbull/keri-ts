@@ -1,4 +1,3 @@
-import { encodeB64 } from "../core/bytes.ts";
 import {
   DeserializeError,
   SemanticInterpretationError,
@@ -13,6 +12,7 @@ import type { Versionage } from "../tables/table-types.ts";
 import { parseCounter } from "./counter.ts";
 import { parseLabeler } from "./labeler.ts";
 import { parseMatter } from "./matter.ts";
+import type { Primitive } from "./primitive.ts";
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 
@@ -32,8 +32,7 @@ const LIST_GROUP_CODES = new Set([
 
 export interface MapperField {
   label: string | null;
-  code: string;
-  qb64: string;
+  primitive: Primitive;
   isCounter: boolean;
   children?: MapperField[];
 }
@@ -51,8 +50,7 @@ export interface Mapper {
 /** Label token artifact produced during map payload syntax parsing. */
 export interface MapperLabelTokenSyntax {
   kind: "label";
-  code: string;
-  qb64: string;
+  primitive: Primitive;
   label: string;
   consumed: number;
 }
@@ -60,8 +58,7 @@ export interface MapperLabelTokenSyntax {
 /** Value token artifact produced during map payload syntax parsing. */
 export interface MapperValueTokenSyntax {
   kind: "value";
-  code: string;
-  qb64: string;
+  primitive: Primitive;
   isCounter: boolean;
   consumed: number;
   children?: MapperBodySyntax;
@@ -97,10 +94,6 @@ function tokenSize(
 
 function isMapGroupCode(code: string): boolean {
   return MAP_GROUP_CODES.has(code);
-}
-
-function asQb64(raw: Uint8Array, domain: ParseDomain): string {
-  return domain === "txt" ? String.fromCharCode(...raw) : encodeB64(raw);
 }
 
 function parseCounterProbe(
@@ -173,11 +166,9 @@ function parseMapperValueSyntax(
   const counter = parseCounterProbe(input, version, domain);
   if (counter) {
     const dispatch = parseAttachmentDispatch(input, version, domain);
-    const raw = input.slice(0, dispatch.consumed);
     const value: MapperValueTokenSyntax = {
       kind: "value",
-      code: dispatch.group.code,
-      qb64: asQb64(raw, domain),
+      primitive: dispatch.group,
       isCounter: true,
       consumed: dispatch.consumed,
     };
@@ -192,8 +183,7 @@ function parseMapperValueSyntax(
   const matter = parseMatter(input, domain);
   return {
     kind: "value",
-    code: matter.code,
-    qb64: matter.qb64,
+    primitive: matter,
     isCounter: false,
     consumed: tokenSize(matter, domain),
   };
@@ -222,8 +212,7 @@ function parseMapPayloadSyntax(
       const consumed = tokenSize(maybeLabel, domain);
       entries.push({
         kind: "label",
-        code: maybeLabel.code,
-        qb64: maybeLabel.token,
+        primitive: parseMatter(at, domain),
         label: maybeLabel.label,
         consumed,
       });
@@ -257,8 +246,7 @@ export function interpretMapperBodySyntax(
 
     fields.push({
       label: pendingLabel,
-      code: entry.code,
-      qb64: entry.qb64,
+      primitive: entry.primitive,
       isCounter: entry.isCounter,
       children: entry.children
         ? interpretMapperBodySyntax(entry.children)

@@ -4,7 +4,8 @@ import {
   type ParserOptions,
 } from "../../src/core/parser-engine.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
-import { annotate, CesrFrame } from "../../src/index.ts";
+import type { CesrFrame } from "../../src/core/types.ts";
+import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import {
@@ -40,6 +41,11 @@ function v1OpaqueNonNativeFrame(): string {
   // `-W` is v1 NonNativeBodyGroup and expects count in quadlets.
   // `MAAA` is a fixed-size 4-char matter token payload.
   return `${counterV1(CtrDexV1.NonNativeBodyGroup, 1)}MAAA`;
+}
+
+function hasCode(entry: unknown): entry is { code: string } {
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry) &&
+    "code" in entry;
 }
 
 Deno.test("V-P0-003: top-level genus-version counter persists stream version for subsequent frame parses", () => {
@@ -97,14 +103,14 @@ Deno.test("V-P0-005: enclosed AttachmentGroup payload-leading genus-version over
   assertEquals(attachment.code, CtrDexV2.AttachmentGroup);
   assertEquals(
     attachment.items.some(
-      (item) => item.kind === "group" && item.name === "KERIACDCGenusVersion",
+      (item) => hasCode(item) && item.code === CtrDexV2.KERIACDCGenusVersion,
     ),
     false,
   );
 
   const nestedControllerSigs = attachment.items.find(
     (item) =>
-      item.kind === "group" &&
+      item instanceof CounterGroup &&
       item.name === "ControllerIdxSigs" &&
       item.code === CtrDexV1.ControllerIdxSigs,
   );

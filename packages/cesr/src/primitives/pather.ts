@@ -1,39 +1,44 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { parseMatter } from "./matter.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
-
-export interface Pather {
-  code: string;
-  qb64: string;
-  path: string;
-  fullSize: number;
-  fullSizeB2: number;
-}
+import { BEXTER_CODES, TEXTER_CODES } from "./codex.ts";
+import { Bexter } from "./bexter.ts";
+import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
 function isPatherCode(code: string): boolean {
-  const name = MATTER_CODE_NAMES[code as keyof typeof MATTER_CODE_NAMES] ?? "";
-  return name.startsWith("StrB64_") || name.startsWith("StrB64_Big_") ||
-    name.startsWith("Bytes_") || name.startsWith("Bytes_Big_");
+  return BEXTER_CODES.has(code) || TEXTER_CODES.has(code);
 }
 
+/**
+ * CESR path primitive for SAD traversal routes.
+ *
+ * KERIpy semantics: path strings may be compactly encoded via StrB64 family
+ * (`-` separators, optional `--` escape prefix) or carried as raw bytes.
+ */
+export class Pather extends Matter {
+  constructor(init: Matter | MatterInit) {
+    const matter = init instanceof Matter ? init : new Matter(init);
+    super(matter);
+    if (!isPatherCode(this.code)) {
+      throw new UnknownCodeError(
+        `Expected pather-compatible code, got ${this.code}`,
+      );
+    }
+  }
+
+  /** Decoded `/`-separated path form regardless of underlying CESR code family. */
+  get path(): string {
+    if (BEXTER_CODES.has(this.code)) {
+      const bext = Bexter.derawify(this.raw, this.code).replace(/^--/, "");
+      return bext.split("-").join("/");
+    }
+    return new TextDecoder().decode(this.raw);
+  }
+}
+
+/** Parse and hydrate a `Pather` from txt/qb2 bytes. */
 export function parsePather(
   input: Uint8Array,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Pather {
-  const matter = parseMatter(input, cold);
-  if (!isPatherCode(matter.code)) {
-    throw new UnknownCodeError(
-      `Expected pather-compatible code, got ${matter.code}`,
-    );
-  }
-  // For parser-level fidelity we preserve encoded path token text.
-  const path = matter.qb64.slice(matter.code.length);
-  return {
-    code: matter.code,
-    qb64: matter.qb64,
-    path,
-    fullSize: matter.fullSize,
-    fullSizeB2: matter.fullSizeB2,
-  };
+  return new Pather(parseMatter(input, cold));
 }

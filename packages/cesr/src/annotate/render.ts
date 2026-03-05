@@ -1,4 +1,4 @@
-import type { AttachmentItem, CesrMessage } from "../core/types.ts";
+import type { CesrMessage } from "../core/types.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
@@ -9,10 +9,16 @@ import {
   UnknownCodeError,
 } from "../core/errors.ts";
 import { sniff } from "../parser/cold-start.ts";
-import { parseCounter } from "../primitives/counter.ts";
-import { parseMatter } from "../primitives/matter.ts";
-import { parseIndexer } from "../primitives/indexer.ts";
+import { Counter, parseCounter } from "../primitives/counter.ts";
+import { Indexer } from "../primitives/indexer.ts";
+import { Matter, parseMatter } from "../primitives/matter.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
+import {
+  isCounterGroupLike,
+  isPrimitiveTuple,
+  type GroupEntry,
+} from "../primitives/primitive.ts";
+import { UnknownPrimitive } from "../primitives/unknown.ts";
 import {
   counterCodeName,
   counterCodeNameForVersion,
@@ -22,7 +28,6 @@ import {
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
 
 const TEXT_DECODER = new TextDecoder();
-const TEXT_ENCODER = new TextEncoder();
 const OPAQUE_TOKEN_COMMENT = "opaque token";
 const OPAQUE_WRAPPER_PAYLOAD_COMMENT = "opaque wrapper payload";
 
@@ -84,58 +89,6 @@ function emitLine(
   lines.push(`${pad}${value} # ${comment}`);
 }
 
-function describeToken(
-  token: string,
-  domain: "txt" | "bny",
-  version: Versionage,
-): {
-  comment: string;
-  size: number;
-} {
-  const input = TEXT_ENCODER.encode(token);
-  try {
-    const counter = parseCounter(input, version, domain);
-    return {
-      comment: `${counterCodeNameForVersion(counter.code, version)} counter`,
-      size: domain === "bny" ? counter.fullSizeB2 : counter.fullSize,
-    };
-  } catch (error) {
-    if (!isRecoverableParseError(error)) {
-      throw error;
-    }
-    // Try indexer/matter below.
-  }
-
-  try {
-    const indexer = parseIndexer(input, domain);
-    return {
-      comment: `Indexer ${indexer.code}`,
-      size: domain === "bny" ? indexer.fullSizeB2 : indexer.fullSize,
-    };
-  } catch (error) {
-    if (!isRecoverableParseError(error)) {
-      throw error;
-    }
-    // Try matter below.
-  }
-
-  try {
-    const matter = parseMatter(input, domain);
-    return {
-      comment: matterCodeName(matter.code),
-      size: domain === "bny" ? matter.fullSizeB2 : matter.fullSize,
-    };
-  } catch (error) {
-    if (!isRecoverableParseError(error)) {
-      throw error;
-    }
-    return {
-      comment: OPAQUE_TOKEN_COMMENT,
-      size: token.length,
-    };
-  }
-}
-
 function parseCounterCompat(
   input: Uint8Array,
   version: Versionage,
@@ -170,36 +123,16 @@ function decodeVersionCounter(
 
 function renderGroupItems(
   lines: string[],
-  items: AttachmentItem[],
+  items: readonly GroupEntry[],
   version: Versionage,
   indent: number,
   options: Required<AnnotateOptions>,
 ): void {
   for (const item of items) {
-    if (item.kind === "qb64") {
-      const parsed = describeToken(item.qb64, "txt", version);
-      const comment = item.opaque
-        ? OPAQUE_WRAPPER_PAYLOAD_COMMENT
-        : parsed.comment;
-      emitLine(lines, item.qb64, comment, indent, options);
-      continue;
-    }
-
-    if (item.kind === "qb2") {
-      emitLine(
-        lines,
-        `0x${toHex(item.qb2)}`,
-        item.opaque ? OPAQUE_WRAPPER_PAYLOAD_COMMENT : "raw qb2 triplet token",
-        indent,
-        options,
-      );
-      continue;
-    }
-
-    if (item.kind === "tuple") {
+    if (isPrimitiveTuple(item)) {
       renderGroupItems(
         lines,
-        item.items,
+        item,
         version,
         indent + options.indent,
         options,
@@ -207,15 +140,54 @@ function renderGroupItems(
       continue;
     }
 
-    if (item.kind === "group") {
+    if (isCounterGroupLike(item)) {
       emitLine(
         lines,
-        `${item.code}`,
+        item.qb64,
         `${item.name} nested group`,
         indent,
         options,
       );
+      renderGroupItems(
+        lines,
+        [...item.items],
+        version,
+        indent + options.indent,
+        options,
+      );
+      continue;
     }
+
+    if (item instanceof UnknownPrimitive) {
+      const value = item.sourceDomain === "bny"
+        ? `0x${toHex(item.qb2)}`
+        : item.qb64;
+      emitLine(lines, value, OPAQUE_WRAPPER_PAYLOAD_COMMENT, indent, options);
+      continue;
+    }
+
+    if (item instanceof Counter) {
+      emitLine(
+        lines,
+        item.qb64,
+        `${counterCodeNameForVersion(item.code, version)} counter`,
+        indent,
+        options,
+      );
+      continue;
+    }
+
+    if (item instanceof Indexer) {
+      emitLine(lines, item.qb64, `Indexer ${item.code}`, indent, options);
+      continue;
+    }
+
+    if (item instanceof Matter) {
+      emitLine(lines, item.qb64, matterCodeName(item.code), indent, options);
+      continue;
+    }
+
+    emitLine(lines, String(item), OPAQUE_TOKEN_COMMENT, indent, options);
   }
 }
 
@@ -328,12 +300,46 @@ function renderNativeBody(
     options,
   );
 
-  for (const field of frame.body.native?.fields ?? []) {
-    const label = nativeLabelName(field.label);
-    const comment = label
-      ? `${label} (${matterCodeName(field.code)})`
-      : matterCodeName(field.code);
-    emitLine(lines, field.qb64, comment, options.indent, options);
+  const unit = domain === "bny" ? 3 : 4;
+  const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
+  const payloadSize = counter.count * unit;
+  const end = Math.min(raw.length, headerSize + payloadSize);
+  let offset = headerSize;
+
+  while (offset < end) {
+    const slice = raw.slice(offset, end);
+    try {
+      const nestedCounter = parseCounterCompat(slice, version, domain);
+      const nestedCounterSize = domain === "bny"
+        ? nestedCounter.fullSizeB2
+        : nestedCounter.fullSize;
+      emitLine(
+        lines,
+        nestedCounter.qb64,
+        `${counterCodeNameForVersion(nestedCounter.code, version)} counter`,
+        options.indent,
+        options,
+      );
+      offset += nestedCounterSize;
+      continue;
+    } catch (error) {
+      if (!isRecoverableParseError(error)) {
+        throw error;
+      }
+    }
+
+    const matter = parseMatter(slice, domain);
+    const matterSize = domain === "bny" ? matter.fullSizeB2 : matter.fullSize;
+    const field = frame.body.native?.fields.find((candidate) =>
+      candidate.primitive.qb64 === matter.qb64
+    );
+    const label = field ? nativeLabelName(field.label) : null;
+    const primitiveComment = matter instanceof Indexer
+      ? `Indexer ${matter.code}`
+      : matterCodeName(matter.code);
+    const comment = label ? `${label} (${primitiveComment})` : primitiveComment;
+    emitLine(lines, matter.qb64, comment, options.indent, options);
+    offset += matterSize;
   }
 }
 

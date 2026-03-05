@@ -51,6 +51,75 @@ This keeps context focused and avoids long-thread drift.
 
 ## Cross-Topic Snapshot
 
+### 2026-03-04
+
+1. CESR/crypto primitive modules now include maintainer-oriented class/function
+   docstrings that capture KERIpy-substance (purpose, invariants, semantic
+   projections, and parser/crypto boundary contracts) across the new
+   primitive-first hydration classes.
+2. Follow-up doc completion closed remaining gaps in core primitive families
+   (`Matter`, `Indexer`, `Counter`) and verifier/signature primitives
+   (`Verfer`/`Cigar`/`Diger`/`Siger`) so all classes/functions touched in the
+   primitive-first wave have explicit maintainer docs.
+3. Primitive-per-file CESR test migration is now complete (one test file per
+   primitive module) with aggregate primitive suites reduced to smoke coverage,
+   and parser wrapper-shape tests updated to assert primitive-first graph types
+   (`CounterGroup`/`UnknownPrimitive`/tuple narrowing) instead of legacy wrapper
+   object fields.
+4. Primitive serialization parity gaps discovered during migration were closed:
+   `Matter` qb2 raw extraction now matches text exfil semantics for non-zero
+   code-pad widths, and `Dater.dts` now follows KERIpy text projection behavior
+   from qualified token payload text.
+5. Annotate native-body rendering now tokenizes from raw native body bytes so
+   annotate/denot output remains deterministic and parseable under primitive
+   hydration, and CESR package baseline is green at `228 passed, 0 failed`
+   (`deno task test` in `packages/cesr`).
+6. Structor-family and Serder-integration tests were expanded with
+   KERIpy-main-derived vectors and nested wrapper projection assertions, raising
+   CESR package baseline to `244 passed, 0 failed` while explicitly tracking a
+   follow-up on canonical v2 tuple-family counter-count parity.
+
+### 2026-03-03
+
+1. Phase 2 reconciliation checkpoints were revalidated against current
+   artifacts: P0 (`harness + parity matrices`) and D0
+   (`inventory + parity
+   matrix`) satisfy their documented exit criteria; D1
+   is the active DB-layer workstream.
+2. D1 `dbing.py` parity advanced in code with new `LMDBer` core branch methods
+   (`cntTop`, `cntAll`, `delTop`) and lifecycle parity refinement for
+   `__version__` stamping on temp/new writeable opens.
+3. New db-core parity tests now lock lifecycle reopen/version behavior plus
+   branch iteration/count/delete semantics for both non-dup and dupsort
+   databases (`8 passed, 0 failed` on the targeted db-core suite).
+4. A new cross-topic DB design reference is now published at
+   `docs/design-docs/db/db-architecture.md`, documenting KERIpy DB architecture
+   and required `keri-ts` parity semantics, including a normative DB invariants
+   contract, and is now linked from KELS/ACDC/ Witness-Watcher-Observer
+   learnings docs.
+5. D1 `dbing.py` core parity advanced substantially: `LMDBer` now includes the
+   `On*`/`OnAll*`, `IoSet*`/`OnIoSet*`, `dup*`, `IoDup*`, and `OnIoDup*` method
+   families with parity tests expanded to `11 passed, 0 failed` across db-core
+   key/helper/parity suites.
+6. D1 oracle pass now includes direct KERIpy vectors for backward-iterator and
+   mixed-key edge behavior (`OnIoSet`/`OnIoDup` families), and LMDBer unit-test
+   representation coverage is now complete (`81` methods referenced, `0`
+   missing).
+7. A follow-up maintainer-doc pass now documents the `LMDBer` top helper layer
+   (byte/proem helpers) and clarifies parity-test intent/provenance in unit
+   tests, with db-core suites still green (`14 passed, 0 failed`).
+8. CI formatting policy is now explicit and enforced: a new PR/master CI
+   workflow runs `deno fmt --check`, release/version workflows also run
+   `deno fmt --check`, and CI guardrails fail on non-Deno formatter references
+   in workflow files.
+9. DB-core API hygiene tracking now explicitly flags `LMDBer.cntTop` and
+   `LMDBer.cntAll` for post `kli init/incept/rotate` keep-vs-remove review to
+   avoid unnecessary surface growth.
+10. CESR primitive parity was refreshed against KERIpy `main` (`5a5597e8`):
+    `Tagger`/`Decimer` were added, `Verser`/`Noncer`/`Labeler` hierarchy and
+    codex semantics were aligned to current KERIpy behavior, and targeted
+    primitive txt/qb2 suites now pass (`52 passed, 0 failed`).
+
 ### 2026-03-02
 
 1. Design-doc path references were synchronized with the
@@ -80,6 +149,40 @@ This keeps context focused and avoids long-thread drift.
 9. Follow-up bugfix completed: `--colored --pretty` now colors all pretty JSON
    body lines for SERDER output, with regression coverage in
    `packages/keri/test/unit/app/annotate.test.ts`.
+10. KERI reconciliation planning was expanded from init/incept-only to a
+    usability-first, two-controller interop arc in
+    `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`, adding early parity
+    gates for `list`, `aid`, `ends add`, OOBI generate/resolve, direct+mailbox
+    communication, and challenge generate/respond/verify.
+11. Directory policy is now explicit in plan scope: preserve default `.tufa`
+    isolation while providing opt-in KLI compatibility mode (`.keri`) via
+    CLI/config for cross-implementation interoperability.
+12. Phase 2 planning now includes a dedicated DB reconciliation artifact at
+    `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`, with explicit parity
+    workstreams for `dbing.py`, `subing.py`, `koming.py`, `basing.py`, and
+    `escrowing.py`.
+13. DB-layer sequencing is now hard-gated: complete LMDB feature-by-feature
+    parity first (including Suber/Komer/databaser/escrow paths), then implement
+    provider abstraction for pluggable backends.
+14. D0 DB parity artifacts are now seeded: a module-symbol parity workbook
+    (`docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`) and a K/V inventory matrix CSV
+    (`docs/plans/keri/DB_LAYER_KV_PARITY_MATRIX.csv`) generated from KERIpy DB
+    modules and `docs/design-docs/db/lmdb-dumper.md`.
+15. D0 parity workbook was upgraded with owner lanes and concrete TS symbol
+    targets, and the K/V inventory is now split into execution worklists for
+    Gate A-G (`DB_LAYER_KV_GATE_AG_WORKLIST.csv`) vs Gate H backlog
+    (`DB_LAYER_KV_GATE_H_BACKLOG.csv`) using current `P1/Partial` heuristics.
+16. Gate A-G worklist rows now include explicit gate assignments and rationale
+    columns (`gate`, `gate_rationale`) instead of heuristic-only classification,
+    so each prioritized K/V row is directly traceable to gates A through G.
+17. Phase 2 P0 closure now includes an explicit KLI/tufa command-output parity
+    matrix (`docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`) and a
+    matrix-driven Gate A-G interop harness
+    (`packages/keri/test/integration/app/interop-gates-harness.test.ts`).
+18. Phase 2 P1 has started with initial `dbing.py` symbol closure: `splitOnKey`,
+    `openLMDB`, and `clearDatabaserDir` are implemented in `keri-ts` and moved
+    from `Missing` to `Partial` in the DB parity matrix with passing
+    unit/integration evidence.
 
 ### 2026-02-28
 

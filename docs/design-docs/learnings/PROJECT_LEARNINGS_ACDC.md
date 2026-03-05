@@ -21,6 +21,12 @@ Use this doc for:
 3. validation and trust-chain constraints,
 4. ACDC parity/interop findings.
 
+## Cross-Topic Design References
+
+1. DB architecture and parity contract (required context for credential indexing
+   and storage-shape decisions that depend on duplicate ordering semantics):
+   - `docs/design-docs/db/db-architecture.md`
+
 ## Planned Sections
 
 1. Decision log
@@ -30,4 +36,22 @@ Use this doc for:
 
 ## Handoff Log
 
-No entries yet.
+### 2026-03-03 - LMDB `dupsort` Design Reference Added
+
+- Topic docs updated:
+  - `docs/design-docs/db/db-architecture.md`
+- What changed:
+  - Added a cross-topic reference to the DB architecture contract doc so ACDC
+    task threads inherit the same KERIpy/`keri-ts` duplicate-index semantics
+    model and invariants.
+- Why:
+  - ACDC storage and exchange flows often depend on DB indexing behavior; this
+    avoids drift in duplicate ordering/idempotence assumptions.
+- Tests:
+  - Command: N/A (design documentation update only)
+  - Result: N/A
+- Contracts/plans touched:
+  - `docs/design-docs/db/db-architecture.md`
+- Risks/TODO:
+  - Revisit ACDC-specific DB mappings against this design once D2/D3 parity work
+    lands.

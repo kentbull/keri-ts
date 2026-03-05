@@ -164,9 +164,9 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
 Deno.test("native MapBodyGroup supports labels between primitives", () => {
   const base = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   const payload = base.slice(4);
-  const mapPayload = `VAAA${payload.slice(0, 12)}VAAA${
+  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${
     payload.slice(12, 16)
-  }VAAA${payload.slice(16)}`;
+  }0J_d${payload.slice(16)}`;
   const mapBody = `${
     counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
   }${mapPayload}`;
@@ -178,7 +178,7 @@ Deno.test("native MapBodyGroup supports labels between primitives", () => {
   assertEquals(frames[0].type, "frame");
   if (frames[0].type === "frame") {
     assertEquals(frames[0].frame.body.kind, "CESR");
-    assertEquals(frames[0].frame.body.ilk, "icp");
+    assertEquals(frames[0].frame.body.ilk, null);
     assertEquals(
       frames[0].frame.body.native?.bodyCode,
       CtrDexV2.MapBodyGroup,
