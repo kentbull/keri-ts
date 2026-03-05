@@ -29,6 +29,99 @@ Deno.test("db/core lmdber - lifecycle reopen and version metadata parity", async
   });
 });
 
+Deno.test("db/core lmdber - closed lifecycle guard for previously unguarded methods", async () => {
+  await run(function* () {
+    const name = `lmdber-closed-guard-${crypto.randomUUID()}`;
+    const lmdber = yield* openLMDB({ name, temp: true });
+    try {
+      const db = lmdber.openDB("closed-plain.", false);
+      const dupDb = lmdber.openDB("closed-dup.", true);
+      yield* lmdber.close();
+
+      assertThrows(
+        () => lmdber.getVal(db, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cnt(db),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntTop(db, b("branch.")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getTopItemIter(db, b("branch."))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.appendOnVal(db, b("k"), b("v")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntOnAll(db, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getOnAllItemIter(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.addIoSetVal(db, b("k"), b("v")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getIoSetItemIter(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getIoSetLastItemIterAll(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.appendOnIoSetVals(db, b("k"), [b("v")]),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntOnAllIoSet(db, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getOnAllIoSetItemIter(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.getVals(dupDb, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getValsIter(dupDb, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntVals(dupDb, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.delVals(dupDb, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.delIoDupVal(dupDb, b("k"), b("v")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getOnIoDupLastItemIter(dupDb, b("k"))],
+        DatabaseNotOpenError,
+      );
+    } finally {
+      if (lmdber.opened) {
+        yield* lmdber.close(true);
+      }
+    }
+  });
+});
+
 Deno.test("db/core lmdber - cntTop/cntAll/getTopItemIter/delTop non-dup parity", async () => {
   await run(function* () {
     const name = `lmdber-branch-${crypto.randomUUID()}`;

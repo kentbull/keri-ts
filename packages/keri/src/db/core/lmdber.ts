@@ -402,6 +402,7 @@ export class LMDBer {
 
   /** Fetch value by key. Returns `null` when missing. */
   getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
+    this.requireEnv();
     try {
       const val = db.get(key);
       if (val === null || val === undefined) {
@@ -442,6 +443,7 @@ export class LMDBer {
 
   /** Count all entries in the sub-database. */
   cnt(db: Database<BinVal, BinKey>): number {
+    this.requireEnv();
     try {
       let count = 0;
       for (const _ of db.getRange({})) {
@@ -468,6 +470,7 @@ export class LMDBer {
     db: Database<BinVal, BinKey>,
     top: Uint8Array = new Uint8Array(0),
   ): number {
+    this.requireEnv();
     try {
       let count = 0;
       const startKey = top.length > 0 ? top : undefined;
@@ -550,6 +553,7 @@ export class LMDBer {
     db: Database<BinVal, BinKey>,
     top: Uint8Array = new Uint8Array(0),
   ): Generator<[Uint8Array, Uint8Array]> {
+    this.requireEnv();
     try {
       // Use getRange with start position at top key
       // With binary encoding, keys and values are always Uint8Array
@@ -616,6 +620,7 @@ export class LMDBer {
     val: Uint8Array | null,
     sep: Uint8Array = DOT_SEP,
   ): number {
+    this.requireEnv();
     if (!key.length || val === null) {
       throw new Error(
         `Bad append parameter: key=${Array.from(key)} val=${val}`,
@@ -719,6 +724,7 @@ export class LMDBer {
     on = 0,
     sep: Uint8Array = DOT_SEP,
   ): number {
+    this.requireEnv();
     const start = key.length ? onKey(key, on, sep) : new Uint8Array(0);
     let count = 0;
     for (const entry of db.getRange({ start })) {
@@ -751,6 +757,7 @@ export class LMDBer {
     on = 0,
     sep: Uint8Array = DOT_SEP,
   ): Generator<[Uint8Array, number, Uint8Array]> {
+    this.requireEnv();
     const start = key.length ? onKey(key, on, sep) : new Uint8Array(0);
     for (const entry of db.getRange({ start })) {
       const ckey = toBytes(entry.key);
@@ -840,6 +847,7 @@ export class LMDBer {
     val: Uint8Array | null,
     sep: Uint8Array = DOT_SEP,
   ): boolean {
+    this.requireEnv();
     if (!key.length || val === null) {
       return false;
     }
@@ -870,6 +878,7 @@ export class LMDBer {
     ion = 0,
     sep: Uint8Array = DOT_SEP,
   ): Generator<[Uint8Array, Uint8Array]> {
+    this.requireEnv();
     if (!key.length) {
       return;
     }
@@ -1011,6 +1020,7 @@ export class LMDBer {
     key: Uint8Array = new Uint8Array(0),
     sep: Uint8Array = DOT_SEP,
   ): Generator<[Uint8Array, Uint8Array]> {
+    this.requireEnv();
     const start = key.length ? suffix(key, 0, sep) : undefined;
     let last: [Uint8Array, Uint8Array] | null = null;
     let lkey: Uint8Array | null = null;
@@ -1083,6 +1093,7 @@ export class LMDBer {
     vals: Iterable<Uint8Array> | null,
     sep: Uint8Array = DOT_SEP,
   ): number {
+    this.requireEnv();
     if (!key.length || vals === null) {
       throw new Error(
         `Bad append parameter: key=${Array.from(key)} vals=${vals}`,
@@ -1220,6 +1231,7 @@ export class LMDBer {
     on = 0,
     sep: Uint8Array = DOT_SEP,
   ): number {
+    this.requireEnv();
     if (!key.length) {
       return this.cntAll(db);
     }
@@ -1255,6 +1267,7 @@ export class LMDBer {
     on = 0,
     sep: Uint8Array = DOT_SEP,
   ): Generator<[Uint8Array, number, Uint8Array]> {
+    this.requireEnv();
     if (!key.length) {
       yield* this.getOnTopIoSetItemIter(db, new Uint8Array(0), sep);
       return;
@@ -1383,6 +1396,7 @@ export class LMDBer {
 
   /** Get duplicate values at `key` (empty list when missing). */
   getVals(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array[] {
+    this.requireEnv();
     return [...db.getValues(key)].map((val) => toBytes(val));
   }
 
@@ -1397,6 +1411,7 @@ export class LMDBer {
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
   ): Generator<Uint8Array> {
+    this.requireEnv();
     for (const val of db.getValues(key)) {
       yield toBytes(val);
     }
@@ -1404,11 +1419,13 @@ export class LMDBer {
 
   /** Count duplicate values at `key`. */
   cntVals(db: Database<BinVal, BinKey>, key: Uint8Array): number {
+    this.requireEnv();
     return db.getValuesCount(key);
   }
 
   /** Delete all duplicate values at `key`. */
   delVals(db: Database<BinVal, BinKey>, key: Uint8Array): boolean {
+    this.requireEnv();
     return db.removeSync(key);
   }
 
@@ -1489,6 +1506,7 @@ export class LMDBer {
     key: Uint8Array,
     val: Uint8Array,
   ): boolean {
+    this.requireEnv();
     for (const proVal of this.getVals(db, key)) {
       if (bytesEqual(stripIoDupProem(proVal), val)) {
         return db.removeSync(key, proVal);
@@ -1599,6 +1617,7 @@ export class LMDBer {
     on = 0,
     sep: Uint8Array = DOT_SEP,
   ): Generator<[Uint8Array, number, Uint8Array]> {
+    this.requireEnv();
     const start = key.length ? onKey(key, on, sep) : new Uint8Array(0);
     let lonkey: Uint8Array | null = null;
     let lkey: Uint8Array | null = null;
