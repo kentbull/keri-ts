@@ -1,4 +1,6 @@
+import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
 import { type Operation } from "npm:effection@^3.6.0";
+import { saidify, serializeBody, versify } from "cesr-ts";
 import { Configer, createConfiger } from "./configing.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
@@ -8,7 +10,6 @@ import {
   encodeCounterV1,
   encodeDateTimeToDater,
   encodeHugeNumber,
-  makeSaider,
   Manager,
   normalizeSaltQb64,
   saltySigner,
@@ -67,14 +68,6 @@ export interface KeverState {
   wits: string[];
 }
 
-function versifyV1(size: number): string {
-  return `KERI10JSON${size.toString(16).padStart(6, "0")}_`;
-}
-
-function serializeKed(ked: Record<string, unknown>): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(ked));
-}
-
 function makeNowIso8601(): string {
   const now = new Date();
   const y = now.getUTCFullYear().toString().padStart(4, "0");
@@ -108,13 +101,12 @@ function makeInceptRaw(
   const ilk = args.delpre ? "dip" : "icp";
   const kt = args.isith ?? defaultThreshold(keys.length, 1);
   const nt = args.nsith ?? defaultThreshold(ndigs.length, 0);
-  const saidDummy = "#".repeat(44);
 
   const ked: Record<string, unknown> = {
-    v: versifyV1(0),
+    v: versify({ size: 0 }),
     t: ilk,
-    d: saidDummy,
-    i: args.code === "E" ? saidDummy : keys[0],
+    d: "",
+    i: args.code === "E" ? "" : keys[0],
     s: "0",
     kt,
     k: keys,
@@ -128,15 +120,9 @@ function makeInceptRaw(
 
   if (args.delpre) ked.di = args.delpre;
 
-  ked.v = versifyV1(serializeKed(ked).length);
-  const sizedDummied = serializeKed(ked);
-  const said = makeSaider(sizedDummied);
+  const result = saidify(ked, blake3, { code: "E" });
 
-  ked.d = said;
-  if (args.code === "E") ked.i = said;
-
-  const raw = serializeKed(ked);
-  return { raw, pre: ked.i as string };
+  return { raw: result.raw, pre: result.ked.i as string };
 }
 
 /** Represents a local identifier habitat and its current key state. */
