@@ -8,6 +8,7 @@ import {
 } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { b, t } from '../../../cesr/mod.ts'
 
 export interface BaserOptions extends LMDBerOptions {
   // Baser-specific options can be added here
@@ -140,13 +141,13 @@ export class Baser {
 
   /** UTF-8 encode helper. */
   private encodeText(text: string): Uint8Array {
-    return new TextEncoder().encode(text);
+    return b(text);
   }
 
   /** UTF-8 decode helper; returns `null` on missing bytes. */
   private decodeText(bytes: Uint8Array | null): string | null {
     if (bytes === null) return null;
-    return new TextDecoder().decode(bytes);
+    return t(bytes);
   }
 
   /** JSON encode helper. */

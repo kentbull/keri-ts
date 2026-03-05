@@ -3,6 +3,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
+import { b } from '../../../../cesr/mod.ts'
 
 /**
  * Integration test for db dump command
@@ -16,8 +17,8 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const name = `db-dump-${crypto.randomUUID()}`;
-    const key = new TextEncoder().encode("evt.0001");
-    const val = new TextEncoder().encode("sample event payload");
+    const key = b("evt.0001");
+    const val = b("sample event payload");
 
     await run(function* () {
       const baser = yield* createBaser({
@@ -103,8 +104,8 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const name = `db-dump-iter-${crypto.randomUUID()}`;
-    const key = new TextEncoder().encode("evt.0001");
-    const val = new TextEncoder().encode("sample event payload");
+    const key = b("evt.0001");
+    const val = b("sample event payload");
 
     await run(function* () {
       // Seed a deterministic fixture DB first so readonly open always has files.

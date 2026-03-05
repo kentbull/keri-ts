@@ -6,7 +6,7 @@ import {
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { decodeB64 } from "../../src/core/bytes.ts";
+import { decodeB64, t } from '../../src/core/bytes.ts'
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -86,7 +86,7 @@ Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", () => {
   assertEquals(frames.length, 1);
   assertEquals(frames[0].type, "frame");
   if (frames[0].type === "frame") {
-    const raw = new TextDecoder().decode(frames[0].frame.body.raw);
+    const raw = t(frames[0].frame.body.raw);
     assertEquals(raw, KERIPY_NATIVE_V2_ICP_FIX_BODY);
     assertEquals(frames[0].frame.body.kind, "CESR");
     assertEquals(frames[0].frame.body.pvrsn.major, 2);

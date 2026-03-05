@@ -1,5 +1,5 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { codeB64ToB2 } from "../../src/core/bytes.ts";
+import { b, codeB64ToB2, t } from '../../src/core/bytes.ts'
 import {
   type CounterGroupLike,
   isCounterGroupLike,
@@ -12,7 +12,7 @@ import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 
 /** Encode UTF-8 fixture text into parser input bytes. */
 export function txt(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
+  return b(input);
 }
 
 /** Generic txt/qb2 qb64 parity helper for parse functions with domain switch. */
@@ -30,7 +30,7 @@ export function assertTxtBnyQb64Parity<T extends { qb64: string }>(
 export function assertQb64Qb2Parity(
   primitive: { qb64: string; qb2: Uint8Array },
 ): void {
-  assertEquals(primitive.qb64, new TextDecoder().decode(new TextEncoder().encode(primitive.qb64)));
+  assertEquals(primitive.qb64, t(b(primitive.qb64)));
   assertEquals([...primitive.qb2], [...codeB64ToB2(primitive.qb64)]);
 }
 

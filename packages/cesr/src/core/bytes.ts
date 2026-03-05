@@ -84,3 +84,42 @@ export function codeB2ToB64(bytes: Uint8Array, sextets: number): string {
 export function nabSextets(bytes: Uint8Array, sextets: number): Uint8Array {
   return codeB64ToB2(codeB2ToB64(bytes, sextets));
 }
+
+/** UTF-8 string -> bytes helper. */
+export const b = (t: string): Uint8Array => encoder.encode(t)
+/** UTF-8 bytes -> string helper. */
+export const t = (b: Uint8Array): string => decoder.decode(b)
+
+/**
+ * Normalize lmdb-js key/value payloads to `Uint8Array`.
+ * Example: converts Node `Buffer`-like values from `getRange()`.
+ */
+export function toBytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) {
+    return value
+  }
+  return new Uint8Array(value as ArrayLike<number>)
+}
+
+/** Constant-time-ish byte equality for small DB keys/values. */
+export function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Stable hex fingerprint used for set-membership dedupe of binary values. */
+export function bytesHex(value: Uint8Array): string {
+  // deno-fmt-ignore
+  return Array.from(value)
+    .map((byte) =>
+      byte.toString(16)
+        .padStart(2, '0'))
+    .join('')
+}

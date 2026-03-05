@@ -60,3 +60,9 @@ export * from "./annotate/render.ts";
 export * from "./annotate/annotator.ts";
 export * from "./annotate/denot.ts";
 export * from "./bench/parser-benchmark.ts";
+
+export { bytesHex } from './core/bytes.ts'
+export { bytesEqual } from './core/bytes.ts'
+export { toBytes } from './core/bytes.ts'
+export { t } from './core/bytes.ts'
+export { b } from './core/bytes.ts'

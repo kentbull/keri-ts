@@ -1,7 +1,8 @@
 import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
-import { b, openLMDB, t } from "../../../../src/db/core/lmdber.ts";
+import { openLMDB } from "../../../../src/db/core/lmdber.ts";
+import { b, t } from '../../../../../cesr/mod.ts'
 
 Deno.test("db/core lmdber - lifecycle reopen and version metadata parity", async () => {
   await run(function* () {

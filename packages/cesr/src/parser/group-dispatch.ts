@@ -15,7 +15,7 @@ import {
   resolveVersionedRegistryValue,
   type VersionedRegistry,
 } from "../tables/counter-version-registry.ts";
-import { b64ToInt, intToB64 } from "../core/bytes.ts";
+import { b, b64ToInt, intToB64 } from '../core/bytes.ts'
 import {
   composeRecoveryDiagnosticObserver,
   type RecoveryDiagnosticObserver,
@@ -582,13 +582,13 @@ function splitOpaqueUnits(
       { length: expectedCount },
       (_v, i) =>
         UnknownPrimitive.fromPayload(
-          new TextEncoder().encode(text.slice(i * 4, i * 4 + 4)),
+          b(text.slice(i * 4, i * 4 + 4)),
           domain,
         ),
     );
   }
   return (text.match(/.{1,4}/g) ?? []).map((token) =>
-    UnknownPrimitive.fromPayload(new TextEncoder().encode(token), domain)
+    UnknownPrimitive.fromPayload(b(token), domain)
   );
 }
 

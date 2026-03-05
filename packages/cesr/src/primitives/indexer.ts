@@ -1,4 +1,5 @@
 import {
+  b,
   b64ToInt,
   codeB2ToB64,
   codeB64ToB2,
@@ -7,8 +8,8 @@ import {
   encodeB64,
   intToB64,
   nabSextets,
-  sceil,
-} from "../core/bytes.ts";
+  sceil
+} from '../core/bytes.ts'
 import {
   DeserializeError,
   ShortageError,
@@ -238,7 +239,7 @@ function parseIndexerInit(init: IndexerInit): IndexerData {
     return parseIndexerFromTextData(init.qb64b);
   }
   if (init.qb64) {
-    return parseIndexerFromTextData(new TextEncoder().encode(init.qb64));
+    return parseIndexerFromTextData(b(init.qb64));
   }
   if (init.qb2) {
     return parseIndexerFromBinaryData(init.qb2);
@@ -305,7 +306,7 @@ export class Indexer {
   }
 
   get qb64b(): Uint8Array {
-    return new TextEncoder().encode(this._qb64);
+    return b(this._qb64);
   }
 
   get qb2(): Uint8Array {

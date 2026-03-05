@@ -1,6 +1,8 @@
+import { b } from '../../src/index.ts'
+
 /** Encode text fixture material into parser input bytes. */
 export function encode(input: string): Uint8Array {
-  return new TextEncoder().encode(input);
+  return b(input);
 }
 
 /** Slice a stream into deterministic feed chunks at provided boundaries. */

@@ -1,4 +1,5 @@
 import {
+  b,
   b64ToInt,
   codeB2ToB64,
   codeB64ToB2,
@@ -7,8 +8,8 @@ import {
   encodeB64,
   intToB64,
   nabSextets,
-  sceil,
-} from "../core/bytes.ts";
+  sceil
+} from '../core/bytes.ts'
 import {
   DeserializeError,
   ShortageError,
@@ -224,7 +225,7 @@ function parseMatterInit(init: MatterInit): MatterData {
     return parseMatterFromTextData(init.qb64b);
   }
   if (init.qb64) {
-    return parseMatterFromTextData(new TextEncoder().encode(init.qb64));
+    return parseMatterFromTextData(b(init.qb64));
   }
   if (init.qb2) {
     return parseMatterFromBinaryData(init.qb2);
@@ -285,7 +286,7 @@ export class Matter {
   }
 
   get qb64b(): Uint8Array {
-    return new TextEncoder().encode(this._qb64);
+    return b(this._qb64);
   }
 
   get qb2(): Uint8Array {

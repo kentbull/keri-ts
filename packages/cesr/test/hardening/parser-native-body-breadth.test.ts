@@ -10,6 +10,7 @@ import {
 } from "./hardening-helpers.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
+import { t } from '../../src/index.ts'
 
 /**
  * P2 native-body breadth vectors (`V-P2-006`, `V-P2-007`).
@@ -51,7 +52,7 @@ Deno.test(
     const stream =
       `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const annotated = annotate(stream);
-    const restored = new TextDecoder().decode(denot(annotated));
+    const restored = t(denot(annotated));
     const originalSummary = summarizeFrames(parseFramesNoError(encode(stream)));
     const restoredSummary = summarizeFrames(
       parseFramesNoError(encode(restored)),

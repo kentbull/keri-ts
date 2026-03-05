@@ -3,6 +3,7 @@ import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { parseMatter } from "cesr-ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
+import { b } from '../../../cesr/mod.ts'
 
 const B64_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -78,7 +79,7 @@ function intToB64(value: number, length = 1): string {
 }
 
 function parseQb64Raw(qb64: string): Uint8Array {
-  return parseMatter(new TextEncoder().encode(qb64), "txt").raw;
+  return parseMatter(b(qb64), "txt").raw;
 }
 
 function encodeFixedMatter(code: string, raw: Uint8Array): string {
@@ -119,7 +120,7 @@ function randomSaltQb64(): string {
 }
 
 function pathToBytes(path: string): Uint8Array {
-  return new TextEncoder().encode(path);
+  return b(path);
 }
 
 function tierParams(tier: string, temp: boolean): { t: number; m: number } {
@@ -317,7 +318,7 @@ export class Manager {
         temp,
       );
       const dig = blake3Qb64(
-        new TextEncoder().encode(signer.verferQb64),
+        b(signer.verferQb64),
         dcode,
       );
       digers.push({ qb64: dig });
@@ -440,7 +441,7 @@ export function encodeHugeNumber(num: number): string {
 
 export function normalizeQb64Code(qb64: string): string {
   return encodeFixedMatter(
-    parseMatter(new TextEncoder().encode(qb64), "txt").code,
+    parseMatter(b(qb64), "txt").code,
     parseQb64Raw(qb64),
   );
 }
