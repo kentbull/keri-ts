@@ -101,6 +101,15 @@ export function toBytes(value: unknown): Uint8Array {
   return new Uint8Array(value as ArrayLike<number>)
 }
 
+/**
+ * Format number as 32-char hex string, zero padded.
+ * @param num
+ */
+export const to32CharHex = (num: number): string => {
+  return num
+    .toString(16)
+    .padStart(32, "0")};
+
 /** Constant-time-ish byte equality for small DB keys/values. */
 export function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) {

@@ -8,6 +8,7 @@
 import { DatabaseKeyError, ValidationError } from "../../core/errors.ts";
 
 import { b, t } from '../../../../cesr/mod.ts'
+import { to32CharHex } from '../../../../cesr/src/core/bytes.ts'
 
 /**
  * Create a digest key: prefix.digest
@@ -36,7 +37,9 @@ export function dgKey(
 }
 
 /**
- * Create an ordinal key: top.separator + 32-char hex ordinal
+ * Create an ordinal key: top.separator + 32-char hex ordinal.
+ * Example:
+ * - "BB__prefix__Ha.00000000000000000000000000000001"
  *
  * @param top - top key (string or Uint8Array)
  * @param on - Ordinal number to be converted to 32 hex bytes
@@ -55,9 +58,7 @@ export function onKey(
     ? b(sep)
     : sep;
 
-  // Format ordinal as 32-char hex, zero-padded
-  const ordinalHex = on.toString(16).padStart(32, "0");
-  const ordinalBytes = b(ordinalHex);
+  const ordinalBytes = b(to32CharHex(on));
 
   const result = new Uint8Array(
     topBytes.length + sepBytes.length + ordinalBytes.length,
