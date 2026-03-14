@@ -22,3 +22,7 @@ Deno.test("CLI - tufa version command prints display version", async () => {
 Deno.test("CLI - tufa --version prints display version", async () => {
   await run(() => tufa(["--version"]));
 });
+
+Deno.test("CLI - tufa --help prints help without executing command handlers", async () => {
+  await run(() => tufa(["--help"]));
+});

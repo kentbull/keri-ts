@@ -195,6 +195,9 @@ Deno.test("db/core lmdber - On* ordinal-key family parity", async () => {
       assertEquals(lmdber.pinOnVal(db, key, 0, b("v0p")), true);
       assertEquals(lmdber.appendOnVal(db, key, b("v1")), 1);
       assertEquals(lmdber.appendOnVal(db, key, b("v2")), 2);
+      // Ensure append tail lookup remains correct when later lexicographic keys exist.
+      assertEquals(lmdber.putOnVal(db, b("z"), 0, b("z0")), true);
+      assertEquals(lmdber.appendOnVal(db, key, b("v3")), 3);
 
       assertEquals(t(lmdber.getOnVal(db, key, 1)!), "v1");
       const item = lmdber.getOnItem(db, key, 2);
@@ -202,12 +205,12 @@ Deno.test("db/core lmdber - On* ordinal-key family parity", async () => {
       assertEquals(item[1], 2);
       assertEquals(t(item[2]), "v2");
 
-      assertEquals(lmdber.cntOnAll(db, key), 3);
+      assertEquals(lmdber.cntOnAll(db, key), 4);
       const ons = [...lmdber.getOnAllItemIter(db, key)].map(([_, on]) => on);
-      assertEquals(ons, [0, 1, 2]);
+      assertEquals(ons, [0, 1, 2, 3]);
 
       assertEquals(lmdber.remOn(db, key, 1), true);
-      assertEquals(lmdber.cntOnAll(db, key), 2);
+      assertEquals(lmdber.cntOnAll(db, key), 3);
       assertEquals(lmdber.remOnAll(db, key, 2), true);
       assertEquals(lmdber.cntOnAll(db, key), 1);
     } finally {

@@ -51,6 +51,27 @@ This keeps context focused and avoids long-thread drift.
 
 ## Cross-Topic Snapshot
 
+### 2026-03-13
+
+1. Deno config ownership is now explicitly treated as graph-wide for local
+   source installs: when root or `packages/keri` entrypoints load dev-time
+   bridges into `packages/cesr` source, the active config must also carry CESR
+   binary/npm import-map entries instead of assuming `packages/cesr/deno.json`
+   will be inherited.
+2. `cbor-x` subpath resolution is now pinned with explicit import-map entries
+   (`cbor-x/decode`, `cbor-x/encode`) instead of the broken `cbor-x/` prefix
+   mapping, and root/`packages/keri` configs now mirror CESR's
+   `@msgpack/msgpack`/`cbor-x` mappings so `deno check` passes in all three
+   contexts (root, `packages/keri`, `packages/cesr`).
+3. Local `deno install --global` flows for `tufa` should use
+   `--lock deno.lock --frozen` and explicitly allow `npm:cbor-extract` scripts;
+   this avoids resolution drift into broken upstream optional dependency
+   releases such as `cbor-extract@2.2.2` referencing unpublished
+   `@cbor-extract/*@2.2.2` platform packages.
+4. `tufa` CLI command handlers are now loaded lazily at dispatch time instead of
+   being imported during CLI startup, so `tufa --help` / `tufa --version` no
+   longer depend on CESR or LMDB module initialization side effects.
+
 ### 2026-03-04
 
 1. CESR/crypto primitive modules now include maintainer-oriented class/function

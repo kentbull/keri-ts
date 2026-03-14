@@ -4,11 +4,18 @@ const ENTRYPOINT = "./src/npm/index.ts";
 const NODE_CLI_ENTRYPOINT = "./src/app/cli/cli-node.ts";
 const OUT_DIR = "./npm";
 const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
+const NPM_MAIN_PATH = "./esm/keri/src/npm/index.js";
+const NPM_TYPES_PATH = "./types/keri/src/npm/index.d.ts";
+const NPM_BIN_PATH = "./esm/keri/src/app/cli/cli-node.js";
 
 interface PackageManifest {
   version?: string;
 }
 
+/**
+ * Resolve the version of the package from package.json or the environment variable.
+ * @returns The version of the package.
+ */
 function resolvePackageVersion(): string {
   const fromEnv = Deno.env.get("KERI_TS_NPM_VERSION");
   if (fromEnv && fromEnv.trim()) {
@@ -25,6 +32,10 @@ function resolvePackageVersion(): string {
   return version;
 }
 
+/**
+ * Resolve the version of the cesr package one directory up from it's package.json.
+ * @returns The version of the cesr package.
+ */
 function resolveCesrPackageVersion(): string {
   const raw = Deno.readTextFileSync("../cesr/package.json");
   const pkg = JSON.parse(raw) as PackageManifest;
@@ -36,6 +47,10 @@ function resolveCesrPackageVersion(): string {
   return version;
 }
 
+/**
+ * CESR package dependency range of + 1 minor version.
+ * @returns The dependency range for the cesr package.
+ */
 function resolveCesrDependencyRange(): string {
   const version = resolveCesrPackageVersion();
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -48,6 +63,10 @@ function resolveCesrDependencyRange(): string {
   return `>=${major}.${minor}.0 <${major}.${minor + 1}.0`;
 }
 
+/**
+ * Writes CESR version to Deno import map for later consumption during packaging.
+ * @param cesrVersion The version of the cesr package to write to the import map.
+ */
 function writeDntImportMap(cesrVersion: string): void {
   const importMap = {
     imports: {
@@ -69,6 +88,7 @@ await emptyDir(OUT_DIR);
 const cesrPackageVersion = resolveCesrPackageVersion();
 writeDntImportMap(cesrPackageVersion);
 
+// build keri-ts package
 try {
   await build({
     entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
@@ -98,17 +118,17 @@ try {
       homepage: "https://github.com/kentbull/keri-ts",
       type: "module",
       sideEffects: false,
-      main: "./esm/npm/index.js",
-      module: "./esm/npm/index.js",
-      types: "./types/npm/index.d.ts",
+      main: NPM_MAIN_PATH,
+      module: NPM_MAIN_PATH,
+      types: NPM_TYPES_PATH,
       exports: {
         ".": {
-          import: "./esm/npm/index.js",
-          types: "./types/npm/index.d.ts",
+          import: NPM_MAIN_PATH,
+          types: NPM_TYPES_PATH,
         },
       },
       bin: {
-        tufa: "./esm/app/cli/cli-node.js",
+        tufa: NPM_BIN_PATH,
       },
       files: ["esm", "types", "README.md", "LICENSE"],
       dependencies: {
@@ -126,7 +146,7 @@ try {
       Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
       Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
 
-      const binPath = `${OUT_DIR}/esm/app/cli/cli-node.js`;
+      const binPath = `${OUT_DIR}/${NPM_BIN_PATH.replace(/^\.\//, "")}`;
       const current = Deno.readTextFileSync(binPath);
       if (!current.startsWith("#!/usr/bin/env node\n")) {
         Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);
