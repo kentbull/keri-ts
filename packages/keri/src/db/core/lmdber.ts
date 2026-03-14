@@ -118,7 +118,19 @@ export const LMDBER_DEFAULTS: LMDBerDefaults = {
 
 const DEFAULT_DB_VERSION = "1.0.0";
 
-/** LMDB env lifecycle + core CRUD/branch operations. */
+/**
+ * Core LMDB environment wrapper plus KERI-style storage families.
+ *
+ * Read this class by storage family, not as a flat method list:
+ *  - plain key/value
+ *  - branch scans
+ *  - `On*`     : ordinal-key
+ *  - `IoSet*`  : synthetic insertion-order sets
+ *  - `OnIoSet*`: ordinal synthetic sets (TS-only)
+ *  - `Dup*`    : native dupsort duplicates
+ *  - `IoDup*`  : insertion-ordered duplicates via hidden proem
+ *  - `OnIoDup*`: ordinal insertion-ordered duplicates
+ */
 export class LMDBer {
   private pathManager: PathManager;
   public env: RootDatabase<any, Key> | null;
@@ -220,8 +232,11 @@ export class LMDBer {
   }
 
   /**
-   * Reopen the LMDB environment with updated options.
-   * Closes any existing env first, then opens at the resolved path.
+   * Reopen the LMDB environment at the resolved path.
+   *
+   * This is the lifecycle entrypoint for the root LMDB env: it closes any
+   * existing env first, re-resolves the backing path, opens the root database,
+   * and stamps the default version marker on newly-created writable envs.
    */
   *reopen(options: Partial<LMDBerOptions> = {}): Operation<boolean> {
     const readonly = options.readonly ?? this.readonly;
@@ -327,7 +342,13 @@ export class LMDBer {
     return pathStat.isFile ?? false;
   }
 
-  /** Close the env and path manager. Optionally clear backing files. */
+  /**
+   * Close the root LMDB env and path manager.
+   *
+   * This waits for LMDB-js async close completion and its internal read-reset
+   * timers before optional path cleanup, so test/resource teardown does not
+   * leak across later work.
+   */
   *close(clear = false): Operation<boolean> {
     if (this.env) {
       try {
@@ -346,7 +367,11 @@ export class LMDBer {
     return true;
   }
 
-  /** Read the `__version__` marker from the root DB. */
+  /**
+   * Read the root `__version__` marker.
+   *
+   * Missing or malformed metadata is treated as unknown and returns `null`.
+   */
   getVer(): string | null {
     const env = this.requireEnv();
 
@@ -360,7 +385,7 @@ export class LMDBer {
     }
   }
 
-  /** Write the `__version__` marker in the root DB. */
+  /** Write the root `__version__` marker. */
   setVer(val: string): void {
     const env = this.requireEnv();
 
@@ -379,7 +404,12 @@ export class LMDBer {
     }
   }
 
-  /** Open a named sub-database with binary key/value encoding. */
+  /**
+   * TypeScript-only convenience for opening a named sub-database.
+   *
+   * All sub-databases use binary key/value encoding; `dupsort=true` enables
+   * native LMDB duplicate values for `Dup*` / `IoDup*` families.
+   */
   openDB(name: string, dupsort = false): Database<BinVal, BinKey> {
     const env = this.requireEnv();
     return env.openDB(name, {
@@ -389,7 +419,20 @@ export class LMDBer {
     });
   }
 
-  /** Insert key/value only if key is absent. Returns `false` on existing key. */
+  /*
+   * Plain key/value family (`dupsort=false` parity surface)
+   * Logical shape: one physical key -> one value.
+   * Multiplicity: none.
+   * Ordering: plain LMDB key order only matters for branch scans.
+   * Parity status: direct KERIpy LMDBer analogs.
+   */
+
+  /**
+   * Write `val` at `key` only when the key is absent.
+   *
+   * Plain key/value storage with no duplicate semantics. Returns `false` when
+   * an entry already exists at `key`. Mirrors KERIpy `putVal`.
+   */
   putVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -412,7 +455,12 @@ export class LMDBer {
     }
   }
 
-  /** Upsert key/value. Overwrites existing value. */
+  /**
+   * Write `val` at `key`, overwriting any existing value.
+   *
+   * Plain key/value upsert. Returns `true` on successful write. Mirrors KERIpy
+   * `setVal`.
+   */
   setVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -430,7 +478,12 @@ export class LMDBer {
     }
   }
 
-  /** Fetch value by key. Returns `null` when missing. */
+  /**
+   * Fetch the value stored exactly at `key`.
+   *
+   * Plain key/value lookup. Returns `null` when the key is missing. Mirrors
+   * KERIpy `getVal`.
+   */
   getVal(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
     this.requireEnv();
     try {
@@ -445,7 +498,13 @@ export class LMDBer {
     }
   }
 
-  /** Delete one key, or one duplicate value when `val` is provided. */
+  /**
+   * Delete the value stored at `key`.
+   *
+   * For plain key/value DBs this removes the whole key. When `val` is supplied
+   * against a dupsort DB, this removes just that duplicate value. The plain K/V
+   * behavior mirrors KERIpy `delVal`.
+   */
   delVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -471,7 +530,12 @@ export class LMDBer {
     }
   }
 
-  /** Count all entries in the sub-database. */
+  /**
+   * Count all physical entries in the sub-database.
+   *
+   * For dupsort DBs, duplicate values are included in the count because LMDB
+   * stores them as separate entries. Mirrors KERIpy `cnt`.
+   */
   cnt(db: Database<BinVal, BinKey>): number {
     this.requireEnv();
     try {
@@ -488,13 +552,21 @@ export class LMDBer {
     }
   }
 
+  /*
+   * Branch/prefix family
+   * Logical shape: lexicographic scans over contiguous keyspace branches.
+   * Multiplicity: inherited from the underlying DB family.
+   * Ordering: plain LMDB key order / duplicate entry order.
+   * Parity status: KERIpy-style branch helpers plus one TS-local alias.
+   */
+
   /**
-   * Count values for keys that share the given byte-prefix (`top`).
-   * Empty `top` counts the whole database.
-   * Example: `top=b("alpha.")` counts `alpha.1`, `alpha.2`, ...
+   * Count entries whose keys begin with prefix `top`.
    *
-   * Review note: keep/remove decision is deferred until post
-   * `kli-init/incept/rotate` implementation usage review.
+   * This is a lexicographic key-prefix scan, not a special storage model.
+   * Empty `top` counts the whole DB. Duplicate entries in dupsort DBs are
+   * included. TypeScript-only convenience alongside KERIpy `getTopItemIter`
+   * and `delTopVal`.
    */
   cntTop(
     db: Database<BinVal, BinKey>,
@@ -524,18 +596,19 @@ export class LMDBer {
   }
 
   /**
-   * KERIpy parity-style alias for full-database count.
+   * TypeScript-only convenience alias for `cnt(db)`.
    *
-   * Review note: keep/remove decision is deferred until post
-   * `kli-init/incept/rotate` implementation usage review.
+   * This counts the whole DB, including duplicate entries in dupsort DBs.
    */
   cntAll(db: Database<BinVal, BinKey>): number {
     return this.cnt(db);
   }
 
   /**
-   * Delete entries whose keys share the given byte-prefix (`top`).
-   * Empty `top` deletes the whole database.
+   * Delete entries whose keys begin with prefix `top`.
+   *
+   * This is a lexicographic key-prefix delete, not a separate storage family.
+   * Empty `top` deletes the whole DB. Mirrors KERIpy `delTopVal`.
    */
   delTop(
     db: Database<BinVal, BinKey>,
@@ -576,9 +649,11 @@ export class LMDBer {
   }
 
   /**
-   * Iterate `(key, value)` entries whose keys share the prefix `top`, returning
-   * the suffixed key per entry.
-   * Empty `top` iterates the whole database.
+   * Iterate `(key, value)` entries whose keys begin with prefix `top`.
+   *
+   * This is a lexicographic branch scan over physical keys. Empty `top`
+   * iterates the whole DB. Returned keys are the full stored keys, not trimmed
+   * branch-relative suffixes. Mirrors KERIpy `getTopItemIter`.
    */
   *getTopItemIter(
     db: Database<BinVal, BinKey>,
@@ -613,7 +688,20 @@ export class LMDBer {
     }
   }
 
-  /** Insert value at `onKey(key, on)` only when absent. */
+  /*
+   * Ordinal-key family (`On*`)
+   * Logical shape: one logical key -> many values via fixed-width ordinal in key.
+   * Multiplicity: synthetic, stored in keyspace as `key.<on>`.
+   * Ordering: lexicographic key order matches numeric ordinal order.
+   * Parity status: direct KERIpy analogs plus TS rename conveniences.
+   */
+
+  /**
+   * Write `val` at the ordinal key `onKey(key, on)` only when absent.
+   *
+   * The ordinal is encoded into the physical key as a fixed-width 32-hex suffix
+   * so LMDB key order matches ordinal order. Mirrors KERIpy `putOnVal`.
+   */
   putOnVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -627,7 +715,11 @@ export class LMDBer {
     return this.putVal(db, onKey(key, on, sep), val);
   }
 
-  /** Upsert value at `onKey(key, on)`. */
+  /**
+   * Write `val` at `onKey(key, on)`, overwriting any existing value.
+   *
+   * TypeScript-local rename of KERIpy `setOnVal`.
+   */
   pinOnVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -642,8 +734,11 @@ export class LMDBer {
   }
 
   /**
-   * Append value at the next ordinal for `key`.
-   * Returns appended ordinal.
+   * Append `val` at the next ordinal slot for `key`.
+   *
+   * This scans backward from the `key.MaxON` boundary to find the current tail,
+   * then writes at the next ordinal. Returns the appended ordinal. Mirrors
+   * KERIpy `appendOnVal`.
    */
   appendOnVal(
     db: Database<BinVal, BinKey>,
@@ -691,7 +786,11 @@ export class LMDBer {
     return nextOn;
   }
 
-  /** Fetch `(key, on, val)` at `onKey(key, on)` or `null`. */
+  /**
+   * TypeScript-only convenience returning the exact `(key, on, val)` triple.
+   *
+   * Returns `null` when that exact ordinal entry is missing.
+   */
   getOnItem(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -702,7 +801,12 @@ export class LMDBer {
     return val ? [key, on, val] : null;
   }
 
-  /** Fetch value at `onKey(key, on)` or `null`. */
+  /**
+   * Fetch the value stored exactly at `onKey(key, on)`.
+   *
+   * Returns `null` when the exact ordinal entry is missing. Empty logical keys
+   * are treated as absent. Mirrors KERIpy `getOnVal`.
+   */
   getOnVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -715,7 +819,12 @@ export class LMDBer {
     return this.getVal(db, onKey(key, on, sep));
   }
 
-  /** Remove value at `onKey(key, on)`. */
+  /**
+   * Remove the value stored exactly at `onKey(key, on)`.
+   *
+   * Empty logical keys return `false`. TypeScript-local rename of KERIpy
+   * `delOnVal`.
+   */
   remOn(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -728,7 +837,12 @@ export class LMDBer {
     return this.delVal(db, onKey(key, on, sep));
   }
 
-  /** Remove all ordinals at `key` from `on` onward. Empty key removes whole DB. */
+  /**
+   * Remove all ordinal entries for `key` starting at ordinal `on`.
+   *
+   * Empty `key` removes the whole DB branch. TypeScript-only convenience built
+   * on the same ordinal-key semantics as KERIpy `delOnVal`.
+   */
   remOnAll(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -764,8 +878,10 @@ export class LMDBer {
   }
 
   /**
-   * Count ordinal-keyed values for `key` from ordinal `on` onward.
-   * TypeScript-local name for KERIpy `cntOnVals`.
+   * Count ordinal-keyed entries for `key` starting at ordinal `on`.
+   *
+   * Empty `key` counts the whole DB. TypeScript-local rename of KERIpy
+   * `cntOnVals`.
    */
   cntOnAll(
     db: Database<BinVal, BinKey>,
@@ -787,7 +903,12 @@ export class LMDBer {
     return count;
   }
 
-  /** Iterate `(key, on, val)` for all ordinal entries in branch `top`. */
+  /**
+   * Iterate `(key, on, val)` triples whose physical keys begin with branch `top`.
+   *
+   * This is the ordinal-key version of `getTopItemIter`, so branch membership is
+   * still a lexicographic key-prefix concept. TypeScript-only convenience.
+   */
   *getOnTopItemIter(
     db: Database<BinVal, BinKey>,
     top: Uint8Array = new Uint8Array(0),
@@ -800,8 +921,10 @@ export class LMDBer {
   }
 
   /**
-   * Iterate `(key, on, val)` for key ordinals `>= on`. Empty key iterates all.
-   * TypeScript-local name for KERIpy `getOnItemIter`.
+   * Iterate `(key, on, val)` triples for ordinals `>= on`.
+   *
+   * Empty `key` iterates the whole DB. Ordering follows the fixed-width ordinal
+   * encoded in the key. TypeScript-local rename of KERIpy `getOnItemIter`.
    */
   *getOnAllItemIter(
     db: Database<BinVal, BinKey>,
@@ -822,7 +945,22 @@ export class LMDBer {
     }
   }
 
-  /** Add values to insertion-ordered set at `key` (dups emulated in keyspace). */
+  /*
+   * Synthetic insertion-ordered set family (`IoSet*`)
+   * Logical shape: one logical key -> many values without dupsort.
+   * Multiplicity: synthetic, stored in keyspace as `key.<ion>`.
+   * Ordering: hidden fixed-width insertion suffix in the physical key.
+   * Parity status: direct KERIpy analogs with TS naming tweaks.
+   */
+
+  /**
+   * Add each unique value in `vals` to the insertion-ordered set at `key`.
+   *
+   * This emulates duplicate-like behavior in keyspace, not native LMDB dupsort:
+   * values are stored under hidden suffixed keys `key.<ion>`. Existing logical
+   * members are skipped, new members append at the next suffix. Mirrors KERIpy
+   * `putIoSetVals`.
+   */
   putIoSetVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -867,8 +1005,10 @@ export class LMDBer {
   }
 
   /**
-   * Replace insertion-ordered set at `key`.
-   * Mirrors setIoSetVals in KERIpy.
+   * Replace the insertion-ordered set at `key` with the provided unique values.
+   *
+   * This clears the existing synthetic key run for `key`, then rewrites fresh
+   * hidden suffixes from zero. TypeScript-local rename of KERIpy `setIoSetVals`.
    */
   pinIoSetVals(
     db: Database<BinVal, BinKey>,
@@ -895,7 +1035,12 @@ export class LMDBer {
     return true;
   }
 
-  /** Add one value to insertion-ordered set at `key` if absent. */
+  /**
+   * Add one value to the insertion-ordered set at `key` if it is not present.
+   *
+   * Membership is checked by scanning the synthetic key run for `key`; new
+   * values append at the next hidden suffix. Mirrors KERIpy `addIoSetVal`.
+   */
   addIoSetVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -927,9 +1072,11 @@ export class LMDBer {
   }
 
   /**
-   * Iterate set items `(key, val)` at `key` from insertion ordinal `ion`.
-   * Mirrors getIoSetValsIter.
-   * Used in place of getIoSetVals from KERIpy for cntIoSet
+   * Iterate `(key, val)` pairs for the insertion-ordered set at `key`.
+   *
+   * Iteration starts at hidden insertion ordinal `ion`. Returned keys are the
+   * logical effective key with the hidden suffix removed. TypeScript-local item
+   * variant corresponding to KERIpy `getIoSetValsIter`.
    */
   *getIoSetItemIter(
     db: Database<BinVal, BinKey>,
@@ -953,7 +1100,13 @@ export class LMDBer {
     }
   }
 
-  /** Return last set item `(key, val)` at `key`, or `null`. */
+  /**
+   * Return the last logical set member at `key`, or `null`.
+   *
+   * "Last" means the entry stored under the greatest hidden insertion suffix,
+   * not the lexicographically greatest value bytes. TypeScript-local item
+   * variant corresponding to KERIpy `getIoSetValLast`.
+   */
   getIoSetLastItem(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -968,7 +1121,9 @@ export class LMDBer {
 
   /**
    * Remove all insertion-ordered set members at `key`.
-   * Mirrors delIoSetVals in KERIpy.
+   *
+   * This deletes the full synthetic key run for the effective key. TypeScript-
+   * local rename of KERIpy `delIoSetVals`.
    */
   remIoSet(
     db: Database<BinVal, BinKey>,
@@ -1004,8 +1159,12 @@ export class LMDBer {
   }
 
   /**
-   * Remove one set member at `key`, or all if `val` is `null`.
-   * Mirrors delIoSetVal in KERIpy.
+   * Remove one logical set member at `key`, or all members when `val` is `null`.
+   *
+   * Delete-by-value requires a linear search because the caller does not know
+   * the hidden insertion suffix. As in KERIpy, suffix ordinals can grow
+   * monotonically over time after deletes and reinserts. TypeScript-local rename
+   * of KERIpy `delIoSetVal`.
    */
   remIoSetVal(
     db: Database<BinVal, BinKey>,
@@ -1047,7 +1206,11 @@ export class LMDBer {
     return true;
   }
 
-  /** Count set members at `key` from insertion ordinal `ion`. */
+  /**
+   * Count logical set members at `key` starting from hidden insertion ordinal `ion`.
+   *
+   * TypeScript-local item-count variant corresponding to KERIpy `cntIoSetVals`.
+   */
   cntIoSet(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1065,8 +1228,11 @@ export class LMDBer {
   }
 
   /**
-   * Iterate branch `(key, val)` where db keys are io-suffixed, returning the
-   * unsuffixed key per item.
+   * Iterate `(key, val)` pairs for all synthetic-set entries in branch `top`.
+   *
+   * Branch membership is still a lexicographic key-prefix scan over the
+   * physical suffixed keys; returned keys have the hidden insertion suffix
+   * removed. Mirrors KERIpy `getTopIoSetItemIter`.
    */
   *getTopIoSetItemIter(
     db: Database<BinVal, BinKey>,
@@ -1080,8 +1246,11 @@ export class LMDBer {
   }
 
   /**
-   * Iterate last set item `(key, val)` for each effective key `>= key`.
-   * Empty key iterates whole DB.
+   * Iterate the last `(key, val)` member for each effective io-set key.
+   *
+   * Empty `key` iterates the whole DB. "Last" is determined by hidden suffix
+   * order. TypeScript-local item variant built from KERIpy `getIoSetValLast`
+   * and branch iteration semantics.
    */
   *getIoSetLastItemIterAll(
     db: Database<BinVal, BinKey>,
@@ -1112,7 +1281,11 @@ export class LMDBer {
     }
   }
 
-  /** Iterate only last values for each effective io-set key `>= key`. */
+  /**
+   * Iterate only the last logical values for each effective io-set key `>= key`.
+   *
+   * TypeScript-only convenience built on `getIoSetLastItemIterAll`.
+   */
   *getIoSetLastIterAll(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1123,7 +1296,23 @@ export class LMDBer {
     }
   }
 
-  /** Add set members at ordinal effective key `onKey(key, on)`. */
+  /*
+   * Ordinal synthetic insertion-ordered set family (`OnIoSet*`)
+   * Logical shape: ordinal buckets, each bucket holding an insertion-ordered set.
+   * Multiplicity: synthetic, stored in keyspace as `key.<on>.<ion>`.
+   * Ordering: exposed fixed-width ordinal in the key, then hidden insertion suffix.
+   * Parity status: TypeScript-only extension. KERIpy exposes `IoSet*` and
+   * `OnIoDup*`, but not `OnIoSet*`. This exists as extension surface for
+   * ordinal buckets + insertion-ordered set semantics without dupsort
+   * constraints, and currently has no production callers.
+   */
+
+  /**
+   * TypeScript-only extension. Add set members at ordinal effective key `onKey(key, on)`.
+   *
+   * This is the `On` + `IoSet` composition: exposed ordinal in keyspace, hidden
+   * insertion suffix inside that ordinal bucket.
+   */
   putOnIoSetVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1137,7 +1326,11 @@ export class LMDBer {
     return this.putIoSetVals(db, onKey(key, on, sep), vals, sep);
   }
 
-  /** Replace set members at ordinal effective key `onKey(key, on)`. */
+  /**
+   * TypeScript-only extension. Replace set members at ordinal effective key.
+   *
+   * This is the ordinal-bucketed counterpart to `pinIoSetVals`.
+   */
   pinOnIoSetVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1152,8 +1345,10 @@ export class LMDBer {
   }
 
   /**
-   * Append a new ordinal set for `key`.
-   * Returns appended ordinal.
+   * TypeScript-only extension. Append a new ordinal bucket for `key`.
+   *
+   * Returns the newly appended exposed ordinal. Within that bucket, the values
+   * are stored as an `IoSet` using hidden insertion suffixes.
    */
   appendOnIoSetVals(
     db: Database<BinVal, BinKey>,
@@ -1186,7 +1381,11 @@ export class LMDBer {
     return on;
   }
 
-  /** Add one set member at ordinal effective key `onKey(key, on)`. */
+  /**
+   * TypeScript-only extension. Add one set member inside an ordinal bucket.
+   *
+   * This is the ordinal-bucketed counterpart to `addIoSetVal`.
+   */
   addOnIoSetVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1197,7 +1396,11 @@ export class LMDBer {
     return this.addIoSetVal(db, onKey(key, on, sep), val, sep);
   }
 
-  /** Iterate `(key, on, val)` set members at ordinal effective key. */
+  /**
+   * TypeScript-only extension. Iterate `(key, on, val)` members at one exact ordinal.
+   *
+   * Ordering inside the bucket follows the hidden insertion suffix.
+   */
   *getOnIoSetItemIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1218,7 +1421,11 @@ export class LMDBer {
     }
   }
 
-  /** Fetch last set member `(key, on, val)` at ordinal effective key or `null`. */
+  /**
+   * TypeScript-only extension. Fetch the last member in one ordinal bucket.
+   *
+   * Returns `null` when that exact ordinal bucket is empty or missing.
+   */
   getOnIoSetLastItem(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1234,7 +1441,11 @@ export class LMDBer {
     return [k, o, val];
   }
 
-  /** Remove set member at ordinal effective key, or all members when `val` is `null`. */
+  /**
+   * TypeScript-only extension. Remove one member from an ordinal bucket.
+   *
+   * When `val` is `null`, removes the whole ordinal bucket.
+   */
   remOnIoSetVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1245,7 +1456,11 @@ export class LMDBer {
     return this.remIoSetVal(db, onKey(key, on, sep), val, sep);
   }
 
-  /** Remove all ordinal sets for `key` from `on` onward. Empty key removes whole DB. */
+  /**
+   * TypeScript-only extension. Remove all ordinal buckets for `key` from `on` onward.
+   *
+   * Empty `key` removes the whole DB branch.
+   */
   remOnAllIoSet(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1281,7 +1496,9 @@ export class LMDBer {
     return true;
   }
 
-  /** Count set members at ordinal effective key from insertion ordinal `ion`. */
+  /**
+   * TypeScript-only extension. Count members in one ordinal bucket from insertion ordinal `ion`.
+   */
   cntOnIoSet(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1292,7 +1509,9 @@ export class LMDBer {
     return this.cntIoSet(db, onKey(key, on, sep), ion, sep);
   }
 
-  /** Count all set members for ordinals of `key` from `on` onward. */
+  /**
+   * TypeScript-only extension. Count all members across ordinal buckets for `key` from `on` onward.
+   */
   cntOnAllIoSet(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1317,8 +1536,10 @@ export class LMDBer {
   }
 
   /**
-   * Iterate `(key, on, val)` io-set members in branch `top`.
-   * Assumes the key for an insertion-ordered set is an ordinal prefixed key.
+   * TypeScript-only extension. Iterate `(key, on, val)` members in branch `top`.
+   *
+   * This is the branch-scan form of `OnIoSet*`, still based on lexicographic
+   * physical key-prefix traversal.
    */
   *getOnTopIoSetItemIter(
     db: Database<BinVal, BinKey>,
@@ -1332,8 +1553,9 @@ export class LMDBer {
   }
 
   /**
-   * Iterate `(key, on, val)` io-set members for ordinals `>= on`. Empty key iterates all.
-   * Assumes both the ordinal number segment and insertion order suffix are present in the key.
+   * TypeScript-only extension. Iterate `(key, on, val)` members for ordinals `>= on`.
+   *
+   * Empty `key` iterates the whole DB.
    */
   *getOnAllIoSetItemIter(
     db: Database<BinVal, BinKey>,
@@ -1358,7 +1580,11 @@ export class LMDBer {
     }
   }
 
-  /** Iterate last set member `(key, on, val)` for each ordinal at `key` from `on`. */
+  /**
+   * TypeScript-only extension. Iterate the last member for each ordinal bucket.
+   *
+   * Empty `key` iterates all logical keys and ordinals in the DB.
+   */
   *getOnAllIoSetLastItemIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1397,7 +1623,11 @@ export class LMDBer {
     }
   }
 
-  /** Iterate backward over io-set members `(key, on, val)`. */
+  /**
+   * TypeScript-only extension. Iterate backward over `(key, on, val)` members.
+   *
+   * Backward order is materialized from the forward iterator, then reversed.
+   */
   *getOnAllIoSetItemBackIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1416,7 +1646,9 @@ export class LMDBer {
     }
   }
 
-  /** Iterate backward over last io-set member per ordinal `(key, on, val)`. */
+  /**
+   * TypeScript-only extension. Iterate backward over the last member per ordinal bucket.
+   */
   *getOnAllIoSetLastItemBackIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1433,7 +1665,21 @@ export class LMDBer {
     }
   }
 
-  /** Add duplicate values at `key` in dupsort DB. Returns false if any pre-existed. */
+  /*
+   * Native dupsort duplicate family (`Dup*`)
+   * Logical shape: one physical key -> many native LMDB duplicate values.
+   * Multiplicity: native LMDB dupsort values.
+   * Ordering: lexicographic by stored value bytes, not insertion order.
+   * Parity status: direct KERIpy analogs with small TS naming adjustments.
+   */
+
+  /**
+   * Add each unique duplicate value in `vals` at `key`.
+   *
+   * LMDB dupsort orders duplicates lexicographically by stored value bytes, not
+   * by insertion order. Returns `false` if any supplied value already existed.
+   * Mirrors KERIpy `putVals`.
+   */
   putVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1458,7 +1704,12 @@ export class LMDBer {
     return result;
   }
 
-  /** Add one duplicate value at `key` in lexicographic value order. */
+  /**
+   * Add one duplicate value at `key` if it does not already exist.
+   *
+   * Duplicate ordering is still lexicographic by stored value bytes. Mirrors
+   * KERIpy `addVal`.
+   */
   addVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1469,20 +1720,31 @@ export class LMDBer {
   }
 
   /**
-   * Get duplicate values at `key` (empty list when missing) sorted lexicographically.
+   * Get duplicate values at `key` in lexicographic stored-value order.
+   *
+   * Returns an empty list when `key` is missing. Mirrors KERIpy `getVals`.
    */
   getVals(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array[] {
     this.requireEnv();
     return [...db.getValues(key)].map((val) => toBytes(val));
   }
 
-  /** Get last duplicate value at `key`, or `null` sorted lexicographically. */
+  /**
+   * Get the lexicographically last duplicate value at `key`.
+   *
+   * "Last" here means LMDB dupsort order, not most-recent insertion. Returns
+   * `null` when `key` is missing. Mirrors KERIpy `getValLast`.
+   */
   getValLast(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
     const vals = this.getVals(db, key);
     return vals.length ? vals[vals.length - 1] : null;
   }
 
-  /** Iterate duplicate values at `key`. */
+  /**
+   * Iterate duplicate values at `key` in lexicographic stored-value order.
+   *
+   * Yields nothing when `key` is missing. Mirrors KERIpy `getValsIter`.
+   */
   *getValsIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1493,19 +1755,36 @@ export class LMDBer {
     }
   }
 
-  /** Count duplicate values at `key`. */
+  /** Count native dupsort values at `key`. Mirrors KERIpy `cntVals`. */
   cntVals(db: Database<BinVal, BinKey>, key: Uint8Array): number {
     this.requireEnv();
     return db.getValuesCount(key);
   }
 
-  /** Delete all duplicate values at `key`. */
+  /** Delete all duplicate values at `key`. Mirrors KERIpy `delVals(key)`. */
   delVals(db: Database<BinVal, BinKey>, key: Uint8Array): boolean {
     this.requireEnv();
     return db.removeSync(key);
   }
 
-  /** Add insertion-ordered duplicates at `key` using a 33-byte proem. */
+  /*
+   * Insertion-ordered duplicate family (`IoDup*`)
+   * Logical shape: one physical key -> many native dupsort values.
+   * Multiplicity: native LMDB dupsort values.
+   * Ordering: hidden 33-byte value proem makes dupsort order equal insertion order.
+   * Parity status: direct KERIpy analogs with TS naming tweaks.
+   *
+   * Use this when dupsort size constraints are acceptable; use `IoSet*` when
+   * values may be too large for dupsort-backed storage.
+   */
+
+  /**
+   * Add insertion-ordered duplicate values at `key`.
+   *
+   * Each stored value gets a hidden 33-byte proem (`32 hex chars + '.'`) so
+   * LMDB's lexicographic duplicate ordering becomes logical insertion order.
+   * Returned values later strip that proem away. Mirrors KERIpy `putIoDupVals`.
+   */
   putIoDupVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1537,7 +1816,11 @@ export class LMDBer {
     return result;
   }
 
-  /** Add one insertion-ordered duplicate value at `key`. */
+  /**
+   * Add one insertion-ordered duplicate value at `key` if absent.
+   *
+   * Mirrors KERIpy `addIoDupVal`.
+   */
   addIoDupVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1547,12 +1830,21 @@ export class LMDBer {
     return this.putIoDupVals(db, key, single);
   }
 
-  /** Get insertion-ordered duplicate values at `key` with proem stripped. */
+  /**
+   * Get insertion-ordered duplicate values at `key`, with the hidden proem removed.
+   *
+   * Ordering is logical insertion order because the hidden proem controls LMDB
+   * dupsort ordering. Mirrors KERIpy `getIoDupVals`.
+   */
   getIoDupVals(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array[] {
     return this.getVals(db, key).map((val) => stripIoDupProem(val));
   }
 
-  /** Iterate insertion-ordered duplicate values at `key` with proem stripped. */
+  /**
+   * Iterate insertion-ordered duplicate values at `key`, with the hidden proem removed.
+   *
+   * Mirrors KERIpy `getIoDupValsIter`.
+   */
   *getIoDupValsIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1562,7 +1854,12 @@ export class LMDBer {
     }
   }
 
-  /** Get last insertion-ordered duplicate value at `key`, proem stripped. */
+  /**
+   * Get the most recently inserted logical duplicate value at `key`.
+   *
+   * This uses the lexicographically last stored proem-prefixed duplicate and
+   * strips the hidden proem before returning. Mirrors KERIpy `getIoDupValLast`.
+   */
   getIoDupValLast(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1571,12 +1868,17 @@ export class LMDBer {
     return last ? stripIoDupProem(last) : null;
   }
 
-  /** Delete all insertion-ordered duplicate values at `key`. */
+  /** Delete all insertion-ordered duplicates at `key`. Mirrors KERIpy `delIoDupVals`. */
   delIoDupVals(db: Database<BinVal, BinKey>, key: Uint8Array): boolean {
     return this.delVals(db, key);
   }
 
-  /** Delete one insertion-ordered duplicate value at `key`, matching stripped value. */
+  /**
+   * Delete one insertion-ordered duplicate value at `key`, matching the stripped logical value.
+   *
+   * This performs a linear search over stored proem-prefixed duplicates. Mirrors
+   * KERIpy `delIoDupVal`.
+   */
   delIoDupVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1591,12 +1893,16 @@ export class LMDBer {
     return false;
   }
 
-  /** Count insertion-ordered duplicates at `key`. */
+  /** Count insertion-ordered duplicates at `key`. Mirrors KERIpy `cntIoDupVals`. */
   cntIoDups(db: Database<BinVal, BinKey>, key: Uint8Array): number {
     return this.cntVals(db, key);
   }
 
-  /** Iterate `(key, val)` over branch `top` with IoDup proem stripped from values. */
+  /**
+   * Iterate `(key, val)` over branch `top`, stripping the hidden IoDup proem from each value.
+   *
+   * Mirrors KERIpy `getTopIoDupItemIter`.
+   */
   *getTopIoDupItemIter(
     db: Database<BinVal, BinKey>,
     top: Uint8Array = new Uint8Array(0),
@@ -1606,7 +1912,20 @@ export class LMDBer {
     }
   }
 
-  /** Add insertion-ordered duplicates at ordinal effective key. */
+  /*
+   * Ordinal insertion-ordered duplicate family (`OnIoDup*`)
+   * Logical shape: ordinal buckets, each bucket holding native dupsort duplicates.
+   * Multiplicity: native LMDB dupsort values within each exposed ordinal key.
+   * Ordering: exposed fixed-width ordinal in the key, hidden 33-byte proem in each duplicate value.
+   * Parity status: direct KERIpy analogs plus a few TS-only convenience methods.
+   */
+
+  /**
+   * TypeScript-only convenience adding insertion-ordered duplicates at one exact ordinal key.
+   *
+   * This is the ordinal-bucketed counterpart to `putIoDupVals`. KERIpy exposes
+   * `addOnIoDupVal` and iterator-based accessors instead of this bulk helper.
+   */
   putOnIoDupVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1617,7 +1936,7 @@ export class LMDBer {
     return this.putIoDupVals(db, onKey(key, on, sep), vals);
   }
 
-  /** Add one insertion-ordered duplicate at ordinal effective key. */
+  /** Add one insertion-ordered duplicate at ordinal effective key. Mirrors KERIpy `addOnIoDupVal`. */
   addOnIoDupVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1628,7 +1947,11 @@ export class LMDBer {
     return this.addIoDupVal(db, onKey(key, on, sep), val);
   }
 
-  /** Append one insertion-ordered duplicate value at next ordinal for key. */
+  /**
+   * Append one insertion-ordered duplicate value at the next ordinal bucket for `key`.
+   *
+   * Mirrors KERIpy `appendOnIoDupVal`.
+   */
   appendOnIoDupVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1638,7 +1961,12 @@ export class LMDBer {
     return this.appendOnVal(db, key, withIoDupProem(0, val), sep);
   }
 
-  /** Get insertion-ordered duplicates at ordinal effective key (stripped). */
+  /**
+   * TypeScript-only convenience returning all logical duplicates at one exact ordinal.
+   *
+   * KERIpy exposes scan-style iterators across ordinals rather than this exact
+   * per-ordinal list helper.
+   */
   getOnIoDupVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1652,7 +1980,8 @@ export class LMDBer {
   }
 
   /**
-   * Iterate insertion-ordered duplicates at one exact ordinal effective key (stripped).
+   * TypeScript-only convenience iterating logical duplicates at one exact ordinal.
+   *
    * No direct KERIpy equivalent: KERIpy `getOnIoDupValIter` scans all ordinals
    * from `on` onward, which maps to `getOnIoDupIterAll` here.
    */
@@ -1668,7 +1997,9 @@ export class LMDBer {
     yield* this.getIoDupValsIter(db, onKey(key, on, sep));
   }
 
-  /** Get last insertion-ordered duplicate at ordinal effective key (stripped). */
+  /**
+   * TypeScript-only convenience fetching the last logical duplicate at one exact ordinal.
+   */
   getOnIoDupLast(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1678,7 +2009,7 @@ export class LMDBer {
     return this.getIoDupValLast(db, onKey(key, on, sep));
   }
 
-  /** Iterate last insertion-ordered duplicate value per ordinal. */
+  /** Iterate the last logical duplicate value per ordinal bucket. Mirrors KERIpy `getOnIoDupLastValIter`. */
   *getOnIoDupLastValIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1690,7 +2021,7 @@ export class LMDBer {
     }
   }
 
-  /** Iterate `(key, on, val)` where `val` is last insertion-ordered duplicate per ordinal. */
+  /** Iterate `(key, on, val)` where `val` is the last logical duplicate per ordinal bucket. Mirrors KERIpy `getOnIoDupLastItemIter`. */
   *getOnIoDupLastItemIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1728,10 +2059,7 @@ export class LMDBer {
     }
   }
 
-  /**
-   * Delete all insertion-ordered duplicates at ordinal effective key.
-   * Mirrors `delOnIoDupVals` in KERIpy.
-   */
+  /** Delete all insertion-ordered duplicates at one ordinal effective key. TypeScript-local rename of KERIpy `delOnIoDupVals`. */
   delOnIoDups(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1741,7 +2069,7 @@ export class LMDBer {
     return this.delIoDupVals(db, onKey(key, on, sep));
   }
 
-  /** Delete one insertion-ordered duplicate at ordinal effective key. */
+  /** Delete one insertion-ordered duplicate at one ordinal effective key. Mirrors KERIpy `delOnIoDupVal`. */
   delOnIoDupVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1752,7 +2080,11 @@ export class LMDBer {
     return this.delIoDupVal(db, onKey(key, on, sep), val);
   }
 
-  /** Count insertion-ordered duplicates at ordinal effective key. */
+  /**
+   * TypeScript-only convenience counting logical duplicates at one exact ordinal.
+   *
+   * KERIpy does not expose this exact count helper on `LMDBer`.
+   */
   cntOnIoDups(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1762,7 +2094,7 @@ export class LMDBer {
     return this.cntIoDups(db, onKey(key, on, sep));
   }
 
-  /** Iterate backwards over insertion-ordered duplicate values. */
+  /** Iterate backwards over logical duplicate values. Mirrors KERIpy `getOnIoDupValBackIter`. */
   *getOnIoDupValBackIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1774,7 +2106,7 @@ export class LMDBer {
     }
   }
 
-  /** Iterate backwards over `(key, on, val)` insertion-ordered duplicates. */
+  /** Iterate backwards over `(key, on, val)` logical duplicates. Mirrors KERIpy `getOnIoDupItemBackIter`. */
   *getOnIoDupItemBackIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1793,7 +2125,8 @@ export class LMDBer {
   }
 
   /**
-   * Iterate insertion-ordered duplicate values for ordinals `>= on`.
+   * Iterate logical duplicate values for ordinals `>= on`.
+   *
    * TypeScript-local name for KERIpy `getOnIoDupValIter`.
    */
   *getOnIoDupIterAll(
@@ -1808,7 +2141,8 @@ export class LMDBer {
   }
 
   /**
-   * Iterate `(key, on, val)` insertion-ordered duplicates for ordinals `>= on`.
+   * Iterate `(key, on, val)` logical duplicates for ordinals `>= on`.
+   *
    * TypeScript-local name for KERIpy `getOnIoDupItemIter`.
    */
   *getOnIoDupItemIterAll(
@@ -1823,8 +2157,14 @@ export class LMDBer {
   }
 }
 
+/*
+ * Factory and path helpers
+ * Parity status: constructor-safe TS factories plus KERIpy-style directory helper.
+ */
+
 /**
  * Remove a databaser directory recursively.
+ *
  * Mirrors KERIpy `clearDatabaserDir` behavior and ignores missing paths.
  */
 export function clearDatabaserDir(path: string): void {
@@ -1837,7 +2177,11 @@ export function clearDatabaserDir(path: string): void {
   }
 }
 
-/** KERIpy-parity alias for creating/opening an `LMDBer`. */
+/**
+ * TypeScript-only alias for creating and opening an `LMDBer`.
+ *
+ * This gives the constructor-safe factory shape used throughout `keri-ts`.
+ */
 export function* openLMDB(
   options: LMDBerOptions = {},
   defaults?: Partial<LMDBerDefaults>,
@@ -1845,7 +2189,11 @@ export function* openLMDB(
   return yield* createLMDBer(options, defaults);
 }
 
-/** Create and open an `LMDBer` (constructor-safe async factory). */
+/**
+ * TypeScript-only constructor-safe async factory for `LMDBer`.
+ *
+ * Opens the env via `reopen()` and throws if the env could not be opened.
+ */
 export function* createLMDBer(
   options: LMDBerOptions = {},
   defaults?: Partial<LMDBerDefaults>,

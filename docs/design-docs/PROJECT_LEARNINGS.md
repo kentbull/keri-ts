@@ -94,6 +94,9 @@ This keeps context focused and avoids long-thread drift.
     to `3.4.4`; allowing caret drift to `3.5.1` triggered Deno N-API panics
     during app-level DB startup on the current macOS arm64 maintainer
     environment.
+15. `lmdber.ts` documentation is now organized by storage family and explicitly
+    distinguishes KERIpy parity methods from `keri-ts`-only extensions,
+    including the `OnIoSet*` family.
 
 ## New Thread Kickoff Template
 

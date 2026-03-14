@@ -66,6 +66,9 @@ Use this doc for:
   `OnIoSet*`/`OnIoDup*` model exists, what upper-layer operations it simplifies,
   when it is justified, and where the real overengineering risk sits for
   maintainers.
+- Updated `lmdber.ts` source documentation so its public API is grouped by
+  storage family and explicitly marks `OnIoSet*` as a `keri-ts` extension family
+  rather than a KERIpy parity family.
 
 ### 2026-03-14 - Dupsort And IoDup Semantics Clarified
 

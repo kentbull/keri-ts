@@ -227,8 +227,9 @@ maintaining or testing a method, answer these four questions first:
 
 1. Where is multiplicity represented: nowhere, native dupsort values, or
    synthetic key suffixes?
-2. Where does ordering come from: plain (lexicographic) key order, duplicate-value sort order,
-   exposed ordinal encoding in the key, or hidden ordering bytes in the value?
+2. Where does ordering come from: plain (lexicographic) key order,
+   duplicate-value sort order, exposed ordinal encoding in the key, or hidden
+   ordering bytes in the value?
 3. Is the ordinal exposed to the caller or hidden by the abstraction?
 4. Is the hidden machinery stored in keys or in values?
 
@@ -298,6 +299,11 @@ maintaining or testing a method, answer these four questions first:
      insertion ordinal.
    - Ordinal visibility: exposed `on`, hidden `ion`.
    - Hidden machinery location: key bytes.
+   - Parity status: `keri-ts` extension family. KERIpy exposes `IoSet*` and
+     `OnIoDup*`, but not `OnIoSet*`.
+   - Usage status: currently maintained as extension surface; not a current
+     KERIpy parity requirement and not known to have production callers in
+     `keri-ts`.
    - Representative methods: `putOnIoSetVals`, `pinOnIoSetVals`,
      `appendOnIoSetVals`, `addOnIoSetVal`, `getOnIoSetItemIter`,
      `getOnIoSetLastItem`, `remOnAllIoSet`, `cntOnAllIoSet`,
@@ -323,7 +329,8 @@ maintaining or testing a method, answer these four questions first:
 1. `Dup*` and `IoDup*` both use native LMDB duplicate values. The difference is
    ordering semantics, not storage capability.
 2. `IoSet*` and `OnIoSet*` emulate duplicate-like behavior in keyspace because
-   they do not rely on native dupsort duplicates.
+   they do not rely on native dupsort duplicates. `OnIoSet*` is a `keri-ts`
+   extension family, not a KERIpy parity family.
 3. If a method name starts with `On`, expect an exposed ordinal in the logical
    caller contract.
 4. If a method name starts with `Io`, expect insertion-order semantics driven by
@@ -366,10 +373,10 @@ In KERI-style data flows, the recurring pattern is:
 4. callers often need forward scans, backward scans, per-ordinal grouping, and
    delete-from-here-forward behavior.
 
-That is not a niche edge case. It is a general shape that appears in monotonic
-by nature key event log creation and storage, CESR message streaming for 
-event/attachment processing, escrow-style staging, receipt/signature material,
-and other one-to-many indexed DB paths.
+That is not a niche edge case. It is a general shape that appears in key event
+log creation and storage, CESR message streaming for event/attachment
+processing, escrow-style staging, receipt/signature material, and other
+one-to-many indexed DB paths.
 
 The design choice here is to pay that complexity once in the DB layer instead of
 forcing each higher-level caller to reinvent:
@@ -431,6 +438,8 @@ across two storage strategies:
    - uses synthetic keyspace members within each ordinal bucket
    - best when the project wants the same logical behavior without relying on
      native dupsort constraints
+   - in `keri-ts` today, this is an extension family rather than a KERIpy parity
+     obligation
 
 This is the same broader design split used elsewhere:
 
