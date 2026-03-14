@@ -5,6 +5,7 @@ import {
   renderWrapperAnnotatedStream,
 } from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
+import { b } from '../core/bytes.ts'
 
 const DEFAULT_OPTIONS: Required<AnnotateOptions> = Object.freeze({
   commentMode: "inline",
@@ -39,7 +40,7 @@ export function annotateFrames(
 ): AnnotatedFrame[] {
   const opts = resolveOptions(options);
   const bytes = typeof input === "string"
-    ? new TextEncoder().encode(input)
+    ? b(input)
     : input;
   const frames = parsedFramesOrThrow(parseBytes(bytes));
   return renderAnnotatedFrames(frames, opts);
@@ -51,7 +52,7 @@ export function annotate(
 ): string {
   const opts = resolveOptions(options);
   const bytes = typeof input === "string"
-    ? new TextEncoder().encode(input)
+    ? b(input)
     : input;
   const wrapperAnnotated = renderWrapperAnnotatedStream(bytes, opts);
   if (wrapperAnnotated !== null) {

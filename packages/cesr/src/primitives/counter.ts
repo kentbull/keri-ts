@@ -1,11 +1,12 @@
 import {
+  b,
   b64ToInt,
   codeB2ToB64,
   codeB64ToB2,
   intToB64,
   nabSextets,
-  sceil,
-} from "../core/bytes.ts";
+  sceil
+} from '../core/bytes.ts'
 import {
   DeserializeError,
   ShortageError,
@@ -219,7 +220,7 @@ function parseCounterInit(init: CounterInit): CounterData {
   }
   if (init.qb64) {
     return parseCounterFromTextData(
-      new TextEncoder().encode(init.qb64),
+      b(init.qb64),
       version,
     );
   }
@@ -296,7 +297,7 @@ export class Counter {
   }
 
   get qb64b(): Uint8Array {
-    return new TextEncoder().encode(this._qb64);
+    return b(this._qb64);
   }
 
   get qb2(): Uint8Array {

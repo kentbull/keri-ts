@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { annotate, type CesrFrame, denot } from "../../src/index.ts";
+import { annotate, type CesrFrame, denot, t } from '../../src/index.ts'
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
@@ -53,7 +53,7 @@ Deno.test("V-P0-001: top-level GenericGroup enclosing one BodyWithAttachmentGrou
   const annotated = annotate(stream);
   assertStringIncludes(annotated, "GenericGroup count=");
   assertStringIncludes(annotated, "BodyWithAttachmentGroup count=");
-  assertEquals(new TextDecoder().decode(denot(annotated)), stream);
+  assertEquals(t(denot(annotated)), stream);
 
   const summary = summarizeFrames(encode(stream), []);
   assertEquals(summary.length, 1);
@@ -80,7 +80,7 @@ Deno.test("V-P0-002: nested GenericGroup two levels deep with mixed enclosed con
   // Verification type 1: annotated CESR preserves wrapper counters and round-trips.
   assertStringIncludes(annotated, "GenericGroup count=");
   assertStringIncludes(annotated, "BodyWithAttachmentGroup count=");
-  assertEquals(new TextDecoder().decode(denot(annotated)), stream);
+  assertEquals(t(denot(annotated)), stream);
 
   // Verification type 2: whole-stream parse yields the expected frame shapes.
   const baseline = summarizeFrames(input, []);

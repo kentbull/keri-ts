@@ -3,6 +3,7 @@ import type { ColdCode } from "../core/types.ts";
 import { BEXTER_CODES, TEXTER_CODES } from "./codex.ts";
 import { Bexter } from "./bexter.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
+import { t } from '../core/bytes.ts'
 
 function isPatherCode(code: string): boolean {
   return BEXTER_CODES.has(code) || TEXTER_CODES.has(code);
@@ -31,7 +32,7 @@ export class Pather extends Matter {
       const bext = Bexter.derawify(this.raw, this.code).replace(/^--/, "");
       return bext.split("-").join("/");
     }
-    return new TextDecoder().decode(this.raw);
+    return t(this.raw);
   }
 }
 

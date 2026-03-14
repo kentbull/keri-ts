@@ -23,6 +23,10 @@
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
+    "@msgpack/msgpack": "npm:@msgpack/msgpack@^3.1.2",
+    "cbor-x": "npm:cbor-x@^1.6.0",
+    "cbor-x/decode": "npm:cbor-x@^1.6.0/decode",
+    "cbor-x/encode": "npm:cbor-x@^1.6.0/encode",
     "effection": "npm:effection@^3.6.0",
     "lmdb": "npm:lmdb@^3.4.4",
     "commander": "npm:commander@^10.0.1",

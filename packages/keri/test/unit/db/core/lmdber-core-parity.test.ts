@@ -1,7 +1,8 @@
 import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
-import { b, openLMDB, t } from "../../../../src/db/core/lmdber.ts";
+import { openLMDB } from "../../../../src/db/core/lmdber.ts";
+import { b, t } from '../../../../../cesr/mod.ts'
 
 Deno.test("db/core lmdber - lifecycle reopen and version metadata parity", async () => {
   await run(function* () {
@@ -20,6 +21,99 @@ Deno.test("db/core lmdber - lifecycle reopen and version metadata parity", async
       assertEquals(reopened, true);
       assert(lmdber.opened);
       assertEquals(lmdber.getVer(), "1.0.0");
+    } finally {
+      if (lmdber.opened) {
+        yield* lmdber.close(true);
+      }
+    }
+  });
+});
+
+Deno.test("db/core lmdber - closed lifecycle guard for previously unguarded methods", async () => {
+  await run(function* () {
+    const name = `lmdber-closed-guard-${crypto.randomUUID()}`;
+    const lmdber = yield* openLMDB({ name, temp: true });
+    try {
+      const db = lmdber.openDB("closed-plain.", false);
+      const dupDb = lmdber.openDB("closed-dup.", true);
+      yield* lmdber.close();
+
+      assertThrows(
+        () => lmdber.getVal(db, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cnt(db),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntTop(db, b("branch.")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getTopItemIter(db, b("branch."))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.appendOnVal(db, b("k"), b("v")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntOnAll(db, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getOnAllItemIter(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.addIoSetVal(db, b("k"), b("v")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getIoSetItemIter(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getIoSetLastItemIterAll(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.appendOnIoSetVals(db, b("k"), [b("v")]),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntOnAllIoSet(db, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getOnAllIoSetItemIter(db, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.getVals(dupDb, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getValsIter(dupDb, b("k"))],
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.cntVals(dupDb, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.delVals(dupDb, b("k")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => lmdber.delIoDupVal(dupDb, b("k"), b("v")),
+        DatabaseNotOpenError,
+      );
+      assertThrows(
+        () => [...lmdber.getOnIoDupLastItemIter(dupDb, b("k"))],
+        DatabaseNotOpenError,
+      );
     } finally {
       if (lmdber.opened) {
         yield* lmdber.close(true);
@@ -101,6 +195,9 @@ Deno.test("db/core lmdber - On* ordinal-key family parity", async () => {
       assertEquals(lmdber.pinOnVal(db, key, 0, b("v0p")), true);
       assertEquals(lmdber.appendOnVal(db, key, b("v1")), 1);
       assertEquals(lmdber.appendOnVal(db, key, b("v2")), 2);
+      // Ensure append tail lookup remains correct when later lexicographic keys exist.
+      assertEquals(lmdber.putOnVal(db, b("z"), 0, b("z0")), true);
+      assertEquals(lmdber.appendOnVal(db, key, b("v3")), 3);
 
       assertEquals(t(lmdber.getOnVal(db, key, 1)!), "v1");
       const item = lmdber.getOnItem(db, key, 2);
@@ -108,12 +205,12 @@ Deno.test("db/core lmdber - On* ordinal-key family parity", async () => {
       assertEquals(item[1], 2);
       assertEquals(t(item[2]), "v2");
 
-      assertEquals(lmdber.cntOnAll(db, key), 3);
+      assertEquals(lmdber.cntOnAll(db, key), 4);
       const ons = [...lmdber.getOnAllItemIter(db, key)].map(([_, on]) => on);
-      assertEquals(ons, [0, 1, 2]);
+      assertEquals(ons, [0, 1, 2, 3]);
 
       assertEquals(lmdber.remOn(db, key, 1), true);
-      assertEquals(lmdber.cntOnAll(db, key), 2);
+      assertEquals(lmdber.cntOnAll(db, key), 3);
       assertEquals(lmdber.remOnAll(db, key, 2), true);
       assertEquals(lmdber.cntOnAll(db, key), 1);
     } finally {

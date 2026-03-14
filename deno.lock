@@ -2,15 +2,10 @@
   "version": "5",
   "specifiers": {
     "jsr:@david/code-block-writer@^13.0.3": "13.0.3",
-    "jsr:@deno/dnt@*": "0.42.3",
     "jsr:@deno/dnt@~0.42.3": "0.42.3",
-    "jsr:@std/assert@*": "1.0.15",
-    "jsr:@std/assert@0.217": "0.217.0",
-    "jsr:@std/fmt@0.217": "0.217.0",
     "jsr:@std/fmt@1": "1.0.8",
     "jsr:@std/fs@1": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.12",
-    "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/internal@^1.0.9": "1.0.12",
     "jsr:@std/path@*": "1.1.2",
     "jsr:@std/path@1": "1.1.2",
@@ -26,7 +21,7 @@
     "npm:cesr-ts@~0.2.3": "0.2.3",
     "npm:commander@^10.0.1": "10.0.1",
     "npm:effection@^3.6.0": "3.6.1",
-    "npm:lmdb@^3.4.4": "3.4.4"
+    "npm:lmdb@^3.4.4": "3.5.1"
   },
   "jsr": {
     "@david/code-block-writer@13.0.3": {
@@ -36,26 +31,11 @@
       "integrity": "62a917a0492f3c8af002dce90605bb0d41f7d29debc06aca40dba72ab65d8ae3",
       "dependencies": [
         "jsr:@david/code-block-writer",
-        "jsr:@std/fmt@1",
+        "jsr:@std/fmt",
         "jsr:@std/fs",
         "jsr:@std/path@1",
         "jsr:@ts-morph/bootstrap"
       ]
-    },
-    "@std/assert@0.217.0": {
-      "integrity": "c98e279362ca6982d5285c3b89517b757c1e3477ee9f14eb2fdf80a45aaa9642",
-      "dependencies": [
-        "jsr:@std/fmt@0.217"
-      ]
-    },
-    "@std/assert@1.0.15": {
-      "integrity": "d64018e951dbdfab9777335ecdb000c0b4e3df036984083be219ce5941e4703b",
-      "dependencies": [
-        "jsr:@std/internal@^1.0.12"
-      ]
-    },
-    "@std/fmt@0.217.0": {
-      "integrity": "cb99f82500b8da20202fedfa8bb94dd0222e81f0494ed9087de20ee3d8a39a8d"
     },
     "@std/fmt@1.0.8": {
       "integrity": "71e1fc498787e4434d213647a6e43e794af4fd393ef8f52062246e06f7e372b7"
@@ -121,38 +101,41 @@
       "os": ["win32"],
       "cpu": ["x64"]
     },
-    "@lmdb/lmdb-darwin-arm64@3.4.4": {
-      "integrity": "sha512-XaKL705gDWd6XVls3ATDj13ZdML/LqSIxwgnYpG8xTzH2ifArx8fMMDdvqGE/Emd+W6R90W2fveZcJ0AyS8Y0w==",
+    "@harperfast/extended-iterable@1.0.3": {
+      "integrity": "sha512-sSAYhQca3rDWtQUHSAPeO7axFIUJOI6hn1gjRC5APVE1a90tuyT8f5WIgRsFhhWA7htNkju2veB9eWL6YHi/Lw=="
+    },
+    "@lmdb/lmdb-darwin-arm64@3.5.1": {
+      "integrity": "sha512-tpfN4kKrrMpQ+If1l8bhmoNkECJi0iOu6AEdrTJvWVC+32sLxTARX5Rsu579mPImRP9YFWfWgeRQ5oav7zApQQ==",
       "os": ["darwin"],
       "cpu": ["arm64"]
     },
-    "@lmdb/lmdb-darwin-x64@3.4.4": {
-      "integrity": "sha512-GPHGEVcwJlkD01GmIr7B4kvbIcUDS2+kBadVEd7lU4can1RZaZQLDDBJRrrNfS2Kavvl0VLI/cMv7UASAXGrww==",
+    "@lmdb/lmdb-darwin-x64@3.5.1": {
+      "integrity": "sha512-+a2tTfc3rmWhLAolFUWRgJtpSuu+Fw/yjn4rF406NMxhfjbMuiOUTDRvRlMFV+DzyjkwnokisskHbCWkS3Ly5w==",
       "os": ["darwin"],
       "cpu": ["x64"]
     },
-    "@lmdb/lmdb-linux-arm64@3.4.4": {
-      "integrity": "sha512-mALqr7DE42HsiwVTKpQWxacjHoJk+e9p00RWIJqTACh/hpucxp/0lK/XMh5XzWnU/TDCZLukq1+vNqnNumTP/Q==",
+    "@lmdb/lmdb-linux-arm64@3.5.1": {
+      "integrity": "sha512-aoERa5B6ywXdyFeYGQ1gbQpkMkDbEo45qVoXE5QpIRavqjnyPwjOulMkmkypkmsbJ5z4Wi0TBztON8agCTG0Vg==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@lmdb/lmdb-linux-arm@3.4.4": {
-      "integrity": "sha512-cmev5/dZr5ACKri9f6GU6lZCXTjMhV72xujlbOhFCgFXrt4W0TxGsmY8kA1BITvH60JBKE50cSxsiulybAbrrw==",
+    "@lmdb/lmdb-linux-arm@3.5.1": {
+      "integrity": "sha512-0EgcE6reYr8InjD7V37EgXcYrloqpxVPINy3ig1MwDSbl6LF/vXTYRH9OE1Ti1D8YZnB35ZH9aTcdfSb5lql2A==",
       "os": ["linux"],
       "cpu": ["arm"]
     },
-    "@lmdb/lmdb-linux-x64@3.4.4": {
-      "integrity": "sha512-QjLs8OcmCNcraAcLoZyFlo0atzBJniQLLwhtR+ymQqS5kLYpV5RqwriL87BW+ZiR9ZiGgZx3evrz5vnWPtJ1fQ==",
+    "@lmdb/lmdb-linux-x64@3.5.1": {
+      "integrity": "sha512-SqNDY1+vpji7bh0sFH5wlWyFTOzjbDOl0/kB5RLLYDAFyd/uw3n7wyrmas3rYPpAW7z18lMOi1yKlTPv967E3g==",
       "os": ["linux"],
       "cpu": ["x64"]
     },
-    "@lmdb/lmdb-win32-arm64@3.4.4": {
-      "integrity": "sha512-tr/pwHDlZ33forLGAr0tI04cRmP4SgF93yHbb+2zvZiDEyln5yMHhbKDySxY66aUOkhvBvTuHq9q/3YmTj6ZHQ==",
+    "@lmdb/lmdb-win32-arm64@3.5.1": {
+      "integrity": "sha512-50v0O1Lt37cwrmR9vWZK5hRW0Aw+KEmxJJ75fge/zIYdvNKB/0bSMSVR5Uc2OV9JhosIUyklOmrEvavwNJ8D6w==",
       "os": ["win32"],
       "cpu": ["arm64"]
     },
-    "@lmdb/lmdb-win32-x64@3.4.4": {
-      "integrity": "sha512-KRzfocJzB/mgoTCqnMawuLSKheHRVTqWfSmouIgYpFs6Hx4zvZSvsZKSCEb5gHmICy7qsx9l06jk3MFTtiFVAQ==",
+    "@lmdb/lmdb-win32-x64@3.5.1": {
+      "integrity": "sha512-qwosvPyl+zpUlp3gRb7UcJ3H8S28XHCzkv0Y0EgQToXjQP91ZD67EHSCDmaLjtKhe+GVIW5om1KUpzVLA0l6pg==",
       "os": ["win32"],
       "cpu": ["x64"]
     },
@@ -242,9 +225,10 @@
     "effection@3.6.1": {
       "integrity": "sha512-ogsuH/cgxfOOaVUf53pYqhPJth4WhPlva0hGb4Roh6cZhttMoanMqwADkDk9ych28lKuQgntpCszbFRyRFifqg=="
     },
-    "lmdb@3.4.4": {
-      "integrity": "sha512-+Y2DqovevLkb6DrSQ6SXTYLEd6kvlRbhsxzgJrk7BUfOVA/mt21ak6pFDZDKxiAczHMWxrb02kXBTSTIA0O94A==",
+    "lmdb@3.5.1": {
+      "integrity": "sha512-NYHA0MRPjvNX+vSw8Xxg6FLKxzAG+e7Pt8RqAQA/EehzHVXq9SxDqJIN3JL1hK0dweb884y8kIh6rkWvPyg9Wg==",
       "dependencies": [
+        "@harperfast/extended-iterable",
         "msgpackr",
         "node-addon-api",
         "node-gyp-build-optional-packages@5.2.2",
@@ -279,8 +263,8 @@
       "scripts": true,
       "bin": true
     },
-    "msgpackr@1.11.5": {
-      "integrity": "sha512-UjkUHN0yqp9RWKy0Lplhh+wlpdt9oQBYgULZOiFhV3VclSF1JnSQWZ5r9gORQlNYaUKQoR8itv7g7z1xDDuACA==",
+    "msgpackr@1.11.8": {
+      "integrity": "sha512-bC4UGzHhVvgDNS7kn9tV8fAucIYUBuGojcaLiz7v+P63Lmtm0Xeji8B/8tYKddALXxJLpwIeBmUN3u64C4YkRA==",
       "optionalDependencies": [
         "msgpackr-extract"
       ]
@@ -302,8 +286,8 @@
       ],
       "bin": true
     },
-    "ordered-binary@1.6.0": {
-      "integrity": "sha512-IQh2aMfMIDbPjI/8a3Edr+PiOpcsB7yo8NdW7aHWVaoR/pcDldunMvnnwbk/auPGqmKeAdxtZl7MHX/QmPwhvQ=="
+    "ordered-binary@1.6.1": {
+      "integrity": "sha512-QkCdPooczexPLiXIrbVOPYkR3VO3T6v2OyKRkR1Xbhpy7/LAVXwahnRCgRp78Oe/Ehf0C/HATAxfSr6eA1oX+w=="
     },
     "undici-types@7.10.0": {
       "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="
@@ -314,6 +298,8 @@
   },
   "workspace": {
     "dependencies": [
+      "npm:@msgpack/msgpack@^3.1.2",
+      "npm:cbor-x@^1.6.0",
       "npm:cesr-ts@~0.2.3"
     ],
     "members": {
@@ -329,6 +315,8 @@
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "jsr:@std/assert@0.217",
+          "npm:@msgpack/msgpack@^3.1.2",
+          "npm:cbor-x@^1.6.0",
           "npm:cesr-ts@~0.2.3",
           "npm:commander@^10.0.1",
           "npm:effection@^3.6.0",

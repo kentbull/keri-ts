@@ -82,7 +82,6 @@ function* runCmd(
  */
 export function* tufa(args: string[] = []): Operation<void> {
   const dispatch: { selection?: CommandSelection } = {};
-  const commandHandlers = createCmdHandlers();
 
   // Use Commander.js for all command parsing
   const program = createCLIProgram((next) => {
@@ -96,5 +95,6 @@ export function* tufa(args: string[] = []): Operation<void> {
     return;
   }
 
+  const commandHandlers = createCmdHandlers();
   yield* runCmd(dispatch.selection, commandHandlers);
 }

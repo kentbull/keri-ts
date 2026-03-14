@@ -2,6 +2,7 @@ import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
+import { t } from '../core/bytes.ts'
 
 function isNumericName(name: string): boolean {
   return name === "Short" || name === "Long" || name === "Big" ||
@@ -39,7 +40,7 @@ export class Tholder extends Matter {
       return [...this.raw].reduce((acc, b) => (acc << 8n) | BigInt(b), 0n)
         .toString(16);
     }
-    return new TextDecoder().decode(this.raw);
+    return t(this.raw);
   }
 }
 

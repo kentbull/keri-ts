@@ -1,3 +1,5 @@
+import { t } from '../packages/cesr/mod.ts'
+
 const SCOPE = ["packages/keri/src", "packages/cesr/src"];
 
 interface CmdResult {
@@ -25,8 +27,8 @@ async function runCommand(
     stderr: "piped",
   }).output();
 
-  const stdout = new TextDecoder().decode(out.stdout);
-  const stderr = new TextDecoder().decode(out.stderr);
+  const stdout = t(out.stdout);
+  const stderr = t(out.stderr);
 
   if (!allowNonZero && out.code !== 0) {
     throw new Error(`${cmd} failed (${out.code}): ${stderr || stdout}`);

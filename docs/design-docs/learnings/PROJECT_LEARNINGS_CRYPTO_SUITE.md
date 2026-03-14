@@ -7,16 +7,20 @@ signing/verification behavior in `keri-ts`.
 
 ## Current Status
 
-### 2026-03-03
-
-1. Primitive parity checks now track KERIpy `main` (`5a5597e8`) rather than
-   v1.3.4 assumptions.
-2. Shared primitive codex subsets were added for semantic validation to avoid
-   lossy code-name aliasing when one CESR code is valid in multiple domains.
-3. `Noncer` behavior is now aligned with KERIpy inheritance and codex semantics
-   (extends `Diger` in non-strict mode, validates full `NonceCodex` subset).
-4. `Verser`/`Tagger`/`Decimer` class model has been brought in line with current
-   KERIpy primitive hierarchy and version-tag semantics.
+1. Primitive semantic parity is now tracked against KERIpy `main`, not older
+   v1.3.4-era assumptions.
+2. Shared primitive codex subsets were added to avoid lossy aliasing when one
+   CESR code is valid in multiple semantic domains.
+3. `Verser`, `Tagger`, `Decimer`, `Noncer`, `Labeler`, and related hierarchy
+   behavior now reflect the current KERIpy primitive model.
+4. Primitive-first documentation coverage is in good shape: touched primitive
+   modules now carry maintainer-oriented purpose/invariant docstrings rather
+   than relying on implicit KERIpy knowledge.
+5. Per-primitive test migration surfaced and closed serialization/projection
+   parity gaps such as `Matter` qb2 raw extraction and `Dater.dts` projection.
+6. Typed attachment-family primitive tests (`Structor`, `Aggor`, `Sealer`,
+   `Blinder`, `Mediar`) now use stronger KERIpy-derived vectors rather than
+   mostly synthetic smoke cases.
 
 ## Scope Checklist
 
@@ -27,137 +31,33 @@ Use this doc for:
 3. digest algorithm behavior and interop,
 4. serialization or encoding behavior tied to crypto primitives.
 
-## Planned Sections
+## Current Follow-Ups
 
-1. Decision log
-2. Interop quirks and parity notes
-3. Test corpus references
-4. Known risks and TODOs
+1. Preserve KERIpy-main parity as the authority for primitive semantics.
+2. Keep constructor/encoding convenience differences from KERIpy explicit when
+   TS contracts intentionally stay narrower.
+3. Keep parser-layer follow-ups separate from primitive memory unless the
+   primitive contract itself changes.
 
-## Handoff Log
+## Milestone Rollup
 
-### 2026-03-03 - Primitive Hierarchy Parity Refresh
+### 2026-03-03 - Primitive Hierarchy and Codex Parity Refresh
 
-- Topic docs updated:
-  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
-- What changed:
-  - Added KERIpy-main-aligned primitive semantic codex subsets in
-    `packages/cesr/src/primitives/codex.ts`.
-  - Added `Tagger` and `Decimer` primitives and exported them from the CESR
-    package barrel.
-  - Updated `Verser`, `Ilker`, `Traitor`, `Noncer`, `Labeler`, `Bexter`,
-    `Pather`, and `NumberPrimitive` code-validation/decoding behavior to align
-    with KERIpy main codex/domain semantics.
-- Why:
-  - Preserve interop and prevent drift from KERIpy as the behavioral authority
-    for primitive semantics and class hierarchy.
-- Tests:
-  - Command:
-    `deno test test/unit/primitives-native.test.ts test/unit/qb2.test.ts` (in
-    `packages/cesr`)
-  - Result: `52 passed, 0 failed`
-- Contracts/plans touched:
-  - none
-- Risks/TODO:
-  - Follow through with full-suite parser graph migration tests to fully lock
-    primitive-first hydration acceptance criteria.
+- Added shared codex subsets to preserve semantic validation across domains.
+- Added `Tagger` and `Decimer`.
+- Aligned `Verser`, `Ilker`, `Traitor`, `Noncer`, `Labeler`, `Bexter`, `Pather`,
+  and `NumberPrimitive` behavior with current KERIpy semantics.
 
-### 2026-03-04 - Primitive Docstring Parity with KERIpy Semantics
+### 2026-03-04 - Primitive Docstring Completion
 
-- Topic docs updated:
-  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
-- What changed:
-  - Added maintainer-oriented class/function/method docstrings in new primitive
-    modules (`Signer`, `Salter`, `Cipher`, `Encrypter`, `Decrypter`, `Siger`,
-    and aligned tag/label/version primitives).
-  - Docstrings now carry KERIpy-substance for purpose and invariants (seed vs
-    salt semantics, encryption/decryption key roles, indexed-signature verifier
-    linkage, and tag/trait/version compact encodings).
-- Why:
-  - Keep primitive internals auditable for maintainers and reduce drift between
-    TypeScript implementation intent and KERIpy behavioral authority.
-- Tests:
-  - Command: `deno check src/index.ts` (in `packages/cesr`)
-  - Result: type check passed
-- Contracts/plans touched:
-  - none
-- Risks/TODO:
-  - Crypto operation execution remains in higher crypto-suite layers; primitive
-    docs now make that boundary explicit but do not change runtime behavior.
+- Added maintainer-oriented docstrings for the touched primitive families,
+  including signer/salter/cipher/encrypter/decrypter/signature/verifier layers.
+- Closed remaining documentation gaps in foundational primitive contracts such
+  as `Matter`, `Indexer`, and `Counter`.
 
-### 2026-03-04 - Verfer/Core Primitive Doc Completion
+### 2026-03-04 - Serialization and Structor-Family Parity Hardening
 
-- Topic docs updated:
-  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
-- What changed:
-  - Closed remaining documentation gaps for verifier/signature and key-material
-    primitives (`Verfer`, `Cigar`, `Diger`, `Signer`, `Salter`, `Siger`) and
-    base primitive contracts (`Matter`, `Indexer`, `Counter`) that were touched
-    in the primitive-first wave.
-- Why:
-  - Ensure principal-engineer reviewability for all primitive classes/functions
-    introduced or materially changed in this refactor.
-- Tests:
-  - Command: `deno check src/index.ts` (in `packages/cesr`)
-  - Result: type check passed
-- Contracts/plans touched:
-  - none
-- Risks/TODO:
-  - Documentation coverage is now complete for this wave; behavioral parity
-    risks remain in pending parser test migration, not in primitive docs.
-
-### 2026-03-04 - Primitive Serialization Parity Fixes During Per-Primitive Test Migration
-
-- Topic docs updated:
-  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
-- What changed:
-  - Fixed `Matter` qb2 hydration parity for codes with non-zero code-pad width
-    by aligning binary exfil raw-byte derivation with text exfil semantics
-    (`parseMatterFromBinaryData` now applies equivalent prepad handling before
-    raw extraction).
-  - Aligned `Dater.dts` projection with KERIpy behavior by deriving datetime
-    text from qualified token text (`qb64` payload slice) instead of decoding
-    `.raw` bytes as UTF-8.
-  - Updated per-primitive tests to cover these paths explicitly (`Number`,
-    `Seqner`, `Tholder`, `Dater`) in txt/qb2 parity assertions.
-- Why:
-  - Close newly surfaced primitive parity gaps found while converting from
-    aggregate primitive suites to dedicated per-primitive files.
-- Tests:
-  - Command: `deno test test/unit/primitives` (in `packages/cesr`)
-  - Result: `116 passed, 0 failed`
-  - Command: `deno task test` (in `packages/cesr`)
-  - Result: `228 passed, 0 failed`
-- Contracts/plans touched:
-  - none
-- Risks/TODO:
-  - Keep constructor-code auto-selection parity (for variable-length decimal
-    encodings) tracked as an explicit follow-up where TS contract remains
-    narrower than full KERIpy convenience behavior.
-
-### 2026-03-04 - Structor-Family Primitive Test Deepening
-
-- Topic docs updated:
-  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
-- What changed:
-  - Added KERIpy-main-derived structor payload vectors for
-    `Sealer`/`Blinder`/`Mediar` and expanded their per-primitive tests to assert
-    class hydration against those payloads.
-  - Expanded `Structor` and `Aggor` tests with qb64/qb2 group projection
-    assertions and KERIpy empty-list baseline vector coverage.
-- Why:
-  - Strengthen parity confidence for typed attachment primitive families beyond
-    smoke-level synthetic vectors.
-- Tests:
-  - Command:
-    `deno test test/unit/primitives/structor.test.ts test/unit/primitives/aggor.test.ts test/unit/primitives/sealer.test.ts test/unit/primitives/blinder.test.ts test/unit/primitives/mediar.test.ts`
-    (in `packages/cesr`)
-  - Result: `19 passed, 0 failed`
-  - Command: `deno test test/unit/primitives` (in `packages/cesr`)
-  - Result: `126 passed, 0 failed`
-- Contracts/plans touched:
-  - none
-- Risks/TODO:
-  - Full canonical-v2 counter-count parity for structor tuple families remains a
-    parser-layer follow-up (tests currently use normalized counters for these
-    payloads).
+- Fixed `Matter` qb2 hydration parity for non-zero code-pad widths.
+- Fixed `Dater.dts` projection to follow KERIpy qualified-text behavior.
+- Expanded per-primitive tests and deepened structor-family coverage with
+  stronger KERIpy-derived vectors.

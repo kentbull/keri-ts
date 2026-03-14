@@ -7,6 +7,7 @@ import {
 } from "../../../src/primitives/primitive.ts";
 import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
 import { KERIPY_COUNTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
+import { b } from '../../../src/index.ts'
 
 Deno.test("primitive guards: detects tuple and counter-group entries", () => {
   const counter = new Counter({
@@ -23,7 +24,7 @@ Deno.test("primitive guards: detects tuple and counter-group entries", () => {
 
 Deno.test("primitive guards: unknown primitive is not tuple/group", () => {
   const unknown = UnknownPrimitive.fromPayload(
-    new TextEncoder().encode("ABCD"),
+    b("ABCD"),
     "txt",
   );
   assertEquals(isPrimitiveTuple(unknown), false);

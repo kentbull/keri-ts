@@ -13,6 +13,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
+import { b, t } from '../../../cesr/mod.ts'
 
 export const SIGNER = "__signatory__";
 
@@ -72,7 +73,7 @@ function versifyV1(size: number): string {
 }
 
 function serializeKed(ked: Record<string, unknown>): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(ked));
+  return b(JSON.stringify(ked));
 }
 
 function makeNowIso8601(): string {
@@ -238,13 +239,13 @@ export class Hab {
       throw new Error("Invalid attachment size, nonintegral quadlets.");
     }
 
-    const msg = new TextEncoder().encode(
-      `${new TextDecoder().decode(raw)}${
+    const msg = b(
+      `${t(raw)}${
         encodeCounterV1("-V", atc.length / 4)
       }${atc}`,
     );
 
-    this.db.putEvt(new TextEncoder().encode(`${pre}:0`), msg);
+    this.db.putEvt(b(`${pre}:0`), msg);
 
     this.kever = {
       pre,

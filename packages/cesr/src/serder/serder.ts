@@ -13,6 +13,7 @@ import {
 } from "../primitives/primitive.ts";
 import { Sealer, isSealerCode } from "../primitives/sealer.ts";
 import { Protocols } from "../tables/versions.ts";
+import { t } from '../core/bytes.ts'
 
 function normalizeDecodedMap(
   value: unknown,
@@ -201,7 +202,7 @@ export function parseSerder(
 
   try {
     if (kind === "JSON") {
-      const text = new TextDecoder().decode(raw);
+      const text = t(raw);
       ked = JSON.parse(text) as Record<string, unknown>;
     } else if (kind === "MGPK") {
       ked = normalizeDecodedMap(decodeMsgpack(raw), kind);
