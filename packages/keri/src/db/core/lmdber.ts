@@ -2,18 +2,22 @@
  * Core LMDB manager used by higher-level DB abstractions.
  */
 
-import { type Operation } from 'npm:effection@^3.6.0'
-import { Database, Key, open, RootDatabase } from 'npm:lmdb@^3.4.4'
-import { startsWith } from '../../core/bytes.ts'
+import { type Operation } from "npm:effection@^3.6.0";
+import { Database, Key, open, RootDatabase } from "npm:lmdb@3.4.4";
+import { startsWith } from "../../core/bytes.ts";
 import {
   DatabaseKeyError,
   DatabaseNotOpenError,
-  DatabaseOperationError
-} from '../../core/errors.ts'
-import { consoleLogger, type Logger } from '../../core/logger.ts'
-import { onKey, splitOnKey, suffix, unsuffix } from './keys.ts'
-import { PathManager, PathManagerDefaults, PathManagerOptions } from './path-manager.ts'
-import { b, bytesEqual, bytesHex, t, toBytes } from '../../../../cesr/mod.ts'
+  DatabaseOperationError,
+} from "../../core/errors.ts";
+import { consoleLogger, type Logger } from "../../core/logger.ts";
+import { onKey, splitOnKey, suffix, unsuffix } from "./keys.ts";
+import {
+  PathManager,
+  PathManagerDefaults,
+  PathManagerOptions,
+} from "./path-manager.ts";
+import { b, bytesEqual, bytesHex, t, toBytes } from "../../../../cesr/mod.ts";
 
 // type aliases for the binary keys and values of LMDB
 export type BinKey = Uint8Array;
@@ -21,9 +25,15 @@ export type BinVal = Uint8Array;
 
 /** Default separator used by ordinal/suffix key helpers (`onKey`, `suffix`). */
 const DOT_SEP = b(".");
-/** Hex chars used for IoDup insertion ordinal prefix. */
+/**
+ * Hex chars used for IoDup insertion ordinal prefix.
+ * Does not include trailing separator.
+ */
 const IODUP_PROEM_HEX_SIZE = 32;
-/** Full IoDup proem size: 32-hex ordinal + `.` separator. */
+/**
+ * Full IoDup proem size:
+ * 32-hex ordinal + trailing `.` separator.
+ */
 const IODUP_PROEM_SIZE = 33;
 
 /**
@@ -546,7 +556,8 @@ export class LMDBer {
   }
 
   /**
-   * Iterate `(key, value)` entries whose keys share the prefix `top`.
+   * Iterate `(key, value)` entries whose keys share the prefix `top`, returning
+   * the suffixed key per entry.
    * Empty `top` iterates the whole database.
    */
   *getTopItemIter(
@@ -644,7 +655,9 @@ export class LMDBer {
       }
       if (bytesEqual(tailOnKey, start)) {
         throw new Error(
-          `Number part cn=${cn} for key part ckey=${Array.from(ckey)} exceeds maximum size.`,
+          `Number part cn=${cn} for key part ckey=${
+            Array.from(ckey)
+          } exceeds maximum size.`,
         );
       }
       nextOn = cn + 1;
@@ -827,7 +840,10 @@ export class LMDBer {
     return true;
   }
 
-  /** Replace insertion-ordered set at `key`. */
+  /**
+   * Replace insertion-ordered set at `key`.
+   * Mirrors setIoSetVals in KERIpy.
+   */
   pinIoSetVals(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -884,7 +900,11 @@ export class LMDBer {
     return this.putVal(db, suffix(key, ion, sep), val);
   }
 
-  /** Iterate set items `(key, val)` at `key` from insertion ordinal `ion`. */
+  /**
+   * Iterate set items `(key, val)` at `key` from insertion ordinal `ion`.
+   * Mirrors getIoSetValsIter.
+   * Used in place of getIoSetVals from KERIpy for cntIoSet
+   */
   *getIoSetItemIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -920,7 +940,10 @@ export class LMDBer {
     return last;
   }
 
-  /** Remove all insertion-ordered set members at `key`. */
+  /**
+   * Remove all insertion-ordered set members at `key`.
+   * Mirrors delIoSetVals in KERIpy.
+   */
   remIoSet(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -954,7 +977,10 @@ export class LMDBer {
     return true;
   }
 
-  /** Remove one set member at `key`, or all if `val` is `null`. */
+  /**
+   * Remove one set member at `key`, or all if `val` is `null`.
+   * Mirrors delIoSetVal in KERIpy.
+   */
   remIoSetVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1012,7 +1038,10 @@ export class LMDBer {
     return count;
   }
 
-  /** Iterate branch `(key, val)` where db keys are io-suffixed. */
+  /**
+   * Iterate branch `(key, val)` where db keys are io-suffixed, returning the
+   * unsuffixed key per item.
+   */
   *getTopIoSetItemIter(
     db: Database<BinVal, BinKey>,
     top: Uint8Array = new Uint8Array(0),
@@ -1397,7 +1426,7 @@ export class LMDBer {
     return result;
   }
 
-  /** Add one duplicate value at `key`. */
+  /** Add one duplicate value at `key` in lexicographic value order. */
   addVal(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,

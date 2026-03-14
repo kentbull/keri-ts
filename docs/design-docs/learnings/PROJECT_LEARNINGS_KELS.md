@@ -54,6 +54,45 @@ Use this doc for:
 
 ## Milestone Rollup
 
+### 2026-03-14 - LMDBer Maintainer Taxonomy Added
+
+- Added a maintainer-oriented `LMDBer` family taxonomy to the DB architecture
+  contract so the DB layer can be reasoned about by storage model instead of as
+  a flat method list.
+- Captured the key distinctions between `Dup*`, `IoDup*`, `IoSet*`, `On*`,
+  `OnIoSet*`, and `OnIoDup*`, including where multiplicity and ordering actually
+  live.
+- Added a design-rationale section explaining why the two-dimensional
+  `OnIoSet*`/`OnIoDup*` model exists, what upper-layer operations it simplifies,
+  when it is justified, and where the real overengineering risk sits for
+  maintainers.
+
+### 2026-03-14 - Dupsort And IoDup Semantics Clarified
+
+- Tightened the DB architecture contract to distinguish native LMDB duplicate
+  values from application-level keyspace virtualization.
+- Added explicit `Dup*` and `IoDup*` examples showing that dupsort order is by
+  stored value bytes, while `IoDup*` uses hidden value proems to turn that into
+  logical insertion order.
+- Strengthened `LMDBer` unit coverage with focused tests for duplicate
+  lexicographic ordering, last-duplicate semantics, IoDup insertion order, and
+  monotonic hidden ordinal advance after deletion/reinsertion.
+
+### 2026-03-14 - Root Test Failures Traced To `lmdb@3.5.1` Drift
+
+- The repo-root `deno task test` failures were caused primarily by
+  `packages/keri` drifting from the intended `lmdb@3.4.4` baseline to
+  `lmdb@3.5.1` via caret imports.
+- Under Deno 2.7.4 on macOS arm64, `lmdb@3.5.1` reproducibly panicked with
+  `Cannot remove cleanup hook which was not registered` during app-level DB
+  startup, while `lmdb@3.4.4` opened and closed cleanly.
+- Fix: pin `lmdb` exactly to `3.4.4` in package imports/source references and
+  keep the lockfile aligned with that exact version.
+- Secondary test-suite fixes were needed in interop harnesses to avoid treating
+  `pyenv`'s `kli` shim error output as proof that `kli` is actually installed.
+- Effection integration tests were also decoupled from real LMDB startup so they
+  keep exercising Effection orchestration rather than native DB boot paths.
+
 ### 2026-03-02 - Planning and Parity Artifact Foundation
 
 - Expanded the reconciliation plan from init/incept-only work to a practical

@@ -2,7 +2,7 @@ import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
-import { b, t } from '../../../../../cesr/mod.ts'
+import { b, t } from "../../../../../cesr/mod.ts";
 
 Deno.test("db/core lmdber - lifecycle reopen and version metadata parity", async () => {
   await run(function* () {
@@ -182,6 +182,35 @@ Deno.test("db/core lmdber - dupsort branch iteration/count/delete parity", async
   });
 });
 
+Deno.test("db/core lmdber - Dup* retrieval order is lexicographic, not insertion order", async () => {
+  await run(function* () {
+    const name = `lmdber-dup-lex-${crypto.randomUUID()}`;
+    const lmdber = yield* openLMDB({ name, temp: true });
+    try {
+      const dupDb = lmdber.openDB("dup-lex.", true);
+      const key = b("dup");
+
+      // Insert intentionally out of lexicographic order. LMDB dupsort should
+      // still retrieve duplicates sorted by stored value bytes.
+      assertEquals(lmdber.putVals(dupDb, key, [b("c"), b("a"), b("b")]), true);
+
+      assertEquals(lmdber.getVals(dupDb, key).map((val) => t(val)), [
+        "a",
+        "b",
+        "c",
+      ]);
+      assertEquals([...lmdber.getValsIter(dupDb, key)].map((val) => t(val)), [
+        "a",
+        "b",
+        "c",
+      ]);
+      assertEquals(t(lmdber.getValLast(dupDb, key)!), "c");
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
 Deno.test("db/core lmdber - On* ordinal-key family parity", async () => {
   await run(function* () {
     const name = `lmdber-on-${crypto.randomUUID()}`;
@@ -273,6 +302,54 @@ Deno.test("db/core lmdber - IoSet and OnIoSet family parity", async () => {
       );
       assertEquals(lmdber.remOnAllIoSet(onDb, okey, 1), true);
       assertEquals(lmdber.cntOnAllIoSet(onDb, okey), 2);
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("db/core lmdber - IoDup* preserves insertion order and advances ordinals monotonically", async () => {
+  await run(function* () {
+    const name = `lmdber-iodup-order-${crypto.randomUUID()}`;
+    const lmdber = yield* openLMDB({ name, temp: true });
+    try {
+      const dupDb = lmdber.openDB("iodup-order.", true);
+      const key = b("iodup");
+      // get first 32 bytes of value since it is the ordinal-prefixed, dup-sortable value for IoDup*
+      const rawOrdinals = () =>
+        lmdber.getVals(dupDb, key).map((val) =>
+          Number.parseInt(t(val.slice(0, 32)), 16)
+        );
+
+      // Insert intentionally out of lexicographic order. IoDup should still
+      // preserve insertion order because the stored values are proem-prefixed.
+      assertEquals(
+        lmdber.putIoDupVals(dupDb, key, [b("z"), b("a"), b("m")]),
+        true,
+      );
+      assertEquals(lmdber.getIoDupVals(dupDb, key).map((val) => t(val)), [
+        "z",
+        "a",
+        "m",
+      ]);
+      assertEquals(
+        [...lmdber.getIoDupValsIter(dupDb, key)].map((val) => t(val)),
+        ["z", "a", "m"],
+      );
+      assertEquals(t(lmdber.getIoDupValLast(dupDb, key)!), "m");
+      assertEquals(rawOrdinals(), [0, 1, 2]);
+
+      // Deleting a middle member must not recycle its ordinal. The next insert
+      // should get a higher proem and therefore remain the newest logical item.
+      assertEquals(lmdber.delIoDupVal(dupDb, key, b("a")), true);
+      assertEquals(lmdber.addIoDupVal(dupDb, key, b("b")), true);
+      assertEquals(lmdber.getIoDupVals(dupDb, key).map((val) => t(val)), [
+        "z",
+        "m",
+        "b",
+      ]);
+      assertEquals(t(lmdber.getIoDupValLast(dupDb, key)!), "b");
+      assertEquals(rawOrdinals(), [0, 2, 3]);
     } finally {
       yield* lmdber.close(true);
     }

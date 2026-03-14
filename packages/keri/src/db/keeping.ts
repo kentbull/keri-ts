@@ -1,12 +1,12 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { Database } from "npm:lmdb@^3.4.4";
+import type { Database } from "npm:lmdb@3.4.4";
 import {
   DatabaseNotOpenError,
   DatabaseOperationError,
 } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
-import { b, t } from '../../../cesr/mod.ts'
+import { b, t } from "../../../cesr/mod.ts";
 
 export interface KeeperOptions extends LMDBerOptions {}
 

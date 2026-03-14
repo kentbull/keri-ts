@@ -1,17 +1,40 @@
 import { run } from "effection";
-import { assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { tufa } from "../../../src/app/cli/cli.ts";
 import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
 
-Deno.test("CLI - init command with valid arguments", async () => {
-  const args = createMockArgs({
-    name: "testkeystore",
-    nopasscode: true,
-  });
+interface CmdResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
 
-  await run(() => initCommand(args));
-  // Test passes if no exception is thrown
+async function runTufaInit(args: string[]): Promise<CmdResult> {
+  const repoRoot = new URL("../../../", import.meta.url);
+  const out = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", "init", ...args],
+    cwd: repoRoot,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+
+  return {
+    code: out.code,
+    stdout: new TextDecoder().decode(out.stdout),
+    stderr: new TextDecoder().decode(out.stderr),
+  };
+}
+
+Deno.test("CLI - init command with valid arguments", async () => {
+  const res = await runTufaInit([
+    "--name",
+    `testkeystore-${crypto.randomUUID()}`,
+    "--temp",
+    "--nopasscode",
+  ]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
 });
 
 Deno.test("CLI - init command requires name", async () => {
@@ -45,63 +68,65 @@ Deno.test("CLI - init command with help flag", async () => {
 
 Deno.test("CLI - init command with all options", async () => {
   const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
-  const args = createMockArgs({
-    name: "fulltest",
-    base: "/custom/base",
-    temp: true,
-    salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+  const res = await runTufaInit([
+    "--name",
+    `fulltest-${crypto.randomUUID()}`,
+    "--base",
+    "/custom/base",
+    "--temp",
+    "--salt",
+    "0AAwMTIzNDU2Nzg5YWJjZGVm",
+    "--config-dir",
     configDir,
-    configFile: "custom.json",
-    passcode: "testpasscode123456789012",
-    nopasscode: true, // Use nopasscode to avoid prompt
-  });
+    "--config-file",
+    "custom.json",
+    "--passcode",
+    "testpasscode123456789012",
+    "--nopasscode",
+  ]);
 
-  await run(() => initCommand(args));
-  // Test passes if no exception is thrown
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
 });
 
 Deno.test("CLI - init command with custom salt", async () => {
-  const args = createMockArgs({
-    name: "salttest",
-    salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
-    nopasscode: true,
-  });
+  const res = await runTufaInit([
+    "--name",
+    `salttest-${crypto.randomUUID()}`,
+    "--temp",
+    "--salt",
+    "0AAwMTIzNDU2Nzg5YWJjZGVm",
+    "--nopasscode",
+  ]);
 
-  await run(() => initCommand(args));
-  // Test passes if no exception is thrown
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
 });
 
 Deno.test("CLI - init command with config overrides", async () => {
   const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
-  const args = createMockArgs({
-    name: "configtest",
+  const res = await runTufaInit([
+    "--name",
+    `configtest-${crypto.randomUUID()}`,
+    "--temp",
+    "--config-dir",
     configDir,
-    configFile: "custom-config.json",
-    nopasscode: true,
-  });
+    "--config-file",
+    "custom-config.json",
+    "--nopasscode",
+  ]);
 
-  await run(() => initCommand(args));
-  // Test passes if no exception is thrown
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
 });
 
 Deno.test("CLI - init command honors custom head directory", async () => {
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  const args = createMockArgs({
-    name: `headtest-${crypto.randomUUID()}`,
+  const res = await runTufaInit([
+    "--name",
+    `headtest-${crypto.randomUUID()}`,
+    "--head-dir",
     headDirPath,
-    nopasscode: true,
-  });
+    "--nopasscode",
+  ]);
 
-  const originalLog = console.log;
-  let capturedOutput = "";
-  console.log = (...messages: unknown[]) => {
-    capturedOutput += `${messages.map(String).join(" ")}\n`;
-  };
-
-  try {
-    await run(() => initCommand(args));
-    assertStringIncludes(capturedOutput, headDirPath);
-  } finally {
-    console.log = originalLog;
-  }
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(res.stdout, headDirPath);
 });

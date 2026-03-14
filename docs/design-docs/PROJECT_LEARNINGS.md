@@ -80,6 +80,20 @@ This keeps context focused and avoids long-thread drift.
    do not pull CESR/LMDB startup work.
 10. Formatting policy is explicitly Deno-native: CI and release workflows are
     expected to enforce `deno fmt --check`.
+11. The DB architecture contract now includes a maintainer-facing `LMDBer`
+    family taxonomy so ordering and multiplicity semantics can be reasoned about
+    by storage model rather than by individual method name.
+12. The DB architecture contract now explicitly distinguishes native LMDB
+    duplicate semantics from synthetic keyspace virtualization, with focused
+    `Dup*`/`IoDup*` examples to prevent maintainers from conflating the two.
+13. The DB architecture contract now includes an explicit design-rationale
+    section for the `OnIoSet*`/`OnIoDup*` two-dimensional model, explaining when
+    the abstraction is justified, what it buys higher layers, and where the real
+    overengineering risk lives.
+14. `packages/keri` test stability currently depends on pinning `lmdb` exactly
+    to `3.4.4`; allowing caret drift to `3.5.1` triggered Deno N-API panics
+    during app-level DB startup on the current macOS arm64 maintainer
+    environment.
 
 ## New Thread Kickoff Template
 

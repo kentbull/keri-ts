@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { t } from '../../../../cesr/mod.ts'
+import { t } from "../../../../cesr/mod.ts";
 
 interface CmdResult {
   code: number;
@@ -30,7 +30,7 @@ async function runCmd(
 async function hasKli(env: Record<string, string>): Promise<boolean> {
   try {
     const res = await runCmd("kli", ["--help"], env);
-    return res.code === 0 || res.stdout.length > 0 || res.stderr.length > 0;
+    return res.code === 0;
   } catch (_error) {
     return false;
   }
