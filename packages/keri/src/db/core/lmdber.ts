@@ -627,15 +627,28 @@ export class LMDBer {
       );
     }
 
-    const start = onKey(key, 0, sep);
+    // KERIpy parity: seek from key.MaxON boundary and step back to the tail
+    // key for this prefix (if any), rather than scanning key.000... upward.
+    const maxOnSuffix = b("f".repeat(32));
+    const start = new Uint8Array(key.length + sep.length + maxOnSuffix.length);
+    start.set(key, 0);
+    start.set(sep, key.length);
+    start.set(maxOnSuffix, key.length + sep.length);
+
     let nextOn = 0;
-    for (const entry of db.getRange({ start })) {
-      const onkey = toBytes(entry.key);
-      const [ckey, cn] = splitOnKey(onkey, sep);
+    for (const entry of db.getRange({ start, reverse: true, limit: 1 })) {
+      const tailOnKey = toBytes(entry.key);
+      const [ckey, cn] = splitOnKey(tailOnKey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
       }
+      if (bytesEqual(tailOnKey, start)) {
+        throw new Error(
+          `Number part cn=${cn} for key part ckey=${Array.from(ckey)} exceeds maximum size.`,
+        );
+      }
       nextOn = cn + 1;
+      break;
     }
 
     const added = this.putVal(db, onKey(key, nextOn, sep), val);

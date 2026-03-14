@@ -68,13 +68,29 @@ native npm dependencies to avoid repeated warnings:
 ```bash
 deno install --global \
   --config "$(pwd)/deno.json" \
+  --lock "$(pwd)/deno.lock" \
+  --frozen \
   --node-modules-dir=auto \
-  --allow-scripts=npm:lmdb,npm:msgpackr-extract \
+  --allow-scripts=npm:cbor-extract,npm:lmdb,npm:msgpackr-extract \
   --allow-all \
   --unstable-ffi \
   --name tufa \
   "$(pwd)/mod.ts"
 ```
+
+Resolver rule that matters here:
+
+- Deno uses the config passed on the command line for the whole module graph.
+- It does not inherit `packages/cesr/deno.json` just because a loaded file lives
+  under `packages/cesr/`.
+- Because `packages/keri` currently has development-time source bridges into
+  local `packages/cesr/src` and `packages/cesr/mod.ts`, root and
+  `packages/keri/deno.json` must also map CESR-owned npm imports used by that
+  local source graph (for example `@msgpack/msgpack`, `cbor-x/decode`, and
+  `cbor-x/encode`).
+- Use the repo lockfile for local global installs. This protects `tufa` install
+  flows from broken upstream optional dependency releases (for example
+  `cbor-extract`/`@cbor-extract/*` resolution drift).
 
 ## Dependency mapping policy
 
@@ -82,6 +98,7 @@ deno install --global \
 
 - Root map: `deno.json`
 - Package map: `packages/keri/deno.json`
+- CESR-local map: `packages/cesr/deno.json`
 
 This keeps maintainers free to choose published or local-compatible ranges based
 on release timing.

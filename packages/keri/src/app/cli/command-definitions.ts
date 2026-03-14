@@ -1,28 +1,67 @@
 import { Command } from "npm:commander@^10.0.1";
-import { type Operation } from "npm:effection@^3.6.0";
-import { agentCommand } from "./agent.ts";
-import { annotateCommand } from "./annotate.ts";
-import { benchmarkCommand } from "./benchmark.ts";
+import { type Operation, spawn, withResolvers } from "npm:effection@^3.6.0";
 import {
   type CommandArgs,
   type CommandDispatch,
   type CommandHandler,
 } from "./command-types.ts";
-import { dumpEvts } from "./db-dump.ts";
-import { exportCommand } from "./export.ts";
-import { inceptCommand } from "./incept.ts";
-import { initCommand } from "./init.ts";
 import { DISPLAY_VERSION } from "../version.ts";
+
+type CommandModule = Record<string, unknown>;
+
+/**
+ * Bridge a promise-backed dynamic import into an Effection operation.
+ *
+ * This keeps CLI startup free of eager command-module imports while preserving
+ * the existing generator-based handler contract.
+ */
+function* loadModule<TModule extends CommandModule>(
+  load: () => Promise<TModule>,
+): Operation<TModule> {
+  const { operation, resolve, reject } = withResolvers<TModule>();
+  const task = yield* spawn(function* () {
+    load()
+      .then(resolve)
+      .catch((error) =>
+        reject(error instanceof Error ? error : new Error(String(error)))
+      );
+  });
+  yield* task;
+  return yield* operation;
+}
+
+/**
+ * Lazily resolve a command handler from its module only when selected.
+ *
+ * This prevents `tufa --help` / `tufa --version` from importing heavy command
+ * dependencies like CESR or LMDB on startup.
+ */
+function lazyCommand<TModule extends CommandModule>(
+  load: () => Promise<TModule>,
+  exportName: string,
+): CommandHandler {
+  return function* (args: CommandArgs): Operation<void> {
+    const module = yield* loadModule(load);
+    const handler = module[exportName];
+    if (typeof handler !== "function") {
+      throw new Error(`Expected ${exportName} to be a command handler export`);
+    }
+    yield* (handler as CommandHandler)(args);
+  };
+}
 
 export function createCmdHandlers(): Map<string, CommandHandler> {
   return new Map([
-    ["init", (args: CommandArgs) => initCommand(args)],
-    ["incept", (args: CommandArgs) => inceptCommand(args)],
-    ["export", (args: CommandArgs) => exportCommand(args)],
-    ["agent", (args: CommandArgs) => agentCommand(args)],
-    ["annotate", (args: CommandArgs) => annotateCommand(args)],
-    ["benchmark.cesr", (args: CommandArgs) => benchmarkCommand(args)],
-    ["db.dump", (args: CommandArgs) => dumpEvts(args)],
+    ["init", lazyCommand(() => import("./init.ts"), "initCommand")],
+    ["incept", lazyCommand(() => import("./incept.ts"), "inceptCommand")],
+    ["export", lazyCommand(() => import("./export.ts"), "exportCommand")],
+    ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
+    ["annotate", lazyCommand(() => import("./annotate.ts"), "annotateCommand")],
+    [
+      "benchmark.cesr",
+      lazyCommand(() => import("./benchmark.ts"), "benchmarkCommand"),
+    ],
+    ["db.dump", lazyCommand(() => import("./db-dump.ts"), "dumpEvts")],
     ["interact", interactCommand],
     ["witness", witnessCommand],
   ]);

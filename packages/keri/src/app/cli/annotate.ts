@@ -1,8 +1,14 @@
 import { annotate } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import {
+  type Operation,
+  spawn,
+  withResolvers,
+} from "npm:effection@^3.6.0";
 import { colorizeAnnotatedOutput } from "./annotate-color.ts";
 
 const TEXT_DECODER = new TextDecoder();
+const STDIN_CHUNK_SIZE = 64 * 1024;
+const WOULD_BLOCK_RETRY_DELAY_MS = 5;
 
 interface AnnotateArgs {
   /**
@@ -28,19 +34,32 @@ interface AnnotateArgs {
 }
 
 /**
- * Reads bytes from stdin in chunks of 64KB and returns them as a single Uint8Array
+ * Reads bytes from stdin in chunks and returns them as a single Uint8Array.
+ * Uses async reads so Node shim stdin pipes can recover from transient EAGAIN.
  * @returns All bytes read from stdin
  */
-function readAllStdinSync(): Uint8Array {
+async function readAllStdinAsync(): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let total = 0;
 
   while (true) {
-    const chunk = new Uint8Array(64 * 1024); // 64KB chunk size
-    const read = Deno.stdin.readSync(chunk); // reads up to 64KB chunk, returns num bytes
-    if (read === null) {
-      // read until EOF (null)
-      break;
+    const chunk = new Uint8Array(STDIN_CHUNK_SIZE);
+    let read: number | null;
+    try {
+      read = await Deno.stdin.read(chunk);
+    } catch (error) {
+      if (isWouldBlockError(error)) {
+        await sleep(WOULD_BLOCK_RETRY_DELAY_MS);
+        continue;
+      }
+      throw error;
+    }
+
+    if (read === null) break;
+
+    if (read === 0) {
+      await sleep(WOULD_BLOCK_RETRY_DELAY_MS);
+      continue;
     }
 
     const used = chunk.subarray(0, read);
@@ -58,7 +77,30 @@ function readAllStdinSync(): Uint8Array {
   return output;
 }
 
-// deno-lint-ignore require-yield
+function isWouldBlockError(error: unknown): boolean {
+  if (error instanceof Deno.errors.WouldBlock) return true;
+  if (!(error && typeof error === "object" && "code" in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "EAGAIN" || code === "EWOULDBLOCK";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function* readAllStdinOp(): Operation<Uint8Array> {
+  const { operation, resolve, reject } = withResolvers<Uint8Array>();
+  const task = yield* spawn(function* () {
+    readAllStdinAsync()
+      .then(resolve)
+      .catch((error) =>
+        reject(error instanceof Error ? error : new Error(String(error)))
+      );
+  });
+  yield* task;
+  return yield* operation;
+}
+
 export function* annotateCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
@@ -72,7 +114,7 @@ export function* annotateCommand(
 
   const inputBytes = options.inPath
     ? Deno.readFileSync(options.inPath)
-    : readAllStdinSync();
+    : yield* readAllStdinOp();
 
   const annotated = options.qb2
     ? annotate(inputBytes, { domainHint: "bny", pretty: options.pretty })
