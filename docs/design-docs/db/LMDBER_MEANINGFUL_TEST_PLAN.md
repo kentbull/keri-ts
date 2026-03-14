@@ -13,6 +13,18 @@
 - Keep helper-export tests (`openLMDB`, `createLMDBer`, `clearDatabaserDir`)
   separate; the real gap is the `LMDBer` class surface.
 
+## Execution Notes
+
+- Implemented on 2026-03-14 with focused files for lifecycle, plain K/V, `On*`,
+  `IoSet*`/`OnIoSet*`, and duplicate families, plus a trimmed
+  `lmdber-core-parity.test.ts` for reverse mixed-key oracle vectors.
+- The old representation-sweep pattern was removed rather than preserved as a
+  broad catch-all, because it was materially less readable than direct
+  behavioral tests.
+- Lifecycle tests should reacquire named sub-database handles after
+  `LMDBer.close()` / `LMDBer.reopen()`; a pre-close DB handle is not a valid
+  proxy for reopened-env behavior.
+
 ## Test Structure
 
 - Add `lmdber-lifecycle.test.ts` for `reopen`, `close`, `getVer`, `setVer`,

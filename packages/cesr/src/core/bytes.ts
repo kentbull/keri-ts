@@ -63,6 +63,10 @@ export function decodeB64(text: string): Uint8Array {
   return out;
 }
 
+/**
+ * Symmetric ceiling function
+ * @param value
+ */
 export function sceil(value: number): number {
   return Math.ceil(value);
 }

@@ -97,6 +97,10 @@ This keeps context focused and avoids long-thread drift.
 15. `lmdber.ts` documentation is now organized by storage family and explicitly
     distinguishes KERIpy parity methods from `keri-ts`-only extensions,
     including the `OnIoSet*` family.
+16. `LMDBer` unit coverage is now organized the same way: readable family-based
+    tests for lifecycle/plain/`On*`/`IoSet*`/`Dup*` semantics plus a much
+    smaller parity-oracle file for reverse mixed-key scans, with the old
+    representation-sweep monolith removed.
 
 ## New Thread Kickoff Template
 

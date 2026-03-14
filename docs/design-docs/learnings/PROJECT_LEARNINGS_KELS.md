@@ -54,6 +54,20 @@ Use this doc for:
 
 ## Milestone Rollup
 
+### 2026-03-14 - LMDBer Tests Refactored By Storage Family
+
+- Replaced the old broad `lmdber-core-parity.test.ts` coverage style with
+  readable family-based unit files for lifecycle, plain K/V, `On*`, `IoSet*`,
+  and duplicate families.
+- Kept a trimmed parity/oracle file only for reverse mixed-key iterator vectors
+  that are easy to regress and harder to reason about from implementation alone.
+- Removed the old representation-sweep approach as the primary coverage model;
+  the new baseline is focused behavioral tests that explain storage semantics in
+  maintainer-readable terms.
+- The refactor surfaced one lifecycle nuance worth remembering in future tests:
+  named LMDB sub-database handles are reopen-scoped and should be reacquired
+  after `LMDBer.close()` / `LMDBer.reopen()`.
+
 ### 2026-03-14 - LMDBer Maintainer Taxonomy Added
 
 - Added a maintainer-oriented `LMDBer` family taxonomy to the DB architecture
