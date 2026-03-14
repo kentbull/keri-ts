@@ -4,6 +4,44 @@ TypeScript packages for KERI and CESR:
 
 - `keri-ts`: KERI runtime package and the `tufa` CLI
 - `cesr-ts`: CESR parsing and annotation library
+- 
+## Install
+
+```bash
+# Global install
+npm install -g keri-ts
+tufa version
+
+# One-off usage without global install
+npx tufa version
+```
+
+### Install with NPM
+
+```bash
+npm i -g keri-ts
+
+tufa -h
+```
+
+### Local install
+
+```bash
+# from repo root
+deno task npm:build:all
+
+cd packages/keri
+TARBALL="$(cd npm && npm pack --silent | tail -n1)"
+npm install -g "$PWD/npm/$TARBALL"
+
+tufa -h
+```
+
+### Sample command to test with GLEIF production witness
+
+```bash
+curl https://gleif-it.github.io/.well-known/keri/oobi/BDkq35LUU63xnFmfhljYYRY0ymkCg7goyeCxN30tsvmS/index.json | tufa annotate
+```
 
 ## Quick start
 
@@ -37,16 +75,7 @@ Color overrides can be provided in `$HOME/.tufa/annot-color.yaml` or
 `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and bright variants
 (`brightBlack` ... `brightWhite`).
 
-## Install
 
-```bash
-# Global install
-npm install -g keri-ts
-tufa version
-
-# One-off usage without global install
-npx tufa version
-```
 
 ## From source (repo)
 

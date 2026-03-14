@@ -234,8 +234,73 @@ Persistent CESR parser memory for `keri-ts`.
 3. Preserve full P2 vector coverage as regression floor (`V-P2-001`..`021`).
 4. Monitor downstream migration from legacy `onAttachmentVersionFallback` toward
    `onRecoveryDiagnostic`.
+5. Keep CESR binary npm import-map entries aligned across any config that can
+   own a graph containing local `packages/cesr` source (`packages/cesr`,
+   `packages/keri`, root) until dev-time cross-package source bridges are
+   removed or isolated behind a stable local alias.
 
 ## Handoff Log
+
+### 2026-03-13 - Deno Import-Map Boundary Fix for Local CESR Source
+
+- What changed:
+  - Replaced the invalid `cbor-x/` prefix mapping with explicit `cbor-x/decode`
+    and `cbor-x/encode` entries in:
+    - `packages/cesr/deno.json`
+  - Mirrored CESR binary dependency mappings in configs that can own a graph
+    containing local CESR source:
+    - `deno.json`
+    - `packages/keri/deno.json`
+  - Updated `MAINTAINER-README.md` to document the config-boundary rule for
+    local `deno install` / `deno check` flows.
+- Why:
+  - Deno applies the active config to the whole graph and does not inherit a
+    subpackage `deno.json` based on file location alone.
+  - `packages/keri` currently imports local CESR source via development-time
+    bridges (`../../../cesr/...`), so root/`packages/keri` graphs must know
+    CESR-owned npm imports such as `@msgpack/msgpack` and `cbor-x/*`.
+  - The prior `cbor-x/` prefix import-map target was not valid for Deno's npm
+    subpath resolution, so explicit subpath entries are the stable fix.
+- Tests:
+  - `deno check --config deno.json mod.ts`
+  - `deno check --config packages/keri/deno.json packages/keri/mod.ts`
+  - `deno check --config packages/cesr/deno.json packages/cesr/mod.ts`
+
+### 2026-03-13 - Global Install Guardrail for Broken `cbor-extract` Release Drift
+
+- What changed:
+  - Updated `MAINTAINER-README.md` global `tufa` install guidance to include:
+    - `--lock "$(pwd)/deno.lock"`
+    - `--frozen`
+    - `--allow-scripts=npm:cbor-extract,...`
+- Why:
+  - `cbor-x` depends optionally on `cbor-extract`, and local installs without a
+    frozen lockfile can drift to newer upstream `cbor-extract` releases.
+  - Broken `cbor-extract@2.2.2` resolution attempts can request unpublished
+    `@cbor-extract/*@2.2.2` platform packages, causing install failure even
+    though repo-local resolution is pinned to `2.2.0` in `deno.lock`.
+- Tests:
+  - Reasoning/lock inspection only; no networked `deno install` verification was
+    possible in the sandbox.
+
+### 2026-03-13 - CLI Startup No Longer Eagerly Imports CESR Handlers
+
+- What changed:
+  - `packages/keri/src/app/cli/command-definitions.ts` now lazy-loads command
+    handler modules via dynamic import wrappers instead of top-level imports.
+  - `packages/keri/src/app/cli/cli.ts` now creates the handler map only after
+    argument parsing succeeds.
+- Why:
+  - `tufa --help` and `tufa --version` should not fail due to CESR binary
+    dependency resolution or LMDB startup side effects.
+  - This isolates CESR startup costs/failure modes to commands that actually use
+    CESR functionality.
+- Tests:
+  - `deno check --config packages/keri/deno.json packages/keri/src/app/cli/cli.ts packages/keri/src/app/cli/command-definitions.ts`
+  - `deno run --config deno.json --lock deno.lock --frozen --node-modules-dir=auto --allow-all --unstable-ffi mod.ts -h`
+  - Focused CLI unit tests for version/benchmark/annotate passed; broader
+    `cli.test.ts` still triggers an existing Deno panic in LMDB/N-API cleanup
+    during `init`-path tests, unrelated to the lazy-load change.
 
 ### 2026-03-02 - Point 8 Closure and REQ-CESR-020/022/024 Completion
 
