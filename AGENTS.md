@@ -11,7 +11,7 @@ At the start of each new task thread, read these files first:
 
 1. `AGENTS.md` (this file)
 2. `docs/design-docs/PROJECT_LEARNINGS.md` (top-level index)
-3. Topic learnings docs listed under "Current Focus" in
+3. Task-relevant topic learnings docs listed under "Current Focus" in
    `docs/design-docs/PROJECT_LEARNINGS.md`
 4. Any task-specific contract/ADR/plan docs referenced by those topic docs
 5. As needed, remember to refer, on a task by task basis, to the KERIpy python
@@ -27,7 +27,7 @@ Then produce:
 
 ## End-of-Task Handoff (Required)
 
-Before final response, update:
+For tasks where significant changes have been made, before final response, update:
 
 1. The appropriate topic learnings doc(s) for the task context
 2. `docs/design-docs/PROJECT_LEARNINGS.md` with a concise cross-topic summary
