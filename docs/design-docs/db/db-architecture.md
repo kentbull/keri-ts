@@ -12,6 +12,53 @@ It captures:
 3. Where behavior differs today.
 4. The invariants we must preserve as features are implemented.
 
+## Core ideas
+
+### Effective keys versus Physical keys
+
+KERIpy and keri-ts make heavy use of an insertion ordered key value abstraction
+on top of LMDB built on the concept of allowing multiple values at a given 
+effective key by virtualizing serialized insertion order with physical keys. Effective keys are what the user specifies to store a value. Physical keys are
+what actually gets saved to the database.
+
+This supports usage patterns of putting multiple values at a key without having
+to remember the insertion order yet having the database remember insertion 
+order for all added values. Implementing this means storing values with unique
+physical keys that have transparently added and removed ordinal numbers 
+providing both uniqueness and memory of insertion order. Naturally, this allows
+sorting all values using insertion order.
+
+#### Illustrative IoSet Example (`dupsort=False`)
+
+Both KERIpy `LMDBer` and `keri-ts` `LMDBer` use the same logical model for
+`IoSet*` methods:
+
+1. Caller provides an **effective key** (logical): `alpha`.
+2. DB stores each member under a unique **physical key**:
+   - `alpha.00000000000000000000000000000000 -> v1`
+   - `alpha.00000000000000000000000000000001 -> v2`
+   - `alpha.00000000000000000000000000000002 -> v3`
+3. Distinct effective keys are computed by stripping the trailing ordinal
+   suffix from physical keys (`unsuffix` behavior).
+
+Common usage/access patterns:
+
+1. Write set members:
+   - `putIoSetVals(db, key, vals)` appends new members at next ordinal suffix.
+2. Read all members for one effective key:
+   - `getIoSetItemIter(db, key)` yields `(effective_key, value)` pairs with
+     suffix hidden from caller.
+3. Read last member for one effective key:
+   - `getIoSetLastItem(db, key)` returns one `(effective_key, value)` pair.
+4. Read last member for each effective key in a branch:
+   - `getIoSetLastItemIterAll(db, key=b"")` yields one last pair per effective
+     key group.
+5. Remove one logical member:
+   - `remIoSetVal(db, key, val)` finds the matching physical key
+     (`key + sep + ordinal`) and deletes it.
+6. Remove all logical members for one effective key:
+   - `remIoSet(db, key)` deletes the full physical-key run for that key.
+
 ## Why This Matters Across Topics
 
 KEL, ACDC, and witness/watcher/observer flows all depend on DB-level ordering,
