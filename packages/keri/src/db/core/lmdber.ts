@@ -2,7 +2,7 @@
  * Core LMDB manager used by higher-level DB abstractions.
  */
 
-import { type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { Database, Key, open, RootDatabase } from "npm:lmdb@3.4.4";
 import { startsWith } from "../../core/bytes.ts";
 import {
@@ -199,6 +199,26 @@ export class LMDBer {
     );
   }
 
+  /** Bridge async LMDB close into an Effection operation. */
+  private *closeEnv(env: RootDatabase<any, Key>): Operation<void> {
+    yield* action<void>((resolve, reject) => {
+      env.close().then(() => resolve(undefined)).catch(reject);
+      return () => {};
+    });
+  }
+
+  /**
+   * Allow LMDB-js internal read-reset timers to flush before test/resource
+   * teardown completes. LMDB uses setTimeout(0/1) internally around read txn
+   * renewal/reset and deferred close paths.
+   */
+  private *quiesceEnvTimers(): Operation<void> {
+    yield* action<void>((resolve) => {
+      const timeout = setTimeout(() => resolve(undefined), 1);
+      return () => clearTimeout(timeout);
+    });
+  }
+
   /**
    * Reopen the LMDB environment with updated options.
    * Closes any existing env first, then opens at the resolved path.
@@ -210,8 +230,7 @@ export class LMDBer {
     // Close existing database if open (prevents double-free when reopening)
     if (this.env) {
       try {
-        // Close synchronously - LMDB close() is synchronous
-        this.env.close();
+        yield* this.closeEnv(this.env);
       } catch (error) {
         // Ignore close errors (database might already be closed)
         this.logger.warn(
@@ -312,7 +331,8 @@ export class LMDBer {
   *close(clear = false): Operation<boolean> {
     if (this.env) {
       try {
-        this.env.close();
+        yield* this.closeEnv(this.env);
+        yield* this.quiesceEnvTimers(); // lmdb-js uses internal teardown timers to manage post-close; this lets them finish
       } catch (error) {
         // Intentional recovery: close errors are non-fatal during shutdown paths.
         this.logger.warn(`Error closing LMDB: ${error}`);
