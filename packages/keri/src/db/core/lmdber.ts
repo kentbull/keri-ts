@@ -763,7 +763,10 @@ export class LMDBer {
     return true;
   }
 
-  /** Count ordinal-keyed values for `key` from ordinal `on` onward. */
+  /**
+   * Count ordinal-keyed values for `key` from ordinal `on` onward.
+   * TypeScript-local name for KERIpy `cntOnVals`.
+   */
   cntOnAll(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -796,7 +799,10 @@ export class LMDBer {
     }
   }
 
-  /** Iterate `(key, on, val)` for key ordinals `>= on`. Empty key iterates all. */
+  /**
+   * Iterate `(key, on, val)` for key ordinals `>= on`. Empty key iterates all.
+   * TypeScript-local name for KERIpy `getOnItemIter`.
+   */
   *getOnAllItemIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1310,7 +1316,10 @@ export class LMDBer {
     return count;
   }
 
-  /** Iterate `(key, on, val)` io-set members in branch `top`. */
+  /**
+   * Iterate `(key, on, val)` io-set members in branch `top`.
+   * Assumes the key for an insertion-ordered set is an ordinal prefixed key.
+   */
   *getOnTopIoSetItemIter(
     db: Database<BinVal, BinKey>,
     top: Uint8Array = new Uint8Array(0),
@@ -1322,7 +1331,10 @@ export class LMDBer {
     }
   }
 
-  /** Iterate `(key, on, val)` io-set members for ordinals `>= on`. Empty key iterates all. */
+  /**
+   * Iterate `(key, on, val)` io-set members for ordinals `>= on`. Empty key iterates all.
+   * Assumes both the ordinal number segment and insertion order suffix are present in the key.
+   */
   *getOnAllIoSetItemIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1456,13 +1468,15 @@ export class LMDBer {
     return this.putVals(db, key, single);
   }
 
-  /** Get duplicate values at `key` (empty list when missing). */
+  /**
+   * Get duplicate values at `key` (empty list when missing) sorted lexicographically.
+   */
   getVals(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array[] {
     this.requireEnv();
     return [...db.getValues(key)].map((val) => toBytes(val));
   }
 
-  /** Get last duplicate value at `key`, or `null`. */
+  /** Get last duplicate value at `key`, or `null` sorted lexicographically. */
   getValLast(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
     const vals = this.getVals(db, key);
     return vals.length ? vals[vals.length - 1] : null;
@@ -1637,7 +1651,11 @@ export class LMDBer {
     return this.getIoDupVals(db, onKey(key, on, sep));
   }
 
-  /** Iterate insertion-ordered duplicates at ordinal effective key (stripped). */
+  /**
+   * Iterate insertion-ordered duplicates at one exact ordinal effective key (stripped).
+   * No direct KERIpy equivalent: KERIpy `getOnIoDupValIter` scans all ordinals
+   * from `on` onward, which maps to `getOnIoDupIterAll` here.
+   */
   *getOnIoDupValsIter(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1710,7 +1728,10 @@ export class LMDBer {
     }
   }
 
-  /** Delete all insertion-ordered duplicates at ordinal effective key. */
+  /**
+   * Delete all insertion-ordered duplicates at ordinal effective key.
+   * Mirrors `delOnIoDupVals` in KERIpy.
+   */
   delOnIoDups(
     db: Database<BinVal, BinKey>,
     key: Uint8Array,
@@ -1771,7 +1792,10 @@ export class LMDBer {
     }
   }
 
-  /** Iterate insertion-ordered duplicate values for ordinals `>= on`. */
+  /**
+   * Iterate insertion-ordered duplicate values for ordinals `>= on`.
+   * TypeScript-local name for KERIpy `getOnIoDupValIter`.
+   */
   *getOnIoDupIterAll(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
@@ -1783,7 +1807,10 @@ export class LMDBer {
     }
   }
 
-  /** Iterate `(key, on, val)` insertion-ordered duplicates for ordinals `>= on`. */
+  /**
+   * Iterate `(key, on, val)` insertion-ordered duplicates for ordinals `>= on`.
+   * TypeScript-local name for KERIpy `getOnIoDupItemIter`.
+   */
   *getOnIoDupItemIterAll(
     db: Database<BinVal, BinKey>,
     key: Uint8Array = new Uint8Array(0),
