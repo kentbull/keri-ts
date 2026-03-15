@@ -10,6 +10,24 @@ import { isAbsolute, join } from "jsr:@std/path";
 import { InvalidPathNameError, PathError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
 
+function hasErrorCode(error: unknown, codes: string[]): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && codes.includes(code);
+}
+
+function isNotFoundLike(error: unknown): boolean {
+  return error instanceof Deno.errors.NotFound ||
+    hasErrorCode(error, ["ENOENT"]);
+}
+
+function isPermissionDeniedLike(error: unknown): boolean {
+  return error instanceof Deno.errors.PermissionDenied ||
+    hasErrorCode(error, ["EACCES", "EPERM"]);
+}
+
 /**
  * Path manager for file and directory paths.
  * Example:
@@ -276,7 +294,7 @@ export class PathManager {
       Deno.stat(path)
         .then(() => resolve(true))
         .catch((error) => {
-          if (error instanceof Deno.errors.NotFound) {
+          if (isNotFoundLike(error)) {
             resolve(false);
           } else {
             reject(error);
@@ -302,7 +320,7 @@ export class PathManager {
       Deno.mkdir(path, { recursive: true, mode: perm })
         .then(() => resolve(true))
         .catch((error) => {
-          if (error instanceof Deno.errors.PermissionDenied) {
+          if (isPermissionDeniedLike(error)) {
             resolve(false);
           } else {
             reject(error);
@@ -317,7 +335,7 @@ export class PathManager {
       Deno.remove(path, { recursive: true })
         .then(() => resolve(undefined))
         .catch((error) => {
-          if (error instanceof Deno.errors.NotFound) {
+          if (isNotFoundLike(error)) {
             resolve(undefined);
           } else {
             reject(error);
@@ -339,7 +357,7 @@ export class PathManager {
           });
         })
         .catch((error) => {
-          if (error instanceof Deno.errors.NotFound) {
+          if (isNotFoundLike(error)) {
             resolve({
               isDirectory: false,
               isFile: false,
@@ -448,13 +466,13 @@ export class PathManager {
       return { path: primary, headDirPath };
     }
 
-    this.logger.info(`Creating directory at ${primary}`);
+    this.logger.debug(`Creating directory at ${primary}`);
     const created = yield* this.mkdirOp(primary, this.perm);
     if (created) {
       return { path: primary, headDirPath };
     }
 
-    this.logger.warn(`Failed to create primary path, falling back to alt path`);
+    this.logger.debug(`Failed to create primary path, falling back to alt path`);
     const altReady = yield* this._ensurePathAccessible(alt);
     if (!altReady) {
       this.logger.error(`Alt path not available at ${alt}`);
@@ -479,7 +497,7 @@ export class PathManager {
       return { path: primary, headDirPath };
     }
 
-    this.logger.info(
+    this.logger.debug(
       `Reuse path unavailable, attempting to (re)create primary path`,
     );
     const primaryReady = yield* this._ensurePathAccessible(primary);
@@ -487,10 +505,10 @@ export class PathManager {
       return { path: primary, headDirPath };
     }
 
-    this.logger.info(`Primary path unavailable, trying alt path`);
+    this.logger.debug(`Primary path unavailable, trying alt path`);
     const altReady = yield* this._ensurePathAccessible(alt);
     if (!altReady) {
-      this.logger.warn(`Alt path not available: ${alt}`);
+      this.logger.debug(`Alt path not available: ${alt}`);
     }
     return { path: alt, headDirPath: this.defaults.altHeadDirPath };
   }
@@ -502,7 +520,7 @@ export class PathManager {
   private *_ensurePathAccessible(path: string): Operation<boolean> {
     const exists = yield* this.statOp(path);
     if (!exists) {
-      this.logger.info(`Creating directory at ${path}`);
+      this.logger.debug(`Creating directory at ${path}`);
       return yield* this.mkdirOp(path, this.perm);
     }
     return yield* this.accessOp(path);
@@ -520,15 +538,15 @@ export class PathManager {
   private *_ensureDirectoryExists(path: string): Operation<void> {
     const exists = yield* this.statOp(path);
     if (!exists) {
-      this.logger.info(`Creating directory at ${path}`);
+      this.logger.debug(`Creating directory at ${path}`);
       const created = yield* this.mkdirOp(path, this.perm);
       if (!created) {
-        this.logger.warn(`Failed to create directory at ${path}`);
+        this.logger.debug(`Failed to create directory at ${path}`);
       }
     } else {
       const accessible = yield* this.accessOp(path);
       if (!accessible) {
-        this.logger.warn(`Path exists but is not accessible: ${path}`);
+        this.logger.debug(`Path exists but is not accessible: ${path}`);
       }
     }
   }
