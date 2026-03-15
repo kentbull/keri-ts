@@ -103,7 +103,7 @@ export class Configer {
     try {
       const dir = Deno.openSync(dirPath, { read: true });
       try {
-        dir.syncSync();
+        dir.syncDataSync();
       } finally {
         dir.close();
       }
@@ -168,7 +168,7 @@ export class Configer {
       });
       try {
         tempFile.writeSync(encoder.encode(content));
-        tempFile.syncSync();
+        tempFile.syncDataSync();
       } finally {
         tempFile.close();
       }
