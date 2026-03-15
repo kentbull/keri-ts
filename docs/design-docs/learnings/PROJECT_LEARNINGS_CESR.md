@@ -31,13 +31,16 @@ Persistent CESR parser memory for `keri-ts`.
 9. Primitive-first hydration, per-primitive tests, and maintainer-oriented
    docstrings are complete enough that future CESR work should preserve
    readability and reviewability as explicit goals.
-10. Current cross-implementation comparisons beyond KERIpy are advisory only;
+10. A dedicated CESR primitive walkthrough and KERIpy comparison matrix now
+    exist for maintainers, and they intentionally explain the parser refresher
+    first so `Serder` / `CesrBody` / `Structor` make sense in workflow context.
+11. Current cross-implementation comparisons beyond KERIpy are advisory only;
     `keride`, `cesride`, `CESRox`, and related projects are useful references,
     but not gating authorities for parser behavior.
-11. For local Deno source graphs, config ownership is graph-wide: if root or
+12. For local Deno source graphs, config ownership is graph-wide: if root or
     `packages/keri` entrypoints load local CESR source, their active config must
     also map CESR-owned imports such as `@msgpack/msgpack` and `cbor-x/*`.
-12. CLI startup in `tufa` now lazy-loads handlers, so help/version paths do not
+13. CLI startup in `tufa` now lazy-loads handlers, so help/version paths do not
     import CESR modules until a CESR-backed command is actually selected.
 
 ## Key Docs
@@ -52,6 +55,8 @@ Persistent CESR parser memory for `keri-ts`.
 8. `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
 9. `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
 10. `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+11. `docs/design-docs/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
+12. `docs/design-docs/cesr-primitives/CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md`
 
 ## Current Follow-Ups
 
@@ -66,6 +71,20 @@ Persistent CESR parser memory for `keri-ts`.
    boundary problems.
 
 ## Milestone Rollup
+
+### 2026-03-14 - CESR Primitive Walkthrough And Parity Matrix Added
+
+- Added a maintainers-first CESR primitive walkthrough organized around the
+  three base classes (`Matter`, `Indexer`, `Counter`) and the parser/body
+  projection layers (`Serder`, `CesrBody`, `Structor`).
+- Added a companion KERIpy parity matrix so maintainers can scan one primitive
+  at a time without rereading the full walkthrough.
+- Cross-linked the new docs to the existing parser maintainer guide, parser
+  state-machine contract, and atomic bounded parser architecture docs so the
+  primitive story and parser story reinforce each other.
+- Captured the main intentional TypeScript-local divergence explicitly:
+  `CesrBody` is a TS public contract layered over the same Serder/body concepts
+  rather than a one-to-one KERIpy class peer.
 
 ### 2026-02-28 to 2026-03-01 - Parser Contract and Readability Program Closed
 

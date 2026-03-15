@@ -101,6 +101,10 @@ This keeps context focused and avoids long-thread drift.
     tests for lifecycle/plain/`On*`/`IoSet*`/`Dup*` semantics plus a much
     smaller parity-oracle file for reverse mixed-key scans, with the old
     representation-sweep monolith removed.
+17. CESR now has a dedicated maintainer walkthrough and parity matrix for the
+    primitive layer, organized by `Matter` / `Indexer` / `Counter` families and
+    cross-linked to the parser architecture docs so maintainers can onboard
+    without re-deriving the model from source.
 
 ## New Thread Kickoff Template
 

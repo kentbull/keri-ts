@@ -21,6 +21,10 @@ signing/verification behavior in `keri-ts`.
 6. Typed attachment-family primitive tests (`Structor`, `Aggor`, `Sealer`,
    `Blinder`, `Mediar`) now use stronger KERIpy-derived vectors rather than
    mostly synthetic smoke cases.
+7. A maintainers-first primitive walkthrough and parity matrix now exist for the
+   CESR surface, and they are intentionally organized by encoding basis before
+   semantic subclass so maintainers can reason from `Matter` / `Indexer` /
+   `Counter` outward.
 
 ## Scope Checklist
 
@@ -40,6 +44,16 @@ Use this doc for:
    primitive contract itself changes.
 
 ## Milestone Rollup
+
+### 2026-03-14 - Primitive Walkthrough Documentation Added
+
+- Added a maintainers-first walkthrough of the primitive layer with human-scale
+  examples, construction/parsing notes, workflow placement, and inline KERIpy
+  comparisons.
+- Added a compact parity matrix keyed by primitive/family so code review and
+  parity checks do not require rediscovering the KERIpy module map each time.
+- Documented `CesrBody` as the main intentional TypeScript-local public shape
+  difference in an otherwise mostly straight-across primitive comparison story.
 
 ### 2026-03-03 - Primitive Hierarchy and Codex Parity Refresh
 
