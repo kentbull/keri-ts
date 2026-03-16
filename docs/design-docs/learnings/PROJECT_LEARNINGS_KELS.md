@@ -29,6 +29,9 @@ replay/verification semantics.
    explicitly audited.
 8. `LMDBer.cntTop` and `LMDBer.cntAll` remain flagged for later keep-vs-remove
    review once the real `init/incept/rotate` call graph stabilizes.
+9. `Habery` now eagerly reloads persisted habitat records on open, which
+   unblocks honest `list`/`aid` visibility without depending on process-local
+   caches.
 
 ## Scope Checklist
 
@@ -53,6 +56,40 @@ Use this doc for:
    usable worklists, not archival dumps.
 
 ## Milestone Rollup
+
+### 2026-03-15 - `tufa init` Home Fallback Restored For npm/Node Runtime
+
+- Traced a local `tufa init` failure to `PathManager.mkdirOp`, not to the
+  fallback policy itself.
+- Under the npm-built CLI, `@deno/shim-deno` surfaced `/usr/local/var` mkdir
+  permission failures as plain `Error` objects carrying Node-style
+  `code: "EACCES"` / `code: "EPERM"` instead of satisfying
+  `instanceof Deno.errors.PermissionDenied`.
+- Because `PathManager` only recognized the Deno-class error shape, the primary
+  mkdir rejection escaped before `_createOrFallback()` could switch to
+  `~/.tufa/...`.
+- Fix: normalize permission/not-found detection in `path-manager.ts` so Node
+  error codes are treated the same as native Deno error classes, and add a
+  regression test that forces a primary-path `EACCES` and verifies fallback to
+  `~/.tufa/db/...`.
+- A second npm/Node compatibility gap surfaced immediately after that fix:
+  `Configer.writeAtomic()` used `FsFile.syncSync()`, but `@deno/shim-deno`
+  leaves that method unimplemented.
+- Fix: switch config durability paths to `syncDataSync()`, which is available
+  through the shim and remains within the typed `FsFile` surface used by Deno.
+
+### 2026-03-14 - Gate B Visibility Slice Landed
+
+- `Habery` now eagerly reloads persisted habitat records on open instead of
+  relying only on process-local `makeHab` caching.
+- Added `tufa list` and `tufa aid` command surfaces for local-store identifier
+  visibility, matching the current Gate B bootstrap need.
+- Promoted the Gate B list/aid interop harness scenario from pending to ready,
+  with focused tests covering empty-list, post-incept visibility, and alias to
+  prefix lookup.
+- This is a bootstrap visibility slice, not evidence that `init`/`incept`
+  reached full KERIpy parity; config processing, OOBI/KEL routing, AEID
+  semantics, and broader reopen behavior remain open follow-on work.
 
 ### 2026-03-14 - LMDBer Tests Refactored By Storage Family
 

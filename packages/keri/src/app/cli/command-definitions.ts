@@ -55,6 +55,8 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["init", lazyCommand(() => import("./init.ts"), "initCommand")],
     ["incept", lazyCommand(() => import("./incept.ts"), "inceptCommand")],
     ["export", lazyCommand(() => import("./export.ts"), "exportCommand")],
+    ["list", lazyCommand(() => import("./list.ts"), "listCommand")],
+    ["aid", lazyCommand(() => import("./aid.ts"), "aidCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     ["annotate", lazyCommand(() => import("./annotate.ts"), "annotateCommand")],
     [
@@ -79,6 +81,8 @@ export function registerCmds(
   regInitCmd(program, dispatch);
   regInceptCmd(program, dispatch);
   regExportCmd(program, dispatch);
+  regListCmd(program, dispatch);
+  regAidCmd(program, dispatch);
   regAnnotateCmd(program, dispatch);
   regAgentCmd(program, dispatch);
   regBenchmarkSubCmd(program, dispatch);
@@ -300,6 +304,75 @@ function regExportCmd(program: Command, dispatch: CommandDispatch): void {
           passcode: options.passcode,
           files: options.files || false,
           ends: options.ends || false,
+        },
+      });
+      return Promise.resolve();
+    });
+}
+
+/**
+ * Registers the list command with the program.
+ * Equivalent to `kli list` from KERIpy.
+ *
+ * @param program The tufa Commander program instance
+ * @param dispatch The command dispatch function
+ */
+function regListCmd(program: Command, dispatch: CommandDispatch): void {
+  program
+    .command("list")
+    .description("List existing identifiers")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "list",
+        args: {
+          name: options.name,
+          base: options.base,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return Promise.resolve();
+    });
+}
+
+/**
+ * Registers the aid command with the program.
+ * Equivalent to `kli aid` from KERIpy.
+ *
+ * @param program The tufa Commander program instance
+ * @param dispatch The command dispatch function
+ */
+function regAidCmd(program: Command, dispatch: CommandDispatch): void {
+  program
+    .command("aid")
+    .description("Print the AID for a given alias")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for the identifier",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "aid",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          base: options.base,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
         },
       });
       return Promise.resolve();

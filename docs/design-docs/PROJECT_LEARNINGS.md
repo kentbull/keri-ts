@@ -101,10 +101,23 @@ This keeps context focused and avoids long-thread drift.
     tests for lifecycle/plain/`On*`/`IoSet*`/`Dup*` semantics plus a much
     smaller parity-oracle file for reverse mixed-key scans, with the old
     representation-sweep monolith removed.
-17. CESR now has a dedicated maintainer walkthrough and parity matrix for the
+17. `Habery` now eagerly reloads persisted habitat records on open, and the
+    local-store Gate B visibility slice (`tufa list` / `tufa aid`) is wired into
+    the interop harness; compatibility-mode visibility remains a separate Gate C
+    concern.
+18. CESR now has a dedicated maintainer walkthrough and parity matrix for the
     primitive layer, organized by `Matter` / `Indexer` / `Counter` families and
     cross-linked to the parser architecture docs so maintainers can onboard
     without re-deriving the model from source.
+19. Local npm/Node execution of `tufa` needs error-shape normalization around
+    filesystem permission failures: `@deno/shim-deno` may surface primary-path
+    mkdir denials as plain Node-style `Error` objects with `code` values like
+    `EACCES`/`EPERM`, so fallback logic for `~/.tufa` must not rely only on
+    `instanceof Deno.errors.PermissionDenied`.
+20. Local npm/Node execution also cannot assume full `FsFile` parity from
+    `@deno/shim-deno`; `syncSync()` may be unimplemented even though
+    `syncDataSync()` works, so `Configer` durability paths should use the latter
+    for cross-runtime compatibility.
 
 ## New Thread Kickoff Template
 

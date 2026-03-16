@@ -86,6 +86,25 @@ function extractKelStream(output: string): string {
     .join("\n");
 }
 
+function extractIdentifierLines(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line));
+}
+
+function extractLastNonEmptyLine(output: string): string {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const line = lines.at(-1);
+  if (!line) {
+    throw new Error(`Unable to parse line from output:\n${output}`);
+  }
+  return line;
+}
+
 function packageRoot(): string {
   return new URL("../../../", import.meta.url).pathname;
 }
@@ -296,6 +315,230 @@ async function runInitInceptExportParity(
   );
 }
 
+async function runListAidVisibilityParity(
+  ctx: ScenarioContext,
+): Promise<void> {
+  const base = `gate-b-${crypto.randomUUID().slice(0, 8)}`;
+  const alias = "interop-aid";
+  const passcode = "MyPasscodeARealSecret";
+  const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+  const kliName = `kli-${crypto.randomUUID().slice(0, 8)}`;
+  const tufaName = `tufa-${crypto.randomUUID().slice(0, 8)}`;
+
+  const kliInit = await runCmd("kli", [
+    "init",
+    "--name",
+    kliName,
+    "--base",
+    base,
+    "--passcode",
+    passcode,
+    "--salt",
+    salt,
+  ], ctx.env);
+  if (kliInit.code !== 0) {
+    throw new Error(`kli init failed: ${kliInit.stderr}\n${kliInit.stdout}`);
+  }
+
+  const tufaInit = await runTufa(
+    [
+      "init",
+      "--name",
+      tufaName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--salt",
+      salt,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaInit.code !== 0) {
+    throw new Error(`tufa init failed: ${tufaInit.stderr}\n${tufaInit.stdout}`);
+  }
+
+  const kliListBefore = await runCmd("kli", [
+    "list",
+    "--name",
+    kliName,
+    "--base",
+    base,
+    "--passcode",
+    passcode,
+  ], ctx.env);
+  if (kliListBefore.code !== 0) {
+    throw new Error(
+      `kli list (before) failed: ${kliListBefore.stderr}\n${kliListBefore.stdout}`,
+    );
+  }
+
+  const tufaListBefore = await runTufa(
+    [
+      "list",
+      "--name",
+      tufaName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaListBefore.code !== 0) {
+    throw new Error(
+      `tufa list (before) failed: ${tufaListBefore.stderr}\n${tufaListBefore.stdout}`,
+    );
+  }
+
+  assertEquals(extractIdentifierLines(kliListBefore.stdout), []);
+  assertEquals(extractIdentifierLines(tufaListBefore.stdout), []);
+
+  const kliIncept = await runCmd("kli", [
+    "incept",
+    "--name",
+    kliName,
+    "--base",
+    base,
+    "--passcode",
+    passcode,
+    "--alias",
+    alias,
+    "--transferable",
+    "--isith",
+    "1",
+    "--icount",
+    "1",
+    "--nsith",
+    "1",
+    "--ncount",
+    "1",
+    "--toad",
+    "0",
+  ], ctx.env);
+  if (kliIncept.code !== 0) {
+    throw new Error(
+      `kli incept failed: ${kliIncept.stderr}\n${kliIncept.stdout}`,
+    );
+  }
+
+  const tufaIncept = await runTufa(
+    [
+      "incept",
+      "--name",
+      tufaName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--alias",
+      alias,
+      "--transferable",
+      "--isith",
+      "1",
+      "--icount",
+      "1",
+      "--nsith",
+      "1",
+      "--ncount",
+      "1",
+      "--toad",
+      "0",
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaIncept.code !== 0) {
+    throw new Error(
+      `tufa incept failed: ${tufaIncept.stderr}\n${tufaIncept.stdout}`,
+    );
+  }
+
+  const kliPre = extractPrefix(kliIncept.stdout);
+  const tufaPre = extractPrefix(tufaIncept.stdout);
+  assertEquals(tufaPre, kliPre);
+
+  const expectedListLine = `${alias} (${tufaPre})`;
+
+  const kliListAfter = await runCmd("kli", [
+    "list",
+    "--name",
+    kliName,
+    "--base",
+    base,
+    "--passcode",
+    passcode,
+  ], ctx.env);
+  if (kliListAfter.code !== 0) {
+    throw new Error(
+      `kli list (after) failed: ${kliListAfter.stderr}\n${kliListAfter.stdout}`,
+    );
+  }
+
+  const tufaListAfter = await runTufa(
+    [
+      "list",
+      "--name",
+      tufaName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaListAfter.code !== 0) {
+    throw new Error(
+      `tufa list (after) failed: ${tufaListAfter.stderr}\n${tufaListAfter.stdout}`,
+    );
+  }
+
+  assertEquals(extractIdentifierLines(kliListAfter.stdout), [expectedListLine]);
+  assertEquals(extractIdentifierLines(tufaListAfter.stdout), [
+    expectedListLine,
+  ]);
+
+  const kliAid = await runCmd("kli", [
+    "aid",
+    "--name",
+    kliName,
+    "--base",
+    base,
+    "--passcode",
+    passcode,
+    "--alias",
+    alias,
+  ], ctx.env);
+  if (kliAid.code !== 0) {
+    throw new Error(`kli aid failed: ${kliAid.stderr}\n${kliAid.stdout}`);
+  }
+
+  const tufaAid = await runTufa(
+    [
+      "aid",
+      "--name",
+      tufaName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--alias",
+      alias,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaAid.code !== 0) {
+    throw new Error(`tufa aid failed: ${tufaAid.stderr}\n${tufaAid.stdout}`);
+  }
+
+  assertEquals(extractLastNonEmptyLine(kliAid.stdout), tufaPre);
+  assertEquals(extractLastNonEmptyLine(tufaAid.stdout), tufaPre);
+}
+
 const GATE_SCENARIOS: GateScenario[] = [
   {
     id: "A-DB-FOUNDATION-READINESS",
@@ -318,10 +561,10 @@ const GATE_SCENARIOS: GateScenario[] = [
   {
     id: "B-LIST-AID-VISIBILITY",
     gate: "B",
-    state: "pending",
+    state: "ready",
     requiredTufaCommands: ["list", "aid"],
     expectedOutputShape: "list(empty)->list(alias+pre)->aid(pre)",
-    blockedReason: "Top-level tufa list/aid commands are not implemented yet.",
+    run: runListAidVisibilityParity,
   },
   {
     id: "C-KLI-COMPAT-STORE-OPEN",

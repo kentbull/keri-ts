@@ -298,7 +298,7 @@ export class LMDBer {
       encoding: "binary" as const, // to mimic KERIpy behavior
       keyEncoding: "binary" as const, // to mimic KERIpy behavior
     };
-    this.logger.info(
+    this.logger.debug(
       `Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`,
     );
 
@@ -308,7 +308,7 @@ export class LMDBer {
       // do sync because wrapping synchronous native operations in action() can cause
       // memory management issues with native bindings (double-free errors)
       this.env = open(dbConfig);
-      this.logger.info(`LMDB environment opened successfully`);
+      this.logger.debug(`LMDB environment opened successfully`);
 
       // KERIpy parity: stamp version metadata on newly-created DBs and temp DBs.
       if (this.opened && !readonly && (!dbExists || this.temp)) {

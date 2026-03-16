@@ -13,7 +13,7 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
-import { b, t } from '../../../cesr/mod.ts'
+import { b, t } from "../../../cesr/mod.ts";
 
 export const SIGNER = "__signatory__";
 
@@ -240,9 +240,7 @@ export class Hab {
     }
 
     const msg = b(
-      `${t(raw)}${
-        encodeCounterV1("-V", atc.length / 4)
-      }${atc}`,
+      `${t(raw)}${encodeCounterV1("-V", atc.length / 4)}${atc}`,
     );
 
     this.db.putEvt(b(`${pre}:0`), msg);
@@ -349,6 +347,26 @@ export class Habery {
     this.cf = cf;
     this.config = config;
     this.signator = new Signator(this.db, this);
+    this.loadHabs();
+  }
+
+  /** Populate the local habitat cache from persisted habitat records. */
+  private loadHabs(): void {
+    for (const [pre, habord] of this.db.getHabItemIter<HabitatRecord>()) {
+      const hid = habord.hid || pre;
+      if (!habord.name || this.habs.has(hid)) {
+        continue;
+      }
+      const hab = new Hab(
+        habord.name,
+        this.db,
+        this.ks,
+        this.mgr,
+        habord.domain,
+        hid,
+      );
+      this.habs.set(hid, hab);
+    }
   }
 
   /** Creates and caches a new habitat under this habery. */

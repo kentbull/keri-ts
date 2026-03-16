@@ -111,6 +111,10 @@ Exit criteria:
 
 4. Load config OOBIs into db if config exists; do not run async network OOBI
    resolver yet.
+5. Preserve local npm CLI fallback semantics when `/usr/local/var/...` is not
+   writable: `PathManager` must treat Node-shape `EACCES` / `EPERM` mkdir
+   failures from `@deno/shim-deno` the same as `Deno.errors.PermissionDenied` so
+   init rehomes into `~/.tufa/...`.
 
 Exit criteria:
 

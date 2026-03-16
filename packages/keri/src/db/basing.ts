@@ -187,6 +187,25 @@ export class Baser {
     );
   }
 
+  /** Iterate persisted habitat records keyed by prefix. */
+  *getHabItemIter<T>(
+    top = "",
+  ): Generator<[string, T]> {
+    for (
+      const [key, val] of this.lmdber.getTopItemIter(
+        this.habs,
+        this.encodeText(top),
+      )
+    ) {
+      const pre = this.decodeText(key);
+      const record = this.decodeJson<T>(val);
+      if (pre === null || record === null) {
+        continue;
+      }
+      yield [pre, record];
+    }
+  }
+
   /** Insert namespace/name -> prefix mapping if absent. */
   putName(ns: string, name: string, pre: string): boolean {
     const key = `${ns}:${name}`;
