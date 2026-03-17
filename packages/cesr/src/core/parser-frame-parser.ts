@@ -483,23 +483,42 @@ export class FrameParser {
       version,
     );
     const fields = this.interpretNativeFieldSyntax(syntax.fields);
+    let body: CesrMessage["body"];
+    try {
+      // Upgrade real native message bodies into full serders so downstream
+      // runtime code gets the normal `ked`/`said`/accessor surface.
+      // Example text-domain shape:
+      //   -FA5 | 0OKERICAACA | Xicp | E... | D... | M... | ...
+      const { serder } = reapSerder(raw);
+      (serder as CesrMessage["body"]).native = {
+        bodyCode,
+        fields,
+      };
+      body = serder;
+    } catch {
+      // Some parser-hardening/native-fixture corpora are valid native body
+      // groups without being full protocol messages. Preserve the older
+      // metadata-only fallback for those cases instead of forcing every native
+      // body through full serder semantics.
+      body = {
+        raw,
+        ked: null,
+        proto: metadata.proto,
+        kind: Kinds.cesr,
+        size: raw.length,
+        pvrsn: metadata.pvrsn,
+        gvrsn: metadata.gvrsn,
+        ilk: metadata.ilk,
+        said: metadata.said,
+        native: {
+          bodyCode,
+          fields,
+        },
+      };
+    }
     return {
       frame: {
-        body: {
-          raw,
-          ked: null,
-          proto: metadata.proto,
-          kind: Kinds.cesr,
-          size: raw.length,
-          pvrsn: metadata.pvrsn,
-          gvrsn: metadata.gvrsn,
-          ilk: metadata.ilk,
-          said: metadata.said,
-          native: {
-            bodyCode,
-            fields,
-          },
-        },
+        body,
         attachments: [],
       },
       consumed: offset + total,

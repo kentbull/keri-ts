@@ -202,3 +202,37 @@ Persistent CESR parser memory for `keri-ts`.
   JSON/CBOR/MGPK serder path needed by local inception and DB hydration, but it
   does not yet claim full KERIpy parity for CESR-native body
   serialization/deserialization or ACDC compactification logic.
+
+### 2026-03-17 - CESR-Native Serder Path Began Converging
+
+- Moved digest dispatch authority into `Diger` with a shared `DigDex`-keyed
+  registry, then let `Saider` and `Serder` consume that primitive-owned seam so
+  digest selection is no longer hidden inside serder-local switches or
+  application helpers.
+- Added a first shared CESR-native serder helper path that can dump and load
+  real KERI fixed-body native messages through the serder layer, including
+  `reapSerder`/`Serdery` support for both qb64 and qb2 inputs by canonicalizing
+  native qb2 bodies to their text-domain qb64 form before subtype hydration.
+- Changed parser native-body hydration so real native message bodies are now
+  upgraded into actual serder subclasses with `ked`/`said`/accessor surface
+  populated, while preserving the older metadata-only fallback for generic
+  native map/list hardening fixtures that are not full protocol messages.
+- Added maintainer-oriented CESR-native docs in code with an explicit mental
+  model for text-domain versus qb2/native-binary bodies, plus ASCII-segmented
+  examples such as:
+
+  ```text
+  -FA5 | 0OKERICAACA | Xicp | EFaYE2... | DNG2ar... | MAAA | MAAB | -JAL...
+  ```
+
+  where the body counter, verser, ilk, SAID/prefix fields, numeric fields, and
+  grouped list/map payloads can be visually distinguished before reasoning
+  about the underlying binary qb2 form.
+- Added a dedicated native-serder test-helper layer so the pinned KERIpy native
+  fixture can be read as named segments (`bodyCounter`, `verser`, `ilk`,
+  `said`, `pre`, `sn`, `kt`, list groups, etc.) inside tests; maintainers
+  should preserve that "tests as worked examples" style instead of regressing
+  native coverage back into opaque whole-string assertions only.
+- This is still only a first native parity slice, not closure: KERI fixed-body
+  messages are now substantially better covered, but broader CESR-native KERI
+  ilks, full ACDC native semantics, and ACDC compactification remain open.

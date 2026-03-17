@@ -1,8 +1,4 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
-import { blake2b, blake2s } from "npm:@noble/hashes@1.8.0/blake2";
-import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
-import { sha256, sha512 } from "npm:@noble/hashes@1.8.0/sha2";
-import { sha3_256, sha3_512 } from "npm:@noble/hashes@1.8.0/sha3";
 import { b, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
@@ -32,6 +28,7 @@ import { Verfer } from "../primitives/verfer.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
+import { dumpCesrNativeSad, parseCesrNativeKed } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
 type SadMap = Record<string, unknown>;
@@ -105,6 +102,14 @@ export function dumps(
   if (kind === "CBOR") {
     return encodeKeriCbor(ked);
   }
+  if (kind === "CESR") {
+    if (!ked || typeof ked !== "object" || Array.isArray(ked)) {
+      throw new SerializeError("CESR native body must be a map/object");
+    }
+    // Native emit is factored out so `Serder`, `Serdery`, and parser-native
+    // hydration all share one CESR-native serialization contract.
+    return dumpCesrNativeSad(ked as Record<string, unknown>);
+  }
   throw new SerializeError(`Unsupported serialization kind: ${kind}`);
 }
 
@@ -174,31 +179,6 @@ export function sizeify(
 
 function parseVersionString(vs: string): Smellage {
   return smell(b(vs)).smellage;
-}
-
-function digestForCode(ser: Uint8Array, code: string): Uint8Array {
-  switch (code) {
-    case DigDex.Blake3_256:
-      return blake3(ser);
-    case DigDex.Blake3_512:
-      return blake3(ser, { dkLen: 64 });
-    case DigDex.Blake2b_256:
-      return blake2b(ser, { dkLen: 32 });
-    case DigDex.Blake2b_512:
-      return blake2b(ser, { dkLen: 64 });
-    case DigDex.Blake2s_256:
-      return blake2s(ser, { dkLen: 32 });
-    case DigDex.SHA2_256:
-      return sha256(ser);
-    case DigDex.SHA2_512:
-      return sha512(ser);
-    case DigDex.SHA3_256:
-      return sha3_256(ser);
-    case DigDex.SHA3_512:
-      return sha3_512(ser);
-    default:
-      throw new SerializeError(`Unsupported digest code ${code}.`);
-  }
 }
 
 function versionFields(
@@ -614,6 +594,14 @@ function parseRawToKed(raw: Uint8Array, smellage: Smellage): {
       ked = normalizeDecodedMap(decodeMsgpack(raw), kind);
     } else if (kind === "CBOR") {
       ked = normalizeDecodedMap(decodeKeriCbor(raw), kind);
+    } else if (kind === "CESR") {
+      // Native inhale is delegated to the shared helper layer because CESR
+      // bodies are not self-describing through `smell()` the same way
+      // JSON/CBOR/MGPK bodies are.
+      const native = parseCesrNativeKed(raw, smellage);
+      ked = native.ked;
+      ilk = native.ilk;
+      said = native.said;
     }
   } catch (error) {
     if (error instanceof DeserializeError) {
@@ -867,7 +855,7 @@ export class Serder implements CesrBody {
       ? Saider.saidifyFields(normalized, {
         kind: resolved.kind,
         saids: resolved.saids,
-        digest: digestForCode,
+        digest: Diger.digest,
       })
       : (() => {
         const existing = shallowCloneSad(normalized);
@@ -1006,7 +994,7 @@ export class Serder implements CesrBody {
     const actual = Saider.saidifyFields(working, {
       kind: this.kind,
       saids,
-      digest: digestForCode,
+      digest: Diger.digest,
     });
 
     if (t(actual.raw) !== t(this.raw)) {

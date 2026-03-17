@@ -1,5 +1,4 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseSaider, Saider } from "../../../src/primitives/saider.ts";
 import { sizeify } from "../../../src/serder/serder.ts";
@@ -46,9 +45,7 @@ Deno.test("saider: saidify injects one computed SAID and preserves sizeified ver
     a: [],
   };
 
-  const { saider, sad } = Saider.saidify(ked, {
-    digest: (ser) => blake3(ser),
-  });
+  const { saider, sad } = Saider.saidify(ked, {});
   const { raw, ked: sized } = sizeify(sad, "JSON");
 
   assertEquals(sized.d, saider.qb64);

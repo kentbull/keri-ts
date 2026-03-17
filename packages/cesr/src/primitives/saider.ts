@@ -5,6 +5,7 @@ import { smell } from "../serder/smell.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Kind } from "../tables/versions.ts";
 import { DIGEST_CODES } from "./codex.ts";
+import { Diger } from "./diger.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
 export type SaidDigestFn = (ser: Uint8Array, code: string) => Uint8Array;
@@ -14,13 +15,13 @@ export interface SaidifyOptions {
   kind?: Kind;
   label?: string;
   ignore?: string[];
-  digest: SaidDigestFn;
+  digest?: SaidDigestFn;
 }
 
 export interface SaidifyFieldsOptions {
   kind?: Kind;
   saids: Record<string, string>;
-  digest: SaidDigestFn;
+  digest?: SaidDigestFn;
 }
 
 /**
@@ -62,7 +63,7 @@ export class Saider extends Matter {
       kind,
       label = "d",
       ignore,
-      digest,
+      digest = Diger.digest,
     }: SaidifyOptions,
   ): {
     saider: Saider;
@@ -99,7 +100,7 @@ export class Saider extends Matter {
     {
       kind,
       saids,
-      digest,
+      digest = Diger.digest,
     }: SaidifyFieldsOptions,
   ): {
     sad: Record<string, unknown>;

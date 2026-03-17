@@ -91,6 +91,7 @@ Deno.test("KERIpy native v2 fix-body fixture parses as top-level frame", () => {
     assertEquals(frames[0].frame.body.kind, "CESR");
     assertEquals(frames[0].frame.body.pvrsn.major, 2);
     assertEquals(frames[0].frame.body.ilk, "icp");
+    assertEquals(frames[0].frame.body.ked?.t, "icp");
     assertEquals(
       frames[0].frame.body.said,
       "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",

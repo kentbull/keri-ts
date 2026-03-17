@@ -223,6 +223,17 @@ This keeps context focused and avoids long-thread drift.
     CESR-native serder parity and deeper ACDC compactification behavior remain
     open, so maintainers should not treat this milestone as full
     `serdering.py` closure yet.
+45. CESR-native parser hydration needs a two-lane contract: when a native body
+    group is a real KERI/ACDC message, the parser should upgrade it to a full
+    `SerderKERI`/`SerderACDC`; when the payload is only a generic native
+    hardening corpus or partial map/list body, the parser must preserve the old
+    metadata-only fallback instead of forcing every native body group through
+    full serder semantics.
+46. Digest-code ownership belongs at the CESR primitive layer, not in app code
+    or serder-local helpers: `DigDex` stays the canonical codex namespace, but
+    `Diger` should own `code -> digest implementation` dispatch so `Saider`,
+    `Serder`, and habitat flows can consume digest behavior without carrying
+    private hash switches.
 
 ## New Thread Kickoff Template
 
