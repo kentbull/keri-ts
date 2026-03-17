@@ -12,8 +12,12 @@ function invertCodeNames<T extends NameByCode>(
   return Object.freeze(out) as Record<T[keyof T], string>;
 }
 
+/** Union of generated semantic counter names available in the v1 table. */
 export type CounterCodeNameV1 = (typeof COUNTER_CODE_NAMES_V1)[keyof typeof COUNTER_CODE_NAMES_V1];
+/** Union of generated semantic counter names available in the v2 table. */
 export type CounterCodeNameV2 = (typeof COUNTER_CODE_NAMES_V2)[keyof typeof COUNTER_CODE_NAMES_V2];
 
+/** Inverted v1 counter code table (`semantic name -> code`). */
 export const CtrDexV1 = invertCodeNames(COUNTER_CODE_NAMES_V1);
+/** Inverted v2 counter code table (`semantic name -> code`). */
 export const CtrDexV2 = invertCodeNames(COUNTER_CODE_NAMES_V2);

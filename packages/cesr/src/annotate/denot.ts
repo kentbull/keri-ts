@@ -1,5 +1,11 @@
 const TEXT_ENCODER = new TextEncoder();
 
+/**
+ * Strip annotation comments/whitespace and rebuild the raw CESR text stream.
+ *
+ * This is the inverse of maintainer-facing annotation output, not a general
+ * parser: comment lines and inline `# ...` commentary are discarded.
+ */
 export function denot(annotated: string): Uint8Array {
   const tokens: string[] = [];
   for (const line of annotated.split(/\r?\n/)) {

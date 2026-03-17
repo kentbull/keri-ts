@@ -28,8 +28,11 @@ export interface CesrParserBenchmarkOptions {
   failOnParseError?: boolean;
 }
 
+/** Per-run frame/error counts used to aggregate benchmark totals. */
 export interface CesrParseRunSummary {
+  /** Count of successfully emitted frame events for one run. */
   frameCount: number;
+  /** Count of emitted parser error events for one run. */
   errorCount: number;
 }
 

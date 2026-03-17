@@ -289,6 +289,12 @@ This keeps context focused and avoids long-thread drift.
     fix is to branch before the call and pass literal `true` / `false`, while
     the callee implementation should return explicitly typed homogeneous arrays
     instead of a union-widened `map(...)` result.
+58. Maintainer-doc coverage is no longer just a class-boundary rule. The
+    broadest ongoing drift risk is exported helper/type/fixture seams and
+    dense internal helper ladders; for those areas, grouped family comments and
+    short invariant-focused helper docstrings are the preferred pattern, while
+    obviously derived constant families such as codex-set blocks can stay
+    documented at the grouped block level instead of one symbol at a time.
 
 ## New Thread Kickoff Template
 

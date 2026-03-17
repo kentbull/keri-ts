@@ -1,7 +1,7 @@
 import { run } from "effection";
-import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { Cigar, SerderKERI, Siger, smell } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("Habery eagerly loads persisted habitats on open", async () => {
@@ -174,4 +174,81 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
       yield* hby.close();
     }
   });
+});
+
+Deno.test("encrypted Habery reopens its signator and signs with the same passcode", async () => {
+  const name = `habery-enc-signator-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  const bran = "MyPasscodeARealSecret";
+  let signatoryPre = "";
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      bran,
+    });
+    try {
+      hby.makeHab("erin", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const ser = new TextEncoder().encode("encrypted-signator");
+      const sig = hby.signator?.sign(ser);
+
+      signatoryPre = hby.db.getHby(SIGNER) ?? "";
+      assertEquals(typeof sig, "string");
+      assertEquals(
+        sig ? hby.signator?.verify(ser, sig) : false,
+        true,
+      );
+      assertEquals(signatoryPre.length > 0, true);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      bran,
+    });
+    try {
+      const ser = new TextEncoder().encode("encrypted-signator-reopen");
+      const sig = hby.signator?.sign(ser);
+
+      assertEquals(hby.signator?.pre, signatoryPre);
+      assertEquals(hby.db.getHby(SIGNER), signatoryPre);
+      assertEquals(typeof sig, "string");
+      assertEquals(
+        sig ? hby.signator?.verify(ser, sig) : false,
+        true,
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  await assertRejects(
+    () =>
+      run(function*() {
+        const hby = yield* createHabery({
+          name,
+          headDirPath,
+          bran: "WrongPasscodeSecretAB",
+        });
+        try {
+          hby.signator?.sign(new TextEncoder().encode("wrong-passcode"));
+        } finally {
+          yield* hby.close();
+        }
+      }),
+    Error,
+    "Last seed missing or provided last seed not associated",
+  );
 });

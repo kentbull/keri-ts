@@ -17,6 +17,9 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
 1. Reliable feature-by-feature translation verification from KERIpy.
 2. Stable `tufa init`/`tufa incept`/communication behavior.
 3. A clean foundation for later pluggable storage providers.
+4. Storage-facing semantics that stay isolated enough for later IndexedDB or
+   other providers to preserve behavior without re-deriving LMDB assumptions
+   from app-layer code.
 
 ## Execution Status (2026-03-15)
 
@@ -106,6 +109,10 @@ Initial D0 artifacts (seeded):
    - Track K/V coverage with `lmdb-dumper.md` and explicit parity matrix rows.
 4. Interop-first verification:
    - Validate behavior with KERIpy interop scenarios, not only unit tests.
+5. Storage-semantics isolation:
+   - While LMDB remains the only real backend in Phase 2, new app-layer work
+     should consume typed DB seams and semantic contracts rather than depending
+     on LMDB-specific cursor/order/dupsort details directly.
 
 ## Workstream Sequence
 

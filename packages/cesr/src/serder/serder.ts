@@ -754,12 +754,14 @@ interface SerderHydratedInit {
   said: string | null;
 }
 
+/** Constructor variant for hydrating a serder directly from raw encoded bytes. */
 export interface SerderRawInit {
   raw: Uint8Array;
   smellage?: Smellage;
   verify?: boolean;
 }
 
+/** Constructor variant for building or normalizing a serder from semantic SAD input. */
 export interface SerderSadInit {
   sad?: SadMap;
   makify?: boolean;
@@ -773,6 +775,7 @@ export interface SerderSadInit {
   compactify?: boolean;
 }
 
+/** Union of all supported serder construction modes. */
 export type SerderInit = SerderHydratedInit | SerderRawInit | SerderSadInit;
 
 function isHydratedInit(init: SerderInit): init is SerderHydratedInit {
@@ -802,6 +805,7 @@ function fieldMapKey(ilk: string | null): string {
   return ilk ?? "<none>";
 }
 
+/** Resolve the field-domain contract for one protocol/version/ilk combination. */
 function getFieldDom(
   registry: FieldRegistry,
   proto: Protocol,
@@ -827,6 +831,7 @@ function getFieldDom(
   return fields;
 }
 
+/** Decode raw serialized bytes into a protocol SAD plus projected ilk/said fields. */
 function parseRawToKed(raw: Uint8Array, smellage: Smellage): {
   ked: SadMap | null;
   ilk: string | null;
@@ -1152,6 +1157,7 @@ function validateSadAgainstFieldDom(
   return { fields, saids, ked };
 }
 
+/** Fill default field values and normalize insertion order against one field-domain contract. */
 function normalizeSadWithFieldDom(
   sad: SadMap | undefined,
   fields: FieldDom,
@@ -1178,6 +1184,7 @@ function normalizeSadWithFieldDom(
   return ordered;
 }
 
+/** Choose protocol/version/kind defaults for semantic serder construction from SAD input. */
 function resolveProtocolDefaults(
   ctor: typeof Serder,
   init: SerderSadInit,

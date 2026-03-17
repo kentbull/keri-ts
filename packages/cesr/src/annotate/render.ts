@@ -85,6 +85,7 @@ function emitLine(
   lines.push(`${pad}${value} # ${comment}`);
 }
 
+/** Parse counters with a bounded v1/v2 fallback for annotation-only rendering paths. */
 function parseCounterCompat(
   input: Uint8Array,
   version: Versionage,
@@ -103,6 +104,7 @@ function parseCounterCompat(
   }
 }
 
+/** Decode a wrapped genus-version selector into the active protocol version context. */
 function decodeVersionCounter(
   counter: { qb64: string; count: number },
 ): Versionage {
@@ -117,6 +119,7 @@ function decodeVersionCounter(
   };
 }
 
+/** Render hydrated group entries recursively using semantic primitive comments. */
 function renderGroupItems(
   lines: string[],
   items: readonly GroupEntry[],
@@ -187,6 +190,7 @@ function renderGroupItems(
   }
 }
 
+/** Render one raw attachment-group span, including nested wrapper groups when present. */
 function renderAttachmentGroupRaw(
   lines: string[],
   raw: Uint8Array,
@@ -273,6 +277,7 @@ function renderAttachmentGroupRaw(
   return parsed.consumed;
 }
 
+/** Render a native CESR body-group payload using hydrated native field projections when available. */
 function renderNativeBody(
   lines: string[],
   frame: CesrMessage,
@@ -337,6 +342,7 @@ function renderNativeBody(
   }
 }
 
+/** Render non-native or opaque message bodies as one annotated body line. */
 function renderMessageBody(
   lines: string[],
   frame: CesrMessage,
@@ -378,6 +384,7 @@ function renderMessageBody(
   emitLine(lines, body, info, 0, options);
 }
 
+/** Render one parsed frame and all of its attachment groups into annotation lines. */
 function renderFrame(
   frame: CesrMessage,
   index: number,
@@ -400,6 +407,7 @@ function renderFrame(
   return { index, frame, lines };
 }
 
+/** Parse and render a nested frame chunk inside wrapper-aware annotation flows. */
 function renderFrameChunk(
   lines: string[],
   input: Uint8Array,
@@ -422,6 +430,7 @@ function renderFrameChunk(
   }
 }
 
+/** Walk a stream that may begin with wrapper/version selectors before ordinary frames. */
 function renderWrapperAwareStream(
   lines: string[],
   input: Uint8Array,

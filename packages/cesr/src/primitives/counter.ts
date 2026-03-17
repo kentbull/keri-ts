@@ -64,6 +64,7 @@ function getTables(version: Versionage) {
   return { sizeTable, nameTable };
 }
 
+/** Inhale one text-domain counter token using the version-selected counter tables. */
 function parseCounterFromTextData(
   input: Uint8Array,
   version: Versionage,
@@ -120,6 +121,7 @@ function parseCounterFromTextData(
   };
 }
 
+/** Inhale one qb2 counter token into the canonical text-oriented counter shape. */
 function parseCounterFromBinaryData(
   input: Uint8Array,
   version: Versionage,
@@ -169,6 +171,7 @@ function parseCounterFromBinaryData(
   };
 }
 
+/** Exhale a counter code/count pair into its fully qualified versioned token. */
 function encodeCounterFromFields(
   code: string,
   count: number,
@@ -202,6 +205,7 @@ function encodeCounterFromFields(
   };
 }
 
+/** Normalize the supported constructor variants into one shared counter payload. */
 function parseCounterInit(init: CounterInit): CounterData {
   const version = init.version ?? { major: 2, minor: 0 };
 

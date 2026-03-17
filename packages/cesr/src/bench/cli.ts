@@ -19,6 +19,7 @@ interface BenchmarkCliOptions {
   json: boolean;
 }
 
+/** Runtime IO boundary for the standalone parser benchmark CLI. */
 export interface BenchmarkCliIo {
   readFile(path: string): Promise<Uint8Array>;
   readStdin(): Promise<Uint8Array>;

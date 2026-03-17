@@ -28,7 +28,7 @@ This closes the remaining P0 requirement from
 | `B`  | `B-LIST-AFTER`          | `kli list`                        | `tufa list`                                | Includes `alias (prefix)` after incept                | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `B`  | `B-AID`                 | `kli aid --alias <a>`             | `tufa aid --alias <a>`                     | Returns same prefix as `incept`                       | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `C`  | `C-KLI-STORE-OPEN`      | `kli init/incept` then `kli list` | `tufa list --compat` / `tufa aid --compat` | Existing KLI store opens and identifiers are visible  | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
-| `D`  | `D-ENCRYPTED-SEMANTICS` | `kli init --passcode`             | `tufa init --passcode`                     | Successful encrypted store open/reopen/decrypt parity | `Pending`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
+| `D`  | `D-ENCRYPTED-SEMANTICS` | `kli init --passcode`             | `tufa init --passcode`                     | Successful encrypted store open/reopen/decrypt parity | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `E`  | `E-ENDS-ADD`            | `kli ends add ...`                | `tufa ends add ...`                        | Endpoint role auth persists in DB                     | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `E`  | `E-OOBI-GENERATE`       | `kli oobi generate ...`           | `tufa oobi generate ...`                   | Deterministic OOBI output shape                       | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `E`  | `E-OOBI-RESOLVE`        | `kli oobi resolve ...`            | `tufa oobi resolve ...`                    | Resolve success and persisted OOBI records            | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
@@ -47,9 +47,10 @@ This closes the remaining P0 requirement from
 3. Gate C was promoted to `Implemented` on 2026-03-17 after
    `interop-gates-harness.test.ts` passed live against a KLI-created encrypted
    store via `tufa list --compat` / `tufa aid --compat`.
-4. Gate D remains `Pending` because the repo now proves compat-store visibility
-   and AEID association boundaries, but it still does not prove true
-   decrypt/re-encrypt parity or reliable signator reopen behavior.
+4. Gate D was promoted to `Implemented` on 2026-03-17 after the repo landed
+   libsodium-backed keeper encryption, AEID decrypt/re-encrypt coverage,
+   wrong-passcode failure assertions, and encrypted signator reopen tests, with
+   corresponding live harness evidence.
 5. Gate F remains `Blocked` because the top-level transport command surface is
    still absent from `tufa --help`, even though the gate is already modeled in
    the harness.

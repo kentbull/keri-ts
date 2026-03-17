@@ -1,4 +1,6 @@
+/** Shared UTF-8 encoder used by CESR and DB byte helpers. */
 export const encoder = new TextEncoder();
+/** Shared UTF-8 decoder used by CESR and DB byte helpers. */
 export const decoder = new TextDecoder();
 const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -19,6 +21,7 @@ export function concatBytes(...chunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
+/** Encode a non-negative integer into CESR's URL-safe base64 sextet text. */
 export function intToB64(value: number, length = 1): string {
   if (value < 0) {
     throw new Error(`value must be >= 0, got ${value}`);
@@ -35,6 +38,7 @@ export function intToB64(value: number, length = 1): string {
   return out.padStart(length, "A");
 }
 
+/** Decode CESR URL-safe base64 sextet text into a non-negative integer. */
 export function b64ToInt(text: string): number {
   let out = 0;
   for (const ch of text) {
@@ -47,11 +51,13 @@ export function b64ToInt(text: string): number {
   return out;
 }
 
+/** Encode raw bytes to unpadded URL-safe base64 text. */
 export function encodeB64(data: Uint8Array): string {
   const str = btoa(String.fromCharCode(...data));
   return str.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+/** Decode unpadded URL-safe base64 text into raw bytes. */
 export function decodeB64(text: string): Uint8Array {
   const padded = text + "===".slice((text.length + 3) % 4);
   const raw = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
@@ -70,12 +76,14 @@ export function sceil(value: number): number {
   return Math.ceil(value);
 }
 
+/** Convert a CESR code string to the exact leading qb2 bytes that carry it. */
 export function codeB64ToB2(text: string): Uint8Array {
   const n = sceil((text.length * 3) / 4);
   const full = text + "A".repeat((4 - (text.length % 4)) % 4);
   return decodeB64(full).slice(0, n);
 }
 
+/** Convert leading qb2 bytes into the requested number of CESR sextets. */
 export function codeB2ToB64(bytes: Uint8Array, sextets: number): string {
   const n = sceil((sextets * 3) / 4);
   if (n > bytes.length) {
@@ -84,6 +92,7 @@ export function codeB2ToB64(bytes: Uint8Array, sextets: number): string {
   return encodeB64(bytes.slice(0, n)).slice(0, sextets);
 }
 
+/** Re-slice the first `sextets` worth of qb2 bytes for parser/code probing. */
 export function nabSextets(bytes: Uint8Array, sextets: number): Uint8Array {
   return codeB64ToB2(codeB2ToB64(bytes, sextets));
 }

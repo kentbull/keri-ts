@@ -21,6 +21,7 @@ const CONFIGER_DEFAULTS: ConfigerDefaults = {
   fext: "json",
 };
 
+/** Options for locating and opening one habitat configuration file. */
 export interface ConfigerOptions extends PathManagerOptions {
   /** File extension for the config file */
   fext?: string;
@@ -262,6 +263,7 @@ export class Configer {
   }
 }
 
+/** Open a `Configer` and fail fast if the backing config path cannot be prepared. */
 export function* createConfiger(
   options: ConfigerOptions = {},
 ): Operation<Configer> {

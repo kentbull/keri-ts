@@ -23,9 +23,24 @@ organized by component with clear implementation priorities.
 5. Path note: base `LMDBer` defaults to `.tufa/db` / `.tufa/clean/db`;
    `.keri/*` tails are selected by compat-aware `Baser` / `Keeper`, not by the
    base `LMDBer` default.
-6. The real next blockers are Gate D encrypted semantics, escrow/process-loop
+6. The real next blockers are Gate E/F/G command breadth, escrow/process-loop
    infrastructure, and matrix refresh, not the initial creation of core LMDB
    helpers.
+7. IndexedDB or other browser/mobile providers are intentionally deferred until
+   after 1.0, but current LMDB work should keep storage-facing semantics
+   isolated so later provider support is mostly adapter work instead of DB
+   behavior excavation.
+
+## Maintainer Rule
+
+LMDB is the reference backend for Phase 2, not the permanent shape of app code.
+
+- New functionality should prefer typed DB seams and semantic helpers over
+  direct dependence on LMDB-specific cursor behavior or raw-handle patterns.
+- If a higher layer truly depends on an LMDB-specific guarantee, document that
+  dependency explicitly at the seam where it enters the codebase.
+- The goal is to finish LMDB parity first without letting LMDB-specific details
+  leak so far upward that later IndexedDB support becomes a rewrite.
 
 ---
 

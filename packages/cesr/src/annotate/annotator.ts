@@ -31,6 +31,12 @@ function parsedFramesOrThrow(frames: CesrFrame[]) {
   return parsedFrames;
 }
 
+/**
+ * Parse input and return one annotation structure per emitted frame.
+ *
+ * Use this when callers want to inspect annotation lines programmatically
+ * instead of flattening the whole stream to one rendered string.
+ */
 export function annotateFrames(
   input: Uint8Array | string,
   options?: AnnotateOptions,
@@ -41,6 +47,12 @@ export function annotateFrames(
   return renderAnnotatedFrames(frames, opts);
 }
 
+/**
+ * Render one CESR stream into maintainer-oriented annotated text.
+ *
+ * Wrapper-aware rendering is attempted first so opaque wrapper payloads can be
+ * preserved faithfully before falling back to frame-by-frame annotation.
+ */
 export function annotate(
   input: Uint8Array | string,
   options?: AnnotateOptions,

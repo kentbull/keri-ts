@@ -32,6 +32,7 @@ function inferSerialized(
   return sourceDomain === "txt" ? b(qb64) : codeB64ToB2(qb64);
 }
 
+/** Constructor payload for rebuilding a structor from an already parsed group. */
 export interface StructorInit {
   group: CounterGroupLike;
   sourceDomain?: ParseDomain;

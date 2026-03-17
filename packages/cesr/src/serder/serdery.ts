@@ -99,6 +99,7 @@ export class Serdery {
   }
 }
 
+/** Convenience wrapper for one-shot `Serdery.reap()` call sites. */
 export function reapSerder(
   input: Uint8Array,
 ): { serder: CesrBody; consumed: number } {

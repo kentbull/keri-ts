@@ -94,12 +94,26 @@ Use this doc for:
 
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
-2. Treat Gate B and the Gate C visibility slice as closed enough to move main
-   attention to Gate D encrypted-secret semantics and Gate E command surfaces.
+2. Treat Gates B, C, and D as closed enough to move main attention to Gate E
+   command surfaces plus the escrow/process-loop work that Gate F/G depend on.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
    maintenance regression and guard against them automatically.
+
+### 2026-03-17 - Gate D Encrypted Keeper Semantics Landed
+
+- Added a KERI-local `libsodium-wrappers@0.8.2` JS+WASM backend for sealed-box
+  behavior instead of hand-rolling the missing pieces around `@noble`.
+- `Manager` now performs real AEID-backed salt and signer encryption, keeper
+  reopen decryption, and `updateAeid()` re-encryption for root salt,
+  per-prefix salts, and `pris.` signer seeds.
+- `CryptSignerSuber` is no longer a placeholder seam; it now stores ciphertext
+  at rest and decrypts signer seeds on read when given a decrypter.
+- Encrypted signator reopen is now covered directly, so Gate D is not just
+  "encrypted init works once" but "encrypted reopen still signs correctly."
+- Wrong-passcode behavior is now explicitly tested and treated as a first-class
+  parity condition rather than an accidental failure mode.
 
 ### 2026-03-15 - Gate C Visibility Foundation Landed
 
@@ -407,3 +421,16 @@ Use this doc for:
 - Scope honesty matters here too: this improves the local inception path and
   serder-backed DB hydration, but it is not evidence that the entire KEL stack
   is now at full KERIpy serder parity.
+
+### 2026-03-17 - KERI Runtime Doc Coverage Now Includes Helper And DB Seams
+
+- Extended maintainer docs across KERI runtime helpers that are easy to depend
+  on but easy to misread: DB key aliases/constants, logger seams, config-file
+  options, CLI bridge/parsing helpers, and the local helper exports at the tail
+  of `keeping.ts`.
+- The important maintainer lesson is that DB/app parity drift does not only
+  happen in classes. Tiny exported helpers and aliases can silently become the
+  real contract future work relies on, so they now need meaning-first docs too.
+- Kept the docs additive around actively changing files such as `habbing.ts`
+  and `keeping.ts`; the sweep was intentionally documentation-only and did not
+  revert or reshape the surrounding in-flight implementation work.

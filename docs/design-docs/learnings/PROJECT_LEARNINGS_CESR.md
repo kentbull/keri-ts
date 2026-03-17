@@ -417,3 +417,18 @@ Persistent CESR parser memory for `keri-ts`.
   `qry`, `rpy`, `xip`, and `exn`, plus primitive-level `Pather` tests, so the
   route lane is now protected by exact byte-parity assertions instead of only
   semantic round-trip checks.
+
+### 2026-03-17 - Maintainer Doc Sweep Extended Beyond Class Boundaries
+
+- Completed a broad maintainer-doc pass across CESR exported helper/type seams
+  in annotate, adapters, parser, serder, core, and table modules.
+- Added short maintainer comments to dense helper ladders in `render.ts`,
+  `serder.ts`, `matter.ts`, `indexer.ts`, and `counter.ts` so parser/native
+  flow and primitive inhale/exhale responsibilities are reviewable without
+  re-deriving them from control flow.
+- Captured the preferred doc pattern for codex/table families explicitly:
+  grouped block comments are correct for obviously derived semantic-set exports,
+  while public interfaces/functions should still carry direct boundary docs.
+- Fixture provenance is now clearer too: the cross-implementation/native
+  external vectors used by hardening and parity suites carry explicit
+  maintainer-facing origin/intent comments.

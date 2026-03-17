@@ -1,6 +1,13 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.2";
-import { Cipher, NumberPrimitive, Prefixer, Signer } from "../../../cesr/mod.ts";
+import {
+  Cipher,
+  type Decrypter,
+  type Encrypter,
+  NumberPrimitive,
+  Prefixer,
+  Signer,
+} from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple } from "../core/records.ts";
@@ -258,19 +265,31 @@ export class Keeper {
     return this.pres.get(pre)?.qb64 ?? null;
   }
 
-  /** Insert a signer seed in `pris.` keyed by its public key if absent. */
-  putPris(pub: string, secret: string): boolean {
-    return this.pris.put(pub, new Signer({ qb64: secret }));
+  /**
+   * Insert a signer seed in `pris.` keyed by its public key if absent.
+   *
+   * Gate D behavior:
+   * - plaintext when no encrypter is provided
+   * - sealed-box ciphertext when an encrypter is provided
+   */
+  putPris(pub: string, secret: string, encrypter?: Encrypter): boolean {
+    return this.pris.put(pub, new Signer({ qb64: secret }), encrypter);
   }
 
-  /** Upsert a signer seed in `pris.` keyed by its public key. */
-  pinPris(pub: string, secret: string): boolean {
-    return this.pris.pin(pub, new Signer({ qb64: secret }));
+  /** Upsert a signer seed in `pris.` under the same plaintext/cipher rules as `putPris()`. */
+  pinPris(pub: string, secret: string, encrypter?: Encrypter): boolean {
+    return this.pris.pin(pub, new Signer({ qb64: secret }), encrypter);
   }
 
-  /** Read a signer seed from `pris.` as qb64 text. */
-  getPris(pub: string): string | null {
-    return this.pris.get(pub)?.qb64 ?? null;
+  /**
+   * Read a signer seed from `pris.` as qb64 text.
+   *
+   * Caller contract:
+   * - without a decrypter, this only succeeds for plaintext stores
+   * - with a decrypter, encrypted Gate D stores are rehydrated transparently
+   */
+  getPris(pub: string, decrypter?: Decrypter): string | null {
+    return this.pris.get(pub, decrypter)?.qb64 ?? null;
   }
 
   /** Insert one prefix-parameter record in `prms.` if absent. */

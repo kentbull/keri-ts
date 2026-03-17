@@ -88,3 +88,14 @@ Use this doc for:
 - Recorded the maintainer rule explicitly: superclass construction is for
   parser/probe seams and genuinely generic payload handling, not for ordinary
   crypto-primitive API returns.
+
+### 2026-03-17 - Primitive Helper Documentation Was Filled In Around The Edges
+
+- Extended the maintainer-doc sweep beyond primitive classes into the helper
+  seams that actually explain primitive behavior in practice: `Matter`,
+  `Indexer`, and `Counter` inhale/exhale helpers now call out their text/qb2
+  normalization responsibilities explicitly.
+- Preserved the grouped-doc pattern for codex families. The derived set exports
+  in `primitives/codex.ts` remain documented as semantic blocks instead of
+  dozens of redundant one-line comments, while callable/type seams now carry
+  direct JSDoc.

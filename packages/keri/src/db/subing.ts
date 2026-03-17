@@ -14,6 +14,7 @@ import {
   smell,
   t,
 } from "../../../cesr/mod.ts";
+import { decryptSigner, encryptSigner } from "../core/keeper-crypto.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -1059,69 +1060,115 @@ export class SignerSuber extends CesrSuberBase<Signer> {
  * - mirrors the role of `CryptSignerSuber` for stores like keeper `pris.`
  *
  * Current `keri-ts` difference:
- * - local CESR primitives do not yet implement signer encryption/decryption,
- *   so methods that receive an `Encrypter` or `Decrypter` preserve the API
- *   shape but fail loudly instead of silently storing incompatible bytes
+ * - encrypted signer payloads now use the KERI-local libsodium sealed-box
+ *   backend while preserving the KERIpy-facing `Encrypter`/`Decrypter` API
+ *
+ * Maintainer model:
+ * - callers still interact in terms of logical signer seeds
+ * - this subdb decides whether those logical seeds are stored directly or as
+ *   ciphertext based on whether an encrypter/decrypter is supplied
+ * - `pris.` therefore stays one logical "public key -> signer seed" map even
+ *   though the at-rest bytes change under Gate D
  */
 export class CryptSignerSuber extends SignerSuber {
   /**
    * Store one signer/cipher payload.
    *
-   * Current `keri-ts` difference:
-   * - encryption is not implemented yet, so passing an encrypter raises
+   * When an encrypter is provided, the stored payload is a CESR `Cipher`
+   * containing the sealed-box ciphertext of the signer's qb64 seed.
+   *
+   * Why encrypt the qualified seed text instead of raw bytes:
+   * - the decrypt path can reconstruct the original CESR `Signer` without extra
+   *   side-channel metadata
+   * - the encrypted payload remains aligned with KERIpy's qualified-material
+   *   round-trip model
    */
   override put(
     keys: Keys,
     val: Signer | Cipher | string | Uint8Array,
     encrypter?: Encrypter,
   ): boolean {
-    if (encrypter) {
-      throw new Error(
-        "CryptSignerSuber encryption is not implemented in local CESR primitives yet.",
-      );
-    }
-    return this.db.putVal(this.sdb, this._tokey(keys), signerToStored(val));
+    const stored = encrypter && !(val instanceof Cipher)
+      ? encryptSigner(
+        val instanceof Signer || typeof val === "string" || val instanceof Uint8Array
+          ? val
+          : new Signer({ qb64b: signerToStored(val) }),
+        encrypter,
+      )
+      : val;
+    return this.db.putVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
 
-  /** Upsert one signer/cipher payload with the same encryption caveat as `put()`. */
+  /**
+   * Upsert one signer/cipher payload with optional sealed-box encryption.
+   *
+   * `put()` and `pin()` intentionally share the same encryption semantics so
+   * callers do not need separate "encrypted update" code paths.
+   */
   override pin(
     keys: Keys,
     val: Signer | Cipher | string | Uint8Array,
     encrypter?: Encrypter,
   ): boolean {
-    if (encrypter) {
-      throw new Error(
-        "CryptSignerSuber encryption is not implemented in local CESR primitives yet.",
-      );
-    }
-    return this.db.setVal(this.sdb, this._tokey(keys), signerToStored(val));
+    const stored = encrypter && !(val instanceof Cipher)
+      ? encryptSigner(
+        val instanceof Signer || typeof val === "string" || val instanceof Uint8Array
+          ? val
+          : new Signer({ qb64b: signerToStored(val) }),
+        encrypter,
+      )
+      : val;
+    return this.db.setVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
 
-  /** Read one signer with the same decryption caveat as `put()`. */
+  /**
+   * Read one signer, decrypting the stored ciphertext when a decrypter exists.
+   *
+   * Failure interpretation:
+   * - `null` still means "no record at this key"
+   * - decrypt failure means "record exists but current auth material is wrong"
+   */
   override get(keys: Keys, decrypter?: Decrypter): Signer | null {
-    if (decrypter) {
-      throw new Error(
-        "CryptSignerSuber decryption is not implemented in local CESR primitives yet.",
-      );
+    if (!decrypter) {
+      return super.get(keys);
     }
-    return super.get(keys);
+    const val = this.db.getVal(this.sdb, this._tokey(keys));
+    if (val === null) {
+      return null;
+    }
+    return decryptSigner(val, decrypter);
   }
 
-  /** Iterate signer items with the same decryption caveat as `get()`. */
+  /**
+   * Iterate signer items, decrypting stored ciphertext when requested.
+   *
+   * Maintainer note:
+   * AEID re-encryption walks this iterator so it can migrate the whole `pris.`
+   * surface without learning any keeper-specific key semantics here.
+   */
   override *getTopItemIter(
     keys: Keys = "",
     decrypterOrOptions?: Decrypter | { topive?: boolean },
     maybeOptions: { topive?: boolean } = {},
   ): Generator<[string[], Signer]> {
-    if (decrypterOrOptions instanceof Matter) {
-      throw new Error(
-        "CryptSignerSuber decryption is not implemented in local CESR primitives yet.",
-      );
+    const decrypter = decrypterOrOptions instanceof Matter
+      ? decrypterOrOptions
+      : undefined;
+    const options = decrypter
+      ? maybeOptions
+      : (decrypterOrOptions ?? {}) as { topive?: boolean };
+    const { topive = false } = options;
+    for (
+      const [key, val] of this.db.getTopItemIter(
+        this.sdb,
+        this._tokey(keys, topive),
+      )
+    ) {
+      yield [
+        this._tokeys(key),
+        decrypter ? decryptSigner(val, decrypter) : signerFromStored(this._tokeys(key), val),
+      ];
     }
-    yield* super.getTopItemIter(
-      keys,
-      maybeOptions.topive === undefined ? decrypterOrOptions : maybeOptions,
-    );
   }
 }
 

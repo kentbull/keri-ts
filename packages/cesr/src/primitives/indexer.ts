@@ -53,6 +53,7 @@ function isIndexerData(value: unknown): value is IndexerData {
     && "fullSize" in value && "fullSizeB2" in value && "index" in value;
 }
 
+/** Resolve the effective indexer code from the text-domain hard-selector prefix. */
 function parseIndexerCodeFromText(txt: string): { code: string } {
   const hs = INDEXER_HARDS.get(txt[0]);
   if (!hs) {
@@ -67,6 +68,7 @@ function parseIndexerCodeFromText(txt: string): { code: string } {
   return { code };
 }
 
+/** Decode index and optional ondex soft fields from a fully qualified indexer token. */
 function parseIndexFields(
   code: string,
   qb64: string,
@@ -84,6 +86,7 @@ function parseIndexFields(
   return { index, ondex };
 }
 
+/** Inhale one text-domain indexer token into normalized indexer data fields. */
 function parseIndexerFromTextData(input: Uint8Array): IndexerData {
   const txt = String.fromCharCode(...input);
   if (txt.length === 0) {
@@ -115,6 +118,7 @@ function parseIndexerFromTextData(input: Uint8Array): IndexerData {
   };
 }
 
+/** Inhale one qb2 indexer token into the canonical text-oriented indexer shape. */
 function parseIndexerFromBinaryData(input: Uint8Array): IndexerData {
   if (input.length === 0) {
     throw new ShortageError(1, 0);
@@ -169,6 +173,7 @@ function parseIndexerFromBinaryData(input: Uint8Array): IndexerData {
   };
 }
 
+/** Exhale raw bytes plus index metadata into fully qualified indexer encodings. */
 function encodeIndexerFromRaw(
   code: string,
   raw: Uint8Array,
@@ -220,6 +225,7 @@ function encodeIndexerFromRaw(
   };
 }
 
+/** Normalize the supported constructor variants into one shared indexer payload. */
 function parseIndexerInit(init: IndexerInit): IndexerData {
   if (init.raw && init.code) {
     return encodeIndexerFromRaw(

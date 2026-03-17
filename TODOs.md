@@ -9,3 +9,4 @@ Things to come back and do at some point:
     all docs on all functions, classes, methods, constants, and so forth to
     their KERIpy equivalents to ensure everything is properly documented.
 - make sure logging works properly including switching between levels.
+- add an interop test on passcode properly working between KERIpy and keri-ts
