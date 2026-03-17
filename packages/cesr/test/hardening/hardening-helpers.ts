@@ -30,6 +30,7 @@ export interface FrameSummary {
   attachments: string[];
 }
 
+/** Paired frame summaries used for text-vs-qb2 parity assertions. */
 export interface ParsedSummaryPair {
   /** Summary from qb64/text-domain parse path. */
   txt: FrameSummary[];

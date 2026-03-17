@@ -23,6 +23,7 @@ import {
   saltySigner,
 } from "./keeping.ts";
 
+/** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
 
 /** Arguments for constructing and reopening a `Habery`. */

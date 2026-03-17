@@ -53,6 +53,7 @@ function isMatterData(value: unknown): value is MatterData {
     && "fullSizeB2" in value;
 }
 
+/** Resolve the effective matter code from the text-domain hard-selector prefix. */
 function parseMatterCodeFromText(txt: string): { code: string; hs: number } {
   const hs = MATTER_HARDS.get(txt[0]);
   if (!hs) {
@@ -74,6 +75,7 @@ function parseMatterCodeFromText(txt: string): { code: string; hs: number } {
   return { code, hs: sizage.hs };
 }
 
+/** Inhale one text-domain CESR primitive into normalized matter data fields. */
 function parseMatterFromTextData(input: Uint8Array): MatterData {
   const txt = String.fromCharCode(...input);
   if (txt.length === 0) {
@@ -103,6 +105,7 @@ function parseMatterFromTextData(input: Uint8Array): MatterData {
   };
 }
 
+/** Inhale one qb2 CESR primitive into the canonical text-oriented matter shape. */
 function parseMatterFromBinaryData(input: Uint8Array): MatterData {
   if (input.length === 0) {
     throw new ShortageError(1, 0);
@@ -173,6 +176,7 @@ function parseMatterFromBinaryData(input: Uint8Array): MatterData {
   };
 }
 
+/** Exhale raw bytes plus code into fully qualified CESR matter encodings. */
 function encodeMatterFromRaw(code: string, raw: Uint8Array): MatterData {
   const sizage = MATTER_SIZES.get(code);
   if (!sizage) {
@@ -214,6 +218,7 @@ function encodeMatterFromRaw(code: string, raw: Uint8Array): MatterData {
   };
 }
 
+/** Normalize the supported constructor variants into one shared matter payload. */
 function parseMatterInit(init: MatterInit): MatterData {
   if (init.raw && init.code) {
     return encodeMatterFromRaw(init.code, init.raw);

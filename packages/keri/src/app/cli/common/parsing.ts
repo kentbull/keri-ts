@@ -1,3 +1,4 @@
+/** JSON file schema for `tufa incept --file` option loading. */
 export interface InceptFileOptions {
   transferable?: boolean;
   wits?: string[];
@@ -11,6 +12,7 @@ export interface InceptFileOptions {
   delpre?: string;
 }
 
+/** Parse inline JSON values or `@file` references used by CLI `--data` flags. */
 export function parseDataItems(items: string[] | undefined): unknown[] {
   if (!items || items.length === 0) return [];
   const out: unknown[] = [];
@@ -26,6 +28,7 @@ export function parseDataItems(items: string[] | undefined): unknown[] {
   return out;
 }
 
+/** Load one JSON file of inception options using the CLI file-input contract. */
 export function loadInceptFileOptions(path: string): InceptFileOptions {
   const text = Deno.readTextFileSync(path);
   return JSON.parse(text) as InceptFileOptions;

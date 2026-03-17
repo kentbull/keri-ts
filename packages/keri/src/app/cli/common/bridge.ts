@@ -10,6 +10,7 @@ import {
 import { t } from "../../../../../cesr/mod.ts";
 import { ValidationError } from "../../../core/errors.ts";
 
+/** Result envelope for one `kli` subprocess invocation. */
 export interface KliExecResult {
   code: number;
   stdout: string;

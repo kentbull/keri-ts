@@ -421,3 +421,16 @@ Use this doc for:
 - Scope honesty matters here too: this improves the local inception path and
   serder-backed DB hydration, but it is not evidence that the entire KEL stack
   is now at full KERIpy serder parity.
+
+### 2026-03-17 - KERI Runtime Doc Coverage Now Includes Helper And DB Seams
+
+- Extended maintainer docs across KERI runtime helpers that are easy to depend
+  on but easy to misread: DB key aliases/constants, logger seams, config-file
+  options, CLI bridge/parsing helpers, and the local helper exports at the tail
+  of `keeping.ts`.
+- The important maintainer lesson is that DB/app parity drift does not only
+  happen in classes. Tiny exported helpers and aliases can silently become the
+  real contract future work relies on, so they now need meaning-first docs too.
+- Kept the docs additive around actively changing files such as `habbing.ts`
+  and `keeping.ts`; the sweep was intentionally documentation-only and did not
+  revert or reshape the surrounding in-flight implementation work.

@@ -2,6 +2,10 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { createKeeper } from "../../../db/keeping.ts";
 import { createHabery, Habery } from "../../habbing.ts";
 
+/**
+ * Reopen an existing keystore/habery pair, prompting for passcode retries when
+ * encrypted keeper state requires it.
+ */
 export function* setupHby(
   name: string,
   base = "",

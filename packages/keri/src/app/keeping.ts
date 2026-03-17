@@ -606,12 +606,14 @@ export class Manager {
   }
 }
 
+/** Normalize caller-provided salt material or synthesize a new random salt. */
 export function normalizeSaltQb64(salt?: string): string {
   return salt
     ? new Salter({ code: "0A", raw: parseQb64Raw(salt) }).qb64
     : randomSaltQb64();
 }
 
+/** Convert a 21-char passcode seed slice into KERI's 128-bit salt qb64 text. */
 export function branToSaltQb64(bran: string): string {
   if (bran.length < 21) {
     throw new Error("Bran (passcode seed material) too short.");
@@ -619,14 +621,17 @@ export function branToSaltQb64(bran: string): string {
   return `0AA${bran.slice(0, 21)}`;
 }
 
+/** Encode an ISO datetime into the qualified `Dater` text form used in KERI DB records. */
 export function encodeDateTimeToDater(dts: string): string {
   return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
 }
 
+/** Encode one v1 counter token directly when higher layers already know code/count. */
 export function encodeCounterV1(code: string, count: number): string {
   return `${code}${intToB64(count, 2)}`;
 }
 
+/** Encode one large ordinal through the CESR Huge-number primitive family. */
 export function encodeHugeNumber(num: number): string {
   const raw = new Uint8Array(16);
   let value = BigInt(num);
@@ -637,14 +642,17 @@ export function encodeHugeNumber(num: number): string {
   return new NumberPrimitive({ code: NumDex.Huge, raw }).qb64;
 }
 
+/** Rehydrate one qb64 text token through the primitive layer to normalize its effective code. */
 export function normalizeQb64Code(qb64: string): string {
   return hydrateMatter(parseMatter(b(qb64), "txt")).qb64;
 }
 
+/** Build a Blake3-256 SAID directly from raw bytes for local record helpers. */
 export function makeSaider(raw: Uint8Array): string {
   return new Saider({ code: "E", raw: Diger.digest(raw, "E") }).qb64;
 }
 
+/** Decode URL-safe base64 text using the CESR byte helper semantics. */
 export function b64DecodeUrl(text: string): Uint8Array {
   return decodeB64(text);
 }

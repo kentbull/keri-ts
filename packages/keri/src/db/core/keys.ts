@@ -62,8 +62,9 @@ export function onKey(
   return result;
 }
 
-// Aliases for semantic clarity
+/** Alias for ordinal keys used as sequence-number keys. */
 export const snKey = onKey; // Sequence number key
+/** Alias for ordinal keys used as first-seen-number keys. */
 export const fnKey = onKey; // First seen number key
 
 /**
@@ -145,11 +146,15 @@ export function splitKeyON(
   return [prefix, ordinal];
 }
 
-// Aliases
+/** Alias for splitting sequence-number keys into prefix + ordinal. */
 export const splitSnKey = splitKeyON;
+/** Alias for splitting first-seen-number keys into prefix + ordinal. */
 export const splitFnKey = splitKeyON;
+/** Legacy alias preserved for KERIpy-oriented naming parity. */
 export const splitKeySN = splitKeyON;
+/** Legacy alias preserved for KERIpy-oriented naming parity. */
 export const splitKeyFN = splitKeyON;
+/** Generic alias for splitting ordinal-suffixed keys. */
 export const splitOnKey = splitKeyON;
 
 /**
@@ -225,9 +230,13 @@ export function unsuffix(
   return [b(keyStr), ordinal];
 }
 
-// Constants
+/** Hex width of IoDup/Dup ordering proems used in suffixed key helpers. */
 export const ProemSize = 32;
+/** Maximum ordinal representable within one fixed-width proem. */
 export const MaxProem = parseInt("f".repeat(ProemSize), 16);
+/** Maximum ordinal representable by the standard 32-hex `onKey()` suffix. */
 export const MaxON = parseInt("f".repeat(32), 16);
+/** Hex width of insertion-order suffixes appended by `suffix()`. */
 export const SuffixSize = 32;
+/** Maximum insertion-order suffix value representable by `suffix()`. */
 export const MaxSuffix = parseInt("f".repeat(SuffixSize), 16);

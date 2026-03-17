@@ -15,8 +15,9 @@ import { consoleLogger, type Logger } from "../../core/logger.ts";
 import { onKey, splitOnKey, suffix, unsuffix } from "./keys.ts";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
-// type aliases for the binary keys and values of LMDB
+/** Binary LMDB key type used by the low-level wrapper surface. */
 export type BinKey = Uint8Array;
+/** Binary LMDB value type used by the low-level wrapper surface. */
 export type BinVal = Uint8Array;
 
 /** Default separator used by ordinal/suffix key helpers (`onKey`, `suffix`). */
@@ -90,11 +91,13 @@ export interface LMDBerOptions extends PathManagerOptions {
   logger?: Logger;
 }
 
+/** Defaultable LMDB/path settings shared by all `LMDBer` instances. */
 export interface LMDBerDefaults extends PathManagerDefaults {
   maxNamedDBs: number;
   mapSize: number;
 }
 
+/** Default LMDB/path settings used when callers do not override environment wiring. */
 export const LMDBER_DEFAULTS: LMDBerDefaults = {
   headDirPath: "/usr/local/var",
   tailDirPath: "keri/db",
