@@ -20,8 +20,7 @@ export function* startServer(
         port,
         hostname: "127.0.0.1",
         signal,
-        onListen: ({ port }) =>
-          logger.info(`Server running on http://localhost:${port}`),
+        onListen: ({ port }) => logger.info(`Server running on http://localhost:${port}`),
         onError: (error) => {
           logger.error("Server error:", error);
           return new Response("Internal Server Error", { status: 500 });

@@ -1,12 +1,12 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import { UnknownCodeError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import type { RecoveryDiagnostic } from "../../src/core/recovery-diagnostics.ts";
-import { UnknownCodeError } from "../../src/core/errors.ts";
 import { parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { COUNTER_CODE_NAMES_V1 } from "../../src/tables/counter.tables.generated.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {
@@ -139,8 +139,8 @@ Deno.test("recovery diagnostics: parser non-shortage error emits reset event", (
   if (diagnostics[0].type === "parser-error-reset") {
     assertEquals(diagnostics[0].offset, 0);
     assert(
-      diagnostics[0].errorName === "ColdStartError" ||
-        diagnostics[0].errorName === "GroupSizeError",
+      diagnostics[0].errorName === "ColdStartError"
+        || diagnostics[0].errorName === "GroupSizeError",
     );
   }
 });

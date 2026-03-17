@@ -5,5 +5,5 @@
  */
 export { tufa } from "./cli.ts";
 export { exportCommand } from "./export.ts";
-export { initCommand } from "./init.ts";
 export { inceptCommand } from "./incept.ts";
+export { initCommand } from "./init.ts";

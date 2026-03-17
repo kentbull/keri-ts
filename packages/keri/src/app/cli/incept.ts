@@ -1,11 +1,7 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { setupHby } from "./common/existing.ts";
-import {
-  InceptFileOptions,
-  loadInceptFileOptions,
-  parseDataItems,
-} from "./common/parsing.ts";
+import { InceptFileOptions, loadInceptFileOptions, parseDataItems } from "./common/parsing.ts";
 
 interface InceptArgs {
   name?: string;
@@ -103,13 +99,18 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
   const cues = createQueue<{ kin: string; pre?: string; mode: string }, void>();
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       inceptArgs.name!,
       inceptArgs.base ?? "",
       inceptArgs.passcode,
       inceptArgs.temp ?? false,
       inceptArgs.headDirPath,
+      {
+        readonly: false,
+        skipConfig: true,
+        skipSignator: true,
+      },
     );
     try {
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {
@@ -124,9 +125,10 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         data: opts.data ?? [],
         delpre: opts.delpre,
       });
+      const state = hby.db.getState(hab.pre);
 
       console.log(`Prefix  ${hab.pre}`);
-      for (const [idx, key] of (hab.kever?.verfers ?? []).entries()) {
+      for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
       }
       console.log("");

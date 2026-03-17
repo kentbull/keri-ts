@@ -1,10 +1,7 @@
-import { type Operation } from "npm:effection@^3.6.0";
 import { basename, dirname, join } from "jsr:@std/path";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
-import {
-  PathManager,
-  type PathManagerOptions,
-} from "../db/core/path-manager.ts";
+import { PathManager, type PathManagerOptions } from "../db/core/path-manager.ts";
 
 interface ConfigerDefaults {
   tailDirPath: string;
@@ -30,17 +27,16 @@ export interface ConfigerOptions extends PathManagerOptions {
 }
 
 /**
- * Habitat Config File.
+ * Habitat config-file manager.
  *
- * This TypeScript implementation intentionally uses stateless file I/O for reads
- * and an atomic-write strategy for updates (temp file + sync + rename).
- * That differs from KERIpy's handle-oriented Configer, which keeps an open file
- * handle and uses seek/truncate/write/flush on that handle.
+ * KERIpy correspondence:
+ * - mirrors the role of `keri.app.configing.Configer` as the habery-local
+ *   configuration store
  *
- * We keep the public API simple (`get`/`put`) while hardening writes against
- * partial-file outcomes during unexpected process exits.
- *
- * Supports only JSON at the moment.
+ * Current `keri-ts` differences:
+ * - intentionally uses stateless file I/O plus atomic temp-file rename instead
+ *   of KERIpy's open-handle seek/truncate/write lifecycle
+ * - currently supports JSON only
  */
 export class Configer {
   readonly name: string;
@@ -103,7 +99,7 @@ export class Configer {
     try {
       const dir = Deno.openSync(dirPath, { read: true });
       try {
-        dir.syncSync();
+        dir.syncDataSync();
       } finally {
         dir.close();
       }
@@ -124,8 +120,8 @@ export class Configer {
 
       // On Windows, rename may fail when target already exists.
       if (
-        !(error instanceof Deno.errors.AlreadyExists) &&
-        !(error instanceof Deno.errors.PermissionDenied)
+        !(error instanceof Deno.errors.AlreadyExists)
+        && !(error instanceof Deno.errors.PermissionDenied)
       ) {
         throw error;
       }
@@ -168,7 +164,7 @@ export class Configer {
       });
       try {
         tempFile.writeSync(encoder.encode(content));
-        tempFile.syncSync();
+        tempFile.syncDataSync();
       } finally {
         tempFile.close();
       }

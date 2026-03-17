@@ -1,26 +1,8 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
+import { SIGER_CODES } from "./codex.ts";
 import { Indexer, type IndexerInit, parseIndexer } from "./indexer.ts";
 import type { Verfer } from "./verfer.ts";
-
-const SIGER_CODES = new Set([
-  "A",
-  "B",
-  "C",
-  "D",
-  "E",
-  "F",
-  "0A",
-  "0B",
-  "2A",
-  "2B",
-  "2C",
-  "2D",
-  "2E",
-  "2F",
-  "3A",
-  "3B",
-]);
 
 /**
  * Indexed signature primitive with optional verifier association.

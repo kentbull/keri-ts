@@ -1,7 +1,6 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
-import { DIGEST_CODES } from "./codex.ts";
+import { DIGEST_CODES, matterCodexName } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
 interface DigerOptions {
@@ -28,8 +27,7 @@ export class Diger extends Matter {
   }
 
   get algorithm(): string {
-    return MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-      "UnknownDigest";
+    return matterCodexName(this.code) ?? "UnknownDigest";
   }
 }
 

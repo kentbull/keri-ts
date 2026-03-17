@@ -1,4 +1,4 @@
-import { b } from '../../src/index.ts'
+import { b } from "../../src/index.ts";
 
 /** Encode text fixture material into parser input bytes. */
 export function encode(input: string): Uint8Array {

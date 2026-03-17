@@ -1,18 +1,14 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
-import { denot } from "../../src/annotate/denot.ts";
 import { annotateCli } from "../../src/annotate/cli.ts";
-import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { denot } from "../../src/annotate/denot.ts";
 import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
+import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
-import {
-  counterV1,
-  counterV2,
-  sigerToken,
-} from "../fixtures/counter-token-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 const TEXT_ENCODER = new TextEncoder();
@@ -20,9 +16,9 @@ const TEXT_DECODER = new TextDecoder();
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
-    intToB64(minor, 1)
-  }${intToB64(patch, 1)}`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${
+    intToB64(patch, 1)
+  }`;
 }
 
 Deno.test("annotate + denot roundtrip for CESR text stream", () => {
@@ -85,7 +81,7 @@ Deno.test("annotateCli supports --in and --out", async () => {
 });
 
 Deno.test("annotate decodes v1 -V wrapped -C group without opaque fallback", () => {
-  const body = v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}');
+  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const nested = PARSIDE_GROUP_VECTORS.nonTransReceiptCouples;
   const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
   const annotated = annotate(ims);
@@ -95,11 +91,9 @@ Deno.test("annotate decodes v1 -V wrapped -C group without opaque fallback", () 
 });
 
 Deno.test("annotate handles v1 wrapper carrying v2 -J generic list payload", () => {
-  const body = v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}');
+  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const nestedV2List = "-JAB--FA";
-  const ims = `${body}${
-    counterV1("-V", nestedV2List.length / 4)
-  }${nestedV2List}`;
+  const ims = `${body}${counterV1("-V", nestedV2List.length / 4)}${nestedV2List}`;
   const annotated = annotate(ims);
   assertStringIncludes(annotated, "AttachmentGroup");
   assertStringIncludes(annotated, "GenericListGroup");
@@ -107,7 +101,7 @@ Deno.test("annotate handles v1 wrapper carrying v2 -J generic list payload", () 
 });
 
 Deno.test("annotate supports legacy v1 SadPathSig inside attachment wrapper", () => {
-  const body = v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}');
+  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const nested = `-JAB6AABAAA-${PARSIDE_GROUP_VECTORS.transIdxSigGroups}`;
   const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
   const annotated = annotate(ims);
@@ -119,9 +113,7 @@ Deno.test("annotate supports legacy v1 SadPathSig inside attachment wrapper", ()
 Deno.test("annotate labels non-serder CESR fallback body as opaque (not SERDER)", () => {
   const nonNativeV1 = `${counterV1(CtrDexV1.NonNativeBodyGroup, 1)}MAAA`;
   const enclosed = `${genusVersionCounter(1)}${nonNativeV1}`;
-  const wrapped = `${
-    counterV2(CtrDexV2.BodyWithAttachmentGroup, enclosed.length / 4)
-  }${enclosed}`;
+  const wrapped = `${counterV2(CtrDexV2.BodyWithAttachmentGroup, enclosed.length / 4)}${enclosed}`;
   const ims = `${wrapped}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
 
   const annotated = annotate(ims);
@@ -130,7 +122,7 @@ Deno.test("annotate labels non-serder CESR fallback body as opaque (not SERDER)"
 });
 
 Deno.test("annotateCli --pretty pretty-prints JSON body", async () => {
-  const ims = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const ims = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   const files = new Map<string, Uint8Array>([
     ["/virtual/in.cesr", TEXT_ENCODER.encode(ims)],
   ]);
@@ -150,6 +142,6 @@ Deno.test("annotateCli --pretty pretty-prints JSON body", async () => {
 
   assertEquals(exitCode, 0);
   const out = TEXT_DECODER.decode(files.get("/virtual/out.annotated")!);
-  assertStringIncludes(out, '\n  "v":');
+  assertStringIncludes(out, "\n  \"v\":");
   assertStringIncludes(out, "SERDER KERI JSON");
 });

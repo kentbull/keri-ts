@@ -116,11 +116,11 @@ function* waitForShutdown(serverTask: Task<void>): Operation<void> {
 Deno.test("Integration: Server - startServer with HTTP requests", async () => {
   const testPort = 8001; // Use a different port to avoid conflicts
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     // Spawn the server as a background task
     // This creates a child task in the Effection task tree
     // The spawn() function returns a Task that can be halted or awaited
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(testPort);
     });
 
@@ -154,8 +154,8 @@ Deno.test("Integration: Server - startServer with HTTP requests", async () => {
 Deno.test("Integration: Server - startServer with concurrent requests", async () => {
   const testPort = 8002;
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(testPort);
     });
 
@@ -164,17 +164,17 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
     try {
       // Spawn multiple concurrent fetch operations
       // Each spawn creates a child task that runs concurrently
-      const request1 = yield* spawn(function* () {
+      const request1 = yield* spawn(function*() {
         const res = yield* fetchOp(`http://localhost:${testPort}/health`);
         return yield* textOp(res);
       });
 
-      const request2 = yield* spawn(function* () {
+      const request2 = yield* spawn(function*() {
         const res = yield* fetchOp(`http://localhost:${testPort}/health`);
         return yield* textOp(res);
       });
 
-      const request3 = yield* spawn(function* () {
+      const request3 = yield* spawn(function*() {
         const res = yield* fetchOp(`http://localhost:${testPort}/health`);
         return yield* textOp(res);
       });
@@ -202,8 +202,8 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
 Deno.test("Integration: Server - startServer error handling", async () => {
   const testPort = 8003;
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(testPort);
     });
 

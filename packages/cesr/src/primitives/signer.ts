@@ -1,12 +1,6 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { SIGNER_CODES } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
-
-const SIGNER_CODE_NAMES = new Set([
-  "Ed25519_Seed",
-  "ECDSA_256k1_Seed",
-  "ECDSA_256r1_Seed",
-]);
 
 /**
  * Signing-seed primitive.
@@ -19,10 +13,7 @@ export class Signer extends Matter {
   constructor(init: Matter | MatterInit) {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
-    const name =
-      MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-        "";
-    if (!SIGNER_CODE_NAMES.has(name)) {
+    if (!SIGNER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected signer seed code, got ${this.code}`,
       );

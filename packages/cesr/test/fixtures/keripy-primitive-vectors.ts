@@ -90,7 +90,7 @@ export const KERIPY_COUNTER_VECTORS = {
 /** KERIpy codex values reused by per-primitive tests. */
 export const KERIPY_CODE_VECTORS = {
   signerSeedCodes: ["A", "J", "Q"],
-  salterCodes: ["0A", "a"],
+  salterCodes: ["0A"],
   cipherSeedCode: "P",
   encrypterCode: "C",
   decrypterCode: "O",
@@ -101,10 +101,8 @@ export const KERIPY_CODE_VECTORS = {
 /** Selected Structor/Aggor family vectors from `tests/core/test_structing.py` + `test_mapping.py`. */
 export const KERIPY_STRUCTOR_VECTORS = {
   aggorEmptyList: "-JAA",
-  sealerTypedDigestEnclosed:
-    "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
-  sealerTypedDigestPayload:
-    "YOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  sealerTypedDigestEnclosed: "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  sealerTypedDigestPayload: "YOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
   blinderBlindStateEnclosed:
     "-aAjEBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0Missued",
   blinderBlindStatePayload:

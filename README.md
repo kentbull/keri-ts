@@ -4,7 +4,8 @@ TypeScript packages for KERI and CESR:
 
 - `keri-ts`: KERI runtime package and the `tufa` CLI
 - `cesr-ts`: CESR parsing and annotation library
-- 
+-
+
 ## Install
 
 ```bash
@@ -74,8 +75,6 @@ Color overrides can be provided in `$HOME/.tufa/annot-color.yaml` or
 `signature`, `said`, `opaque`, `comment`. Allowed values: `black`, `red`,
 `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and bright variants
 (`brightBlack` ... `brightWhite`).
-
-
 
 ## From source (repo)
 

@@ -27,7 +27,8 @@ Then produce:
 
 ## End-of-Task Handoff (Required)
 
-For tasks where significant changes have been made, before final response, update:
+For tasks where significant changes have been made, before final response,
+update:
 
 1. The appropriate topic learnings doc(s) for the task context
 2. `docs/design-docs/PROJECT_LEARNINGS.md` with a concise cross-topic summary
@@ -70,6 +71,12 @@ For new modules/classes/functions introduced during feature work:
   tutorial-level commentary.
 - Prefer short comments that make control-flow intent and lifecycle semantics
   reviewable.
+- When porting or introducing a class that corresponds to a KERIpy class, port
+  the class documentation in the same change. A behavior port without its
+  maintainer-facing source documentation is considered incomplete.
+- Mirror KERIpy documentation meaning-first, not verbatim: preserve
+  responsibilities and invariants, but rewrite for `keri-ts` maintainers and
+  call out any TypeScript or runtime divergences explicitly.
 
 ## Scope Guardrails
 
@@ -77,6 +84,15 @@ For new modules/classes/functions introduced during feature work:
   otherwise.
 - Do not introduce perf-oriented complexity unless tied to an approved perf
   plan/phase.
+- Until `keri-ts` reaches 1.0 KERIpy parity, prefer KERIpy compatibility over
+  compatibility with prior `keri-ts` versions.
+- Do not add backward-compatibility shims for old `keri-ts` storage/layout/API
+  behavior unless they are explicitly required for KERIpy interop or the task
+  request says to preserve them.
+- Treat exact KERI CBOR byte parity as a project rule. Do not import `cbor-x`
+  directly in KERI/CESR source for protocol or storage encoding/decoding; route
+  through the shared CESR CBOR codec so map-size and tag behavior stay aligned
+  with KERIpy `cbor2`.
 
 ## Design Bias (Learner/Maintainer First)
 

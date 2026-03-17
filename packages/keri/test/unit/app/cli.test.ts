@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { initCommand } from "../../../src/app/cli/init.ts";
 import { tufa } from "../../../src/app/cli/cli.ts";
+import { initCommand } from "../../../src/app/cli/init.ts";
 import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
 
 interface CmdResult {
@@ -129,4 +129,33 @@ Deno.test("CLI - init command honors custom head directory", async () => {
 
   assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
   assertStringIncludes(res.stdout, headDirPath);
+});
+
+Deno.test("CLI - default loglevel suppresses debug LMDB traces", async () => {
+  const res = await runTufaInit([
+    "--name",
+    `quiettest-${crypto.randomUUID()}`,
+    "--temp",
+    "--nopasscode",
+  ]);
+
+  const combined = `${res.stdout}\n${res.stderr}`;
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertEquals(combined.includes("Opening LMDB at:"), false);
+  assertEquals(combined.includes("Creating directory at"), false);
+});
+
+Deno.test("CLI - --loglevel debug enables debug LMDB traces", async () => {
+  const res = await runTufaInit([
+    "--loglevel",
+    "debug",
+    "--name",
+    `debugtest-${crypto.randomUUID()}`,
+    "--temp",
+    "--nopasscode",
+  ]);
+
+  const combined = `${res.stdout}\n${res.stderr}`;
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(combined, "Opening LMDB at:");
 });

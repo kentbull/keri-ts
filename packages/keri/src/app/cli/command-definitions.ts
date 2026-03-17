@@ -1,11 +1,7 @@
 import { Command } from "npm:commander@^10.0.1";
 import { type Operation, spawn, withResolvers } from "npm:effection@^3.6.0";
-import {
-  type CommandArgs,
-  type CommandDispatch,
-  type CommandHandler,
-} from "./command-types.ts";
 import { DISPLAY_VERSION } from "../version.ts";
+import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
 
 type CommandModule = Record<string, unknown>;
 
@@ -19,12 +15,10 @@ function* loadModule<TModule extends CommandModule>(
   load: () => Promise<TModule>,
 ): Operation<TModule> {
   const { operation, resolve, reject } = withResolvers<TModule>();
-  const task = yield* spawn(function* () {
+  const task = yield* spawn(function*() {
     load()
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
   });
   yield* task;
   return yield* operation;
@@ -40,7 +34,7 @@ function lazyCommand<TModule extends CommandModule>(
   load: () => Promise<TModule>,
   exportName: string,
 ): CommandHandler {
-  return function* (args: CommandArgs): Operation<void> {
+  return function*(args: CommandArgs): Operation<void> {
     const module = yield* loadModule(load);
     const handler = module[exportName];
     if (typeof handler !== "function") {
@@ -55,6 +49,8 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["init", lazyCommand(() => import("./init.ts"), "initCommand")],
     ["incept", lazyCommand(() => import("./incept.ts"), "inceptCommand")],
     ["export", lazyCommand(() => import("./export.ts"), "exportCommand")],
+    ["list", lazyCommand(() => import("./list.ts"), "listCommand")],
+    ["aid", lazyCommand(() => import("./aid.ts"), "aidCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     ["annotate", lazyCommand(() => import("./annotate.ts"), "annotateCommand")],
     [
@@ -79,6 +75,8 @@ export function registerCmds(
   regInitCmd(program, dispatch);
   regInceptCmd(program, dispatch);
   regExportCmd(program, dispatch);
+  regListCmd(program, dispatch);
+  regAidCmd(program, dispatch);
   regAnnotateCmd(program, dispatch);
   regAgentCmd(program, dispatch);
   regBenchmarkSubCmd(program, dispatch);
@@ -307,6 +305,79 @@ function regExportCmd(program: Command, dispatch: CommandDispatch): void {
 }
 
 /**
+ * Registers the list command with the program.
+ * Equivalent to `kli list` from KERIpy.
+ *
+ * @param program The tufa Commander program instance
+ * @param dispatch The command dispatch function
+ */
+function regListCmd(program: Command, dispatch: CommandDispatch): void {
+  program
+    .command("list")
+    .description("List existing identifiers")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "list",
+        args: {
+          name: options.name,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return Promise.resolve();
+    });
+}
+
+/**
+ * Registers the aid command with the program.
+ * Equivalent to `kli aid` from KERIpy.
+ *
+ * @param program The tufa Commander program instance
+ * @param dispatch The command dispatch function
+ */
+function regAidCmd(program: Command, dispatch: CommandDispatch): void {
+  program
+    .command("aid")
+    .description("Print the AID for a given alias")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for the identifier",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "aid",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return Promise.resolve();
+    });
+}
+
+/**
  * Registers the annotate command with the program.
  *
  * @param program The tufa Commander program instance
@@ -361,7 +432,7 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "Port number for the server (default: 8000)",
       "8000",
     )
-    .action(function (this: Command) {
+    .action(function(this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",

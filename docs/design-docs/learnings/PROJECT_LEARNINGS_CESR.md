@@ -31,14 +31,26 @@ Persistent CESR parser memory for `keri-ts`.
 9. Primitive-first hydration, per-primitive tests, and maintainer-oriented
    docstrings are complete enough that future CESR work should preserve
    readability and reviewability as explicit goals.
-10. Current cross-implementation comparisons beyond KERIpy are advisory only;
+10. A dedicated CESR primitive walkthrough and KERIpy comparison matrix now
+    exist for maintainers, and they intentionally explain the parser refresher
+    first so `Serder` / `CesrBody` / `Structor` make sense in workflow context.
+11. Current cross-implementation comparisons beyond KERIpy are advisory only;
     `keride`, `cesride`, `CESRox`, and related projects are useful references,
     but not gating authorities for parser behavior.
-11. For local Deno source graphs, config ownership is graph-wide: if root or
+12. For local Deno source graphs, config ownership is graph-wide: if root or
     `packages/keri` entrypoints load local CESR source, their active config must
     also map CESR-owned imports such as `@msgpack/msgpack` and `cbor-x/*`.
-12. CLI startup in `tufa` now lazy-loads handlers, so help/version paths do not
+13. CLI startup in `tufa` now lazy-loads handlers, so help/version paths do not
     import CESR modules until a CESR-backed command is actually selected.
+14. CESR codex design is now explicitly dual-layer: generated KERIpy-parity
+    codex objects like `MtrDex`, `PreDex`, `DigDex`, and `IdrDex` are the
+    primary source of truth, while primitive-friendly sets in `codex.ts` are
+    derived readability helpers and TS-only counter-group families remain
+    centralized in one shared module.
+15. The same dual-layer rule now applies to non-cryptographic and singleton-ish
+    primitives as well: `Dater`, `Seqner`, `Ilker`, `Verser`, `Noncer`, and
+    `Traitor` should validate through canonical parity codexes or helpers
+    derived from them, not raw code-name table lookups or local magic strings.
 
 ## Key Docs
 
@@ -52,6 +64,8 @@ Persistent CESR parser memory for `keri-ts`.
 8. `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
 9. `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
 10. `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+11. `docs/design-docs/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
+12. `docs/design-docs/cesr-primitives/CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md`
 
 ## Current Follow-Ups
 
@@ -64,8 +78,24 @@ Persistent CESR parser memory for `keri-ts`.
 4. Re-evaluate the local-source bridge strategy between `packages/keri` and
    `packages/cesr` if local Deno install/dev ergonomics keep leaking package
    boundary problems.
+5. Keep `packages/cesr/scripts/verify-tables.ts` green whenever KERIpy parity
+   work touches code tables or semantic codex-family consumers.
 
 ## Milestone Rollup
+
+### 2026-03-14 - CESR Primitive Walkthrough And Parity Matrix Added
+
+- Added a maintainers-first CESR primitive walkthrough organized around the
+  three base classes (`Matter`, `Indexer`, `Counter`) and the parser/body
+  projection layers (`Serder`, `CesrBody`, `Structor`).
+- Added a companion KERIpy parity matrix so maintainers can scan one primitive
+  at a time without rereading the full walkthrough.
+- Cross-linked the new docs to the existing parser maintainer guide, parser
+  state-machine contract, and atomic bounded parser architecture docs so the
+  primitive story and parser story reinforce each other.
+- Captured the main intentional TypeScript-local divergence explicitly:
+  `CesrBody` is a TS public contract layered over the same Serder/body concepts
+  rather than a one-to-one KERIpy class peer.
 
 ### 2026-02-28 to 2026-03-01 - Parser Contract and Readability Program Closed
 
@@ -112,3 +142,41 @@ Persistent CESR parser memory for `keri-ts`.
   and explicit native npm script allowances.
 - Lazy-loaded `tufa` command handlers so `--help` and `--version` no longer fail
   because CESR or LMDB modules were imported at startup.
+
+### 2026-03-16 - Codex And Code-Table Reconciliation Closed
+
+- Closed the false-completeness gap where raw matter tables were generated from
+  KERIpy but semantic codex families were still partially hand-maintained in TS.
+- Extended table generation to cover KERIpy matter codex families, mapping
+  escape families, X25519 cipher codex families, and indexer/indexed-signature
+  codex families plus indexer size/name tables.
+- Replaced handwritten `Prefixer`/`Verfer`/`Signer`/`Siger`/`Cipher` family
+  lists with shared generated codex sets, and moved TS-only counter-group
+  families like aggregate/map/seal/media/blind groups into one shared module to
+  stop copy drift across primitives.
+- Turned `verify-tables.ts` into a real drift detector for both matter and
+  indexer generated artifacts so future KERIpy code-table changes surface as a
+  failing maintenance check instead of a runtime surprise.
+
+### 2026-03-16 - Canonical Codex Layer Made Primary
+
+- Added generated KERIpy-parity codex modules for `MatterCodex`/`MtrDex`,
+  `PreDex`, `DigDex`, `NonceDex`, `LabelDex`, `IndexerCodex`/`IdrDex`,
+  `IdxSigDex`, `IdxCrtSigDex`, and `IdxBthSigDex`.
+- Reframed `primitives/codex.ts` as a derived adapter layer that computes
+  primitive-facing helper sets from those canonical codex objects instead of
+  acting like the conceptual source of truth.
+- Locked the maintainer rule that docs and parity work should teach KERIpy names
+  first, while still allowing split helper views when they improve local
+  readability.
+
+### 2026-03-16 - Singleton And Trait Primitive Codex Migration Closed
+
+- Extended the generated parity layer to include `TraitCodex`/`TraitDex` from
+  `kering.py`, so `Traitor` no longer depends on a local trait-string list.
+- Migrated singleton-ish semantic validators such as `Dater`, `Seqner`, `Ilker`,
+  `Verser`, and `Noncer` away from raw `MATTER_CODE_NAMES` checks and literal
+  code strings onto canonical codex exports or helpers derived from them.
+- Added a shared matter-codex name lookup helper so primitives such as `Diger`,
+  `Verfer`, and `Cigar` no longer read raw generated name tables directly just
+  to project algorithm names.

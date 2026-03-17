@@ -1,5 +1,5 @@
-import { parseMatterFromText } from "./matter.ts";
 import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { parseMatterFromText } from "./matter.ts";
 
 export interface PrimitiveToken {
   code: string;
@@ -11,9 +11,8 @@ export interface PrimitiveToken {
 
 export function parsePrimitiveFromText(input: Uint8Array): PrimitiveToken {
   const matter = parseMatterFromText(input);
-  const name =
-    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ??
-      "UnknownPrimitive";
+  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES]
+    ?? "UnknownPrimitive";
   return {
     code: matter.code,
     name,

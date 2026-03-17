@@ -1,7 +1,7 @@
-import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { encode as encodeMsgpack } from "@msgpack/msgpack";
-import { encode as encodeCbor } from "cbor-x/encode";
+import { assertEquals } from "jsr:@std/assert";
+import { encodeKeriCbor } from "../../src/core/cbor.ts";
+import { createParser } from "../../src/core/parser-engine.ts";
 
 type Encodable =
   | string
@@ -43,7 +43,7 @@ function buildV1Serder(kind: "MGPK" | "CBOR"): Uint8Array {
   body.v = `KERI10${kind}000000_`;
   const encode = kind === "MGPK"
     ? (obj: Record<string, Encodable>) => encodeMsgpack(obj)
-    : (obj: Record<string, Encodable>) => encodeCbor(obj);
+    : (obj: Record<string, Encodable>) => encodeKeriCbor(obj);
   let raw = encode(body);
   body.v = `KERI10${kind}${raw.length.toString(16).padStart(6, "0")}_`;
   raw = encode(body);

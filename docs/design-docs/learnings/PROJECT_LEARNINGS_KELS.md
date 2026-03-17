@@ -11,8 +11,9 @@ replay/verification semantics.
    active work is still the foundation layer around DB parity and practical
    `kli`/`tufa` interoperability planning.
 2. Phase 2 planning is now parity-first: P0 command/output parity and D0
-   inventory/parity artifacts are established, and D1 DB-core parity is the
-   active workstream.
+   inventory/parity artifacts are established, D1 DB-core parity is largely in
+   place, and the active edge has moved into a minimal D2/D3 foundation for
+   compatibility-mode store opening.
 3. `docs/design-docs/db/db-architecture.md` is the current cross-topic DB
    invariants reference for ordering, idempotence, serialization, lifecycle, and
    interoperability semantics that later KEL logic will rely on.
@@ -29,6 +30,48 @@ replay/verification semantics.
    explicitly audited.
 8. `LMDBer.cntTop` and `LMDBer.cntAll` remain flagged for later keep-vs-remove
    review once the real `init/incept/rotate` call graph stabilizes.
+9. `Habery` now eagerly reloads persisted habitat records on open, which
+   unblocks honest `list`/`aid` visibility without depending on process-local
+   caches.
+10. The current bootstrap path no longer stores everything through ad hoc raw
+    LMDB handles: a minimal `Suber` / `Komer` slice now backs the active `Baser`
+    / `Keeper` visibility stores, specifically to prepare honest Gate C store
+    opening work.
+11. KERIpy parity work should include source documentation parity for class
+    boundaries: maintainer-facing docstrings are part of the port, not optional
+    follow-up polish.
+12. `Komer` serializer parity is now broader than the live-store rollout:
+    JSON/CBOR/MGPK are supported at the mapper boundary, while existing
+    `Baser`/`Keeper` stores intentionally remain JSON until an explicit
+    migration/compat decision is made.
+13. Until 1.0 parity is reached, old-`keri-ts` compatibility is not a project
+    goal by default; if a choice exists between preserving prior `keri-ts`
+    behavior and matching KERIpy, we should choose KERIpy unless the task says
+    otherwise.
+14. Interop tests should now assume a working installed KERIpy CLI and fail if
+    it cannot be resolved; skipping was useful during bootstrap, but it now
+    hides real parity regressions.
+15. `Komer` is no longer intentionally flattened in `keri-ts`: the KERIpy-style
+    `KomerBase -> Komer` split is now part of the parity path, and future mapper
+    subclasses should build on that seam instead of reintroducing raw-LMDB
+    shortcuts.
+16. Generic type parameters on `Komer`, `Suber`, and the CESR-backed LMDB
+    wrappers are part of the parity contract, not optional TypeScript garnish:
+    the storage wrapper type must describe the narrowest real persisted value
+    shape from KERIpy usage, and if a store holds a compound CESR tuple then the
+    TypeScript type should be an explicit tuple alias of those primitive
+    subclasses instead of `Matter`, `Matter[]`, or another widened fallback.
+17. Local habitat key state should now be treated as DB-backed state, not
+    in-memory-only `Hab.kever` state: `states.` is the source of truth,
+    `kels.`/`fels.`/`dtss.` support event ordering and reopen, and `Habery.habs`
+    remains only an in-memory cache of reconstructed `Hab` objects.
+18. DB parity work is not maintainer-complete until the new storage families,
+    record contracts, and runtime seams are documented in source with KERIpy
+    correspondence and `keri-ts` differences called out explicitly.
+19. For `Baser` and `Keeper`, the canonical named-subdb meaning now lives on
+    the `reopen()` bindings where property name, subkey, wrapper type, and
+    tuple/value wiring appear together; declaration comments are the shorter
+    public-surface mirror.
 
 ## Scope Checklist
 
@@ -51,8 +94,186 @@ Use this doc for:
    output shape as those commands become executable.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
+4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
+   maintenance regression and guard against them automatically.
+
+### 2026-03-15 - Gate C Visibility Foundation Landed
+
+- Added the first minimal `subing.ts` / `koming.ts` foundation instead of
+  continuing the raw-LMDB shortcut path.
+- Migrated the active bootstrap-path `Baser` and `Keeper` stores onto those
+  typed wrappers where KERIpy already expects `Suber` / `Komer` usage.
+- Added explicit compatibility-mode `.keri/db` and `.keri/ks` open paths plus
+  KERIpy-aligned `names.` separator handling (`^`).
+- Readonly visibility commands now skip config loading and signator creation,
+  and readonly compat opens no longer try to write `aeid`.
+- Added focused unit coverage for the new typed-store seam and for readonly
+  compatibility-mode `list` / `aid` store opening.
+- This is still not full Gate C or Gate D closure: encrypted `pris` semantics,
+  true decrypter/encrypter behavior, signator reliability, config processing,
+  OOBI resolution, and KEL routing remain open.
 
 ## Milestone Rollup
+
+### 2026-03-16 - `Baser` And `Keeper` Sub-DB Documentation Was Fully Mirrored
+
+- Added comments for every currently bound LMDB sub-database in `Baser` and
+  `Keeper` at both the field declaration and `reopen()` binding sites.
+- Mirrored KERIpy meaning-first instead of verbatim so the TypeScript source
+  keeps the original store intent while staying readable for maintainers.
+- Treated `reopen()` as the canonical seam for store meaning, which let the
+  comments call out property-to-subkey mismatches such as `misfits -> mfes.`,
+  `delegables -> dees.`, `tops -> witm.`, and `gpwe -> gdwe.` without forcing
+  readers to infer them from the constructor wiring.
+
+### 2026-03-16 - Class Documentation Parity Became A Guarded Requirement
+
+- Completed a maintainer-grade class-doc sweep across the remaining undocumented
+  `keri-ts` KERI and CESR class surfaces, starting with `Manager` and the
+  recently changed DB/app wrappers.
+- Tightened the source-documentation rule: when porting a KERIpy-corresponding
+  class, we should port its maintainer-facing documentation in the same change
+  and explicitly call out `keri-ts` divergences.
+- Added an automated class-doc coverage check so undocumented class boundaries
+  stop being silent drift.
+
+### 2026-03-16 - `Komer` Gained CBOR And MGPK Serializer Support
+
+- Expanded `Komer` to support `JSON`, `CBOR`, and `MGPK` serializer selection at
+  construction time, following the same high-level format contract as KERIpy's
+  `Komer`.
+- Kept the change capability-only: current `Baser` and `Keeper` call sites still
+  use the JSON default, so no store migration or dual-read compatibility logic
+  was introduced.
+- Added a format-matrix unit suite plus an explicit invalid-kind guard so the
+  new serializer boundary is both parity-oriented and fail-fast.
+
+### 2026-03-16 - Prior `keri-ts` Compatibility Explicitly De-Prioritized
+
+- Removed the temporary `Baser.getName()` fallback that tolerated older pre-`^`
+  `keri-ts` `names.` keys.
+- Recorded the project rule explicitly: before 1.0, we optimize for KERIpy
+  parity first and should not add back-compat shims for historical `keri-ts`
+  behavior unless they are required for KERIpy interop.
+
+### 2026-03-16 - Installed KLI Is Now Part Of Regular Interop Checks
+
+- Promoted the live KLI interop suites from opportunistic-skip behavior to
+  regular quality coverage by resolving the real KLI executable up front and
+  failing if it cannot be used.
+- Preserved the active `DENO_DIR` when tests override `HOME`, so `tufa` can run
+  under isolated test homes without trying to re-fetch npm/JSR dependencies.
+- Verified both `interop-gates-harness.test.ts` and `interop-kli-tufa.test.ts`
+  run successfully against the installed KERIpy CLI.
+
+### 2026-03-16 - `KomerBase` And `Komer` Hierarchy Ported
+
+- Refactored `koming.ts` so `keri-ts` now has the same `KomerBase -> Komer`
+  split that KERIpy uses for single-record object mappers.
+- Ported the KERIpy-style base methods and boundaries, including `_tokey`,
+  `_tokeys`, `_serializer`, `_deserializer`, `trim`, `remTop`, `getTopItemIter`,
+  and `getFullItemIter`, while expressing dataclass-like validation/mapping
+  through explicit TypeScript schema hooks.
+- Expanded the `Komer` unit suite to mirror the current KERIpy single-value
+  tests for CRUD, branch iteration, trim, schema validation failures, custom
+  serialization, and serializer/deserializer behavior.
+
+### 2026-03-16 - LMDB Wrapper Generics Became A Storage-Contract Rule
+
+- Recorded an explicit parity rule for `Komer`, `Suber`, and CESR-backed LMDB
+  wrappers: the generic type argument must model the real persisted KERIpy value
+  shape, not a convenience supertype.
+- Corrected the recent `pres.` regression by fixing the local `Prefixer`
+  primitive to accept the full KERIpy `PreDex` family and then restoring
+  `Keeper.pres` to `CesrSuber<Prefixer>` instead of widening it to `Matter`.
+- Captured the rule for mixed CESR tuple stores as well: when a KERIpy store
+  returns a typed couple, triple, or larger tuple, `keri-ts` should use an
+  explicit tuple type alias of the participating primitive subclasses rather
+  than `Matter[]` or another erased representation.
+- Maintainer heuristic: if a proposed generic widening makes the code easier but
+  makes the DB contract less specific, it is usually the primitive/model layer
+  that needs correction, not the storage wrapper.
+
+### 2026-03-16 - Local Habitat State Moved Onto The DB Backbone
+
+- `Baser` now binds the current KERIpy `Baser` and `Keeper` named-subdb surface
+  needed for the local runtime arc, including `fels.`, `kels.`, `states.`,
+  `dtss.`, `smids.`, `rmids.`, and the wider reply/OOBI/exchange/contact
+  families.
+- `Hab.make()` now persists local inception state through the DB backbone: event
+  raw into `evts.`, sequence and first-seen indices into `kels.` and `fels.`,
+  datetime into `dtss.`, signatures into `sigs.`, and current key state into
+  `states.`.
+- Habitat reopen now rebuilds current local state from `states.` instead of
+  treating `Hab.kever` as the authoritative writable state holder.
+- `Habery.habs` intentionally stayed cache-only, matching the KERIpy mental
+  model: the cache holds reconstructed `Hab` objects, while the DB holds the
+  durable identifier state.
+- `tufa incept` and `tufa export` now read current local identifier state from
+  the DB-backed path instead of depending on transient in-memory state and the
+  old `${pre}:0` event shortcut.
+
+### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
+
+- Confirmed the root cause of the earlier CBOR mismatch: `cbor-x` defaults plain
+  object encoding to fixed-width `map16` headers for preallocation, while KERIpy
+  `cbor2.dumps()` uses preferred-size map headers.
+- Added one shared CESR-side CBOR codec and moved current KERI/CESR CBOR paths
+  onto it so byte-level policy is centralized instead of re-decided in each
+  subsystem.
+- The canonical KERI encoder configuration is now `useRecords: false`,
+  `variableMapSize: true`, and `useTag259ForMaps: false`, which matched the
+  tested `cbor2` vectors exactly.
+- Added parity tests plus a guard against direct `cbor-x` imports in KERI/CESR
+  source so we stop regressing to valid-but-non-identical CBOR encodings.
+
+### 2026-03-15 - `tufa init` Home Fallback Restored For npm/Node Runtime
+
+- Traced a local `tufa init` failure to `PathManager.mkdirOp`, not to the
+  fallback policy itself.
+- Under the npm-built CLI, `@deno/shim-deno` surfaced `/usr/local/var` mkdir
+  permission failures as plain `Error` objects carrying Node-style
+  `code: "EACCES"` / `code: "EPERM"` instead of satisfying
+  `instanceof Deno.errors.PermissionDenied`.
+- Because `PathManager` only recognized the Deno-class error shape, the primary
+  mkdir rejection escaped before `_createOrFallback()` could switch to
+  `~/.tufa/...`.
+- Fix: normalize permission/not-found detection in `path-manager.ts` so Node
+  error codes are treated the same as native Deno error classes, and add a
+  regression test that forces a primary-path `EACCES` and verifies fallback to
+  `~/.tufa/db/...`.
+- A second npm/Node compatibility gap surfaced immediately after that fix:
+  `Configer.writeAtomic()` used `FsFile.syncSync()`, but `@deno/shim-deno`
+  leaves that method unimplemented.
+- Fix: switch config durability paths to `syncDataSync()`, which is available
+  through the shim and remains within the typed `FsFile` surface used by Deno.
+
+### 2026-03-14 - Gate B Visibility Slice Landed
+
+- `Habery` now eagerly reloads persisted habitat records on open instead of
+  relying only on process-local `makeHab` caching.
+- Added `tufa list` and `tufa aid` command surfaces for local-store identifier
+  visibility, matching the current Gate B bootstrap need.
+- Promoted the Gate B list/aid interop harness scenario from pending to ready,
+  with focused tests covering empty-list, post-incept visibility, and alias to
+  prefix lookup.
+- This is a bootstrap visibility slice, not evidence that `init`/`incept`
+  reached full KERIpy parity; config processing, OOBI/KEL routing, AEID
+  semantics, and broader reopen behavior remain open follow-on work.
+
+### 2026-03-14 - LMDBer Tests Refactored By Storage Family
+
+- Replaced the old broad `lmdber-core-parity.test.ts` coverage style with
+  readable family-based unit files for lifecycle, plain K/V, `On*`, `IoSet*`,
+  and duplicate families.
+- Kept a trimmed parity/oracle file only for reverse mixed-key iterator vectors
+  that are easy to regress and harder to reason about from implementation alone.
+- Removed the old representation-sweep approach as the primary coverage model;
+  the new baseline is focused behavioral tests that explain storage semantics in
+  maintainer-readable terms.
+- The refactor surfaced one lifecycle nuance worth remembering in future tests:
+  named LMDB sub-database handles are reopen-scoped and should be reacquired
+  after `LMDBer.close()` / `LMDBer.reopen()`.
 
 ### 2026-03-14 - LMDBer Maintainer Taxonomy Added
 

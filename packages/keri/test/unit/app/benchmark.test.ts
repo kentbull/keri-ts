@@ -1,11 +1,11 @@
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "effection";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";
 
 Deno.test("CLI - tufa benchmark cesr reads stream file and prints metrics", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
-  const sample = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const sample = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 
   const originalLog = console.log;
   let captured = "";
@@ -39,7 +39,7 @@ Deno.test("CLI - tufa benchmark cesr reads stream file and prints metrics", asyn
 Deno.test("CLI - tufa benchmark cesr emits JSON result when requested", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
-  const sample = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const sample = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 
   const originalLog = console.log;
   let captured = "";

@@ -40,13 +40,18 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
     void
   >();
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       exportArgs.name!,
       exportArgs.base ?? "",
       exportArgs.passcode,
       false,
       exportArgs.headDirPath,
+      {
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+      },
     );
     try {
       const hab = hby.habByName(exportArgs.alias!);
@@ -56,12 +61,10 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
         );
       }
 
-      const encoder = new TextEncoder();
-      const keyPrefix = encoder.encode(`${hab.pre}:`);
       const decoder = new TextDecoder();
       let count = 0;
-      for (const [, value] of hby.db.getAllEvtsIter(keyPrefix)) {
-        console.log(decoder.decode(value));
+      for (const msg of hby.db.clonePreIter(hab.pre)) {
+        console.log(decoder.decode(msg));
         count += 1;
       }
       cues.add({ kin: "export", count, mode: "native" });

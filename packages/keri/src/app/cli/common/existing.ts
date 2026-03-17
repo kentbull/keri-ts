@@ -8,12 +8,19 @@ export function* setupHby(
   bran?: string,
   temp = false,
   headDirPath?: string,
+  options: {
+    compat?: boolean;
+    readonly?: boolean;
+    skipConfig?: boolean;
+    skipSignator?: boolean;
+  } = {},
 ): Operation<Habery> {
   const ks = yield* createKeeper({
     name,
     base,
     temp,
     headDirPath,
+    compat: options.compat,
     reopen: true,
     readonly: true,
   });
@@ -33,6 +40,10 @@ export function* setupHby(
         base,
         temp,
         headDirPath,
+        compat: options.compat,
+        readonly: options.readonly,
+        skipConfig: options.skipConfig,
+        skipSignator: options.skipSignator,
         bran: passcode?.replaceAll("-", ""),
       });
     } catch (error) {

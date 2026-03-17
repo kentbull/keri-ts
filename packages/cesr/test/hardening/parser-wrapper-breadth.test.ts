@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import {
   assertTxtQb2Parity,
   parseFramesNoError,
@@ -8,7 +9,6 @@ import {
   summarizeFrames,
   wrapperHeavyV2Stream,
 } from "./hardening-helpers.ts";
-import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 /**
  * P2 wrapper breadth vectors (`V-P2-003`, `V-P2-004`).

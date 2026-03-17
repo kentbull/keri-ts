@@ -83,7 +83,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const cf: Configer | undefined = initArgs.configFile
       ? (yield* createConfiger({
         name: initArgs.configFile,
@@ -102,6 +102,8 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
         headDirPath,
         temp,
         cf,
+        skipConfig: !cf,
+        skipSignator: true,
         bran: bran ?? undefined,
         aeid: initArgs.aeid,
         seed: initArgs.seed,
@@ -120,6 +122,8 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
         headDirPath,
         temp: true,
         cf,
+        skipConfig: !cf,
+        skipSignator: true,
         bran: bran ?? undefined,
         aeid: initArgs.aeid,
         seed: initArgs.seed,

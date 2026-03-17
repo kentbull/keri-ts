@@ -1,5 +1,6 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
+import { ILKER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 import { Tagger } from "./tagger.ts";
 
@@ -13,8 +14,8 @@ export class Ilker extends Tagger {
   constructor(init: Matter | MatterInit) {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
-    if (this.code !== "X") {
-      throw new UnknownCodeError(`Expected ilker code X, got ${this.code}`);
+    if (!ILKER_CODES.has(this.code)) {
+      throw new UnknownCodeError(`Expected ilker Tag3 code, got ${this.code}`);
     }
   }
 

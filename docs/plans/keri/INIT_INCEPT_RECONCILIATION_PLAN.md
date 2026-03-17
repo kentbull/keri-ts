@@ -72,14 +72,18 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
 
 ## Baseline Findings (Current)
 
-1. Default `.tufa` isolation exists, but compatibility mode for frictionless
-   `.keri` usage is not complete.
-2. `init`/`incept` exist; `list`/`aid`/`ends add` and mailbox-oriented flows are
-   not yet parity-complete.
+1. Default `.tufa` isolation exists, and explicit compatibility-mode visibility
+   now has a minimal honest foundation, but frictionless `.keri` usage is still
+   not complete.
+2. `init`/`incept`/`list`/`aid`/`export` now exist as command surfaces, but only
+   the Gate B local-store slice is parity-backed; compatibility-mode encrypted
+   reopen and endpoint/OOBI/comms breadth remain incomplete.
 3. AEID encrypted-secret handling is incomplete versus KERIpy.
 4. Signator reopen lifecycle is incomplete.
-5. DB layer is still largely raw LMDB wrappers; Suber/Komer/Escrow parity is
-   incomplete.
+5. DB layer is no longer purely raw-LMDB on the bootstrap path: a minimal
+   `Suber` / `Komer` foundation now backs the active `Baser` / `Keeper`
+   visibility path, but full `Suber` / `Komer` / escrow parity is still far from
+   complete.
 
 ## Hard Gates
 
@@ -167,6 +171,8 @@ P0 tracking artifacts:
 - Implement critical Suber and Komer class families needed for this phase.
 - Ensure typed value serialization/deserialization and iterator semantics match
   intended KERIpy behavior.
+- Current state: the first bootstrap slice is landed for Gate C visibility, but
+  most of the family surface remains open.
 
 ## P3 - Databaser Classes + Required Sub-DB Surface
 
@@ -181,6 +187,8 @@ P0 tracking artifacts:
 
 - Complete default-isolated path mode and explicit compatibility mode.
 - Land/finish `init`, `incept`, `list`, `aid` parity flow (Gate B/C).
+- Current state: Gate B local visibility is implemented; Gate C visibility is
+  harness-ready on the `tufa` side, but not yet closed for encrypted KLI stores.
 
 ## P6 - AEID + Manager + Signator Reliability
 

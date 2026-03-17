@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseTraitor } from "../../../src/primitives/traitor.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("traitor: parses KERIpy trait vector", () => {
   const traitor = parseTraitor(txt(KERIPY_MATTER_VECTORS.traitorEO), "txt");

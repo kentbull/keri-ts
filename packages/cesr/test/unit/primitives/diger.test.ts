@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseDiger } from "../../../src/primitives/diger.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("diger: parses KERIpy digest vector", () => {
   const diger = parseDiger(txt(KERIPY_MATTER_VECTORS.digerBlake3), "txt");

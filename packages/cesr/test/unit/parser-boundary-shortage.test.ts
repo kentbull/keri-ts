@@ -22,10 +22,8 @@ function summarizeFrames(events: CesrFrame[]): string[] {
 }
 
 Deno.test("V-P1-009: boundary-shortage matrix is deterministic at header/mid/just-before-complete cuts", () => {
-  const body = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
-  const attachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const attachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const stream = `${body}${attachment}`;
   const bytes = encode(stream);
 

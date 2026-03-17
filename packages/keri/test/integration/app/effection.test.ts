@@ -1,11 +1,7 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { ValidationError } from "../../../src/core/errors.ts";
-import {
-  CLITestHarness,
-  createMockArgs,
-  testCLICommand,
-} from "../../../test/utils.ts";
+import { CLITestHarness, createMockArgs, testCLICommand } from "../../../test/utils.ts";
 
 /**
  * Integration tests using Effection primitives for full system simulation.
@@ -41,7 +37,7 @@ Deno.test("Integration: Effection - CLI command execution with Effection run", a
 
 Deno.test("Integration: Effection - Multiple CLI commands with spawn", async () => {
   const names = ["keystore1", "keystore2", "keystore3"];
-  const results = await run(function* () {
+  const results = await run(function*() {
     const outputSizes: number[] = [];
     for (const name of names) {
       const args = createMockArgs({ name, nopasscode: true, temp: true });
@@ -95,7 +91,7 @@ Deno.test("Integration: Effection - CLI command with CLI test harness cleanup", 
 
   let cleanupCalled = false;
 
-  const result = await run(function* () {
+  const result = await run(function*() {
     try {
       const harness = new CLITestHarness();
       harness.captureOutput();
@@ -122,10 +118,10 @@ Deno.test("Integration: Effection - CLI command with nested operations", async (
     yield* fakeCLICommand(args);
 
     // Simulate additional nested operations
-    const nestedOp = function* () {
+    const nestedOp = function*() {
       // Nested operation 1
       // deno-lint-ignore require-yield
-      const deepOp = function* () {
+      const deepOp = function*() {
         // Deeply nested operation
         return;
       };
@@ -133,7 +129,7 @@ Deno.test("Integration: Effection - CLI command with nested operations", async (
 
       // Nested operation 2
       // deno-lint-ignore require-yield
-      const anotherOp = function* () {
+      const anotherOp = function*() {
         return;
       };
       yield* anotherOp();

@@ -1,9 +1,9 @@
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
+import { b } from "../../../../cesr/mod.ts";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
-import { b } from '../../../../cesr/mod.ts'
 
 /**
  * Integration test for db dump command
@@ -11,8 +11,7 @@ import { b } from '../../../../cesr/mod.ts'
  */
 
 Deno.test({
-  name:
-    "Integration: DB dump command - should dump database contents - debug iterator issue",
+  name: "Integration: DB dump command - should dump database contents - debug iterator issue",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -20,7 +19,7 @@ Deno.test({
     const key = b("evt.0001");
     const val = b("sample event payload");
 
-    await run(function* () {
+    await run(function*() {
       const baser = yield* createBaser({
         name,
         temp: true,
@@ -61,9 +60,7 @@ Deno.test({
         `Expected no stderr output, got: ${errors.join("\n")}`,
       );
       assert(
-        output.some((line) =>
-          line.includes("Baser.evts sub-database dump (1 entries)")
-        ),
+        output.some((line) => line.includes("Baser.evts sub-database dump (1 entries)")),
       );
       assert(output.some((line) => line.includes("Total entries: 1")));
     } catch (error) {
@@ -98,8 +95,7 @@ Deno.test({
 });
 
 Deno.test({
-  name:
-    "Integration: DB dump command - should test Baser.getAllEvtsIter directly",
+  name: "Integration: DB dump command - should test Baser.getAllEvtsIter directly",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -107,7 +103,7 @@ Deno.test({
     const key = b("evt.0001");
     const val = b("sample event payload");
 
-    await run(function* () {
+    await run(function*() {
       // Seed a deterministic fixture DB first so readonly open always has files.
       const writableBaser = yield* createBaser({
         name,
@@ -148,8 +144,8 @@ Deno.test({
         console.log("Iterator:", iter);
         console.log(
           "Is generator?",
-          iter.constructor.name === "GeneratorFunction" ||
-            iter[Symbol.iterator],
+          iter.constructor.name === "GeneratorFunction"
+            || iter[Symbol.iterator],
         );
 
         // Try to iterate

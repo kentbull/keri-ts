@@ -78,8 +78,8 @@ This keeps context focused and avoids long-thread drift.
    primary user path; the supported distribution path remains the npm package
    artifact, and CLI startup now lazy-loads handlers so `--help` and `--version`
    do not pull CESR/LMDB startup work.
-10. Formatting policy is explicitly Deno-native: CI and release workflows are
-    expected to enforce `deno fmt --check`.
+10. Formatting policy is explicitly `dprint`-based: CI and release workflows are
+    expected to enforce `deno task fmt:check`.
 11. The DB architecture contract now includes a maintainer-facing `LMDBer`
     family taxonomy so ordering and multiplicity semantics can be reasoned about
     by storage model rather than by individual method name.
@@ -97,6 +97,88 @@ This keeps context focused and avoids long-thread drift.
 15. `lmdber.ts` documentation is now organized by storage family and explicitly
     distinguishes KERIpy parity methods from `keri-ts`-only extensions,
     including the `OnIoSet*` family.
+16. `LMDBer` unit coverage is now organized the same way: readable family-based
+    tests for lifecycle/plain/`On*`/`IoSet*`/`Dup*` semantics plus a much
+    smaller parity-oracle file for reverse mixed-key scans, with the old
+    representation-sweep monolith removed.
+17. `Habery` now eagerly reloads persisted habitat records on open, and the
+    local-store Gate B visibility slice (`tufa list` / `tufa aid`) is wired into
+    the interop harness; compatibility-mode visibility remains a separate Gate C
+    concern.
+18. CESR now has a dedicated maintainer walkthrough and parity matrix for the
+    primitive layer, organized by `Matter` / `Indexer` / `Counter` families and
+    cross-linked to the parser architecture docs so maintainers can onboard
+    without re-deriving the model from source.
+19. Local npm/Node execution of `tufa` needs error-shape normalization around
+    filesystem permission failures: `@deno/shim-deno` may surface primary-path
+    mkdir denials as plain Node-style `Error` objects with `code` values like
+    `EACCES`/`EPERM`, so fallback logic for `~/.tufa` must not rely only on
+    `instanceof Deno.errors.PermissionDenied`.
+20. Local npm/Node execution also cannot assume full `FsFile` parity from
+    `@deno/shim-deno`; `syncSync()` may be unimplemented even though
+    `syncDataSync()` works, so `Configer` durability paths should use the latter
+    for cross-runtime compatibility.
+21. Minimal `Suber` / `Komer` foundations now exist and back the active
+    bootstrap-path `Baser` / `Keeper` stores; this is enough to stop extending
+    the raw-LMDB pattern on the Gate C visibility path, but it is not evidence
+    of full `subing.py` / `koming.py` parity.
+22. Compatibility-mode visibility now has an honest readonly-open path:
+    `.keri/db` and `.keri/ks` alt tails are supported, `list` / `aid` can skip
+    config loading and signator creation, and readonly opens no longer try to
+    write `aeid`; encrypted reopen semantics and true decrypt/encrypt behavior
+    remain the next real blockers.
+23. KERIpy-corresponding class ports need source-documentation parity as well as
+    behavior parity: when we add or translate a class, we should port its
+    maintainer-facing responsibilities and invariants into `keri-ts` source
+    docstrings in the same change, not defer them to cleanup work later.
+24. `Komer` now supports JSON, CBOR, and MGPK serializer selection at the
+    constructor boundary, matching KERIpy's format choices without changing the
+    current live-store default away from JSON.
+25. Before 1.0, `keri-ts` should optimize for KERIpy parity rather than
+    preserving compatibility with older `keri-ts` behavior; local back-compat
+    shims that are not needed for KERIpy interop are drift, not safety.
+26. KLI interop tests are now expected to run in regular quality checks against
+    the installed KERIpy CLI, not skip opportunistically; isolated test `HOME`
+    values should preserve the active `DENO_DIR`, and KLI resolution should use
+    the real executable path when pyenv shims are on `PATH`.
+27. `Komer` parity now assumes the KERIpy `KomerBase -> Komer` split exists in
+    `keri-ts`; future `IoSetKomer` / `DupKomer` work should extend that base
+    instead of re-flattening object-mapper behavior.
+28. Exact KERI CBOR byte parity is now an explicit cross-project rule: source
+    code should use the shared CESR CBOR codec instead of direct `cbor-x`
+    imports, and the encoder is configured to match KERIpy `cbor2` preferred
+    map-size bytes rather than `cbor-x`'s fixed-width object-map default.
+29. LMDB wrapper generics are now an explicit parity contract: `Komer`, `Suber`,
+    and CESR-backed storage wrappers should use the narrowest real KERIpy value
+    type, and mixed-primitive stores should be modeled with explicit tuple
+    aliases rather than widened `Matter`-level fallbacks.
+30. CESR code-table parity now requires generated semantic codex families, not
+    just raw size/name tables: primitive validators should consume the shared
+    KERIpy-derived matter/indexer codex sets, and TS-only counter-group families
+    should live in one shared module so `Prefixer`-style drift cannot hide
+    behind local string sets.
+31. CESR codex organization is now explicitly dual-layer: generated KERIpy
+    parity codex objects such as `MtrDex`, `PreDex`, `DigDex`, and `IdrDex` are
+    the primary source of truth, and `codex.ts` helper sets are derived
+    readability views rather than a competing authority.
+32. The dual-layer codex rule also now covers non-cryptographic and
+    singleton-ish CESR primitives: `Dater`, `Seqner`, `Ilker`, `Verser`,
+    `Noncer`, and `Traitor` should validate through canonical codex exports or
+    derived helpers, and trait semantics should come from generated `TraitDex`
+    parity rather than local string lists.
+33. Local habitat state is no longer allowed to live only in `Hab.kever`:
+    `states.` is now the durable source of truth, `kels.` / `fels.` / `dtss.`
+    back reopenable local event state, and `Habery.habs` should remain an
+    in-memory reconstruction cache rather than becoming another persisted truth
+    source.
+34. DB parity changes should ship with maintainer-grade source docs for the new
+    record contracts, storage families, and runtime seams; otherwise the code
+    may be behaviorally closer to KERIpy while still being too opaque for safe
+    future parity work.
+35. `Baser` and `Keeper` named-subdb docs are now mirrored store-by-store in
+    source, with `reopen()` as the canonical meaning seam because it shows the
+    property name, subkey, wrapper type, and tuple/value wiring together; field
+    comments are the shorter scan-oriented mirror.
 
 ## New Thread Kickoff Template
 

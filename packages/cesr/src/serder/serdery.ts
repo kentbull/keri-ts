@@ -1,7 +1,7 @@
-import { smell } from "./smell.ts";
-import { parseSerder } from "./serder.ts";
-import type { CesrBody } from "../core/types.ts";
 import { ShortageError } from "../core/errors.ts";
+import type { CesrBody } from "../core/types.ts";
+import { parseSerder } from "./serder.ts";
+import { smell } from "./smell.ts";
 
 export function reapSerder(
   input: Uint8Array,

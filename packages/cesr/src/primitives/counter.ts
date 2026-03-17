@@ -5,20 +5,16 @@ import {
   codeB64ToB2,
   intToB64,
   nabSextets,
-  sceil
-} from '../core/bytes.ts'
-import {
-  DeserializeError,
-  ShortageError,
-  UnknownCodeError,
-} from "../core/errors.ts";
-import { COUNTER_HARDS } from "../tables/counter.tables.generated.ts";
-import type { Versionage } from "../tables/table-types.ts";
+  sceil,
+} from "../core/bytes.ts";
+import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import {
   resolveCounterCodeNameTable,
   resolveCounterSizeTable,
 } from "../tables/counter-version-registry.ts";
+import { COUNTER_HARDS } from "../tables/counter.tables.generated.ts";
+import type { Versionage } from "../tables/table-types.ts";
 import type { GroupEntry } from "./primitive.ts";
 
 /**
@@ -49,17 +45,17 @@ interface CounterData {
 
 const COUNTER_BARDS = new Map<string, number>(
   [...COUNTER_HARDS.entries()].map(([code, hs]) => [
-    String.fromCharCode(codeB64ToB2(code)[0]) +
-    String.fromCharCode(codeB64ToB2(code)[1] ?? 0),
+    String.fromCharCode(codeB64ToB2(code)[0])
+    + String.fromCharCode(codeB64ToB2(code)[1] ?? 0),
     hs,
   ]),
 );
 
 function isCounterData(value: unknown): value is CounterData {
-  return typeof value === "object" && value !== null &&
-    "code" in value && "count" in value && "fullSize" in value &&
-    "fullSizeB2" in value && "qb64" in value && "name" in value &&
-    "version" in value;
+  return typeof value === "object" && value !== null
+    && "code" in value && "count" in value && "fullSize" in value
+    && "fullSizeB2" in value && "qb64" in value && "name" in value
+    && "version" in value;
 }
 
 function getTables(version: Versionage) {
@@ -135,8 +131,8 @@ function parseCounterFromBinaryData(
   const { sizeTable, nameTable } = getTables(version);
 
   const firstTwo = nabSextets(input, 2);
-  const key = String.fromCharCode(firstTwo[0]) +
-    String.fromCharCode(firstTwo[1] ?? 0);
+  const key = String.fromCharCode(firstTwo[0])
+    + String.fromCharCode(firstTwo[1] ?? 0);
   const hs = COUNTER_BARDS.get(key);
   if (!hs) {
     throw new UnknownCodeError("Unsupported qb2 counter start sextets");
@@ -210,8 +206,8 @@ function parseCounterInit(init: CounterInit): CounterData {
   const version = init.version ?? { major: 2, minor: 0 };
 
   if (init.code !== undefined) {
-    const count = init.count ??
-      (init.countB64 ? b64ToInt(init.countB64) : 0);
+    const count = init.count
+      ?? (init.countB64 ? b64ToInt(init.countB64) : 0);
     return encodeCounterFromFields(init.code, count, version);
   }
 

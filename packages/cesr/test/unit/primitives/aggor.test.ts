@@ -11,9 +11,7 @@ const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("aggor: parses list aggregate groups", () => {
   const payload = "ABCDWXYZ";
-  const listBody = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
 
   const aggor = parseAggor(txt(listBody), V2, "txt");
   assertEquals(aggor instanceof Aggor, true);
@@ -36,9 +34,7 @@ Deno.test("aggor: parses KERIpy empty-list aggregate vector", () => {
 
 Deno.test("aggor: parses map aggregate groups", () => {
   const payload = `0J_i${token("B")}`;
-  const mapBody = `${
-    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
-  }${payload}`;
+  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
 
   const aggor = parseAggor(txt(mapBody), V2, "txt");
   assertEquals(aggor instanceof Aggor, true);
@@ -48,9 +44,7 @@ Deno.test("aggor: parses map aggregate groups", () => {
 
 Deno.test("aggor: qb2 parsing keeps KERIpy-derived payload stable", () => {
   const payload = KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload;
-  const listBody = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
   const qb2 = codeB64ToB2(listBody);
 
   const aggor = parseAggor(qb2, V2, "bny");

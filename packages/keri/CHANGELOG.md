@@ -1,5 +1,11 @@
 # keri-ts
 
+## 0.4.0
+
+### Minor Changes
+
+- DB layer impl buildout with tests and --loglevel for logs
+
 ## 0.3.1
 
 ### Patch Changes

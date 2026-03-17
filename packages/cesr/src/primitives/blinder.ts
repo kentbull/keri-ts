@@ -1,16 +1,9 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
+import { BLINDER_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { CtrDexV2 } from "../tables/counter-codex.ts";
 import type { CounterGroupLike } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
-
-const BLINDER_CODES = new Set<string>([
-  CtrDexV2.BlindedStateQuadruples,
-  CtrDexV2.BigBlindedStateQuadruples,
-  CtrDexV2.BoundStateSextuples,
-  CtrDexV2.BigBoundStateSextuples,
-]);
 
 /** True when counter code belongs to blinded/bound state tuple families. */
 export function isBlinderCode(code: string): boolean {

@@ -19,14 +19,18 @@ export function isBexterCode(code: string): boolean {
   return BEXTER_CODES.has(code);
 }
 
+/**
+ * CESR Base64-text primitive (`bext`) with compact StrB64 encoding.
+ *
+ * KERIpy correspondence:
+ * - mirrors the `Bexter`/StrB64 family contract: payload text is already
+ *   restricted to Base64 URL-safe characters, so the qualified form can be more
+ *   compact than generic UTF-8 text primitives
+ *
+ * Invariant:
+ * - `code` must belong to the StrB64/Bexter codex family
+ */
 export class Bexter extends Matter {
-  /**
-   * Base64-text primitive (`bext`) with compact CESR encoding.
-   *
-   * KERIpy semantics: values are constrained to Base64 URL-safe characters and
-   * encoded more compactly than generic UTF-8 text payloads.
-   * Invariant: code must be in StrB64 codex family.
-   */
   /** Convert bext text into CESR raw payload bytes. */
   static rawify(bext: string): Uint8Array {
     const ts = bext.length % 4;

@@ -1,9 +1,9 @@
+import { t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { BEXTER_CODES, TEXTER_CODES } from "./codex.ts";
 import { Bexter } from "./bexter.ts";
+import { BEXTER_CODES, TEXTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
-import { t } from '../core/bytes.ts'
 
 function isPatherCode(code: string): boolean {
   return BEXTER_CODES.has(code) || TEXTER_CODES.has(code);

@@ -22,6 +22,7 @@
     "npm:cbor-x@^1.6.0": "1.6.0",
     "npm:cesr-ts@~0.2.3": "0.2.3",
     "npm:commander@^10.0.1": "10.0.1",
+    "npm:dprint@0.49.0": "0.49.0",
     "npm:effection@^3.6.0": "3.6.1",
     "npm:lmdb@3.4.4": "3.4.4"
   },
@@ -109,6 +110,51 @@
     },
     "@cbor-extract/cbor-extract-win32-x64@2.2.0": {
       "integrity": "sha512-l2M+Z8DO2vbvADOBNLbbh9y5ST1RY5sqkWOg/58GkUPBYou/cuNZ68SGQ644f1CvZ8kcOxyZtw06+dxWHIoN/w==",
+      "os": ["win32"],
+      "cpu": ["x64"]
+    },
+    "@dprint/darwin-arm64@0.49.0": {
+      "integrity": "sha512-b8fwjdfYrX5H+QyeWiB27gPc1GMVdd2LorCtsZWC+MDQO6NOgpuxJePqccbQlFUumy2rfmQuLQprnldvQZhceg==",
+      "os": ["darwin"],
+      "cpu": ["arm64"]
+    },
+    "@dprint/darwin-x64@0.49.0": {
+      "integrity": "sha512-cA/DIPlHClkufLufuIfcXHtZdlyP9U05RuJLvvAfHwJAxyeEC/chKYVc5BVz86RxMIq6czFGpJHoFtTjrfM3YA==",
+      "os": ["darwin"],
+      "cpu": ["x64"]
+    },
+    "@dprint/linux-arm64-glibc@0.49.0": {
+      "integrity": "sha512-UBo3lDJhotT+qza2S48DOPI64MirkJMoFDidh/TJBjokio2TcGd+QUzuB9O7J1+R3AlbwyObcTECjJryCNohHQ==",
+      "os": ["linux"],
+      "cpu": ["arm64"]
+    },
+    "@dprint/linux-arm64-musl@0.49.0": {
+      "integrity": "sha512-XWAPL6Hp+zqk9bi57450wuy4yz4fvT72L3Zji3X7ChL5KD/apMUzQnZhmTpln2sxwIgJ3nCbzEzlF7jhhp/7KA==",
+      "os": ["linux"],
+      "cpu": ["arm64"]
+    },
+    "@dprint/linux-riscv64-glibc@0.49.0": {
+      "integrity": "sha512-6GlGcauMeMbCCJ15OmAMkarouCifij9hb12Vz5UUZPevnutVoWRTQBPQLfllmd+9Znsp23fHnmzmykibdwj4Gw==",
+      "os": ["linux"],
+      "cpu": ["riscv64"]
+    },
+    "@dprint/linux-x64-glibc@0.49.0": {
+      "integrity": "sha512-PJUM1G8L2xwF9R1s4/J6kf29S2sJ/sZGy3ah7g5Uj+oYkZq6SlMOrx3xqCXEkKSa0T6Xuc1bUBcJyrjEf36xiw==",
+      "os": ["linux"],
+      "cpu": ["x64"]
+    },
+    "@dprint/linux-x64-musl@0.49.0": {
+      "integrity": "sha512-+WIInBwbCXYmWZcYYmnD8HdcZj6q8ewy6mPpHH6SDMtWr6nrxzyIVLFr72XeiBoHnVsQFUhN+wv5Bm5NnpJtRw==",
+      "os": ["linux"],
+      "cpu": ["x64"]
+    },
+    "@dprint/win32-arm64@0.49.0": {
+      "integrity": "sha512-AteygrhmT7OXIgE/72REUfTPs/+qU0I1vhU379AYXgcWzOKy6Eeyi8lAt17oF7OmGT4IuyrKEDjpdTxhOWLsQw==",
+      "os": ["win32"],
+      "cpu": ["arm64"]
+    },
+    "@dprint/win32-x64@0.49.0": {
+      "integrity": "sha512-8bE6P9T/32Gd+zMAkcwvUHzOLEMnbHEMgsgiKypYsdFTskpDz+y1GLJvMaxIFd2DB2tMx9TdBYuBQrJroTsMeQ==",
       "os": ["win32"],
       "cpu": ["x64"]
     },
@@ -229,6 +275,22 @@
     },
     "detect-libc@2.1.2": {
       "integrity": "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="
+    },
+    "dprint@0.49.0": {
+      "integrity": "sha512-xtBPZbPKWOOJH5al4h6rgzsGHuXpyK7TFJCQ5/TW8Z4zkcB9dfmPAh14/Yp5YZcB798D0liztXw+Nd7suzdzBQ==",
+      "optionalDependencies": [
+        "@dprint/darwin-arm64",
+        "@dprint/darwin-x64",
+        "@dprint/linux-arm64-glibc",
+        "@dprint/linux-arm64-musl",
+        "@dprint/linux-riscv64-glibc",
+        "@dprint/linux-x64-glibc",
+        "@dprint/linux-x64-musl",
+        "@dprint/win32-arm64",
+        "@dprint/win32-x64"
+      ],
+      "scripts": true,
+      "bin": true
     },
     "effection@3.6.1": {
       "integrity": "sha512-ogsuH/cgxfOOaVUf53pYqhPJth4WhPlva0hGb4Roh6cZhttMoanMqwADkDk9ych28lKuQgntpCszbFRyRFifqg=="

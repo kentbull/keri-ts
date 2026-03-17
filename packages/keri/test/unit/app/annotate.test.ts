@@ -1,9 +1,5 @@
-import {
-  assertMatch,
-  assertNotMatch,
-  assertStringIncludes,
-} from "jsr:@std/assert";
 import { run } from "effection";
+import { assertMatch, assertNotMatch, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";
 
 Deno.test("CLI - tufa annotate reads from file and writes annotation", async () => {
@@ -12,7 +8,7 @@ Deno.test("CLI - tufa annotate reads from file and writes annotation", async () 
   const outPath = `${dir}/out.annotated`;
 
   try {
-    const cesr = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+    const cesr = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
     await Deno.writeTextFile(inPath, cesr);
 
     await run(() => tufa(["annotate", "--in", inPath, "--out", outPath]));
@@ -27,7 +23,7 @@ Deno.test("CLI - tufa annotate reads from file and writes annotation", async () 
 Deno.test("CLI - tufa annotate --colored applies ANSI styling on stdout", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
-  const cesr = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const cesr = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   await Deno.writeTextFile(inPath, cesr);
 
   const originalLog = console.log;
@@ -50,7 +46,7 @@ Deno.test("CLI - tufa annotate --colored applies ANSI styling on stdout", async 
 Deno.test("CLI - tufa annotate --colored --pretty colors pretty JSON body lines", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
-  const cesr = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const cesr = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   await Deno.writeTextFile(inPath, cesr);
 
   const originalLog = console.log;
@@ -60,15 +56,13 @@ Deno.test("CLI - tufa annotate --colored --pretty colors pretty JSON body lines"
   };
 
   try {
-    await run(() =>
-      tufa(["annotate", "--in", inPath, "--colored", "--pretty"])
-    );
+    await run(() => tufa(["annotate", "--in", inPath, "--colored", "--pretty"]));
   } finally {
     console.log = originalLog;
     await Deno.remove(dir, { recursive: true });
   }
 
-  assertStringIncludes(captured, '"v": "KERI10JSON00002e_"');
+  assertStringIncludes(captured, "\"v\": \"KERI10JSON00002e_\"");
   assertMatch(captured, /\x1b\[[0-9;]*m  "v":/);
 });
 
@@ -76,13 +70,11 @@ Deno.test("CLI - tufa annotate --colored never colors --out file output", async 
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const outPath = `${dir}/out.annotated`;
-  const cesr = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const cesr = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   await Deno.writeTextFile(inPath, cesr);
 
   try {
-    await run(() =>
-      tufa(["annotate", "--in", inPath, "--out", outPath, "--colored"])
-    );
+    await run(() => tufa(["annotate", "--in", inPath, "--out", outPath, "--colored"]));
     const out = await Deno.readTextFile(outPath);
     assertStringIncludes(out, "SERDER KERI JSON");
     assertNotMatch(out, /\x1b\[[0-9;]*m/);
@@ -103,7 +95,7 @@ Deno.test("CLI - tufa annotate loads valid YAML color overrides from HOME", asyn
   );
   await Deno.writeTextFile(
     inPath,
-    '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}',
+    "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}",
   );
 
   const originalHome = Deno.env.get("HOME");

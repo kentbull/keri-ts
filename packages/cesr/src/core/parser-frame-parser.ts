@@ -1,25 +1,22 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import type {
-  AttachmentVersionFallbackPolicy,
-} from "../parser/group-dispatch.ts";
+import type { AttachmentVersionFallbackPolicy } from "../parser/group-dispatch.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
-import { parseMatter } from "../primitives/matter.ts";
-import type { Primitive } from "../primitives/primitive.ts";
 import {
   interpretMapperBodySyntax,
   type MapperBodySyntax,
   parseMapperBodySyntax,
 } from "../primitives/mapper.ts";
+import { parseMatter } from "../primitives/matter.ts";
+import type { Primitive } from "../primitives/primitive.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 import { b64ToInt, intToB64 } from "./bytes.ts";
-import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import {
   ColdStartError,
   DeserializeError,
@@ -43,6 +40,7 @@ import {
   tokenSize,
 } from "./parser-constants.ts";
 import type { FrameBoundaryPolicy } from "./parser-policy.ts";
+import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import type { CesrMessage } from "./types.ts";
 
 /** Dependency-injected options for frame parsing behavior and hooks. */
@@ -137,15 +135,13 @@ interface NativeBodySyntaxArtifact {
  */
 export class FrameParser {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
-  private readonly attachmentVersionFallbackPolicy:
-    AttachmentVersionFallbackPolicy;
+  private readonly attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
   private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
   constructor(options: FrameParserOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
-    this.attachmentVersionFallbackPolicy =
-      options.attachmentVersionFallbackPolicy;
+    this.attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy;
     this.onEnclosedFrames = options.onEnclosedFrames;
     this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
   }
@@ -315,8 +311,7 @@ export class FrameParser {
         };
       }
       case "bodyWithAttachmentGroup": {
-        const { counter, frameVersion, headerSize, unit } =
-          requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
         return this.parseBodyWithAttachmentGroup(
           input,
           syntax.offset,
@@ -333,8 +328,7 @@ export class FrameParser {
             `Expected attachment domain for non-native body but got ${syntax.cold}`,
           );
         }
-        const { counter, frameVersion, headerSize, unit } =
-          requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
         return this.parseNonNativeBodyGroup(
           input,
           syntax.offset,
@@ -352,8 +346,7 @@ export class FrameParser {
             `Expected attachment domain for native body but got ${syntax.cold}`,
           );
         }
-        const { counter, frameVersion, headerSize, unit } =
-          requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
         return this.parseNativeBodyGroup(
           input,
           syntax.offset,
@@ -367,8 +360,7 @@ export class FrameParser {
         );
       }
       case "genericGroup": {
-        const { counter, frameVersion, headerSize, unit } =
-          requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
         return this.parseGenericGroup(
           input,
           syntax.offset,
@@ -720,9 +712,9 @@ export class FrameParser {
       };
     } catch (error) {
       if (
-        error instanceof ShortageError ||
-        error instanceof UnknownCodeError ||
-        error instanceof DeserializeError
+        error instanceof ShortageError
+        || error instanceof UnknownCodeError
+        || error instanceof DeserializeError
       ) {
         throw new SyntaxParseError(
           `Native body syntax parse failed: ${error.message}`,
@@ -866,9 +858,7 @@ export class FrameParser {
       } catch (error) {
         if (error instanceof SemanticInterpretationError) {
           throw new SemanticInterpretationError(
-            `Native body semantic interpretation failed: ${
-              (error as Error).message
-            }`,
+            `Native body semantic interpretation failed: ${(error as Error).message}`,
             error,
           );
         }
@@ -933,8 +923,8 @@ export class FrameParser {
           throw error;
         }
         if (
-          error instanceof UnknownCodeError ||
-          error instanceof DeserializeError
+          error instanceof UnknownCodeError
+          || error instanceof DeserializeError
         ) {
           continue;
         }
@@ -971,8 +961,8 @@ export class FrameParser {
           throw error;
         }
         if (
-          error instanceof UnknownCodeError ||
-          error instanceof DeserializeError
+          error instanceof UnknownCodeError
+          || error instanceof DeserializeError
         ) {
           if (!firstError) {
             firstError = error;

@@ -1,8 +1,6 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import type {
-  AttachmentVersionFallbackPolicy,
-} from "../parser/group-dispatch.ts";
+import type { AttachmentVersionFallbackPolicy } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isAttachmentDomain } from "./parser-constants.ts";
@@ -43,8 +41,7 @@ export interface ResumePendingResult {
  */
 export class AttachmentCollector {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
-  private readonly attachmentVersionFallbackPolicy:
-    AttachmentVersionFallbackPolicy;
+  private readonly attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
@@ -54,8 +51,7 @@ export class AttachmentCollector {
 
   constructor(options: AttachmentCollectorOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
-    this.attachmentVersionFallbackPolicy =
-      options.attachmentVersionFallbackPolicy;
+    this.attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy;
     this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }

@@ -1,17 +1,14 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { codeB64ToB2, decodeB64 } from "../../../src/core/bytes.ts";
-import {
-  ShortageError,
-  UnknownCodeError,
-} from "../../../src/core/errors.ts";
+import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import {
   Matter,
   parseMatter,
   parseMatterFromBinary,
   parseMatterFromText,
 } from "../../../src/primitives/matter.ts";
-import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { token } from "../../fixtures/counter-token-fixtures.ts";
+import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import {
   assertQb64Qb2Parity,
   assertTxtBnyQb64Parity,

@@ -10,7 +10,7 @@ with Effection structured concurrency.
 ### Transactions
 
 | KERIpy                        | TypeScript lmdb                   |
-|-------------------------------|-----------------------------------|
+| ----------------------------- | --------------------------------- |
 | `with env.begin(write=False)` | `db.transactionSync(() => {...})` |
 | `txn.get(key)`                | `db.get(key)`                     |
 | `txn.put(key, val)`           | `db.putSync(key, val)`            |
@@ -18,7 +18,7 @@ with Effection structured concurrency.
 ### Cursors
 
 | KERIpy                  | TypeScript lmdb                             |
-|-------------------------|---------------------------------------------|
+| ----------------------- | ------------------------------------------- |
 | `cursor.set_range(key)` | `db.getRange({ start: key })`               |
 | `cursor.iternext()`     | `for (const {key, value} of db.getRange())` |
 | `cursor.delete()`       | `db.removeSync(key)`                        |
@@ -101,7 +101,7 @@ function* getAllItemIter(
 > {
   const targetDb = subDb || db;
 
-  return function* () {
+  return function*() {
     for (const { key, value } of targetDb.getRange({ start: startKey })) {
       if (split) {
         const keyBytes = typeof key === "string"
@@ -169,8 +169,8 @@ function* delTopVal(
         ? new TextEncoder().encode(key)
         : key;
       if (
-        keyBytes.length < prefix.length ||
-        !prefix.every((b, i) => keyBytes[i] === b)
+        keyBytes.length < prefix.length
+        || !prefix.every((b, i) => keyBytes[i] === b)
       ) {
         break;
       }

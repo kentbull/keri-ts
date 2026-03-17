@@ -30,6 +30,6 @@ export function isPrimitiveTuple(entry: GroupEntry): entry is PrimitiveTuple {
 export function isCounterGroupLike(
   entry: GroupEntry,
 ): entry is CounterGroupLike {
-  return typeof entry === "object" && entry !== null && !Array.isArray(entry) &&
-    "items" in entry && "count" in entry && "code" in entry;
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry)
+    && "items" in entry && "count" in entry && "code" in entry;
 }

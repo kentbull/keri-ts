@@ -39,12 +39,12 @@ interface DecimerInit extends MatterInit {
 export class Decimer extends Matter {
   constructor(init: Matter | DecimerInit) {
     if (
-      !(init instanceof Matter) &&
-      !init.raw &&
-      !init.qb64 &&
-      !init.qb64b &&
-      !init.qb2 &&
-      (init.dns !== undefined || init.decimal !== undefined)
+      !(init instanceof Matter)
+      && !init.raw
+      && !init.qb64
+      && !init.qb64b
+      && !init.qb2
+      && (init.dns !== undefined || init.decimal !== undefined)
     ) {
       const dns = init.dns ?? `${init.decimal}`;
       super({

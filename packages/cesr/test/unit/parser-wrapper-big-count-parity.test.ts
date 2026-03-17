@@ -1,10 +1,10 @@
 import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { decodeB64 } from "../../src/core/bytes.ts";
+import { createParser } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 function wrapQuadletGroupV2(code: string, payload: string): string {
@@ -35,9 +35,7 @@ function summarizeFrames(events: CesrFrame[]): string[] {
 }
 
 Deno.test("V-P1-006: big wrapper counters (--A/--B/--C) preserve txt/qb2 parity", () => {
-  const nestedSigGroup = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
 
   const bigBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSigGroup}`;
   const bigBodyWrapped = wrapQuadletGroupV2(
@@ -49,8 +47,7 @@ Deno.test("V-P1-006: big wrapper counters (--A/--B/--C) preserve txt/qb2 parity"
     CtrDexV2.BigAttachmentGroup,
     nestedSigGroup,
   );
-  const bodyPlusBigAttachment =
-    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${bigAttachmentWrapped}`;
+  const bodyPlusBigAttachment = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${bigAttachmentWrapped}`;
 
   const genericPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${bigBodyWrapped}`;
   const bigGenericWrapped = wrapQuadletGroupV2(

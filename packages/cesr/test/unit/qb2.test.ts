@@ -1,18 +1,9 @@
 import { assertEquals } from "jsr:@std/assert";
 import { codeB64ToB2 } from "../../src/core/bytes.ts";
-import {
-  parseMatterFromBinary,
-  parseMatterFromText,
-} from "../../src/primitives/matter.ts";
-import {
-  parseCounterFromBinary,
-  parseCounterFromText,
-} from "../../src/primitives/counter.ts";
-import {
-  parseIndexerFromBinary,
-  parseIndexerFromText,
-} from "../../src/primitives/indexer.ts";
 import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
+import { parseCounterFromBinary, parseCounterFromText } from "../../src/primitives/counter.ts";
+import { parseIndexerFromBinary, parseIndexerFromText } from "../../src/primitives/indexer.ts";
+import { parseMatterFromBinary, parseMatterFromText } from "../../src/primitives/matter.ts";
 import {
   KERIPY_COUNTER_VECTORS,
   KERIPY_INDEXER_VECTORS,
@@ -46,7 +37,8 @@ Deno.test("qb2 smoke: counter/indexer txt/bny parity", () => {
 });
 
 Deno.test("qb2 smoke: attachment dispatch", () => {
-  const qb64 = `${KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1}${KERIPY_INDEXER_VECTORS.ed25519SigIdx0}`;
+  const qb64 =
+    `${KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1}${KERIPY_INDEXER_VECTORS.ed25519SigIdx0}`;
   const parsed = parseAttachmentDispatch(codeB64ToB2(qb64), V2, "bny");
 
   assertEquals(parsed.group.code, "-K");
