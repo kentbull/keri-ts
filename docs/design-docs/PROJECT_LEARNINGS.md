@@ -278,6 +278,13 @@ This keeps context focused and avoids long-thread drift.
     already knows `proto`/`pvrsn`/`gvrsn`; it must carry that smellage
     explicitly while validating the byte round-trip instead of trying to sniff a
     self-describing version string that native bodies do not contain.
+56. TypeScript literal-overload APIs do not survive boolean forwarding. When a
+    caller-facing method like `Hab.sign(..., true|false)` forwards a plain
+    `boolean` into an overloaded callee like `Manager.sign(...)`, the narrow
+    return-type contract is lost even if the runtime logic is fine. The stable
+    fix is to branch before the call and pass literal `true` / `false`, while
+    the callee implementation should return explicitly typed homogeneous arrays
+    instead of a union-widened `map(...)` result.
 
 ## New Thread Kickoff Template
 

@@ -1,6 +1,6 @@
 import { run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
-import { SerderKERI, smell } from "../../../../cesr/mod.ts";
+import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
+import { Cigar, SerderKERI, Siger, smell } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -9,7 +9,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -56,7 +56,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -84,7 +84,7 @@ Deno.test("Habery inception keeps non-transferable prefix equal to the signing k
   const name = `habery-nontrans-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -111,7 +111,7 @@ Deno.test("Habery inception honors digestive prefix codex overrides for i", asyn
   const name = `habery-sha2-prefix-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -130,6 +130,46 @@ Deno.test("Habery inception honors digestive prefix codex overrides for i", asyn
       assertEquals(hab.pre.startsWith("I"), true);
       assertEquals(state?.d?.startsWith("E"), true);
       assertEquals(hab.pre === state?.k?.[0], false);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior intact", async () => {
+  const name = `habery-sign-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function* () {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("dave", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const ser = new TextEncoder().encode("hab-signatures");
+
+      const indexed = hab.sign(ser, true);
+      const unindexed = hab.sign(ser, false);
+      const signatorSig = hby.signator?.sign(ser);
+
+      assertEquals(indexed.length, 1);
+      assertEquals(unindexed.length, 1);
+      assertInstanceOf(indexed[0], Siger);
+      assertInstanceOf(unindexed[0], Cigar);
+      assertEquals(indexed[0]?.index, 0);
+      assertEquals(typeof signatorSig, "string");
+      assertEquals(
+        signatorSig ? hby.signator?.verify(ser, signatorSig) : false,
+        true,
+      );
     } finally {
       yield* hby.close();
     }

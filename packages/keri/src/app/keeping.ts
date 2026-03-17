@@ -403,23 +403,39 @@ export class Manager {
   sign(ser: Uint8Array, pubs: string[], indexed?: false): Cigar[];
   sign(ser: Uint8Array, pubs: string[], indexed = true): Siger[] | Cigar[] {
     if (indexed) {
-      return pubs.map((pub, idx) => {
-        const seedQb64 = this.ks.getPris(pub);
-        if (!seedQb64) {
-          throw new Error(`Missing prikey in db for pubkey=${pub}`);
-        }
-        const seedRaw = parseQb64Raw(seedQb64);
-        const sigRaw = ed25519.sign(ser, seedRaw);
-        return new Siger({ code: "A", raw: sigRaw, index: idx });
-      });
+      return this.signIndexed(ser, pubs);
     }
-    return pubs.map((pub) => {
+    return this.signUnindexed(ser, pubs);
+  }
+
+  /** Build indexed controller signatures in stable key-list order. */
+  private signIndexed(ser: Uint8Array, pubs: string[]): Siger[] {
+    const sigers: Siger[] = [];
+    for (const [idx, pub] of pubs.entries()) {
       const seedQb64 = this.ks.getPris(pub);
-      if (!seedQb64) throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      if (!seedQb64) {
+        throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      }
       const seedRaw = parseQb64Raw(seedQb64);
       const sigRaw = ed25519.sign(ser, seedRaw);
-      return new Cigar({ code: "0B", raw: sigRaw });
-    });
+      sigers.push(new Siger({ code: "A", raw: sigRaw, index: idx }));
+    }
+    return sigers;
+  }
+
+  /** Build unindexed detached signatures for ad hoc message signing flows. */
+  private signUnindexed(ser: Uint8Array, pubs: string[]): Cigar[] {
+    const cigars: Cigar[] = [];
+    for (const pub of pubs) {
+      const seedQb64 = this.ks.getPris(pub);
+      if (!seedQb64) {
+        throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      }
+      const seedRaw = parseQb64Raw(seedQb64);
+      const sigRaw = ed25519.sign(ser, seedRaw);
+      cigars.push(new Cigar({ code: "0B", raw: sigRaw }));
+    }
+    return cigars;
   }
 }
 

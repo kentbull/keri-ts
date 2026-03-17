@@ -374,7 +374,10 @@ export class Hab {
       this.refreshKever();
     }
     const pubs = this.kever?.verfers ?? [];
-    return this.mgr.sign(ser, pubs, indexed);
+    if (indexed) {
+      return this.mgr.sign(ser, pubs, true);
+    }
+    return this.mgr.sign(ser, pubs, false);
   }
 }
 

@@ -75,3 +75,36 @@ Deno.test("app/keeping - Manager returns narrow CESR primitives for inception an
     }
   });
 });
+
+Deno.test("app/keeping - Manager.sign preserves overload behavior for indexed and unindexed calls", async () => {
+  await run(function* () {
+    const keeper = yield* createKeeper({
+      name: `manager-sign-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        transferable: true,
+        temp: true,
+      });
+      const ser = new TextEncoder().encode("typed-signatures");
+
+      const indexed = manager.sign(ser, [verfers[0].qb64], true);
+      const unindexed = manager.sign(ser, [verfers[0].qb64], false);
+
+      assertEquals(indexed.length, 1);
+      assertEquals(unindexed.length, 1);
+      assertInstanceOf(indexed[0], Siger);
+      assertInstanceOf(unindexed[0], Cigar);
+      assertEquals(indexed[0]?.index, 0);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
