@@ -23,6 +23,8 @@
     "npm:commander@^10.0.1": "10.0.1",
     "npm:dprint@0.49.0": "0.49.0",
     "npm:effection@^3.6.0": "3.6.1",
+    "npm:libsodium-wrappers@0.7.15": "0.7.15",
+    "npm:libsodium-wrappers@0.8.2": "0.8.2",
     "npm:lmdb@3.5.2": "3.5.2"
   },
   "jsr": {
@@ -289,6 +291,24 @@
     },
     "effection@3.6.1": {
       "integrity": "sha512-ogsuH/cgxfOOaVUf53pYqhPJth4WhPlva0hGb4Roh6cZhttMoanMqwADkDk9ych28lKuQgntpCszbFRyRFifqg=="
+    },
+    "libsodium-wrappers@0.7.15": {
+      "integrity": "sha512-E4anqJQwcfiC6+Yrl01C1m8p99wEhLmJSs0VQqST66SbQXXBoaJY0pF4BNjRYa/sOQAxx6lXAaAFIlx+15tXJQ==",
+      "dependencies": [
+        "libsodium@0.7.16"
+      ]
+    },
+    "libsodium-wrappers@0.8.2": {
+      "integrity": "sha512-VFLmfxkxo+U9q60tjcnSomQBRx2UzlRjKWJqvB4K1pUqsMQg4cu3QXA2nrcsj9A1qRsnJBbi2Ozx1hsiDoCkhw==",
+      "dependencies": [
+        "libsodium@0.8.2"
+      ]
+    },
+    "libsodium@0.7.16": {
+      "integrity": "sha512-3HrzSPuzm6Yt9aTYCDxYEG8x8/6C0+ag655Y7rhhWZM9PT4NpdnbqlzXhGZlDnkgR6MeSTnOt/VIyHLs9aSf+Q=="
+    },
+    "libsodium@0.8.2": {
+      "integrity": "sha512-TsnGYMoZtpweT+kR+lOv5TVsnJ/9U0FZOsLFzFOMWmxqOAYXjX3fsrPAW+i1LthgDKXJnI9A8dWEanT1tnJKIw=="
     },
     "lmdb@3.5.2": {
       "integrity": "sha512-od5AWh1MNylIOeX7MB7TV627MM9tzyOUn8U8FZOeWKpWFnMU5FS9pu5t41pS4+pi7OxHRyk5QVRhuUimHjfkmg==",

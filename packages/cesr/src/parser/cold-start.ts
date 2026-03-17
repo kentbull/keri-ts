@@ -1,6 +1,12 @@
 import { ColdStartError, ShortageError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 
+/**
+ * Classify the next unread stream bytes into CESR cold-start domains.
+ *
+ * This mirrors KERIpy's tritet probe: message-domain encodings, text CESR,
+ * binary CESR, or annotation separators all begin with distinct leading bits.
+ */
 export function sniff(ims: Uint8Array): ColdCode {
   if (ims.length === 0) {
     throw new ShortageError(1, 0);

@@ -1,6 +1,14 @@
 import { createParser, type ParserOptions } from "../core/parser-engine.ts";
 import type { CesrMessage } from "../core/types.ts";
 
+/**
+ * Adapt an async byte stream into parsed CESR frames.
+ *
+ * Boundary contract:
+ * - chunks are fed in arrival order into one parser instance
+ * - emitted parser error events are rethrown as stream errors
+ * - yielded values are the historical `CesrMessage` frame payloads only
+ */
 export async function* toAsyncFrames(
   source: AsyncIterable<Uint8Array>,
   options: ParserOptions = {},

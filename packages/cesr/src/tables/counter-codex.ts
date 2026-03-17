@@ -15,5 +15,7 @@ function invertCodeNames<T extends NameByCode>(
 export type CounterCodeNameV1 = (typeof COUNTER_CODE_NAMES_V1)[keyof typeof COUNTER_CODE_NAMES_V1];
 export type CounterCodeNameV2 = (typeof COUNTER_CODE_NAMES_V2)[keyof typeof COUNTER_CODE_NAMES_V2];
 
+/** Inverted v1 counter code table (`semantic name -> code`). */
 export const CtrDexV1 = invertCodeNames(COUNTER_CODE_NAMES_V1);
+/** Inverted v2 counter code table (`semantic name -> code`). */
 export const CtrDexV2 = invertCodeNames(COUNTER_CODE_NAMES_V2);

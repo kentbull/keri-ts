@@ -57,6 +57,12 @@ export function versify(opts: {
   }${kind}${intToB64(size, 4)}.`;
 }
 
+/**
+ * Locate and decode the first version string in the stream head window.
+ *
+ * For non-native bodies this is the canonical pre-hydration metadata probe used
+ * by parser and serder layers before any protocol-specific decode occurs.
+ */
 export function smell(
   raw: Uint8Array,
 ): { smellage: Smellage; start: number; fullLength: number } {

@@ -1,11 +1,25 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";
+import {
+  b,
+  Cipher,
+  parseSerder,
+  Prefixer,
+  SerderKERI,
+  Signer,
+  smell,
+} from "../../../../cesr/mod.ts";
+import { branToSeedAeid } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
+import {
+  makeDecrypterFromSeed,
+  makeEncrypterFromAeid,
+} from "../../../src/core/keeper-crypto.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
   CesrIoSetSuber,
   CesrSuber,
+  CryptSignerSuber,
   IoSetSuber,
   OnSuber,
   SerderSuber,
@@ -181,6 +195,41 @@ Deno.test("db/subing - SerderSuber hydrates KERI serders through the shared pars
       assertEquals(suber.put(["Epre", serder.said!], serder), true);
       assertEquals(suber.get(["Epre", serder.said!])?.said, serder.said);
       assertEquals(suber.get(["Epre", serder.said!])?.ilk, "icp");
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("db/subing - CryptSignerSuber encrypts at rest and decrypts on read", async () => {
+  await run(function*() {
+    const lmdber = yield* createLMDBer({
+      name: `cryptsigner-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const { signer, verfer } = makeSignerMaterial("crypt-signer", true);
+      const { seed, aeid } = branToSeedAeid("MyPasscodeARealSecret");
+      const encrypter = makeEncrypterFromAeid(aeid);
+      const decrypter = makeDecrypterFromSeed(seed);
+      const suber = new CryptSignerSuber(lmdber, { subkey: "pris." });
+
+      assertEquals(suber.put(verfer.qb64, signer, encrypter), true);
+
+      const stored = lmdber.getVal(suber.sdb, b(verfer.qb64));
+      if (!stored) {
+        throw new Error("Expected encrypted signer bytes in LMDB.");
+      }
+      assertEquals(new Cipher({ qb64b: stored }).code, "P");
+      assertEquals(new Cipher({ qb64b: stored }).qb64 === signer.qb64, false);
+      assertEquals(suber.get(verfer.qb64, decrypter)?.qb64, signer.qb64);
+      assertEquals(
+        [...suber.getTopItemIter("", decrypter)].map(([keys, value]) => [
+          keys,
+          value.qb64,
+        ]),
+        [[[verfer.qb64], signer.qb64]],
+      );
     } finally {
       yield* lmdber.close(true);
     }

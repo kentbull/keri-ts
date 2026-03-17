@@ -752,6 +752,151 @@ async function runKliCompatStoreOpen(
   assertEquals(extractLastNonEmptyLine(tufaAid.stdout), kliPre);
 }
 
+async function runEncryptedKeeperSemantics(
+  ctx: ScenarioContext,
+): Promise<void> {
+  const base = `gate-d-${crypto.randomUUID().slice(0, 8)}`;
+  const alias = "encrypted-aid";
+  const passcode = "MyPasscodeARealSecret";
+  const wrongPasscode = "WrongPasscodeSecretAB";
+  const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+  const name = `tufa-${crypto.randomUUID().slice(0, 8)}`;
+
+  const tufaInit = await runTufa(
+    [
+      "init",
+      "--name",
+      name,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--salt",
+      salt,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaInit.code !== 0) {
+    throw new Error(`tufa init failed: ${tufaInit.stderr}\n${tufaInit.stdout}`);
+  }
+
+  const tufaIncept = await runTufa(
+    [
+      "incept",
+      "--name",
+      name,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--alias",
+      alias,
+      "--transferable",
+      "--isith",
+      "1",
+      "--icount",
+      "1",
+      "--nsith",
+      "1",
+      "--ncount",
+      "1",
+      "--toad",
+      "0",
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaIncept.code !== 0) {
+    throw new Error(
+      `tufa incept failed: ${tufaIncept.stderr}\n${tufaIncept.stdout}`,
+    );
+  }
+  const pre = extractPrefix(tufaIncept.stdout);
+  const expectedListLine = `${alias} (${pre})`;
+
+  const tufaList = await runTufa(
+    [
+      "list",
+      "--name",
+      name,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaList.code !== 0) {
+    throw new Error(`tufa list failed: ${tufaList.stderr}\n${tufaList.stdout}`);
+  }
+
+  const tufaAid = await runTufa(
+    [
+      "aid",
+      "--name",
+      name,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--alias",
+      alias,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaAid.code !== 0) {
+    throw new Error(`tufa aid failed: ${tufaAid.stderr}\n${tufaAid.stdout}`);
+  }
+
+  const tufaExport = await runTufa(
+    [
+      "export",
+      "--name",
+      name,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--alias",
+      alias,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaExport.code !== 0) {
+    throw new Error(
+      `tufa export failed: ${tufaExport.stderr}\n${tufaExport.stdout}`,
+    );
+  }
+
+  const wrongList = await runTufa(
+    [
+      "list",
+      "--name",
+      name,
+      "--base",
+      base,
+      "--passcode",
+      wrongPasscode,
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+
+  assertEquals(extractIdentifierLines(tufaList.stdout), [expectedListLine]);
+  assertEquals(extractLastNonEmptyLine(tufaAid.stdout), pre);
+  assertEquals(normalizeCesr(extractKelStream(tufaExport.stdout)).length > 0, true);
+  assertEquals(wrongList.code === 0, false);
+  assert(
+    /too many attempts|not associated with last aeid|valid passcode required/i
+      .test(`${wrongList.stdout}\n${wrongList.stderr}`),
+    `Expected wrong passcode failure, got:\n${wrongList.stdout}\n${wrongList.stderr}`,
+  );
+}
+
 const GATE_SCENARIOS: GateScenario[] = [
   {
     id: "A-DB-FOUNDATION-READINESS",
@@ -788,10 +933,10 @@ const GATE_SCENARIOS: GateScenario[] = [
   {
     id: "D-ENCRYPTED-AT-REST-SEMANTICS",
     gate: "D",
-    state: "pending",
-    requiredTufaCommands: ["init"],
+    state: "ready",
+    requiredTufaCommands: ["init", "incept", "list", "aid", "export"],
     expectedOutputShape: "AEID and encrypted keeper semantics parity",
-    blockedReason: "Needs explicit reopen/decrypt parity assertions beyond current smoke coverage.",
+    run: runEncryptedKeeperSemantics,
   },
   {
     id: "E-ENDS-OOBI-BOOTSTRAP",
@@ -871,5 +1016,12 @@ Deno.test(
   "Interop gate harness ready scenario: C-KLI-COMPAT-STORE-OPEN",
   async () => {
     await runReadyScenario("C-KLI-COMPAT-STORE-OPEN");
+  },
+);
+
+Deno.test(
+  "Interop gate harness ready scenario: D-ENCRYPTED-AT-REST-SEMANTICS",
+  async () => {
+    await runReadyScenario("D-ENCRYPTED-AT-REST-SEMANTICS");
   },
 );

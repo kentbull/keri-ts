@@ -754,12 +754,14 @@ interface SerderHydratedInit {
   said: string | null;
 }
 
+/** Constructor variant for hydrating a serder directly from raw encoded bytes. */
 export interface SerderRawInit {
   raw: Uint8Array;
   smellage?: Smellage;
   verify?: boolean;
 }
 
+/** Constructor variant for building or normalizing a serder from semantic SAD input. */
 export interface SerderSadInit {
   sad?: SadMap;
   makify?: boolean;
@@ -773,6 +775,7 @@ export interface SerderSadInit {
   compactify?: boolean;
 }
 
+/** Union of all supported serder construction modes. */
 export type SerderInit = SerderHydratedInit | SerderRawInit | SerderSadInit;
 
 function isHydratedInit(init: SerderInit): init is SerderHydratedInit {

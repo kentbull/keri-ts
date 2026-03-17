@@ -44,6 +44,12 @@ function lazyCommand<TModule extends CommandModule>(
   };
 }
 
+/**
+ * Build the canonical command-dispatch map used by CLI execution and tests.
+ *
+ * Keys must stay aligned with the names registered in `registerCmds()` so the
+ * command parser and dispatch layer continue to agree on routing.
+ */
 export function createCmdHandlers(): Map<string, CommandHandler> {
   return new Map([
     ["init", lazyCommand(() => import("./init.ts"), "initCommand")],

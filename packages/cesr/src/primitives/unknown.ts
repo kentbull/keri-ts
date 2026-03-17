@@ -1,5 +1,6 @@
 import { codeB64ToB2, encodeB64 } from "../core/bytes.ts";
 
+/** Origin domain of losslessly preserved unknown CESR payloads. */
 export type PrimitiveDomain = "txt" | "bny";
 
 /**

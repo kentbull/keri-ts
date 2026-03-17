@@ -78,12 +78,12 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
 2. Gate B bootstrap CLI parity is now live-evidenced for
    `init`/`incept`/`export`/`list`/`aid`; endpoint/OOBI/comms/challenge breadth
    remains absent or blocked by missing command surfaces.
-3. AEID association checks, readonly safety rails, and compat-store visibility
-   are in place, but true encrypted secret semantics versus KERIpy remain
-   incomplete.
-4. `Manager`, `Hab`, and `Signator` now use primitive-first signing surfaces
-   and `Hab.make()` builds inception events through `SerderKERI`, but signator
-   reopen / decrypt lifecycle reliability is still incomplete.
+3. Gate D is now live-evidenced: keeper-global salt, per-prefix salts, and
+   `pris.` signer seeds use real sealed-box encryption with AEID
+   decrypt/re-encrypt behavior and wrong-passcode failure coverage.
+4. `Manager`, `Hab`, and `Signator` now use primitive-first signing surfaces,
+   `Hab.make()` builds inception events through `SerderKERI`, and encrypted
+   signator reopen behavior is covered by focused reopen tests.
 5. The DB layer bootstrap path now runs through typed `Suber` / `Komer`
    wrappers with broad `Baser` / `Keeper` named-subdb binding, but escrow
    infrastructure and row-by-row parity closure are still open.
@@ -120,6 +120,9 @@ for.
 
 - AEID paths match KERIpy expectations for encrypted salt/keys and re-encryption
   behavior.
+- Status: implemented in `keri-ts` with live harness evidence plus focused unit
+  coverage for keeper reopen, wrong-passcode rejection, AEID re-encryption, and
+  signator reopen.
 
 ### Gate E: Endpoint + OOBI Bootstrap (`ends add`, `oobi`)
 
@@ -192,15 +195,17 @@ P0 tracking artifacts:
 - Complete default-isolated path mode and explicit compatibility mode.
 - Land/finish `init`, `incept`, `list`, `aid` parity flow (Gate B/C).
 - Current state: Gate B is implemented with live interop evidence, and Gate C
-  visibility now passes live against encrypted KLI stores; the next blocker is
-  Gate D encrypted secret semantics, not basic compat-store opening.
+  visibility now passes live against encrypted KLI stores; Gate D encrypted
+  secret semantics are also closed, so the next blocker is the Gate E command
+  surface rather than keeper unlock behavior.
 
 ## P6 - AEID + Manager + Signator Reliability
 
 - Complete encryption/decryption lifecycle parity.
 - Fix signator reopen behavior and related command stability.
-- Current state: primitive-first signing and AEID association checks are landed,
-  but decrypt/re-encrypt parity and reopen reliability are still open.
+- Current state: decrypt/re-encrypt parity and signator reopen reliability are
+  landed with sodium-backed sealed-box behavior and reopen tests; remaining work
+  has moved outward to endpoint/OOBI/comms breadth.
 
 ## P7 - `ends add` + Endpoint State
 
@@ -239,13 +244,11 @@ P0 tracking artifacts:
 
 ## Recommended Next Focus (2026-03-17)
 
-1. Gate D: close encrypted keeper semantics, AEID decrypt/re-encrypt parity, and
-   signator reopen reliability.
-2. Gate E: implement `ends` / `oobi` command surfaces on top of the endpoint and
+1. Gate E: implement `ends` / `oobi` command surfaces on top of the endpoint and
    OOBI stores that are already bound in `Baser`.
-3. Gate A/H bookkeeping: refresh the DB-layer symbol and K/V matrices so the
+2. Gate A/H bookkeeping: refresh the DB-layer symbol and K/V matrices so the
    plans stop understating landed `Suber` / `Komer` / `Baser` work.
-4. Gate F/G readiness: add escrow/process-loop infrastructure needed for
+3. Gate F/G readiness: add escrow/process-loop infrastructure needed for
    endpoint, OOBI, comms, and challenge flows before chasing higher-level CLI
    parity.
 

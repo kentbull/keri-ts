@@ -1,5 +1,11 @@
 import { CtrDexV1, CtrDexV2 } from "./counter-codex.ts";
 
+/**
+ * Shared semantic counter families for structor/native-body helpers.
+ *
+ * These are grouped readability views over the counter codex, not another
+ * authority for code ownership.
+ */
 export const AGGOR_LIST_CODES = new Set<string>([
   CtrDexV2.GenericGroup,
   CtrDexV2.BigGenericGroup,

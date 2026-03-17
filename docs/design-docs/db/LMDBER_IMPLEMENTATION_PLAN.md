@@ -23,7 +23,7 @@ organized by component with clear implementation priorities.
 5. Path note: base `LMDBer` defaults to `.tufa/db` / `.tufa/clean/db`;
    `.keri/*` tails are selected by compat-aware `Baser` / `Keeper`, not by the
    base `LMDBer` default.
-6. The real next blockers are Gate D encrypted semantics, escrow/process-loop
+6. The real next blockers are Gate E/F/G command breadth, escrow/process-loop
    infrastructure, and matrix refresh, not the initial creation of core LMDB
    helpers.
 

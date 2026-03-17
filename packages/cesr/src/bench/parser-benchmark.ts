@@ -29,7 +29,9 @@ export interface CesrParserBenchmarkOptions {
 }
 
 export interface CesrParseRunSummary {
+  /** Count of successfully emitted frame events for one run. */
   frameCount: number;
+  /** Count of emitted parser error events for one run. */
   errorCount: number;
 }
 

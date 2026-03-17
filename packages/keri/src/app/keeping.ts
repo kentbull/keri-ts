@@ -2,14 +2,15 @@ import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import {
   Cigar,
+  Decrypter,
   decodeB64,
   Diger,
+  Encrypter,
   hydrateMatter,
   intToB64,
   NumberPrimitive,
   NumDex,
   parseMatter,
-  Prefixer,
   Saider,
   Salter,
   Siger,
@@ -17,6 +18,14 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
+import {
+  decryptSaltQb64,
+  ensureKeeperCryptoReady,
+  encryptSaltQb64,
+  makeDecrypterFromSeed,
+  makeEncrypterFromAeid,
+  seedMatchesAeid,
+} from "../core/keeper-crypto.ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
 
 /**
@@ -162,14 +171,19 @@ function pubsKey(pre: string, ridx: number): string {
  *
  * Current `keri-ts` differences:
  * - bootstrap-first: the salty path is the only real algorithm today
- * - AEID handling currently validates association and storage boundaries but
- *   does not yet implement KERIpy's full re-encryption/decryption lifecycle
+ * - AEID handling now includes real sealed-box encryption for keeper-global
+ *   salt, per-prefix salts, and signer seeds, while keeping the encrypted
+ *   runtime dependency local to the KERI package instead of CESR
  * - readonly opens intentionally avoid keeper mutation so visibility commands
  *   can inspect stores without side effects
  */
 export class Manager {
   private _seed: string;
   private _ks: Keeper;
+  /** Public box key derived from AEID; used only when writing encrypted secrets. */
+  private encrypter: Encrypter | null = null;
+  /** Private box key derived from passcode/seed; required for encrypted reads. */
+  private decrypter: Decrypter | null = null;
 
   constructor(args: ManagerArgs) {
     const {
@@ -225,12 +239,30 @@ export class Manager {
     this.ks.pinGbls("algo", algo);
   }
 
+  /**
+   * Keeper-global root salt.
+   *
+   * Storage invariant:
+   * - plaintext qb64 when no AEID encryption is active
+   * - `X25519_Cipher_Salt` qb64 when a decrypter/encrypter pair is active
+   *
+   * Caller contract:
+   * - callers always see canonical plaintext salt qb64 from this getter
+   * - the encrypted/plain distinction is strictly an at-rest concern
+   */
   get salt(): string | null {
-    return this.ks.getGbls("salt");
+    const salt = this.ks.getGbls("salt");
+    if (salt === null) {
+      return null;
+    }
+    return this.decrypter ? decryptSaltQb64(salt, this.decrypter) : salt;
   }
 
   set salt(salt: string) {
-    this.ks.pinGbls("salt", salt);
+    this.ks.pinGbls(
+      "salt",
+      this.encrypter ? encryptSaltQb64(salt, this.encrypter).qb64 : salt,
+    );
   }
 
   get tier(): string | null {
@@ -241,34 +273,140 @@ export class Manager {
     this.ks.pinGbls("tier", tier);
   }
 
+  /**
+   * Initialize or reopen manager encryption state against the underlying keeper.
+   *
+   * Reopen rules:
+   * - if the keeper has never stored an AEID, first-time initialization may set
+   *   one unless the keeper is readonly
+   * - if the keeper already has an AEID, the caller must supply a seed/passcode
+   *   that proves possession of the matching decrypt key
+   * - readonly opens never rewrite keeper globals, even when the caller also
+   *   provides AEID input
+   *
+   * Maintainer warning:
+   * This is the place where "seed means process-local input" meets
+   * "AEID means persistent keeper policy". Be careful not to collapse those two
+   * concepts or readonly visibility commands will start mutating stores again.
+   */
   setup(aeid = "", seed = ""): void {
-    this.updateAeid(aeid, seed);
+    ensureKeeperCryptoReady();
+    const storedAeid = this.aeid;
+
+    if (!storedAeid) {
+      if (!this.ks.readonly) {
+        this.updateAeid(aeid, seed);
+      }
+      return;
+    }
+
+    this.encrypter = makeEncrypterFromAeid(storedAeid);
+    if (!seed || !seedMatchesAeid(seed, storedAeid)) {
+      throw new Error(
+        `Last seed missing or provided last seed not associated with last aeid=${storedAeid}.`,
+      );
+    }
+
+    this._seed = seed;
+    this.decrypter = makeDecrypterFromSeed(seed);
+
+    if (!this.ks.readonly && aeid && aeid !== storedAeid) {
+      this.updateAeid(aeid, seed);
+    }
   }
 
+  /**
+   * Change keeper AEID policy and re-encrypt every affected secret in place.
+   *
+   * Re-encryption scope:
+   * - keeper-global root salt in `gbls.salt`
+   * - per-prefix salts in `prms.salt`
+   * - signer seeds in `pris.`
+   *
+   * Behavior matrix:
+   * - `current AEID -> same AEID`: validate and keep stable
+   * - `current AEID -> new AEID`: decrypt with old seed, re-encrypt with new
+   *   public box key
+   * - `current AEID -> empty`: decrypt and persist plaintext secrets
+   * - `empty -> new AEID`: encrypt newly managed secrets going forward
+   *
+   * Failure model:
+   * - current seed must authenticate the currently stored AEID before any
+   *   secret migration is attempted
+   * - new seed must authenticate the new AEID before any re-encryption is
+   *   attempted
+   */
   updateAeid(aeid: string, seed: string): void {
-    if (aeid) {
-      if (!seed) {
-        throw new Error("Seed required when aeid is set.");
-      }
-      const seedRaw = parseQb64Raw(seed);
-      const derivedAeid = new Prefixer({
-        code: "B",
-        raw: ed25519.getPublicKey(seedRaw),
-      }).qb64;
-      if (derivedAeid !== aeid) {
+    ensureKeeperCryptoReady();
+    const currentAeid = this.aeid;
+
+    if (currentAeid) {
+      if (!this.seed || !this.encrypter || !seedMatchesAeid(this.seed, currentAeid)) {
         throw new Error(
-          `Seed missing or provided seed not associated with aeid=${aeid}.`,
+          `Last seed missing or provided last seed not associated with last aeid=${currentAeid}.`,
         );
       }
     }
 
+    if (aeid) {
+      if (!seed || !seedMatchesAeid(seed, aeid)) {
+        throw new Error(
+          `Seed missing or provided seed not associated with aeid=${aeid}.`,
+        );
+      }
+      this.encrypter = makeEncrypterFromAeid(aeid);
+    } else {
+      this.encrypter = null;
+    }
+
+    const salt = this.salt;
+    if (salt !== null) {
+      this.salt = salt;
+    }
+
+    if (this.decrypter) {
+      // `prms.salt` stores derivation salt per managed prefix, so AEID changes
+      // must migrate that state in lockstep with keeper-global salt.
+      for (const [keys, data] of this.ks.prms.getTopItemIter()) {
+        if (!data.salt) {
+          continue;
+        }
+        data.salt = this.encrypter
+          ? encryptSaltQb64(
+            decryptSaltQb64(data.salt, this.decrypter),
+            this.encrypter,
+          ).qb64
+          : decryptSaltQb64(data.salt, this.decrypter);
+        this.ks.prms.pin(keys, data);
+      }
+
+      // `pris.` stores signer seeds keyed by their public verifier. Reads here
+      // are intentionally plaintext through the decrypter so the subdb can
+      // immediately re-pin under the new encryption policy.
+      for (const [keys, signer] of this.ks.pris.getTopItemIter("", this.decrypter)) {
+        this.ks.pris.pin(keys, signer, this.encrypter ?? undefined);
+      }
+    }
+
     this._seed = seed;
+    this.decrypter = seed ? makeDecrypterFromSeed(seed) : null;
+
     if (this.ks.readonly) {
       return;
     }
     this.ks.pinGbls("aeid", aeid);
   }
 
+  /**
+   * Create current and next key material for one new managed prefix.
+   *
+   * Gate D note:
+   * - when keeper encryption is active, signer seeds are written into `pris.`
+   *   as sealed-box ciphertext and the persisted prefix parameters store an
+   *   encrypted salt
+   * - returned `Verfer`/`Diger` values remain plaintext semantic objects
+   *   because encryption is only an at-rest concern
+   */
   incept(args: ManagerInceptArgs = {}): [Verfer[], Diger[]] {
     const {
       icount = 1,
@@ -309,7 +447,11 @@ export class Manager {
         temp,
       );
       verfers.push(signer.verfer);
-      this.ks.putPris(signer.verfer.qb64, signer.signer.qb64);
+      this.ks.putPris(
+        signer.verfer.qb64,
+        signer.signer.qb64,
+        this.encrypter ?? undefined,
+      );
     }
 
     for (let i = 0; i < ncount; i++) {
@@ -326,13 +468,19 @@ export class Manager {
         raw: Diger.digest(b(signer.verfer.qb64), dcode),
       });
       digers.push(dig);
-      this.ks.putPris(signer.verfer.qb64, signer.signer.qb64);
+      this.ks.putPris(
+        signer.verfer.qb64,
+        signer.signer.qb64,
+        this.encrypter ?? undefined,
+      );
     }
 
     const pp: PrePrm = {
       pidx,
       algo: usedAlgo,
-      salt: usedSalt,
+      salt: this.encrypter
+        ? encryptSaltQb64(usedSalt, this.encrypter).qb64
+        : usedSalt,
       stem,
       tier: usedTier,
     };
@@ -408,11 +556,22 @@ export class Manager {
     return this.signUnindexed(ser, pubs);
   }
 
-  /** Build indexed controller signatures in stable key-list order. */
+  /**
+   * Build indexed controller signatures in stable key-list order.
+   *
+   * Security invariant:
+   * - when AEID encryption is active, signing is not allowed to silently fall
+   *   through to "missing key" behavior without a decrypter
+   * - this keeps wrong-open / unauthorized-open failures distinct from actual
+   *   DB corruption or missing-key conditions
+   */
   private signIndexed(ser: Uint8Array, pubs: string[]): Siger[] {
+    if (this.aeid && !this.decrypter) {
+      throw new Error("Unauthorized decryption attempt. Aeid but no decrypter.");
+    }
     const sigers: Siger[] = [];
     for (const [idx, pub] of pubs.entries()) {
-      const seedQb64 = this.ks.getPris(pub);
+      const seedQb64 = this.ks.getPris(pub, this.decrypter ?? undefined);
       if (!seedQb64) {
         throw new Error(`Missing prikey in db for pubkey=${pub}`);
       }
@@ -423,11 +582,19 @@ export class Manager {
     return sigers;
   }
 
-  /** Build unindexed detached signatures for ad hoc message signing flows. */
+  /**
+   * Build unindexed detached signatures for ad hoc message signing flows.
+   *
+   * Uses the same auth boundary as indexed signing: encrypted keeper state must
+   * already be unlocked before detached signatures are attempted.
+   */
   private signUnindexed(ser: Uint8Array, pubs: string[]): Cigar[] {
+    if (this.aeid && !this.decrypter) {
+      throw new Error("Unauthorized decryption attempt. Aeid but no decrypter.");
+    }
     const cigars: Cigar[] = [];
     for (const pub of pubs) {
-      const seedQb64 = this.ks.getPris(pub);
+      const seedQb64 = this.ks.getPris(pub, this.decrypter ?? undefined);
       if (!seedQb64) {
         throw new Error(`Missing prikey in db for pubkey=${pub}`);
       }
@@ -481,3 +648,5 @@ export function makeSaider(raw: Uint8Array): string {
 export function b64DecodeUrl(text: string): Uint8Array {
   return decodeB64(text);
 }
+
+export { ensureKeeperCryptoReady };

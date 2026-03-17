@@ -70,6 +70,14 @@ export {
   TraitDex,
 };
 
+/**
+ * Derived matter/indexer family views used by semantic primitive validators.
+ *
+ * Maintainer rule:
+ * - generated codex objects such as `MtrDex`, `PreDex`, and `IdrDex` remain
+ *   the authority
+ * - these exported sets are readability helpers layered over that authority
+ */
 export const BEXTER_CODES = codexValues(BexDex);
 export const TEXTER_CODES = codexValues(TexDex);
 export const DECIMAL_CODES = codexValues(DecDex);
@@ -133,6 +141,7 @@ export const VERSER_PROTOCOLS = new Set<string>(Object.values(Protocols));
 
 const MATTER_CODEX_NAMES = invertCodex(MtrDex);
 
+/** Project one matter code back to its generated codex member name. */
 export function matterCodexName(code: string): string | undefined {
   return MATTER_CODEX_NAMES.get(
     code as (typeof MtrDex)[keyof typeof MtrDex],

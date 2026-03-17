@@ -17,6 +17,7 @@ import {
   Algos,
   branToSaltQb64,
   encodeDateTimeToDater,
+  ensureKeeperCryptoReady,
   Manager,
   normalizeSaltQb64,
   saltySigner,
@@ -621,6 +622,11 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     if (!usedAeid) usedAeid = derived.aeid;
   }
 
+  // Encrypted keeper opens are sync at the `Manager` surface, so habery
+  // creation explicitly establishes the sodium readiness boundary here before
+  // manager construction. That keeps reopen/init paths honest without pushing
+  // libsodium concerns into CESR imports.
+  ensureKeeperCryptoReady();
   const mgr = new Manager({
     ks,
     seed: usedSeed,

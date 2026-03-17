@@ -23,6 +23,7 @@ const NATIVE_FIELD_LABELS: Record<string, string> = Object.freeze({
   a: "anchors/data",
 });
 
+/** Resolve a human-readable counter name against either known counter table. */
 export function counterCodeName(code: string): string {
   const v2 = COUNTER_CODE_NAMES_V2[code as keyof typeof COUNTER_CODE_NAMES_V2];
   if (v2) return v2;
@@ -31,6 +32,7 @@ export function counterCodeName(code: string): string {
   return "Counter";
 }
 
+/** Resolve a counter name against the registry selected for one protocol version. */
 export function counterCodeNameForVersion(
   code: string,
   version: Versionage,
@@ -39,10 +41,12 @@ export function counterCodeNameForVersion(
   return table[code] ?? "Counter";
 }
 
+/** Resolve a human-readable matter name from the generated matter code table. */
 export function matterCodeName(code: string): string {
   return MATTER_CODE_NAMES[code as keyof typeof MATTER_CODE_NAMES] ?? "Matter";
 }
 
+/** Expand well-known native field labels for annotation comments when available. */
 export function nativeLabelName(label: string | null): string | null {
   if (!label) return null;
   return NATIVE_FIELD_LABELS[label] ?? label;

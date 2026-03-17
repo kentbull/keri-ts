@@ -17,6 +17,10 @@ import {
 } from "./recovery-diagnostics.ts";
 import type { CesrFrame, CesrMessage } from "./types.ts";
 
+/**
+ * Parser construction options spanning legacy compatibility knobs and the newer
+ * explicit policy seams.
+ */
 export interface ParserOptions {
   /** Legacy framed toggle; used only when `frameBoundaryPolicy` is not injected. */
   framed?: boolean;

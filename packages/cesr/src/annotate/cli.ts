@@ -7,6 +7,7 @@ interface CliOptions {
   pretty: boolean;
 }
 
+/** Runtime IO boundary for the standalone annotate CLI. */
 export interface CliIo {
   readFile(path: string): Promise<Uint8Array>;
   writeTextFile(path: string, text: string): Promise<void>;
@@ -53,6 +54,12 @@ function parseArgs(args: string[]): CliOptions {
   return out;
 }
 
+/**
+ * Read a full `ReadableStream` into one contiguous byte buffer.
+ *
+ * This is the shared browser/runtime-neutral helper used by annotate CLI
+ * shims that expose stdin as a web stream instead of synchronous file APIs.
+ */
 export async function readAllReadable(
   stream: ReadableStream<Uint8Array>,
 ): Promise<Uint8Array> {
@@ -81,6 +88,12 @@ export async function readAllReadable(
   return out;
 }
 
+/**
+ * Execute the standalone annotate CLI against the provided IO boundary.
+ *
+ * Error reporting is intentionally normalized here so runtime-specific entry
+ * points can stay as thin bootstraps.
+ */
 export async function annotateCli(args: string[], io: CliIo): Promise<number> {
   try {
     const options = parseArgs(args);

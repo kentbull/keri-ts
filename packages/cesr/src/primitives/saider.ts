@@ -8,8 +8,10 @@ import { DIGEST_CODES } from "./codex.ts";
 import { Diger } from "./diger.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
+/** Digest callback seam used by SAID derivation helpers. */
 export type SaidDigestFn = (ser: Uint8Array, code: string) => Uint8Array;
 
+/** Options for deriving one top-level saidive field from a SAD. */
 export interface SaidifyOptions {
   code?: string;
   kind?: Kind;
@@ -18,6 +20,7 @@ export interface SaidifyOptions {
   digest?: SaidDigestFn;
 }
 
+/** Options for computing multiple saidive fields from one sized SAD. */
 export interface SaidifyFieldsOptions {
   kind?: Kind;
   saids: Record<string, string>;

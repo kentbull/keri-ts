@@ -95,6 +95,12 @@ function* readAllStdinOp(): Operation<Uint8Array> {
   return yield* operation;
 }
 
+/**
+ * CLI command wrapper for CESR annotation.
+ *
+ * This keeps `tufa annotate` aligned with the lower-level CESR annotator while
+ * handling runtime-specific stdin/stdout and optional terminal colorization.
+ */
 export function* annotateCommand(
   args: Record<string, unknown>,
 ): Operation<void> {

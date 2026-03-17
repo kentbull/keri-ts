@@ -2,6 +2,7 @@ import type { CounterGroupLike, GroupEntry, Primitive } from "../primitives/prim
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind, Protocol } from "../tables/versions.ts";
 
+/** Version metadata discovered from one version string or native pre-read. */
 export interface Smellage {
   proto: Protocol;
   pvrsn: Versionage;
@@ -10,6 +11,7 @@ export interface Smellage {
   gvrsn: Versionage | null;
 }
 
+/** Parser cold-start domain classification for the next unread stream bytes. */
 export type ColdCode = "msg" | "txt" | "bny" | "ano";
 
 /** Body payload for one parsed CESR frame. */
