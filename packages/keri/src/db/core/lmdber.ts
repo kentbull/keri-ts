@@ -3,7 +3,7 @@
  */
 
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { Database, Key, open, RootDatabase } from "npm:lmdb@3.4.4";
+import { Database, Key, open, RootDatabase } from "npm:lmdb@3.5.2";
 import { b, bytesEqual, bytesHex, t, toBytes } from "../../../../cesr/mod.ts";
 import { startsWith } from "../../core/bytes.ts";
 import {

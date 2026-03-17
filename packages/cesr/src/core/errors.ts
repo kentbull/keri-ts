@@ -37,6 +37,8 @@ export class UnknownCodeError extends ParserError {}
 export class GroupSizeError extends ParserError {}
 /** Qualified input could not be deserialized into a valid CESR payload. */
 export class DeserializeError extends ParserError {}
+/** A CESR payload could not be serialized into a valid protocol representation. */
+export class SerializeError extends ParserError {}
 /** Failure while constructing syntax artifacts from token bytes. */
 export class SyntaxParseError extends ParserError {
   constructor(

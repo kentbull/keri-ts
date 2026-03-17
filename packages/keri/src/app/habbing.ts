@@ -1,5 +1,14 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { b, t } from "../../../cesr/mod.ts";
+import {
+  Cigar,
+  DigDex,
+  DIGEST_CODES,
+  parseMatter,
+  PREFIX_CODES,
+  SerderKERI,
+  Siger,
+} from "../../../cesr/mod.ts";
+import { b } from "../../../cesr/mod.ts";
 import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
@@ -8,7 +17,6 @@ import {
   Algos,
   branToSaltQb64,
   encodeDateTimeToDater,
-  makeSaider,
   Manager,
   normalizeSaltQb64,
   saltySigner,
@@ -68,14 +76,6 @@ export interface KeverState {
   sn: number;
   delpre?: string;
   wits: string[];
-}
-
-function versifyV1(size: number): string {
-  return `KERI10JSON${size.toString(16).padStart(6, "0")}_`;
-}
-
-function serializeKed(ked: Record<string, unknown>): Uint8Array {
-  return b(JSON.stringify(ked));
 }
 
 function makeNowIso8601(): string {
@@ -159,18 +159,14 @@ function makeInceptRaw(
     data: unknown[];
     delpre?: string;
   },
-): { raw: Uint8Array; pre: string; said: string } {
+): SerderKERI {
   const ilk = args.delpre ? "dip" : "icp";
   const kt = args.isith ?? defaultThreshold(keys.length, 1);
   const nt = args.nsith ?? defaultThreshold(ndigs.length, 0);
-  const saidDummy = "#".repeat(44);
 
   const ked: Record<string, unknown> = {
-    v: versifyV1(0),
     t: ilk,
-    d: saidDummy,
-    i: args.code === "E" ? saidDummy : keys[0],
-    s: "0",
+    i: "",
     kt,
     k: keys,
     nt,
@@ -182,16 +178,41 @@ function makeInceptRaw(
   };
 
   if (args.delpre) ked.di = args.delpre;
+  if (!args.delpre && !DIGEST_CODES.has(args.code) && keys.length === 1) {
+    ked.i = keys[0];
+  }
 
-  ked.v = versifyV1(serializeKed(ked).length);
-  const sizedDummied = serializeKed(ked);
-  const said = makeSaider(sizedDummied);
+  const saids = resolveInceptiveSaidCodes(ked, args.code);
+  return new SerderKERI({
+    sad: ked,
+    makify: true,
+    saids,
+  });
+}
 
-  ked.d = said;
-  if (args.code === "E") ked.i = said;
+function resolveInceptiveSaidCodes(
+  ked: Record<string, unknown>,
+  explicitPrefixCode?: string,
+): Record<string, string> {
+  const saids: Record<string, string> = {
+    d: DigDex.Blake3_256,
+    i: DigDex.Blake3_256,
+  };
 
-  const raw = serializeKed(ked);
-  return { raw, pre: ked.i as string, said };
+  if (explicitPrefixCode && PREFIX_CODES.has(explicitPrefixCode)) {
+    saids.i = explicitPrefixCode;
+    return saids;
+  }
+
+  if (typeof ked.i === "string" && ked.i.length > 0) {
+    try {
+      saids.i = parseMatter(b(ked.i), "txt").code;
+    } catch {
+      // Match KERIpy priority: invalid existing values do not override defaults.
+    }
+  }
+
+  return saids;
 }
 
 /** Represents a local identifier habitat and its current key state. */
@@ -284,7 +305,7 @@ export class Hab {
 
     const currentSith = isith ?? defaultThreshold(keys.length, 1);
     const nextThreshold = nextSith ?? defaultThreshold(ndigs.length, 0);
-    const { raw, pre, said } = makeInceptRaw(keys, ndigs, {
+    const serder = makeInceptRaw(keys, ndigs, {
       code: prefixCode,
       isith: currentSith,
       nsith: nextThreshold,
@@ -294,6 +315,14 @@ export class Hab {
       data,
       delpre,
     });
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) {
+      throw new Error(
+        "Expected inception serder to provide string pre and said.",
+      );
+    }
+    const raw = serder.raw;
 
     const opre = verfers[0].qb64;
     this.mgr.move(opre, pre);
@@ -338,12 +367,17 @@ export class Hab {
   }
 
   /** Produces signatures with this habitat's current signing keys. */
-  sign(ser: Uint8Array, indexed = false): string[] {
+  sign(ser: Uint8Array, indexed: true): Siger[];
+  sign(ser: Uint8Array, indexed?: false): Cigar[];
+  sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
     if (!this.kever && this.pre) {
       this.refreshKever();
     }
     const pubs = this.kever?.verfers ?? [];
-    return this.mgr.sign(ser, pubs, indexed);
+    if (indexed) {
+      return this.mgr.sign(ser, pubs, true);
+    }
+    return this.mgr.sign(ser, pubs, false);
   }
 }
 
@@ -390,7 +424,7 @@ export class Signator {
   sign(ser: Uint8Array): string {
     const sig = this.hab.sign(ser, false)[0];
     if (!sig) throw new Error("Unable to sign");
-    return sig;
+    return sig.qb64;
   }
 
   /** Verifies by recomputing the expected deterministic signature. */
@@ -522,7 +556,7 @@ export class Habery {
 export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
   const branSalt = branToSaltQb64(bran);
   const signer = saltySigner(branSalt, "", false, "low", false);
-  return { seed: signer.seedQb64, aeid: signer.verferQb64 };
+  return { seed: signer.signer.qb64, aeid: signer.verfer.qb64 };
 }
 
 /**

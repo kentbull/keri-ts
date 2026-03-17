@@ -16,8 +16,7 @@ function isTexterCode(code: string): boolean {
  */
 export class Texter extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!isTexterCode(this.code)) {
       throw new UnknownCodeError(
         `Expected texter bytes code, got ${this.code}`,

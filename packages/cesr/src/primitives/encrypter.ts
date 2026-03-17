@@ -11,8 +11,7 @@ import { Matter, type MatterInit } from "./matter.ts";
  */
 export class Encrypter extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!ENCRYPTER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected encrypter key code, got ${this.code}`,

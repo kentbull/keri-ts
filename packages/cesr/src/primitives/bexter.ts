@@ -43,13 +43,12 @@ export class Bexter extends Matter {
   static derawify(raw: Uint8Array, code: string): string {
     const ls = getLeadSize(code);
     const bext = encodeB64(new Uint8Array([...new Uint8Array(ls), ...raw]));
-    const ws = ls === 0 && bext.startsWith("A") ? 1 : (ls + 1) % 4;
+    const ws = ls === 0 ? (bext.startsWith("A") ? 1 : 0) : (ls + 1) % 4;
     return bext.slice(ws);
   }
 
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!isBexterCode(this.code)) {
       throw new UnknownCodeError(
         `Expected bexter strb64 code, got ${this.code}`,

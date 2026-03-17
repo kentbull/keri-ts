@@ -12,8 +12,7 @@ import { Matter, type MatterInit, parseMatter } from "./matter.ts";
  */
 export class Prefixer extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!PREFIX_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected prefix code, got ${this.code}`);
     }

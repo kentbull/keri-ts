@@ -33,9 +33,14 @@ import { Protocols } from "../tables/versions.ts";
 /**
  * Derived readability layer over the generated KERIpy-parity codex objects.
  *
- * Canonical names such as `MtrDex`, `PreDex`, `DigDex`, and `IdrDex` are the
- * primary source of truth. The sets exported here are convenience views for
- * primitive-family validation and TS ergonomics.
+ * Canonical names such as `MtrDex` and `IdrDex` are the primary source of
+ * truth for the shared Matter/Indexer code spaces. Semantic families such as
+ * `PreDex`, `DigDex`, `NonceDex`, and `IdxSigDex` are KERIpy-style subset
+ * views over those same base codices, not separate versioned registries.
+ *
+ * The sets exported here are convenience views for primitive-family validation
+ * and TS ergonomics. Counter codices are the separate genus/version-aware
+ * layer; Matter and Indexer family subsets are not.
  */
 export {
   BexDex,

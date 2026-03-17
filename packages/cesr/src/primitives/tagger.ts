@@ -31,8 +31,7 @@ export function isTaggerCode(code: string): boolean {
  */
 export class Tagger extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!isTaggerCode(this.code)) {
       throw new UnknownCodeError(`Expected tag code, got ${this.code}`);
     }

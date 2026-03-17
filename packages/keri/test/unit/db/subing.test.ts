@@ -118,8 +118,8 @@ Deno.test("db/subing - CesrSuber hydrates typed CESR primitives", async () => {
       temp: true,
     });
     try {
-      const { verferQb64 } = makeSignerMaterial("pref-a", false);
-      const prefixer = new Prefixer({ qb64: verferQb64 });
+      const { verfer } = makeSignerMaterial("pref-a", false);
+      const prefixer = new Prefixer({ qb64: verfer.qb64 });
       const suber = new CesrSuber<Prefixer>(lmdber, {
         subkey: "pres.",
         klas: Prefixer,
@@ -145,10 +145,10 @@ Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async
     });
     try {
       const signerA = new Signer({
-        qb64: makeSignerMaterial("signer-a").seedQb64,
+        qb64: makeSignerMaterial("signer-a").signer.qb64,
       });
       const signerB = new Signer({
-        qb64: makeSignerMaterial("signer-b").seedQb64,
+        qb64: makeSignerMaterial("signer-b").signer.qb64,
       });
       const suber = new CesrIoSetSuber<Signer>(lmdber, {
         subkey: "pris.",

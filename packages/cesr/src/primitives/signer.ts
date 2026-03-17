@@ -11,8 +11,7 @@ import { Matter, type MatterInit } from "./matter.ts";
  */
 export class Signer extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!SIGNER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected signer seed code, got ${this.code}`,

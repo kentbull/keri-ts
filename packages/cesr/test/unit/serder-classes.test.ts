@@ -2,9 +2,11 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { b } from "../../src/index.ts";
-import { parseSerder, Serder, SerderACDC, SerderKERI } from "../../src/serder/serder.ts";
-import { smell } from "../../src/serder/smell.ts";
+import { Matter } from "../../src/primitives/matter.ts";
+import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../src/serder/serder.ts";
+import { smell, versify } from "../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { Vrsn_2_0 } from "../../src/tables/versions.ts";
 import { counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -142,4 +144,251 @@ Deno.test("serder: parseSerder wraps malformed JSON decode failures", () => {
   const raw = b(bad);
   const { smellage } = smell(raw);
   assertThrows(() => parseSerder(raw, smellage), DeserializeError);
+});
+
+Deno.test("serder: SerderKERI makify returns saidified inception serder", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+  const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "icp",
+      i: "",
+      kt: "1",
+      k: [key],
+      nt: "1",
+      n: [nxt],
+      bt: "0",
+      b: [],
+      c: [],
+      a: [],
+    },
+    makify: true,
+    saids: {
+      d: "E",
+      i: "E",
+    },
+  });
+
+  assertEquals(serder.verify(), true);
+  assertEquals(serder.pre, serder.said);
+  assertEquals(serder.keys, [key]);
+  assertEquals(serder.ndigs, [nxt]);
+  assertEquals(serder.estive, true);
+});
+
+Deno.test("serder: SerderKERI preserves non-digestive i code from existing prefix", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "icp",
+      i: key,
+      kt: "1",
+      k: [key],
+      nt: "0",
+      n: [],
+      bt: "0",
+      b: [],
+      c: [],
+      a: [],
+    },
+    makify: true,
+  });
+
+  assertEquals(serder.pre, key);
+  assertEquals(new Matter({ qb64: serder.pre ?? "" }).code, "B");
+  assertEquals(serder.verify(), true);
+});
+
+Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backer wrapper accessors", () => {
+  // This is the accessor parity test for the KERI subtype: the semantic hex
+  // strings stay available, but the wrapper projections should also exist for
+  // maintainers who want the same object-level surface KERIpy exposes.
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+  const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";
+  const backer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+
+  const serder = new SerderKERI({
+    sad: {
+      v: versify({
+        proto: "KERI",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "icp",
+      d: "",
+      i: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+      s: "a",
+      kt: "1",
+      k: [key],
+      nt: "1",
+      n: [nxt],
+      bt: "1",
+      b: [backer],
+      c: [],
+      a: [],
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+
+  assertEquals(serder.sner?.numh, "a");
+  assertEquals(serder.sn, 10);
+  assertEquals(serder.tholder?.sith, "1");
+  assertEquals(serder.ntholder?.sith, "1");
+  assertEquals(serder.bner?.numh, "1");
+  assertEquals(serder.bn, 1);
+  assertEquals(serder.berfers.map((verfer) => verfer.qb64), [backer]);
+  assertEquals(serder.genus, "-_AAA");
+  assertEquals(serder.mucodes.FixBodyGroup, CtrDexV2.FixBodyGroup);
+});
+
+Deno.test("serder: SerderKERI rejects invalid non-transferable inception state", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+
+  assertThrows(
+    () =>
+      new SerderKERI({
+        sad: {
+          t: "icp",
+          i: key,
+          kt: "1",
+          k: [key],
+          nt: "1",
+          n: ["EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_"],
+          bt: "0",
+          b: [],
+          c: [],
+          a: [],
+        },
+        makify: true,
+      }),
+    DeserializeError,
+  );
+});
+
+Deno.test("serder: SerderACDC can preserve expanded sections while computing the compact-form top-level SAID", () => {
+  // This is the key ACDC compactification rule from KERIpy: the visible sad can
+  // remain expanded, while the top-level `d` is still the digest of the most
+  // compact variant.
+  const issuer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+  const regid = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
+  const template = {
+    v: versify({
+      proto: "ACDC",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "JSON",
+      size: 0,
+    }),
+    t: "acm",
+    d: "",
+    u: "",
+    i: issuer,
+    rd: regid,
+    s: { d: "", title: "schema" },
+    a: { d: "", i: issuer, role: "holder" },
+    e: { d: "", link: regid },
+    r: { d: "", usage: "test" },
+  };
+
+  const expanded = new SerderACDC({
+    sad: template,
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+    compactify: false,
+  });
+  const compacted = new SerderACDC({
+    sad: template,
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+    compactify: true,
+  });
+
+  assertEquals(expanded.verify(), true);
+  assertEquals(compacted.verify(), true);
+  // Same top-level SAID, different caller-visible section representation.
+  assertEquals(expanded.said, compacted.said);
+  assertEquals(typeof expanded.schema, "object");
+  assertEquals(typeof expanded.attrib, "object");
+  assertEquals(typeof compacted.schema, "string");
+  assertEquals(typeof compacted.attrib, "string");
+});
+
+Deno.test("serder: SerderACDC rejects expanded-section tampering when top-level d is left stale", () => {
+  // This is the inverse of the previous test: if a maintainer changes expanded
+  // section content but leaves top-level `d` alone, verification must fail
+  // because `d` commits to the compact form of those sections.
+  const issuer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+  const regid = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
+  const serder = new SerderACDC({
+    sad: {
+      v: versify({
+        proto: "ACDC",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "acm",
+      d: "",
+      u: "",
+      i: issuer,
+      rd: regid,
+      s: { d: "", title: "schema" },
+      a: { d: "", i: issuer, role: "holder" },
+      e: { d: "", link: regid },
+      r: { d: "", usage: "test" },
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+    compactify: false,
+  });
+
+  const tampered = serder.sad ?? {};
+  ((tampered.a as Record<string, unknown>).role) = "tampered";
+  const { raw } = sizeify(tampered, "JSON");
+
+  assertThrows(
+    () => new SerderACDC({ raw, verify: true }),
+    DeserializeError,
+  );
+});
+
+Deno.test("serder: SerderACDC partial schema sections compute and verify $id while leaving the visible section expanded", () => {
+  // Partial section ilks are not top-level compactable, but they still have
+  // embedded section identifier rules. For `sch`, that identifier is `$id`.
+  const serder = new SerderACDC({
+    sad: {
+      v: versify({
+        proto: "ACDC",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "sch",
+      d: "",
+      s: { title: "schema" },
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+
+  assertEquals(serder.verify(), true);
+  assertEquals(typeof serder.schema, "object");
+  assertEquals(typeof (serder.schema as Record<string, unknown>).$id, "string");
 });

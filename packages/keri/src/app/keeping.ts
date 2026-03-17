@@ -1,11 +1,23 @@
-import { parseMatter } from "cesr-ts";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
-import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
+import {
+  Cigar,
+  decodeB64,
+  Diger,
+  hydrateMatter,
+  intToB64,
+  NumberPrimitive,
+  NumDex,
+  parseMatter,
+  Prefixer,
+  Saider,
+  Salter,
+  Siger,
+  Signer,
+  Verfer,
+} from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
-
-const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /**
  * Root key-creation strategy selectors stored in keeper globals.
@@ -59,93 +71,18 @@ export interface ManagerInceptArgs {
   temp?: boolean;
 }
 
-/**
- * Minimal public-key projection returned by `Manager.incept()`.
- *
- * We currently surface qb64-only records instead of richer CESR wrapper
- * objects to keep the bootstrap path small.
- */
-export interface KeyVerfer {
-  qb64: string;
-}
-
-/**
- * Minimal next-key digest projection returned by `Manager.incept()`.
- *
- * Mirrors the current `KeyVerfer` compromise: qb64-only until the app layer
- * adopts fuller CESR primitive hydration.
- */
-export interface KeyDiger {
-  qb64: string;
-}
-
 interface SignerMaterial {
-  seedQb64: string;
-  verferQb64: string;
-}
-
-function toBase64Url(bytes: Uint8Array): string {
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function fromBase64Url(text: string): Uint8Array {
-  const padded = text + "=".repeat((4 - (text.length % 4 || 4)) % 4);
-  const b64 = padded.replace(/-/g, "+").replace(/_/g, "/");
-  const decoded = atob(b64);
-  const out = new Uint8Array(decoded.length);
-  for (let i = 0; i < decoded.length; i++) out[i] = decoded.charCodeAt(i);
-  return out;
-}
-
-function intToB64(value: number, length = 1): string {
-  let v = value;
-  const out = new Array<string>(length).fill("A");
-  for (let i = length - 1; i >= 0; i--) {
-    out[i] = B64_ALPHABET[v & 0x3f];
-    v = Math.floor(v / 64);
-  }
-  return out.join("");
+  signer: Signer;
+  verfer: Verfer;
 }
 
 function parseQb64Raw(qb64: string): Uint8Array {
   return parseMatter(b(qb64), "txt").raw;
 }
 
-function encodeFixedMatter(code: string, raw: Uint8Array): string {
-  const cs = code.length;
-  const ps = cs % 4;
-  const body = toBase64Url(
-    new Uint8Array(ps + raw.length).map((_, i) => i < ps ? 0 : raw[i - ps]),
-  );
-  return `${code}${body.slice(ps)}`;
-}
-
-function encodeIndexerEd25519Sig(
-  rawSig: Uint8Array,
-  index: number,
-  ondex = index,
-): string {
-  const code = ondex === index ? "A" : "2A";
-  if (code !== "A") {
-    throw new Error("Only compact single-sig indexer encoding is implemented.");
-  }
-  const both = `${code}${intToB64(index, 1)}`;
-  const ps = (3 - (rawSig.length % 3)) % 3;
-  const body = toBase64Url(
-    new Uint8Array(ps + rawSig.length).map((_, i) => i < ps ? 0 : rawSig[i - ps]),
-  );
-  return `${both}${body.slice(ps)}`;
-}
-
-function blake3Qb64(raw: Uint8Array, code = "E"): string {
-  return encodeFixedMatter(code, blake3(raw));
-}
-
 function randomSaltQb64(): string {
   const raw = crypto.getRandomValues(new Uint8Array(16));
-  return encodeFixedMatter("0A", raw);
+  return new Salter({ code: "0A", raw }).qb64;
 }
 
 function pathToBytes(path: string): Uint8Array {
@@ -188,8 +125,8 @@ function deriveSeedFromSalt(
  *   per-prefix key material
  *
  * Current `keri-ts` difference:
- * - returns a lightweight qb64 projection instead of richer signer objects,
- *   because the bootstrap app layer stores the derived material separately
+ * - returns the narrow CESR primitives directly so callers can decide whether
+ *   to keep semantic objects or project `.qb64` at the boundary they need
  */
 export function saltySigner(
   saltQb64: string,
@@ -199,10 +136,13 @@ export function saltySigner(
   temp: boolean,
 ): SignerMaterial {
   const seedRaw = deriveSeedFromSalt(saltQb64, path, tier, temp);
-  const seedQb64 = encodeFixedMatter("A", seedRaw);
+  const signer = new Signer({ code: "A", raw: seedRaw });
   const pubRaw = ed25519.getPublicKey(seedRaw);
-  const verferQb64 = encodeFixedMatter(transferable ? "D" : "B", pubRaw);
-  return { seedQb64, verferQb64 };
+  const verfer = new Verfer({
+    code: transferable ? "D" : "B",
+    raw: pubRaw,
+  });
+  return { signer, verfer };
 }
 
 function pubsKey(pre: string, ridx: number): string {
@@ -311,7 +251,10 @@ export class Manager {
         throw new Error("Seed required when aeid is set.");
       }
       const seedRaw = parseQb64Raw(seed);
-      const derivedAeid = encodeFixedMatter("B", ed25519.getPublicKey(seedRaw));
+      const derivedAeid = new Prefixer({
+        code: "B",
+        raw: ed25519.getPublicKey(seedRaw),
+      }).qb64;
       if (derivedAeid !== aeid) {
         throw new Error(
           `Seed missing or provided seed not associated with aeid=${aeid}.`,
@@ -326,7 +269,7 @@ export class Manager {
     this.ks.pinGbls("aeid", aeid);
   }
 
-  incept(args: ManagerInceptArgs = {}): [KeyVerfer[], KeyDiger[]] {
+  incept(args: ManagerInceptArgs = {}): [Verfer[], Diger[]] {
     const {
       icount = 1,
       ncount = 1,
@@ -351,8 +294,8 @@ export class Manager {
     const usedTier = rooted ? (tier ?? this.tier ?? "low") : (tier ?? "low");
     const pidx = this.pidx ?? 0;
 
-    const verfers: KeyVerfer[] = [];
-    const digers: KeyDiger[] = [];
+    const verfers: Verfer[] = [];
+    const digers: Diger[] = [];
 
     const rootStem = stem || `${pidx.toString(16)}`;
 
@@ -365,8 +308,8 @@ export class Manager {
         usedTier,
         temp,
       );
-      verfers.push({ qb64: signer.verferQb64 });
-      this.ks.putPris(signer.verferQb64, signer.seedQb64);
+      verfers.push(signer.verfer);
+      this.ks.putPris(signer.verfer.qb64, signer.signer.qb64);
     }
 
     for (let i = 0; i < ncount; i++) {
@@ -378,12 +321,12 @@ export class Manager {
         usedTier,
         temp,
       );
-      const dig = blake3Qb64(
-        b(signer.verferQb64),
-        dcode,
-      );
-      digers.push({ qb64: dig });
-      this.ks.putPris(signer.verferQb64, signer.seedQb64);
+      const dig = new Diger({
+        code: dcode,
+        raw: Diger.digest(b(signer.verfer.qb64), dcode),
+      });
+      digers.push(dig);
+      this.ks.putPris(signer.verfer.qb64, signer.signer.qb64);
     }
 
     const pp: PrePrm = {
@@ -398,13 +341,13 @@ export class Manager {
     const ps: PreSit = {
       old: { pubs: [], ridx: 0, kidx: 0, dt },
       new: {
-        pubs: verfers.map((v) => v.qb64),
+        pubs: verfers.map((verfer) => verfer.qb64),
         ridx: 0,
         kidx: 0,
         dt,
       },
       nxt: {
-        pubs: digers.map((d) => d.qb64),
+        pubs: digers.map((diger) => diger.qb64),
         ridx: 1,
         kidx: icount,
         dt,
@@ -456,21 +399,50 @@ export class Manager {
     this.ks.putPres(newPre, newPre);
   }
 
-  sign(ser: Uint8Array, pubs: string[], indexed = true): string[] {
-    return pubs.map((pub, idx) => {
+  sign(ser: Uint8Array, pubs: string[], indexed: true): Siger[];
+  sign(ser: Uint8Array, pubs: string[], indexed?: false): Cigar[];
+  sign(ser: Uint8Array, pubs: string[], indexed = true): Siger[] | Cigar[] {
+    if (indexed) {
+      return this.signIndexed(ser, pubs);
+    }
+    return this.signUnindexed(ser, pubs);
+  }
+
+  /** Build indexed controller signatures in stable key-list order. */
+  private signIndexed(ser: Uint8Array, pubs: string[]): Siger[] {
+    const sigers: Siger[] = [];
+    for (const [idx, pub] of pubs.entries()) {
       const seedQb64 = this.ks.getPris(pub);
-      if (!seedQb64) throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      if (!seedQb64) {
+        throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      }
       const seedRaw = parseQb64Raw(seedQb64);
       const sigRaw = ed25519.sign(ser, seedRaw);
-      return indexed
-        ? encodeIndexerEd25519Sig(sigRaw, idx, idx)
-        : encodeFixedMatter("0B", sigRaw);
-    });
+      sigers.push(new Siger({ code: "A", raw: sigRaw, index: idx }));
+    }
+    return sigers;
+  }
+
+  /** Build unindexed detached signatures for ad hoc message signing flows. */
+  private signUnindexed(ser: Uint8Array, pubs: string[]): Cigar[] {
+    const cigars: Cigar[] = [];
+    for (const pub of pubs) {
+      const seedQb64 = this.ks.getPris(pub);
+      if (!seedQb64) {
+        throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      }
+      const seedRaw = parseQb64Raw(seedQb64);
+      const sigRaw = ed25519.sign(ser, seedRaw);
+      cigars.push(new Cigar({ code: "0B", raw: sigRaw }));
+    }
+    return cigars;
   }
 }
 
 export function normalizeSaltQb64(salt?: string): string {
-  return salt ? encodeFixedMatter("0A", parseQb64Raw(salt)) : randomSaltQb64();
+  return salt
+    ? new Salter({ code: "0A", raw: parseQb64Raw(salt) }).qb64
+    : randomSaltQb64();
 }
 
 export function branToSaltQb64(bran: string): string {
@@ -495,20 +467,17 @@ export function encodeHugeNumber(num: number): string {
     raw[i] = Number(value & 0xffn);
     value >>= 8n;
   }
-  return encodeFixedMatter("0A", raw);
+  return new NumberPrimitive({ code: NumDex.Huge, raw }).qb64;
 }
 
 export function normalizeQb64Code(qb64: string): string {
-  return encodeFixedMatter(
-    parseMatter(b(qb64), "txt").code,
-    parseQb64Raw(qb64),
-  );
+  return hydrateMatter(parseMatter(b(qb64), "txt")).qb64;
 }
 
 export function makeSaider(raw: Uint8Array): string {
-  return blake3Qb64(raw, "E");
+  return new Saider({ code: "E", raw: Diger.digest(raw, "E") }).qb64;
 }
 
 export function b64DecodeUrl(text: string): Uint8Array {
-  return fromBase64Url(text);
+  return decodeB64(text);
 }

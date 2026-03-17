@@ -1,4 +1,4 @@
-import { type Database } from "npm:lmdb@3.4.4";
+import { type Database } from "npm:lmdb@3.5.2";
 import {
   b,
   Cipher,
@@ -22,9 +22,10 @@ type CesrValue = Matter | Indexer | Counter;
 type QualifiedCtor<T extends CesrValue> = new(
   init: { qb64b: Uint8Array } | { qb64: string },
 ) => T;
-type SerderCtor<T extends Serder> = new(
-  init: { raw: Uint8Array; verify?: boolean },
-) => T;
+type SerderCtor<T extends Serder> = {
+  new(init?: unknown): T;
+  name: string;
+};
 
 function isKeysIterable(value: Keys): value is Iterable<KeyPart> {
   return typeof value !== "string" && !(value instanceof Uint8Array);
@@ -484,7 +485,7 @@ export class B64Suber<T extends string[] = string[]> extends B64SuberBase<T> {}
 /**
  * Qualified CESR primitive family (`Cesr*`).
  */
-export class CesrSuberBase<T extends CesrValue = Matter> extends Suber<T> {
+export class CesrSuberBase<T extends CesrValue = CesrValue> extends Suber<T> {
   protected readonly klas: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -494,13 +495,13 @@ export class CesrSuberBase<T extends CesrValue = Matter> extends Suber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = Matter as QualifiedCtor<T>,
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<T>;
+      klas: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
@@ -522,7 +523,7 @@ export class CesrSuberBase<T extends CesrValue = Matter> extends Suber<T> {
 }
 
 /** Concrete qualified-CESR single-value family. */
-export class CesrSuber<T extends CesrValue = Matter> extends CesrSuberBase<T> {}
+export class CesrSuber<T extends CesrValue = CesrValue> extends CesrSuberBase<T> {}
 
 /**
  * Qualified CESR primitive family with an exposed ordinal in the keyspace.
@@ -531,7 +532,7 @@ export class CesrSuber<T extends CesrValue = Matter> extends CesrSuberBase<T> {}
  * - exposed ordinal in the physical key (`On*`)
  * - one qualified CESR primitive per logical item
  */
-export class CesrOnSuber<T extends CesrValue = Matter> extends OnSuberBase<T> {
+export class CesrOnSuber<T extends CesrValue = CesrValue> extends OnSuberBase<T> {
   protected readonly klas: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -541,13 +542,13 @@ export class CesrOnSuber<T extends CesrValue = Matter> extends OnSuberBase<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = Matter as QualifiedCtor<T>,
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<T>;
+      klas: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
@@ -583,13 +584,13 @@ export class CatCesrSuberBase<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = [Matter as QualifiedCtor<CesrValue>],
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
+      klas: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
       strict?: boolean;
     },
   ) {
@@ -883,7 +884,7 @@ export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> 
  * - synthetic keyspace virtualization (`IoSet*`)
  * - one qualified CESR primitive per logical member
  */
-export class CesrIoSetSuber<T extends CesrValue = Matter> extends IoSetSuber<T> {
+export class CesrIoSetSuber<T extends CesrValue = CesrValue> extends IoSetSuber<T> {
   protected readonly klas: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -893,13 +894,13 @@ export class CesrIoSetSuber<T extends CesrValue = Matter> extends IoSetSuber<T> 
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = Matter as QualifiedCtor<T>,
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<T>;
+      klas: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
@@ -939,13 +940,13 @@ export class CatCesrIoSetSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = [Matter as QualifiedCtor<CesrValue>],
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
+      klas: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
       strict?: boolean;
     },
   ) {
@@ -1136,7 +1137,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = SerderKERI as SerderCtor<T>,
+      klas = SerderKERI as unknown as SerderCtor<T>,
     }: {
       subkey: string;
       sep?: string;
@@ -1158,7 +1159,9 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
     }
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
-    if (this.klas === SerderKERI && !(serder instanceof SerderKERI)) {
+    if (
+      (this.klas as unknown) === SerderKERI && !(serder instanceof SerderKERI)
+    ) {
       throw new TypeError(
         `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
       );
@@ -1186,7 +1189,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = SerderKERI as SerderCtor<T>,
+      klas = SerderKERI as unknown as SerderCtor<T>,
     }: {
       subkey: string;
       sep?: string;
@@ -1210,7 +1213,9 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
     }
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
-    if (this.klas === SerderKERI && !(serder instanceof SerderKERI)) {
+    if (
+      (this.klas as unknown) === SerderKERI && !(serder instanceof SerderKERI)
+    ) {
       throw new TypeError(
         `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
       );
@@ -1298,7 +1303,7 @@ export class DupSuber<T = string> extends SuberBase<T> {
 }
 
 /** Qualified CESR primitive family over native LMDB dupsort duplicates. */
-export class CesrDupSuber<T extends CesrValue = Matter> extends DupSuber<T> {
+export class CesrDupSuber<T extends CesrValue = CesrValue> extends DupSuber<T> {
   protected readonly klas: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -1308,13 +1313,13 @@ export class CesrDupSuber<T extends CesrValue = Matter> extends DupSuber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = Matter as QualifiedCtor<T>,
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<T>;
+      klas: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
@@ -1348,13 +1353,13 @@ export class CatCesrDupSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = [Matter as QualifiedCtor<CesrValue>],
+      klas,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
+      klas: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
       strict?: boolean;
     },
   ) {

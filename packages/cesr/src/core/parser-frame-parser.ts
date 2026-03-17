@@ -90,8 +90,12 @@ interface FrameStartSyntaxArtifact {
 /**
  * Advisory metadata token syntax extracted from native body streams.
  *
- * All fields are optional because metadata extraction is best-effort and should
- * never fail native-body parsing if tokens are absent/malformed.
+ * Maintainer note:
+ * top-level native frame parsing no longer uses this as a metadata-only
+ * fallback success path. It remains valuable as a readability seam because
+ * parser-local native syntax extraction, annotation, and lower-level
+ * map/list reasoning still benefit from explicit `verser` / `ilker` /
+ * `saider` token projections.
  */
 interface NativeMetadataSyntaxArtifact {
   verser?: ReturnType<typeof parseVerser>;
@@ -483,23 +487,30 @@ export class FrameParser {
       version,
     );
     const fields = this.interpretNativeFieldSyntax(syntax.fields);
+    // KERIpy parity rule: once the frame parser has classified a top-level
+    // FixBodyGroup/MapBodyGroup as a native message body, the result must be a
+    // real Serder or a parse error. Arbitrary native map/list corpora still
+    // belong to lower-level CESR-native surfaces such as Mapper/Aggor.
+    const { serder } = reapSerder(raw);
+    if (
+      serder.proto !== metadata.proto
+      || serder.pvrsn.major !== metadata.pvrsn.major
+      || serder.pvrsn.minor !== metadata.pvrsn.minor
+      || (metadata.ilk !== null && serder.ilk !== metadata.ilk)
+      || (metadata.said !== null && serder.said !== metadata.said)
+    ) {
+      throw new SemanticInterpretationError(
+        "Native body syntax pre-read disagreed with Serder hydration",
+      );
+    }
+    (serder as CesrMessage["body"]).native = {
+      bodyCode,
+      fields,
+    };
+    const body: CesrMessage["body"] = serder;
     return {
       frame: {
-        body: {
-          raw,
-          ked: null,
-          proto: metadata.proto,
-          kind: Kinds.cesr,
-          size: raw.length,
-          pvrsn: metadata.pvrsn,
-          gvrsn: metadata.gvrsn,
-          ilk: metadata.ilk,
-          said: metadata.said,
-          native: {
-            bodyCode,
-            fields,
-          },
-        },
+        body,
         attachments: [],
       },
       consumed: offset + total,

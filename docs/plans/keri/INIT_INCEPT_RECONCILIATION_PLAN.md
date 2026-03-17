@@ -72,18 +72,21 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
 
 ## Baseline Findings (Current)
 
-1. Default `.tufa` isolation exists, and explicit compatibility-mode visibility
-   now has a minimal honest foundation, but frictionless `.keri` usage is still
-   not complete.
-2. `init`/`incept`/`list`/`aid`/`export` now exist as command surfaces, but only
-   the Gate B local-store slice is parity-backed; compatibility-mode encrypted
-   reopen and endpoint/OOBI/comms breadth remain incomplete.
-3. AEID encrypted-secret handling is incomplete versus KERIpy.
-4. Signator reopen lifecycle is incomplete.
-5. DB layer is no longer purely raw-LMDB on the bootstrap path: a minimal
-   `Suber` / `Komer` foundation now backs the active `Baser` / `Keeper`
-   visibility path, but full `Suber` / `Komer` / escrow parity is still far from
-   complete.
+1. Default `.tufa` isolation and explicit `--compat` path routing are both
+   implemented, and `tufa list` / `tufa aid` now have live interop evidence
+   against KLI-created encrypted `.keri` stores.
+2. Gate B bootstrap CLI parity is now live-evidenced for
+   `init`/`incept`/`export`/`list`/`aid`; endpoint/OOBI/comms/challenge breadth
+   remains absent or blocked by missing command surfaces.
+3. AEID association checks, readonly safety rails, and compat-store visibility
+   are in place, but true encrypted secret semantics versus KERIpy remain
+   incomplete.
+4. `Manager`, `Hab`, and `Signator` now use primitive-first signing surfaces
+   and `Hab.make()` builds inception events through `SerderKERI`, but signator
+   reopen / decrypt lifecycle reliability is still incomplete.
+5. The DB layer bootstrap path now runs through typed `Suber` / `Komer`
+   wrappers with broad `Baser` / `Keeper` named-subdb binding, but escrow
+   infrastructure and row-by-row parity closure are still open.
 
 ## Hard Gates
 
@@ -171,8 +174,9 @@ P0 tracking artifacts:
 - Implement critical Suber and Komer class families needed for this phase.
 - Ensure typed value serialization/deserialization and iterator semantics match
   intended KERIpy behavior.
-- Current state: the first bootstrap slice is landed for Gate C visibility, but
-  most of the family surface remains open.
+- Current state: the bootstrap-critical `Suber` / `Komer` slice is landed and
+  live in `Baser` / `Keeper`, including typed CESR and serder wrappers; full
+  row-by-row family closure is still open.
 
 ## P3 - Databaser Classes + Required Sub-DB Surface
 
@@ -187,13 +191,16 @@ P0 tracking artifacts:
 
 - Complete default-isolated path mode and explicit compatibility mode.
 - Land/finish `init`, `incept`, `list`, `aid` parity flow (Gate B/C).
-- Current state: Gate B local visibility is implemented; Gate C visibility is
-  harness-ready on the `tufa` side, but not yet closed for encrypted KLI stores.
+- Current state: Gate B is implemented with live interop evidence, and Gate C
+  visibility now passes live against encrypted KLI stores; the next blocker is
+  Gate D encrypted secret semantics, not basic compat-store opening.
 
 ## P6 - AEID + Manager + Signator Reliability
 
 - Complete encryption/decryption lifecycle parity.
 - Fix signator reopen behavior and related command stability.
+- Current state: primitive-first signing and AEID association checks are landed,
+  but decrypt/re-encrypt parity and reopen reliability are still open.
 
 ## P7 - `ends add` + Endpoint State
 
@@ -229,6 +236,18 @@ P0 tracking artifacts:
 - Implement DB provider abstraction layer for pluggable K/V backends.
 - First provider remains LMDB; add adapters for IndexedDB/SQLite in follow-on
   increments.
+
+## Recommended Next Focus (2026-03-17)
+
+1. Gate D: close encrypted keeper semantics, AEID decrypt/re-encrypt parity, and
+   signator reopen reliability.
+2. Gate E: implement `ends` / `oobi` command surfaces on top of the endpoint and
+   OOBI stores that are already bound in `Baser`.
+3. Gate A/H bookkeeping: refresh the DB-layer symbol and K/V matrices so the
+   plans stop understating landed `Suber` / `Komer` / `Baser` work.
+4. Gate F/G readiness: add escrow/process-loop infrastructure needed for
+   endpoint, OOBI, comms, and challenge flows before chasing higher-level CLI
+   parity.
 
 ## Milestones
 

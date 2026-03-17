@@ -12,8 +12,7 @@ import { Tagger } from "./tagger.ts";
  */
 export class Ilker extends Tagger {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!ILKER_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected ilker Tag3 code, got ${this.code}`);
     }

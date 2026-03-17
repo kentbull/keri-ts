@@ -31,8 +31,7 @@ function parseVersion(text: string): Versionage {
  */
 export class Verser extends Tagger {
   constructor(init: Matter | MatterInit) {
-    const tagger = init instanceof Matter ? init : new Matter(init);
-    super(tagger);
+    super(init);
     if (!VERSER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected verser code (Y/0O), got ${this.code}`,

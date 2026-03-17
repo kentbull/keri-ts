@@ -12,8 +12,7 @@ import { Tagger } from "./tagger.ts";
  */
 export class Traitor extends Tagger {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!TRAIT_TAGS.has(this.tag)) {
       throw new UnknownCodeError(`Invalid trait tag for Traitor: ${this.tag}`);
     }

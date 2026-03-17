@@ -7,6 +7,7 @@ import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import {
   buildNestedMapBodyV2,
+  parseEvents,
   parseFramesNoError,
   splitIntoThirds,
   summarizeFrames,
@@ -20,25 +21,21 @@ import {
  * - annotate/denot workflow preserving native-body semantic extraction
  */
 Deno.test(
-  "V-P2-006: MapBodyGroup with multiple labels and nested values remains stable across chunk boundaries",
+  "V-P2-006: invalid top-level MapBodyGroup still fails deterministically across chunk boundaries",
   () => {
     const mapBody = buildNestedMapBodyV2();
     const bytes = encode(mapBody);
-    // Contract: chunking must not change map-body parse outcome.
-    const frames = parseFramesNoError(bytes, splitIntoThirds(bytes));
+    // This vector is intentionally *not* a full top-level message. The point
+    // of the regression is that chunking must not turn an invalid top-level
+    // native map corpus into a partially accepted frame.
+    const events = parseEvents(bytes, splitIntoThirds(bytes));
+    const frames = events.filter((event) => event.type === "frame");
+    const errors = events.filter((event) => event.type === "error");
 
-    assertEquals(frames.length, 1);
-    const frame = frames[0];
-    if (frame.type !== "frame") {
-      throw new Error("expected frame event");
-    }
-
-    assertEquals(frame.frame.body.kind, "CESR");
-    assertEquals(frame.frame.body.native?.bodyCode, CtrDexV2.MapBodyGroup);
-    assertEquals((frame.frame.body.native?.fields.length ?? 0) >= 3, true);
+    assertEquals(frames.length, 0);
+    assertEquals(errors.length, 1);
     assertEquals(
-      frame.frame.body.native?.fields.some((field) => field.label !== null)
-        ?? false,
+      ["DeserializeError", "UnknownCodeError"].includes(errors[0].error.name),
       true,
     );
   },

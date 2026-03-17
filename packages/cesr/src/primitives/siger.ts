@@ -14,8 +14,7 @@ export class Siger extends Indexer {
   readonly verfer?: Verfer;
 
   constructor(init: Indexer | IndexerInit, verfer?: Verfer) {
-    const indexer = init instanceof Indexer ? init : new Indexer(init);
-    super(indexer);
+    super(init);
     if (!SIGER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected indexed signature code, got ${this.code}`,

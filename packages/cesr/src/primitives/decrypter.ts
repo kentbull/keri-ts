@@ -10,8 +10,7 @@ import { Matter, type MatterInit } from "./matter.ts";
  */
 export class Decrypter extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!DECRYPTER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected decrypter key code, got ${this.code}`,

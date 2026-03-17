@@ -6,6 +6,27 @@ This document provides a comprehensive checklist for implementing LMDBer and all
 its subclasses in KERI TS, matching KERIpy's functionality. The plan is
 organized by component with clear implementation priorities.
 
+## Status Snapshot (2026-03-17)
+
+1. The key-helper surface in `packages/keri/src/db/core/keys.ts` is implemented
+   and covered by targeted helper tests.
+2. `LMDBer` core lifecycle/version/plain/branch/`On*`/`IoSet*`/`Dup*`/`IoDup*`
+   families are implemented in `packages/keri/src/db/core/lmdber.ts`; the
+   remaining work is row-by-row parity promotion and edge-case closure, not raw
+   helper creation.
+3. The bootstrap `subing.ts` / `koming.ts` / `basing.ts` / `keeping.ts` slice is
+   live enough to back Gate B and Gate C visibility, including typed CESR and
+   serder wrappers plus broad `Baser` / `Keeper` named-subdb binding.
+4. This checklist is partially stale: unchecked boxes below do not mean
+   "missing in code"; many Phase 1 and bootstrap Phase 2 items are landed but
+   have not been rescored row-by-row in this document yet.
+5. Path note: base `LMDBer` defaults to `.tufa/db` / `.tufa/clean/db`;
+   `.keri/*` tails are selected by compat-aware `Baser` / `Keeper`, not by the
+   base `LMDBer` default.
+6. The real next blockers are Gate D encrypted semantics, escrow/process-loop
+   infrastructure, and matrix refresh, not the initial creation of core LMDB
+   helpers.
+
 ---
 
 ## Phase 1: Core Infrastructure

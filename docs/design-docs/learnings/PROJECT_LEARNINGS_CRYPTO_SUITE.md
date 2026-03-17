@@ -25,6 +25,10 @@ signing/verification behavior in `keri-ts`.
    CESR surface, and they are intentionally organized by encoding basis before
    semantic subclass so maintainers can reason from `Matter` / `Indexer` /
    `Counter` outward.
+8. `Matter` and `Indexer` should now be treated as infrastructure bases in
+   crypto-adjacent code: if a caller knows it is handling a signer seed,
+   verifier, digest, indexed signature, or detached signature, it should use the
+   corresponding narrow primitive instead of returning the superclass.
 
 ## Scope Checklist
 
@@ -75,3 +79,12 @@ Use this doc for:
 - Fixed `Dater.dts` projection to follow KERIpy qualified-text behavior.
 - Expanded per-primitive tests and deepened structor-family coverage with
   stronger KERIpy-derived vectors.
+
+### 2026-03-17 - Superclass Construction Was Demoted To Generic Seams Only
+
+- Narrowed app- and CESR-layer constructions that were returning `Matter` or
+  `Indexer` even though the semantic type was already known, especially along
+  signer/verifier/digest/signature paths.
+- Recorded the maintainer rule explicitly: superclass construction is for
+  parser/probe seams and genuinely generic payload handling, not for ordinary
+  crypto-primitive API returns.

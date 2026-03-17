@@ -11,8 +11,7 @@ import { Matter, type MatterInit, parseMatter } from "./matter.ts";
  */
 export class Seqner extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!SEQNER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected seqner Salt_128 code, got ${this.code}`,

@@ -1,5 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.4.4";
+import type { Database } from "npm:lmdb@3.5.2";
 import { Cipher, NumberPrimitive, Prefixer, Signer } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";

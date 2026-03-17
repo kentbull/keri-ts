@@ -1,7 +1,7 @@
 /** KERI event-log databaser built on `LMDBer` composition. */
 
 import { type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.4.4";
+import type { Database } from "npm:lmdb@3.5.2";
 import {
   b,
   Cigar,
@@ -1132,18 +1132,26 @@ export class Baser {
   }
 
   /** Insert indexed signatures for one event in `sigs.` if absent. */
-  putSigs(pre: string, said: string, sigs: string[]): boolean {
+  putSigs(
+    pre: string,
+    said: string,
+    sigs: readonly (Siger | string)[],
+  ): boolean {
     return this.sigs.put(
       [pre, said],
-      sigs.map((sig) => new Siger({ qb64: sig })),
+      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 
   /** Upsert indexed signatures for one event in `sigs.`. */
-  pinSigs(pre: string, said: string, sigs: string[]): boolean {
+  pinSigs(
+    pre: string,
+    said: string,
+    sigs: readonly (Siger | string)[],
+  ): boolean {
     return this.sigs.pin(
       [pre, said],
-      sigs.map((sig) => new Siger({ qb64: sig })),
+      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 

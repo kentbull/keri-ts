@@ -133,11 +133,16 @@ On PR:
 Current workflow shape:
 
 - `PR Stage Gate` on pull requests targeting `master`
+- exact runtime pins: Deno `2.7.5`, Node `22.14.0`
+- pinned third-party GitHub Actions by commit SHA
+- split jobs: `static-checks`, `keri-tests`, `cesr-tests`, `package-smoke`
+- aggregate `stage-gate` job preserves a stable branch-protection target name
 - restore shared Deno/module cache and npm cache before Deno tasking
-- formatting: `deno task fmt:check`
-- linting: `deno task lint`
-- static quality: `deno task quality:check`
-- tests: `deno task test:quality` and `deno task test:cesr`
+- formatting/lint/static quality run in the static job
+- tests run in parallel KERI and CESR jobs
+- package smoke builds both npm packages, packs tarballs, smoke-installs
+  `keri-ts` with the just-built local `cesr-ts` tarball, and uploads the
+  tarballs as artifacts
 - pinned interop dependency:
   `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704`
 - interop cache: restore a KERIpy virtualenv keyed by the pinned Git SHA before
@@ -146,6 +151,8 @@ Current workflow shape:
   across local and CI environments
 - release build steps opt into CI metadata explicitly via
   `deno task version:generate:ci`
+- scheduled `macOS Compatibility` workflow reruns the interop, test, and
+  package-build smoke surface on `macos-latest`
 
 ### 7) Release CI
 

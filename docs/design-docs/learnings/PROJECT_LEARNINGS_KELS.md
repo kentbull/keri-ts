@@ -12,8 +12,8 @@ replay/verification semantics.
    `kli`/`tufa` interoperability planning.
 2. Phase 2 planning is now parity-first: P0 command/output parity and D0
    inventory/parity artifacts are established, D1 DB-core parity is largely in
-   place, and the active edge has moved into a minimal D2/D3 foundation for
-   compatibility-mode store opening.
+   place, and the active edge has moved into a D2/D3 runtime foundation that is
+   strong enough for live Gate B and Gate C visibility evidence.
 3. `docs/design-docs/db/db-architecture.md` is the current cross-topic DB
    invariants reference for ordering, idempotence, serialization, lifecycle, and
    interoperability semantics that later KEL logic will rely on.
@@ -34,9 +34,8 @@ replay/verification semantics.
    unblocks honest `list`/`aid` visibility without depending on process-local
    caches.
 10. The current bootstrap path no longer stores everything through ad hoc raw
-    LMDB handles: a minimal `Suber` / `Komer` slice now backs the active `Baser`
-    / `Keeper` visibility stores, specifically to prepare honest Gate C store
-    opening work.
+    LMDB handles: typed `Suber` / `Komer` wrappers now back the active `Baser` /
+    `Keeper` local runtime path, not just a narrow Gate C visibility shim.
 11. KERIpy parity work should include source documentation parity for class
     boundaries: maintainer-facing docstrings are part of the port, not optional
     follow-up polish.
@@ -68,10 +67,15 @@ replay/verification semantics.
 18. DB parity work is not maintainer-complete until the new storage families,
     record contracts, and runtime seams are documented in source with KERIpy
     correspondence and `keri-ts` differences called out explicitly.
-19. For `Baser` and `Keeper`, the canonical named-subdb meaning now lives on
-    the `reopen()` bindings where property name, subkey, wrapper type, and
+19. For `Baser` and `Keeper`, the canonical named-subdb meaning now lives on the
+    `reopen()` bindings where property name, subkey, wrapper type, and
     tuple/value wiring appear together; declaration comments are the shorter
     public-surface mirror.
+20. Local key-management surfaces should return CESR primitives, not qb64-only
+    wrapper records: `Manager.incept()` should expose `Verfer[]`/`Diger[]`,
+    signing should expose `Siger[]`/`Cigar[]`, and DB helpers should accept the
+    narrow primitive types directly instead of rehydrating every signature from
+    strings at the last minute.
 
 ## Scope Checklist
 
@@ -90,8 +94,8 @@ Use this doc for:
 
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
-2. Validate planned command-level parity gates against real KERIpy behavior and
-   output shape as those commands become executable.
+2. Treat Gate B and the Gate C visibility slice as closed enough to move main
+   attention to Gate D encrypted-secret semantics and Gate E command surfaces.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
@@ -165,8 +169,8 @@ Use this doc for:
   under isolated test homes without trying to re-fetch npm/JSR dependencies.
 - Made the CI side explicit too: the PR stage-gate and `keri-ts` release
   workflows now install KERIpy from
-  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test
-  steps so interop evidence is pinned and reproducible instead of depending on
+  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test steps
+  so interop evidence is pinned and reproducible instead of depending on
   whatever `kli` happens to be preinstalled on the runner.
 - Verified both `interop-gates-harness.test.ts` and `interop-kli-tufa.test.ts`
   run successfully against the installed KERIpy CLI; if the pinned commit
@@ -218,6 +222,39 @@ Use this doc for:
 - `tufa incept` and `tufa export` now read current local identifier state from
   the DB-backed path instead of depending on transient in-memory state and the
   old `${pre}:0` event shortcut.
+
+### 2026-03-17 - Manager/Hab Signing Surface Became Primitive-First
+
+- Removed the bootstrap-era qb64 wrapper compromise from
+  `packages/keri/src/app/keeping.ts`: salty derivation now returns `Signer` +
+  `Verfer`, inception returns `Verfer[]` + `Diger[]`, and signing returns
+  `Siger[]` or `Cigar[]`.
+- Updated the surrounding habitat/database path so `Hab` and `Signator` consume
+  the narrow signature primitives directly and `Baser.pinSigs()` / `putSigs()`
+  accept already-hydrated `Siger` values.
+- Tightened the CESR-backed DB wrapper constructors so new stores must pass an
+  explicit `klas` instead of silently defaulting to `Matter`, which closes one
+  of the easier ways for semantic type erasure to creep back in.
+
+### 2026-03-17 - Gate C Visibility Moved From Tentative To Live Interop Evidence
+
+- Re-ran `packages/keri/test/integration/app/interop-gates-harness.test.ts` and
+  confirmed the `C-KLI-COMPAT-STORE-OPEN` scenario passes live against a
+  KLI-created encrypted store using `tufa list --compat` / `tufa aid --compat`.
+- Promoted the repo memory accordingly: Gate C visibility should no longer be
+  described as merely "harness-ready" or "tufa-side only".
+- Verdict: the visibility-only compat-store plumbing is no longer the bottleneck;
+  the real blocker is Gate D encrypted secret semantics and reopen reliability.
+
+### 2026-03-17 - Inception Construction Moved Onto Shared `SerderKERI` Semantics
+
+- `Hab.make()` now constructs inception events through `SerderKERI` instead of
+  local string assembly plus ad hoc saidification helpers.
+- Added focused unit evidence for two parity-sensitive cases: non-transferable
+  prefixes that must equal the signing key, and digestive prefix-code overrides
+  that must not collapse back to the signing key path.
+- Verdict: init/incept parity should now evolve through shared serder logic,
+  not through more bootstrap-local event-construction helpers.
 
 ### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
 
@@ -352,3 +389,21 @@ Use this doc for:
 - Recorded a deliberate follow-up to re-evaluate `cntTop` and `cntAll` after the
   real KEL/bootstrap command graph is stable, so temporary reconciliation APIs
   do not silently become permanent surface area.
+
+### 2026-03-17 - Habitat Inception Now Builds Through `SerderKERI`
+
+- `Hab.make()` no longer hand-saidifies a loose inception SAD into
+  `{ raw, pre, said }`; it now constructs a `SerderKERI` directly and persists
+  `serder.raw`/`serder.pre`/`serder.said`.
+- The old app-local inceptive prefix validation logic in `habbing.ts` was
+  removed in favor of `SerderKERI` subtype verification, which centralizes the
+  KERI rules where KERIpy keeps them.
+- This shifts local habitat bootstrap closer to the KERIpy mental model:
+  application code asks the serder layer for a valid inception event instead of
+  reimplementing protocol rules above it.
+- Added regression coverage proving the stored event can be rehydrated back out
+  of `evts.` as a typed `SerderKERI` whose `pre` and `said` match the current
+  habitat state.
+- Scope honesty matters here too: this improves the local inception path and
+  serder-backed DB hydration, but it is not evidence that the entire KEL stack
+  is now at full KERIpy serder parity.

@@ -224,3 +224,85 @@ Use this doc for:
   - The Linux Deno N-API panic may still need a runner/runtime pin if it proves
     independent of LMDB data-format compatibility; this change fixes the known
     missing contract first.
+
+### 2026-03-17 - CI Split Stage Gate, Exact Pins, And Artifact Smoke Paths
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/cesr-npm-release.yml`
+  - `.github/workflows/changesets-version-pr.yml`
+  - `.github/workflows/macos-compatibility.yml`
+  - `scripts/ci/assert-environment.sh`
+  - `scripts/smoke-test-keri-npm.sh`
+- What changed:
+  - Pinned Deno exactly to `2.7.5`, Node exactly to `22.14.0`, and all
+    third-party GitHub Actions to immutable commit SHAs.
+  - Split the PR stage gate into parallel static-check, KERI-test, CESR-test,
+    and npm-package-smoke jobs, then added a tiny aggregate `stage-gate` job so
+    existing branch-protection check names can stay stable.
+  - Added per-job `timeout-minutes`, explicit environment assertion output, and
+    npm-tarball artifact uploads for PR, release, and scheduled compatibility
+    paths.
+  - Added a scheduled `macOS Compatibility` workflow that reruns the interop,
+    test, package-build, and tarball-smoke surface on `macos-latest`.
+  - Strengthened the npm smoke path so `keri-ts` can be smoke-installed
+    alongside the just-built local `cesr-ts` tarball instead of silently
+    falling back to whatever version is currently published on npm.
+- Why:
+  - One giant PR job hides where time and failures actually go, and changing
+    required check names accidentally is an avoidable self-own.
+  - Native-addon library repos get most of their CI pain from drift and
+    packaging seams, so exact pins and saved artifacts are higher-value than
+    adding still more generic checks.
+- Tests:
+  - Commands: `deno task fmt`, `bash -n scripts/ci/assert-environment.sh scripts/smoke-test-keri-npm.sh`, `deno task quality:check`
+  - Result: passed locally
+  - Command: `deno task npm:build:all`
+  - Result: reached DNT's package-build/npm-install phase locally, but full end-to-end completion was not confirmed in this sandbox session
+- Contracts/plans touched:
+  - `docs/design-docs/versioning-and-release-plan.md`
+- Risks/TODO:
+  - The pinned action SHAs and scheduled macOS workflow still need live GitHub
+    Actions confirmation because this local session cannot execute the hosted
+    runners themselves.
+
+### 2026-03-17 - KERI Test Parallelism Now Follows Isolation Boundaries
+
+- Topic docs updated:
+  - `scripts/ci/run-keri-test-group.sh`
+  - `packages/keri/deno.json`
+  - `deno.json`
+  - `.github/workflows/pr-stage-gate.yml`
+  - `packages/keri/test/integration/app/interop-gates-harness.test.ts`
+  - `packages/keri/test/README.md`
+- What changed:
+  - Replaced the old monolithic `keri` quality-test invocation with explicit
+    grouped lanes for DB-fast, app-light, app-stateful-A, app-stateful-B,
+    interop parity, and split interop gate scenarios.
+  - Added a documented CI runner script that encodes which groups are safe for
+    `deno test --parallel` and which must stay isolated at file granularity.
+  - Refactored the interop gate harness so ready scenarios are individual
+    `Deno.test(...)` cases, making them filterable and CI-addressable instead
+    of one long opaque test.
+  - Updated the PR stage gate to fan KERI coverage out across multiple jobs
+    instead of one catch-all `keri-tests` lane.
+- Why:
+  - The longest wall-clock bottleneck was the interop harness, not the average
+    test file, and several CLI/app files mutate process-global state in ways
+    that make naive `--parallel` usage flaky.
+- Tests:
+  - Commands:
+    `deno task test:quality:keri:fast`,
+    `deno task test:quality:keri:app-stateful-a`,
+    `deno task test:quality:keri:app-stateful-b`,
+    `deno task test:quality:keri:interop-parity`,
+    `deno task test:quality:keri:interop-gates-b`,
+    `deno task test:quality:keri:interop-gates-c`
+  - Result: all passed locally
+- Contracts/plans touched:
+  - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Risks/TODO:
+  - On a cold GitHub cache, the extra KERI job fan-out will increase duplicate
+    dependency/bootstrap work before cache reuse stabilizes; the tradeoff is
+    intentional because warm-cache PR latency is the dominant maintainer path.

@@ -19,9 +19,16 @@
     "start": "deno run --allow-all --unstable-ffi mod.ts",
     "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
     "tufa": "deno run --allow-all --unstable-ffi mod.ts",
-    "test": "deno test --allow-all --unstable-ffi",
-    "test:quality": "deno test --allow-all --unstable-ffi --ignore=test/integration/app/server.test.ts",
-    "test:integration:server": "deno test --allow-all --unstable-ffi test/integration/app/server.test.ts"
+    "test": "bash ../../scripts/ci/run-keri-test-group.sh full",
+    "test:quality": "bash ../../scripts/ci/run-keri-test-group.sh quality",
+    "test:quality:db-fast": "bash ../../scripts/ci/run-keri-test-group.sh db-fast",
+    "test:quality:app-light": "bash ../../scripts/ci/run-keri-test-group.sh app-light",
+    "test:quality:app-stateful-a": "bash ../../scripts/ci/run-keri-test-group.sh app-stateful-a",
+    "test:quality:app-stateful-b": "bash ../../scripts/ci/run-keri-test-group.sh app-stateful-b",
+    "test:quality:interop-parity": "bash ../../scripts/ci/run-keri-test-group.sh interop-parity",
+    "test:quality:interop-gates-b": "bash ../../scripts/ci/run-keri-test-group.sh interop-gates-b",
+    "test:quality:interop-gates-c": "bash ../../scripts/ci/run-keri-test-group.sh interop-gates-c",
+    "test:integration:server": "bash ../../scripts/ci/run-keri-test-group.sh server"
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
@@ -30,10 +37,10 @@
     "cbor-x/decode": "npm:cbor-x@^1.6.0/decode",
     "cbor-x/encode": "npm:cbor-x@^1.6.0/encode",
     "effection": "npm:effection@^3.6.0",
-    "lmdb": "npm:lmdb@3.4.4",
+    "lmdb": "npm:lmdb@3.5.2",
     "commander": "npm:commander@^10.0.1",
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0",
-    "cesr-ts": "npm:cesr-ts@^0.2.3"
+    "cesr-ts": "../cesr/mod.ts"
   },
   "compilerOptions": {
     "lib": [
