@@ -108,7 +108,7 @@ proposed TypeScript symbol targets.
 | `basing.py`    | `class`     | `WellKnownAuthN`    |         556 | `DB-BASER`  | `keripy/src/keri/db/basing.py`    | `packages/keri/src/db/records.ts (planned)`     | `WellKnownAuthN`          | `D4`  | `Missing` | Top-level symbol inventory row                                                                                                                                                                                                  |
 | `basing.py`    | `def`       | `openDB`            |         567 | `DB-BASER`  | `keripy/src/keri/db/basing.py`    | `packages/keri/src/db/basing.ts`                | `openDB`                  | `D4`  | `Missing` | Top-level symbol inventory row                                                                                                                                                                                                  |
 | `basing.py`    | `def`       | `reopenDB`          |         577 | `DB-BASER`  | `keripy/src/keri/db/basing.py`    | `packages/keri/src/db/basing.ts`                | `reopenDB`                | `D4`  | `Missing` | Top-level symbol inventory row                                                                                                                                                                                                  |
-| `basing.py`    | `class`     | `Baser`             |         603 | `DB-BASER`  | `keripy/src/keri/db/basing.py`    | `packages/keri/src/db/basing.ts`                | `Baser`                   | `D4`  | `Partial` | Bootstrap path now uses `Komer`/`Suber` for `habs`, `names`, and `hbys`, with compatibility-mode `.keri/db` support and `names.` `^` separator alignment; broad record/subdb parity remains open                                |
+| `basing.py`    | `class`     | `Baser`             |         603 | `DB-BASER`  | `keripy/src/keri/db/basing.py`    | `packages/keri/src/db/basing.ts`                | `Baser`                   | `D4`  | `Partial` | The current TS `Baser` now binds the broad named-subdb surface needed for the local runtime arc, including event/state backbone, reply/OOBI/exchange/contact families, and compatibility-mode `.keri/db` support; escrow/process-loop closure and full row-by-row parity remain open |
 | `basing.py`    | `class`     | `BaserDoer`         |        2007 | `DB-BASER`  | `keripy/src/keri/db/basing.py`    | `packages/keri/src/db/basing-doer.ts (planned)` | `BaserDoer`               | `D4`  | `Missing` | Top-level symbol inventory row                                                                                                                                                                                                  |
 | `escrowing.py` | `class`     | `Broker`            |          22 | `DB-ESCROW` | `keripy/src/keri/db/escrowing.py` | `packages/keri/src/db/escrowing.ts (planned)`   | `Broker`                  | `D5`  | `Missing` | Top-level symbol inventory row                                                                                                                                                                                                  |
 
@@ -174,8 +174,24 @@ proposed TypeScript symbol targets.
    - `test/unit/db/koming.test.ts`
    - `test/unit/app/habbing.test.ts`
 
-Note: the row-by-row inventory above predates this parity pass and still needs
-an explicit matrix refresh.
+## D2/D3/D6 Status Update (2026-03-17)
+
+1. `Manager`, `Hab`, `Signator`, `Baser`, and `Keeper` now exchange narrow CESR
+   primitives directly, so the active bootstrap path no longer widens signing
+   and key-material values to qb64-only placeholder records.
+2. `Hab.make()` now builds inception events through `SerderKERI`, with targeted
+   tests covering non-transferable prefix-equals-key behavior and digestive
+   prefix-code overrides.
+3. Live interop evidence now passes Gate C compatibility-mode opening against a
+   KLI-created encrypted store, which means the main DB-layer blocker has moved
+   from basic visibility plumbing to Gate D encrypted-secret semantics.
+4. The symbol rows above now understate landed `subing.py` parity surface:
+   `OnSuberBase`, `B64SuberBase`, `CesrSuberBase`, `CatCesrSuberBase`,
+   `SerderSuber`, `SchemerSuber`, `OnIoDupSuber`, and related classes exist in
+   `packages/keri/src/db/subing.ts` and need a dedicated row refresh.
+
+Note: until that row-by-row refresh lands, the dated snapshots below are more
+authoritative than the raw `Missing` counts in the inventory table.
 
 ## K/V Inventory Artifacts
 

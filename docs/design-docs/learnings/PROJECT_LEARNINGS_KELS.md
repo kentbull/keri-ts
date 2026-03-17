@@ -12,8 +12,8 @@ replay/verification semantics.
    `kli`/`tufa` interoperability planning.
 2. Phase 2 planning is now parity-first: P0 command/output parity and D0
    inventory/parity artifacts are established, D1 DB-core parity is largely in
-   place, and the active edge has moved into a minimal D2/D3 foundation for
-   compatibility-mode store opening.
+   place, and the active edge has moved into a D2/D3 runtime foundation that is
+   strong enough for live Gate B and Gate C visibility evidence.
 3. `docs/design-docs/db/db-architecture.md` is the current cross-topic DB
    invariants reference for ordering, idempotence, serialization, lifecycle, and
    interoperability semantics that later KEL logic will rely on.
@@ -34,9 +34,8 @@ replay/verification semantics.
    unblocks honest `list`/`aid` visibility without depending on process-local
    caches.
 10. The current bootstrap path no longer stores everything through ad hoc raw
-    LMDB handles: a minimal `Suber` / `Komer` slice now backs the active `Baser`
-    / `Keeper` visibility stores, specifically to prepare honest Gate C store
-    opening work.
+    LMDB handles: typed `Suber` / `Komer` wrappers now back the active `Baser` /
+    `Keeper` local runtime path, not just a narrow Gate C visibility shim.
 11. KERIpy parity work should include source documentation parity for class
     boundaries: maintainer-facing docstrings are part of the port, not optional
     follow-up polish.
@@ -95,8 +94,8 @@ Use this doc for:
 
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
-2. Validate planned command-level parity gates against real KERIpy behavior and
-   output shape as those commands become executable.
+2. Treat Gate B and the Gate C visibility slice as closed enough to move main
+   attention to Gate D encrypted-secret semantics and Gate E command surfaces.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
@@ -236,6 +235,26 @@ Use this doc for:
 - Tightened the CESR-backed DB wrapper constructors so new stores must pass an
   explicit `klas` instead of silently defaulting to `Matter`, which closes one
   of the easier ways for semantic type erasure to creep back in.
+
+### 2026-03-17 - Gate C Visibility Moved From Tentative To Live Interop Evidence
+
+- Re-ran `packages/keri/test/integration/app/interop-gates-harness.test.ts` and
+  confirmed the `C-KLI-COMPAT-STORE-OPEN` scenario passes live against a
+  KLI-created encrypted store using `tufa list --compat` / `tufa aid --compat`.
+- Promoted the repo memory accordingly: Gate C visibility should no longer be
+  described as merely "harness-ready" or "tufa-side only".
+- Verdict: the visibility-only compat-store plumbing is no longer the bottleneck;
+  the real blocker is Gate D encrypted secret semantics and reopen reliability.
+
+### 2026-03-17 - Inception Construction Moved Onto Shared `SerderKERI` Semantics
+
+- `Hab.make()` now constructs inception events through `SerderKERI` instead of
+  local string assembly plus ad hoc saidification helpers.
+- Added focused unit evidence for two parity-sensitive cases: non-transferable
+  prefixes that must equal the signing key, and digestive prefix-code overrides
+  that must not collapse back to the signing key path.
+- Verdict: init/incept parity should now evolve through shared serder logic,
+  not through more bootstrap-local event-construction helpers.
 
 ### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
 

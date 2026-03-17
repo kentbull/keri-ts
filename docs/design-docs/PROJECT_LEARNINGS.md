@@ -101,10 +101,10 @@ This keeps context focused and avoids long-thread drift.
     tests for lifecycle/plain/`On*`/`IoSet*`/`Dup*` semantics plus a much
     smaller parity-oracle file for reverse mixed-key scans, with the old
     representation-sweep monolith removed.
-17. `Habery` now eagerly reloads persisted habitat records on open, and the
+17. `Habery` now eagerly reloads persisted habitat records on open, the
     local-store Gate B visibility slice (`tufa list` / `tufa aid`) is wired into
-    the interop harness; compatibility-mode visibility remains a separate Gate C
-    concern.
+    the interop harness, and live Gate C compatibility-mode visibility now
+    passes against KLI-created encrypted stores.
 18. CESR now has a dedicated maintainer walkthrough and parity matrix for the
     primitive layer, organized by `Matter` / `Indexer` / `Counter` families and
     cross-linked to the parser architecture docs so maintainers can onboard
@@ -122,11 +122,11 @@ This keeps context focused and avoids long-thread drift.
     bootstrap-path `Baser` / `Keeper` stores; this is enough to stop extending
     the raw-LMDB pattern on the Gate C visibility path, but it is not evidence
     of full `subing.py` / `koming.py` parity.
-22. Compatibility-mode visibility now has an honest readonly-open path:
-    `.keri/db` and `.keri/ks` alt tails are supported, `list` / `aid` can skip
-    config loading and signator creation, and readonly opens no longer try to
-    write `aeid`; encrypted reopen semantics and true decrypt/encrypt behavior
-    remain the next real blockers.
+22. Compatibility-mode visibility is now a demonstrated interop path, not just
+    a readonly-open design: `.keri/db` and `.keri/ks` alt tails are supported,
+    `list` / `aid` can skip config loading and signator creation, and the live
+    interop harness verifies encrypted KLI-store visibility via `--compat`;
+    true decrypt/encrypt semantics remain the next real blocker.
 23. KERIpy-corresponding class ports need source-documentation parity as well as
     behavior parity: when we add or translate a class, we should port its
     maintainer-facing responsibilities and invariants into `keri-ts` source
