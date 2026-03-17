@@ -143,9 +143,11 @@ This keeps context focused and avoids long-thread drift.
     the real executable path when pyenv shims are on `PATH`.
 27. `Komer` parity now assumes the KERIpy `KomerBase -> Komer` split exists in
     `keri-ts`; future `IoSetKomer` / `DupKomer` work should extend that base
-    instead of re-flattening object-mapper behavior, and raw CBOR byte parity
-    should not be assumed across `cbor2` vs `cbor-x` even when decoded payloads
-    match.
+    instead of re-flattening object-mapper behavior.
+28. Exact KERI CBOR byte parity is now an explicit cross-project rule: source
+    code should use the shared CESR CBOR codec instead of direct `cbor-x`
+    imports, and the encoder is configured to match KERIpy `cbor2` preferred
+    map-size bytes rather than `cbor-x`'s fixed-width object-map default.
 
 ## New Thread Kickoff Template
 

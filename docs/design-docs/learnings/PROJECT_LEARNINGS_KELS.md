@@ -149,9 +149,20 @@ Use this doc for:
 - Expanded the `Komer` unit suite to mirror the current KERIpy single-value
   tests for CRUD, branch iteration, trim, schema validation failures, custom
   serialization, and serializer/deserializer behavior.
-- Captured one important divergence explicitly: `cbor-x` and KERIpy's `cbor2`
-  can produce different raw CBOR bytes for the same logical object, so byte-for-
-  byte CBOR parity should not be assumed even when decoded payload parity holds.
+
+### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
+
+- Confirmed the root cause of the earlier CBOR mismatch: `cbor-x` defaults plain
+  object encoding to fixed-width `map16` headers for preallocation, while KERIpy
+  `cbor2.dumps()` uses preferred-size map headers.
+- Added one shared CESR-side CBOR codec and moved current KERI/CESR CBOR paths
+  onto it so byte-level policy is centralized instead of re-decided in each
+  subsystem.
+- The canonical KERI encoder configuration is now `useRecords: false`,
+  `variableMapSize: true`, and `useTag259ForMaps: false`, which matched the
+  tested `cbor2` vectors exactly.
+- Added parity tests plus a guard against direct `cbor-x` imports in KERI/CESR
+  source so we stop regressing to valid-but-non-identical CBOR encodings.
 
 ### 2026-03-15 - `tufa init` Home Fallback Restored For npm/Node Runtime
 

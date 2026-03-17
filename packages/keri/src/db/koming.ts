@@ -2,10 +2,15 @@ import {
   decode as decodeMsgpack,
   encode as encodeMsgpack,
 } from "@msgpack/msgpack";
-import { decode as decodeCbor } from "cbor-x/decode";
-import { encode as encodeCbor } from "cbor-x/encode";
 import { type Database } from "npm:lmdb@3.4.4";
-import { b, type Kind, Kinds, t } from "../../../cesr/mod.ts";
+import {
+  b,
+  decodeKeriCbor,
+  encodeKeriCbor,
+  type Kind,
+  Kinds,
+  t,
+} from "../../../cesr/mod.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -181,7 +186,7 @@ export class KomerBase<T, Stored = unknown> {
   }
 
   protected serializeCBOR(val: T): Uint8Array {
-    return toUint8Array(encodeCbor(this.toStored(val)));
+    return encodeKeriCbor(this.toStored(val));
   }
 
   protected deserializeJSON(val: Uint8Array | null): T | null {
@@ -202,7 +207,7 @@ export class KomerBase<T, Stored = unknown> {
     if (val === null) {
       return null;
     }
-    return this.fromStored(decodeCbor(val));
+    return this.fromStored(decodeKeriCbor(val));
   }
 
   /**

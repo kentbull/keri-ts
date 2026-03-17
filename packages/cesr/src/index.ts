@@ -3,6 +3,7 @@ export * from "./core/errors.ts";
 export * from "./core/parser-engine.ts";
 export * from "./core/parser-policy.ts";
 export * from "./core/recovery-diagnostics.ts";
+export * from "./core/cbor.ts";
 export * from "./parser/cold-start.ts";
 export * from "./parser/group-dispatch.ts";
 export * from "./serder/smell.ts";
@@ -63,8 +64,8 @@ export * from "./annotate/annotator.ts";
 export * from "./annotate/denot.ts";
 export * from "./bench/parser-benchmark.ts";
 
-export { bytesHex } from './core/bytes.ts'
-export { bytesEqual } from './core/bytes.ts'
-export { toBytes } from './core/bytes.ts'
-export { t } from './core/bytes.ts'
-export { b } from './core/bytes.ts'
+export { bytesHex } from "./core/bytes.ts";
+export { bytesEqual } from "./core/bytes.ts";
+export { toBytes } from "./core/bytes.ts";
+export { t } from "./core/bytes.ts";
+export { b } from "./core/bytes.ts";

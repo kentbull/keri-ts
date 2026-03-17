@@ -1,19 +1,19 @@
 import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
 import { DeserializeError } from "../core/errors.ts";
 import { decode as decodeMsgpack } from "@msgpack/msgpack";
-import { decode as decodeCbor } from "cbor-x/decode";
+import { decodeKeriCbor } from "../core/cbor.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
-import { Mediar, isMediarCode } from "../primitives/mediar.ts";
+import { isMediarCode, Mediar } from "../primitives/mediar.ts";
 import {
   type CounterGroupLike,
   type GroupEntry,
   isCounterGroupLike,
   isPrimitiveTuple,
 } from "../primitives/primitive.ts";
-import { Sealer, isSealerCode } from "../primitives/sealer.ts";
+import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { Protocols } from "../tables/versions.ts";
-import { t } from '../core/bytes.ts'
+import { t } from "../core/bytes.ts";
 
 function normalizeDecodedMap(
   value: unknown,
@@ -74,7 +74,9 @@ function collectNestedGroups(
 }
 
 /** Extract all top-level + nested counted groups from one parsed message. */
-function collectMessageGroups(message: Pick<CesrMessage, "attachments">): CounterGroupLike[] {
+function collectMessageGroups(
+  message: Pick<CesrMessage, "attachments">,
+): CounterGroupLike[] {
   const groups: CounterGroupLike[] = [];
   for (const attachment of message.attachments) {
     groups.push(attachment);
@@ -207,7 +209,7 @@ export function parseSerder(
     } else if (kind === "MGPK") {
       ked = normalizeDecodedMap(decodeMsgpack(raw), kind);
     } else if (kind === "CBOR") {
-      ked = normalizeDecodedMap(decodeCbor(raw), kind);
+      ked = normalizeDecodedMap(decodeKeriCbor(raw), kind);
     }
     if (ked) {
       ilk = typeof ked.t === "string" ? ked.t : null;

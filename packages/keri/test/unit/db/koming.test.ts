@@ -502,11 +502,7 @@ Deno.test("db/koming - Komer serializers mirror KERIpy format selection", async 
     assertEquals(
       k._serializer(Kinds.cbor)(jim),
       new Uint8Array([
-        // `cbor-x` emits a compact length prefix that differs from KERIpy's
-        // `cbor2` bytes while representing the same decoded object.
-        0xb9,
-        0x00,
-        0x06,
+        0xa6,
         0x65,
         0x66,
         0x69,

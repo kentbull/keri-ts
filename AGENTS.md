@@ -89,6 +89,10 @@ For new modules/classes/functions introduced during feature work:
 - Do not add backward-compatibility shims for old `keri-ts` storage/layout/API
   behavior unless they are explicitly required for KERIpy interop or the task
   request says to preserve them.
+- Treat exact KERI CBOR byte parity as a project rule. Do not import `cbor-x`
+  directly in KERI/CESR source for protocol or storage encoding/decoding; route
+  through the shared CESR CBOR codec so map-size and tag behavior stay aligned
+  with KERIpy `cbor2`.
 
 ## Design Bias (Learner/Maintainer First)
 
