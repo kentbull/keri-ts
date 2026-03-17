@@ -124,9 +124,19 @@ orchestration at repo root.
 
 On PR:
 
-- run tests/checks
-- run version:generate and version:check to ensure no drift
+- install pinned KERIpy CLI interop dependency before test jobs
+- run formatting, lint, static quality checks, and tests
 - validate changeset presence for publishable changes (policy job)
+
+Current workflow shape:
+
+- `PR Stage Gate` on pull requests targeting `master`
+- formatting: `deno task fmt:check`
+- linting: `deno task lint`
+- static quality: `deno task quality:check`
+- tests: `deno task test:quality` and `deno task test:cesr`
+- pinned interop dependency:
+  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704`
 
 ### 7) Release CI
 

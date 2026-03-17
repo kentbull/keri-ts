@@ -156,15 +156,21 @@ Use this doc for:
   parity first and should not add back-compat shims for historical `keri-ts`
   behavior unless they are required for KERIpy interop.
 
-### 2026-03-16 - Installed KLI Is Now Part Of Regular Interop Checks
+### 2026-03-16 - KLI Interop Became A Real Quality Gate
 
 - Promoted the live KLI interop suites from opportunistic-skip behavior to
   regular quality coverage by resolving the real KLI executable up front and
   failing if it cannot be used.
 - Preserved the active `DENO_DIR` when tests override `HOME`, so `tufa` can run
   under isolated test homes without trying to re-fetch npm/JSR dependencies.
+- Made the CI side explicit too: the PR stage-gate and `keri-ts` release
+  workflows now install KERIpy from
+  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test
+  steps so interop evidence is pinned and reproducible instead of depending on
+  whatever `kli` happens to be preinstalled on the runner.
 - Verified both `interop-gates-harness.test.ts` and `interop-kli-tufa.test.ts`
-  run successfully against the installed KERIpy CLI.
+  run successfully against the installed KERIpy CLI; if the pinned commit
+  changes its Python floor or install behavior, CI setup must move in lockstep.
 
 ### 2026-03-16 - `KomerBase` And `Komer` Hierarchy Ported
 

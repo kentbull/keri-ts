@@ -51,20 +51,23 @@ Deno.test("annotateCli supports --in and --out", async () => {
   const exitCode = await annotateCli(
     ["--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated"],
     {
-      readFile: async (path: string) => {
+      readFile: (path: string) => {
         const file = files.get(path);
         if (!file) throw new Error(`missing file: ${path}`);
-        return file;
+        return Promise.resolve(file);
       },
-      writeTextFile: async (path: string, text: string) => {
+      writeTextFile: (path: string, text: string) => {
         files.set(path, TEXT_ENCODER.encode(text));
+        return Promise.resolve();
       },
-      readStdin: async () => new Uint8Array(0),
-      writeStdout: async (text: string) => {
+      readStdin: () => Promise.resolve(new Uint8Array(0)),
+      writeStdout: (text: string) => {
         stdout.push(text);
+        return Promise.resolve();
       },
-      writeStderr: async (text: string) => {
+      writeStderr: (text: string) => {
         stderr.push(text);
+        return Promise.resolve();
       },
     },
   );
@@ -130,13 +133,14 @@ Deno.test("annotateCli --pretty pretty-prints JSON body", async () => {
   const exitCode = await annotateCli(
     ["--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated", "--pretty"],
     {
-      readFile: async (path: string) => files.get(path) ?? new Uint8Array(0),
-      writeTextFile: async (path: string, text: string) => {
+      readFile: (path: string) => Promise.resolve(files.get(path) ?? new Uint8Array(0)),
+      writeTextFile: (path: string, text: string) => {
         files.set(path, TEXT_ENCODER.encode(text));
+        return Promise.resolve();
       },
-      readStdin: async () => new Uint8Array(0),
-      writeStdout: async () => {},
-      writeStderr: async () => {},
+      readStdin: () => Promise.resolve(new Uint8Array(0)),
+      writeStdout: () => Promise.resolve(),
+      writeStderr: () => Promise.resolve(),
     },
   );
 

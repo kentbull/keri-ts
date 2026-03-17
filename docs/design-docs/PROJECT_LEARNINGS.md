@@ -138,9 +138,11 @@ This keeps context focused and avoids long-thread drift.
     preserving compatibility with older `keri-ts` behavior; local back-compat
     shims that are not needed for KERIpy interop are drift, not safety.
 26. KLI interop tests are now expected to run in regular quality checks against
-    the installed KERIpy CLI, not skip opportunistically; isolated test `HOME`
-    values should preserve the active `DENO_DIR`, and KLI resolution should use
-    the real executable path when pyenv shims are on `PATH`.
+    a real installed KERIpy CLI, not skip opportunistically; isolated test
+    `HOME` values should preserve the active `DENO_DIR`, KLI resolution should
+    use the real executable path when pyenv shims are on `PATH`, and CI should
+    install a pinned KERIpy commit before test jobs so interop coverage is
+    deterministic.
 27. `Komer` parity now assumes the KERIpy `KomerBase -> Komer` split exists in
     `keri-ts`; future `IoSetKomer` / `DupKomer` work should extend that base
     instead of re-flattening object-mapper behavior.
@@ -179,6 +181,10 @@ This keeps context focused and avoids long-thread drift.
     source, with `reopen()` as the canonical meaning seam because it shows the
     property name, subkey, wrapper type, and tuple/value wiring together; field
     comments are the shorter scan-oriented mirror.
+36. PR CI for `master` now has a dedicated stage-gate workflow that runs
+    formatting, lint, static quality checks, and tests, and the KERI package
+    release workflow installs the same pinned KERIpy CLI before running interop
+    tests so GitHub Actions coverage matches local expectations.
 
 ## New Thread Kickoff Template
 

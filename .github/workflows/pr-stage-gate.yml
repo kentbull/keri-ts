@@ -1,0 +1,59 @@
+name: PR Stage Gate
+
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-stage-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  KERIPY_GIT_SHA: 273784cb1702348c3888a09806cc37aea1877704
+
+jobs:
+  stage-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: install pinned KERIpy CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+          kli --help > /dev/null
+
+      - name: check formatting
+        run: deno task fmt:check
+
+      - name: run lint
+        run: deno task lint
+
+      - name: run quality checks
+        run: deno task quality:check
+
+      - name: run tests
+        run: |
+          deno task test:quality
+          deno task test:cesr

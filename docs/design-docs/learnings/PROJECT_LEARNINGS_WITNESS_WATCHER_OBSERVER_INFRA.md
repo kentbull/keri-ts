@@ -65,25 +65,18 @@ Use this doc for:
   - `.github/workflows/cesr-npm-release.yml`
   - `.github/workflows/changesets-version-pr.yml`
 - What changed:
-  - Added a dedicated CI workflow that runs `deno fmt --check` on PRs and pushes
-    to `master`.
-  - Added a workflow-policy guard that fails if CI workflow files reference
-    non-Deno formatters (`prettier`, `biome`, `dprint`).
-  - Added explicit `deno fmt --check` steps to existing release/version
-    workflows.
+  - Historical note only: CI originally standardized on `deno fmt --check`
+    plus a workflow-policy guard against other formatters.
 - Why:
-  - Ensure formatting policy is enforced consistently across CI entry points and
-    prevent accidental formatter drift.
+  - Preserve the rationale chain for the later move from `deno fmt` to
+    `dprint`; this entry is superseded, not current policy.
 - Tests:
-  - Command:
-    `rg -n "deno fmt --check|prettier|biome|dprint" .github/workflows/*.yml`
-  - Result: `deno fmt --check` present in all workflow paths; non-Deno formatter
-    references only appear in the new policy-guard regex.
+  - Command: historical only
+  - Result: superseded by the 2026-03-16 formatter-policy entry below
 - Contracts/plans touched:
   - N/A
 - Risks/TODO:
-  - If additional workflow files are added later, they should keep this
-    formatter policy and pass the guard.
+  - None; this entry remains only as migration history.
 
 ### 2026-03-16 - Formatter Policy Switched to `dprint`
 
@@ -112,3 +105,42 @@ Use this doc for:
   - This offline session could not live-validate `dprint` package/plugin
     downloads, so the first networked CI/local run should confirm formatter
     bootstrap succeeds end-to-end.
+
+### 2026-03-16 - PR Stage Gate Added For `master`
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `deno.json`
+  - `packages/keri/deno.json`
+  - `packages/cesr/deno.json`
+- What changed:
+  - Added a dedicated PR workflow for pull requests targeting `master` that
+    runs formatting, linting, static quality checks, and both KERI/CESR test
+    suites as one merge gate.
+  - Added an explicit repo lint task based on Deno's recommended rules with
+    targeted exclusions for the repo's current Deno-import/Effection patterns,
+    and fixed the concrete code/test issues needed for that lint pass to go
+    green.
+  - Installed a pinned KERIpy CLI in CI via
+    `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test
+    execution so interop suites run deterministically in GitHub Actions.
+  - Applied the same pinned KERIpy install step to the `keri-ts` npm release
+    workflow before its quality-test gate.
+- Why:
+  - A PR status check only protects `master` if the workflow exists, runs on PR
+    events, and exercises the same interop-sensitive test surface maintainers
+    expect locally.
+- Tests:
+  - Commands: `deno task fmt:check`, `deno task lint`,
+    `deno task quality:check`, `deno task test:quality`,
+    `deno task test:cesr`
+  - Result: all passed locally; `fmt:check` emitted only a sandbox-local
+    `dprint` incremental-cache write warning
+- Contracts/plans touched:
+  - `docs/design-docs/versioning-and-release-plan.md`
+- Risks/TODO:
+  - Branch protection in GitHub still needs to require the new PR workflow's
+    status check if that rule is not already configured.
+  - The pinned KERIpy install depends on GitHub Actions having Python `3.14`
+    available, matching the current KERIpy packaging requirement.
