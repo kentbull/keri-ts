@@ -1,12 +1,6 @@
 import type { ColdCode } from "../core/types.ts";
-import {
-  CIGAR_CODES,
-  DATER_CODES,
-  DECIMAL_CODES,
-  NONCE_CODES,
-  SIGER_CODES,
-} from "./codex.ts";
 import { Cigar } from "./cigar.ts";
+import { CIGAR_CODES, DATER_CODES, DECIMAL_CODES, NONCE_CODES, SIGER_CODES } from "./codex.ts";
 import { Dater } from "./dater.ts";
 import { Decimer } from "./decimer.ts";
 import { Indexer, type IndexerInit, parseIndexer } from "./indexer.ts";

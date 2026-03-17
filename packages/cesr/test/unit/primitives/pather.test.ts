@@ -1,14 +1,8 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import {
-  DeserializeError,
-  UnknownCodeError,
-} from "../../../src/core/errors.ts";
+import { DeserializeError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { makePather, parsePather } from "../../../src/primitives/pather.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("pather: parses KERIpy path vector", () => {
   const pather = parsePather(txt(KERIPY_MATTER_VECTORS.patherSimple), "txt");

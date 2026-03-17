@@ -99,8 +99,8 @@ export class Compactor extends Mapper {
     const parts = path.split(".").slice(1);
     for (const part of parts) {
       if (
-        !tail || typeof tail !== "object" || Array.isArray(tail) ||
-        !(part in (tail as SadMap))
+        !tail || typeof tail !== "object" || Array.isArray(tail)
+        || !(part in (tail as SadMap))
       ) {
         return null;
       }
@@ -338,8 +338,8 @@ export class Compactor extends Mapper {
         return true;
       }
       if (
-        value && typeof value === "object" && !Array.isArray(value) &&
-        this._hasSaid(value as SadMap)
+        value && typeof value === "object" && !Array.isArray(value)
+        && this._hasSaid(value as SadMap)
       ) {
         return true;
       }

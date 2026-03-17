@@ -1,22 +1,11 @@
 import { run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import {
-  Cigar,
-  Diger,
-  NumberPrimitive,
-  Prefixer,
-  Siger,
-  Verfer,
-} from "../../../../cesr/mod.ts";
-import {
-  encodeHugeNumber,
-  Manager,
-  saltySigner,
-} from "../../../src/app/keeping.ts";
+import { Cigar, Diger, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
+import { encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 
 Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () => {
-  await run(function* () {
+  await run(function*() {
     const keeper = yield* createKeeper({
       name: `keeper-${crypto.randomUUID()}`,
       temp: true,
@@ -46,7 +35,7 @@ Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () 
 });
 
 Deno.test("app/keeping - Manager returns narrow CESR primitives for inception and signing", async () => {
-  await run(function* () {
+  await run(function*() {
     const keeper = yield* createKeeper({
       name: `manager-${crypto.randomUUID()}`,
       temp: true,
@@ -77,7 +66,7 @@ Deno.test("app/keeping - Manager returns narrow CESR primitives for inception an
 });
 
 Deno.test("app/keeping - Manager.sign preserves overload behavior for indexed and unindexed calls", async () => {
-  await run(function* () {
+  await run(function*() {
     const keeper = yield* createKeeper({
       name: `manager-sign-${crypto.randomUUID()}`,
       temp: true,

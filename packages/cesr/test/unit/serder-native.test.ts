@@ -203,8 +203,7 @@ Deno.test("Serdery: native fixture reaps to the same SerderKERI in txt and qb2 d
   // End-to-end runtime bridge: regardless of input domain, `Serdery` should
   // produce one canonical `SerderKERI` with the same semantic body and qb64 raw.
   const serdery = new Serdery();
-  const txt =
-    serdery.reap(new TextEncoder().encode(nativeKeriIcpFixtureQb64())).serder;
+  const txt = serdery.reap(new TextEncoder().encode(nativeKeriIcpFixtureQb64())).serder;
   const bny = serdery.reap(nativeKeriIcpFixtureQb2()).serder;
 
   assertEquals(txt instanceof SerderKERI, true);

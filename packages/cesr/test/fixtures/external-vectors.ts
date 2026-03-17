@@ -34,4 +34,4 @@ export const KERIPY_NATIVE_V2_EXN_FIX_BODY =
   "-FBd0OKERICAACAAXexnEB69IykjPhbbu2PU-TbK5ecI7KKFaG34yC3-W6uWaLykDNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4HxEFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRNEFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2EN0MZ5zwEHpCi297Rg4fu1vfFXSPWHAP9PWVvCEV1_Kd1AAG2026-03-17T12c34c56d000000p00c004AAEcredential-issue-IAN0MschemaEFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2-IAF0J_d1AAP0J_m0L_hello";
 
 export const KERIPY_V1_JSON_ICP_BODY =
-  '{"v":"KERI10JSON00012b_","t":"icp","d":"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF","i":"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx","s":"0","kt":"1","k":["DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx"],"nt":"1","n":["EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2"],"bt":"0","b":[],"c":[],"a":[]}';
+  "{\"v\":\"KERI10JSON00012b_\",\"t\":\"icp\",\"d\":\"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF\",\"i\":\"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx\",\"s\":\"0\",\"kt\":\"1\",\"k\":[\"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx\"],\"nt\":\"1\",\"n\":[\"EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2\"],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}";

@@ -1,7 +1,4 @@
-import {
-  decode as decodeMsgpack,
-  encode as encodeMsgpack,
-} from "@msgpack/msgpack";
+import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
@@ -33,19 +30,10 @@ import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { Tholder } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
-import {
-  type CounterCodex,
-  resolveMUDex,
-} from "../tables/counter-version-registry.ts";
+import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import {
-  type Kind,
-  Kinds,
-  Protocols,
-  Vrsn_1_0,
-  Vrsn_2_0,
-} from "../tables/versions.ts";
+import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
 import { dumpCesrNativeSad, parseCesrNativeKed } from "./native.ts";
 import { smell, versify } from "./smell.ts";
@@ -1139,9 +1127,7 @@ function validateSadAgainstFieldDom(
     }
   }
 
-  const orderWithoutExtras = currentKeys.filter((key) =>
-    allowedKeys.includes(key)
-  );
+  const orderWithoutExtras = currentKeys.filter((key) => allowedKeys.includes(key));
   const expectedOrder = allowedKeys.filter((key) => key in ked);
   if (orderWithoutExtras.join("|") !== expectedOrder.join("|")) {
     throw new DeserializeError("Missing or out-of-order fields in SAD.");
@@ -1216,8 +1202,8 @@ function resolveProtocolDefaults(
 
   const proto = init.proto ?? smelled?.proto ?? ctor.Proto;
   const pvrsn = init.pvrsn ?? smelled?.pvrsn ?? ctor.PVrsn;
-  const gvrsn = init.gvrsn ?? smelled?.gvrsn ??
-    (pvrsn.major >= 2 ? ctor.GVrsn : null);
+  const gvrsn = init.gvrsn ?? smelled?.gvrsn
+    ?? (pvrsn.major >= 2 ? ctor.GVrsn : null);
   const kind = init.kind ?? smelled?.kind ?? ctor.Kind;
 
   const versionFields = ctor.Fields[proto]?.[versionKey(pvrsn)];
@@ -1227,8 +1213,8 @@ function resolveProtocolDefaults(
     );
   }
   const defaultIlk = Object.keys(versionFields)[0] ?? "<none>";
-  const ilk = init.ilk ?? (typeof sad.t === "string" ? sad.t : null) ??
-    (defaultIlk === "<none>" ? null : defaultIlk);
+  const ilk = init.ilk ?? (typeof sad.t === "string" ? sad.t : null)
+    ?? (defaultIlk === "<none>" ? null : defaultIlk);
   const fields = getFieldDom(ctor.Fields, proto, pvrsn, ilk);
   const normalized = normalizeSadWithFieldDom(sad, fields);
   if (ilk !== null) {
@@ -1465,17 +1451,17 @@ export class Serder implements CesrBody {
 
   get said(): string | null {
     if (
-      this._ked &&
-      this.ilk !== null &&
-      Object.keys(
+      this._ked
+      && this.ilk !== null
+      && Object.keys(
           getFieldDom(
             (this.constructor as typeof Serder & SerderStatic).Fields,
             this.proto,
             this.pvrsn,
             this.ilk,
           ).saids ?? {},
-        ).length === 0 &&
-      typeof this._ked.d === "string"
+        ).length === 0
+      && typeof this._ked.d === "string"
     ) {
       return this._ked.d;
     }
@@ -1530,8 +1516,8 @@ export class Serder implements CesrBody {
       throw new DeserializeError("Inconsistent protocol after verification.");
     }
     if (
-      actualSmellage.pvrsn.major !== this.pvrsn.major ||
-      actualSmellage.pvrsn.minor !== this.pvrsn.minor
+      actualSmellage.pvrsn.major !== this.pvrsn.major
+      || actualSmellage.pvrsn.minor !== this.pvrsn.minor
     ) {
       throw new DeserializeError(
         "Inconsistent protocol version after verification.",
@@ -1548,8 +1534,8 @@ export class Serder implements CesrBody {
       );
     }
     if (
-      (actualSmellage.gvrsn?.major ?? -1) !== (this.gvrsn?.major ?? -1) ||
-      (actualSmellage.gvrsn?.minor ?? -1) !== (this.gvrsn?.minor ?? -1)
+      (actualSmellage.gvrsn?.major ?? -1) !== (this.gvrsn?.major ?? -1)
+      || (actualSmellage.gvrsn?.minor ?? -1) !== (this.gvrsn?.minor ?? -1)
     ) {
       throw new DeserializeError(
         "Inconsistent genus version after verification.",
@@ -1796,17 +1782,13 @@ export class SerderKERI extends Serder {
 
   get cuts(): string[] {
     return Array.isArray(this.ked?.br)
-      ? this.ked.br.filter((value): value is string =>
-        typeof value === "string"
-      )
+      ? this.ked.br.filter((value): value is string => typeof value === "string")
       : [];
   }
 
   get adds(): string[] {
     return Array.isArray(this.ked?.ba)
-      ? this.ked.ba.filter((value): value is string =>
-        typeof value === "string"
-      )
+      ? this.ked.ba.filter((value): value is string => typeof value === "string")
       : [];
   }
 
@@ -1868,8 +1850,8 @@ export class SerderACDC extends Serder {
     }
 
     if (
-      this.ilk === null ||
-      ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)
+      this.ilk === null
+      || ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)
     ) {
       const issuer = this.issuer;
       if (!issuer) {

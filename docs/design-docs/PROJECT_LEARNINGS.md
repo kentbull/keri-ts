@@ -168,67 +168,71 @@ This keeps context focused and avoids long-thread drift.
     `Noncer`, and `Traitor` should validate through canonical codex exports or
     derived helpers, and trait semantics should come from generated `TraitDex`
     parity rather than local string lists.
-33. Local habitat state is no longer allowed to live only in `Hab.kever`:
+33. CESR codex reasoning has to respect KERIpy's layering: `Matter` and
+    `Indexer` use shared non-versioned base code spaces with semantic subset
+    views layered on top, while `Counter` is the distinct genus/version-aware
+    table family. Reused literals across semantic subsets are not collisions.
+34. Local habitat state is no longer allowed to live only in `Hab.kever`:
     `states.` is now the durable source of truth, `kels.` / `fels.` / `dtss.`
     back reopenable local event state, and `Habery.habs` should remain an
     in-memory reconstruction cache rather than becoming another persisted truth
     source.
-34. DB parity changes should ship with maintainer-grade source docs for the new
+35. DB parity changes should ship with maintainer-grade source docs for the new
     record contracts, storage families, and runtime seams; otherwise the code
     may be behaviorally closer to KERIpy while still being too opaque for safe
     future parity work.
-35. `Baser` and `Keeper` named-subdb docs are now mirrored store-by-store in
+36. `Baser` and `Keeper` named-subdb docs are now mirrored store-by-store in
     source, with `reopen()` as the canonical meaning seam because it shows the
     property name, subkey, wrapper type, and tuple/value wiring together; field
     comments are the shorter scan-oriented mirror.
-36. PR CI for `master` now has a dedicated stage-gate workflow that runs
+37. PR CI for `master` now has a dedicated stage-gate workflow that runs
     formatting, lint, static quality checks, and tests, and the KERI package
     release workflow installs the same pinned KERIpy CLI before running interop
     tests so GitHub Actions coverage matches local expectations.
-37. CI dependency bootstrap now treats cacheability as part of workflow design:
+38. CI dependency bootstrap now treats cacheability as part of workflow design:
     active GitHub Actions paths restore a shared Deno/module cache, npm cache,
     and, where interop tests run, a KERIpy virtualenv cache keyed by the pinned
     KERIpy Git SHA so expensive setup work is skipped unless dependencies
     actually change.
-38. Runtime version-module generation is no longer allowed to infer build
+39. Runtime version-module generation is no longer allowed to infer build
     metadata implicitly from ambient GitHub env vars during checks:
     deterministic `version:check` uses empty metadata by default, while
     artifact-producing CI steps must opt into stamped metadata explicitly.
-39. KERIpy LMDB interop depends not just on pinning `lmdb@3.4.4`, but on
+40. KERIpy LMDB interop depends not just on pinning `lmdb@3.4.4`, but on
     preserving LMDB-js data-format v1 semantics as a CI/runtime contract; the
     KERI workflows should export `LMDB_DATA_V1=true` and rebuild/cache the
     native addon accordingly instead of assuming runner defaults are compatible.
-40. The LMDB-js v1-compat rebuild path must avoid
+41. The LMDB-js v1-compat rebuild path must avoid
     `npm rebuild ... --build-from-source` on the published package because that
     path invokes a Rollup-based JS rebuild step the CI runner does not provide;
     rebuilding only the native addon via `node-gyp` is the correct contract for
     CI.
-41. Once a PR gate grows beyond one cheap job, the real bottleneck is usually
+42. Once a PR gate grows beyond one cheap job, the real bottleneck is usually
     feedback topology rather than raw runner speed: split static checks, interop
     tests, package smoke, and slower cross-platform coverage into separate jobs,
     but keep one tiny aggregate status job if branch protection already depends
     on a stable check name.
-42. CI reproducibility for native-addon library repos means pinning the whole
+43. CI reproducibility for native-addon library repos means pinning the whole
     bootstrap surface, not just the package graph: exact Deno/Node versions,
     action commit SHAs, explicit environment assertions, and saved built
     tarballs all reduce "works locally, shrugs in Actions" debugging time.
-43. Test parallelization needs to follow isolation boundaries, not folder names:
+44. Test parallelization needs to follow isolation boundaries, not folder names:
     DB-core tests can safely use Deno module parallelism, but CLI/app tests that
     mutate `console`, `HOME`, or persisted local stores need file-level
     isolation, and long interop harnesses should be split into individually
     addressable scenarios so one slow parity lane does not dominate the whole PR
     gate.
-44. `Matter` and `Indexer` should now be treated as low-level parser/storage
+45. `Matter` and `Indexer` should now be treated as low-level parser/storage
     bases rather than normal semantic construction surfaces: when the code
     already knows it is handling a signer/verfer/diger/siger/cigar/etc., it
     should instantiate and return that narrow subclass directly, while truly
     generic seams stay on parser outputs or explicit `Matter`/`Indexer` bases.
-45. `keri-ts` now has a real non-native `Serder` construction/verification seam
-46. CESR-native parity work is no longer just a parser concern: `Mapper`,
+46. `keri-ts` now has a real non-native `Serder` construction/verification seam
+47. CESR-native parity work is no longer just a parser concern: `Mapper`,
     `Compactor`, and `Aggor` are now evolving into semantic CESR-native
     primitives, and ACDC top-level `Serder` verification depends on their
     compact/disclose behavior rather than generic `saidifyFields` alone.
-47. ACDC parity has a special verification rule that must stay explicit in TS:
+48. ACDC parity has a special verification rule that must stay explicit in TS:
     expanded top-level ACDC bodies may carry a `d` derived from the most compact
     variant, so `SerderACDC` must verify compact-form SAID semantics separately
     from "does the visible raw reserialize from the visible SAD?" semantics. for
@@ -237,48 +241,48 @@ This keeps context focused and avoids long-thread drift.
     CESR-native serder parity and deeper ACDC compactification behavior remain
     open, so maintainers should not treat this milestone as full `serdering.py`
     closure yet.
-48. CESR-native parser hydration is now a stricter KERIpy-parity contract at the
+49. CESR-native parser hydration is now a stricter KERIpy-parity contract at the
     top-level frame seam: once the parser classifies a native
     `FixBodyGroup`/`MapBodyGroup` as a message body, success means full
     `SerderKERI`/`SerderACDC` hydration and anything less should be a parse
     error. Generic native map/list corpora still belong to lower-level
     mapper/aggor/compactor surfaces, not metadata-only top-level frame bodies.
-49. KERI native top-level message bodies are fixed-field only; even a
+50. KERI native top-level message bodies are fixed-field only; even a
     message-shaped native `MapBodyGroup` carrying `v`/`t`/`d`/`i` and the rest
     of the expected KERI labels must be rejected by the shared native
     serder/reaper layer. Native map-body top-level semantics belong to ACDC and
     lower-level mapping surfaces, not KERI messages.
-50. Digest-code ownership belongs at the CESR primitive layer, not in app code
+51. Digest-code ownership belongs at the CESR primitive layer, not in app code
     or serder-local helpers: `DigDex` stays the canonical codex namespace, but
     `Diger` should own `code -> digest implementation` dispatch so `Saider`,
     `Serder`, and habitat flows can consume digest behavior without carrying
     private hash switches.
-51. CESR-native serder parity is now organized around one protocol/version/ilk
+52. CESR-native serder parity is now organized around one protocol/version/ilk
     support matrix in `native.ts` instead of a split "hard-coded KERI plus
     separate ACDC layout table" design; parser hydration, `Serdery`, and native
     inhale/exhale should all extend that one matrix rather than adding sidecar
     native branching.
-52. ACDC section parity depends on two different identifier rules that must stay
+53. ACDC section parity depends on two different identifier rules that must stay
     explicit in TS: top-level compactive ilks hash over the most compact section
     form, while partial section-message ilks keep the visible section expanded
     but still require embedded `$id`/`d`/`agid` values to be computed and
     verified.
-53. Long-tail KERI serder parity now includes wrapper accessors, not just raw
+54. Long-tail KERI serder parity now includes wrapper accessors, not just raw
     scalar projections: `sner`, `tholder`, `ntholder`, `bner`, and KERIpy-like
     `berfers` typing are part of the subtype contract and should be regression
     tested when serder projection behavior changes.
-54. Native KERI route fields are a `Pather` problem, not a `Labeler` problem.
+55. Native KERI route fields are a `Pather` problem, not a `Labeler` problem.
     Even simple semantic routes like `ksn` or `reply` must serialize through
     KERIpy's `Pather(path=..., relative=True, pathive=False)` rules, which
     choose a StrB64/Bytes code family based on the compact path payload. A
     "label-looking" workaround can preserve semantics for some fixtures while
     still breaking byte parity.
-55. Native serder construction/verification cannot feed CESR-native raw back
+56. Native serder construction/verification cannot feed CESR-native raw back
     through non-native `smell()` logic. For native `kind=CESR`, the serder
     already knows `proto`/`pvrsn`/`gvrsn`; it must carry that smellage
     explicitly while validating the byte round-trip instead of trying to sniff a
     self-describing version string that native bodies do not contain.
-56. TypeScript literal-overload APIs do not survive boolean forwarding. When a
+57. TypeScript literal-overload APIs do not survive boolean forwarding. When a
     caller-facing method like `Hab.sign(..., true|false)` forwards a plain
     `boolean` into an overloaded callee like `Manager.sign(...)`, the narrow
     return-type contract is lost even if the runtime logic is fine. The stable

@@ -1,28 +1,15 @@
 import { b, codeB2ToB64, codeB64ToB2, t } from "../core/bytes.ts";
-import {
-  DeserializeError,
-  SerializeError,
-  UnknownCodeError,
-} from "../core/errors.ts";
+import { DeserializeError, SerializeError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
-import {
-  AGGOR_CODES,
-  AGGOR_LIST_CODES,
-  AGGOR_MAP_CODES,
-} from "../tables/counter-groups.ts";
+import { AGGOR_CODES, AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind } from "../tables/versions.ts";
 import { DigDex } from "./codex.ts";
 import { Counter, parseCounter } from "./counter.ts";
 import { Diger } from "./diger.ts";
-import {
-  Mapper,
-  type MapperField,
-  type MapperMap,
-  parseMapperBody,
-} from "./mapper.ts";
+import { Mapper, type MapperField, type MapperMap, parseMapperBody } from "./mapper.ts";
 import { parseMatter } from "./matter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
@@ -408,9 +395,7 @@ export class Aggor extends Structor {
     const codeName = compacted.length / 4 < 64 ** 2
       ? CtrDexV2.GenericListGroup
       : CtrDexV2.BigGenericListGroup;
-    return `${
-      new Counter({ code: codeName, count: compacted.length / 4 }).qb64
-    }${compacted}`;
+    return `${new Counter({ code: codeName, count: compacted.length / 4 }).qb64}${compacted}`;
   }
 
   private static deserializeList(
@@ -496,9 +481,7 @@ export class Aggor extends Structor {
       ? CtrDexV2.GenericListGroup
       : CtrDexV2.BigGenericListGroup;
     const raw = b(
-      `${
-        new Counter({ code: groupCode, count: compacted.length / 4 }).qb64
-      }${compacted}`,
+      `${new Counter({ code: groupCode, count: compacted.length / 4 }).qb64}${compacted}`,
     );
     return new Diger({ code, raw: Diger.digest(raw, code) }).qb64;
   }

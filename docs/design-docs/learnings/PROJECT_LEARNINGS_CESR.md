@@ -79,6 +79,11 @@ Persistent CESR parser memory for `keri-ts`.
     `unknown`: mapper values are recursive scalar/list/map trees, aggregate
     lists are `string | map` elements, and broader serder/KED layers should
     cast deliberately when crossing into those mapper-native contracts.
+23. CESR codex interpretation must keep the KERIpy layering straight: `Matter`
+    and `Indexer` each have one shared, non-versioned base code space plus
+    semantic subset codexes such as `PreDex`, `NonceDex`, and `IdxSigDex`;
+    `Counter` is the distinct genus/version-aware table family. Reused literals
+    across subset codexes are semantic membership reuse, not code collisions.
 
 ## Key Docs
 
@@ -275,12 +280,25 @@ Persistent CESR parser memory for `keri-ts`.
   `NumberPrimitive`, `Salter`, `Signer`, `Verfer`, `Prefixer`) when the code
   already knew the semantic family.
 - Added a shared `hydrate.ts` seam for generic callers, but made it
-  intentionally conservative after auditing KERIpy code overlap: many CESR codes
-  are semantically shared across families, so automatic narrowing is only honest
-  for unambiguous families such as `Dater`, `Decimer`, `Cigar`, and `Siger`.
+  intentionally conservative after auditing KERIpy's codex layering: many
+  semantic subset codexes reuse literals from the shared base `Matter` or
+  `Indexer` code spaces, so automatic narrowing is only honest for
+  unambiguous families such as `Dater`, `Decimer`, `Cigar`, and `Siger`.
 - Added regression coverage for the hydrator contract itself plus app-level
   proof that `Manager.incept()` and `Manager.sign()` now return narrow
   primitives instead of qb64-only `Matter`/`Indexer` projections.
+
+### 2026-03-17 - Codex Layering Model Corrected To Match KERIpy
+
+- Tightened maintainer docs to state the real KERIpy model explicitly:
+  `MatterCodex`/`MtrDex` and `IndexerCodex`/`IdrDex` are shared base code
+  spaces, and semantic codexes like `PreDex`, `NonceDex`, `NumDex`, and
+  `IdxSigDex` are subset views over those same spaces.
+- Corrected the earlier sloppy "code overlap" phrasing. The important failure
+  mode is not protocol/genus-version collision, but confusing semantic subset
+  membership reuse with versioned table selection.
+- Reinforced that `Counter` is the genus/version-aware exception, so code-table
+  version reasoning belongs there, not in Matter/Indexer subset validation.
 
 ### 2026-03-17 - Mapper And Aggor Value Types Were Tightened To KERIpy Shape
 

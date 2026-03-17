@@ -602,8 +602,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     readonly,
   });
 
-  const cf = providedCf ??
-    (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf
+    ?? (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,
