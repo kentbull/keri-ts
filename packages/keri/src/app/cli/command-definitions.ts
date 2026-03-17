@@ -1,11 +1,7 @@
 import { Command } from "npm:commander@^10.0.1";
 import { type Operation, spawn, withResolvers } from "npm:effection@^3.6.0";
-import {
-  type CommandArgs,
-  type CommandDispatch,
-  type CommandHandler,
-} from "./command-types.ts";
 import { DISPLAY_VERSION } from "../version.ts";
+import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
 
 type CommandModule = Record<string, unknown>;
 
@@ -19,12 +15,10 @@ function* loadModule<TModule extends CommandModule>(
   load: () => Promise<TModule>,
 ): Operation<TModule> {
   const { operation, resolve, reject } = withResolvers<TModule>();
-  const task = yield* spawn(function* () {
+  const task = yield* spawn(function*() {
     load()
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
   });
   yield* task;
   return yield* operation;
@@ -40,7 +34,7 @@ function lazyCommand<TModule extends CommandModule>(
   load: () => Promise<TModule>,
   exportName: string,
 ): CommandHandler {
-  return function* (args: CommandArgs): Operation<void> {
+  return function*(args: CommandArgs): Operation<void> {
     const module = yield* loadModule(load);
     const handler = module[exportName];
     if (typeof handler !== "function") {
@@ -438,7 +432,7 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "Port number for the server (default: 8000)",
       "8000",
     )
-    .action(function (this: Command) {
+    .action(function(this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",

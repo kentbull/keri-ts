@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseSeqner } from "../../../src/primitives/seqner.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("seqner: parses KERIpy sequence vectors", () => {
   const zero = parseSeqner(txt(KERIPY_MATTER_VECTORS.seqnerZero), "txt");

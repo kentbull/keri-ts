@@ -1,8 +1,9 @@
 import { type Operation } from "npm:effection@^3.6.0";
+import { b, t } from "../../../cesr/mod.ts";
 import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
-import { Configer, createConfiger } from "./configing.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
+import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
   branToSaltQb64,
@@ -12,7 +13,6 @@ import {
   normalizeSaltQb64,
   saltySigner,
 } from "./keeping.ts";
-import { b, t } from "../../../cesr/mod.ts";
 
 export const SIGNER = "__signatory__";
 
@@ -568,8 +568,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     readonly,
   });
 
-  const cf = providedCf ??
-    (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf
+    ?? (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,

@@ -1,7 +1,7 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
+import type { ParserOptions } from "../core/parser-engine.ts";
 import type { CesrMessage } from "../core/types.ts";
 import { toAsyncFrames } from "./async-iterable.ts";
-import type { ParserOptions } from "../core/parser-engine.ts";
 
 export interface FrameChannel {
   readonly frames: AsyncIterable<CesrMessage>;

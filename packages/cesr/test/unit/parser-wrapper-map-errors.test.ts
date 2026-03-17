@@ -3,8 +3,8 @@ import { createParser } from "../../src/core/parser-engine.ts";
 import { CounterGroup } from "../../src/primitives/counter.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside AttachmentGroup wrapper payload", () => {
@@ -50,8 +50,7 @@ Deno.test("supplemental: compat mode preserves opaque tail remainder inside Atta
   assertEquals(attachment.items.length, 2);
   assertEquals(
     attachment.items.some(
-      (item) =>
-        item instanceof CounterGroup && item.name === "ControllerIdxSigs",
+      (item) => item instanceof CounterGroup && item.name === "ControllerIdxSigs",
     ),
     true,
   );

@@ -1,11 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { b, t } from "../../../../../cesr/mod.ts";
-import {
-  onItemsAsText,
-  pairsAsText,
-  valuesAsText,
-  withTempLMDBer,
-} from "./lmdber-test-utils.ts";
+import { onItemsAsText, pairsAsText, valuesAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
 
 Deno.test("db/core lmdber dup - putVals returns false on mixed existing input but still stores new values in lexical order", async () => {
   await withTempLMDBer("dup-put", (lmdber) => {
@@ -56,9 +51,7 @@ Deno.test("db/core lmdber iodup - insertion order survives lexical conflicts and
     const dups = lmdber.openDB("dups.", true);
 
     const rawOrdinals = () =>
-      lmdber.getVals(dups, b("journal")).map((value) =>
-        Number.parseInt(t(value.slice(0, 32)), 16)
-      );
+      lmdber.getVals(dups, b("journal")).map((value) => Number.parseInt(t(value.slice(0, 32)), 16));
 
     assertEquals(
       lmdber.putIoDupVals(dups, b("journal"), [b("zebra"), b("apple")]),

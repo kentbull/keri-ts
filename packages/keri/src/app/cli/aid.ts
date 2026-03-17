@@ -29,7 +29,7 @@ export function* aidCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       aidArgs.name!,
       aidArgs.base ?? "",

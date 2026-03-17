@@ -101,7 +101,7 @@ function* getAllItemIter(
 > {
   const targetDb = subDb || db;
 
-  return function* () {
+  return function*() {
     for (const { key, value } of targetDb.getRange({ start: startKey })) {
       if (split) {
         const keyBytes = typeof key === "string"
@@ -169,8 +169,8 @@ function* delTopVal(
         ? new TextEncoder().encode(key)
         : key;
       if (
-        keyBytes.length < prefix.length ||
-        !prefix.every((b, i) => keyBytes[i] === b)
+        keyBytes.length < prefix.length
+        || !prefix.every((b, i) => keyBytes[i] === b)
       ) {
         break;
       }

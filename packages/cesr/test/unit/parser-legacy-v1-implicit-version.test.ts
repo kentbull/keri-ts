@@ -29,9 +29,7 @@ Deno.test("legacy implicit-v1: top-level v1 NonNativeBodyGroup parses as v1 with
 
 Deno.test("legacy implicit-v1: v1 GenericGroup payload parses enclosed frames without genus-version selector", () => {
   const enclosed = `${v1OpaqueNonNativeFrame()}${v1OpaqueNonNativeFrame()}`;
-  const generic = `${
-    counterV1(CtrDexV1.GenericGroup, enclosed.length / 4)
-  }${enclosed}`;
+  const generic = `${counterV1(CtrDexV1.GenericGroup, enclosed.length / 4)}${enclosed}`;
   const parser = createParser();
   const events = [...parser.feed(encode(generic)), ...parser.flush()];
   const errors = events.filter((event) => event.type === "error");

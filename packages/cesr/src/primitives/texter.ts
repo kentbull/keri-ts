@@ -1,8 +1,8 @@
+import { t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { TEXTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
-import { t } from "../core/bytes.ts";
 
 function isTexterCode(code: string): boolean {
   return TEXTER_CODES.has(code);

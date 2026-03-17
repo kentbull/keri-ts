@@ -130,8 +130,7 @@ export const SmallVarRawSizeCodex = Object.freeze(
 export const SmallVrzDex = SmallVarRawSizeCodex;
 
 export type SmallVarRawSizeCodexName = keyof typeof SmallVarRawSizeCodex;
-export type SmallVarRawSizeCodexCode =
-  (typeof SmallVarRawSizeCodex)[SmallVarRawSizeCodexName];
+export type SmallVarRawSizeCodexCode = (typeof SmallVarRawSizeCodex)[SmallVarRawSizeCodexName];
 
 export const LargeVarRawSizeCodex = Object.freeze(
   {
@@ -144,8 +143,7 @@ export const LargeVarRawSizeCodex = Object.freeze(
 export const LargeVrzDex = LargeVarRawSizeCodex;
 
 export type LargeVarRawSizeCodexName = keyof typeof LargeVarRawSizeCodex;
-export type LargeVarRawSizeCodexCode =
-  (typeof LargeVarRawSizeCodex)[LargeVarRawSizeCodexName];
+export type LargeVarRawSizeCodexCode = (typeof LargeVarRawSizeCodex)[LargeVarRawSizeCodexName];
 
 export const BextCodex = Object.freeze(
   {
@@ -430,8 +428,7 @@ export const CipherX25519VarStrmCodex = Object.freeze(
 
 export const CiXVarStrmDex = CipherX25519VarStrmCodex;
 
-export type CipherX25519VarStrmCodexName =
-  keyof typeof CipherX25519VarStrmCodex;
+export type CipherX25519VarStrmCodexName = keyof typeof CipherX25519VarStrmCodex;
 export type CipherX25519VarStrmCodexCode =
   (typeof CipherX25519VarStrmCodex)[CipherX25519VarStrmCodexName];
 
@@ -448,8 +445,7 @@ export const CipherX25519VarQB64Codex = Object.freeze(
 
 export const CiXVarQB64Dex = CipherX25519VarQB64Codex;
 
-export type CipherX25519VarQB64CodexName =
-  keyof typeof CipherX25519VarQB64Codex;
+export type CipherX25519VarQB64CodexName = keyof typeof CipherX25519VarQB64Codex;
 export type CipherX25519VarQB64CodexCode =
   (typeof CipherX25519VarQB64Codex)[CipherX25519VarQB64CodexName];
 
@@ -462,8 +458,7 @@ export const CipherX25519FixQB64Codex = Object.freeze(
 
 export const CiXFixQB64Dex = CipherX25519FixQB64Codex;
 
-export type CipherX25519FixQB64CodexName =
-  keyof typeof CipherX25519FixQB64Codex;
+export type CipherX25519FixQB64CodexName = keyof typeof CipherX25519FixQB64Codex;
 export type CipherX25519FixQB64CodexCode =
   (typeof CipherX25519FixQB64Codex)[CipherX25519FixQB64CodexName];
 
@@ -482,8 +477,7 @@ export const CipherX25519AllQB64Codex = Object.freeze(
 
 export const CiXAllQB64Dex = CipherX25519AllQB64Codex;
 
-export type CipherX25519AllQB64CodexName =
-  keyof typeof CipherX25519AllQB64Codex;
+export type CipherX25519AllQB64CodexName = keyof typeof CipherX25519AllQB64Codex;
 export type CipherX25519AllQB64CodexCode =
   (typeof CipherX25519AllQB64Codex)[CipherX25519AllQB64CodexName];
 
@@ -561,5 +555,4 @@ export const CipherX25519AllCodex = Object.freeze(
 export const CiXDex = CipherX25519AllCodex;
 
 export type CipherX25519AllCodexName = keyof typeof CipherX25519AllCodex;
-export type CipherX25519AllCodexCode =
-  (typeof CipherX25519AllCodex)[CipherX25519AllCodexName];
+export type CipherX25519AllCodexCode = (typeof CipherX25519AllCodex)[CipherX25519AllCodexName];

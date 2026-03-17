@@ -1,31 +1,27 @@
-import type { CesrMessage } from "../core/types.ts";
-import { parseBytes } from "../core/parser-engine.ts";
-import type { Versionage } from "../tables/table-types.ts";
-import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
+import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import {
   DeserializeError,
   GroupSizeError,
   ShortageError,
   UnknownCodeError,
 } from "../core/errors.ts";
+import { parseBytes } from "../core/parser-engine.ts";
+import type { CesrMessage } from "../core/types.ts";
 import { sniff } from "../parser/cold-start.ts";
+import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
-import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
-import {
-  type GroupEntry,
-  isCounterGroupLike,
-  isPrimitiveTuple,
-} from "../primitives/primitive.ts";
+import { type GroupEntry, isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
+import type { Versionage } from "../tables/table-types.ts";
 import {
   counterCodeName,
   counterCodeNameForVersion,
   matterCodeName,
   nativeLabelName,
 } from "./comments.ts";
-import { b64ToInt, intToB64 } from "../core/bytes.ts";
+import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
 const TEXT_DECODER = new TextDecoder();
 const OPAQUE_TOKEN_COMMENT = "opaque token";
@@ -50,10 +46,10 @@ function toHex(bytes: Uint8Array): string {
 }
 
 function isRecoverableParseError(error: unknown): boolean {
-  return error instanceof UnknownCodeError ||
-    error instanceof DeserializeError ||
-    error instanceof ShortageError ||
-    error instanceof GroupSizeError;
+  return error instanceof UnknownCodeError
+    || error instanceof DeserializeError
+    || error instanceof ShortageError
+    || error instanceof GroupSizeError;
 }
 
 function spaces(count: number): string {
@@ -293,9 +289,7 @@ function renderNativeBody(
   emitLine(
     lines,
     counter.qb64,
-    `${
-      counterCodeNameForVersion(counter.code, version)
-    } count=${counter.count}`,
+    `${counterCodeNameForVersion(counter.code, version)} count=${counter.count}`,
     0,
     options,
   );
@@ -349,8 +343,8 @@ function renderMessageBody(
   options: Required<AnnotateOptions>,
 ): void {
   const rawBody = TEXT_DECODER.decode(frame.body.raw);
-  const isOpaqueCesrBody = frame.body.kind === "CESR" &&
-    frame.body.ked === null;
+  const isOpaqueCesrBody = frame.body.kind === "CESR"
+    && frame.body.ked === null;
 
   if (isOpaqueCesrBody) {
     emitLine(

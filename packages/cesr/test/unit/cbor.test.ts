@@ -1,9 +1,6 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
-import {
-  decode as decodeMsgpack,
-  encode as encodeMsgpack,
-} from "@msgpack/msgpack";
+import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { encode as encodeDefaultCbor } from "cbor-x/encode";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeKeriCbor, encodeKeriCbor } from "../../src/core/cbor.ts";
 
 type CborVector = {
@@ -21,11 +18,13 @@ const vectors: CborVector[] = [
   {
     name: "nested map",
     value: { nested: { a: 1, b: [2, 3] }, flag: true },
+    // dprint-ignore-start
     expected: new Uint8Array([
       0xa2, 0x66, 0x6e, 0x65, 0x73, 0x74, 0x65, 0x64,
       0xa2, 0x61, 0x61, 0x01, 0x61, 0x62, 0x82, 0x02,
       0x03, 0x64, 0x66, 0x6c, 0x61, 0x67, 0xf5,
     ]),
+    // dprint-ignore-end
   },
   {
     name: "array",
@@ -52,6 +51,7 @@ const vectors: CborVector[] = [
       state: "UT",
       zip: 84058,
     },
+    // dprint-ignore-start
     expected: new Uint8Array([
       0xa6, 0x65, 0x66, 0x69, 0x72, 0x73, 0x74, 0x63,
       0x4a, 0x69, 0x6d, 0x64, 0x6c, 0x61, 0x73, 0x74,
@@ -64,6 +64,7 @@ const vectors: CborVector[] = [
       0x65, 0x62, 0x55, 0x54, 0x63, 0x7a, 0x69, 0x70,
       0x1a, 0x00, 0x01, 0x48, 0x5a,
     ]),
+    // dprint-ignore-end
   },
 ];
 
@@ -79,8 +80,8 @@ const vectors: CborVector[] = [
  */
 function assertPlainObjectListShape(value: unknown): void {
   if (
-    value === null || typeof value === "string" || typeof value === "number" ||
-    typeof value === "boolean"
+    value === null || typeof value === "string" || typeof value === "number"
+    || typeof value === "boolean"
   ) {
     return;
   }

@@ -1,7 +1,7 @@
-import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { encode as encodeMsgpack } from "@msgpack/msgpack";
+import { assertEquals } from "jsr:@std/assert";
 import { encodeKeriCbor } from "../../src/core/cbor.ts";
+import { createParser } from "../../src/core/parser-engine.ts";
 
 type Encodable =
   | string

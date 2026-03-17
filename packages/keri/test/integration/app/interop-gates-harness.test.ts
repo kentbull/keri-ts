@@ -104,9 +104,7 @@ async function resolveKliCommand(env: Record<string, string>): Promise<string> {
   }
 
   throw new Error(
-    `kli is required for interop tests but could not be resolved. Tried: ${
-      candidates.join(", ")
-    }`,
+    `kli is required for interop tests but could not be resolved. Tried: ${candidates.join(", ")}`,
   );
 }
 
@@ -117,9 +115,7 @@ async function resolveKliCommand(env: Record<string, string>): Promise<string> {
  * re-implementing line parsing at each call site.
  */
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((line) =>
-    line.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -158,7 +154,7 @@ function normalizeCesr(text: string): string {
 function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith('{"v":"KERI'))
+    .filter((line) => line.trim().startsWith("{\"v\":\"KERI"))
     .join("\n");
 }
 
@@ -748,16 +744,14 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: [],
     expectedOutputShape: "DB and escrow readiness evidence",
-    blockedReason:
-      "Tracks DB-layer parity artifacts and escrow work, not a single CLI command.",
+    blockedReason: "Tracks DB-layer parity artifacts and escrow work, not a single CLI command.",
   },
   {
     id: "B-INIT-INCEPT-EXPORT-PARITY",
     gate: "B",
     state: "ready",
     requiredTufaCommands: ["init", "incept", "export"],
-    expectedOutputShape:
-      "Prefix line parity and normalized exported KEL stream parity.",
+    expectedOutputShape: "Prefix line parity and normalized exported KEL stream parity.",
     run: runInitInceptExportParity,
   },
   {
@@ -773,8 +767,7 @@ const GATE_SCENARIOS: GateScenario[] = [
     gate: "C",
     state: "ready",
     requiredTufaCommands: ["list", "aid"],
-    expectedOutputShape:
-      "kli-created store visible through tufa compatibility mode",
+    expectedOutputShape: "kli-created store visible through tufa compatibility mode",
     run: runKliCompatStoreOpen,
   },
   {
@@ -783,8 +776,7 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: ["init"],
     expectedOutputShape: "AEID and encrypted keeper semantics parity",
-    blockedReason:
-      "Needs explicit reopen/decrypt parity assertions beyond current smoke coverage.",
+    blockedReason: "Needs explicit reopen/decrypt parity assertions beyond current smoke coverage.",
   },
   {
     id: "E-ENDS-OOBI-BOOTSTRAP",
@@ -792,8 +784,7 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: ["ends", "oobi"],
     expectedOutputShape: "ends add + oobi generate/resolve parity",
-    blockedReason:
-      "Top-level ends/oobi command surface is not implemented yet.",
+    blockedReason: "Top-level ends/oobi command surface is not implemented yet.",
   },
   {
     id: "F-DIRECT-MAILBOX-COMMS",
@@ -801,8 +792,7 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: ["exchange"],
     expectedOutputShape: "direct and mailbox message flow parity",
-    blockedReason:
-      "Direct/mailbox interop flow commands are not implemented yet.",
+    blockedReason: "Direct/mailbox interop flow commands are not implemented yet.",
   },
   {
     id: "G-CHALLENGE-ROUNDTRIP",

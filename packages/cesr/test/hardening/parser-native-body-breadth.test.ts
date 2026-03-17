@@ -1,16 +1,16 @@
 import { assertEquals } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
+import { t } from "../../src/index.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import {
   buildNestedMapBodyV2,
   parseFramesNoError,
   splitIntoThirds,
   summarizeFrames,
 } from "./hardening-helpers.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-import { encode } from "../fixtures/stream-byte-fixtures.ts";
-import { t } from "../../src/index.ts";
 
 /**
  * P2 native-body breadth vectors (`V-P2-006`, `V-P2-007`).
@@ -37,8 +37,8 @@ Deno.test(
     assertEquals(frame.frame.body.native?.bodyCode, CtrDexV2.MapBodyGroup);
     assertEquals((frame.frame.body.native?.fields.length ?? 0) >= 3, true);
     assertEquals(
-      frame.frame.body.native?.fields.some((field) => field.label !== null) ??
-        false,
+      frame.frame.body.native?.fields.some((field) => field.label !== null)
+        ?? false,
       true,
     );
   },
@@ -49,8 +49,7 @@ Deno.test(
   () => {
     // Two native frames keep the round-trip assertion focused on semantic
     // stability, not on preserving literal source-token formatting.
-    const stream =
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const annotated = annotate(stream);
     const restored = t(denot(annotated));
     const originalSummary = summarizeFrames(parseFramesNoError(encode(stream)));

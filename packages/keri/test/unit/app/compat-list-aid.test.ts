@@ -6,9 +6,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
 function identifierLines(lines: string[]): string[] {
-  return lines.filter((line) =>
-    /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim())
-  );
+  return lines.filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim()));
 }
 
 Deno.test("CLI - compat list/aid open a .keri-layout store without config or signator side effects", async () => {
@@ -21,7 +19,7 @@ Deno.test("CLI - compat list/aid open a .keri-layout store without config or sig
 
   try {
     let prefix = "";
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name,
         compat: true,

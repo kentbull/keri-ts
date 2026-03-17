@@ -7,8 +7,8 @@ import {
   parseMatterFromBinary,
   parseMatterFromText,
 } from "../../../src/primitives/matter.ts";
-import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { token } from "../../fixtures/counter-token-fixtures.ts";
+import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import {
   assertQb64Qb2Parity,
   assertTxtBnyQb64Parity,

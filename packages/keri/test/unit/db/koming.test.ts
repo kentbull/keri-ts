@@ -18,7 +18,7 @@ interface PersonRecord {
 async function withTempDb(
   fn: (ctx: { lmdber: LMDBer }) => void,
 ): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `komer-${crypto.randomUUID()}`,
       temp: true,

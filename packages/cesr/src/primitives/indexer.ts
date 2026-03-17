@@ -10,16 +10,9 @@ import {
   nabSextets,
   sceil,
 } from "../core/bytes.ts";
-import {
-  DeserializeError,
-  ShortageError,
-  UnknownCodeError,
-} from "../core/errors.ts";
+import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import {
-  INDEXER_HARDS,
-  INDEXER_SIZES,
-} from "../tables/indexer.tables.generated.ts";
+import { INDEXER_HARDS, INDEXER_SIZES } from "../tables/indexer.tables.generated.ts";
 
 /**
  * Supported initialization forms for Indexer-derived primitives.
@@ -55,9 +48,9 @@ const INDEXER_BARDS = new Map<string, number>(
 );
 
 function isIndexerData(value: unknown): value is IndexerData {
-  return typeof value === "object" && value !== null &&
-    "code" in value && "raw" in value && "qb64" in value &&
-    "fullSize" in value && "fullSizeB2" in value && "index" in value;
+  return typeof value === "object" && value !== null
+    && "code" in value && "raw" in value && "qb64" in value
+    && "fullSize" in value && "fullSizeB2" in value && "index" in value;
 }
 
 function parseIndexerCodeFromText(txt: string): { code: string } {
@@ -206,9 +199,7 @@ function encodeIndexerFromRaw(
   const paw = concatBytes(new Uint8Array(ps + sizage.ls), raw);
   const body = encodeB64(paw).slice(ps);
 
-  const soft = `${intToB64(index, ms)}${
-    sizage.os > 0 ? intToB64(ondexValue ?? 0, sizage.os) : ""
-  }`;
+  const soft = `${intToB64(index, ms)}${sizage.os > 0 ? intToB64(ondexValue ?? 0, sizage.os) : ""}`;
   const qb64 = `${code}${soft}${body}`;
 
   const fullSize = qb64.length;

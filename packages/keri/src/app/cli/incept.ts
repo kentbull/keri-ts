@@ -1,11 +1,7 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { setupHby } from "./common/existing.ts";
-import {
-  InceptFileOptions,
-  loadInceptFileOptions,
-  parseDataItems,
-} from "./common/parsing.ts";
+import { InceptFileOptions, loadInceptFileOptions, parseDataItems } from "./common/parsing.ts";
 
 interface InceptArgs {
   name?: string;
@@ -103,7 +99,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
   const cues = createQueue<{ kin: string; pre?: string; mode: string }, void>();
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       inceptArgs.name!,
       inceptArgs.base ?? "",

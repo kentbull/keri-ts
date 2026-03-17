@@ -1,21 +1,17 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { intToB64 } from "../../src/core/bytes.ts";
+import { createParser } from "../../src/core/parser-engine.ts";
 import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
-import {
-  counterV1,
-  counterV2,
-  sigerToken,
-} from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
-    intToB64(minor, 1)
-  }${intToB64(0, 1)}`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${
+    intToB64(0, 1)
+  }`;
 }
 
 function wrapQuadletGroupV2(code: string, payload: string): string {
@@ -39,9 +35,9 @@ Deno.test("V-P1-007: GenericGroup enclosed genus-version override applies across
   assertEquals(errors.length, 0);
   assertEquals(frames.length, 3);
   if (
-    frames[0].type === "frame" &&
-    frames[1].type === "frame" &&
-    frames[2].type === "frame"
+    frames[0].type === "frame"
+    && frames[1].type === "frame"
+    && frames[2].type === "frame"
   ) {
     assertEquals(frames[0].frame.body.pvrsn.major, 1);
     assertEquals(frames[1].frame.body.pvrsn.major, 1);
@@ -52,7 +48,7 @@ Deno.test("V-P1-007: GenericGroup enclosed genus-version override applies across
 });
 
 Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups that require fallback", () => {
-  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
+  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   // Use a v2-only counter token that fails immediately under v1 dispatch.
   const v2OnlyNested = counterV2(CtrDexV2.BigBlindedStateQuadruples, 1);
   const wrappedV1Attachment = `${
@@ -76,9 +72,7 @@ Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups tha
 Deno.test("V-P1-010: latest genus-version inside wrapper payload controls subsequent nested groups", () => {
   const nestedV1 = `${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`;
   const nestedV2 = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
-  const payload = `${genusVersionCounter(1)}${nestedV1}${
-    genusVersionCounter(2)
-  }${nestedV2}`;
+  const payload = `${genusVersionCounter(1)}${nestedV1}${genusVersionCounter(2)}${nestedV2}`;
   const wrapper = wrapQuadletGroupV2(CtrDexV2.AttachmentGroup, payload);
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrapper}`;
 

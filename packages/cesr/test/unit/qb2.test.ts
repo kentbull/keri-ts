@@ -1,18 +1,9 @@
 import { assertEquals } from "jsr:@std/assert";
 import { codeB64ToB2 } from "../../src/core/bytes.ts";
-import {
-  parseMatterFromBinary,
-  parseMatterFromText,
-} from "../../src/primitives/matter.ts";
-import {
-  parseCounterFromBinary,
-  parseCounterFromText,
-} from "../../src/primitives/counter.ts";
-import {
-  parseIndexerFromBinary,
-  parseIndexerFromText,
-} from "../../src/primitives/indexer.ts";
 import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
+import { parseCounterFromBinary, parseCounterFromText } from "../../src/primitives/counter.ts";
+import { parseIndexerFromBinary, parseIndexerFromText } from "../../src/primitives/indexer.ts";
+import { parseMatterFromBinary, parseMatterFromText } from "../../src/primitives/matter.ts";
 import {
   KERIPY_COUNTER_VECTORS,
   KERIPY_INDEXER_VECTORS,

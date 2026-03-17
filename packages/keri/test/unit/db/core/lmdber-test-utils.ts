@@ -1,7 +1,7 @@
 import { run } from "effection";
+import { t } from "../../../../../cesr/mod.ts";
 import type { LMDBer } from "../../../../src/db/core/lmdber.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
-import { t } from "../../../../../cesr/mod.ts";
 
 /**
  * Helper function to make temporary LMDBer for a test.
@@ -12,7 +12,7 @@ export async function withTempLMDBer(
   label: string,
   fn: (lmdber: LMDBer) => void,
 ): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* openLMDB({
       name: `${label}-${crypto.randomUUID()}`,
       temp: true,

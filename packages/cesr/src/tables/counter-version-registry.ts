@@ -1,11 +1,11 @@
 import { VersionError } from "../core/errors.ts";
+import { CtrDexV1, CtrDexV2 } from "./counter-codex.ts";
 import {
   COUNTER_CODE_NAMES_V1,
   COUNTER_CODE_NAMES_V2,
   COUNTER_SIZES_V1,
   COUNTER_SIZES_V2,
 } from "./counter.tables.generated.ts";
-import { CtrDexV1, CtrDexV2 } from "./counter-codex.ts";
 import type { Cizage, Versionage, VersionMajor } from "./table-types.ts";
 
 /**

@@ -68,6 +68,10 @@ replay/verification semantics.
 18. DB parity work is not maintainer-complete until the new storage families,
     record contracts, and runtime seams are documented in source with KERIpy
     correspondence and `keri-ts` differences called out explicitly.
+19. For `Baser` and `Keeper`, the canonical named-subdb meaning now lives on
+    the `reopen()` bindings where property name, subkey, wrapper type, and
+    tuple/value wiring appear together; declaration comments are the shorter
+    public-surface mirror.
 
 ## Scope Checklist
 
@@ -110,6 +114,17 @@ Use this doc for:
   OOBI resolution, and KEL routing remain open.
 
 ## Milestone Rollup
+
+### 2026-03-16 - `Baser` And `Keeper` Sub-DB Documentation Was Fully Mirrored
+
+- Added comments for every currently bound LMDB sub-database in `Baser` and
+  `Keeper` at both the field declaration and `reopen()` binding sites.
+- Mirrored KERIpy meaning-first instead of verbatim so the TypeScript source
+  keeps the original store intent while staying readable for maintainers.
+- Treated `reopen()` as the canonical seam for store meaning, which let the
+  comments call out property-to-subkey mismatches such as `misfits -> mfes.`,
+  `delegables -> dees.`, `tops -> witm.`, and `gpwe -> gdwe.` without forcing
+  readers to infer them from the constructor wiring.
 
 ### 2026-03-16 - Class Documentation Parity Became A Guarded Requirement
 

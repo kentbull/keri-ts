@@ -89,5 +89,4 @@ export const IndexedBothSigCodex = Object.freeze(
 export const IdxBthSigDex = IndexedBothSigCodex;
 
 export type IndexedBothSigCodexName = keyof typeof IndexedBothSigCodex;
-export type IndexedBothSigCodexCode =
-  (typeof IndexedBothSigCodex)[IndexedBothSigCodexName];
+export type IndexedBothSigCodexCode = (typeof IndexedBothSigCodex)[IndexedBothSigCodexName];

@@ -190,9 +190,7 @@ export function benchmarkCesrParser(
     totalErrors += run.errorCount;
     if (failOnParseError && run.errorCount > 0) {
       throw new Error(
-        `Benchmark run produced parse errors (run=${
-          i + 1
-        }, errorCount=${run.errorCount})`,
+        `Benchmark run produced parse errors (run=${i + 1}, errorCount=${run.errorCount})`,
       );
     }
   }

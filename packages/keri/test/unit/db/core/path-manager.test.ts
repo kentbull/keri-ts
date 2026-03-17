@@ -32,7 +32,7 @@ Deno.test("db/core path-manager - reopen falls back to ~/.tufa when primary mkdi
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       assertEquals(yield* pathManager.reopen(), true);
     });
 

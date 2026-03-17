@@ -1,3 +1,10 @@
+import { codexValues, invertCodex } from "../tables/codex-utils.ts";
+import {
+  IdrDex,
+  IdxBthSigDex,
+  IdxCrtSigDex,
+  IdxSigDex,
+} from "../tables/indexer.codex.generated.ts";
 import {
   BexDex,
   CiXAllQB64Dex,
@@ -20,14 +27,7 @@ import {
   TagDex,
   TexDex,
 } from "../tables/matter.codex.generated.ts";
-import {
-  IdrDex,
-  IdxBthSigDex,
-  IdxCrtSigDex,
-  IdxSigDex,
-} from "../tables/indexer.codex.generated.ts";
 import { TraitDex } from "../tables/trait.codex.generated.ts";
-import { codexValues, invertCodex } from "../tables/codex-utils.ts";
 import { Protocols } from "../tables/versions.ts";
 
 /**

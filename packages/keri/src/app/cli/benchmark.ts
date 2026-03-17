@@ -215,16 +215,14 @@ function benchmarkParser(
     totalErrors += summary.errorCount;
     if (failOnParseError && summary.errorCount > 0) {
       throw new Error(
-        `Benchmark run produced parse errors (run=${
-          i + 1
-        }, errorCount=${summary.errorCount})`,
+        `Benchmark run produced parse errors (run=${i + 1}, errorCount=${summary.errorCount})`,
       );
     }
   }
   const elapsedMs = Math.max(performance.now() - startMs, Number.EPSILON);
 
-  const throughputMiBPerSec = ((input.length * iterations * 1000) / elapsedMs) /
-    (1024 * 1024);
+  const throughputMiBPerSec = ((input.length * iterations * 1000) / elapsedMs)
+    / (1024 * 1024);
   const framesPerSec = (totalFrames * 1000) / elapsedMs;
 
   return {

@@ -78,8 +78,8 @@ This keeps context focused and avoids long-thread drift.
    primary user path; the supported distribution path remains the npm package
    artifact, and CLI startup now lazy-loads handlers so `--help` and `--version`
    do not pull CESR/LMDB startup work.
-10. Formatting policy is explicitly Deno-native: CI and release workflows are
-    expected to enforce `deno fmt --check`.
+10. Formatting policy is explicitly `dprint`-based: CI and release workflows are
+    expected to enforce `deno task fmt:check`.
 11. The DB architecture contract now includes a maintainer-facing `LMDBer`
     family taxonomy so ordering and multiplicity semantics can be reasoned about
     by storage model rather than by individual method name.
@@ -175,6 +175,10 @@ This keeps context focused and avoids long-thread drift.
     record contracts, storage families, and runtime seams; otherwise the code
     may be behaviorally closer to KERIpy while still being too opaque for safe
     future parity work.
+35. `Baser` and `Keeper` named-subdb docs are now mirrored store-by-store in
+    source, with `reopen()` as the canonical meaning seam because it shows the
+    property name, subkey, wrapper type, and tuple/value wiring together; field
+    comments are the shorter scan-oriented mirror.
 
 ## New Thread Kickoff Template
 

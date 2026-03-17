@@ -1,12 +1,11 @@
-import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
-import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
-import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { parseMatter } from "cesr-ts";
-import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
+import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
+import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
+import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
 import { b } from "../../../cesr/mod.ts";
+import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
 
-const B64_ALPHABET =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /**
  * Root key-creation strategy selectors stored in keeper globals.
@@ -135,9 +134,7 @@ function encodeIndexerEd25519Sig(
   const both = `${code}${intToB64(index, 1)}`;
   const ps = (3 - (rawSig.length % 3)) % 3;
   const body = toBase64Url(
-    new Uint8Array(ps + rawSig.length).map((_, i) =>
-      i < ps ? 0 : rawSig[i - ps]
-    ),
+    new Uint8Array(ps + rawSig.length).map((_, i) => i < ps ? 0 : rawSig[i - ps]),
   );
   return `${both}${body.slice(ps)}`;
 }
@@ -484,9 +481,7 @@ export function branToSaltQb64(bran: string): string {
 }
 
 export function encodeDateTimeToDater(dts: string): string {
-  return `1AAG${
-    dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")
-  }`;
+  return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
 }
 
 export function encodeCounterV1(code: string, count: number): string {

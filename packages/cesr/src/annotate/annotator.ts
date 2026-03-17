@@ -1,11 +1,8 @@
+import { b } from "../core/bytes.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { CesrFrame } from "../core/types.ts";
-import {
-  renderAnnotatedFrames,
-  renderWrapperAnnotatedStream,
-} from "./render.ts";
+import { renderAnnotatedFrames, renderWrapperAnnotatedStream } from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
-import { b } from "../core/bytes.ts";
 
 const DEFAULT_OPTIONS: Required<AnnotateOptions> = Object.freeze({
   commentMode: "inline",

@@ -1,8 +1,8 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { run } from "effection";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { b, t } from "../../../../../cesr/mod.ts";
 import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
 import { openLMDB } from "../../../../src/db/core/lmdber.ts";
-import { b, t } from "../../../../../cesr/mod.ts";
 import { pairsAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
 
 Deno.test("db/core lmdber plain - putVal is write-once and leaves neighbors untouched", async () => {
@@ -30,7 +30,7 @@ Deno.test("db/core lmdber plain - setVal overwrites and getVal handles missing v
 });
 
 Deno.test("db/core lmdber plain - getVal throws the existing guard error after close", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* openLMDB({
       name: `plain-closed-${crypto.randomUUID()}`,
       temp: true,

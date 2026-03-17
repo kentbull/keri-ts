@@ -104,8 +104,7 @@ try {
     package: {
       name: "keri-ts",
       version: resolvePackageVersion(),
-      description:
-        "KERI TypeScript package with database primitives and CLI runtime",
+      description: "KERI TypeScript package with database primitives and CLI runtime",
       license: "Apache-2.0",
       repository: {
         type: "git",

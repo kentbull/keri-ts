@@ -83,8 +83,8 @@ function normalizeBuildMetadata(input: string): string {
 }
 
 function computeDefaultBuildMetadata(): string {
-  const run = Deno.env.get("GITHUB_RUN_NUMBER") ??
-    Deno.env.get("GITHUB_RUN_ID");
+  const run = Deno.env.get("GITHUB_RUN_NUMBER")
+    ?? Deno.env.get("GITHUB_RUN_ID");
   const sha = Deno.env.get("GITHUB_SHA")?.slice(0, 8);
 
   if (run && sha) {
@@ -103,8 +103,8 @@ function computeDefaultBuildMetadata(): string {
 }
 
 function getBuildMetadata(target: GenerateTarget): string {
-  const explicit = Deno.env.get(target.envOverrideKey) ??
-    Deno.env.get("BUILD_METADATA");
+  const explicit = Deno.env.get(target.envOverrideKey)
+    ?? Deno.env.get("BUILD_METADATA");
   if (explicit) {
     return normalizeBuildMetadata(explicit);
   }

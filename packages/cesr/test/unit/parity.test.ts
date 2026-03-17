@@ -1,22 +1,18 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import { UnknownCodeError } from "../../src/core/errors.ts";
 import {
   parseAttachmentDispatch,
   parseAttachmentDispatchCompat,
 } from "../../src/parser/group-dispatch.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
-import { UnknownCodeError } from "../../src/core/errors.ts";
+import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   COUNTER_CODE_NAMES_V1,
   COUNTER_CODE_NAMES_V2,
   COUNTER_SIZES_V1,
   COUNTER_SIZES_V2,
 } from "../../src/tables/counter.tables.generated.ts";
-import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  counterV2,
-  sigerToken,
-  token,
-} from "../fixtures/counter-token-fixtures.ts";
+import { counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {

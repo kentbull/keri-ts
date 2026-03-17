@@ -1,5 +1,5 @@
-import type { ColdCode } from "../core/types.ts";
 import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
+import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 
 /** Attachment dispatch fallback is only defined for counter domains. */
@@ -111,8 +111,7 @@ function alternateMajorVersion(version: Versionage): Versionage {
  * strict mode is intended for parity/fail-fast validation where ambiguous
  * compatibility recovery must not hide malformed or mixed-major input.
  */
-class StrictAttachmentVersionFallbackPolicy
-  implements AttachmentVersionFallbackPolicy {
+class StrictAttachmentVersionFallbackPolicy implements AttachmentVersionFallbackPolicy {
   /**
    * Always reject retry and preserve original error.
    *
@@ -160,8 +159,7 @@ class StrictAttachmentVersionFallbackPolicy
  * interop streams in the ecosystem can mix major-version counters/payloads, and
  * compat mode intentionally favors successful parse continuity.
  */
-class CompatAttachmentVersionFallbackPolicy
-  implements AttachmentVersionFallbackPolicy {
+class CompatAttachmentVersionFallbackPolicy implements AttachmentVersionFallbackPolicy {
   private readonly fallbackObserver?: (info: VersionFallbackInfo) => void;
 
   /**

@@ -1,10 +1,10 @@
 import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
+import { createParser } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
 
@@ -41,10 +41,8 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
 }
 
 Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", () => {
-  const body = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
-  const attachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const attachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
 
   // Same semantic frame, two attachment domains:
   // - txt stream carries qb64 attachments.
@@ -60,17 +58,12 @@ Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", 
 });
 
 Deno.test("V-P1-005: multi-message mixed stream ordering is split-deterministic", () => {
-  const jsonBody = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
-  const jsonAttachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const jsonBody = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const jsonAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const jsonFrame = `${jsonBody}${jsonAttachment}`;
 
-  const wrappedNestedAttachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
-  const wrappedPayload =
-    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
+  const wrappedNestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
   const wrappedFrame = `${
     counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)
   }${wrappedPayload}`;

@@ -1,7 +1,7 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import type { Versionage } from "../tables/table-types.ts";
 import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
+import type { Versionage } from "../tables/table-types.ts";
 import { type Mapper, parseMapperBody } from "./mapper.ts";
 
 export function parseCompactor(

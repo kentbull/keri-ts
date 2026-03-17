@@ -153,9 +153,9 @@ The entry points determine which implementation is injected.
 **Server Entry (`mod.ts` / CLI):**
 
 ```typescript
-import { DenoPlatform } from "./platform/deno/Platform.ts";
-import { LMDBBackend } from "./platform/deno/LMDBBackend.ts";
 import { Agent } from "./app/agent.ts";
+import { LMDBBackend } from "./platform/deno/LMDBBackend.ts";
+import { DenoPlatform } from "./platform/deno/Platform.ts";
 
 // Inject Deno-specifics
 const platform = new DenoPlatform();
@@ -168,8 +168,8 @@ agent.start();
 **Browser Entry (`index.browser.ts` - for NPM package):**
 
 ```typescript
-import { BrowserPlatform } from "./platform/browser/Platform.ts";
 import { IndexedDBBackend } from "./platform/browser/IndexedDBBackend.ts";
+import { BrowserPlatform } from "./platform/browser/Platform.ts";
 
 // Exports for library consumers
 export * from "./core";

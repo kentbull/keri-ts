@@ -83,7 +83,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const cf: Configer | undefined = initArgs.configFile
       ? (yield* createConfiger({
         name: initArgs.configFile,

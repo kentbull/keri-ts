@@ -57,7 +57,7 @@ Use this doc for:
   - Validate infra-specific DB slices against this design during Gate F/G and
     Gate H parity closure.
 
-### 2026-03-03 - CI Formatter Policy Locked to `deno fmt`
+### 2026-03-03 - CI Formatter Policy Locked to `deno fmt` (Superseded)
 
 - Topic docs updated:
   - `.github/workflows/ci.yml`
@@ -84,3 +84,31 @@ Use this doc for:
 - Risks/TODO:
   - If additional workflow files are added later, they should keep this
     formatter policy and pass the guard.
+
+### 2026-03-16 - Formatter Policy Switched to `dprint`
+
+- Topic docs updated:
+  - `deno.json`
+  - `packages/keri/deno.json`
+  - `packages/cesr/deno.json`
+  - `.github/workflows/changesets-version-pr.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/cesr-npm-release.yml`
+- What changed:
+  - Replaced `deno fmt` tasking and workflow checks with `dprint`.
+  - Added a repo-root `dprint.json` so formatting policy is centralized.
+  - Updated generated-artifact formatting in CESR table generation to use
+    `dprint` instead of `deno fmt`.
+- Why:
+  - `deno fmt` was too rigid for the desired whitespace style; `dprint`
+    provides more control over wrapping behavior and is a better fit for
+    maintainers who care strongly about layout.
+- Tests:
+  - Command: `deno check packages/cesr/scripts/generate-tables.ts`
+  - Result: passed
+- Contracts/plans touched:
+  - N/A
+- Risks/TODO:
+  - This offline session could not live-validate `dprint` package/plugin
+    downloads, so the first networked CI/local run should confirm formatter
+    bootstrap succeeds end-to-end.

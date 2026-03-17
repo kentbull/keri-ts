@@ -4,7 +4,7 @@ import { encodeDateTimeToDater } from "../../../src/app/keeping.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 
 Deno.test("db/basing - Baser binds DB-backed state and record stores", async () => {
-  await run(function* () {
+  await run(function*() {
     const baser = yield* createBaser({
       name: `baser-${crypto.randomUUID()}`,
       temp: true,

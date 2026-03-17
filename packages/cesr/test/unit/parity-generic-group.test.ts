@@ -2,8 +2,8 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { annotate, type CesrFrame, denot, t } from "../../src/index.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 
 /** Wrap payload with a quadlet-counted v2 group counter. */
@@ -39,11 +39,8 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
 }
 
 Deno.test("V-P0-001: top-level GenericGroup enclosing one BodyWithAttachmentGroup", () => {
-  const nestedAttachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
-  const bodyWithAttachmentPayload =
-    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const bodyWithAttachmentPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const bodyWithAttachment = wrapQuadletGroup(
     CtrDexV2.BodyWithAttachmentGroup,
     bodyWithAttachmentPayload,
@@ -62,11 +59,8 @@ Deno.test("V-P0-001: top-level GenericGroup enclosing one BodyWithAttachmentGrou
 });
 
 Deno.test("V-P0-002: nested GenericGroup two levels deep with mixed enclosed content is split-deterministic", () => {
-  const nestedAttachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
-  const wrappedBodyPayload =
-    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const wrappedBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const wrappedBody = wrapQuadletGroup(
     CtrDexV2.BodyWithAttachmentGroup,
     wrappedBodyPayload,

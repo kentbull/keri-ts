@@ -4,6 +4,7 @@
 
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { Database, Key, open, RootDatabase } from "npm:lmdb@3.4.4";
+import { b, bytesEqual, bytesHex, t, toBytes } from "../../../../cesr/mod.ts";
 import { startsWith } from "../../core/bytes.ts";
 import {
   DatabaseKeyError,
@@ -12,12 +13,7 @@ import {
 } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
 import { onKey, splitOnKey, suffix, unsuffix } from "./keys.ts";
-import {
-  PathManager,
-  PathManagerDefaults,
-  PathManagerOptions,
-} from "./path-manager.ts";
-import { b, bytesEqual, bytesHex, t, toBytes } from "../../../../cesr/mod.ts";
+import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
 // type aliases for the binary keys and values of LMDB
 export type BinKey = Uint8Array;
@@ -780,9 +776,7 @@ export class LMDBer {
       }
       if (bytesEqual(tailOnKey, start)) {
         throw new Error(
-          `Number part cn=${cn} for key part ckey=${
-            Array.from(ckey)
-          } exceeds maximum size.`,
+          `Number part cn=${cn} for key part ckey=${Array.from(ckey)} exceeds maximum size.`,
         );
       }
       nextOn = cn + 1;
@@ -2124,9 +2118,7 @@ export class LMDBer {
     sep: Uint8Array = DOT_SEP,
   ): Generator<[Uint8Array, number, Uint8Array]> {
     const items = key.length
-      ? [...this.getOnIoDupItemIterAll(db, key, 0, sep)].filter((item) =>
-        item[1] <= on
-      )
+      ? [...this.getOnIoDupItemIterAll(db, key, 0, sep)].filter((item) => item[1] <= on)
       : [...this.getOnIoDupItemIterAll(db, new Uint8Array(0), 0, sep)];
 
     for (let i = items.length - 1; i >= 0; i--) {

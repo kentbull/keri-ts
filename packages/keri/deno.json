@@ -5,9 +5,10 @@
     ".": "./mod.ts"
   },
   "tasks": {
-    "fmt": "deno fmt",
+    "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
+    "fmt:check": "deno run -A npm:dprint@0.49.0 check --config ../../dprint.json .",
     "check": "deno check mod.ts ../cesr/mod.ts",
-    "quality": "deno task fmt && deno task check && deno task version:check && deno task test:quality",
+    "quality": "deno task fmt:check && deno task check && deno task version:check && deno task test:quality",
     "manifest:sync": "deno run -A ../../scripts/sync_manifest_versions.ts",
     "manifest:check": "deno run -A ../../scripts/sync_manifest_versions.ts --check",
     "version:generate": "deno run -A ../../scripts/generate_versions.ts --only keri",

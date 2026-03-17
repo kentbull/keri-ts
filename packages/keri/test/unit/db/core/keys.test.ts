@@ -1,11 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import {
-  onKey,
-  splitKey,
-  splitKeyON,
-  splitOnKey,
-} from "../../../../src/db/core/keys.ts";
 import { t } from "../../../../../cesr/mod.ts";
+import { onKey, splitKey, splitKeyON, splitOnKey } from "../../../../src/db/core/keys.ts";
 
 Deno.test("db/core keys - splitKey uses rightmost separator", () => {
   const [top, suffix] = splitKey("alpha.beta.gamma", ".");

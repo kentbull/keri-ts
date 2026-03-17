@@ -18,7 +18,7 @@ const parser = createParser();
 const out = parser.feed(new TextEncoder().encode("...CESR..."));
 const last = parser.flush();
 
-const text = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+const text = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 const annotated = annotate(text, { domainHint: "txt", pretty: true });
 ```
 

@@ -1,25 +1,12 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.4.4";
-import {
-  DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../core/errors.ts";
+import { Cipher, NumberPrimitive, Prefixer, Signer } from "../../../cesr/mod.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple } from "../core/records.ts";
 import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
-import {
-  CatCesrIoSetSuber,
-  CesrSuber,
-  CryptSignerSuber,
-  Suber,
-} from "./subing.ts";
-import {
-  Cipher,
-  NumberPrimitive,
-  Prefixer,
-  Signer,
-} from "../../../cesr/mod.ts";
+import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
 
 /** Options for opening a keeper LMDB environment and its named subdb surface. */
 export interface KeeperOptions extends LMDBerOptions {
@@ -95,15 +82,25 @@ export class Keeper {
   private lmdber: LMDBer;
   private readonly logger: Logger;
 
+  /** Keeper-global parameters shared across all managed prefixes. */
   public gbls!: Suber;
+  /** Public-key to private-key secret store. */
   public pris!: CryptSignerSuber;
+  /** Group signing member tuples for one multisig prefix. */
   public smids!: CatCesrIoSetSuber<GroupMemberTuple>;
+  /** Group rotating member tuples for one multisig prefix. */
   public rmids!: CatCesrIoSetSuber<GroupMemberTuple>;
+  /** First-public-key to identifier-prefix index. */
   public pres!: CesrSuber<Prefixer>;
+  /** Root derivation parameters for one managed identifier prefix. */
   public prms!: Komer<PrePrm>;
+  /** Old/current/next key situation for one managed identifier prefix. */
   public sits!: Komer<PreSit>;
+  /** Replayable public-key sets keyed by `(prefix, ridx)`. */
   public pubs!: Komer<PubSet>;
+  /** Encrypted next private keys used by group-signify keeper flows. */
   public prxs!: CesrSuber<Cipher>;
+  /** Encrypted next-key commitments used by group-signify keeper flows. */
   public nxts!: CesrSuber<Cipher>;
 
   static readonly TailDirPath = "keri/ks";
@@ -164,27 +161,61 @@ export class Keeper {
     if (!opened) return false;
 
     try {
+      // Global keeper parameters for all prefixes.
+      // `aeid` anchors the encrypter/decrypter used to protect salts and
+      // private keys, while `pidx`, `algo`, `salt`, and `tier` capture the
+      // default root key-management settings.
       this.gbls = new Suber(this.lmdber, { subkey: "gbls." });
+
+      // Public-key to private-key secret material store.
+      // Keys are fully qualified public keys and values are the corresponding
+      // fully qualified private keys.
       this.pris = new CryptSignerSuber(this.lmdber, { subkey: "pris." });
+
+      // Group signing member tuples for one multisig prefix.
+      // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
+      // identifier set used by GroupSignifyHab flows.
       this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
         subkey: "smids.",
         klas: [Prefixer, NumberPrimitive],
       });
+
+      // Group rotating member tuples for one multisig prefix.
+      // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
+      // identifier set used by GroupSignifyHab flows.
       this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
         subkey: "rmids.",
         klas: [Prefixer, NumberPrimitive],
       });
+
+      // Prefix index keyed by the first public key in a key sequence.
+      // Values are the identifier prefix, or the first public key for
+      // temporary prefixes, matching the KERIpy keeper index contract.
       this.pres = new CesrSuber<Prefixer>(this.lmdber, {
         subkey: "pres.",
         klas: Prefixer,
       });
+
+      // Root derivation parameters for one managed identifier prefix.
       this.prms = new Komer<PrePrm>(this.lmdber, { subkey: "prms." });
+
+      // Old/current/next key situation for one managed identifier prefix.
       this.sits = new Komer<PreSit>(this.lmdber, { subkey: "sits." });
+
+      // Replayable public-key sets keyed by `(prefix, ridx)`.
+      // This enables lookup of the current signing keys after each rotation so
+      // establishment events can be replayed in order.
       this.pubs = new Komer<PubSet>(this.lmdber, { subkey: "pubs." });
+
+      // Encrypted next private keys used by group-signify keeper flows.
+      // KERIpy notes these are not yet broadly exercised outside that path.
       this.prxs = new CesrSuber<Cipher>(this.lmdber, {
         subkey: "prxs.",
         klas: Cipher,
       });
+
+      // Encrypted next-key commitments used by group-signify keeper flows.
+      // KERIpy notes these are not yet broadly exercised outside that path.
       this.nxts = new CesrSuber<Cipher>(this.lmdber, {
         subkey: "nxts.",
         klas: Cipher,

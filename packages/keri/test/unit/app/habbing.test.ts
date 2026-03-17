@@ -8,7 +8,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -46,7 +46,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,

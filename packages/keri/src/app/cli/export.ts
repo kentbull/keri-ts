@@ -40,7 +40,7 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
     void
   >();
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       exportArgs.name!,
       exportArgs.base ?? "",

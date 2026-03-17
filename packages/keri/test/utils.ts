@@ -156,7 +156,7 @@ export function* testConcurrentCLICommands(
 
   // Spawn all commands concurrently
   const tasks = commands.map(({ name, command, args }) =>
-    spawn(function* () {
+    spawn(function*() {
       const result = yield* testCLICommand(command, args);
       results[name] = result;
     })

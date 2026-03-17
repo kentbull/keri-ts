@@ -84,9 +84,7 @@ async function resolveKliCommand(env: Record<string, string>): Promise<string> {
   }
 
   throw new Error(
-    `kli is required for interop tests but could not be resolved. Tried: ${
-      candidates.join(", ")
-    }`,
+    `kli is required for interop tests but could not be resolved. Tried: ${candidates.join(", ")}`,
   );
 }
 
@@ -94,9 +92,7 @@ async function resolveKliCommand(env: Record<string, string>): Promise<string> {
  * Parses the human-readable `Prefix` line emitted after `incept`.
  */
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((line) =>
-    line.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -132,7 +128,7 @@ function normalizeCesr(text: string): string {
 function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith('{"v":"KERI'))
+    .filter((line) => line.trim().startsWith("{\"v\":\"KERI"))
     .join("\n");
 }
 

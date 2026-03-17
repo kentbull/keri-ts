@@ -6,8 +6,7 @@ const SOURCE_ROOTS = [
   new URL("../packages/cesr/src/", import.meta.url),
 ];
 
-const CLASS_RE =
-  /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)\b/;
+const CLASS_RE = /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)\b/;
 
 interface MissingDoc {
   path: string;
@@ -90,9 +89,7 @@ function collectMissingDocs(filePath: string): MissingDoc[] {
 }
 
 const missing = SOURCE_ROOTS.flatMap((root) =>
-  [...walkTsFiles(root.pathname)].flatMap((filePath) =>
-    collectMissingDocs(filePath)
-  )
+  [...walkTsFiles(root.pathname)].flatMap((filePath) => collectMissingDocs(filePath))
 );
 
 if (missing.length === 0) {

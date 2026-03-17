@@ -1,15 +1,11 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
+import { AGGOR_CODES, AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import {
-  AGGOR_CODES,
-  AGGOR_LIST_CODES,
-  AGGOR_MAP_CODES,
-} from "../tables/counter-groups.ts";
 import { parseCompactor } from "./compactor.ts";
 import { parseCounter } from "./counter.ts";
-import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import type { MapperField } from "./mapper.ts";
+import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
 
 /** True when counter code belongs to aggregate-list group families. */

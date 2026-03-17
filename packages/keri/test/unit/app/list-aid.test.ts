@@ -7,9 +7,7 @@ import { listCommand } from "../../../src/app/cli/list.ts";
 import { assertOperationThrows, CLITestHarness } from "../../../test/utils.ts";
 
 function identifierLines(lines: string[]): string[] {
-  return lines.filter((line) =>
-    /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim())
-  );
+  return lines.filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim()));
 }
 
 Deno.test("CLI - list command shows no identifiers before first incept", async () => {
@@ -71,9 +69,7 @@ Deno.test("CLI - list and aid commands show persisted identifier visibility afte
     );
     const output = inceptHarness.getOutput().join("\n");
     assertStringIncludes(output, "Prefix");
-    const line = inceptHarness.getOutput().find((entry) =>
-      entry.startsWith("Prefix")
-    );
+    const line = inceptHarness.getOutput().find((entry) => entry.startsWith("Prefix"));
     if (!line) {
       throw new Error(`Unable to parse prefix from output:\n${output}`);
     }

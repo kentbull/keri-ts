@@ -1,8 +1,8 @@
+import { t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { THOLDER_NUMERIC_CODES, THOLDER_WEIGHTED_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
-import { t } from "../core/bytes.ts";
 
 /**
  * Threshold expression primitive.
@@ -15,8 +15,8 @@ export class Tholder extends Matter {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
     if (
-      !THOLDER_NUMERIC_CODES.has(this.code) &&
-      !THOLDER_WEIGHTED_CODES.has(this.code)
+      !THOLDER_NUMERIC_CODES.has(this.code)
+      && !THOLDER_WEIGHTED_CODES.has(this.code)
     ) {
       throw new UnknownCodeError(`Expected threshold code, got ${this.code}`);
     }

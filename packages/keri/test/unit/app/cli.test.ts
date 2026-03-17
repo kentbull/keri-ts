@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { initCommand } from "../../../src/app/cli/init.ts";
 import { tufa } from "../../../src/app/cli/cli.ts";
+import { initCommand } from "../../../src/app/cli/init.ts";
 import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
 
 interface CmdResult {

@@ -1,5 +1,5 @@
-import type { CesrMessage } from "../core/types.ts";
 import { createParser, type ParserOptions } from "../core/parser-engine.ts";
+import type { CesrMessage } from "../core/types.ts";
 
 export async function* toAsyncFrames(
   source: AsyncIterable<Uint8Array>,

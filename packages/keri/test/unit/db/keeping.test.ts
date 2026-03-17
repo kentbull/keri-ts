@@ -5,7 +5,7 @@ import { encodeHugeNumber, saltySigner } from "../../../src/app/keeping.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 
 Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () => {
-  await run(function* () {
+  await run(function*() {
     const keeper = yield* createKeeper({
       name: `keeper-${crypto.randomUUID()}`,
       temp: true,

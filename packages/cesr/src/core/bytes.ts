@@ -1,7 +1,6 @@
 export const encoder = new TextEncoder();
 export const decoder = new TextDecoder();
-const B64_ALPHABET =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /**
  * Concatenates Uint8Array byte arrays into one byte array
@@ -134,6 +133,7 @@ export function bytesHex(value: Uint8Array): string {
   return Array.from(value)
     .map((byte) =>
       byte.toString(16)
-        .padStart(2, '0'))
-    .join('')
+        .padStart(2, "0")
+    )
+    .join("");
 }

@@ -1,10 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../../cesr/mod.ts";
-import {
-  onItemsAsText,
-  valuesAsText,
-  withTempLMDBer,
-} from "./lmdber-test-utils.ts";
+import { onItemsAsText, valuesAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
 
 Deno.test("db/core lmdber parity - OnIoSet reverse scans keep mixed-key whole-db order and treat `on` as an upper bound", async () => {
   await withTempLMDBer("parity-onioset", (lmdber) => {

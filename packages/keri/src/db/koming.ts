@@ -1,16 +1,6 @@
-import {
-  decode as decodeMsgpack,
-  encode as encodeMsgpack,
-} from "@msgpack/msgpack";
+import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { type Database } from "npm:lmdb@3.4.4";
-import {
-  b,
-  decodeKeriCbor,
-  encodeKeriCbor,
-  type Kind,
-  Kinds,
-  t,
-} from "../../../cesr/mod.ts";
+import { b, decodeKeriCbor, encodeKeriCbor, type Kind, Kinds, t } from "../../../cesr/mod.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -31,22 +21,20 @@ export interface KomerOptions extends Omit<KomerBaseOptions, "dupsort"> {}
 
 function assertKomerKind(kind: KomerKind): KomerKind {
   if (
-    kind !== Kinds.json &&
-    kind !== Kinds.cbor &&
-    kind !== Kinds.mgpk
+    kind !== Kinds.json
+    && kind !== Kinds.cbor
+    && kind !== Kinds.mgpk
   ) {
     throw new Error(
-      `Unsupported Komer serialization kind=${
-        String(kind)
-      }. Expected JSON, CBOR, or MGPK.`,
+      `Unsupported Komer serialization kind=${String(kind)}. Expected JSON, CBOR, or MGPK.`,
     );
   }
   return kind;
 }
 
 function toUint8Array(bytes: Uint8Array): Uint8Array {
-  return bytes instanceof Uint8Array &&
-      Object.getPrototypeOf(bytes) === Uint8Array.prototype
+  return bytes instanceof Uint8Array
+      && Object.getPrototypeOf(bytes) === Uint8Array.prototype
     ? bytes
     : new Uint8Array(bytes);
 }
@@ -107,9 +95,7 @@ export class KomerBase<T> {
       return keys;
     }
 
-    const parts = [...keys].map((part) =>
-      typeof part === "string" ? part : t(part)
-    );
+    const parts = [...keys].map((part) => typeof part === "string" ? part : t(part));
     if (topive && parts.at(-1) !== "") {
       parts.push("");
     }
@@ -320,8 +306,8 @@ export class IoSetKomer<T> extends KomerBase<T> {
   put(keys: Keys, vals: T | Iterable<T> | null = null): boolean {
     const items = vals === null || vals === undefined
       ? []
-      : Symbol.iterator in Object(vals) && typeof vals !== "string" &&
-          !(vals instanceof Uint8Array)
+      : Symbol.iterator in Object(vals) && typeof vals !== "string"
+          && !(vals instanceof Uint8Array)
       ? [...(vals as Iterable<T>)]
       : [vals as T];
     return this.db.putIoSetVals(
@@ -336,8 +322,8 @@ export class IoSetKomer<T> extends KomerBase<T> {
   pin(keys: Keys, vals: T | Iterable<T> | null = null): boolean {
     const items = vals === null || vals === undefined
       ? []
-      : Symbol.iterator in Object(vals) && typeof vals !== "string" &&
-          !(vals instanceof Uint8Array)
+      : Symbol.iterator in Object(vals) && typeof vals !== "string"
+          && !(vals instanceof Uint8Array)
       ? [...(vals as Iterable<T>)]
       : [vals as T];
     return this.db.pinIoSetVals(
@@ -403,8 +389,8 @@ export class IoSetKomer<T> extends KomerBase<T> {
   /** Count stored members for one effective key or the whole subdb. */
   cnt(keys: Keys = "", { ion = 0 }: { ion?: number } = {}): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }

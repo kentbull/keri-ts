@@ -43,11 +43,11 @@ function isCommanderExitError(error: unknown): error is { code: string } {
 
 function isExpectedCommanderExit(code: string): boolean {
   return (
-    code === "commander.help" ||
-    code === "commander.helpDisplayed" ||
-    code === "commander.version" ||
-    code === "commander.unknownCommand" ||
-    code === "commander.missingArgument"
+    code === "commander.help"
+    || code === "commander.helpDisplayed"
+    || code === "commander.version"
+    || code === "commander.unknownCommand"
+    || code === "commander.missingArgument"
   );
 }
 

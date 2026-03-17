@@ -2,11 +2,11 @@ import { b, codeB64ToB2, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
+import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { isCounterGroupLike, isPrimitiveTuple } from "./primitive.ts";
-import type { Versionage } from "../tables/table-types.ts";
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 
@@ -19,9 +19,7 @@ function serializeEntryQb64(entry: GroupEntry): string {
     return entry.map((item) => serializeEntryQb64(item)).join("");
   }
   if (isCounterGroupLike(entry)) {
-    return `${entry.qb64}${
-      entry.items.map((item) => serializeEntryQb64(item)).join("")
-    }`;
+    return `${entry.qb64}${entry.items.map((item) => serializeEntryQb64(item)).join("")}`;
   }
   return entry.qb64;
 }
@@ -30,9 +28,7 @@ function inferSerialized(
   group: CounterGroupLike,
   sourceDomain: ParseDomain,
 ): Uint8Array {
-  const qb64 = `${group.qb64}${
-    group.items.map((item) => serializeEntryQb64(item)).join("")
-  }`;
+  const qb64 = `${group.qb64}${group.items.map((item) => serializeEntryQb64(item)).join("")}`;
   return sourceDomain === "txt" ? b(qb64) : codeB64ToB2(qb64);
 }
 
@@ -67,8 +63,8 @@ export class Structor extends CounterGroup {
     super(group as unknown as Counter, group.raw, group.items);
 
     this.sourceDomain = init.sourceDomain ?? "txt";
-    this.serialized = init.serialized?.slice() ??
-      inferSerialized(group, this.sourceDomain);
+    this.serialized = init.serialized?.slice()
+      ?? inferSerialized(group, this.sourceDomain);
     this.consumed = init.consumed ?? this.serialized.length;
   }
 

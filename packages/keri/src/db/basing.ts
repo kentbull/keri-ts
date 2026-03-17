@@ -3,9 +3,27 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.4.4";
 import {
-  DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../core/errors.ts";
+  b,
+  Cigar,
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  Dater,
+  Diger,
+  Labeler,
+  Noncer,
+  NumberPrimitive,
+  NumDex,
+  Prefixer,
+  Saider,
+  SerderKERI,
+  Siger,
+  t,
+  Texter,
+  Verfer,
+  Verser,
+} from "../../../cesr/mod.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
   BlindedImageTuple,
@@ -34,8 +52,8 @@ import {
   ValidatorReceiptQuadruple,
   WellKnownAuthN,
 } from "../core/records.ts";
-import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { dgKey } from "./core/keys.ts";
+import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import {
   B64OnIoDupSuber,
@@ -51,27 +69,6 @@ import {
   SerderSuber,
   Suber,
 } from "./subing.ts";
-import {
-  b,
-  Cigar,
-  concatBytes,
-  Counter,
-  CtrDexV1,
-  Dater,
-  Diger,
-  Labeler,
-  Noncer,
-  NumberPrimitive,
-  NumDex,
-  Prefixer,
-  Saider,
-  SerderKERI,
-  Siger,
-  t,
-  Texter,
-  Verfer,
-  Verser,
-} from "../../../cesr/mod.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
@@ -116,106 +113,106 @@ export class Baser {
   private readonly logger: Logger;
   private evtsRaw!: Database<BinVal, BinKey>;
 
-  public evts!: SerderSuber<SerderKERI>;
-  public fels!: OnSuber<string>;
-  public kels!: OnIoDupSuber<string>;
-  public dtss!: CesrSuber<Dater>;
-  public aess!: CatCesrSuber<EventSealTuple>;
-  public sigs!: CesrIoSetSuber<Siger>;
-  public wigs!: CesrIoSetSuber<Siger>;
-  public rcts!: CatCesrIoSetSuber<ReceiptCouple>;
-  public ures!: CatCesrIoSetSuber<UnverifiedReceiptTriple>;
-  public vrcs!: CatCesrIoSetSuber<ValidatorReceiptQuadruple>;
-  public vres!: CatCesrIoSetSuber<EscrowedValidatorReceiptQuintuple>;
-  public pses!: OnIoDupSuber<string>;
-  public pwes!: OnIoDupSuber<string>;
-  public pdes!: OnIoDupSuber<string>;
-  public udes!: CatCesrSuber<EventSealTuple>;
-  public uwes!: B64OnIoDupSuber<string[]>;
-  public ooes!: OnIoDupSuber<string>;
-  public dels!: OnIoDupSuber<string>;
-  public ldes!: OnIoDupSuber<string>;
-  public qnfs!: IoSetSuber<string>;
-  public fons!: CesrSuber<NumberPrimitive>;
-  public migs!: CesrSuber<Dater>;
-  public vers!: Suber;
-  public esrs!: Komer<EventSourceRecord>;
-  public misfits!: IoSetSuber<string>;
-  public delegables!: IoSetSuber<string>;
-  public states!: Komer<KeyStateRecord>;
-  public wits!: CesrIoSetSuber<Prefixer>;
-  public habs!: Komer<HabitatRecord>;
-  public names!: Suber;
-  public sdts!: CesrSuber<Dater>;
-  public ssgs!: CesrIoSetSuber<Siger>;
-  public scgs!: CatCesrIoSetSuber<TransferableSignatureCouple>;
-  public rpys!: SerderSuber<SerderKERI>;
-  public rpes!: CesrIoSetSuber<Diger>;
-  public eans!: CesrSuber<Diger>;
-  public lans!: CesrSuber<Diger>;
-  public ends!: Komer<EndpointRecord>;
-  public locs!: Komer<LocationRecord>;
-  public obvs!: Komer<ObservedRecord>;
-  public tops!: Komer<TopicsRecord>;
-  public gpse!: CatCesrIoSetSuber<EventSealTuple>;
-  public gdee!: CatCesrIoSetSuber<EventSealTuple>;
-  public gpwe!: CatCesrIoSetSuber<EventSealTuple>;
-  public cgms!: CesrSuber<Diger>;
-  public epse!: SerderSuber<SerderKERI>;
-  public epsd!: CesrSuber<Dater>;
-  public exns!: SerderSuber<SerderKERI>;
-  public erpy!: CesrSuber<Saider>;
-  public esigs!: CesrIoSetSuber<Siger>;
-  public ecigs!: CatCesrIoSetSuber<TransferableSignatureCouple>;
-  public epath!: IoSetSuber<string>;
-  public essrs!: CesrIoSetSuber<Texter>;
-  public chas!: CesrIoSetSuber<Diger>;
-  public reps!: CesrIoSetSuber<Diger>;
-  public wkas!: IoSetKomer<WellKnownAuthN>;
-  public kdts!: CesrSuber<Dater>;
-  public ksns!: Komer<KeyStateRecord>;
-  public knas!: CesrSuber<Diger>;
-  public wwas!: CesrSuber<Diger>;
-  public oobis!: Komer<OobiRecord>;
-  public eoobi!: Komer<OobiRecord>;
-  public coobi!: Komer<OobiRecord>;
-  public roobi!: Komer<OobiRecord>;
-  public woobi!: Komer<OobiRecord>;
-  public moobi!: Komer<OobiRecord>;
-  public mfa!: Komer<OobiRecord>;
-  public rmfa!: Komer<OobiRecord>;
-  public schema!: SchemerSuber<SerderKERI>;
-  public cfld!: Suber;
-  public hbys!: Suber;
-  public cons!: Suber;
-  public ccigs!: CesrSuber<Cigar>;
-  public imgs!: CatCesrSuber<BlindedImageTuple>;
-  public ifld!: Suber;
-  public sids!: Suber;
-  public icigs!: CesrSuber<Cigar>;
-  public iimgs!: CatCesrSuber<BlindedImageTuple>;
-  public dpwe!: SerderSuber<SerderKERI>;
-  public dune!: SerderSuber<SerderKERI>;
-  public dpub!: SerderSuber<SerderKERI>;
-  public cdel!: CesrOnSuber<Diger>;
-  public meids!: CesrIoSetSuber<Diger>;
-  public maids!: CesrIoSetSuber<Prefixer>;
-  public ctyp!: Komer<CacheTypeRecord>;
-  public msgc!: Komer<MsgCacheRecord>;
-  public tmsc!: Komer<TxnMsgCacheRecord>;
-  public pmkm!: SerderSuber<SerderKERI>;
-  public pmks!: CesrIoSetSuber<Siger>;
-  public pmsk!: CatCesrSuber<EventSealTuple>;
-  public trqs!: CatCesrIoSetSuber<ValidatorReceiptQuadruple>;
-  public tsgs!: CatCesrIoSetSuber<ValidatorReceiptQuadruple>;
-  public sscs!: CatCesrIoSetSuber<EventSealTuple>;
-  public ssts!: CatCesrIoSetSuber<SourceSealTriple>;
-  public frcs!: CatCesrIoSetSuber<FirstSeenReplayCouple>;
-  public tdcs!: CatCesrIoSetSuber<TypedDigestSealCouple>;
-  public ptds!: IoSetSuber<string>;
-  public bsqs!: CatCesrIoSetSuber<BoundStateQuadruple>;
-  public bsss!: CatCesrIoSetSuber<BoundStateSextuple>;
-  public tmqs!: CatCesrIoSetSuber<TypeMediaQuadruple>;
+  public evts!: SerderSuber<SerderKERI>; // Serialized KEL events keyed by event digest.
+  public fels!: OnSuber<string>; // First-seen event log entries keyed by prefix and ordinal.
+  public kels!: OnIoDupSuber<string>; // Key-event log sequence buckets keyed by prefix and sequence number.
+  public dtss!: CesrSuber<Dater>; // Event escrow/seen timestamps used for timeout handling.
+  public aess!: CatCesrSuber<EventSealTuple>; // Authorizing event source seal couples keyed by event digest.
+  public sigs!: CesrIoSetSuber<Siger>; // Indexed controller signatures for one event.
+  public wigs!: CesrIoSetSuber<Siger>; // Indexed witness signatures for one event.
+  public rcts!: CatCesrIoSetSuber<ReceiptCouple>; // Non-transferable receipt couples for one event.
+  public ures!: CatCesrIoSetSuber<UnverifiedReceiptTriple>; // Unverified non-transferable receipt escrows.
+  public vrcs!: CatCesrIoSetSuber<ValidatorReceiptQuadruple>; // Transferable validator receipt quadruples.
+  public vres!: CatCesrIoSetSuber<EscrowedValidatorReceiptQuintuple>; // Unverified transferable validator receipt escrows.
+  public pses!: OnIoDupSuber<string>; // Partially signed key-event escrows.
+  public pwes!: OnIoDupSuber<string>; // Partially witnessed key-event escrows.
+  public pdes!: OnIoDupSuber<string>; // Partially delegated key-event escrows.
+  public udes!: CatCesrSuber<EventSealTuple>; // Unverified delegation seal source couples.
+  public uwes!: B64OnIoDupSuber<string[]>; // Unverified witness escrow couples.
+  public ooes!: OnIoDupSuber<string>; // Out-of-order escrowed event digests.
+  public dels!: OnIoDupSuber<string>; // Duplicitous event-log digests.
+  public ldes!: OnIoDupSuber<string>; // Likely-duplicitous escrowed event digests.
+  public qnfs!: IoSetSuber<string>; // Query-not-found escrows keyed by queried event digest.
+  public fons!: CesrSuber<NumberPrimitive>; // First-seen ordinals for recovery and superseding.
+  public migs!: CesrSuber<Dater>; // Database migration datetimes.
+  public vers!: Suber; // Database version table.
+  public esrs!: Komer<EventSourceRecord>; // Event source records describing local vs remote provenance.
+  public misfits!: IoSetSuber<string>; // Misfit escrows for remote events pending authentication.
+  public delegables!: IoSetSuber<string>; // Delegable event escrows awaiting local delegator approval.
+  public states!: Komer<KeyStateRecord>; // Latest key-state record for each identifier prefix.
+  public wits!: CesrIoSetSuber<Prefixer>; // Witness lists for one event digest.
+  public habs!: Komer<HabitatRecord>; // Habitat application records for controller databases.
+  public names!: Suber; // Habitat name-to-prefix index keyed by namespace and name.
+  public sdts!: CesrSuber<Dater>; // SAD datetime stamps keyed by SAID.
+  public ssgs!: CesrIoSetSuber<Siger>; // SAD indexed signatures keyed by SAD quadkey.
+  public scgs!: CatCesrIoSetSuber<TransferableSignatureCouple>; // SAD non-indexed signature couples keyed by SAID.
+  public rpys!: SerderSuber<SerderKERI>; // Reply messages stored by reply SAID.
+  public rpes!: CesrIoSetSuber<Diger>; // Partially signed reply escrow indices keyed by route.
+  public eans!: CesrSuber<Diger>; // Controller-to-endpoint AuthN/AuthZ reply references.
+  public lans!: CesrSuber<Diger>; // Endpoint-to-location AuthN/AuthZ reply references.
+  public ends!: Komer<EndpointRecord>; // Service endpoint authorization records.
+  public locs!: Komer<LocationRecord>; // Service endpoint locations keyed by endpoint and scheme.
+  public obvs!: Komer<ObservedRecord>; // Observed identifier records keyed by controller, watcher, and observed ID.
+  public tops!: Komer<TopicsRecord>; // Witness mailbox retrieval cursors.
+  public gpse!: CatCesrIoSetSuber<EventSealTuple>; // Group partial signature escrows.
+  public gdee!: CatCesrIoSetSuber<EventSealTuple>; // Group delegate escrows.
+  public gpwe!: CatCesrIoSetSuber<EventSealTuple>; // Group partial witness escrows.
+  public cgms!: CesrSuber<Diger>; // Completed group multisig references.
+  public epse!: SerderSuber<SerderKERI>; // Exchange-message partial signature escrow messages.
+  public epsd!: CesrSuber<Dater>; // Exchange-message partial signature escrow datetimes.
+  public exns!: SerderSuber<SerderKERI>; // Exchange messages keyed by their digest.
+  public erpy!: CesrSuber<Saider>; // Forward pointers to provided reply messages.
+  public esigs!: CesrIoSetSuber<Siger>; // Exchange-message indexed signatures.
+  public ecigs!: CatCesrIoSetSuber<TransferableSignatureCouple>; // Exchange-message non-indexed signature couples.
+  public epath!: IoSetSuber<string>; // Exchange-message pathed attachments.
+  public essrs!: CesrIoSetSuber<Texter>; // ESSR payloads keyed by exchange digest.
+  public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
+  public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
+  public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
+  public kdts!: CesrSuber<Dater>; // Key-state notice datetime stamps.
+  public ksns!: Komer<KeyStateRecord>; // Key-state messages keyed by key-state SAID.
+  public knas!: CesrSuber<Diger>; // Successful key-state notice SAID index.
+  public wwas!: CesrSuber<Diger>; // Watcher-to-watched-AID reply SAID index.
+  public oobis!: Komer<OobiRecord>; // Config-loaded OOBIs to process asynchronously.
+  public eoobi!: Komer<OobiRecord>; // Retriable OOBIs that failed to load.
+  public coobi!: Komer<OobiRecord>; // OOBIs with outstanding client requests.
+  public roobi!: Komer<OobiRecord>; // Successfully resolved OOBIs.
+  public woobi!: Komer<OobiRecord>; // Well-known OOBIs used for MFA against resolved OOBIs.
+  public moobi!: Komer<OobiRecord>; // Multi-OOBI associations for one AID.
+  public mfa!: Komer<OobiRecord>; // Multifactor OOBI auth records awaiting processing.
+  public rmfa!: Komer<OobiRecord>; // Resolved multifactor OOBI auth records.
+  public schema!: SchemerSuber<SerderKERI>; // JSON Schema SADs keyed by schema SAID.
+  public cfld!: Suber; // Contact field values for remote identifiers.
+  public hbys!: Suber; // Habery-global settings.
+  public cons!: Suber; // Signed contact data keyed by identifier prefix.
+  public ccigs!: CesrSuber<Cigar>; // Contact-data signature cigars.
+  public imgs!: CatCesrSuber<BlindedImageTuple>; // Blinded media tuples for remote contact data.
+  public ifld!: Suber; // Identifier field values for local identifiers.
+  public sids!: Suber; // Signed local identifier data keyed by prefix.
+  public icigs!: CesrSuber<Cigar>; // Local identifier-data signature cigars.
+  public iimgs!: CatCesrSuber<BlindedImageTuple>; // Blinded media tuples for local identifier data.
+  public dpwe!: SerderSuber<SerderKERI>; // Delegated partial-witness escrow messages.
+  public dune!: SerderSuber<SerderKERI>; // Delegated unanchored escrow messages.
+  public dpub!: SerderSuber<SerderKERI>; // Delegate publication escrow messages.
+  public cdel!: CesrOnSuber<Diger>; // Completed group delegated AIDs keyed by ordinal.
+  public meids!: CesrIoSetSuber<Diger>; // Multisig embed payload SAIDs to containing exchange-message SAIDs.
+  public maids!: CesrIoSetSuber<Prefixer>; // Multisig embed payload SAIDs to participant AIDs.
+  public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
+  public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
+  public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
+  public pmkm!: SerderSuber<SerderKERI>; // KRAM partially signed multi-key messages.
+  public pmks!: CesrIoSetSuber<Siger>; // KRAM partially signed multi-key signatures.
+  public pmsk!: CatCesrSuber<EventSealTuple>; // KRAM partially signed multi-key sender key-state seals.
+  public trqs!: CatCesrIoSetSuber<ValidatorReceiptQuadruple>; // KRAM transferable receipt quadruples.
+  public tsgs!: CatCesrIoSetSuber<ValidatorReceiptQuadruple>; // KRAM transferable last-signature groups.
+  public sscs!: CatCesrIoSetSuber<EventSealTuple>; // First-seen seal couples.
+  public ssts!: CatCesrIoSetSuber<SourceSealTriple>; // Source seal triples.
+  public frcs!: CatCesrIoSetSuber<FirstSeenReplayCouple>; // First-seen replay couples.
+  public tdcs!: CatCesrIoSetSuber<TypedDigestSealCouple>; // Typed digest seal couples.
+  public ptds!: IoSetSuber<string>; // Pathed streams stored as raw bytes.
+  public bsqs!: CatCesrIoSetSuber<BoundStateQuadruple>; // Blind state quadruples.
+  public bsss!: CatCesrIoSetSuber<BoundStateSextuple>; // Bound state sextuples.
+  public tmqs!: CatCesrIoSetSuber<TypeMediaQuadruple>; // Type-media quadruples.
 
   static readonly TailDirPath = "keri/db";
   static readonly AltTailDirPath = ".tufa/db";
@@ -277,34 +274,55 @@ export class Baser {
     }
 
     try {
+      // Serialized KEL events keyed by `(pre, said)` digest keys.
       this.evts = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "evts." });
       this.evtsRaw = this.evts.sdb;
+
+      // First-seen event logs map `(pre, fn)` ordinals to event digests.
       this.fels = new OnSuber(this.lmdber, { subkey: "fels." });
+
+      // Key-event logs map `(pre, sn)` sequence numbers to event digests.
       this.kels = new OnIoDupSuber(this.lmdber, { subkey: "kels." });
+
+      // Event timestamps keyed by digest, used when escrowing and timeout logic
+      // needs the first-seen datetime.
       this.dtss = new CesrSuber<Dater>(this.lmdber, {
         subkey: "dtss.",
         klas: Dater,
       });
+
+      // Authorizing event source seal couples keyed by event digest.
       this.aess = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "aess.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Fully qualified indexed controller signatures for one event digest.
       this.sigs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "sigs.",
         klas: Siger,
       });
+
+      // Indexed witness signatures for one event digest.
       this.wigs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "wigs.",
         klas: Siger,
       });
+
+      // Event receipt couples from non-transferable signers that are not
+      // witnesses, such as watchers or jurors.
       this.rcts = new CatCesrIoSetSuber<ReceiptCouple>(this.lmdber, {
         subkey: "rcts.",
         klas: [Prefixer, Cigar],
       });
+
+      // Unverified event receipt escrow triples from non-transferable signers.
       this.ures = new CatCesrIoSetSuber<UnverifiedReceiptTriple>(this.lmdber, {
         subkey: "ures.",
         klas: [Diger, Prefixer, Cigar],
       });
+
+      // Event validator receipt quadruples from transferable signers.
       this.vrcs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
         this.lmdber,
         {
@@ -312,6 +330,9 @@ export class Baser {
           klas: [Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
+
+      // Unverified event validator receipt escrow tuples from transferable
+      // signers.
       this.vres = new CatCesrIoSetSuber<EscrowedValidatorReceiptQuintuple>(
         this.lmdber,
         {
@@ -319,49 +340,100 @@ export class Baser {
           klas: [Diger, Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
+
+      // Partially signed key-event escrows mapping `(pre, sn)` to event digests.
       this.pses = new OnIoDupSuber(this.lmdber, { subkey: "pses." });
+
+      // Partially witnessed key-event escrows mapping `(pre, sn)` to event
+      // digests.
       this.pwes = new OnIoDupSuber(this.lmdber, { subkey: "pwes." });
+
+      // Partially delegated key-event escrows mapping `(pre, sn)` to event
+      // digests.
       this.pdes = new OnIoDupSuber(this.lmdber, { subkey: "pdes." });
+
+      // Unverified delegation seal source couples keyed by delegated event
+      // digest.
       this.udes = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "udes.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Unverified witness escrow couples from witness signers.
       this.uwes = new B64OnIoDupSuber(this.lmdber, { subkey: "uwes." });
+
+      // Out-of-order escrowed event tables mapping `(pre, sn)` to event digests.
       this.ooes = new OnIoDupSuber(this.lmdber, { subkey: "ooes." });
+
+      // Duplicitous event log tables mapping `(pre, sn)` to conflicting digests.
       this.dels = new OnIoDupSuber(this.lmdber, { subkey: "dels." });
+
+      // Likely-duplicitous escrowed event tables keyed by `(pre, sn)`.
       this.ldes = new OnIoDupSuber(this.lmdber, { subkey: "ldes." });
+
+      // Query-not-found escrows keyed by queried event digest.
       this.qnfs = new IoSetSuber<string>(this.lmdber, { subkey: "qnfs." });
+
+      // First-seen ordinal numbers for events, used in superseding and recovery
+      // rotation logic.
       this.fons = new CesrSuber<NumberPrimitive>(this.lmdber, {
         subkey: "fons.",
         klas: NumberPrimitive,
       });
+
+      // Database migration datetimes keyed by migration name.
       this.migs = new CesrSuber<Dater>(this.lmdber, {
         subkey: "migs.",
         klas: Dater,
       });
+
+      // Database version table retained for parity even though it is currently
+      // unused.
       this.vers = new Suber(this.lmdber, { subkey: "vers." });
+
+      // Event source records describing whether an event is local/protected or
+      // remote/not protected.
       this.esrs = new Komer<EventSourceRecord>(this.lmdber, {
         subkey: "esrs.",
       });
+
+      // Misfit escrows for remote events that should be dropped unless they
+      // become authenticated.
       this.misfits = new IoSetSuber<string>(this.lmdber, { subkey: "mfes." });
+
+      // Delegable event escrows for KEL events whose local delegator still
+      // needs to approve them.
       this.delegables = new IoSetSuber<string>(this.lmdber, {
         subkey: "dees.",
       });
+
+      // Latest key-state record for each identifier prefix.
       this.states = new Komer<KeyStateRecord>(this.lmdber, { subkey: "stts." });
+      // Witness lists for a given event digest.
       this.wits = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "wits.",
         klas: Prefixer,
       });
+
+      // Habitat application records keyed by habitat name and namespace.
       this.habs = new Komer<HabitatRecord>(this.lmdber, { subkey: "habs." });
+
+      // Habitat name database mapping `(domain, name)` to identifier prefixes.
       this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
+
+      // SAD datetime stamps keyed by SAID.
       this.sdts = new CesrSuber<Dater>(this.lmdber, {
         subkey: "sdts.",
         klas: Dater,
       });
+
+      // SAD indexed signatures keyed by the reply/event quadkey.
       this.ssgs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "ssgs.",
         klas: Siger,
       });
+
+      // SAD non-indexed signature couples keyed by SAD SAID.
       this.scgs = new CatCesrIoSetSuber<TransferableSignatureCouple>(
         this.lmdber,
         {
@@ -369,53 +441,96 @@ export class Baser {
           klas: [Verfer, Cigar],
         },
       );
+
+      // Reply messages keyed by reply SAID.
+      // Datetimes and signatures live in the companion `sdts.`, `ssgs.`, and
+      // `scgs.` stores.
       this.rpys = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "rpys." });
+
+      // Reply escrow indices of partially signed reply messages, mapping reply
+      // routes such as `/end/role` or `/loc/schema` to reply SAIDs.
       this.rpes = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "rpes.",
         klas: Diger,
       });
+
+      // AuthN/AuthZ by local controller at `cid` of endpoint provider at `eid`.
+      // Maps `cid.role.eid` to the SAID of the relevant `/end/role` reply.
       this.eans = new CesrSuber<Diger>(this.lmdber, {
         subkey: "eans.",
         klas: Diger,
       });
+
+      // AuthN/AuthZ by endpoint provider at `eid` of a location at URL scheme.
+      // Maps `cid.role.eid` to the SAID of the relevant `/loc` reply.
       this.lans = new CesrSuber<Diger>(this.lmdber, {
         subkey: "lans.",
         klas: Diger,
       });
+
+      // Service endpoint identifier auth records extracted from `/end/role`
+      // replies.
       this.ends = new Komer<EndpointRecord>(this.lmdber, { subkey: "ends." });
+
+      // Service endpoint locations keyed by endpoint identifier and URL scheme.
       this.locs = new Komer<LocationRecord>(this.lmdber, { subkey: "locs." });
+
+      // Observed identifier records keyed by controller, watcher, and observed
+      // identifier.
       this.obvs = new Komer<ObservedRecord>(this.lmdber, { subkey: "obvs." });
+
+      // Index of the last retrieved message from a witness mailbox.
       this.tops = new Komer<TopicsRecord>(this.lmdber, { subkey: "witm." });
+
+      // Group partial signature escrow entries.
       this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "gpse.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Group delegate escrow entries.
       this.gdee = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "gdee.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Group partial witness escrow entries.
       this.gpwe = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "gdwe.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Completed group multisig references.
       this.cgms = new CesrSuber<Diger>(this.lmdber, {
         subkey: "cgms.",
         klas: Diger,
       });
+
+      // Exchange-message partial signature escrow messages.
       this.epse = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "epse." });
+
+      // Exchange-message partial signature escrow datetimes.
       this.epsd = new CesrSuber<Dater>(this.lmdber, {
         subkey: "epsd.",
         klas: Dater,
       });
+
+      // Exchange messages keyed by digest.
       this.exns = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "exns." });
+
+      // Forward pointers to provided reply messages.
       this.erpy = new CesrSuber<Saider>(this.lmdber, {
         subkey: "erpy.",
         klas: Saider,
       });
+
+      // Exchange-message indexed signatures.
       this.esigs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "esigs.",
         klas: Siger,
       });
+
+      // Exchange-message non-indexed signature couples.
       this.ecigs = new CatCesrIoSetSuber<TransferableSignatureCouple>(
         this.lmdber,
         {
@@ -423,120 +538,209 @@ export class Baser {
           klas: [Verfer, Cigar],
         },
       );
+
+      // Exchange-message pathed attachments.
       this.epath = new IoSetSuber<string>(this.lmdber, { subkey: ".epath" });
+
+      // Encrypt-Sender-Sign-Receiver payloads keyed by exchange digest.
       this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, {
         subkey: ".essrs",
         klas: Texter,
       });
+
+      // Accepted signed challenge-response exchange-message SAIDs keyed by the
+      // signer prefix.
       this.chas = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "chas.",
         klas: Diger,
       });
+
+      // Successful signed challenge-response exchange-message SAIDs keyed by
+      // the signer prefix.
       this.reps = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "reps.",
         klas: Diger,
       });
+
+      // Authorized well-known OOBI records.
       this.wkas = new IoSetKomer<WellKnownAuthN>(this.lmdber, {
         subkey: "wkas.",
       });
+      // Key-state notice datetime stamps keyed by key-state SAID.
       this.kdts = new CesrSuber<Dater>(this.lmdber, {
         subkey: "kdts.",
         klas: Dater,
       });
+
+      // Key-state messages keyed by key-state SAID.
+      // Datetimes and signatures are held in the companion key-state stores.
       this.ksns = new Komer<KeyStateRecord>(this.lmdber, { subkey: "ksns." });
+
+      // Successful key-state notice SAID index mapping `(controller, aid)` to
+      // saved key-state SAIDs.
       this.knas = new CesrSuber<Diger>(this.lmdber, {
         subkey: "knas.",
         klas: Diger,
       });
+
+      // Watcher watched-SAID index mapping `(cid, aid, oid)` to the saved reply
+      // message SAID for a watched identifier.
       this.wwas = new CesrSuber<Diger>(this.lmdber, {
         subkey: "wwas.",
         klas: Diger,
       });
+
+      // Config-loaded OOBIs to be processed asynchronously.
       this.oobis = new Komer<OobiRecord>(this.lmdber, {
         subkey: "oobis.",
         sep: ">",
       });
+
+      // Retriable OOBIs that failed to load.
       this.eoobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "eoobi.",
         sep: ">",
       });
+
+      // OOBIs with outstanding client requests.
       this.coobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "coobi.",
         sep: ">",
       });
+
+      // Successfully resolved OOBIs.
       this.roobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "roobi.",
         sep: ">",
       });
+
+      // Well-known OOBIs used for multifactor authentication against resolved
+      // OOBIs.
       this.woobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "woobi.",
         sep: ">",
       });
+
+      // Multi-OOBI associations where one AID is tied to multiple OOBIs.
       this.moobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "moobi.",
         sep: ">",
       });
+
+      // Multifactor well-known OOBI auth records awaiting processing, keyed by
+      // controller URL.
       this.mfa = new Komer<OobiRecord>(this.lmdber, {
         subkey: "mfa.",
         sep: ">",
       });
+
+      // Resolved multifactor well-known OOBI auth records keyed by controller
+      // URL.
       this.rmfa = new Komer<OobiRecord>(this.lmdber, {
         subkey: "rmfa.",
         sep: ">",
       });
+
+      // JSON Schema SADs keyed by schema SAID.
       this.schema = new SchemerSuber<SerderKERI>(this.lmdber, {
         subkey: "schema.",
       });
+
+      // Field values for contact information for remote identifiers.
       this.cfld = new Suber(this.lmdber, { subkey: "cfld." });
+
+      // Global settings for the Habery environment.
       this.hbys = new Suber(this.lmdber, { subkey: "hbys." });
+
+      // Signed contact data keyed by identifier prefix.
       this.cons = new Suber(this.lmdber, { subkey: "cons." });
+
+      // Signature cigars for signed contact data.
       this.ccigs = new CesrSuber<Cigar>(this.lmdber, {
         subkey: "ccigs.",
         klas: Cigar,
       });
+
+      // Blinded media tuples for remote contact information.
       this.imgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
         subkey: "imgs.",
         klas: [Noncer, Noncer, Labeler, Texter],
       });
+
+      // Field values for local identifier information.
       this.ifld = new Suber(this.lmdber, { subkey: "ifld." });
+
+      // Signed local identifier data keyed by prefix.
       this.sids = new Suber(this.lmdber, { subkey: "sids." });
+
+      // Signature cigars for signed local identifier data.
       this.icigs = new CesrSuber<Cigar>(this.lmdber, {
         subkey: "icigs.",
         klas: Cigar,
       });
+
+      // Blinded media tuples for local identifier information.
       this.iimgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
         subkey: "iimgs.",
         klas: [Noncer, Noncer, Labeler, Texter],
       });
+
+      // Delegated partial-witness escrow messages.
       this.dpwe = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dpwe." });
+
+      // Delegated unanchored escrow messages.
       this.dune = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dune." });
+
+      // Delegate publication escrow messages for sending delegator information
+      // to local witnesses.
       this.dpub = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dpub." });
+
+      // Completed group delegated AIDs keyed by ordinal.
       this.cdel = new CesrOnSuber<Diger>(this.lmdber, {
         subkey: "cdel.",
         klas: Diger,
       });
+
+      // Multisig embed payload SAIDs mapped to containing exchange-message
+      // SAIDs across group multisig participants.
       this.meids = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "meids.",
         klas: Diger,
       });
+
+      // Multisig embed payload SAIDs mapped to group multisig participant AIDs.
       this.maids = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "maids.",
         klas: Prefixer,
       });
+      // KRAM cache-type records keyed by expression string.
       this.ctyp = new Komer<CacheTypeRecord>(this.lmdber, { subkey: "ctyp." });
+
+      // KRAM message-cache records keyed by `(AID, MID)`.
       this.msgc = new Komer<MsgCacheRecord>(this.lmdber, { subkey: "msgc." });
+
+      // KRAM transactioned message-cache records keyed by `(AID, XID, MID)`.
       this.tmsc = new Komer<TxnMsgCacheRecord>(this.lmdber, {
         subkey: "tmsc.",
       });
+
+      // KRAM partially signed multi-key messages keyed by `(AID, MID)`.
       this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
+
+      // KRAM partially signed multi-key signatures keyed by `(AID, MID)`.
       this.pmks = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "pmks.",
         klas: Siger,
       });
+
+      // KRAM partially signed multi-key sender key-state seals keyed by
+      // `(AID, MID)`.
       this.pmsk = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "pmsk.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Transferable receipt quadruples used by the KRAM attachment path.
       this.trqs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
         this.lmdber,
         {
@@ -544,6 +748,8 @@ export class Baser {
           klas: [Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
+
+      // Transferable last-signature groups used by the KRAM attachment path.
       this.tsgs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
         this.lmdber,
         {
@@ -551,31 +757,47 @@ export class Baser {
           klas: [Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
+
+      // First-seen seal couples for issuing or delegating events.
       this.sscs = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "sscs.",
         klas: [NumberPrimitive, Diger],
       });
+
+      // Source seal triples for issued or delegated events.
       this.ssts = new CatCesrIoSetSuber<SourceSealTriple>(this.lmdber, {
         subkey: "ssts.",
         klas: [Prefixer, NumberPrimitive, Diger],
       });
+
+      // First-seen replay couples storing ordinal and datetime pairs.
       this.frcs = new CatCesrIoSetSuber<FirstSeenReplayCouple>(this.lmdber, {
         subkey: "frcs.",
         klas: [NumberPrimitive, Dater],
       });
+
+      // Typed digest seal couples.
       this.tdcs = new CatCesrIoSetSuber<TypedDigestSealCouple>(this.lmdber, {
         subkey: "tdcs.",
         klas: [Verser, Diger],
       });
+
+      // Pathed streams stored as raw bytes.
       this.ptds = new IoSetSuber<string>(this.lmdber, { subkey: "ptds." });
+
+      // Blind state quadruples.
       this.bsqs = new CatCesrIoSetSuber<BoundStateQuadruple>(this.lmdber, {
         subkey: "bsqs.",
         klas: [Diger, Noncer, Noncer, Labeler],
       });
+
+      // Bound state sextuples.
       this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.lmdber, {
         subkey: "bsss.",
         klas: [Diger, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
       });
+
+      // Type-media quadruples.
       this.tmqs = new CatCesrIoSetSuber<TypeMediaQuadruple>(this.lmdber, {
         subkey: "tmqs.",
         klas: [Diger, Noncer, Labeler, Texter],

@@ -106,8 +106,8 @@ function parseCounterProbe(
         throw error;
       }
       if (
-        error instanceof UnknownCodeError ||
-        error instanceof DeserializeError
+        error instanceof UnknownCodeError
+        || error instanceof DeserializeError
       ) {
         continue;
       }
@@ -129,8 +129,8 @@ function parseLabelProbe(
       throw error;
     }
     if (
-      error instanceof UnknownCodeError ||
-      error instanceof DeserializeError
+      error instanceof UnknownCodeError
+      || error instanceof DeserializeError
     ) {
       return null;
     }
@@ -292,9 +292,9 @@ export function parseMapperBodySyntax(
     };
   } catch (error) {
     if (
-      error instanceof ShortageError ||
-      error instanceof UnknownCodeError ||
-      error instanceof DeserializeError
+      error instanceof ShortageError
+      || error instanceof UnknownCodeError
+      || error instanceof DeserializeError
     ) {
       throw new SyntaxParseError(
         `Map-body syntax parse failed: ${error.message}`,

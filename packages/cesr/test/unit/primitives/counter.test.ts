@@ -1,10 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../../src/core/bytes.ts";
-import {
-  DeserializeError,
-  ShortageError,
-  UnknownCodeError,
-} from "../../../src/core/errors.ts";
+import { DeserializeError, ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import {
   Counter,
   parseCounter,

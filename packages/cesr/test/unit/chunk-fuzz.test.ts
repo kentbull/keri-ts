@@ -1,14 +1,10 @@
 import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { decodeB64 } from "../../src/core/bytes.ts";
-import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
+import { createParser } from "../../src/core/parser-engine.ts";
 import { CesrFrame } from "../../src/index.ts";
-import {
-  counterV1,
-  counterV2,
-  sigerToken,
-} from "../fixtures/counter-token-fixtures.ts";
+import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
@@ -80,7 +76,7 @@ function assertSplitDeterminism(
 }
 
 Deno.test("chunk-fuzz matrix: v1 json frame with wrapped attachments", () => {
-  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
+  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const nested = `-AAB${sigerToken()}`;
   const frame = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
   assertSplitDeterminism("v1-wrapped", encode(frame));
@@ -94,9 +90,7 @@ Deno.test("chunk-fuzz matrix: v2 native fix-body frame stream", () => {
 });
 
 Deno.test("chunk-fuzz matrix: v2 BodyWithAttachmentGroup stream (txt + qb2)", () => {
-  const nestedAttachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const wrapped = `${
     counterV2(

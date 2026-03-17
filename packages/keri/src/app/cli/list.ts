@@ -24,7 +24,7 @@ export function* listCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Name is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       listArgs.name!,
       listArgs.base ?? "",

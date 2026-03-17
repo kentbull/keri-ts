@@ -11,9 +11,7 @@ const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("structor: hydrates generic list group as class instance", () => {
   const payload = "ABCDWXYZ";
-  const ims = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const ims = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
 
   const structor = parseStructor(txt(ims), V2, "txt");
   assertEquals(structor instanceof Structor, true);
@@ -25,9 +23,7 @@ Deno.test("structor: hydrates generic list group as class instance", () => {
 
 Deno.test("structor: fromGroup preserves clan semantics", () => {
   const payload = "ABCDWXYZ";
-  const ims = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const ims = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
   const parsed = parseStructor(txt(ims), V2, "txt");
 
   const rebuilt = Structor.fromGroup(parsed);
@@ -37,9 +33,7 @@ Deno.test("structor: fromGroup preserves clan semantics", () => {
 
 Deno.test("structor: parses KERIpy-derived payload and supports equality checks", () => {
   const payload = KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload;
-  const ims = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const ims = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
 
   const left = parseStructor(txt(ims), V2, "txt");
   const right = Structor.fromGroup(left);
@@ -50,9 +44,7 @@ Deno.test("structor: parses KERIpy-derived payload and supports equality checks"
 
 Deno.test("structor: bny parse preserves qb2/qb64 group projections", () => {
   const payload = KERIPY_STRUCTOR_VECTORS.sealerTypedDigestPayload;
-  const ims = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const ims = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
   const qb2 = codeB64ToB2(ims);
 
   const structor = parseStructor(qb2, V2, "bny");
@@ -63,9 +55,7 @@ Deno.test("structor: bny parse preserves qb2/qb64 group projections", () => {
 
 Deno.test("structor: allowed-code guard rejects mismatched families", () => {
   const payload = "ABCD";
-  const ims = `${
-    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
-  }${payload}`;
+  const ims = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
 
   assertThrows(
     () =>

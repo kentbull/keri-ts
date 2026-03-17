@@ -1,7 +1,8 @@
-import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
-import { DeserializeError } from "../core/errors.ts";
 import { decode as decodeMsgpack } from "@msgpack/msgpack";
+import { t } from "../core/bytes.ts";
 import { decodeKeriCbor } from "../core/cbor.ts";
+import { DeserializeError } from "../core/errors.ts";
+import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
@@ -13,7 +14,6 @@ import {
 } from "../primitives/primitive.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { Protocols } from "../tables/versions.ts";
-import { t } from "../core/bytes.ts";
 
 function normalizeDecodedMap(
   value: unknown,

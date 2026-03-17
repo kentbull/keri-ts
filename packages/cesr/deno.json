@@ -13,6 +13,8 @@
     "cbor-x/encode": "npm:cbor-x@^1.6.0/encode"
   },
   "tasks": {
+    "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
+    "fmt:check": "deno run -A npm:dprint@0.49.0 check --config ../../dprint.json .",
     "test": "deno test",
     "bench": "deno bench bench",
     "bench:parser": "deno run --allow-read src/bench/cli-deno.ts",

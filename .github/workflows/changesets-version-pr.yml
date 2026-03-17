@@ -23,7 +23,7 @@ jobs:
           deno-version: v2.x
 
       - name: check formatting
-        run: deno fmt --check
+        run: deno task fmt:check
 
       - name: create version PR
         uses: changesets/action@v1
