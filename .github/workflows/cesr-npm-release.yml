@@ -11,6 +11,10 @@ on:
         required: true
         default: "false"
 
+env:
+  DENO_DIR: ${{ github.workspace }}/.deno-cache
+  NODE_VERSION: "20"
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -27,8 +31,20 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: restore Deno dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-deno-v2-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-v2-
 
       - name: check formatting
         run: deno task fmt:check

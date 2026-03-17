@@ -127,10 +127,16 @@ Use this doc for:
     execution so interop suites run deterministically in GitHub Actions.
   - Applied the same pinned KERIpy install step to the `keri-ts` npm release
     workflow before its quality-test gate.
+  - Added dependency caching across active workflows: shared Deno/module cache
+    plus npm cache everywhere, and a KERIpy virtualenv cache keyed by the
+    pinned Git SHA on workflows that run interop-sensitive tests.
 - Why:
   - A PR status check only protects `master` if the workflow exists, runs on PR
     events, and exercises the same interop-sensitive test surface maintainers
     expect locally.
+  - Without cache restoration, the same pipelines keep paying the full
+    dependency/bootstrap cost on every run even when neither the Deno graph nor
+    the pinned KERIpy version changed.
 - Tests:
   - Commands: `deno task fmt:check`, `deno task lint`,
     `deno task quality:check`, `deno task test:quality`,
@@ -144,3 +150,6 @@ Use this doc for:
     status check if that rule is not already configured.
   - The pinned KERIpy install depends on GitHub Actions having Python `3.14`
     available, matching the current KERIpy packaging requirement.
+  - The KERIpy virtualenv cache is keyed by exact SHA on purpose; that is
+    maximally reproducible, but cache misses are expected whenever the pin
+    moves.

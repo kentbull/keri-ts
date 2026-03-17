@@ -131,12 +131,15 @@ On PR:
 Current workflow shape:
 
 - `PR Stage Gate` on pull requests targeting `master`
+- restore shared Deno/module cache and npm cache before Deno tasking
 - formatting: `deno task fmt:check`
 - linting: `deno task lint`
 - static quality: `deno task quality:check`
 - tests: `deno task test:quality` and `deno task test:cesr`
 - pinned interop dependency:
   `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704`
+- interop cache: restore a KERIpy virtualenv keyed by the pinned Git SHA before
+  reinstalling
 
 ### 7) Release CI
 

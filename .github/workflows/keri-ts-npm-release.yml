@@ -12,7 +12,11 @@ on:
         default: "false"
 
 env:
+  DENO_DIR: ${{ github.workspace }}/.deno-cache
   KERIPY_GIT_SHA: 273784cb1702348c3888a09806cc37aea1877704
+  KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.14"
 
 jobs:
   build-and-release:
@@ -30,17 +34,44 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: restore Deno dependency cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-deno-v2-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-v2-
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: restore KERIpy virtualenv cache
+        id: keripy-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.KERIPY_VENV }}
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
 
       - name: install pinned KERIpy CLI
+        if: steps.keripy-cache.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+          python -m venv "${KERIPY_VENV}"
+          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
+          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+
+      - name: add KERIpy CLI to PATH
+        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
+
+      - name: verify pinned KERIpy CLI
+        run: |
           kli --help > /dev/null
 
       - name: check formatting

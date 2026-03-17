@@ -185,6 +185,11 @@ This keeps context focused and avoids long-thread drift.
     formatting, lint, static quality checks, and tests, and the KERI package
     release workflow installs the same pinned KERIpy CLI before running interop
     tests so GitHub Actions coverage matches local expectations.
+37. CI dependency bootstrap now treats cacheability as part of workflow design:
+    active GitHub Actions paths restore a shared Deno/module cache, npm cache,
+    and, where interop tests run, a KERIpy virtualenv cache keyed by the pinned
+    KERIpy Git SHA so expensive setup work is skipped unless dependencies
+    actually change.
 
 ## New Thread Kickoff Template
 
