@@ -21,6 +21,7 @@ env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
   KERIPY_GIT_SHA: 273784cb1702348c3888a09806cc37aea1877704
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
+  LMDB_DATA_V1: "true"
   NODE_VERSION: "20"
   PYTHON_VERSION: "3.14"
 
@@ -41,14 +42,21 @@ jobs:
           deno-version: v2.x
 
       - name: restore Deno dependency cache
+        id: deps-cache
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.DENO_DIR }}
             node_modules
-          key: ${{ runner.os }}-deno-v2-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          key: ${{ runner.os }}-deno-v2-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
-            ${{ runner.os }}-deno-v2-
+            ${{ runner.os }}-deno-v2-lmdb-data-v1-
+
+      - name: rebuild LMDB-js with data v1 compatibility
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          cd packages/keri
+          deno task setup
 
       - uses: actions/setup-python@v5
         with:

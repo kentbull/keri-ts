@@ -194,6 +194,10 @@ This keeps context focused and avoids long-thread drift.
     metadata implicitly from ambient GitHub env vars during checks: deterministic
     `version:check` uses empty metadata by default, while artifact-producing CI
     steps must opt into stamped metadata explicitly.
+39. KERIpy LMDB interop depends not just on pinning `lmdb@3.4.4`, but on
+    preserving LMDB-js data-format v1 semantics as a CI/runtime contract; the
+    KERI workflows should export `LMDB_DATA_V1=true` and rebuild/cache the
+    native addon accordingly instead of assuming runner defaults are compatible.
 
 ## New Thread Kickoff Template
 

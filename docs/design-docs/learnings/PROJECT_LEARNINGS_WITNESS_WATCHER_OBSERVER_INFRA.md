@@ -192,3 +192,35 @@ Use this doc for:
 - Risks/TODO:
   - Any future workflow that wants stamped runtime versions must opt in
     explicitly; ambient GitHub env is no longer enough.
+
+### 2026-03-17 - CI Now Codifies LMDB-js V1 Compatibility For KERIpy Interop
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `packages/keri/test/integration/app/interop-kli-tufa.test.ts`
+- What changed:
+  - Added `LMDB_DATA_V1=true` to the KERI-interoperability workflows and bumped
+    the dependency-cache key so old incompatible native-addon caches do not get
+    silently reused.
+  - Added a cache-miss setup step that runs `deno task setup` in
+    `packages/keri`, which rebuilds `lmdb` from source with the project’s
+    required v1 data-format compatibility.
+  - Removed the remaining hardcoded maintainer-local package path from the
+    single-sig interop test so CI can actually spawn `tufa` from the checked-out
+    workspace.
+- Why:
+  - KERIpy store interop is a storage-format contract, not just an npm version
+    pin. If CI restores or downloads an `lmdb-js` build without the v1 data
+    format, compat-mode tests are operating against the wrong backend even when
+    the JS package version looks correct.
+- Tests:
+  - Command: N/A in this macOS session for the Linux-specific CI/runtime seam
+  - Result: workflow/test logic updated; next GitHub Actions run is the real
+    verification point
+- Contracts/plans touched:
+  - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Risks/TODO:
+  - The Linux Deno N-API panic may still need a runner/runtime pin if it proves
+    independent of LMDB data-format compatibility; this change fixes the known
+    missing contract first.

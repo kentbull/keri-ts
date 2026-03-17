@@ -163,6 +163,11 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 }
 
+/** Resolve the package root dynamically so CI and other machines can spawn tufa. */
+function packageRoot(): string {
+  return new URL("../../../", import.meta.url).pathname;
+}
+
 Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL stream", async () => {
   const home = await Deno.makeTempDir({ prefix: "tufa-kli-home-" });
   const denoDir = await detectDenoDir();
@@ -173,7 +178,7 @@ Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL str
   };
   const kliCommand = await resolveKliCommand(env);
 
-  const repoRoot = "/Users/kbull/code/keri/kentbull/keri-ts/packages/keri";
+  const repoRoot = packageRoot();
   const base = `interop-${crypto.randomUUID().slice(0, 8)}`;
   const alias = "interop-aid";
   const passcode = "MyPasscodeARealSecret";
