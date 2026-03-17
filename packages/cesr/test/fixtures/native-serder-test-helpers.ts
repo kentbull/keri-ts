@@ -1,11 +1,13 @@
 import { b, codeB64ToB2 } from "../../src/core/bytes.ts";
 import type { Smellage } from "../../src/core/types.ts";
+import { Counter } from "../../src/primitives/counter.ts";
 import { parseCounter } from "../../src/primitives/counter.ts";
 import { parseIlker } from "../../src/primitives/ilker.ts";
 import { Matter } from "../../src/primitives/matter.ts";
 import { NumberPrimitive } from "../../src/primitives/number.ts";
 import { Tholder } from "../../src/primitives/tholder.ts";
 import { parseVerser } from "../../src/primitives/verser.ts";
+import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { Kinds, Protocols, Vrsn_2_0 } from "../../src/tables/versions.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "./external-vectors.ts";
 
@@ -77,6 +79,66 @@ export function expectedNativeKeriIcpSad(): Record<string, unknown> {
     c: [],
     a: [],
   };
+}
+
+/**
+ * Build a message-shaped KERI native map body from the pinned fixed-body fixture.
+ *
+ * Why this exists:
+ * the result is intentionally "plausible enough" to reach the serder-native
+ * decoder. It has a `v` label plus the normal KERI top-level labels in order,
+ * but it still must be rejected because KERI top-level native bodies are fixed
+ * field, not map bodies.
+ *
+ * ASCII shape:
+ *
+ * ```text
+ * -G... | 0J_v <verser> | 0J_t <ilk> | 0J_d <said> | 0J_i <pre> | ...
+ * ```
+ */
+export function invalidNativeKeriIcpMapBodyQb64(): string {
+  const segments = breakdownNativeKeriIcpFixture();
+  const byName = new Map(segments.map((segment) => [segment.name, segment.qb64]));
+  const payload = [
+    "0J_v",
+    byName.get("verser"),
+    "0J_t",
+    byName.get("ilk"),
+    "0J_d",
+    byName.get("said"),
+    "0J_i",
+    byName.get("pre"),
+    "0J_s",
+    byName.get("sn"),
+    "0Kkt",
+    byName.get("kt"),
+    "0J_k",
+    byName.get("keys"),
+    "0Knt",
+    byName.get("nt"),
+    "0J_n",
+    byName.get("ndigs"),
+    "0Kbt",
+    byName.get("bt"),
+    "0J_b",
+    byName.get("backs"),
+    "0J_c",
+    byName.get("traits"),
+    "0J_a",
+    byName.get("seals"),
+  ].join("");
+
+  if (payload.includes("undefined")) {
+    throw new Error("Failed to build invalid KERI native map-body fixture");
+  }
+
+  return `${
+    new Counter({
+      code: CtrDexV2.MapBodyGroup,
+      count: payload.length / 4,
+      version: V2,
+    }).qb64
+  }${payload}`;
 }
 
 function parseMatterToken(raw: string, offset: number): ParsedMatterToken {

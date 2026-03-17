@@ -268,8 +268,11 @@ export function wrapperHeavyV2Stream(): string {
 /**
  * Build a nested v2 MapBody stream with label/value interleaving.
  *
- * Used by native-body breadth vectors to stress map tokenization and
- * syntax/semantic boundary handling under chunked parsing.
+ * Maintainer note:
+ * this is intentionally a lower-level native map corpus, not a full top-level
+ * KERI/ACDC message body. Frame-parser tests use it to prove that chunking
+ * does not accidentally upgrade invalid top-level native map payloads into
+ * accepted frames.
  */
 export function buildNestedMapBodyV2(): string {
   const innerPayload = `0J_i${sigerToken()}`;

@@ -223,13 +223,18 @@ This keeps context focused and avoids long-thread drift.
     CESR-native serder parity and deeper ACDC compactification behavior remain
     open, so maintainers should not treat this milestone as full
     `serdering.py` closure yet.
-45. CESR-native parser hydration needs a two-lane contract: when a native body
-    group is a real KERI/ACDC message, the parser should upgrade it to a full
-    `SerderKERI`/`SerderACDC`; when the payload is only a generic native
-    hardening corpus or partial map/list body, the parser must preserve the old
-    metadata-only fallback instead of forcing every native body group through
-    full serder semantics.
-46. Digest-code ownership belongs at the CESR primitive layer, not in app code
+45. CESR-native parser hydration is now a stricter KERIpy-parity contract at
+    the top-level frame seam: once the parser classifies a native
+    `FixBodyGroup`/`MapBodyGroup` as a message body, success means full
+    `SerderKERI`/`SerderACDC` hydration and anything less should be a parse
+    error. Generic native map/list corpora still belong to lower-level
+    mapper/aggor/compactor surfaces, not metadata-only top-level frame bodies.
+46. KERI native top-level message bodies are fixed-field only; even a
+    message-shaped native `MapBodyGroup` carrying `v`/`t`/`d`/`i` and the rest
+    of the expected KERI labels must be rejected by the shared native
+    serder/reaper layer. Native map-body top-level semantics belong to ACDC and
+    lower-level mapping surfaces, not KERI messages.
+47. Digest-code ownership belongs at the CESR primitive layer, not in app code
     or serder-local helpers: `DigDex` stays the canonical codex namespace, but
     `Diger` should own `code -> digest implementation` dispatch so `Saider`,
     `Serder`, and habitat flows can consume digest behavior without carrying

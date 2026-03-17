@@ -682,6 +682,12 @@ function parseKeriFixedField(
  * 4. rebuild normal SAD strings/lists/maps so `Serder` verification can run on
  *    the same shape used by JSON/CBOR/MGPK bodies
  *
+ * Maintainer rule:
+ * top-level KERI native messages are fixed-field bodies. A top-level
+ * `MapBodyGroup` may still be meaningful for lower-level CESR-native mapping
+ * surfaces or ACDC, but it is not a valid KERI native message body and should
+ * be rejected here.
+ *
  * Example:
  *
  * ```ts
@@ -724,6 +730,11 @@ export function parseCesrNativeKed(
   };
 
   if (smellage.proto === Protocols.keri) {
+    if (!fixed) {
+      throw new DeserializeError(
+        "KERI CESR-native top-level messages must use FixBodyGroup, not MapBodyGroup",
+      );
+    }
     const ilk = parseIlker(textRaw.slice(offset), "txt").ilk;
     offset += 4;
     ked.t = ilk;

@@ -1,10 +1,12 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { codeB64ToB2 } from "../../src/core/bytes.ts";
+import { DeserializeError } from "../../src/core/errors.ts";
 import { dumps, parseSerder, Serder, sizeify } from "../../src/serder/serder.ts";
 import { SerderKERI } from "../../src/serder/serder.ts";
 import { reapSerder } from "../../src/serder/serdery.ts";
 import { smell, versify } from "../../src/serder/smell.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
+import { invalidNativeKeriIcpMapBodyQb64 } from "../fixtures/native-serder-test-helpers.ts";
 
 Deno.test("dumps: JSON/CBOR/MGPK payloads round-trip through parseSerder", () => {
   const cases = [
@@ -60,4 +62,15 @@ Deno.test("reapSerder: native KERI txt and qb2 hydrate SerderKERI", () => {
   assertEquals(bny instanceof SerderKERI, true);
   assertEquals(txt.ked?.t, "icp");
   assertEquals(bny.ked?.d, txt.ked?.d);
+});
+
+Deno.test("reapSerder: message-shaped KERI native MapBodyGroup is rejected instead of hydrating a Serder", () => {
+  // This protects the shared serder entrypoint, not just the top-level parser:
+  // direct native reaping should reject KERI map-body messages for the same
+  // reason the frame parser now does.
+  assertThrows(
+    () => reapSerder(new TextEncoder().encode(invalidNativeKeriIcpMapBodyQb64())),
+    DeserializeError,
+    "FixBodyGroup",
+  );
 });

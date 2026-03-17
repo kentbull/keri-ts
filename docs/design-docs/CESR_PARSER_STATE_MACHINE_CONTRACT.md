@@ -101,6 +101,10 @@ reason about lifecycle behavior without re-deriving rules from control flow.
 - Enclosed frame order is preserved (`parseFrameSequence()` and queued emission
   ordering).
 - Stream order is preserved when both `pendingFrame` and `queuedFrames` exist.
+- When `parseFrame()` classifies a top-level native `FixBodyGroup` or
+  `MapBodyGroup` as a message body, success means full `Serder` hydration;
+  metadata-only native-body success is not a valid parser outcome for that
+  frame-start branch.
 
 ## Error Semantics
 
@@ -136,21 +140,22 @@ Legacy note:
 
 ## Contract-to-Test Matrix
 
-| Contract Item                                                               | Test Coverage                                                                                         |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Pending continuation treats body-group counter as new frame boundary        | `packages/cesr/test/unit/parser-pending-frame.test.ts` (`V-P1-001`)                                   |
-| Flush emits pending frame without remainder error                           | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-008`)                                           |
-| Flush emits pending frame then terminal shortage when tail remains          | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-009`)                                           |
-| Flush idempotency (frame/error not duplicated)                              | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-012`)                                           |
-| Framed-mode bounded one-frame drain behavior                                | `packages/cesr/test/unit/parser-framed-mode.test.ts` (`V-P0-007`)                                     |
-| GenericGroup parsing and split determinism                                  | `packages/cesr/test/unit/parity-generic-group.test.ts` (`V-P0-001`, `V-P0-002`)                       |
-| Version selector at top-level and enclosed scopes                           | `packages/cesr/test/unit/parser-version-context.test.ts` (`V-P0-003`..`V-P0-005`)                     |
-| Nested wrapper version-context behavior                                     | `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (`V-P1-007`, `V-P1-008`, `V-P1-010`) |
-| Legacy implicit-v1 behavior without selectors                               | `packages/cesr/test/unit/parser-legacy-v1-implicit-version.test.ts`                                   |
-| Mixed multi-frame order determinism across splits                           | `packages/cesr/test/unit/parser-mixed-stream.test.ts` (`V-P1-005`)                                    |
-| Non-shortage error recovery via reset                                       | `packages/cesr/test/unit/parser-recovery.test.ts` (`V-P1-011`)                                        |
-| Leading/repeated `ano` separator handling                                   | `packages/cesr/test/unit/parser.test.ts` (`V-P0-010`)                                                 |
-| `pendingFrame` + `queuedFrames` coexistence preserves stream order at flush | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-014`)                                           |
+| Contract Item                                                               | Test Coverage                                                                                                          |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Pending continuation treats body-group counter as new frame boundary        | `packages/cesr/test/unit/parser-pending-frame.test.ts` (`V-P1-001`)                                                    |
+| Flush emits pending frame without remainder error                           | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-008`)                                                            |
+| Flush emits pending frame then terminal shortage when tail remains          | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P0-009`)                                                            |
+| Flush idempotency (frame/error not duplicated)                              | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-012`)                                                            |
+| Framed-mode bounded one-frame drain behavior                                | `packages/cesr/test/unit/parser-framed-mode.test.ts` (`V-P0-007`)                                                      |
+| GenericGroup parsing and split determinism                                  | `packages/cesr/test/unit/parity-generic-group.test.ts` (`V-P0-001`, `V-P0-002`)                                        |
+| Version selector at top-level and enclosed scopes                           | `packages/cesr/test/unit/parser-version-context.test.ts` (`V-P0-003`..`V-P0-005`)                                      |
+| Nested wrapper version-context behavior                                     | `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (`V-P1-007`, `V-P1-008`, `V-P1-010`)                  |
+| Legacy implicit-v1 behavior without selectors                               | `packages/cesr/test/unit/parser-legacy-v1-implicit-version.test.ts`                                                    |
+| Mixed multi-frame order determinism across splits                           | `packages/cesr/test/unit/parser-mixed-stream.test.ts` (`V-P1-005`)                                                     |
+| Non-shortage error recovery via reset                                       | `packages/cesr/test/unit/parser-recovery.test.ts` (`V-P1-011`)                                                         |
+| Leading/repeated `ano` separator handling                                   | `packages/cesr/test/unit/parser.test.ts` (`V-P0-010`)                                                                  |
+| Top-level native body groups either hydrate to `Serder` or emit parse error | `packages/cesr/test/unit/external-fixtures.test.ts`, `packages/cesr/test/hardening/parser-native-body-breadth.test.ts` |
+| `pendingFrame` + `queuedFrames` coexistence preserves stream order at flush | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-014`)                                                            |
 
 ## Change Control
 

@@ -1,4 +1,5 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { DeserializeError } from "../../src/core/errors.ts";
 import {
   canonicalizeCesrNativeRaw,
   dumpCesrNativeSad,
@@ -9,6 +10,7 @@ import { Serdery } from "../../src/serder/serdery.ts";
 import {
   breakdownNativeKeriIcpFixture,
   expectedNativeKeriIcpSad,
+  invalidNativeKeriIcpMapBodyQb64,
   nativeKeriIcpFixtureQb2,
   nativeKeriIcpFixtureQb64,
   nativeKeriIcpSmellage,
@@ -95,6 +97,22 @@ Deno.test("dumpCesrNativeSad: semantic SAD emits the same CESR native fixture th
   const raw = dumpCesrNativeSad(expectedNativeKeriIcpSad());
 
   assertEquals(raw, new TextEncoder().encode(nativeKeriIcpFixtureQb64()));
+});
+
+Deno.test("parseCesrNativeKed: message-shaped KERI native MapBodyGroup is rejected because top-level KERI native bodies must be fixed-field", () => {
+  // This is the exact boundary that used to be too permissive: the payload
+  // looks message-shaped because it carries `v`, `t`, `d`, `i`, and the rest
+  // of the expected KERI labels, but KERIpy semantics still reject it because
+  // native KERI top-level messages are fixed-body, not map-body.
+  assertThrows(
+    () =>
+      parseCesrNativeKed(
+        new TextEncoder().encode(invalidNativeKeriIcpMapBodyQb64()),
+        nativeKeriIcpSmellage(),
+      ),
+    DeserializeError,
+    "FixBodyGroup",
+  );
 });
 
 Deno.test("Serdery: native fixture reaps to the same SerderKERI in txt and qb2 domains", () => {

@@ -38,6 +38,13 @@ export class Serdery {
    * 2. canonicalize qb2 to qb64 if needed
    * 3. pre-read version metadata from compact native fields
    * 4. delegate full hydration to `parseSerder`
+   *
+   * Maintainer note:
+   * "candidate native body-group code" is broader than "valid protocol
+   * message". For example, KERI top-level native messages must still be fixed
+   * field even though `MapBodyGroup` remains a valid native framing shape in
+   * the wider CESR/ACDC world. The protocol-specific decoder is responsible
+   * for that final acceptance decision.
    */
   reap(input: Uint8Array): { serder: CesrBody; consumed: number } {
     const cold = sniff(input);

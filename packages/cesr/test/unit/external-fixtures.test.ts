@@ -160,7 +160,7 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
   }
 });
 
-Deno.test("native MapBodyGroup supports labels between primitives", () => {
+Deno.test("top-level native MapBodyGroup without version field is rejected as non-message", () => {
   const base = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   const payload = base.slice(4);
   const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${
@@ -169,19 +169,15 @@ Deno.test("native MapBodyGroup supports labels between primitives", () => {
   const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
 
   const parser = createParser();
-  const first = parser.feed(encode(mapBody));
-  const frames = first.length > 0 ? first : parser.flush();
-  assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, "frame");
-  if (frames[0].type === "frame") {
-    assertEquals(frames[0].frame.body.kind, "CESR");
-    assertEquals(frames[0].frame.body.ilk, null);
-    assertEquals(
-      frames[0].frame.body.native?.bodyCode,
-      CtrDexV2.MapBodyGroup,
-    );
-    const labels = frames[0].frame.body.native?.fields
-      .filter((f) => f.label !== null).length ?? 0;
-    assertEquals(labels > 0, true);
-  }
+  const events = [...parser.feed(encode(mapBody)), ...parser.flush()];
+  const frames = events.filter((event) => event.type === "frame");
+  const errors = events.filter((event) => event.type === "error");
+
+  // This payload is still a useful native-map corpus for lower-level mapper
+  // tests, but it is not a valid top-level protocol message: it has no `v`
+  // field and therefore KERIpy-style frame parsing must reject it instead of
+  // returning a metadata-only pseudo-serder.
+  assertEquals(frames.length, 0);
+  assertEquals(errors.length, 1);
+  assertEquals(errors[0].error.name, "DeserializeError");
 });

@@ -236,3 +236,41 @@ Persistent CESR parser memory for `keri-ts`.
 - This is still only a first native parity slice, not closure: KERI fixed-body
   messages are now substantially better covered, but broader CESR-native KERI
   ilks, full ACDC native semantics, and ACDC compactification remain open.
+
+### 2026-03-17 - Top-Level Native Message Contract Tightened To Match KERIpy
+
+- Removed the parser's metadata-only success fallback for top-level native
+  `FixBodyGroup` / `MapBodyGroup` frames. Once the frame parser classifies a
+  native body group as a message body, the next step must be successful
+  `Serder` hydration or a parse error.
+- This matters because the previous fallback blurred two different layers:
+  top-level protocol messages versus lower-level CESR-native map/list corpora.
+  KERIpy keeps that boundary sharp by sending top-level native body groups
+  through `Serdery.reap(...)` and failing if the payload is not a valid
+  protocol message.
+- The maintainer mental model should now be:
+  1. `Mapper` / `Aggor` / `Compactor` are the right tools for arbitrary native
+     map/list structures.
+  2. `FrameParser.parseNativeBodyGroup()` is only for native bodies that are
+     being treated as top-level messages.
+  3. Therefore top-level success means a real `Serder`, not a best-effort
+     metadata shell.
+- Hardening vectors that used to rely on parser acceptance of invalid top-level
+  native `MapBodyGroup` corpora were rewritten to assert deterministic parse
+  failure instead, preserving the chunk-boundary contract without preserving
+  the wrong success semantics.
+
+### 2026-03-17 - Shared Native Serder Layer Now Rejects KERI Map-Body Messages
+
+- Tightened `parseCesrNativeKed()` so KERI top-level CESR-native messages must
+  be `FixBodyGroup` bodies. This closes the deeper permissiveness bug where the
+  parser seam had been fixed but direct native reaping could still have
+  accepted a message-shaped KERI `MapBodyGroup`.
+- Added readable regression coverage using a constructed "looks valid at a
+  glance" native KERI map-body fixture: it includes a `v` label plus the normal
+  `t`/`d`/`i`/`s`/`kt`/`k`/... labels, but both `parseCesrNativeKed()` and
+  `reapSerder()` must now reject it because KERI native top-level messages are
+  fixed-field only.
+- The maintainer lesson is important: "map-body native top level exists" is not
+  enough to justify KERI acceptance. Top-level native map-body semantics belong
+  to ACDC and lower-level mapping helpers unless KERIpy proves otherwise.
