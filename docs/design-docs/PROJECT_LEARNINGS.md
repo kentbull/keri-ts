@@ -166,6 +166,15 @@ This keeps context focused and avoids long-thread drift.
     `Noncer`, and `Traitor` should validate through canonical codex exports or
     derived helpers, and trait semantics should come from generated `TraitDex`
     parity rather than local string lists.
+33. Local habitat state is no longer allowed to live only in `Hab.kever`:
+    `states.` is now the durable source of truth, `kels.` / `fels.` / `dtss.`
+    back reopenable local event state, and `Habery.habs` should remain an
+    in-memory reconstruction cache rather than becoming another persisted truth
+    source.
+34. DB parity changes should ship with maintainer-grade source docs for the
+    new record contracts, storage families, and runtime seams; otherwise the
+    code may be behaviorally closer to KERIpy while still being too opaque for
+    safe future parity work.
 
 ## New Thread Kickoff Template
 

@@ -129,9 +129,10 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         data: opts.data ?? [],
         delpre: opts.delpre,
       });
+      const state = hby.db.getState(hab.pre);
 
       console.log(`Prefix  ${hab.pre}`);
-      for (const [idx, key] of (hab.kever?.verfers ?? []).entries()) {
+      for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
       }
       console.log("");

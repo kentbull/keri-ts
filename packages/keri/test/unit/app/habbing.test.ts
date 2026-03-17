@@ -1,6 +1,7 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const name = `habery-load-${crypto.randomUUID()}`;
@@ -26,8 +27,13 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(storedHab?.hid, hab.pre);
       assertEquals(storedHab?.name, alias);
       assertEquals(storedHab ? "sigs" in storedHab : false, false);
+      const state = hby.db.getState(hab.pre);
+      assertEquals(state?.i, hab.pre);
+      assertEquals(state?.k, hab.kever?.verfers);
+      assertEquals(hby.db.getKel(hab.pre, 0), state?.d);
+      assertEquals(hby.db.getFel(hab.pre, 0), state?.d);
 
-      const evt = hby.db.getEvt(new TextEncoder().encode(`${hab.pre}:0`));
+      const evt = state?.d ? hby.db.getEvt(dgKey(hab.pre, state.d)) : null;
       const evtText = evt ? new TextDecoder().decode(evt) : "";
       const match = evtText.match(/"d":"([^"]+)"/);
       if (!match) {
@@ -50,10 +56,14 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       const hab = [...hby.habs.values()][0];
       assertEquals(hab?.name, alias);
       assertEquals(hby.habByName(alias)?.pre, hab?.pre);
+      assertEquals(hab?.kever?.pre, hab?.pre);
       const storedHab = hab ? hby.db.getHab(hab.pre) : null;
       assertEquals(storedHab?.hid, hab?.pre);
       assertEquals(storedHab?.name, alias);
       assertEquals(storedHab ? "sigs" in storedHab : false, false);
+      const state = hab ? hby.db.getState(hab.pre) : null;
+      assertEquals(state?.i, hab?.pre);
+      assertEquals(state?.k, hab?.kever?.verfers);
     } finally {
       yield* hby.close();
     }

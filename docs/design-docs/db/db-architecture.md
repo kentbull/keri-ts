@@ -186,6 +186,10 @@ KERIpy:
 
 1. Domain databasers should depend on stabilized Layer 0/1 semantics and avoid
    custom one-off raw LMDB logic where a parity abstraction exists.
+2. Local habitat/runtime state should be DB-derived at this layer: `Habery`
+   caches `Hab` objects in memory, but current identifier state belongs in
+   `Baser` stores such as `states.`, `kels.`, `fels.`, and related event
+   indices, not in process-local app state alone.
 
 ## Core Storage Models
 

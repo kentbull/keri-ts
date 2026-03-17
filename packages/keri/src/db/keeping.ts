@@ -5,15 +5,23 @@ import {
   DatabaseOperationError,
 } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
+import { GroupMemberTuple } from "../core/records.ts";
 import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
-import { CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
-import { Cipher, Prefixer, Signer } from "../../../cesr/mod.ts";
+import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
+import { Cipher, NumberPrimitive, Prefixer, Signer } from "../../../cesr/mod.ts";
 
+/** Options for opening a keeper LMDB environment and its named subdb surface. */
 export interface KeeperOptions extends LMDBerOptions {
   compat?: boolean;
 }
 
+/**
+ * One rotation-slot public-key set plus its replay metadata.
+ *
+ * KERIpy correspondence:
+ * - mirrors the `PubLot` record shape used by keeper state records
+ */
 export interface PubLot {
   pubs: string[];
   ridx: number;
@@ -21,12 +29,30 @@ export interface PubLot {
   dt: string;
 }
 
+/**
+ * Keeper situation record for one prefix.
+ *
+ * KERIpy correspondence:
+ * - mirrors `PreSit`
+ *
+ * Captures the old/current/next public-key lots used by the manager for local
+ * replay and stateful key progression.
+ */
 export interface PreSit {
   old: PubLot;
   new: PubLot;
   nxt: PubLot;
 }
 
+/**
+ * Keeper root-parameter record for one prefix.
+ *
+ * KERIpy correspondence:
+ * - mirrors `PrePrm`
+ *
+ * Stores the deterministic key-derivation parameters needed to rehydrate local
+ * key material for a managed identifier prefix.
+ */
 export interface PrePrm {
   pidx: number;
   algo: string;
@@ -35,6 +61,7 @@ export interface PrePrm {
   tier: string;
 }
 
+/** Ordered public-key set stored for one `(prefix, ridx)` replay key. */
 export interface PubSet {
   pubs: string[];
 }
@@ -60,6 +87,8 @@ export class Keeper {
 
   public gbls!: Suber;
   public pris!: CryptSignerSuber;
+  public smids!: CatCesrIoSetSuber<GroupMemberTuple>;
+  public rmids!: CatCesrIoSetSuber<GroupMemberTuple>;
   public pres!: CesrSuber<Prefixer>;
   public prms!: Komer<PrePrm>;
   public sits!: Komer<PreSit>;
@@ -71,7 +100,7 @@ export class Keeper {
   static readonly AltTailDirPath = ".tufa/ks";
   static readonly CompatAltTailDirPath = ".keri/ks";
   static readonly TempPrefix = "keri_ks_";
-  static readonly MaxNamedDBs = 16;
+  static readonly MaxNamedDBs = 24;
 
   constructor(options: KeeperOptions = {}) {
     this.logger = options.logger ?? consoleLogger;
@@ -112,6 +141,14 @@ export class Keeper {
     return this.lmdber.path;
   }
 
+  /**
+   * Reopen the keeper environment and bind the KERIpy-style named subdbs.
+   *
+   * Runtime-active stores today include globals, private/public key material,
+   * prefix parameters/situations, and the group-member tuple stores. The rest
+   * of the keeper surface remains parity-bound even where higher-level runtime
+   * flows have not yet exercised it deeply.
+   */
   *reopen(options: Partial<KeeperOptions> = {}): Operation<boolean> {
     const opened = yield* this.lmdber.reopen(options);
     if (!opened) return false;
@@ -119,6 +156,14 @@ export class Keeper {
     try {
       this.gbls = new Suber(this.lmdber, { subkey: "gbls." });
       this.pris = new CryptSignerSuber(this.lmdber, { subkey: "pris." });
+      this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
+        subkey: "smids.",
+        klas: [Prefixer, NumberPrimitive],
+      });
+      this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
+        subkey: "rmids.",
+        klas: [Prefixer, NumberPrimitive],
+      });
       this.pres = new CesrSuber<Prefixer>(this.lmdber, {
         subkey: "pres.",
         klas: Prefixer,
@@ -147,75 +192,128 @@ export class Keeper {
     return yield* this.lmdber.close(clear);
   }
 
+  /** Read one keeper-global string value from `gbls.`. */
   getGbls(key: string): string | null {
     return this.gbls.get(key);
   }
 
+  /** Upsert one keeper-global string value in `gbls.`. */
   pinGbls(key: string, value: string): boolean {
     return this.gbls.pin(key, value);
   }
 
+  /** Insert the first public-key to prefix mapping in `pres.` if absent. */
   putPres(pre: string, val: string): boolean {
     return this.pres.put(pre, new Prefixer({ qb64: val }));
   }
 
+  /** Upsert the first public-key to prefix mapping in `pres.`. */
   pinPres(pre: string, val: string): boolean {
     return this.pres.pin(pre, new Prefixer({ qb64: val }));
   }
 
+  /** Read the stored prefixer projection from `pres.` as qb64 text. */
   getPres(pre: string): string | null {
     return this.pres.get(pre)?.qb64 ?? null;
   }
 
+  /** Insert a signer seed in `pris.` keyed by its public key if absent. */
   putPris(pub: string, secret: string): boolean {
     return this.pris.put(pub, new Signer({ qb64: secret }));
   }
 
+  /** Upsert a signer seed in `pris.` keyed by its public key. */
   pinPris(pub: string, secret: string): boolean {
     return this.pris.pin(pub, new Signer({ qb64: secret }));
   }
 
+  /** Read a signer seed from `pris.` as qb64 text. */
   getPris(pub: string): string | null {
     return this.pris.get(pub)?.qb64 ?? null;
   }
 
+  /** Insert one prefix-parameter record in `prms.` if absent. */
   putPrms(pre: string, val: PrePrm): boolean {
     return this.prms.put(pre, val);
   }
 
+  /** Upsert one prefix-parameter record in `prms.`. */
   pinPrms(pre: string, val: PrePrm): boolean {
     return this.prms.pin(pre, val);
   }
 
+  /** Read one prefix-parameter record from `prms.`. */
   getPrms(pre: string): PrePrm | null {
     return this.prms.get(pre);
   }
 
+  /** Insert one prefix-situation record in `sits.` if absent. */
   putSits(pre: string, val: PreSit): boolean {
     return this.sits.put(pre, val);
   }
 
+  /** Upsert one prefix-situation record in `sits.`. */
   pinSits(pre: string, val: PreSit): boolean {
     return this.sits.pin(pre, val);
   }
 
+  /** Read one prefix-situation record from `sits.`. */
   getSits(pre: string): PreSit | null {
     return this.sits.get(pre);
   }
 
+  /** Insert one replayable public-key set in `pubs.` if absent. */
   putPubs(key: string, val: PubSet): boolean {
     return this.pubs.put(key, val);
   }
 
+  /** Upsert one replayable public-key set in `pubs.`. */
   pinPubs(key: string, val: PubSet): boolean {
     return this.pubs.pin(key, val);
   }
 
+  /** Read one replayable public-key set from `pubs.`. */
   getPubs(key: string): PubSet | null {
     return this.pubs.get(key);
   }
+
+  /**
+   * Insert group-signing member tuples in `smids.` if absent.
+   *
+   * Each tuple is the narrow KERIpy shape `[Prefixer, NumberPrimitive]`, not a
+   * widened `Matter` family placeholder.
+   */
+  putSmids(pre: string, vals: GroupMemberTuple[]): boolean {
+    return this.smids.put(pre, vals);
+  }
+
+  /** Upsert group-signing member tuples in `smids.`. */
+  pinSmids(pre: string, vals: GroupMemberTuple[]): boolean {
+    return this.smids.pin(pre, vals);
+  }
+
+  /** Read group-signing member tuples from `smids.`. */
+  getSmids(pre: string): GroupMemberTuple[] {
+    return this.smids.get(pre);
+  }
+
+  /** Insert group-rotating member tuples in `rmids.` if absent. */
+  putRmids(pre: string, vals: GroupMemberTuple[]): boolean {
+    return this.rmids.put(pre, vals);
+  }
+
+  /** Upsert group-rotating member tuples in `rmids.`. */
+  pinRmids(pre: string, vals: GroupMemberTuple[]): boolean {
+    return this.rmids.pin(pre, vals);
+  }
+
+  /** Read group-rotating member tuples from `rmids.`. */
+  getRmids(pre: string): GroupMemberTuple[] {
+    return this.rmids.get(pre);
+  }
 }
 
+/** Constructor-safe async factory for a fully reopened `Keeper`. */
 export function* createKeeper(
   options: KeeperOptions = {},
 ): Operation<Keeper> {

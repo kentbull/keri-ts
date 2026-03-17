@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { Prefixer, Signer } from "../../../../cesr/mod.ts";
+import { parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
@@ -8,6 +8,7 @@ import {
   CesrSuber,
   IoSetSuber,
   OnSuber,
+  SerderSuber,
   Suber,
 } from "../../../src/db/subing.ts";
 
@@ -19,6 +20,33 @@ function makeSignerMaterial(path: string, transferable = false) {
     "low",
     true,
   );
+}
+
+function makeTestSerder(): SerderKERI {
+  const prefix = "D".repeat(44);
+  const said = "E".repeat(44);
+  const ked = {
+    v: "KERI10JSON000000_",
+    t: "icp",
+    d: said,
+    i: prefix,
+    s: "0",
+    kt: "1",
+    k: [prefix],
+    nt: "0",
+    n: [],
+    bt: "0",
+    b: [],
+    c: [],
+    a: [],
+  };
+  const encoder = new TextEncoder();
+  const raw = encoder.encode(JSON.stringify({
+    ...ked,
+    v: `KERI10JSON${encoder.encode(JSON.stringify(ked)).length.toString(16).padStart(6, "0")}_`,
+  }));
+  const { smellage } = smell(raw);
+  return parseSerder(raw, smellage) as SerderKERI;
 }
 
 Deno.test("db/subing - Suber uses the configured separator and iterates keys", async () => {
@@ -129,6 +157,26 @@ Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async
         signerB.qb64,
       ]);
       assertEquals(suber.getLast("alice")?.qb64, signerB.qb64);
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("db/subing - SerderSuber hydrates KERI serders through the shared parser", async () => {
+  await run(function* () {
+    const lmdber = yield* createLMDBer({
+      name: `serdersuber-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const serder = makeTestSerder();
+      const suber = new SerderSuber<SerderKERI>(lmdber, {
+        subkey: "evts.",
+      });
+      assertEquals(suber.put(["Epre", serder.said!], serder), true);
+      assertEquals(suber.get(["Epre", serder.said!])?.said, serder.said);
+      assertEquals(suber.get(["Epre", serder.said!])?.ilk, "icp");
     } finally {
       yield* lmdber.close(true);
     }

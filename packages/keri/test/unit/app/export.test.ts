@@ -41,6 +41,8 @@ Deno.test("CLI - export command works with custom head directory", async () => {
     );
     const output = harness.getOutput().join("\n");
     assertStringIncludes(output, "KERI10JSON");
+    assertStringIncludes(output, "-V");
+    assertStringIncludes(output, "1AAG");
   } finally {
     harness.restoreOutput();
   }
