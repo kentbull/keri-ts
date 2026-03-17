@@ -9,6 +9,12 @@ import { SerderKERI } from "../../src/serder/serder.ts";
 import { Serdery } from "../../src/serder/serdery.ts";
 import { versify } from "../../src/serder/smell.ts";
 import { Vrsn_2_0 } from "../../src/tables/versions.ts";
+import {
+  KERIPY_NATIVE_V2_EXN_FIX_BODY,
+  KERIPY_NATIVE_V2_QRY_FIX_BODY,
+  KERIPY_NATIVE_V2_RPY_FIX_BODY,
+  KERIPY_NATIVE_V2_XIP_FIX_BODY,
+} from "../fixtures/external-vectors.ts";
 import { KERIPY_MATTER_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import {
   breakdownNativeKeriIcpFixture,
@@ -23,6 +29,73 @@ import {
 // This file is the maintainers' native-serder walkthrough. The tests are meant
 // to read like worked examples of the native story:
 // KERI fixed-body basics first, then the ACDC map/fixed section lane.
+
+function keriV2FixtureSad(
+  ilk: "qry" | "rpy" | "xip" | "exn",
+): Record<string, unknown> {
+  const base = {
+    v: versify({
+      proto: "KERI",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: 0,
+    }),
+  };
+
+  switch (ilk) {
+    case "qry":
+      return {
+        ...base,
+        t: "qry",
+        d: "",
+        i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+        dt: "2026-03-17T12:34:56.000000+00:00",
+        r: "ksn",
+        rr: "reply",
+        q: { pre: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx", sn: "0" },
+      };
+    case "rpy":
+      return {
+        ...base,
+        t: "rpy",
+        d: "",
+        i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+        dt: "2026-03-17T12:34:56.000000+00:00",
+        r: "introduce",
+        a: { cid: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx" },
+      };
+    case "xip":
+      return {
+        ...base,
+        t: "xip",
+        d: "",
+        // This nonce is pinned to the exact KERIpy fixture above, so the
+        // computed top-level SAID also stays byte-for-byte aligned.
+        u: "0AAb4Y8P4m9N2S8RULf7rqmR",
+        i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+        ri: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+        dt: "2026-03-17T12:34:56.000000+00:00",
+        r: "ipex",
+        q: { role: "issuer" },
+        a: { d: "", action: "grant" },
+      };
+    case "exn":
+      return {
+        ...base,
+        t: "exn",
+        d: "",
+        i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+        ri: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+        x: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+        p: "EN0MZ5zwEHpCi297Rg4fu1vfFXSPWHAP9PWVvCEV1_Kd",
+        dt: "2026-03-17T12:34:56.000000+00:00",
+        r: "credential/issue",
+        q: { schema: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2" },
+        a: { d: "", m: "hello" },
+      };
+  }
+}
 
 Deno.test("native helper: KERI v2 icp fixture is broken down into readable top-level CESR segments", () => {
   // This is the "teach me the wire shape" test. The helper should expose the
@@ -80,7 +153,10 @@ Deno.test("canonicalizeCesrNativeRaw: qb64 text and qb2 binary become the same r
     expected,
   );
   assertEquals(
-    canonicalizeCesrNativeRaw(nativeKeriIcpFixtureQb2(), { major: 2, minor: 0 }),
+    canonicalizeCesrNativeRaw(nativeKeriIcpFixtureQb2(), {
+      major: 2,
+      minor: 0,
+    }),
     expected,
   );
 });
@@ -126,7 +202,8 @@ Deno.test("Serdery: native fixture reaps to the same SerderKERI in txt and qb2 d
   // End-to-end runtime bridge: regardless of input domain, `Serdery` should
   // produce one canonical `SerderKERI` with the same semantic body and qb64 raw.
   const serdery = new Serdery();
-  const txt = serdery.reap(new TextEncoder().encode(nativeKeriIcpFixtureQb64())).serder;
+  const txt =
+    serdery.reap(new TextEncoder().encode(nativeKeriIcpFixtureQb64())).serder;
   const bny = serdery.reap(nativeKeriIcpFixtureQb2()).serder;
 
   assertEquals(txt instanceof SerderKERI, true);
@@ -142,7 +219,13 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC map-body `acm` round-tri
   // while section fields like `s` and `a` may themselves be compactable nested
   // blocks carried as CESR-native map groups.
   const sad = {
-    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    v: versify({
+      proto: "ACDC",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: 0,
+    }),
     t: "acm",
     d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
     u: "",
@@ -166,7 +249,13 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC map-body `acm` round-tri
   assertEquals(parsed.ilk, "acm");
   assertEquals(parsed.ked, {
     ...sad,
-    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+    v: versify({
+      proto: "ACDC",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: raw.length,
+    }),
   });
 });
 
@@ -175,7 +264,13 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: KERI v2 qry round-trips route
   // route/query message with datetime, path, return-route, and native mapper
   // payload fields.
   const sad = {
-    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    v: versify({
+      proto: "KERI",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: 0,
+    }),
     t: "qry",
     d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
     i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
@@ -197,15 +292,67 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: KERI v2 qry round-trips route
   assertEquals(parsed.ilk, "qry");
   assertEquals(parsed.ked, {
     ...sad,
-    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+    v: versify({
+      proto: "KERI",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: raw.length,
+    }),
   });
+});
+
+Deno.test("native parity: KERIpy qry/rpy/xip/exn fixtures round-trip byte-for-byte through SerderKERI and native dump", () => {
+  // These are the tail-parity fixtures that matter for route-heavy native
+  // messages. They prove our `Pather`-backed route encoding now matches the
+  // reference bytes KERIpy emits instead of only preserving semantic shape.
+  const fixtures = [
+    ["qry", KERIPY_NATIVE_V2_QRY_FIX_BODY],
+    ["rpy", KERIPY_NATIVE_V2_RPY_FIX_BODY],
+    ["xip", KERIPY_NATIVE_V2_XIP_FIX_BODY],
+    ["exn", KERIPY_NATIVE_V2_EXN_FIX_BODY],
+  ] as const;
+
+  for (const [ilk, fixture] of fixtures) {
+    const serder = new SerderKERI({
+      sad: keriV2FixtureSad(ilk),
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      makify: true,
+      verify: true,
+      ilk,
+    });
+
+    assertEquals(new TextDecoder().decode(serder.raw), fixture);
+    assertEquals(
+      new TextDecoder().decode(dumpCesrNativeSad(serder.ked ?? {})),
+      fixture,
+    );
+    assertEquals(
+      parseCesrNativeKed(new TextEncoder().encode(fixture), {
+        proto: "KERI",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "CESR",
+        size: fixture.length,
+      }).ked,
+      serder.ked,
+    );
+  }
 });
 
 Deno.test("parseCesrNativeKed + dumpCesrNativeSad: KERI v2 xip round-trips nonce, route, and mapper fields", () => {
   // This is the nonce-bearing KERI native case. It proves the matrix handles
   // KERI `u` as a qualified nonce token, not the ACDC empty-or-value rule.
   const sad = {
-    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    v: versify({
+      proto: "KERI",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: 0,
+    }),
     t: "xip",
     d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
     u: KERIPY_MATTER_VECTORS.noncerSalt128,
@@ -229,7 +376,13 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: KERI v2 xip round-trips nonce
   assertEquals(parsed.ilk, "xip");
   assertEquals(parsed.ked, {
     ...sad,
-    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+    v: versify({
+      proto: "KERI",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: raw.length,
+    }),
   });
 });
 
@@ -239,7 +392,13 @@ Deno.test("dumpCesrNativeSad: non-native-only KERI ilks are rejected by the nati
   assertThrows(
     () =>
       dumpCesrNativeSad({
-        v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+        v: versify({
+          proto: "KERI",
+          pvrsn: Vrsn_2_0,
+          gvrsn: Vrsn_2_0,
+          kind: "CESR",
+          size: 0,
+        }),
         t: "vcp",
         d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
       }),
@@ -251,7 +410,13 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC fixed-body `act` round-t
   // Fixed-body ACDC ilks put the ilk in a fixed slot after the verser, then
   // serialize the remaining fields in protocol order without explicit labels.
   const sad = {
-    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    v: versify({
+      proto: "ACDC",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: 0,
+    }),
     t: "act",
     d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
     u: "",
@@ -275,6 +440,12 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC fixed-body `act` round-t
   assertEquals(parsed.ilk, "act");
   assertEquals(parsed.ked, {
     ...sad,
-    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+    v: versify({
+      proto: "ACDC",
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind: "CESR",
+      size: raw.length,
+    }),
   });
 });

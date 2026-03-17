@@ -38,7 +38,7 @@ interface DecimerInit extends MatterInit {
  */
 export class Decimer extends Matter {
   constructor(init: Matter | DecimerInit) {
-    const matter = (
+    const matterInit = (
         !(init instanceof Matter)
         && !init.raw
         && !init.qb64
@@ -51,11 +51,9 @@ export class Decimer extends Matter {
         raw: rawifyDns(init.dns ?? `${init.decimal}`),
         code: init.code ?? "4H",
       }
-      : init instanceof Matter
-      ? init
-      : new Matter(init);
+      : init;
 
-    super(matter);
+    super(matterInit);
 
     if (!DECIMAL_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected decimal code, got ${this.code}`);

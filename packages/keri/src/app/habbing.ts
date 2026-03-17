@@ -1,5 +1,14 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { DigDex, DIGEST_CODES, Matter, PREFIX_CODES, SerderKERI } from "../../../cesr/mod.ts";
+import {
+  Cigar,
+  DigDex,
+  DIGEST_CODES,
+  parseMatter,
+  PREFIX_CODES,
+  SerderKERI,
+  Siger,
+} from "../../../cesr/mod.ts";
+import { b } from "../../../cesr/mod.ts";
 import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
@@ -197,7 +206,7 @@ function resolveInceptiveSaidCodes(
 
   if (typeof ked.i === "string" && ked.i.length > 0) {
     try {
-      saids.i = new Matter({ qb64: ked.i }).code;
+      saids.i = parseMatter(b(ked.i), "txt").code;
     } catch {
       // Match KERIpy priority: invalid existing values do not override defaults.
     }
@@ -309,7 +318,9 @@ export class Hab {
     const pre = serder.pre;
     const said = serder.said;
     if (!pre || !said) {
-      throw new Error("Expected inception serder to provide string pre and said.");
+      throw new Error(
+        "Expected inception serder to provide string pre and said.",
+      );
     }
     const raw = serder.raw;
 
@@ -356,7 +367,9 @@ export class Hab {
   }
 
   /** Produces signatures with this habitat's current signing keys. */
-  sign(ser: Uint8Array, indexed = false): string[] {
+  sign(ser: Uint8Array, indexed: true): Siger[];
+  sign(ser: Uint8Array, indexed?: false): Cigar[];
+  sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
     if (!this.kever && this.pre) {
       this.refreshKever();
     }
@@ -408,7 +421,7 @@ export class Signator {
   sign(ser: Uint8Array): string {
     const sig = this.hab.sign(ser, false)[0];
     if (!sig) throw new Error("Unable to sign");
-    return sig;
+    return sig.qb64;
   }
 
   /** Verifies by recomputing the expected deterministic signature. */
@@ -540,7 +553,7 @@ export class Habery {
 export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
   const branSalt = branToSaltQb64(bran);
   const signer = saltySigner(branSalt, "", false, "low", false);
-  return { seed: signer.seedQb64, aeid: signer.verferQb64 };
+  return { seed: signer.signer.qb64, aeid: signer.verfer.qb64 };
 }
 
 /**
@@ -586,8 +599,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     readonly,
   });
 
-  const cf = providedCf
-    ?? (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf ??
+    (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,

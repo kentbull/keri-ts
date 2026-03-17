@@ -1,4 +1,7 @@
-import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
+import {
+  decode as decodeMsgpack,
+  encode as encodeMsgpack,
+} from "@msgpack/msgpack";
 import { b, codeB2ToB64, codeB64ToB2, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import {
@@ -31,6 +34,7 @@ import { Diger } from "./diger.ts";
 import { parseLabeler } from "./labeler.ts";
 import { Matter, parseMatter } from "./matter.ts";
 import type { Primitive } from "./primitive.ts";
+import { Texter } from "./texter.ts";
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 type SadMap = Record<string, unknown>;
@@ -134,7 +138,9 @@ function cloneValue<T>(value: T): T {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, cloneValue(v)]),
+      Object.entries(value as Record<string, unknown>).map((
+        [k, v],
+      ) => [k, cloneValue(v)]),
     ) as T;
   }
   return value;
@@ -186,8 +192,8 @@ function parseCounterProbe(
         throw error;
       }
       if (
-        error instanceof UnknownCodeError
-        || error instanceof DeserializeError
+        error instanceof UnknownCodeError ||
+        error instanceof DeserializeError
       ) {
         continue;
       }
@@ -210,8 +216,8 @@ function parseLabelProbe(
       throw error;
     }
     if (
-      error instanceof UnknownCodeError
-      || error instanceof DeserializeError
+      error instanceof UnknownCodeError ||
+      error instanceof DeserializeError
     ) {
       return null;
     }
@@ -365,9 +371,9 @@ export function parseMapperBodySyntax(
     };
   } catch (error) {
     if (
-      error instanceof ShortageError
-      || error instanceof UnknownCodeError
-      || error instanceof DeserializeError
+      error instanceof ShortageError ||
+      error instanceof UnknownCodeError ||
+      error instanceof DeserializeError
     ) {
       throw new SyntaxParseError(
         `Map-body syntax parse failed: ${error.message}`,
@@ -396,24 +402,35 @@ function encodeTag(text: string): string {
   if (!code) {
     throw new SerializeError(`Unsupported mapper tag length=${text.length}`);
   }
-  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9 ? "_" : "";
+  const pad =
+    code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
+      ? "_"
+      : "";
   return `${code}${pad}${text}`;
 }
 
 /** Encode base64-safe text through the compact StrB64/Bexter families. */
 function encodeBext(text: string): string {
   const rem = text.length % 4;
-  const code = rem === 0 ? LabelDex.StrB64_L0 : rem === 1 ? LabelDex.StrB64_L1 : LabelDex.StrB64_L2;
+  const code = rem === 0
+    ? LabelDex.StrB64_L0
+    : rem === 1
+    ? LabelDex.StrB64_L1
+    : LabelDex.StrB64_L2;
   const raw = Bexter.rawify(text);
-  return new Matter({ code, raw }).qb64;
+  return new Bexter({ code, raw }).qb64;
 }
 
 /** Encode arbitrary UTF-8 text through CESR bytes-label families. */
 function encodeBytes(text: string): string {
   const raw = b(text);
   const rem = raw.length % 3;
-  const code = rem === 0 ? LabelDex.Bytes_L0 : rem === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2;
-  return new Matter({ code, raw }).qb64;
+  const code = rem === 0
+    ? LabelDex.Bytes_L0
+    : rem === 1
+    ? LabelDex.Bytes_L1
+    : LabelDex.Bytes_L2;
+  return new Texter({ code, raw }).qb64;
 }
 
 /**
@@ -446,7 +463,10 @@ function serializeValue(
     return new Matter({ code: MtrDex.Null, raw: new Uint8Array() }).qb64;
   }
   if (typeof value === "boolean") {
-    return new Matter({ code: value ? MtrDex.Yes : MtrDex.No, raw: new Uint8Array() }).qb64;
+    return new Matter({
+      code: value ? MtrDex.Yes : MtrDex.No,
+      raw: new Uint8Array(),
+    }).qb64;
   }
   if (typeof value === "number") {
     return new Decimer({ decimal: value }).qb64;
@@ -456,7 +476,7 @@ function serializeValue(
   }
   if (typeof value === "string") {
     try {
-      const primitive = new Matter({ qb64: value });
+      const primitive = parseMatter(b(value), "txt");
       if (primitive.qb64.length === value.length) {
         const escape = ESCAPE_CODES.has(primitive.code)
           ? new Matter({ code: MtrDex.Escape, raw: new Uint8Array() }).qb64
@@ -469,7 +489,7 @@ function serializeValue(
     return encodeText(value);
   }
   if (value instanceof Uint8Array) {
-    return new Matter({
+    return new Texter({
       code: value.length % 3 === 0
         ? LabelDex.Bytes_L0
         : value.length % 3 === 1
@@ -479,7 +499,9 @@ function serializeValue(
     }).qb64;
   }
   if (Array.isArray(value)) {
-    const payload = value.map((entry) => serializeValue(entry, strict)).join("");
+    const payload = value.map((entry) => serializeValue(entry, strict)).join(
+      "",
+    );
     const code = payload.length / 4 < 64 ** 2
       ? CtrDexV2.GenericListGroup
       : CtrDexV2.BigGenericListGroup;
@@ -487,7 +509,9 @@ function serializeValue(
   }
   if (value && typeof value === "object") {
     const payload = Object.entries(value as SadMap).map(([label, entry]) =>
-      `${strict ? encodeText(label) : encodeText(label)}${serializeValue(entry, strict)}`
+      `${strict ? encodeText(label) : encodeText(label)}${
+        serializeValue(entry, strict)
+      }`
     ).join("");
     const code = payload.length / 4 < 64 ** 2
       ? CtrDexV2.GenericMapGroup
@@ -536,10 +560,10 @@ function deserializeValue(
     }
   }
 
-  const matter = new Matter({ qb64b: raw });
+  const matter = parseMatter(raw, "txt");
   let offset = matter.fullSize;
   if (matter.code === MtrDex.Escape) {
-    const escaped = new Matter({ qb64b: raw.slice(offset) });
+    const escaped = parseMatter(raw.slice(offset), "txt");
     return { value: escaped.qb64, nextOffset: offset + escaped.fullSize };
   }
   if (matter.code === MtrDex.Null) {
@@ -555,7 +579,10 @@ function deserializeValue(
     return { value: new Decimer(matter).decimal, nextOffset: offset };
   }
   if (LABELER_CODES.has(matter.code) || BEXTER_CODES.has(matter.code)) {
-    return { value: parseLabeler(b(matter.qb64), "txt").text, nextOffset: offset };
+    return {
+      value: parseLabeler(b(matter.qb64), "txt").text,
+      nextOffset: offset,
+    };
   }
   return { value: matter.qb64, nextOffset: offset };
 }
@@ -578,7 +605,8 @@ function buildFieldProjection(
     return {
       label,
       primitive,
-      isCounter: AGGOR_LIST_CODES.has(primitive.code) || AGGOR_MAP_CODES.has(primitive.code),
+      isCounter: AGGOR_LIST_CODES.has(primitive.code) ||
+        AGGOR_MAP_CODES.has(primitive.code),
       children,
     };
   });
@@ -673,7 +701,7 @@ export class Mapper {
         for (const [label, code] of Object.entries(this.saids)) {
           if (!(label in dummy)) continue;
           try {
-            const valueCode = new Matter({ qb64: String(dummy[label]) }).code;
+            const valueCode = parseMatter(b(String(dummy[label])), "txt").code;
             if (valueCode) {
               this.saids[label] = valueCode;
             }
@@ -682,16 +710,22 @@ export class Mapper {
           }
           const sizage = MATTER_SIZES.get(this.saids[label]);
           if (!sizage?.fs) {
-            throw new SerializeError(`Unsupported mapper SAID code=${this.saids[label]}`);
+            throw new SerializeError(
+              `Unsupported mapper SAID code=${this.saids[label]}`,
+            );
           }
           dummy[label] = "#".repeat(sizage.fs);
         }
         const dummiedRaw = this.kind === "CESR"
           ? Mapper.serializeCesrMap(dummy, this.strict, true, this.saids)
-          : Mapper.serializeNonNativeMap(dummy, this.kind as Exclude<Kind, "CESR">);
+          : Mapper.serializeNonNativeMap(
+            dummy,
+            this.kind as Exclude<Kind, "CESR">,
+          );
         for (const [label, code] of Object.entries(this.saids)) {
           if (!(label in mad)) continue;
-          mad[label] = new Matter({ code, raw: Diger.digest(dummiedRaw, code) }).qb64;
+          mad[label] =
+            new Diger({ code, raw: Diger.digest(dummiedRaw, code) }).qb64;
         }
       }
 
@@ -700,7 +734,11 @@ export class Mapper {
         // readable `fields` projection directly from semantic data instead of
         // re-parsing the raw bytes we just emitted.
         this.raw = Mapper.serializeCesrMap(mad, this.strict);
-        const counter = parseCounter(this.raw, init.version ?? { major: 2, minor: 0 }, "txt");
+        const counter = parseCounter(
+          this.raw,
+          init.version ?? { major: 2, minor: 0 },
+          "txt",
+        );
         this.code = counter.code;
         this.count = counter.count;
         this.fullSize = counter.fullSize;
@@ -756,7 +794,9 @@ export class Mapper {
     // point is to reconstruct semantic values from the compact map encoding.
     const counter = parseCounter(raw, version, "txt");
     if (!isMapGroupCode(counter.code)) {
-      throw new UnknownCodeError(`Expected map-body/group counter, got ${counter.code}`);
+      throw new UnknownCodeError(
+        `Expected map-body/group counter, got ${counter.code}`,
+      );
     }
     const totalSize = counter.fullSize + counter.count * 4;
     const payload = raw.slice(counter.fullSize, totalSize);
@@ -809,7 +849,9 @@ export class Mapper {
         ? (() => {
           const sizage = MATTER_SIZES.get(saids[label]);
           if (!sizage?.fs) {
-            throw new SerializeError(`Unsupported mapper SAID code=${saids[label]}`);
+            throw new SerializeError(
+              `Unsupported mapper SAID code=${saids[label]}`,
+            );
           }
           return "#".repeat(sizage.fs);
         })()
@@ -819,7 +861,9 @@ export class Mapper {
     const code = payload.length / 4 < 64 ** 2
       ? CtrDexV2.GenericMapGroup
       : CtrDexV2.BigGenericMapGroup;
-    return b(`${new Counter({ code, count: payload.length / 4 }).qb64}${payload}`);
+    return b(
+      `${new Counter({ code, count: payload.length / 4 }).qb64}${payload}`,
+    );
   }
 
   static serializeNonNativeMap(
@@ -851,7 +895,9 @@ export class Mapper {
     if (kind === "MGPK") {
       return decodeMsgpack(raw) as SadMap;
     }
-    throw new DeserializeError(`Unsupported mapper deserialization kind=${kind}`);
+    throw new DeserializeError(
+      `Unsupported mapper deserialization kind=${kind}`,
+    );
   }
 
   get mad(): SadMap {
@@ -870,7 +916,9 @@ export class Mapper {
 
   get qb2(): Uint8Array {
     if (this.kind !== "CESR") {
-      throw new SerializeError(`Binary domain undefined for non-native kind=${this.kind}`);
+      throw new SerializeError(
+        `Binary domain undefined for non-native kind=${this.kind}`,
+      );
     }
     return codeB64ToB2(this.qb64);
   }

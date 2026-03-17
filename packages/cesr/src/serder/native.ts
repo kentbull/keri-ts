@@ -2,7 +2,12 @@ import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
-import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
+import {
+  Aggor,
+  isAggorListCode,
+  isAggorMapCode,
+  parseAggor,
+} from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
 import {
   BEXTER_CODES,
@@ -21,19 +26,28 @@ import { Dater } from "../primitives/dater.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { Labeler, parseLabeler } from "../primitives/labeler.ts";
 import { Mapper } from "../primitives/mapper.ts";
-import { Matter } from "../primitives/matter.ts";
+import { parseMatter } from "../primitives/matter.ts";
 import { parseNoncer } from "../primitives/noncer.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
-import { parsePather } from "../primitives/pather.ts";
+import { makePather, parsePather } from "../primitives/pather.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
-import { isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
+import {
+  isCounterGroupLike,
+  isPrimitiveTuple,
+} from "../primitives/primitive.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Tholder } from "../primitives/tholder.ts";
+import { Texter } from "../primitives/texter.ts";
 import { parseTraitor } from "../primitives/traitor.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { Kinds, type Protocol, Protocols, Vrsn_2_0 } from "../tables/versions.ts";
+import {
+  Kinds,
+  type Protocol,
+  Protocols,
+  Vrsn_2_0,
+} from "../tables/versions.ts";
 import { versify } from "./smell.ts";
 
 type SadMap = Record<string, unknown>;
@@ -148,23 +162,34 @@ function encodeTag(text: string): string {
   if (!code) {
     throw new SerializeError(`Unsupported tag length=${text.length}`);
   }
-  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9 ? "_" : "";
+  const pad =
+    code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
+      ? "_"
+      : "";
   return `${code}${pad}${text}`;
 }
 
 /** Emit base64-safe text through the StrB64/Bexter family. */
 function encodeBext(text: string): string {
   const rem = text.length % 4;
-  const code = rem === 0 ? LabelDex.StrB64_L0 : rem === 1 ? LabelDex.StrB64_L1 : LabelDex.StrB64_L2;
-  return new Matter({ code, raw: Bexter.rawify(text) }).qb64;
+  const code = rem === 0
+    ? LabelDex.StrB64_L0
+    : rem === 1
+    ? LabelDex.StrB64_L1
+    : LabelDex.StrB64_L2;
+  return new Bexter({ code, raw: Bexter.rawify(text) }).qb64;
 }
 
 /** Emit arbitrary UTF-8 text through the bytes label family. */
 function encodeBytes(text: string): string {
   const raw = b(text);
   const rem = raw.length % 3;
-  const code = rem === 0 ? LabelDex.Bytes_L0 : rem === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2;
-  return new Matter({ code, raw }).qb64;
+  const code = rem === 0
+    ? LabelDex.Bytes_L0
+    : rem === 1
+    ? LabelDex.Bytes_L1
+    : LabelDex.Bytes_L2;
+  return new Texter({ code, raw }).qb64;
 }
 
 /**
@@ -187,10 +212,14 @@ function encodeLabel(text: string): string {
 }
 
 /** Encode protocol + version metadata into one native verser token. */
-function encodeVerser(proto: Protocol, pvrsn: Versionage, gvrsn: Versionage | null): string {
-  const payload = `${proto}${intToB64(pvrsn.major, 1)}${intToB64(pvrsn.minor, 2)}${
-    gvrsn ? `${intToB64(gvrsn.major, 1)}${intToB64(gvrsn.minor, 2)}` : ""
-  }`;
+function encodeVerser(
+  proto: Protocol,
+  pvrsn: Versionage,
+  gvrsn: Versionage | null,
+): string {
+  const payload = `${proto}${intToB64(pvrsn.major, 1)}${
+    intToB64(pvrsn.minor, 2)
+  }${gvrsn ? `${intToB64(gvrsn.major, 1)}${intToB64(gvrsn.minor, 2)}` : ""}`;
   return encodeTag(payload);
 }
 
@@ -230,7 +259,7 @@ function encodeNumber(value: string | number | bigint): string {
   }
   const padded = new Uint8Array(entry.rawSize);
   padded.set(raw, entry.rawSize - raw.length);
-  return new Matter({ code: entry.code, raw: padded }).qb64;
+  return new NumberPrimitive({ code: entry.code, raw: padded }).qb64;
 }
 
 /** KERI thresholds are either numeric hex strings or weighted Bexter expressions. */
@@ -252,24 +281,40 @@ function encodeDate(iso8601: string): string {
   }`;
 }
 
-/** Encode route/path values as native label/text tokens. */
+/**
+ * Encode semantic route/path strings using the same Pather rules as KERIpy.
+ *
+ * Important nuance:
+ * KERI route fields are not generic labels. Even when the semantic value is a
+ * simple string like `ksn`, KERIpy encodes it through `Pather(..., relative=True,
+ * pathive=False)` so the result may be a compact StrB64 path token such as
+ * `4AABAksn` instead of a labeler/text token.
+ */
 function encodePath(path: string): string {
-  return encodeLabel(path);
+  return makePather(path, { relative: true, pathive: false }).qb64;
 }
 
 /** Enclose already-encoded members inside one native generic-list group. */
 function encodeList(entries: string[], gvrsn: Versionage | null): string {
   const frame = entries.join("");
   const count = frame.length / 4;
-  const code = count < 64 ** 2 ? CtrDexV2.GenericListGroup : CtrDexV2.BigGenericListGroup;
-  return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
+  const code = count < 64 ** 2
+    ? CtrDexV2.GenericListGroup
+    : CtrDexV2.BigGenericListGroup;
+  return `${
+    new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64
+  }${frame}`;
 }
 
 /**
  * Enclose one semantic field map inside either a top-level body-group or a
  * nested generic map-group.
  */
-function encodeMap(map: SadMap, gvrsn: Versionage | null, topLevel = false): string {
+function encodeMap(
+  map: SadMap,
+  gvrsn: Versionage | null,
+  topLevel = false,
+): string {
   let frame = "";
   for (const [label, value] of Object.entries(map)) {
     frame += encodeLabel(label);
@@ -281,7 +326,9 @@ function encodeMap(map: SadMap, gvrsn: Versionage | null, topLevel = false): str
     : count < 64 ** 2
     ? CtrDexV2.GenericMapGroup
     : CtrDexV2.BigGenericMapGroup;
-  return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
+  return `${
+    new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64
+  }${frame}`;
 }
 
 /**
@@ -302,15 +349,15 @@ function encodeValue(
       return LabelDex.Empty;
     }
     try {
-      const primitive = new Matter({ qb64: value });
+      const primitive = parseMatter(b(value), "txt");
       if (
-        DIGEST_CODES.has(primitive.code)
-        || PREFIX_CODES.has(primitive.code)
-        || NON_DIGEST_PREFIX_CODES.has(primitive.code)
-        || NONCE_CODES.has(primitive.code)
-        || BEXTER_CODES.has(primitive.code)
-        || TAG_CODES.has(primitive.code)
-        || DATER_CODES.has(primitive.code)
+        DIGEST_CODES.has(primitive.code) ||
+        PREFIX_CODES.has(primitive.code) ||
+        NON_DIGEST_PREFIX_CODES.has(primitive.code) ||
+        NONCE_CODES.has(primitive.code) ||
+        BEXTER_CODES.has(primitive.code) ||
+        TAG_CODES.has(primitive.code) ||
+        DATER_CODES.has(primitive.code)
       ) {
         return primitive.qb64;
       }
@@ -368,10 +415,16 @@ function decodeEntry(entry: GroupEntry, gvrsn: Versionage): unknown {
       return entry.items.map((item) => decodeEntry(item, gvrsn));
     }
     if (isAggorMapCode(entry.code)) {
-      const aggor = parseAggor(b(Structor.fromGroup(entry).qb64g), gvrsn, "txt");
+      const aggor = parseAggor(
+        b(Structor.fromGroup(entry).qb64g),
+        gvrsn,
+        "txt",
+      );
       const fields = aggor.mapFields ?? [];
       return Object.fromEntries(
-        fields.map((field) => [field.label ?? "", decodeMapperField(field, gvrsn)]),
+        fields.map((
+          field,
+        ) => [field.label ?? "", decodeMapperField(field, gvrsn)]),
       );
     }
     return Structor.fromGroup(entry).qb64g;
@@ -379,9 +432,9 @@ function decodeEntry(entry: GroupEntry, gvrsn: Versionage): unknown {
 
   const matter = entry;
   if (
-    DIGEST_CODES.has(matter.code)
-    || PREFIX_CODES.has(matter.code)
-    || NON_DIGEST_PREFIX_CODES.has(matter.code)
+    DIGEST_CODES.has(matter.code) ||
+    PREFIX_CODES.has(matter.code) ||
+    NON_DIGEST_PREFIX_CODES.has(matter.code)
   ) {
     return matter.qb64;
   }
@@ -424,7 +477,9 @@ function decodeMapperField(
 ): unknown {
   if (field.children) {
     return Object.fromEntries(
-      field.children.map((child) => [child.label ?? "", decodeMapperField(child as never, gvrsn)]),
+      field.children.map((
+        child,
+      ) => [child.label ?? "", decodeMapperField(child as never, gvrsn)]),
     );
   }
   return decodeEntry(field.primitive, gvrsn);
@@ -440,12 +495,14 @@ function decodeMapperField(
 function decodeList(raw: Uint8Array, gvrsn: Versionage): unknown[] {
   const counter = parseCounter(raw, gvrsn, "txt");
   if (
-    counter.code !== CtrDexV2.GenericListGroup
-    && counter.code !== CtrDexV2.BigGenericListGroup
+    counter.code !== CtrDexV2.GenericListGroup &&
+    counter.code !== CtrDexV2.BigGenericListGroup
   ) {
     throw new DeserializeError(`Expected list group, got ${counter.code}`);
   }
-  const payload = t(raw.slice(counter.fullSize, counter.fullSize + counter.count * 4));
+  const payload = t(
+    raw.slice(counter.fullSize, counter.fullSize + counter.count * 4),
+  );
   const out: unknown[] = [];
   let offset = 0;
   while (offset < payload.length) {
@@ -456,7 +513,7 @@ function decodeList(raw: Uint8Array, gvrsn: Versionage): unknown[] {
       offset += parsed.consumed;
       continue;
     } catch {
-      const matter = new Matter({ qb64b: chunk });
+      const matter = parseMatter(chunk, "txt");
       out.push(decodeEntry(matter, gvrsn));
       offset += matter.fullSize;
     }
@@ -479,7 +536,7 @@ function parseQb64Field(
   raw: Uint8Array,
   offset: number,
 ): ParsedNativeField<string> {
-  const matter = new Matter({ qb64b: raw.slice(offset) });
+  const matter = parseMatter(raw.slice(offset), "txt");
   return {
     value: matter.qb64,
     nextOffset: offset + matter.fullSize,
@@ -501,7 +558,7 @@ function parseNumericHexField(
   raw: Uint8Array,
   offset: number,
 ): ParsedNativeField<string> {
-  const matter = new NumberPrimitive(new Matter({ qb64b: raw.slice(offset) }));
+  const matter = new NumberPrimitive({ qb64b: raw.slice(offset) });
   return {
     value: matter.numh,
     nextOffset: offset + matter.fullSize,
@@ -522,7 +579,7 @@ function parseThresholdSithField(
   raw: Uint8Array,
   offset: number,
 ): ParsedNativeField<string> {
-  const matter = new Tholder(new Matter({ qb64b: raw.slice(offset) }));
+  const matter = new Tholder({ qb64b: raw.slice(offset) });
   return {
     value: matter.sith,
     nextOffset: offset + matter.fullSize,
@@ -551,7 +608,7 @@ function parseQb64ListField(
   const items: string[] = [];
   let inner = 0;
   while (inner < payload.length) {
-    const matter = new Matter({ qb64: payload.slice(inner) });
+    const matter = parseMatter(b(payload.slice(inner)), "txt");
     items.push(matter.qb64);
     inner += matter.fullSize;
   }
@@ -777,7 +834,12 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "ixn"),
-    withKinds(Protocols.keri, "fixed", ["d", "i", "s", "p", "a"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "i", "s", "p", "a"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "dip"),
@@ -819,19 +881,39 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "qry"),
-    withKinds(Protocols.keri, "fixed", ["d", "dt", "r", "rr", "q"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "dt", "r", "rr", "q"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "rpy"),
-    withKinds(Protocols.keri, "fixed", ["d", "dt", "r", "a"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "dt", "r", "a"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "pro"),
-    withKinds(Protocols.keri, "fixed", ["d", "dt", "r", "rr", "q"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "dt", "r", "rr", "q"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "bar"),
-    withKinds(Protocols.keri, "fixed", ["d", "dt", "r", "a"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "dt", "r", "a"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "exn"),
@@ -871,7 +953,12 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "ixn"),
-    withKinds(Protocols.keri, "fixed", ["d", "i", "s", "p", "a"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "i", "s", "p", "a"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "dip"),
@@ -914,19 +1001,39 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "qry"),
-    withKinds(Protocols.keri, "fixed", ["d", "i", "dt", "r", "rr", "q"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "i", "dt", "r", "rr", "q"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "rpy"),
-    withKinds(Protocols.keri, "fixed", ["d", "i", "dt", "r", "a"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "i", "dt", "r", "a"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "pro"),
-    withKinds(Protocols.keri, "fixed", ["d", "i", "dt", "r", "rr", "q"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "i", "dt", "r", "rr", "q"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "bar"),
-    withKinds(Protocols.keri, "fixed", ["d", "i", "dt", "r", "a"], KERI_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.keri,
+      "fixed",
+      ["d", "i", "dt", "r", "a"],
+      KERI_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "xip"),
@@ -1054,11 +1161,21 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
   ],
   [
     nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "rip"),
-    withKinds(Protocols.acdc, "fixed", ["d", "u", "i", "n", "dt"], ACDC_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.acdc,
+      "fixed",
+      ["d", "u", "i", "n", "dt"],
+      ACDC_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "bup"),
-    withKinds(Protocols.acdc, "fixed", ["d", "rd", "n", "p", "dt", "b"], ACDC_NATIVE_FAMILIES),
+    withKinds(
+      Protocols.acdc,
+      "fixed",
+      ["d", "rd", "n", "p", "dt", "b"],
+      ACDC_NATIVE_FAMILIES,
+    ),
   ],
   [
     nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "upd"),
@@ -1080,7 +1197,9 @@ function getNativeLayout(
   const layout = NATIVE_LAYOUTS.get(nativeLayoutKey(proto, version, ilk));
   if (!layout) {
     throw new DeserializeError(
-      `Unsupported ${proto} native ilk=${String(ilk)} version=${version.major}.${version.minor}`,
+      `Unsupported ${proto} native ilk=${
+        String(ilk)
+      } version=${version.major}.${version.minor}`,
     );
   }
   return layout;
@@ -1127,16 +1246,19 @@ function parseNativeField(
     return parseTraitListField(raw, offset, gvrsn);
   }
   if (spec.kind === "datetime") {
-    const date = new Dater(new Matter({ qb64b: raw.slice(offset) }));
+    const date = new Dater({ qb64b: raw.slice(offset) });
     return {
       value: date.iso8601,
       nextOffset: offset + date.fullSize,
     };
   }
   if (spec.kind === "route") {
-    const pather = parseLabeler(raw.slice(offset), "txt");
+    // Route fields use Pather semantics, not generic labels. That means a
+    // native token like `4AAEcredential-issue` must round-trip back to the
+    // slash-delimited semantic route `credential/issue`.
+    const pather = parsePather(raw.slice(offset), "txt");
     return {
-      value: pather.text,
+      value: pather.path,
       nextOffset: offset + pather.fullSize,
     };
   }
@@ -1146,14 +1268,14 @@ function parseNativeField(
   if (spec.kind === "seal-list-or-mapper") {
     const counter = parseCounter(raw.slice(offset), gvrsn, "txt");
     if (
-      counter.code === CtrDexV2.GenericMapGroup
-      || counter.code === CtrDexV2.BigGenericMapGroup
+      counter.code === CtrDexV2.GenericMapGroup ||
+      counter.code === CtrDexV2.BigGenericMapGroup
     ) {
       return parseMapperField(raw, offset, gvrsn, spec.strict ?? true);
     }
     if (
-      counter.code === CtrDexV2.GenericListGroup
-      || counter.code === CtrDexV2.BigGenericListGroup
+      counter.code === CtrDexV2.GenericListGroup ||
+      counter.code === CtrDexV2.BigGenericListGroup
     ) {
       return parseNestedSealOrDataListField(raw, offset, gvrsn);
     }
@@ -1204,40 +1326,52 @@ function encodeNativeFieldValue(
 ): string {
   if (spec.kind === "said" || spec.kind === "aid" || spec.kind === "noncer") {
     if (typeof value !== "string" || value.length === 0) {
-      throw new SerializeError(`Expected non-empty qb64 value for native field ${label}`);
+      throw new SerializeError(
+        `Expected non-empty qb64 value for native field ${label}`,
+      );
     }
     return value;
   }
   if (spec.kind === "nonce-or-empty") {
     if (typeof value !== "string") {
-      throw new SerializeError(`Expected string nonce value for native field ${label}`);
+      throw new SerializeError(
+        `Expected string nonce value for native field ${label}`,
+      );
     }
     return value.length === 0 ? LabelDex.Empty : value;
   }
   if (spec.kind === "number") {
     if (
-      typeof value !== "string"
-      && typeof value !== "number"
-      && typeof value !== "bigint"
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "bigint"
     ) {
-      throw new SerializeError(`Expected numeric value for native field ${label}`);
+      throw new SerializeError(
+        `Expected numeric value for native field ${label}`,
+      );
     }
     return encodeNumber(value);
   }
   if (spec.kind === "threshold") {
     if (typeof value !== "string" && typeof value !== "number") {
-      throw new SerializeError(`Expected threshold value for native field ${label}`);
+      throw new SerializeError(
+        `Expected threshold value for native field ${label}`,
+      );
     }
     return encodeThreshold(value);
   }
   if (spec.kind === "primitive-list") {
     if (!Array.isArray(value)) {
-      throw new SerializeError(`Expected primitive list for native field ${label}`);
+      throw new SerializeError(
+        `Expected primitive list for native field ${label}`,
+      );
     }
     return encodeList(
       value.map((entry) => {
         if (typeof entry !== "string" || entry.length === 0) {
-          throw new SerializeError(`Expected qb64 list member for native field ${label}`);
+          throw new SerializeError(
+            `Expected qb64 list member for native field ${label}`,
+          );
         }
         return entry;
       }),
@@ -1252,13 +1386,17 @@ function encodeNativeFieldValue(
   }
   if (spec.kind === "datetime") {
     if (typeof value !== "string") {
-      throw new SerializeError(`Expected ISO-8601 string for native field ${label}`);
+      throw new SerializeError(
+        `Expected ISO-8601 string for native field ${label}`,
+      );
     }
     return encodeDate(value);
   }
   if (spec.kind === "route") {
     if (typeof value !== "string") {
-      throw new SerializeError(`Expected route/path string for native field ${label}`);
+      throw new SerializeError(
+        `Expected route/path string for native field ${label}`,
+      );
     }
     return encodePath(value);
   }
@@ -1297,7 +1435,9 @@ function encodeNativeFieldValue(
       }).qb64;
     }
     if (typeof value !== "string" || value.length === 0) {
-      throw new SerializeError(`Expected qb64 or map for native field ${label}`);
+      throw new SerializeError(
+        `Expected qb64 or map for native field ${label}`,
+      );
     }
     return value;
   }
@@ -1311,13 +1451,17 @@ function encodeNativeFieldValue(
       }).qb64g;
     }
     if (typeof value !== "string" || value.length === 0) {
-      throw new SerializeError(`Expected agid string or aggregate list for native field ${label}`);
+      throw new SerializeError(
+        `Expected agid string or aggregate list for native field ${label}`,
+      );
     }
     return value;
   }
   if (spec.kind === "label-text") {
     if (typeof value !== "string") {
-      throw new SerializeError(`Expected text string for native field ${label}`);
+      throw new SerializeError(
+        `Expected text string for native field ${label}`,
+      );
     }
     return encodeLabel(value);
   }
@@ -1374,12 +1518,15 @@ export function parseCesrNativeKed(
   const textRaw = canonicalizeCesrNativeRaw(raw, gvrsn);
   const counter = parseCounter(textRaw, gvrsn, "txt");
   let offset = counter.fullSize;
-  const fixed = counter.code === CtrDexV2.FixBodyGroup || counter.code === CtrDexV2.BigFixBodyGroup;
+  const fixed = counter.code === CtrDexV2.FixBodyGroup ||
+    counter.code === CtrDexV2.BigFixBodyGroup;
 
   if (!fixed) {
     const versionLabel = parseLabeler(textRaw.slice(offset), "txt");
     if (versionLabel.label !== "v") {
-      throw new DeserializeError(`Expected native version label 'v', got ${versionLabel.label}`);
+      throw new DeserializeError(
+        `Expected native version label 'v', got ${versionLabel.label}`,
+      );
     }
     offset += versionLabel.fullSize;
   }
@@ -1411,15 +1558,25 @@ export function parseCesrNativeKed(
   }
 
   let layout = getNativeLayout(smellage.proto, smellage.pvrsn, ilk);
-  if ((fixed && layout.shape !== "fixed") || (!fixed && layout.shape !== "map")) {
+  if (
+    (fixed && layout.shape !== "fixed") || (!fixed && layout.shape !== "map")
+  ) {
     throw new DeserializeError(
-      `${smellage.proto} CESR-native ilk=${String(ilk)} requires ${layout.shape} body shape`,
+      `${smellage.proto} CESR-native ilk=${
+        String(ilk)
+      } requires ${layout.shape} body shape`,
     );
   }
 
   if (fixed) {
     for (const label of layout.labels) {
-      const parsed = parseNativeField(textRaw, offset, label, layout.fields[label], gvrsn);
+      const parsed = parseNativeField(
+        textRaw,
+        offset,
+        label,
+        layout.fields[label],
+        gvrsn,
+      );
       ked[label] = parsed.value;
       offset = parsed.nextOffset;
     }
@@ -1448,7 +1605,9 @@ export function parseCesrNativeKed(
     const spec = layout.fields[label];
     if (!spec) {
       throw new DeserializeError(
-        `Unsupported ${smellage.proto} native label=${label} for ilk=${String(ilk)}`,
+        `Unsupported ${smellage.proto} native label=${label} for ilk=${
+          String(ilk)
+        }`,
       );
     }
     const parsed = parseNativeField(textRaw, offset, label, spec, gvrsn);
@@ -1547,30 +1706,44 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
         }
         const spec = layout.fields[label];
         if (!spec) {
-          throw new SerializeError(`Unsupported native field ${label} for ilk=${String(ilk)}`);
+          throw new SerializeError(
+            `Unsupported native field ${label} for ilk=${String(ilk)}`,
+          );
         }
         frame += encodeLabel(label);
         frame += encodeNativeFieldValue(sad[label], label, spec, version);
       }
-      const code = frame.length / 4 < 64 ** 2 ? CtrDexV2.MapBodyGroup : CtrDexV2.BigMapBodyGroup;
-      return `${new Counter({ code, count: frame.length / 4, version }).qb64}${frame}`;
+      const code = frame.length / 4 < 64 ** 2
+        ? CtrDexV2.MapBodyGroup
+        : CtrDexV2.BigMapBodyGroup;
+      return `${
+        new Counter({ code, count: frame.length / 4, version }).qb64
+      }${frame}`;
     })()
     : (() => {
       if (!ilk) {
-        throw new SerializeError(`Missing ilk for fixed-body native ${smellage.proto} message`);
+        throw new SerializeError(
+          `Missing ilk for fixed-body native ${smellage.proto} message`,
+        );
       }
-      let frame = `${encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)}${
-        encodeTag(ilk)
-      }`;
+      let frame = `${
+        encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)
+      }${encodeTag(ilk)}`;
       for (const label of layout.labels) {
         const spec = layout.fields[label];
         if (!spec) {
-          throw new SerializeError(`Unsupported native field ${label} for ilk=${String(ilk)}`);
+          throw new SerializeError(
+            `Unsupported native field ${label} for ilk=${String(ilk)}`,
+          );
         }
         frame += encodeNativeFieldValue(sad[label], label, spec, version);
       }
-      const code = frame.length / 4 < 64 ** 2 ? CtrDexV2.FixBodyGroup : CtrDexV2.BigFixBodyGroup;
-      return `${new Counter({ code, count: frame.length / 4, version }).qb64}${frame}`;
+      const code = frame.length / 4 < 64 ** 2
+        ? CtrDexV2.FixBodyGroup
+        : CtrDexV2.BigFixBodyGroup;
+      return `${
+        new Counter({ code, count: frame.length / 4, version }).qb64
+      }${frame}`;
     })();
 
   return b(body);

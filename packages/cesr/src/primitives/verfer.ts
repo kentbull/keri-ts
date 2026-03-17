@@ -11,8 +11,7 @@ import { Matter, type MatterInit, parseMatter } from "./matter.ts";
  */
 export class Verfer extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!VERFER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected verification key code, got ${this.code}`,

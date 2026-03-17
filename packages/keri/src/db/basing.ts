@@ -23,7 +23,10 @@ import {
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
-import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
+import {
+  DatabaseNotOpenError,
+  DatabaseOperationError,
+} from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
   BlindedImageTuple,
@@ -1132,18 +1135,30 @@ export class Baser {
   }
 
   /** Insert indexed signatures for one event in `sigs.` if absent. */
-  putSigs(pre: string, said: string, sigs: string[]): boolean {
+  putSigs(
+    pre: string,
+    said: string,
+    sigs: readonly (Siger | string)[],
+  ): boolean {
     return this.sigs.put(
       [pre, said],
-      sigs.map((sig) => new Siger({ qb64: sig })),
+      sigs.map((sig) =>
+        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
+      ),
     );
   }
 
   /** Upsert indexed signatures for one event in `sigs.`. */
-  pinSigs(pre: string, said: string, sigs: string[]): boolean {
+  pinSigs(
+    pre: string,
+    said: string,
+    sigs: readonly (Siger | string)[],
+  ): boolean {
     return this.sigs.pin(
       [pre, said],
-      sigs.map((sig) => new Siger({ qb64: sig })),
+      sigs.map((sig) =>
+        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
+      ),
     );
   }
 

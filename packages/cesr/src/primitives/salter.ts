@@ -10,8 +10,7 @@ import { Matter, type MatterInit } from "./matter.ts";
  */
 export class Salter extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!SALTER_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected salt code, got ${this.code}`);
     }

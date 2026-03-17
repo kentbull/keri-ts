@@ -68,10 +68,15 @@ replay/verification semantics.
 18. DB parity work is not maintainer-complete until the new storage families,
     record contracts, and runtime seams are documented in source with KERIpy
     correspondence and `keri-ts` differences called out explicitly.
-19. For `Baser` and `Keeper`, the canonical named-subdb meaning now lives on
-    the `reopen()` bindings where property name, subkey, wrapper type, and
+19. For `Baser` and `Keeper`, the canonical named-subdb meaning now lives on the
+    `reopen()` bindings where property name, subkey, wrapper type, and
     tuple/value wiring appear together; declaration comments are the shorter
     public-surface mirror.
+20. Local key-management surfaces should return CESR primitives, not qb64-only
+    wrapper records: `Manager.incept()` should expose `Verfer[]`/`Diger[]`,
+    signing should expose `Siger[]`/`Cigar[]`, and DB helpers should accept the
+    narrow primitive types directly instead of rehydrating every signature from
+    strings at the last minute.
 
 ## Scope Checklist
 
@@ -165,8 +170,8 @@ Use this doc for:
   under isolated test homes without trying to re-fetch npm/JSR dependencies.
 - Made the CI side explicit too: the PR stage-gate and `keri-ts` release
   workflows now install KERIpy from
-  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test
-  steps so interop evidence is pinned and reproducible instead of depending on
+  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test steps
+  so interop evidence is pinned and reproducible instead of depending on
   whatever `kli` happens to be preinstalled on the runner.
 - Verified both `interop-gates-harness.test.ts` and `interop-kli-tufa.test.ts`
   run successfully against the installed KERIpy CLI; if the pinned commit
@@ -218,6 +223,19 @@ Use this doc for:
 - `tufa incept` and `tufa export` now read current local identifier state from
   the DB-backed path instead of depending on transient in-memory state and the
   old `${pre}:0` event shortcut.
+
+### 2026-03-17 - Manager/Hab Signing Surface Became Primitive-First
+
+- Removed the bootstrap-era qb64 wrapper compromise from
+  `packages/keri/src/app/keeping.ts`: salty derivation now returns `Signer` +
+  `Verfer`, inception returns `Verfer[]` + `Diger[]`, and signing returns
+  `Siger[]` or `Cigar[]`.
+- Updated the surrounding habitat/database path so `Hab` and `Signator` consume
+  the narrow signature primitives directly and `Baser.pinSigs()` / `putSigs()`
+  accept already-hydrated `Siger` values.
+- Tightened the CESR-backed DB wrapper constructors so new stores must pass an
+  explicit `klas` instead of silently defaulting to `Matter`, which closes one
+  of the easier ways for semantic type erasure to creep back in.
 
 ### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
 
@@ -355,7 +373,8 @@ Use this doc for:
 
 ### 2026-03-17 - Habitat Inception Now Builds Through `SerderKERI`
 
-- `Hab.make()` no longer hand-saidifies a loose inception SAD into `{ raw, pre, said }`; it now constructs a `SerderKERI` directly and persists
+- `Hab.make()` no longer hand-saidifies a loose inception SAD into
+  `{ raw, pre, said }`; it now constructs a `SerderKERI` directly and persists
   `serder.raw`/`serder.pre`/`serder.said`.
 - The old app-local inceptive prefix validation logic in `habbing.ts` was
   removed in favor of `SerderKERI` subtype verification, which centralizes the

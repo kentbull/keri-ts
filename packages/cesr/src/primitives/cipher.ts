@@ -10,8 +10,7 @@ import { Matter, type MatterInit } from "./matter.ts";
  */
 export class Cipher extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!CIPHER_X25519_ALL_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected cipher code, got ${this.code}`);
     }

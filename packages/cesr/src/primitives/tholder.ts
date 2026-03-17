@@ -12,8 +12,7 @@ import { Matter, type MatterInit, parseMatter } from "./matter.ts";
  */
 export class Tholder extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (
       !THOLDER_NUMERIC_CODES.has(this.code)
       && !THOLDER_WEIGHTED_CODES.has(this.code)

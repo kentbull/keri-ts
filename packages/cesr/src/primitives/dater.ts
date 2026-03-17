@@ -17,8 +17,7 @@ function toIso8601(dts: string): string {
  */
 export class Dater extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!DATER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected dater DateTime code, got ${this.code}`,

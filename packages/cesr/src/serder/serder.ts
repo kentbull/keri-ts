@@ -1,4 +1,7 @@
-import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
+import {
+  decode as decodeMsgpack,
+  encode as encodeMsgpack,
+} from "@msgpack/msgpack";
 import { b, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
@@ -16,7 +19,7 @@ import {
 } from "../primitives/codex.ts";
 import { Compactor } from "../primitives/compactor.ts";
 import { Diger } from "../primitives/diger.ts";
-import { Matter } from "../primitives/matter.ts";
+import { parseMatter } from "../primitives/matter.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
 import {
@@ -29,9 +32,19 @@ import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { Tholder } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
+import {
+  type CounterCodex,
+  resolveMUDex,
+} from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { type Kind, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
+import {
+  type Kind,
+  Kinds,
+  Protocols,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
 import { dumpCesrNativeSad, parseCesrNativeKed } from "./native.ts";
 import { smell, versify } from "./smell.ts";
@@ -51,6 +64,19 @@ type FieldMap = Record<string, FieldDom>;
 type ProtocolFieldMap = Record<string, FieldMap>;
 type FieldRegistry = Record<Protocol, ProtocolFieldMap>;
 
+/**
+ * Shared CESR genus mapping for protocol messages.
+ *
+ * KERIpy keeps this indirection as `GenDex` + `ProGen`: today both KERI and
+ * ACDC messages ride the shared KERI message-universal genus `-_AAA`, while
+ * the reserved ACDC genus remains unused for serder framing.
+ */
+const MESSAGE_GENUS_BY_PROTOCOL: Readonly<Record<Protocol, string>> = Object
+  .freeze({
+    [Protocols.keri]: "-_AAA",
+    [Protocols.acdc]: "-_AAA",
+  });
+
 function versionKey(version: Versionage): string {
   return `${version.major}.${version.minor}`;
 }
@@ -61,7 +87,9 @@ function cloneDefault<T>(value: T): T {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, cloneDefault(v)]),
+      Object.entries(value as Record<string, unknown>).map((
+        [k, v],
+      ) => [k, cloneDefault(v)]),
     ) as T;
   }
   return value;
@@ -366,15 +394,48 @@ const FIELDS: FieldRegistry = {
         saids: { d: DigDex.Blake3_256 },
       },
       exn: {
-        alls: { v: "", t: "", d: "", i: "", rp: "", p: "", dt: "", r: "", q: {}, a: [], e: {} },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          i: "",
+          rp: "",
+          p: "",
+          dt: "",
+          r: "",
+          q: {},
+          a: [],
+          e: {},
+        },
         saids: { d: DigDex.Blake3_256 },
       },
       vcp: {
-        alls: { v: "", t: "", d: "", i: "", ii: "", s: "0", c: [], bt: "0", b: [], n: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          i: "",
+          ii: "",
+          s: "0",
+          c: [],
+          bt: "0",
+          b: [],
+          n: "",
+        },
         saids: { d: DigDex.Blake3_256, i: DigDex.Blake3_256 },
       },
       vrt: {
-        alls: { v: "", t: "", d: "", i: "", p: "", s: "0", bt: "0", br: [], ba: [] },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          i: "",
+          p: "",
+          s: "0",
+          bt: "0",
+          br: [],
+          ba: [],
+        },
         saids: { d: DigDex.Blake3_256 },
       },
       iss: {
@@ -494,11 +555,34 @@ const FIELDS: FieldRegistry = {
         saids: { d: DigDex.Blake3_256 },
       },
       xip: {
-        alls: { v: "", t: "", d: "", u: "", i: "", ri: "", dt: "", r: "", q: {}, a: {} },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          u: "",
+          i: "",
+          ri: "",
+          dt: "",
+          r: "",
+          q: {},
+          a: {},
+        },
         saids: { d: DigDex.Blake3_256 },
       },
       exn: {
-        alls: { v: "", t: "", d: "", i: "", ri: "", x: "", p: "", dt: "", r: "", q: {}, a: {} },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          i: "",
+          ri: "",
+          x: "",
+          p: "",
+          dt: "",
+          r: "",
+          q: {},
+          a: {},
+        },
         saids: { d: DigDex.Blake3_256 },
       },
     }),
@@ -506,13 +590,36 @@ const FIELDS: FieldRegistry = {
   [Protocols.acdc]: {
     [versionKey(Vrsn_1_0)]: versionFields({
       "<none>": {
-        alls: { v: "", d: "", u: "", i: "", ri: "", s: "", a: "", A: "", e: "", r: "" },
+        alls: {
+          v: "",
+          d: "",
+          u: "",
+          i: "",
+          ri: "",
+          s: "",
+          a: "",
+          A: "",
+          e: "",
+          r: "",
+        },
         opts: { u: "", ri: "", a: "", A: "", e: "", r: "" },
         alts: { a: "A", A: "a" },
         saids: { d: DigDex.Blake3_256 },
       },
       ace: {
-        alls: { v: "", t: "", d: "", u: "", i: "", ri: "", s: "", a: "", A: "", e: "", r: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          u: "",
+          i: "",
+          ri: "",
+          s: "",
+          a: "",
+          A: "",
+          e: "",
+          r: "",
+        },
         opts: { u: "", ri: "", a: "", A: "", e: "", r: "" },
         alts: { a: "A", A: "a" },
         saids: { d: DigDex.Blake3_256 },
@@ -521,30 +628,87 @@ const FIELDS: FieldRegistry = {
     }),
     [versionKey(Vrsn_2_0)]: versionFields({
       "<none>": {
-        alls: { v: "", d: "", u: "", i: "", rd: "", s: "", a: "", A: "", e: "", r: "" },
+        alls: {
+          v: "",
+          d: "",
+          u: "",
+          i: "",
+          rd: "",
+          s: "",
+          a: "",
+          A: "",
+          e: "",
+          r: "",
+        },
         opts: { u: "", rd: "", a: "", A: "", e: "", r: "" },
         alts: { a: "A", A: "a" },
         saids: { d: DigDex.Blake3_256 },
       },
       acm: {
-        alls: { v: "", t: "", d: "", u: "", i: "", rd: "", s: "", a: "", A: "", e: "", r: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          u: "",
+          i: "",
+          rd: "",
+          s: "",
+          a: "",
+          A: "",
+          e: "",
+          r: "",
+        },
         opts: { t: "", u: "", rd: "", a: "", A: "", e: "", r: "" },
         alts: { a: "A", A: "a" },
         saids: { d: DigDex.Blake3_256 },
       },
       ace: {
-        alls: { v: "", t: "", d: "", u: "", i: "", ri: "", s: "", a: "", A: "", e: "", r: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          u: "",
+          i: "",
+          ri: "",
+          s: "",
+          a: "",
+          A: "",
+          e: "",
+          r: "",
+        },
         opts: { u: "", ri: "", a: "", A: "", e: "", r: "" },
         alts: { a: "A", A: "a" },
         saids: { d: DigDex.Blake3_256 },
         strict: false,
       },
       act: {
-        alls: { v: "", t: "", d: "", u: "", i: "", rd: "", s: "", a: "", e: "", r: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          u: "",
+          i: "",
+          rd: "",
+          s: "",
+          a: "",
+          e: "",
+          r: "",
+        },
         saids: { d: DigDex.Blake3_256 },
       },
       acg: {
-        alls: { v: "", t: "", d: "", u: "", i: "", rd: "", s: "", A: "", e: "", r: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          u: "",
+          i: "",
+          rd: "",
+          s: "",
+          A: "",
+          e: "",
+          r: "",
+        },
         saids: { d: DigDex.Blake3_256 },
       },
       sch: {
@@ -576,7 +740,17 @@ const FIELDS: FieldRegistry = {
         saids: { d: DigDex.Blake3_256 },
       },
       upd: {
-        alls: { v: "", t: "", d: "", rd: "", n: "", p: "", dt: "", td: "", ts: "" },
+        alls: {
+          v: "",
+          t: "",
+          d: "",
+          rd: "",
+          n: "",
+          p: "",
+          dt: "",
+          td: "",
+          ts: "",
+        },
         saids: { d: DigDex.Blake3_256 },
       },
     }),
@@ -620,6 +794,21 @@ function isRawInit(init: SerderInit): init is SerderRawInit {
   return "raw" in init && !isHydratedInit(init) && !("sad" in init);
 }
 
+function nativeSmellage(
+  proto: Protocol,
+  pvrsn: Versionage,
+  gvrsn: Versionage | null,
+  size: number,
+): Smellage {
+  return {
+    proto,
+    pvrsn,
+    gvrsn,
+    kind: Kinds.cesr,
+    size,
+  };
+}
+
 function fieldMapKey(ilk: string | null): string {
   return ilk ?? "<none>";
 }
@@ -636,11 +825,15 @@ function getFieldDom(
   }
   const versionFields = protoFields[versionKey(pvrsn)];
   if (!versionFields) {
-    throw new SerializeError(`Invalid version=${versionKey(pvrsn)} for protocol=${proto}`);
+    throw new SerializeError(
+      `Invalid version=${versionKey(pvrsn)} for protocol=${proto}`,
+    );
   }
   const fields = versionFields[fieldMapKey(ilk)];
   if (!fields) {
-    throw new SerializeError(`Invalid packet type (ilk)=${String(ilk)} for protocol=${proto}`);
+    throw new SerializeError(
+      `Invalid packet type (ilk)=${String(ilk)} for protocol=${proto}`,
+    );
   }
   return fields;
 }
@@ -700,14 +893,16 @@ function coerceMatterCode(value: unknown): string | null {
     return null;
   }
   try {
-    return new Matter({ qb64: value }).code;
+    return parseMatter(b(value), "txt").code;
   } catch {
     return null;
   }
 }
 
 function shallowCloneSad(sad: SadMap): SadMap {
-  return Object.fromEntries(Object.entries(sad).map(([k, v]) => [k, cloneDefault(v)]));
+  return Object.fromEntries(
+    Object.entries(sad).map(([k, v]) => [k, cloneDefault(v)]),
+  );
 }
 
 /** True when the top-level ACDC ilk participates in KERIpy's most-compact SAID rule. */
@@ -775,7 +970,9 @@ function computeAcdcFieldVariants(
   partialSection: boolean,
 ): { display: unknown; compact: unknown } {
   const sectionConfig = acdcSectionConfig(label);
-  if (sectionConfig && value && typeof value === "object" && !Array.isArray(value)) {
+  if (
+    sectionConfig && value && typeof value === "object" && !Array.isArray(value)
+  ) {
     const expanded = new Compactor({
       mad: withAcdcSectionPlaceholder(label, value as SadMap),
       kind,
@@ -886,7 +1083,7 @@ function computeAcdcSad(
   // version-string span.
   sizeify(hashSad, kind);
   const digestRaw = dumps(hashSad, kind);
-  const said = new Matter({ code, raw: Diger.digest(digestRaw, code) }).qb64;
+  const said = new Diger({ code, raw: Diger.digest(digestRaw, code) }).qb64;
 
   compactSad.d = said;
   displaySad.d = said;
@@ -912,16 +1109,25 @@ function validateSadAgainstFieldDom(
   }
 
   if (ctor.Protocol && serder.proto !== ctor.Protocol) {
-    throw new DeserializeError(`Required protocol=${ctor.Protocol}, got ${serder.proto}`);
+    throw new DeserializeError(
+      `Required protocol=${ctor.Protocol}, got ${serder.proto}`,
+    );
   }
 
   const ked = serder.ked;
-  const fields = getFieldDom(ctor.Fields, serder.proto, serder.pvrsn, serder.ilk);
+  const fields = getFieldDom(
+    ctor.Fields,
+    serder.proto,
+    serder.pvrsn,
+    serder.ilk,
+  );
   const currentKeys = Object.keys(ked);
   const allowedKeys = Object.keys(fields.alls);
   const extraKeys = currentKeys.filter((key) => !allowedKeys.includes(key));
   if (extraKeys.length > 0 && (fields.strict ?? true)) {
-    throw new DeserializeError(`Unallowed extra field(s)=${extraKeys.join(",")}`);
+    throw new DeserializeError(
+      `Unallowed extra field(s)=${extraKeys.join(",")}`,
+    );
   }
 
   const optional = new Set(Object.keys(fields.opts ?? {}));
@@ -932,7 +1138,9 @@ function validateSadAgainstFieldDom(
     }
   }
 
-  const orderWithoutExtras = currentKeys.filter((key) => allowedKeys.includes(key));
+  const orderWithoutExtras = currentKeys.filter((key) =>
+    allowedKeys.includes(key)
+  );
   const expectedOrder = allowedKeys.filter((key) => key in ked);
   if (orderWithoutExtras.join("|") !== expectedOrder.join("|")) {
     throw new DeserializeError("Missing or out-of-order fields in SAD.");
@@ -1007,16 +1215,19 @@ function resolveProtocolDefaults(
 
   const proto = init.proto ?? smelled?.proto ?? ctor.Proto;
   const pvrsn = init.pvrsn ?? smelled?.pvrsn ?? ctor.PVrsn;
-  const gvrsn = init.gvrsn ?? smelled?.gvrsn ?? (pvrsn.major >= 2 ? ctor.GVrsn : null);
+  const gvrsn = init.gvrsn ?? smelled?.gvrsn ??
+    (pvrsn.major >= 2 ? ctor.GVrsn : null);
   const kind = init.kind ?? smelled?.kind ?? ctor.Kind;
 
   const versionFields = ctor.Fields[proto]?.[versionKey(pvrsn)];
   if (!versionFields) {
-    throw new SerializeError(`Invalid version=${versionKey(pvrsn)} for protocol=${proto}`);
+    throw new SerializeError(
+      `Invalid version=${versionKey(pvrsn)} for protocol=${proto}`,
+    );
   }
   const defaultIlk = Object.keys(versionFields)[0] ?? "<none>";
-  const ilk = init.ilk ?? (typeof sad.t === "string" ? sad.t : null)
-    ?? (defaultIlk === "<none>" ? null : defaultIlk);
+  const ilk = init.ilk ?? (typeof sad.t === "string" ? sad.t : null) ??
+    (defaultIlk === "<none>" ? null : defaultIlk);
   const fields = getFieldDom(ctor.Fields, proto, pvrsn, ilk);
   const normalized = normalizeSadWithFieldDom(sad, fields);
   if (ilk !== null) {
@@ -1135,7 +1346,9 @@ export class Serder implements CesrBody {
 
     if (isRawInit(init)) {
       const smellage = init.smellage ?? smell(init.raw).smellage;
-      const raw = init.raw.length === smellage.size ? init.raw : init.raw.slice(0, smellage.size);
+      const raw = init.raw.length === smellage.size
+        ? init.raw
+        : init.raw.slice(0, smellage.size);
       const parsed = parseRawToKed(raw, smellage);
       this.raw = raw;
       this.kind = smellage.kind;
@@ -1154,7 +1367,12 @@ export class Serder implements CesrBody {
 
     const ctor = this.constructor as typeof Serder & SerderStatic;
     const resolved = resolveProtocolDefaults(ctor, init);
-    const fields = getFieldDom(ctor.Fields, resolved.proto, resolved.pvrsn, resolved.ilk);
+    const fields = getFieldDom(
+      ctor.Fields,
+      resolved.proto,
+      resolved.pvrsn,
+      resolved.ilk,
+    );
     const normalized = normalizeSadWithFieldDom(resolved.sad, fields);
     if (resolved.ilk !== null) {
       normalized.t = resolved.ilk;
@@ -1184,7 +1402,14 @@ export class Serder implements CesrBody {
         const { raw } = sizeify(existing, resolved.kind);
         return { sad: existing, raw, saiders: {} as Record<string, Saider> };
       })();
-    const smellage = smell(actual.raw).smellage;
+    const smellage = resolved.kind === Kinds.cesr
+      ? nativeSmellage(
+        resolved.proto,
+        resolved.pvrsn,
+        resolved.gvrsn,
+        actual.raw.length,
+      )
+      : smell(actual.raw).smellage;
 
     this.raw = actual.raw;
     this.kind = smellage.kind;
@@ -1213,23 +1438,43 @@ export class Serder implements CesrBody {
     return this._ked && typeof this._ked.v === "string" ? this._ked.v : null;
   }
 
+  /** CESR message-universal genus code backing this serder's native framing. */
+  get genus(): string {
+    return MESSAGE_GENUS_BY_PROTOCOL[this.proto];
+  }
+
   get protocol(): Protocol {
     return this.proto;
   }
 
+  /**
+   * Message-universal counter codex selected by the serder's genus version.
+   *
+   * This mirrors KERIpy's `serder.mucodes`: native body-group parsing and emit
+   * use the latest compatible counter table for the active genus major/minor.
+   * Non-native legacy messages without `gvrsn` do not have a meaningful
+   * message-universal codex, so this accessor rejects that misuse explicitly.
+   */
+  get mucodes(): CounterCodex {
+    if (!this.gvrsn) {
+      throw new DeserializeError("mucodes requires a CESR genus version.");
+    }
+    return resolveMUDex(this.gvrsn);
+  }
+
   get said(): string | null {
     if (
-      this._ked
-      && this.ilk !== null
-      && Object.keys(
+      this._ked &&
+      this.ilk !== null &&
+      Object.keys(
           getFieldDom(
             (this.constructor as typeof Serder & SerderStatic).Fields,
             this.proto,
             this.pvrsn,
             this.ilk,
           ).saids ?? {},
-        ).length === 0
-      && typeof this._ked.d === "string"
+        ).length === 0 &&
+      typeof this._ked.d === "string"
     ) {
       return this._ked.d;
     }
@@ -1277,27 +1522,37 @@ export class Serder implements CesrBody {
       throw new DeserializeError("Invalid round trip of SAD against raw.");
     }
 
-    const actualSmellage = smell(actual.raw).smellage;
+    const actualSmellage = this.kind === Kinds.cesr
+      ? nativeSmellage(this.proto, this.pvrsn, this.gvrsn, actual.raw.length)
+      : smell(actual.raw).smellage;
     if (actualSmellage.proto !== this.proto) {
       throw new DeserializeError("Inconsistent protocol after verification.");
     }
     if (
-      actualSmellage.pvrsn.major !== this.pvrsn.major
-      || actualSmellage.pvrsn.minor !== this.pvrsn.minor
+      actualSmellage.pvrsn.major !== this.pvrsn.major ||
+      actualSmellage.pvrsn.minor !== this.pvrsn.minor
     ) {
-      throw new DeserializeError("Inconsistent protocol version after verification.");
+      throw new DeserializeError(
+        "Inconsistent protocol version after verification.",
+      );
     }
     if (actualSmellage.kind !== this.kind) {
-      throw new DeserializeError("Inconsistent serialization kind after verification.");
+      throw new DeserializeError(
+        "Inconsistent serialization kind after verification.",
+      );
     }
     if (actualSmellage.size !== this.size || actual.raw.length !== this.size) {
-      throw new DeserializeError("Inconsistent serialized size after verification.");
+      throw new DeserializeError(
+        "Inconsistent serialized size after verification.",
+      );
     }
     if (
-      (actualSmellage.gvrsn?.major ?? -1) !== (this.gvrsn?.major ?? -1)
-      || (actualSmellage.gvrsn?.minor ?? -1) !== (this.gvrsn?.minor ?? -1)
+      (actualSmellage.gvrsn?.major ?? -1) !== (this.gvrsn?.major ?? -1) ||
+      (actualSmellage.gvrsn?.minor ?? -1) !== (this.gvrsn?.minor ?? -1)
     ) {
-      throw new DeserializeError("Inconsistent genus version after verification.");
+      throw new DeserializeError(
+        "Inconsistent genus version after verification.",
+      );
     }
   }
 
@@ -1377,7 +1632,9 @@ export class SerderKERI extends Serder {
       throw new DeserializeError("Missing decoded KERI SAD.");
     }
 
-    const allowedKeys = Object.keys(getFieldDom(FIELDS, this.proto, this.pvrsn, this.ilk).alls);
+    const allowedKeys = Object.keys(
+      getFieldDom(FIELDS, this.proto, this.pvrsn, this.ilk).alls,
+    );
     const actualKeys = Object.keys(sad);
     if (allowedKeys.join("|") !== actualKeys.join("|")) {
       throw new DeserializeError(
@@ -1398,7 +1655,9 @@ export class SerderKERI extends Serder {
       if (this.ilk === "icp" || this.ilk === "dip") {
         if (NON_DIGEST_PREFIX_CODES.has(code)) {
           if (this.keys.length !== 1) {
-            throw new DeserializeError(`Non-digestive prefix ${code} requires exactly one key.`);
+            throw new DeserializeError(
+              `Non-digestive prefix ${code} requires exactly one key.`,
+            );
           }
           if (this.ked?.kt !== "1") {
             throw new DeserializeError(
@@ -1406,7 +1665,9 @@ export class SerderKERI extends Serder {
             );
           }
           if (pre !== this.keys[0]) {
-            throw new DeserializeError(`Non-digestive prefix ${code} must equal the zeroth key.`);
+            throw new DeserializeError(
+              `Non-digestive prefix ${code} must equal the zeroth key.`,
+            );
           }
         }
 
@@ -1417,10 +1678,14 @@ export class SerderKERI extends Serder {
             );
           }
           if (this.backs.length > 0) {
-            throw new DeserializeError(`Non-transferable prefix ${code} requires no backers.`);
+            throw new DeserializeError(
+              `Non-transferable prefix ${code} requires no backers.`,
+            );
           }
           if (this.seals.length > 0) {
-            throw new DeserializeError(`Non-transferable prefix ${code} requires no seals/data.`);
+            throw new DeserializeError(
+              `Non-transferable prefix ${code} requires no seals/data.`,
+            );
           }
         }
       }
@@ -1428,8 +1693,12 @@ export class SerderKERI extends Serder {
 
     if (this.ilk === "dip" && this.delpre) {
       const delCode = coerceMatterCode(this.delpre);
-      if (!delCode || !PREFIX_CODES.has(delCode) || !DIGEST_CODES.has(delCode)) {
-        throw new DeserializeError(`Invalid delegator/delegate prefix code=${String(delCode)}.`);
+      if (
+        !delCode || !PREFIX_CODES.has(delCode) || !DIGEST_CODES.has(delCode)
+      ) {
+        throw new DeserializeError(
+          `Invalid delegator/delegate prefix code=${String(delCode)}.`,
+        );
       }
     }
   }
@@ -1526,13 +1795,17 @@ export class SerderKERI extends Serder {
 
   get cuts(): string[] {
     return Array.isArray(this.ked?.br)
-      ? this.ked.br.filter((value): value is string => typeof value === "string")
+      ? this.ked.br.filter((value): value is string =>
+        typeof value === "string"
+      )
       : [];
   }
 
   get adds(): string[] {
     return Array.isArray(this.ked?.ba)
-      ? this.ked.ba.filter((value): value is string => typeof value === "string")
+      ? this.ked.ba.filter((value): value is string =>
+        typeof value === "string"
+      )
       : [];
   }
 
@@ -1593,7 +1866,10 @@ export class SerderACDC extends Serder {
       throw new DeserializeError("Invalid ACDC raw serialization against SAD.");
     }
 
-    if (this.ilk === null || ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)) {
+    if (
+      this.ilk === null ||
+      ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)
+    ) {
       const issuer = this.issuer;
       if (!issuer) {
         throw new DeserializeError("Invalid issuer AID.");

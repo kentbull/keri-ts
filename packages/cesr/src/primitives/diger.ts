@@ -40,8 +40,7 @@ export class Diger extends Matter {
   ]);
 
   constructor(init: Matter | MatterInit, options: DigerOptions = {}) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if ((options.strict ?? true) && !DIGEST_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected digest code, got ${this.code}`);
     }

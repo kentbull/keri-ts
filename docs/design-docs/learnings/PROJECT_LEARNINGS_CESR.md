@@ -71,6 +71,10 @@ Persistent CESR parser memory for `keri-ts`.
 20. ACDC section parity now requires section-label-aware saidive normalization:
     schema sections compute `$id`, ordinary saidive sections compute `d`, and
     aggregate sections compute/verify `agid` through `Aggor`.
+21. `Matter`/`Indexer` are now explicitly low-level CESR bases, not the default
+    semantic construction target: mapper/native/serder code should construct
+    narrow primitives when semantics are known, and any shared hydration helper
+    must stay conservative and only auto-narrow unambiguous code families.
 
 ## Key Docs
 
@@ -204,9 +208,9 @@ Persistent CESR parser memory for `keri-ts`.
 ### 2026-03-17 - Non-Native Serder Makify/Verify Surface Landed
 
 - Expanded `packages/cesr/src/serder/serder.ts` from a parser-hydration helper
-  into a schema-driven `Serder` layer with constructor support for `raw`,
-  `sad`, and `makify` flows plus `verify`, `compare`, `pretty`, and copied
-  KERIpy-style protocol/version defaults.
+  into a schema-driven `Serder` layer with constructor support for `raw`, `sad`,
+  and `makify` flows plus `verify`, `compare`, `pretty`, and copied KERIpy-style
+  protocol/version defaults.
 - Ported a large first slice of KERIpy field-domain behavior into TypeScript:
   KERI and ACDC field schemas now drive required-field filling, field ordering,
   alternate-field rejection, and saidive-field defaulting for JSON/CBOR/MGPK
@@ -215,9 +219,9 @@ Persistent CESR parser memory for `keri-ts`.
   non-digestive-prefix rules, non-transferable-prefix constraints, and
   delegated-inception digestive-prefix checks instead of leaving those rules in
   app-level helpers.
-- Added protocol-specific projection accessors (`pre`, `keys`, `ndigs`,
-  `backs`, `traits`, `issuer`, `regid`, etc.) so application code can treat the
-  subtype objects more like KERIpy serders instead of raw decoded maps.
+- Added protocol-specific projection accessors (`pre`, `keys`, `ndigs`, `backs`,
+  `traits`, `issuer`, `regid`, etc.) so application code can treat the subtype
+  objects more like KERIpy serders instead of raw decoded maps.
 - Current limitation remains explicit: this milestone closes the non-native
   JSON/CBOR/MGPK serder path needed by local inception and DB hydration, but it
   does not yet claim full KERIpy parity for CESR-native body
@@ -246,30 +250,43 @@ Persistent CESR parser memory for `keri-ts`.
   ```
 
   where the body counter, verser, ilk, SAID/prefix fields, numeric fields, and
-  grouped list/map payloads can be visually distinguished before reasoning
-  about the underlying binary qb2 form.
+  grouped list/map payloads can be visually distinguished before reasoning about
+  the underlying binary qb2 form.
 - Added a dedicated native-serder test-helper layer so the pinned KERIpy native
-  fixture can be read as named segments (`bodyCounter`, `verser`, `ilk`,
-  `said`, `pre`, `sn`, `kt`, list groups, etc.) inside tests; maintainers
-  should preserve that "tests as worked examples" style instead of regressing
-  native coverage back into opaque whole-string assertions only.
+  fixture can be read as named segments (`bodyCounter`, `verser`, `ilk`, `said`,
+  `pre`, `sn`, `kt`, list groups, etc.) inside tests; maintainers should
+  preserve that "tests as worked examples" style instead of regressing native
+  coverage back into opaque whole-string assertions only.
 - This is still only a first native parity slice, not closure: KERI fixed-body
   messages are now substantially better covered, but broader CESR-native KERI
   ilks, full ACDC native semantics, and ACDC compactification remain open.
 
 ### 2026-03-17 - Top-Level Native Message Contract Tightened To Match KERIpy
 
+### 2026-03-17 - Narrow Primitive Construction Rule Landed
+
+- Replaced semantic-erasing `new Matter(...)` / `new Indexer(...)` uses in the
+  active mapper/native/serder/aggor and KERI app paths with the corresponding
+  narrow primitives (`Bexter`, `Texter`, `Diger`, `Siger`, `Cigar`,
+  `NumberPrimitive`, `Salter`, `Signer`, `Verfer`, `Prefixer`) when the code
+  already knew the semantic family.
+- Added a shared `hydrate.ts` seam for generic callers, but made it
+  intentionally conservative after auditing KERIpy code overlap: many CESR codes
+  are semantically shared across families, so automatic narrowing is only honest
+  for unambiguous families such as `Dater`, `Decimer`, `Cigar`, and `Siger`.
+- Added regression coverage for the hydrator contract itself plus app-level
+  proof that `Manager.incept()` and `Manager.sign()` now return narrow
+  primitives instead of qb64-only `Matter`/`Indexer` projections.
+
 ### 2026-03-17 - ACDC Native And Compactification Lane Landed
 
 - Promoted `Mapper` from a syntax-only parse artifact into a semantic native map
-  primitive with real `mad`/`raw`/`qb64`/`qb2` behavior, while keeping the
-  older syntax/projection helpers as compatibility wrappers for parser-oriented
-  tests.
+  primitive with real `mad`/`raw`/`qb64`/`qb2` behavior, while keeping the older
+  syntax/projection helpers as compatibility wrappers for parser-oriented tests.
 - Promoted `Compactor` and `Aggor` from parse wrappers into maintainer-readable
-  semantic primitives:
-  `Compactor` now exposes `trace()`, `compact()`, `expand()`, `leaves`, and
-  `partials`, while `Aggor` now exposes `ael`, `agid`, `disclose()`, and
-  `verifyDisclosure()`.
+  semantic primitives: `Compactor` now exposes `trace()`, `compact()`,
+  `expand()`, `leaves`, and `partials`, while `Aggor` now exposes `ael`, `agid`,
+  `disclose()`, and `verifyDisclosure()`.
 
 ### 2026-03-17 - Native Support Matrix And Deeper Section Parity Landed
 
@@ -284,34 +301,34 @@ Persistent CESR parser memory for `keri-ts`.
   nonce tokens and empty-or-value nonce semantics.
 - Deepened `SerderACDC` compactification so schema sections compute `$id`,
   section messages keep expanded visible sections while still verifying their
-  embedded identifiers, and compactable top-level ACDCs still hash over the
-  most compact section form.
+  embedded identifiers, and compactable top-level ACDCs still hash over the most
+  compact section form.
 - Added matrix-focused native tests plus accessor/partial-section tests so the
   new parity surface is documented by readable examples instead of only by the
   implementation.
 - Added ACDC CESR-native top-level body-shape rules and section-field handling
-  in the shared native serder layer:
-  map-body `acm`/`ace`/`<none>` and fixed-body `act`/`acg`/`sch`/`att`/`agg`/
-  `edg`/`rul`/`rip`/`bup`/`upd` now decode/encode through field-family helpers
-  instead of generic fallback parsing.
+  in the shared native serder layer: map-body `acm`/`ace`/`<none>` and
+  fixed-body `act`/`acg`/`sch`/`att`/`agg`/ `edg`/`rul`/`rip`/`bup`/`upd` now
+  decode/encode through field-family helpers instead of generic fallback
+  parsing.
 - Added the first real ACDC compactification-aware `SerderACDC` makify/verify
   behavior: expanded ACDC bodies can now preserve expanded section maps while
   still computing/verifying top-level `d` from the most compact variant, and
   `compactify=true` can persist compact section references in the visible SAD.
-- Locked the maintainer rule that CESR-native tests should stay pedagogical:
-  new coverage now includes example-driven `Compactor`/`Aggor` lifecycle tests,
+- Locked the maintainer rule that CESR-native tests should stay pedagogical: new
+  coverage now includes example-driven `Compactor`/`Aggor` lifecycle tests,
   ACDC-native fixed/map round trips, and explicit expanded-vs-compact ACDC
   serder tests instead of relying only on opaque fixture comparisons.
 
 - Removed the parser's metadata-only success fallback for top-level native
   `FixBodyGroup` / `MapBodyGroup` frames. Once the frame parser classifies a
-  native body group as a message body, the next step must be successful
-  `Serder` hydration or a parse error.
+  native body group as a message body, the next step must be successful `Serder`
+  hydration or a parse error.
 - This matters because the previous fallback blurred two different layers:
   top-level protocol messages versus lower-level CESR-native map/list corpora.
   KERIpy keeps that boundary sharp by sending top-level native body groups
-  through `Serdery.reap(...)` and failing if the payload is not a valid
-  protocol message.
+  through `Serdery.reap(...)` and failing if the payload is not a valid protocol
+  message.
 - The maintainer mental model should now be:
   1. `Mapper` / `Aggor` / `Compactor` are the right tools for arbitrary native
      map/list structures.
@@ -321,15 +338,15 @@ Persistent CESR parser memory for `keri-ts`.
      metadata shell.
 - Hardening vectors that used to rely on parser acceptance of invalid top-level
   native `MapBodyGroup` corpora were rewritten to assert deterministic parse
-  failure instead, preserving the chunk-boundary contract without preserving
-  the wrong success semantics.
+  failure instead, preserving the chunk-boundary contract without preserving the
+  wrong success semantics.
 
 ### 2026-03-17 - Shared Native Serder Layer Now Rejects KERI Map-Body Messages
 
 - Tightened `parseCesrNativeKed()` so KERI top-level CESR-native messages must
   be `FixBodyGroup` bodies. This closes the deeper permissiveness bug where the
-  parser seam had been fixed but direct native reaping could still have
-  accepted a message-shaped KERI `MapBodyGroup`.
+  parser seam had been fixed but direct native reaping could still have accepted
+  a message-shaped KERI `MapBodyGroup`.
 - Added readable regression coverage using a constructed "looks valid at a
   glance" native KERI map-body fixture: it includes a `v` label plus the normal
   `t`/`d`/`i`/`s`/`kt`/`k`/... labels, but both `parseCesrNativeKed()` and
@@ -338,3 +355,31 @@ Persistent CESR parser memory for `keri-ts`.
 - The maintainer lesson is important: "map-body native top level exists" is not
   enough to justify KERI acceptance. Top-level native map-body semantics belong
   to ACDC and lower-level mapping helpers unless KERIpy proves otherwise.
+
+### 2026-03-17 - Native Route Byte Parity Requires Real `Pather` Semantics
+
+- The old native route workaround in `native.ts` was wrong in an important way:
+  encoding `r` / `rr` / `rp` as generic labels can preserve enough semantics to
+  make some tests pass, but it does not produce KERIpy-faithful CESR-native
+  bytes.
+- The concrete proof case is KERI native `qry`: semantic `r: "ksn"` must
+  serialize as `4AABAksn`, not a label token like `Xksn`. Likewise `rr: "reply"`
+  must become `6AACAAAreply`, and slash routes such as `credential/issue` must
+  compact to `4AAEcredential-issue` while still decoding back to
+  `credential/issue`.
+- The fix belongs in the primitive layer, not in serder-local branching.
+  `Pather` now has a semantic constructor helper that mirrors KERIpy's
+  `relative=True, pathive=False` route contract, including: code-family
+  selection (`4A` / `5A` / `6A` and bytes variants), escape-prefix handling for
+  ambiguous leading `A`, and slash-vs-hyphen semantic projection.
+- Native decode must mirror the same rule on the inhale side: route-family
+  fields must parse through `Pather`, not `Labeler`, or compact slash routes
+  will silently flatten into `credential-issue`.
+- Native `Serder` construction/verification also needed one more parity fix:
+  CESR-native bodies are not self-smelling, so `kind=CESR` construct/verify
+  paths must carry known `proto` / `pvrsn` / `gvrsn` smellage explicitly instead
+  of re-running non-native `smell()` on native raw bytes.
+- Added pinned KERIpy-generated native v2 fixtures for route-heavy KERI ilks
+  `qry`, `rpy`, `xip`, and `exn`, plus primitive-level `Pather` tests, so the
+  route lane is now protected by exact byte-parity assertions instead of only
+  semantic round-trip checks.

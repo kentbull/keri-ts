@@ -32,8 +32,7 @@ export interface SaidifyFieldsOptions {
  */
 export class Saider extends Matter {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter);
+    super(init);
     if (!DIGEST_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected said digest code, got ${this.code}`,

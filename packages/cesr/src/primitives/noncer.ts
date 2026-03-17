@@ -12,8 +12,7 @@ import { Matter, type MatterInit, parseMatter } from "./matter.ts";
  */
 export class Noncer extends Diger {
   constructor(init: Matter | MatterInit) {
-    const matter = init instanceof Matter ? init : new Matter(init);
-    super(matter, { strict: false });
+    super(init, { strict: false });
     if (!NONCE_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected nonce code, got ${this.code}`);
     }

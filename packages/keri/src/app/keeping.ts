@@ -1,7 +1,21 @@
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
-import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
-import { decodeB64, Indexer, intToB64, Matter, parseMatter, Saider } from "../../../cesr/mod.ts";
+import {
+  Cigar,
+  decodeB64,
+  Diger,
+  hydrateMatter,
+  intToB64,
+  NumberPrimitive,
+  NumDex,
+  parseMatter,
+  Prefixer,
+  Saider,
+  Salter,
+  Siger,
+  Signer,
+  Verfer,
+} from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
 
@@ -57,29 +71,9 @@ export interface ManagerInceptArgs {
   temp?: boolean;
 }
 
-/**
- * Minimal public-key projection returned by `Manager.incept()`.
- *
- * We currently surface qb64-only records instead of richer CESR wrapper
- * objects to keep the bootstrap path small.
- */
-export interface KeyVerfer {
-  qb64: string;
-}
-
-/**
- * Minimal next-key digest projection returned by `Manager.incept()`.
- *
- * Mirrors the current `KeyVerfer` compromise: qb64-only until the app layer
- * adopts fuller CESR primitive hydration.
- */
-export interface KeyDiger {
-  qb64: string;
-}
-
 interface SignerMaterial {
-  seedQb64: string;
-  verferQb64: string;
+  signer: Signer;
+  verfer: Verfer;
 }
 
 function parseQb64Raw(qb64: string): Uint8Array {
@@ -88,7 +82,7 @@ function parseQb64Raw(qb64: string): Uint8Array {
 
 function randomSaltQb64(): string {
   const raw = crypto.getRandomValues(new Uint8Array(16));
-  return new Matter({ code: "0A", raw }).qb64;
+  return new Salter({ code: "0A", raw }).qb64;
 }
 
 function pathToBytes(path: string): Uint8Array {
@@ -131,8 +125,8 @@ function deriveSeedFromSalt(
  *   per-prefix key material
  *
  * Current `keri-ts` difference:
- * - returns a lightweight qb64 projection instead of richer signer objects,
- *   because the bootstrap app layer stores the derived material separately
+ * - returns the narrow CESR primitives directly so callers can decide whether
+ *   to keep semantic objects or project `.qb64` at the boundary they need
  */
 export function saltySigner(
   saltQb64: string,
@@ -142,13 +136,13 @@ export function saltySigner(
   temp: boolean,
 ): SignerMaterial {
   const seedRaw = deriveSeedFromSalt(saltQb64, path, tier, temp);
-  const seedQb64 = new Matter({ code: "A", raw: seedRaw }).qb64;
+  const signer = new Signer({ code: "A", raw: seedRaw });
   const pubRaw = ed25519.getPublicKey(seedRaw);
-  const verferQb64 = new Matter({
+  const verfer = new Verfer({
     code: transferable ? "D" : "B",
     raw: pubRaw,
-  }).qb64;
-  return { seedQb64, verferQb64 };
+  });
+  return { signer, verfer };
 }
 
 function pubsKey(pre: string, ridx: number): string {
@@ -257,7 +251,7 @@ export class Manager {
         throw new Error("Seed required when aeid is set.");
       }
       const seedRaw = parseQb64Raw(seed);
-      const derivedAeid = new Matter({
+      const derivedAeid = new Prefixer({
         code: "B",
         raw: ed25519.getPublicKey(seedRaw),
       }).qb64;
@@ -275,7 +269,7 @@ export class Manager {
     this.ks.pinGbls("aeid", aeid);
   }
 
-  incept(args: ManagerInceptArgs = {}): [KeyVerfer[], KeyDiger[]] {
+  incept(args: ManagerInceptArgs = {}): [Verfer[], Diger[]] {
     const {
       icount = 1,
       ncount = 1,
@@ -300,8 +294,8 @@ export class Manager {
     const usedTier = rooted ? (tier ?? this.tier ?? "low") : (tier ?? "low");
     const pidx = this.pidx ?? 0;
 
-    const verfers: KeyVerfer[] = [];
-    const digers: KeyDiger[] = [];
+    const verfers: Verfer[] = [];
+    const digers: Diger[] = [];
 
     const rootStem = stem || `${pidx.toString(16)}`;
 
@@ -314,8 +308,8 @@ export class Manager {
         usedTier,
         temp,
       );
-      verfers.push({ qb64: signer.verferQb64 });
-      this.ks.putPris(signer.verferQb64, signer.seedQb64);
+      verfers.push(signer.verfer);
+      this.ks.putPris(signer.verfer.qb64, signer.signer.qb64);
     }
 
     for (let i = 0; i < ncount; i++) {
@@ -327,12 +321,12 @@ export class Manager {
         usedTier,
         temp,
       );
-      const dig = new Matter({
+      const dig = new Diger({
         code: dcode,
-        raw: blake3(b(signer.verferQb64)),
-      }).qb64;
-      digers.push({ qb64: dig });
-      this.ks.putPris(signer.verferQb64, signer.seedQb64);
+        raw: Diger.digest(b(signer.verfer.qb64), dcode),
+      });
+      digers.push(dig);
+      this.ks.putPris(signer.verfer.qb64, signer.signer.qb64);
     }
 
     const pp: PrePrm = {
@@ -347,13 +341,13 @@ export class Manager {
     const ps: PreSit = {
       old: { pubs: [], ridx: 0, kidx: 0, dt },
       new: {
-        pubs: verfers.map((v) => v.qb64),
+        pubs: verfers.map((verfer) => verfer.qb64),
         ridx: 0,
         kidx: 0,
         dt,
       },
       nxt: {
-        pubs: digers.map((d) => d.qb64),
+        pubs: digers.map((diger) => diger.qb64),
         ridx: 1,
         kidx: icount,
         dt,
@@ -405,22 +399,33 @@ export class Manager {
     this.ks.putPres(newPre, newPre);
   }
 
-  sign(ser: Uint8Array, pubs: string[], indexed = true): string[] {
-    return pubs.map((pub, idx) => {
+  sign(ser: Uint8Array, pubs: string[], indexed: true): Siger[];
+  sign(ser: Uint8Array, pubs: string[], indexed?: false): Cigar[];
+  sign(ser: Uint8Array, pubs: string[], indexed = true): Siger[] | Cigar[] {
+    if (indexed) {
+      return pubs.map((pub, idx) => {
+        const seedQb64 = this.ks.getPris(pub);
+        if (!seedQb64) {
+          throw new Error(`Missing prikey in db for pubkey=${pub}`);
+        }
+        const seedRaw = parseQb64Raw(seedQb64);
+        const sigRaw = ed25519.sign(ser, seedRaw);
+        return new Siger({ code: "A", raw: sigRaw, index: idx });
+      });
+    }
+    return pubs.map((pub) => {
       const seedQb64 = this.ks.getPris(pub);
       if (!seedQb64) throw new Error(`Missing prikey in db for pubkey=${pub}`);
       const seedRaw = parseQb64Raw(seedQb64);
       const sigRaw = ed25519.sign(ser, seedRaw);
-      return indexed
-        ? new Indexer({ code: "A", raw: sigRaw, index: idx }).qb64
-        : new Matter({ code: "0B", raw: sigRaw }).qb64;
+      return new Cigar({ code: "0B", raw: sigRaw });
     });
   }
 }
 
 export function normalizeSaltQb64(salt?: string): string {
   return salt
-    ? new Matter({ code: "0A", raw: parseQb64Raw(salt) }).qb64
+    ? new Salter({ code: "0A", raw: parseQb64Raw(salt) }).qb64
     : randomSaltQb64();
 }
 
@@ -432,7 +437,9 @@ export function branToSaltQb64(bran: string): string {
 }
 
 export function encodeDateTimeToDater(dts: string): string {
-  return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
+  return `1AAG${
+    dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")
+  }`;
 }
 
 export function encodeCounterV1(code: string, count: number): string {
@@ -446,16 +453,15 @@ export function encodeHugeNumber(num: number): string {
     raw[i] = Number(value & 0xffn);
     value >>= 8n;
   }
-  return new Matter({ code: "0A", raw }).qb64;
+  return new NumberPrimitive({ code: NumDex.Huge, raw }).qb64;
 }
 
 export function normalizeQb64Code(qb64: string): string {
-  const matter = parseMatter(b(qb64), "txt");
-  return new Matter({ code: matter.code, raw: matter.raw }).qb64;
+  return hydrateMatter(parseMatter(b(qb64), "txt")).qb64;
 }
 
 export function makeSaider(raw: Uint8Array): string {
-  return new Saider({ code: "E", raw: blake3(raw) }).qb64;
+  return new Saider({ code: "E", raw: Diger.digest(raw, "E") }).qb64;
 }
 
 export function b64DecodeUrl(text: string): Uint8Array {

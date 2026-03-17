@@ -1,8 +1,16 @@
 import { b, codeB2ToB64, codeB64ToB2, t } from "../core/bytes.ts";
-import { DeserializeError, SerializeError, UnknownCodeError } from "../core/errors.ts";
+import {
+  DeserializeError,
+  SerializeError,
+  UnknownCodeError,
+} from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
-import { AGGOR_CODES, AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
+import {
+  AGGOR_CODES,
+  AGGOR_LIST_CODES,
+  AGGOR_MAP_CODES,
+} from "../tables/counter-groups.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind } from "../tables/versions.ts";
@@ -10,7 +18,7 @@ import { DigDex } from "./codex.ts";
 import { Counter, parseCounter } from "./counter.ts";
 import { Diger } from "./diger.ts";
 import { Mapper, type MapperField, parseMapperBody } from "./mapper.ts";
-import { Matter } from "./matter.ts";
+import { parseMatter } from "./matter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
 
@@ -89,7 +97,12 @@ export class Aggor extends Structor {
    * - map lane: compatibility bridge for existing TS parser projections that
    *   still bucket generic map groups into aggregate families
    */
-  constructor(init: AggorInit | { structor: Structor; mapFields?: readonly MapperField[] }) {
+  constructor(
+    init: AggorInit | {
+      structor: Structor;
+      mapFields?: readonly MapperField[];
+    },
+  ) {
     const payload = "structor" in init
       ? init
       : Aggor.materializeStructor(init as AggorInit);
@@ -102,14 +115,20 @@ export class Aggor extends Structor {
     }
     this.kind = isAggorMapCode(this.code) ? "map" : "list";
     this.mapFields = payload.mapFields;
-    this.strict = "structor" in init ? true : ((init as AggorInit).strict ?? true);
+    this.strict = "structor" in init
+      ? true
+      : ((init as AggorInit).strict ?? true);
     this.saids = {
-      ...("structor" in init ? {} : ((init as AggorInit).saids ?? { d: DigDex.Blake3_256 })),
+      ...("structor" in init
+        ? {}
+        : ((init as AggorInit).saids ?? { d: DigDex.Blake3_256 })),
     };
     this.digestCode = "structor" in init
       ? DigDex.Blake3_256
       : ((init as AggorInit).code ?? DigDex.Blake3_256);
-    this.wireKind = "structor" in init ? "CESR" : ((init as AggorInit).kind ?? "CESR");
+    this.wireKind = "structor" in init
+      ? "CESR"
+      : ((init as AggorInit).kind ?? "CESR");
     if (this.kind === "list") {
       try {
         // Parser-origin list groups may be arbitrary generic list payloads, so
@@ -126,7 +145,9 @@ export class Aggor extends Structor {
 
   /** Aggregate identifier at element zero for list-form aggregates. */
   get agid(): string | null {
-    return this.kind === "list" && typeof this._ael[0] === "string" ? this._ael[0] : null;
+    return this.kind === "list" && typeof this._ael[0] === "string"
+      ? this._ael[0]
+      : null;
   }
 
   /** Aggregate element list in semantic form. */
@@ -178,7 +199,9 @@ export class Aggor extends Structor {
    */
   disclose(indices: number[] = []): [unknown[], Kind] {
     if (this.kind !== "list") {
-      throw new SerializeError("Disclosure is only defined for aggregate lists.");
+      throw new SerializeError(
+        "Disclosure is only defined for aggregate lists.",
+      );
     }
     // We first normalize every element into either:
     // - the aggregate's compact commitment string, or
@@ -200,7 +223,9 @@ export class Aggor extends Structor {
       return typeof element === "string" ? element : null;
     });
 
-    const disclosure: unknown[] = atoms.map((atom) => atom instanceof Mapper ? atom.said : atom);
+    const disclosure: unknown[] = atoms.map((atom) =>
+      atom instanceof Mapper ? atom.said : atom
+    );
     for (const index of indices) {
       if (index > 0 && index < atoms.length && atoms[index] instanceof Mapper) {
         // Disclosure only expands selected post-agid map elements. The agid at
@@ -218,7 +243,11 @@ export class Aggor extends Structor {
   ): Aggor {
     const structor = Structor.fromGroup(group, sourceDomain);
     if (isAggorMapCode(structor.code)) {
-      const map = parseMapperBody(b(structor.qb64g), { major: 2, minor: 0 }, "txt");
+      const map = parseMapperBody(
+        b(structor.qb64g),
+        { major: 2, minor: 0 },
+        "txt",
+      );
       return new Aggor({ structor, mapFields: map.fields });
     }
     return new Aggor({ structor });
@@ -241,7 +270,9 @@ export class Aggor extends Structor {
       : null;
 
     if (!raw) {
-      throw new SerializeError("Aggor requires ael or raw/qb64/qb64b/qb2 input.");
+      throw new SerializeError(
+        "Aggor requires ael or raw/qb64/qb64b/qb2 input.",
+      );
     }
 
     const structor = parseStructor(
@@ -252,7 +283,12 @@ export class Aggor extends Structor {
       "aggregate list/map",
     );
     const mapFields = isAggorMapCode(structor.code)
-      ? new Mapper({ raw: b(structor.qb64g), version, kind: "CESR", verify: false }).fields
+      ? new Mapper({
+        raw: b(structor.qb64g),
+        version,
+        kind: "CESR",
+        verify: false,
+      }).fields
       : undefined;
 
     if (init.verify ?? true) {
@@ -292,7 +328,9 @@ export class Aggor extends Structor {
     }
     if (value && typeof value === "object") {
       return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, Aggor.clone(v)]),
+        Object.entries(value as Record<string, unknown>).map((
+          [k, v],
+        ) => [k, Aggor.clone(v)]),
       ) as T;
     }
     return value;
@@ -361,7 +399,9 @@ export class Aggor extends Structor {
     const codeName = compacted.length / 4 < 64 ** 2
       ? CtrDexV2.GenericListGroup
       : CtrDexV2.BigGenericListGroup;
-    return `${new Counter({ code: codeName, count: compacted.length / 4 }).qb64}${compacted}`;
+    return `${
+      new Counter({ code: codeName, count: compacted.length / 4 }).qb64
+    }${compacted}`;
   }
 
   private static deserializeList(
@@ -375,12 +415,18 @@ export class Aggor extends Structor {
     // - nested map groups representing disclosed element bodies.
     const raw = b(qb64);
     const counter = parseCounter(raw, { major: 2, minor: 0 }, "txt");
-    const payload = raw.slice(counter.fullSize, counter.fullSize + counter.count * 4);
+    const payload = raw.slice(
+      counter.fullSize,
+      counter.fullSize + counter.count * 4,
+    );
     const out: unknown[] = [];
     let offset = 0;
     while (offset < payload.length) {
       if (payload[offset] === "-".charCodeAt(0)) {
-        const nextCounter = parseCounter(payload.slice(offset), { major: 2, minor: 0 }, "txt");
+        const nextCounter = parseCounter(payload.slice(offset), {
+          major: 2,
+          minor: 0,
+        }, "txt");
         if (!isAggorMapCode(nextCounter.code)) {
           throw new DeserializeError(
             `Expected aggregate element map group, got ${nextCounter.code}`,
@@ -399,7 +445,7 @@ export class Aggor extends Structor {
         offset += total;
         continue;
       }
-      const matter = new Matter({ qb64b: payload.slice(offset) });
+      const matter = parseMatter(payload.slice(offset), "txt");
       out.push(matter.qb64);
       offset += matter.fullSize;
     }
@@ -441,9 +487,11 @@ export class Aggor extends Structor {
       ? CtrDexV2.GenericListGroup
       : CtrDexV2.BigGenericListGroup;
     const raw = b(
-      `${new Counter({ code: groupCode, count: compacted.length / 4 }).qb64}${compacted}`,
+      `${
+        new Counter({ code: groupCode, count: compacted.length / 4 }).qb64
+      }${compacted}`,
     );
-    return new Matter({ code, raw: Diger.digest(raw, code) }).qb64;
+    return new Diger({ code, raw: Diger.digest(raw, code) }).qb64;
   }
 }
 
