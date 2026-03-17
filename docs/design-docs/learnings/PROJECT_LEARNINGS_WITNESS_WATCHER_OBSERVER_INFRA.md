@@ -65,25 +65,18 @@ Use this doc for:
   - `.github/workflows/cesr-npm-release.yml`
   - `.github/workflows/changesets-version-pr.yml`
 - What changed:
-  - Added a dedicated CI workflow that runs `deno fmt --check` on PRs and pushes
-    to `master`.
-  - Added a workflow-policy guard that fails if CI workflow files reference
-    non-Deno formatters (`prettier`, `biome`, `dprint`).
-  - Added explicit `deno fmt --check` steps to existing release/version
-    workflows.
+  - Historical note only: CI originally standardized on `deno fmt --check`
+    plus a workflow-policy guard against other formatters.
 - Why:
-  - Ensure formatting policy is enforced consistently across CI entry points and
-    prevent accidental formatter drift.
+  - Preserve the rationale chain for the later move from `deno fmt` to
+    `dprint`; this entry is superseded, not current policy.
 - Tests:
-  - Command:
-    `rg -n "deno fmt --check|prettier|biome|dprint" .github/workflows/*.yml`
-  - Result: `deno fmt --check` present in all workflow paths; non-Deno formatter
-    references only appear in the new policy-guard regex.
+  - Command: historical only
+  - Result: superseded by the 2026-03-16 formatter-policy entry below
 - Contracts/plans touched:
   - N/A
 - Risks/TODO:
-  - If additional workflow files are added later, they should keep this
-    formatter policy and pass the guard.
+  - None; this entry remains only as migration history.
 
 ### 2026-03-16 - Formatter Policy Switched to `dprint`
 
@@ -112,3 +105,122 @@ Use this doc for:
   - This offline session could not live-validate `dprint` package/plugin
     downloads, so the first networked CI/local run should confirm formatter
     bootstrap succeeds end-to-end.
+
+### 2026-03-16 - PR Stage Gate Added For `master`
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `deno.json`
+  - `packages/keri/deno.json`
+  - `packages/cesr/deno.json`
+- What changed:
+  - Added a dedicated PR workflow for pull requests targeting `master` that
+    runs formatting, linting, static quality checks, and both KERI/CESR test
+    suites as one merge gate.
+  - Added an explicit repo lint task based on Deno's recommended rules with
+    targeted exclusions for the repo's current Deno-import/Effection patterns,
+    and fixed the concrete code/test issues needed for that lint pass to go
+    green.
+  - Installed a pinned KERIpy CLI in CI via
+    `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704` before test
+    execution so interop suites run deterministically in GitHub Actions.
+  - Applied the same pinned KERIpy install step to the `keri-ts` npm release
+    workflow before its quality-test gate.
+  - Added dependency caching across active workflows: shared Deno/module cache
+    plus npm cache everywhere, and a KERIpy virtualenv cache keyed by the
+    pinned Git SHA on workflows that run interop-sensitive tests.
+  - Removed implicit GitHub-env sensitivity from runtime version checks:
+    stage-gate quality checks force empty build metadata, and artifact-building
+    release steps opt into stamped metadata explicitly instead of inheriting it
+    accidentally from runner env.
+- Why:
+  - A PR status check only protects `master` if the workflow exists, runs on PR
+    events, and exercises the same interop-sensitive test surface maintainers
+    expect locally.
+  - Without cache restoration, the same pipelines keep paying the full
+    dependency/bootstrap cost on every run even when neither the Deno graph nor
+    the pinned KERIpy version changed.
+- Tests:
+  - Commands: `deno task fmt:check`, `deno task lint`,
+    `deno task quality:check`, `deno task test:quality`,
+    `deno task test:cesr`
+  - Result: all passed locally; `fmt:check` emitted only a sandbox-local
+    `dprint` incremental-cache write warning
+- Contracts/plans touched:
+  - `docs/design-docs/versioning-and-release-plan.md`
+- Risks/TODO:
+  - Branch protection in GitHub still needs to require the new PR workflow's
+    status check if that rule is not already configured.
+  - The pinned KERIpy install depends on GitHub Actions having Python `3.14`
+    available, matching the current KERIpy packaging requirement.
+  - The KERIpy virtualenv cache is keyed by exact SHA on purpose; that is
+    maximally reproducible, but cache misses are expected whenever the pin
+    moves.
+
+### 2026-03-17 - Version Checks Became Deterministic Across Local And CI
+
+- Topic docs updated:
+  - `scripts/generate_versions.ts`
+  - `deno.json`
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/cesr-npm-release.yml`
+  - `docs/release-versioning.md`
+- What changed:
+  - `generate_versions.ts` no longer derives build metadata from ambient
+    `GITHUB_*` vars unless explicitly asked via `--ci-build-metadata` or
+    explicit metadata env vars.
+  - Added `version:generate:ci` for workflows that are intentionally producing
+    stamped CI artifacts.
+  - Kept PR quality checks deterministic by forcing empty metadata on the
+    stage-gate check path, while release build steps now opt into stamped
+    metadata explicitly.
+- Why:
+  - Hidden GitHub-env behavior made `version:check` pass locally and fail in
+    CI for the same commit, which is a bad contract for a stage gate.
+- Tests:
+  - Command:
+    `GITHUB_RUN_NUMBER=2 GITHUB_SHA=70eacff790df06ff3b548aff3e2843883ddd6755 deno task version:check`
+  - Result: passed
+  - Command:
+    `BUILD_METADATA=build.2.70eacff7 deno run -A scripts/generate_versions.ts --check`
+  - Result: failed as expected, proving metadata stamping is now explicit
+- Contracts/plans touched:
+  - `docs/design-docs/versioning-and-release-plan.md`
+  - `docs/release-versioning.md`
+- Risks/TODO:
+  - Any future workflow that wants stamped runtime versions must opt in
+    explicitly; ambient GitHub env is no longer enough.
+
+### 2026-03-17 - CI Now Codifies LMDB-js V1 Compatibility For KERIpy Interop
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `packages/keri/test/integration/app/interop-kli-tufa.test.ts`
+- What changed:
+  - Added `LMDB_DATA_V1=true` to the KERI-interoperability workflows and bumped
+    the dependency-cache key so old incompatible native-addon caches do not get
+    silently reused.
+  - Added a cache-miss setup step that runs `deno task setup` in
+    `packages/keri`, which rebuilds `lmdb` from source with the project’s
+    required v1 data-format compatibility.
+  - Removed the remaining hardcoded maintainer-local package path from the
+    single-sig interop test so CI can actually spawn `tufa` from the checked-out
+    workspace.
+- Why:
+  - KERIpy store interop is a storage-format contract, not just an npm version
+    pin. If CI restores or downloads an `lmdb-js` build without the v1 data
+    format, compat-mode tests are operating against the wrong backend even when
+    the JS package version looks correct.
+- Tests:
+  - Command: N/A in this macOS session for the Linux-specific CI/runtime seam
+  - Result: workflow/test logic updated; next GitHub Actions run is the real
+    verification point
+- Contracts/plans touched:
+  - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Risks/TODO:
+  - The Linux Deno N-API panic may still need a runner/runtime pin if it proves
+    independent of LMDB data-format compatibility; this change fixes the known
+    missing contract first.

@@ -29,8 +29,11 @@ export function displayStr(bytes: Uint8Array, maxLength?: number): string {
   try {
     const decoder = new TextDecoder("utf-8", { fatal: false });
     let str = decoder.decode(bytes);
-    // Replace control characters (non-printable) for readable terminal output
-    str = str.replace(/[\x00-\x1F\x7F-\x9F]/g, ".");
+    // Replace control characters (non-printable) for readable terminal output.
+    str = Array.from(str, (char) => {
+      const code = char.charCodeAt(0);
+      return (code <= 0x1F || (code >= 0x7F && code <= 0x9F)) ? "." : char;
+    }).join("");
     // Truncate if maxLength is specified
     if (maxLength !== undefined && str.length > maxLength) {
       str = str.substring(0, maxLength - 3) + "...";

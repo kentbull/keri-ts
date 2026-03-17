@@ -154,6 +154,7 @@ export class Configer {
     const tempPath = join(dirPath, `.${baseName}.tmp-${crypto.randomUUID()}`);
     const encoder = new TextEncoder();
     let written = false;
+    let pendingError: unknown;
 
     try {
       const tempFile = Deno.openSync(tempPath, {
@@ -172,16 +173,22 @@ export class Configer {
       this.renameIntoPlace(tempPath, path);
       written = true;
       this.syncDirBestEffort(dirPath);
+    } catch (error) {
+      pendingError = error;
     } finally {
       if (!written) {
         try {
           Deno.removeSync(tempPath);
         } catch (error) {
           if (!(error instanceof Deno.errors.NotFound)) {
-            throw error;
+            pendingError ??= error;
           }
         }
       }
+    }
+
+    if (pendingError !== undefined) {
+      throw pendingError;
     }
   }
 

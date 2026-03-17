@@ -263,7 +263,6 @@ function formatBenchmarkText(
   ].join("\n");
 }
 
-// deno-lint-ignore require-yield
 /**
  * Effection command handler for `tufa benchmark cesr`.
  *

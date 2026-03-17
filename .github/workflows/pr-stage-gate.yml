@@ -1,15 +1,21 @@
-name: keri-ts npm release
+name: PR Stage Gate
 
 on:
-  push:
-    tags:
-      - "keri-v*"
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: "Publish to npm"
-        required: true
-        default: "false"
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-stage-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
@@ -20,25 +26,20 @@ env:
   PYTHON_VERSION: "3.14"
 
 jobs:
-  build-and-release:
+  stage-gate:
     runs-on: ubuntu-latest
-    environment: publishing
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
-
-      - uses: denoland/setup-deno@v1
-        with:
-          deno-version: v2.x
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: "https://registry.npmjs.org"
           cache: "npm"
           cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
 
       - name: restore Deno dependency cache
         id: deps-cache
@@ -85,49 +86,17 @@ jobs:
       - name: check formatting
         run: deno task fmt:check
 
-      - name: read package version
-        id: package
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./packages/keri/package.json').version")
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: run lint
+        run: deno task lint
 
-      - name: ensure tag matches package version
-        if: ${{ github.event_name == 'push' }}
-        shell: bash
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#keri-v}"
-          PKG_VERSION="${{ steps.package.outputs.version }}"
-          if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
-            echo "Tag version (${TAG_VERSION}) does not match packages/keri/package.json version (${PKG_VERSION})."
-            exit 1
-          fi
-
-      - name: test quality gate
-        run: deno task test:quality
-
-      - name: build npm package
+      - name: run quality checks
         env:
-          BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
-        run: |
-          deno task version:generate:ci
-          cd packages/keri
-          deno task build:npm
+          BUILD_METADATA: ""
+          KERI_TS_BUILD_METADATA: ""
+          CESR_TS_BUILD_METADATA: ""
+        run: deno task quality:check
 
-      - name: npm pack dry run
+      - name: run tests
         run: |
-          cd packages/keri/npm
-          npm pack
-
-      - name: smoke test tufa in node alpine
-        run: |
-          TARBALL=$(cd packages/keri/npm && ls -1 keri-ts-*.tgz | sort | tail -n 1)
-          bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/${TARBALL}"
-
-      - name: publish to npm
-        if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          cd packages/keri/npm
-          npm publish --provenance --access public
+          deno task test:quality
+          deno task test:cesr

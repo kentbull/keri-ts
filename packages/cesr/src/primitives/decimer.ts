@@ -38,24 +38,24 @@ interface DecimerInit extends MatterInit {
  */
 export class Decimer extends Matter {
   constructor(init: Matter | DecimerInit) {
-    if (
-      !(init instanceof Matter)
-      && !init.raw
-      && !init.qb64
-      && !init.qb64b
-      && !init.qb2
-      && (init.dns !== undefined || init.decimal !== undefined)
-    ) {
-      const dns = init.dns ?? `${init.decimal}`;
-      super({
+    const matter = (
+        !(init instanceof Matter)
+        && !init.raw
+        && !init.qb64
+        && !init.qb64b
+        && !init.qb2
+        && (init.dns !== undefined || init.decimal !== undefined)
+      )
+      ? {
         ...init,
-        raw: rawifyDns(dns),
+        raw: rawifyDns(init.dns ?? `${init.decimal}`),
         code: init.code ?? "4H",
-      });
-    } else {
-      const matter = init instanceof Matter ? init : new Matter(init);
-      super(matter);
-    }
+      }
+      : init instanceof Matter
+      ? init
+      : new Matter(init);
+
+    super(matter);
 
     if (!DECIMAL_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected decimal code, got ${this.code}`);
