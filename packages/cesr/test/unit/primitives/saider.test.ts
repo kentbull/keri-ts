@@ -1,6 +1,9 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import { parseSaider } from "../../../src/primitives/saider.ts";
+import { parseSaider, Saider } from "../../../src/primitives/saider.ts";
+import { sizeify } from "../../../src/serder/serder.ts";
+import { versify } from "../../../src/serder/smell.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
@@ -24,4 +27,32 @@ Deno.test("saider: rejects non-digest code families", () => {
     () => parseSaider(txt(KERIPY_MATTER_VECTORS.verferEcdsaR1), "txt"),
     UnknownCodeError,
   );
+});
+
+Deno.test("saider: saidify injects one computed SAID and preserves sizeified version", () => {
+  const ked = {
+    v: versify({ size: 0 }),
+    t: "icp",
+    d: "",
+    i: "DFixedPrefix0000000000000000000000000000000",
+    s: "0",
+    kt: "1",
+    k: ["DFixedPrefix0000000000000000000000000000000"],
+    nt: "0",
+    n: [],
+    bt: "0",
+    b: [],
+    c: [],
+    a: [],
+  };
+
+  const { saider, sad } = Saider.saidify(ked, {
+    digest: (ser) => blake3(ser),
+  });
+  const { raw, ked: sized } = sizeify(sad, "JSON");
+
+  assertEquals(sized.d, saider.qb64);
+  assertEquals(sized.i, ked.i);
+  assertEquals(saider.qb64.startsWith("E"), true);
+  assertEquals(versify({ size: raw.length }), sized.v);
 });

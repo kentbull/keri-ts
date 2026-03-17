@@ -1,6 +1,8 @@
-import { b64ToInt } from "../core/bytes.ts";
+import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import { ShortageError, VersionError } from "../core/errors.ts";
 import type { Smellage } from "../core/types.ts";
+import type { Versionage } from "../tables/table-types.ts";
+import { type Kind, type Protocol, Vrsn_1_0 } from "../tables/versions.ts";
 
 // KERIpy parity: allow version token to begin within the first 12 bytes.
 const MAXVSOFFSET = 12;
@@ -15,6 +17,44 @@ function byteWindowToText(raw: Uint8Array): string {
     out.push(String.fromCharCode(b));
   }
   return out.join("");
+}
+
+/**
+ * Build one CESR/KERI version string from its semantic parts.
+ *
+ * This is the serialize-side counterpart to `smell()`: callers that already
+ * know protocol, version, kind, and measured size can construct the embedded
+ * version token without reimplementing the encoding rules.
+ */
+export function versify(opts: {
+  proto?: Protocol;
+  pvrsn?: Versionage;
+  gvrsn?: Versionage | null;
+  kind?: Kind;
+  size: number;
+}): string {
+  const {
+    proto = "KERI",
+    pvrsn = Vrsn_1_0,
+    gvrsn = null,
+    kind = "JSON",
+    size,
+  } = opts;
+
+  if (!Number.isInteger(size) || size < 0) {
+    throw new VersionError(`Invalid versioned size ${size}`);
+  }
+
+  if (pvrsn.major === 1) {
+    return `${proto}${pvrsn.major.toString(16)}${pvrsn.minor.toString(16)}${kind}${
+      size.toString(16).padStart(6, "0")
+    }_`;
+  }
+
+  const genv = gvrsn ?? { major: 0, minor: 0 };
+  return `${proto}${intToB64(pvrsn.major, 1)}${intToB64(pvrsn.minor, 2)}${intToB64(genv.major, 1)}${
+    intToB64(genv.minor, 2)
+  }${kind}${intToB64(size, 4)}.`;
 }
 
 export function smell(

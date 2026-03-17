@@ -273,6 +273,21 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 }
 
+async function createScenarioContext(): Promise<ScenarioContext> {
+  const home = await Deno.makeTempDir({ prefix: "tufa-gate-harness-home-" });
+  const denoDir = await detectDenoDir();
+  const env = {
+    ...Deno.env.toObject(),
+    HOME: home,
+    ...(denoDir ? { DENO_DIR: denoDir } : {}),
+  };
+  return {
+    env,
+    packageRoot: packageRoot(),
+    kliCommand: await resolveKliCommand(env),
+  };
+}
+
 async function runInitInceptExportParity(
   ctx: ScenarioContext,
 ): Promise<void> {
@@ -804,38 +819,57 @@ const GATE_SCENARIOS: GateScenario[] = [
   },
 ];
 
+function readyScenario(id: string): GateScenario {
+  const scenario = GATE_SCENARIOS.find((scenario) =>
+    scenario.id === id && scenario.state === "ready"
+  );
+  if (!scenario) {
+    throw new Error(`Expected ready interop scenario '${id}' to exist.`);
+  }
+  return scenario;
+}
+
+async function runReadyScenario(id: string): Promise<void> {
+  const scenario = readyScenario(id);
+  const ctx = await createScenarioContext();
+  const tufaCommands = await listTufaCommands(ctx.env, ctx.packageRoot);
+
+  for (const command of scenario.requiredTufaCommands) {
+    assert(
+      tufaCommands.has(command),
+      `Ready scenario ${scenario.id} requires tufa command '${command}'`,
+    );
+  }
+
+  if (!scenario.run) {
+    throw new Error(`Ready scenario ${scenario.id} has no run() implementation.`);
+  }
+
+  await scenario.run(ctx);
+}
+
 Deno.test("Interop gate harness matrix covers Gate A-G", () => {
   const gates = new Set<Gate>(GATE_SCENARIOS.map((scenario) => scenario.gate));
   assertEquals([...gates].sort(), ["A", "B", "C", "D", "E", "F", "G"]);
 });
 
-Deno.test("Interop gate harness executes ready scenarios", async () => {
-  const home = await Deno.makeTempDir({ prefix: "tufa-gate-harness-home-" });
-  const denoDir = await detectDenoDir();
-  const env = {
-    ...Deno.env.toObject(),
-    HOME: home,
-    ...(denoDir ? { DENO_DIR: denoDir } : {}),
-  };
-  const kliCommand = await resolveKliCommand(env);
+Deno.test(
+  "Interop gate harness ready scenario: B-INIT-INCEPT-EXPORT-PARITY",
+  async () => {
+    await runReadyScenario("B-INIT-INCEPT-EXPORT-PARITY");
+  },
+);
 
-  const ready = GATE_SCENARIOS.filter((scenario) => scenario.state === "ready");
-  assert(ready.length > 0, "Expected at least one ready interop scenario.");
+Deno.test(
+  "Interop gate harness ready scenario: B-LIST-AID-VISIBILITY",
+  async () => {
+    await runReadyScenario("B-LIST-AID-VISIBILITY");
+  },
+);
 
-  const tufaCommands = await listTufaCommands(env, packageRoot());
-  for (const scenario of ready) {
-    for (const command of scenario.requiredTufaCommands) {
-      assert(
-        tufaCommands.has(command),
-        `Ready scenario ${scenario.id} requires tufa command '${command}'`,
-      );
-    }
-
-    if (!scenario.run) {
-      throw new Error(
-        `Ready scenario ${scenario.id} has no run() implementation.`,
-      );
-    }
-    await scenario.run({ env, packageRoot: packageRoot(), kliCommand });
-  }
-});
+Deno.test(
+  "Interop gate harness ready scenario: C-KLI-COMPAT-STORE-OPEN",
+  async () => {
+    await runReadyScenario("C-KLI-COMPAT-STORE-OPEN");
+  },
+);

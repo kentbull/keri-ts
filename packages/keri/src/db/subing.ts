@@ -22,9 +22,10 @@ type CesrValue = Matter | Indexer | Counter;
 type QualifiedCtor<T extends CesrValue> = new(
   init: { qb64b: Uint8Array } | { qb64: string },
 ) => T;
-type SerderCtor<T extends Serder> = new(
-  init: { raw: Uint8Array; verify?: boolean },
-) => T;
+type SerderCtor<T extends Serder> = {
+  new(init?: unknown): T;
+  name: string;
+};
 
 function isKeysIterable(value: Keys): value is Iterable<KeyPart> {
   return typeof value !== "string" && !(value instanceof Uint8Array);
@@ -1136,7 +1137,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = SerderKERI as SerderCtor<T>,
+      klas = SerderKERI as unknown as SerderCtor<T>,
     }: {
       subkey: string;
       sep?: string;
@@ -1158,7 +1159,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
     }
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
-    if (this.klas === SerderKERI && !(serder instanceof SerderKERI)) {
+    if ((this.klas as unknown) === SerderKERI && !(serder instanceof SerderKERI)) {
       throw new TypeError(
         `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
       );
@@ -1186,7 +1187,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = SerderKERI as SerderCtor<T>,
+      klas = SerderKERI as unknown as SerderCtor<T>,
     }: {
       subkey: string;
       sep?: string;
@@ -1210,7 +1211,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
     }
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
-    if (this.klas === SerderKERI && !(serder instanceof SerderKERI)) {
+    if ((this.klas as unknown) === SerderKERI && !(serder instanceof SerderKERI)) {
       throw new TypeError(
         `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
       );

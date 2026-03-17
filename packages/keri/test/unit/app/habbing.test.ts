@@ -1,5 +1,6 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import { SerderKERI, smell } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -40,7 +41,16 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
         throw new Error("Expected inception event SAID in stored event.");
       }
       const said = match[1];
+      assertEquals(hab.pre, said);
       assertEquals(hby.db.getSigs(hab.pre, said).length, 1);
+      if (!evt) {
+        throw new Error("Expected stored inception event bytes.");
+      }
+      assertEquals(smell(evt).smellage.size, evt.length);
+      const evtSerder = hby.db.getEvtSerder(hab.pre, said);
+      assertEquals(evtSerder instanceof SerderKERI, true);
+      assertEquals(evtSerder?.pre, hab.pre);
+      assertEquals(evtSerder?.said, said);
     } finally {
       yield* hby.close();
     }
@@ -64,6 +74,62 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       const state = hab ? hby.db.getState(hab.pre) : null;
       assertEquals(state?.i, hab?.pre);
       assertEquals(state?.k, hab?.kever?.verfers);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Habery inception keeps non-transferable prefix equal to the signing key", async () => {
+  const name = `habery-nontrans-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("bob", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const state = hby.db.getState(hab.pre);
+      assertEquals(hab.pre, state?.k?.[0]);
+      assertEquals(hab.pre.startsWith("B"), true);
+      assertEquals(state?.n ?? [], []);
+      assertEquals(state?.b ?? [], []);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Habery inception honors digestive prefix codex overrides for i", async () => {
+  const name = `habery-sha2-prefix-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("carol", undefined, {
+        code: "I",
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const state = hby.db.getState(hab.pre);
+      assertEquals(hab.pre.startsWith("I"), true);
+      assertEquals(state?.d?.startsWith("E"), true);
+      assertEquals(hab.pre === state?.k?.[0], false);
     } finally {
       yield* hby.close();
     }

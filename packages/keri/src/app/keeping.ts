@@ -1,11 +1,9 @@
-import { parseMatter } from "cesr-ts";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
+import { decodeB64, Indexer, intToB64, Matter, parseMatter, Saider } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
-
-const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /**
  * Root key-creation strategy selectors stored in keeper globals.
@@ -84,68 +82,13 @@ interface SignerMaterial {
   verferQb64: string;
 }
 
-function toBase64Url(bytes: Uint8Array): string {
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function fromBase64Url(text: string): Uint8Array {
-  const padded = text + "=".repeat((4 - (text.length % 4 || 4)) % 4);
-  const b64 = padded.replace(/-/g, "+").replace(/_/g, "/");
-  const decoded = atob(b64);
-  const out = new Uint8Array(decoded.length);
-  for (let i = 0; i < decoded.length; i++) out[i] = decoded.charCodeAt(i);
-  return out;
-}
-
-function intToB64(value: number, length = 1): string {
-  let v = value;
-  const out = new Array<string>(length).fill("A");
-  for (let i = length - 1; i >= 0; i--) {
-    out[i] = B64_ALPHABET[v & 0x3f];
-    v = Math.floor(v / 64);
-  }
-  return out.join("");
-}
-
 function parseQb64Raw(qb64: string): Uint8Array {
   return parseMatter(b(qb64), "txt").raw;
 }
 
-function encodeFixedMatter(code: string, raw: Uint8Array): string {
-  const cs = code.length;
-  const ps = cs % 4;
-  const body = toBase64Url(
-    new Uint8Array(ps + raw.length).map((_, i) => i < ps ? 0 : raw[i - ps]),
-  );
-  return `${code}${body.slice(ps)}`;
-}
-
-function encodeIndexerEd25519Sig(
-  rawSig: Uint8Array,
-  index: number,
-  ondex = index,
-): string {
-  const code = ondex === index ? "A" : "2A";
-  if (code !== "A") {
-    throw new Error("Only compact single-sig indexer encoding is implemented.");
-  }
-  const both = `${code}${intToB64(index, 1)}`;
-  const ps = (3 - (rawSig.length % 3)) % 3;
-  const body = toBase64Url(
-    new Uint8Array(ps + rawSig.length).map((_, i) => i < ps ? 0 : rawSig[i - ps]),
-  );
-  return `${both}${body.slice(ps)}`;
-}
-
-function blake3Qb64(raw: Uint8Array, code = "E"): string {
-  return encodeFixedMatter(code, blake3(raw));
-}
-
 function randomSaltQb64(): string {
   const raw = crypto.getRandomValues(new Uint8Array(16));
-  return encodeFixedMatter("0A", raw);
+  return new Matter({ code: "0A", raw }).qb64;
 }
 
 function pathToBytes(path: string): Uint8Array {
@@ -199,9 +142,12 @@ export function saltySigner(
   temp: boolean,
 ): SignerMaterial {
   const seedRaw = deriveSeedFromSalt(saltQb64, path, tier, temp);
-  const seedQb64 = encodeFixedMatter("A", seedRaw);
+  const seedQb64 = new Matter({ code: "A", raw: seedRaw }).qb64;
   const pubRaw = ed25519.getPublicKey(seedRaw);
-  const verferQb64 = encodeFixedMatter(transferable ? "D" : "B", pubRaw);
+  const verferQb64 = new Matter({
+    code: transferable ? "D" : "B",
+    raw: pubRaw,
+  }).qb64;
   return { seedQb64, verferQb64 };
 }
 
@@ -311,7 +257,10 @@ export class Manager {
         throw new Error("Seed required when aeid is set.");
       }
       const seedRaw = parseQb64Raw(seed);
-      const derivedAeid = encodeFixedMatter("B", ed25519.getPublicKey(seedRaw));
+      const derivedAeid = new Matter({
+        code: "B",
+        raw: ed25519.getPublicKey(seedRaw),
+      }).qb64;
       if (derivedAeid !== aeid) {
         throw new Error(
           `Seed missing or provided seed not associated with aeid=${aeid}.`,
@@ -378,10 +327,10 @@ export class Manager {
         usedTier,
         temp,
       );
-      const dig = blake3Qb64(
-        b(signer.verferQb64),
-        dcode,
-      );
+      const dig = new Matter({
+        code: dcode,
+        raw: blake3(b(signer.verferQb64)),
+      }).qb64;
       digers.push({ qb64: dig });
       this.ks.putPris(signer.verferQb64, signer.seedQb64);
     }
@@ -463,14 +412,16 @@ export class Manager {
       const seedRaw = parseQb64Raw(seedQb64);
       const sigRaw = ed25519.sign(ser, seedRaw);
       return indexed
-        ? encodeIndexerEd25519Sig(sigRaw, idx, idx)
-        : encodeFixedMatter("0B", sigRaw);
+        ? new Indexer({ code: "A", raw: sigRaw, index: idx }).qb64
+        : new Matter({ code: "0B", raw: sigRaw }).qb64;
     });
   }
 }
 
 export function normalizeSaltQb64(salt?: string): string {
-  return salt ? encodeFixedMatter("0A", parseQb64Raw(salt)) : randomSaltQb64();
+  return salt
+    ? new Matter({ code: "0A", raw: parseQb64Raw(salt) }).qb64
+    : randomSaltQb64();
 }
 
 export function branToSaltQb64(bran: string): string {
@@ -495,20 +446,18 @@ export function encodeHugeNumber(num: number): string {
     raw[i] = Number(value & 0xffn);
     value >>= 8n;
   }
-  return encodeFixedMatter("0A", raw);
+  return new Matter({ code: "0A", raw }).qb64;
 }
 
 export function normalizeQb64Code(qb64: string): string {
-  return encodeFixedMatter(
-    parseMatter(b(qb64), "txt").code,
-    parseQb64Raw(qb64),
-  );
+  const matter = parseMatter(b(qb64), "txt");
+  return new Matter({ code: matter.code, raw: matter.raw }).qb64;
 }
 
 export function makeSaider(raw: Uint8Array): string {
-  return blake3Qb64(raw, "E");
+  return new Saider({ code: "E", raw: blake3(raw) }).qb64;
 }
 
 export function b64DecodeUrl(text: string): Uint8Array {
-  return fromBase64Url(text);
+  return decodeB64(text);
 }

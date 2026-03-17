@@ -352,3 +352,20 @@ Use this doc for:
 - Recorded a deliberate follow-up to re-evaluate `cntTop` and `cntAll` after the
   real KEL/bootstrap command graph is stable, so temporary reconciliation APIs
   do not silently become permanent surface area.
+
+### 2026-03-17 - Habitat Inception Now Builds Through `SerderKERI`
+
+- `Hab.make()` no longer hand-saidifies a loose inception SAD into `{ raw, pre, said }`; it now constructs a `SerderKERI` directly and persists
+  `serder.raw`/`serder.pre`/`serder.said`.
+- The old app-local inceptive prefix validation logic in `habbing.ts` was
+  removed in favor of `SerderKERI` subtype verification, which centralizes the
+  KERI rules where KERIpy keeps them.
+- This shifts local habitat bootstrap closer to the KERIpy mental model:
+  application code asks the serder layer for a valid inception event instead of
+  reimplementing protocol rules above it.
+- Added regression coverage proving the stored event can be rehydrated back out
+  of `evts.` as a typed `SerderKERI` whose `pre` and `said` match the current
+  habitat state.
+- Scope honesty matters here too: this improves the local inception path and
+  serder-backed DB hydration, but it is not evidence that the entire KEL stack
+  is now at full KERIpy serder parity.

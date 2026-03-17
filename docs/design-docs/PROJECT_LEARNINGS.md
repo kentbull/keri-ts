@@ -211,6 +211,18 @@ This keeps context focused and avoids long-thread drift.
     bootstrap surface, not just the package graph: exact Deno/Node versions,
     action commit SHAs, explicit environment assertions, and saved built
     tarballs all reduce "works locally, shrugs in Actions" debugging time.
+43. Test parallelization needs to follow isolation boundaries, not folder
+    names: DB-core tests can safely use Deno module parallelism, but CLI/app
+    tests that mutate `console`, `HOME`, or persisted local stores need
+    file-level isolation, and long interop harnesses should be split into
+    individually addressable scenarios so one slow parity lane does not dominate
+    the whole PR gate.
+44. `keri-ts` now has a real non-native `Serder` construction/verification seam
+    for JSON/CBOR/MGPK KERI and ACDC bodies, and local habitat inception now
+    consumes a `SerderKERI` instead of raw saidify helper output; however,
+    CESR-native serder parity and deeper ACDC compactification behavior remain
+    open, so maintainers should not treat this milestone as full
+    `serdering.py` closure yet.
 
 ## New Thread Kickoff Template
 

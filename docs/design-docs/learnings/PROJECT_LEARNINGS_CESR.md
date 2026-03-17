@@ -180,3 +180,25 @@ Persistent CESR parser memory for `keri-ts`.
 - Added a shared matter-codex name lookup helper so primitives such as `Diger`,
   `Verfer`, and `Cigar` no longer read raw generated name tables directly just
   to project algorithm names.
+
+### 2026-03-17 - Non-Native Serder Makify/Verify Surface Landed
+
+- Expanded `packages/cesr/src/serder/serder.ts` from a parser-hydration helper
+  into a schema-driven `Serder` layer with constructor support for `raw`,
+  `sad`, and `makify` flows plus `verify`, `compare`, `pretty`, and copied
+  KERIpy-style protocol/version defaults.
+- Ported a large first slice of KERIpy field-domain behavior into TypeScript:
+  KERI and ACDC field schemas now drive required-field filling, field ordering,
+  alternate-field rejection, and saidive-field defaulting for JSON/CBOR/MGPK
+  bodies.
+- `SerderKERI` now owns KERI-specific inceptive validation such as
+  non-digestive-prefix rules, non-transferable-prefix constraints, and
+  delegated-inception digestive-prefix checks instead of leaving those rules in
+  app-level helpers.
+- Added protocol-specific projection accessors (`pre`, `keys`, `ndigs`,
+  `backs`, `traits`, `issuer`, `regid`, etc.) so application code can treat the
+  subtype objects more like KERIpy serders instead of raw decoded maps.
+- Current limitation remains explicit: this milestone closes the non-native
+  JSON/CBOR/MGPK serder path needed by local inception and DB hydration, but it
+  does not yet claim full KERIpy parity for CESR-native body
+  serialization/deserialization or ACDC compactification logic.

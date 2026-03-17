@@ -266,3 +266,43 @@ Use this doc for:
   - The pinned action SHAs and scheduled macOS workflow still need live GitHub
     Actions confirmation because this local session cannot execute the hosted
     runners themselves.
+
+### 2026-03-17 - KERI Test Parallelism Now Follows Isolation Boundaries
+
+- Topic docs updated:
+  - `scripts/ci/run-keri-test-group.sh`
+  - `packages/keri/deno.json`
+  - `deno.json`
+  - `.github/workflows/pr-stage-gate.yml`
+  - `packages/keri/test/integration/app/interop-gates-harness.test.ts`
+  - `packages/keri/test/README.md`
+- What changed:
+  - Replaced the old monolithic `keri` quality-test invocation with explicit
+    grouped lanes for DB-fast, app-light, app-stateful-A, app-stateful-B,
+    interop parity, and split interop gate scenarios.
+  - Added a documented CI runner script that encodes which groups are safe for
+    `deno test --parallel` and which must stay isolated at file granularity.
+  - Refactored the interop gate harness so ready scenarios are individual
+    `Deno.test(...)` cases, making them filterable and CI-addressable instead
+    of one long opaque test.
+  - Updated the PR stage gate to fan KERI coverage out across multiple jobs
+    instead of one catch-all `keri-tests` lane.
+- Why:
+  - The longest wall-clock bottleneck was the interop harness, not the average
+    test file, and several CLI/app files mutate process-global state in ways
+    that make naive `--parallel` usage flaky.
+- Tests:
+  - Commands:
+    `deno task test:quality:keri:fast`,
+    `deno task test:quality:keri:app-stateful-a`,
+    `deno task test:quality:keri:app-stateful-b`,
+    `deno task test:quality:keri:interop-parity`,
+    `deno task test:quality:keri:interop-gates-b`,
+    `deno task test:quality:keri:interop-gates-c`
+  - Result: all passed locally
+- Contracts/plans touched:
+  - `docs/design-docs/PROJECT_LEARNINGS.md`
+- Risks/TODO:
+  - On a cold GitHub cache, the extra KERI job fan-out will increase duplicate
+    dependency/bootstrap work before cache reuse stabilizes; the tradeoff is
+    intentional because warm-cache PR latency is the dominant maintainer path.

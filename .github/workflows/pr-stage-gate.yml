@@ -3,8 +3,10 @@ name: PR Stage Gate
 # PR merge gate for `master`.
 # Flow:
 # 1. `static-checks` rejects formatting, lint, and deterministic quality drift.
-# 2. `keri-tests` exercises the KERI suite with the same pinned KERIpy/LMDB v1
-#    interop contract we rely on locally and in release CI.
+# 2. The KERI test surface is split by real isolation boundaries:
+#    - `keri-fast-tests` for parallel-safe DB/light checks
+#    - `keri-app-stateful-*` for stateful CLI flows that mutate process globals
+#    - `keri-interop-*` for the slow KERIpy/LMDB v1 parity paths
 # 3. `cesr-tests` keeps the CESR package's fast unit surface independent so
 #    regressions fail quickly without waiting on interop-heavy jobs.
 # 4. `package-smoke` proves the built npm artifacts are installable and usable,
@@ -100,11 +102,122 @@ jobs:
           CESR_TS_BUILD_METADATA: ""
         run: deno task quality:check
 
-  # Interop-sensitive KERI test job. This is separate from static checks because
-  # it needs Python, pinned KERIpy, and LMDB v1-compatible native-addon state.
-  keri-tests:
+  # Fast KERI lanes: DB-core tests can use Deno module parallelism, while the
+  # tiny console-mutating app/integration files are still isolated by file.
+  keri-fast-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run fast KERI test lanes
+        # This lane uses the grouped runner to combine the parallel-safe DB
+        # bucket with the tiny isolated app/integration files.
+        run: deno task test:quality:keri:fast
+
+  # Stateful CLI flows are slower and mutate console/HOME or persisted stores,
+  # so we isolate them by file and split them into two balanced jobs.
+  keri-app-stateful-a-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run stateful KERI app tests group A
+        run: deno task test:quality:keri:app-stateful-a
+
+  keri-app-stateful-b-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run stateful KERI app tests group B
+        run: deno task test:quality:keri:app-stateful-b
+
+  # Interop-sensitive KERI test jobs. These alone need pinned KERIpy and LMDB
+  # data-format v1 compatibility, so they stay isolated from the rest.
+  keri-interop-parity-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -130,9 +243,6 @@ jobs:
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
       - name: rebuild LMDB-js with data v1 compatibility
-        # KERIpy interop depends on LMDB data-format v1 semantics. Rebuild only
-        # when the dependency cache missed so we don't pay native build cost on
-        # every run.
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
@@ -150,8 +260,6 @@ jobs:
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
 
       - name: install pinned KERIpy CLI
-        # Interop tests should run against an explicit KERIpy revision, not
-        # whatever happens to be current on the runner.
         if: steps.keripy-cache.outputs.cache-hit != 'true'
         run: |
           python -m venv "${KERIPY_VENV}"
@@ -168,10 +276,136 @@ jobs:
           EXPECT_KLI: "true"
         run: bash scripts/ci/assert-environment.sh
 
-      - name: run KERI test suite
-        # This includes the KERI package quality/integration surface and is the
-        # stage that protects `master` from interop regressions.
-        run: deno task test:quality
+      - name: run interop parity test
+        run: deno task test:quality:keri:interop-parity
+
+  keri-interop-gates-b-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: rebuild LMDB-js with data v1 compatibility
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          cd packages/keri
+          deno task setup
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: restore KERIpy virtualenv cache
+        id: keripy-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.KERIPY_VENV }}
+          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
+
+      - name: install pinned KERIpy CLI
+        if: steps.keripy-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv "${KERIPY_VENV}"
+          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
+          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+
+      - name: add KERIpy CLI to PATH
+        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+          EXPECT_KLI: "true"
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run interop gate B scenarios
+        run: deno task test:quality:keri:interop-gates-b
+
+  keri-interop-gates-c-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: rebuild LMDB-js with data v1 compatibility
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          cd packages/keri
+          deno task setup
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: restore KERIpy virtualenv cache
+        id: keripy-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.KERIPY_VENV }}
+          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
+
+      - name: install pinned KERIpy CLI
+        if: steps.keripy-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv "${KERIPY_VENV}"
+          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
+          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+
+      - name: add KERIpy CLI to PATH
+        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+          EXPECT_KLI: "true"
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run interop gate C scenarios
+        run: deno task test:quality:keri:interop-gates-c
 
   # CESR remains a separate job because it is fast and independent; splitting it
   # out improves feedback latency and makes failures easier to localize.
@@ -291,7 +525,12 @@ jobs:
     if: ${{ always() }}
     needs:
       - static-checks
-      - keri-tests
+      - keri-fast-tests
+      - keri-app-stateful-a-tests
+      - keri-app-stateful-b-tests
+      - keri-interop-parity-tests
+      - keri-interop-gates-b-tests
+      - keri-interop-gates-c-tests
       - cesr-tests
       - package-smoke
     runs-on: ubuntu-latest
@@ -302,15 +541,30 @@ jobs:
         # disappearing when an upstream job aborts early.
         env:
           STATIC_CHECKS: ${{ needs.static-checks.result }}
-          KERI_TESTS: ${{ needs.keri-tests.result }}
+          KERI_FAST_TESTS: ${{ needs.keri-fast-tests.result }}
+          KERI_APP_STATEFUL_A_TESTS: ${{ needs.keri-app-stateful-a-tests.result }}
+          KERI_APP_STATEFUL_B_TESTS: ${{ needs.keri-app-stateful-b-tests.result }}
+          KERI_INTEROP_PARITY_TESTS: ${{ needs.keri-interop-parity-tests.result }}
+          KERI_INTEROP_GATES_B_TESTS: ${{ needs.keri-interop-gates-b-tests.result }}
+          KERI_INTEROP_GATES_C_TESTS: ${{ needs.keri-interop-gates-c-tests.result }}
           CESR_TESTS: ${{ needs.cesr-tests.result }}
           PACKAGE_SMOKE: ${{ needs.package-smoke.result }}
         run: |
           echo "static-checks=${STATIC_CHECKS}"
-          echo "keri-tests=${KERI_TESTS}"
+          echo "keri-fast-tests=${KERI_FAST_TESTS}"
+          echo "keri-app-stateful-a-tests=${KERI_APP_STATEFUL_A_TESTS}"
+          echo "keri-app-stateful-b-tests=${KERI_APP_STATEFUL_B_TESTS}"
+          echo "keri-interop-parity-tests=${KERI_INTEROP_PARITY_TESTS}"
+          echo "keri-interop-gates-b-tests=${KERI_INTEROP_GATES_B_TESTS}"
+          echo "keri-interop-gates-c-tests=${KERI_INTEROP_GATES_C_TESTS}"
           echo "cesr-tests=${CESR_TESTS}"
           echo "package-smoke=${PACKAGE_SMOKE}"
           [[ "${STATIC_CHECKS}" == "success" ]]
-          [[ "${KERI_TESTS}" == "success" ]]
+          [[ "${KERI_FAST_TESTS}" == "success" ]]
+          [[ "${KERI_APP_STATEFUL_A_TESTS}" == "success" ]]
+          [[ "${KERI_APP_STATEFUL_B_TESTS}" == "success" ]]
+          [[ "${KERI_INTEROP_PARITY_TESTS}" == "success" ]]
+          [[ "${KERI_INTEROP_GATES_B_TESTS}" == "success" ]]
+          [[ "${KERI_INTEROP_GATES_C_TESTS}" == "success" ]]
           [[ "${CESR_TESTS}" == "success" ]]
           [[ "${PACKAGE_SMOKE}" == "success" ]]

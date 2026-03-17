@@ -2,6 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { b } from "../../src/index.ts";
+import { Matter } from "../../src/primitives/matter.ts";
 import { parseSerder, Serder, SerderACDC, SerderKERI } from "../../src/serder/serder.ts";
 import { smell } from "../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
@@ -142,4 +143,83 @@ Deno.test("serder: parseSerder wraps malformed JSON decode failures", () => {
   const raw = b(bad);
   const { smellage } = smell(raw);
   assertThrows(() => parseSerder(raw, smellage), DeserializeError);
+});
+
+Deno.test("serder: SerderKERI makify returns saidified inception serder", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+  const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "icp",
+      i: "",
+      kt: "1",
+      k: [key],
+      nt: "1",
+      n: [nxt],
+      bt: "0",
+      b: [],
+      c: [],
+      a: [],
+    },
+    makify: true,
+    saids: {
+      d: "E",
+      i: "E",
+    },
+  });
+
+  assertEquals(serder.verify(), true);
+  assertEquals(serder.pre, serder.said);
+  assertEquals(serder.keys, [key]);
+  assertEquals(serder.ndigs, [nxt]);
+  assertEquals(serder.estive, true);
+});
+
+Deno.test("serder: SerderKERI preserves non-digestive i code from existing prefix", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "icp",
+      i: key,
+      kt: "1",
+      k: [key],
+      nt: "0",
+      n: [],
+      bt: "0",
+      b: [],
+      c: [],
+      a: [],
+    },
+    makify: true,
+  });
+
+  assertEquals(serder.pre, key);
+  assertEquals(new Matter({ qb64: serder.pre ?? "" }).code, "B");
+  assertEquals(serder.verify(), true);
+});
+
+Deno.test("serder: SerderKERI rejects invalid non-transferable inception state", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+
+  assertThrows(
+    () =>
+      new SerderKERI({
+        sad: {
+          t: "icp",
+          i: key,
+          kt: "1",
+          k: [key],
+          nt: "1",
+          n: ["EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_"],
+          bt: "0",
+          b: [],
+          c: [],
+          a: [],
+        },
+        makify: true,
+      }),
+    DeserializeError,
+  );
 });
