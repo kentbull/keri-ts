@@ -1,6 +1,11 @@
-import { Command } from "npm:commander@^10.0.1";
+import { Command, Option } from "npm:commander@^10.0.1";
 import { type Operation } from "npm:effection@^3.6.0";
 import { AppError } from "../../core/errors.ts";
+import {
+  LOG_LEVELS,
+  setLogLevel,
+  type LogLevel,
+} from "../../core/logger.ts";
 import { DISPLAY_VERSION } from "../version.ts";
 import { createCmdHandlers, registerCmds } from "./command-definitions.ts";
 import { CommandHandler, type CommandSelection } from "./command-types.ts";
@@ -13,6 +18,12 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
   program.name("tufa").version(DISPLAY_VERSION).description(
     "Trust Utilities for Agents CLI",
+  );
+  program.addOption(
+    new Option(
+      "--loglevel <level>",
+      `Set runtime log verbosity (${LOG_LEVELS.join(", ")})`,
+    ).choices([...LOG_LEVELS]),
   );
 
   // Prevent Commander from exiting automatically so we can run Effection operations
@@ -82,6 +93,7 @@ function* runCmd(
  */
 export function* tufa(args: string[] = []): Operation<void> {
   const dispatch: { selection?: CommandSelection } = {};
+  setLogLevel("warn");
 
   // Use Commander.js for all command parsing
   const program = createCLIProgram((next) => {
@@ -94,6 +106,9 @@ export function* tufa(args: string[] = []): Operation<void> {
     handleParseError(error);
     return;
   }
+
+  const options = program.opts<{ loglevel?: LogLevel }>();
+  setLogLevel(options.loglevel ?? "warn");
 
   const commandHandlers = createCmdHandlers();
   yield* runCmd(dispatch.selection, commandHandlers);
