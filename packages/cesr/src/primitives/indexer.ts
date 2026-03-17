@@ -8,15 +8,18 @@ import {
   encodeB64,
   intToB64,
   nabSextets,
-  sceil
-} from '../core/bytes.ts'
+  sceil,
+} from "../core/bytes.ts";
 import {
   DeserializeError,
   ShortageError,
   UnknownCodeError,
 } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { INDEXER_HARDS, INDEXER_SIZES } from "../tables/indexer.tables.ts";
+import {
+  INDEXER_HARDS,
+  INDEXER_SIZES,
+} from "../tables/indexer.tables.generated.ts";
 
 /**
  * Supported initialization forms for Indexer-derived primitives.

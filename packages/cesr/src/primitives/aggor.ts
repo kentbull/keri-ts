@@ -1,26 +1,16 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { CtrDexV2 } from "../tables/counter-codex.ts";
+import {
+  AGGOR_CODES,
+  AGGOR_LIST_CODES,
+  AGGOR_MAP_CODES,
+} from "../tables/counter-groups.ts";
 import { parseCompactor } from "./compactor.ts";
 import { parseCounter } from "./counter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import type { MapperField } from "./mapper.ts";
 import { parseStructor, Structor } from "./structor.ts";
-
-const AGGOR_LIST_CODES = new Set<string>([
-  CtrDexV2.GenericGroup,
-  CtrDexV2.BigGenericGroup,
-  CtrDexV2.GenericListGroup,
-  CtrDexV2.BigGenericListGroup,
-]);
-
-const AGGOR_MAP_CODES = new Set<string>([
-  CtrDexV2.MapBodyGroup,
-  CtrDexV2.BigMapBodyGroup,
-  CtrDexV2.GenericMapGroup,
-  CtrDexV2.BigGenericMapGroup,
-]);
 
 /** True when counter code belongs to aggregate-list group families. */
 export function isAggorListCode(code: string): boolean {
@@ -34,7 +24,7 @@ export function isAggorMapCode(code: string): boolean {
 
 /** True when counter code belongs to any aggregate list/map family. */
 export function isAggorCode(code: string): boolean {
-  return isAggorListCode(code) || isAggorMapCode(code);
+  return AGGOR_CODES.has(code);
 }
 
 interface AggorInit {
@@ -52,12 +42,18 @@ export class Aggor extends Structor {
   readonly kind: "list" | "map";
   readonly mapFields?: readonly MapperField[];
 
-  constructor(init: AggorInit | Structor | ConstructorParameters<typeof Structor>[0]) {
+  constructor(
+    init: AggorInit | Structor | ConstructorParameters<typeof Structor>[0],
+  ) {
     const payload = init instanceof Structor
       ? { structor: init }
       : "structor" in (init as AggorInit)
       ? (init as AggorInit)
-      : { structor: new Structor(init as ConstructorParameters<typeof Structor>[0]) };
+      : {
+        structor: new Structor(
+          init as ConstructorParameters<typeof Structor>[0],
+        ),
+      };
 
     super(payload.structor);
     if (!isAggorCode(this.code)) {
@@ -120,5 +116,7 @@ export function parseAggor(
   if (isAggorListCode(structor.code)) {
     return new Aggor(structor);
   }
-  throw new UnknownCodeError(`Expected aggregate list/map group code, got ${structor.code}`);
+  throw new UnknownCodeError(
+    `Expected aggregate list/map group code, got ${structor.code}`,
+  );
 }

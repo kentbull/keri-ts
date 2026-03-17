@@ -1,29 +1,20 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { PREFIX_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
-
-const PREFIX_CODE_NAMES = new Set([
-  "Ed25519N",
-  "ECDSA_256k1N",
-  "ECDSA_256r1N",
-  "Ed448N",
-]);
 
 /**
  * Identifier-prefix primitive.
  *
- * KERIpy substance: `Prefixer` represents AID prefix material and restricts
- * accepted codes to non-transferable/basic prefix derivation families.
+ * KERIpy substance: `Prefixer` represents AID prefix material and accepts the
+ * full KERI prefix derivation codex (`PreDex`), including transferable and
+ * self-addressing derivation families.
  */
 export class Prefixer extends Matter {
   constructor(init: Matter | MatterInit) {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
-    const name =
-      MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-        "";
-    if (!PREFIX_CODE_NAMES.has(name)) {
+    if (!PREFIX_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected prefix code, got ${this.code}`);
     }
   }

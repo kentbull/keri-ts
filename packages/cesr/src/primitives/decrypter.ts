@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { DECRYPTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
 
 /**
@@ -12,10 +12,7 @@ export class Decrypter extends Matter {
   constructor(init: Matter | MatterInit) {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
-    const name =
-      MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-        "";
-    if (name !== "X25519_Private") {
+    if (!DECRYPTER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected decrypter key code, got ${this.code}`,
       );

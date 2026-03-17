@@ -22,6 +22,19 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
         toad: 0,
       });
       assertEquals(hby.habs.get(hab.pre)?.name, alias);
+      const storedHab = hby.db.getHab(hab.pre);
+      assertEquals(storedHab?.hid, hab.pre);
+      assertEquals(storedHab?.name, alias);
+      assertEquals(storedHab ? "sigs" in storedHab : false, false);
+
+      const evt = hby.db.getEvt(new TextEncoder().encode(`${hab.pre}:0`));
+      const evtText = evt ? new TextDecoder().decode(evt) : "";
+      const match = evtText.match(/"d":"([^"]+)"/);
+      if (!match) {
+        throw new Error("Expected inception event SAID in stored event.");
+      }
+      const said = match[1];
+      assertEquals(hby.db.getSigs(hab.pre, said).length, 1);
     } finally {
       yield* hby.close();
     }
@@ -37,6 +50,10 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       const hab = [...hby.habs.values()][0];
       assertEquals(hab?.name, alias);
       assertEquals(hby.habByName(alias)?.pre, hab?.pre);
+      const storedHab = hab ? hby.db.getHab(hab.pre) : null;
+      assertEquals(storedHab?.hid, hab?.pre);
+      assertEquals(storedHab?.name, alias);
+      assertEquals(storedHab ? "sigs" in storedHab : false, false);
     } finally {
       yield* hby.close();
     }

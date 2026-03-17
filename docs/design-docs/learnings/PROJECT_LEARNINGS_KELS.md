@@ -55,6 +55,12 @@ replay/verification semantics.
     `KomerBase -> Komer` split is now part of the parity path, and future mapper
     subclasses should build on that seam instead of reintroducing raw-LMDB
     shortcuts.
+16. Generic type parameters on `Komer`, `Suber`, and the CESR-backed LMDB
+    wrappers are part of the parity contract, not optional TypeScript garnish:
+    the storage wrapper type must describe the narrowest real persisted value
+    shape from KERIpy usage, and if a store holds a compound CESR tuple then
+    the TypeScript type should be an explicit tuple alias of those primitive
+    subclasses instead of `Matter`, `Matter[]`, or another widened fallback.
 
 ## Scope Checklist
 
@@ -149,6 +155,22 @@ Use this doc for:
 - Expanded the `Komer` unit suite to mirror the current KERIpy single-value
   tests for CRUD, branch iteration, trim, schema validation failures, custom
   serialization, and serializer/deserializer behavior.
+
+### 2026-03-16 - LMDB Wrapper Generics Became A Storage-Contract Rule
+
+- Recorded an explicit parity rule for `Komer`, `Suber`, and CESR-backed LMDB
+  wrappers: the generic type argument must model the real persisted KERIpy
+  value shape, not a convenience supertype.
+- Corrected the recent `pres.` regression by fixing the local `Prefixer`
+  primitive to accept the full KERIpy `PreDex` family and then restoring
+  `Keeper.pres` to `CesrSuber<Prefixer>` instead of widening it to `Matter`.
+- Captured the rule for mixed CESR tuple stores as well: when a KERIpy store
+  returns a typed couple, triple, or larger tuple, `keri-ts` should use an
+  explicit tuple type alias of the participating primitive subclasses rather
+  than `Matter[]` or another erased representation.
+- Maintainer heuristic: if a proposed generic widening makes the code easier but
+  makes the DB contract less specific, it is usually the primitive/model layer
+  that needs correction, not the storage wrapper.
 
 ### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
 

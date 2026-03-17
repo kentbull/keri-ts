@@ -7,7 +7,7 @@ import {
 } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
-import { CtrDexV2 } from "../tables/counter-codex.ts";
+import { AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { parseCounter } from "./counter.ts";
 import { parseLabeler } from "./labeler.ts";
@@ -15,20 +15,6 @@ import { parseMatter } from "./matter.ts";
 import type { Primitive } from "./primitive.ts";
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
-
-const MAP_GROUP_CODES = new Set([
-  CtrDexV2.MapBodyGroup,
-  CtrDexV2.BigMapBodyGroup,
-  CtrDexV2.GenericMapGroup,
-  CtrDexV2.BigGenericMapGroup,
-]);
-
-const LIST_GROUP_CODES = new Set([
-  CtrDexV2.GenericGroup,
-  CtrDexV2.BigGenericGroup,
-  CtrDexV2.GenericListGroup,
-  CtrDexV2.BigGenericListGroup,
-]);
 
 export interface MapperField {
   label: string | null;
@@ -93,7 +79,7 @@ function tokenSize(
 }
 
 function isMapGroupCode(code: string): boolean {
-  return MAP_GROUP_CODES.has(code);
+  return AGGOR_MAP_CODES.has(code);
 }
 
 function parseCounterProbe(
@@ -359,5 +345,5 @@ export function parseMapperBody(
 
 /** True for counter codes that represent map/list-native aggregate primitives. */
 export function isMapperCounterCode(code: string): boolean {
-  return MAP_GROUP_CODES.has(code) || LIST_GROUP_CODES.has(code);
+  return AGGOR_MAP_CODES.has(code) || AGGOR_LIST_CODES.has(code);
 }

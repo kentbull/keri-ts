@@ -1,15 +1,8 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { CtrDexV2 } from "../tables/counter-codex.ts";
+import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
 import { type Mapper, parseMapperBody } from "./mapper.ts";
-
-const COMPACTOR_CODES = new Set([
-  CtrDexV2.MapBodyGroup,
-  CtrDexV2.BigMapBodyGroup,
-  CtrDexV2.GenericMapGroup,
-  CtrDexV2.BigGenericMapGroup,
-]);
 
 export function parseCompactor(
   input: Uint8Array,

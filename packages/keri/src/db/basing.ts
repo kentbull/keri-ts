@@ -6,11 +6,12 @@ import {
   DatabaseNotOpenError,
   DatabaseOperationError,
 } from "../core/errors.ts";
+import { HabitatRecord } from "../core/records.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
-import { Suber } from "./subing.ts";
-import { b, t } from "../../../cesr/mod.ts";
+import { CesrIoSetSuber, Suber } from "./subing.ts";
+import { b, Siger, t } from "../../../cesr/mod.ts";
 
 export interface BaserOptions extends LMDBerOptions {
   compat?: boolean;
@@ -35,7 +36,8 @@ export class Baser {
 
   // Named sub-databases
   public evts!: Database<BinVal, BinKey>; // Events sub-database (dgKey: serialized KEL events)
-  public habs!: Komer<unknown>; // Habitat records keyed by pre
+  public habs!: Komer<HabitatRecord>; // Habitat records keyed by pre
+  public sigs!: CesrIoSetSuber<Siger>; // Indexed signatures keyed by (pre, said)
   public names!: Suber; // (ns,name) -> pre
   public hbys!: Suber; // Habery-scoped values such as __signatory__
 
@@ -98,7 +100,11 @@ export class Baser {
     // Names end with "." to avoid namespace collisions with Base64 identifier prefixes
     try {
       this.evts = this.lmdber.openDB("evts.", false);
-      this.habs = new Komer(this.lmdber, { subkey: "habs." });
+      this.habs = new Komer<HabitatRecord>(this.lmdber, { subkey: "habs." });
+      this.sigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+        subkey: "sigs.",
+        klas: Siger,
+      });
       this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
       this.hbys = new Suber(this.lmdber, { subkey: "hbys." });
 
@@ -171,31 +177,46 @@ export class Baser {
   }
 
   /** Insert habitat record for prefix if absent. */
-  putHab(pre: string, record: unknown): boolean {
+  putHab(pre: string, record: HabitatRecord): boolean {
     return this.habs.put(pre, record);
   }
 
   /** Upsert habitat record for prefix. */
-  pinHab(pre: string, record: unknown): boolean {
+  pinHab(pre: string, record: HabitatRecord): boolean {
     return this.habs.pin(pre, record);
   }
 
   /** Read habitat record for prefix. */
-  getHab<T>(pre: string): T | null {
-    return this.habs.get(pre) as T | null;
+  getHab(pre: string): HabitatRecord | null {
+    return this.habs.get(pre);
   }
 
   /** Iterate persisted habitat records keyed by prefix. */
-  *getHabItemIter<T>(
+  *getHabItemIter(
     top = "",
-  ): Generator<[string, T]> {
+  ): Generator<[string, HabitatRecord]> {
     for (const [keys, record] of this.habs.getTopItemIter(top)) {
       const pre = keys[0];
       if (!pre) {
         continue;
       }
-      yield [pre, record as T];
+      yield [pre, record];
     }
+  }
+
+  /** Insert indexed signatures for an event if the key is absent. */
+  putSigs(pre: string, said: string, sigs: string[]): boolean {
+    return this.sigs.put([pre, said], sigs.map((sig) => new Siger({ qb64: sig })));
+  }
+
+  /** Upsert indexed signatures for an event. */
+  pinSigs(pre: string, said: string, sigs: string[]): boolean {
+    return this.sigs.pin([pre, said], sigs.map((sig) => new Siger({ qb64: sig })));
+  }
+
+  /** Read indexed signatures for an event. */
+  getSigs(pre: string, said: string): string[] {
+    return this.sigs.get([pre, said]).map((sig) => sig.qb64);
   }
 
   /** Insert namespace/name -> prefix mapping if absent. */

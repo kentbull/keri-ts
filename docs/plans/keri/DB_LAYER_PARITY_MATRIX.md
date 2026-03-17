@@ -149,30 +149,33 @@ proposed TypeScript symbol targets.
    - `test/unit/db/core/lmdber-helpers.test.ts`
    - `test/unit/db/core/keys.test.ts`
 
-## D2/D3 Bootstrap Foundation Snapshot (2026-03-15)
+## D2/D3 Bootstrap Foundation Snapshot (2026-03-16)
 
-1. `subing.ts` now exists and provides the first bootstrap slice of the `Suber`
-   family needed on the current `Baser` / `Keeper` path:
-   - `SuberBase`
-   - `Suber`
-   - `CesrSuber`
-   - `CryptSignerSuber`
-2. `koming.ts` now exists and provides a minimal JSON-backed `Komer`.
-3. `Baser` migrated its active visibility stores off raw named-handle access:
-   - `habs.` -> `Komer`
+1. `subing.ts` now carries the full planned `Suber` family surface used by the
+   current parity push, with KERIpy method names as the primary API.
+2. `koming.ts` is now a single-generic `Komer<T>` for one persisted value
+   shape rather than a schema/codec abstraction.
+3. `Baser` now uses typed record storage for habitats and a separate signature
+   store:
+   - `habs.` -> `Komer<HabitatRecord>`
+   - `sigs.` -> `CesrIoSetSuber<Siger>`
    - `names.` -> `Suber` with KERIpy-aligned `^` separator
    - `hbys.` -> `Suber`
-4. `Keeper` migrated its active bootstrap stores onto typed wrappers:
+4. `Keeper` active bootstrap stores now open through the fuller typed wrappers:
    - `gbls.` -> `Suber`
    - `pris.` -> `CryptSignerSuber`
-   - `pres.` / `prxs.` / `nxts.` -> `CesrSuber`
+   - `pres.` -> `CesrSuber<Prefixer>`
+   - `prxs.` / `nxts.` -> `CesrSuber<Cipher>`
    - `prms.` / `sits.` / `pubs.` -> `Komer`
-5. Compatibility-mode store opening now uses `.keri/db` and `.keri/ks` alt
-   tails, which is sufficient to exercise visibility-only Gate C opens.
+5. Habitat metadata no longer persists inline `sigs`; indexed signatures are
+   stored separately in `.sigs`, matching the KERIpy split more closely.
 6. Evidence tests:
    - `test/unit/db/subing.test.ts`
    - `test/unit/db/koming.test.ts`
-   - `test/unit/app/compat-list-aid.test.ts`
+   - `test/unit/app/habbing.test.ts`
+
+Note: the row-by-row inventory above predates this parity pass and still needs
+an explicit matrix refresh.
 
 ## K/V Inventory Artifacts
 

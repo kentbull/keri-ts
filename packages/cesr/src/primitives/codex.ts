@@ -1,89 +1,94 @@
-/**
- * Primitive codex subsets derived from KERIpy `coring.py` + `kering.py`.
- *
- * These sets intentionally model semantic families (digest, nonce, tag, label)
- * instead of relying on one-to-one code-name maps because several CESR codes
- * are valid in multiple semantic domains (for example `0A`).
- */
-export const DIGEST_CODES = new Set<string>([
-  "E",
-  "F",
-  "G",
-  "H",
-  "I",
-  "0D",
-  "0E",
-  "0F",
-  "0G",
+import {
+  BEXTER_CODES,
+  CIPHER_X25519_ALL_CODES,
+  DECIMAL_CODES,
+  DIGEST_CODES,
+  ESCAPE_CODES,
+  LABELER_CODES,
+  NON_DIGEST_PREFIX_CODES,
+  NON_TRANSFERABLE_PREFIX_CODES,
+  NONCE_CODES,
+  NUMBER_CODES,
+  PREFIX_CODES,
+  TAG_CODES,
+  TEXTER_CODES,
+} from "../tables/matter.codexes.generated.ts";
+import {
+  INDEXED_BOTH_SIG_CODES,
+  INDEXED_CURRENT_SIG_CODES,
+  INDEXED_SIG_CODES,
+  INDEXER_CODES,
+} from "../tables/indexer.codexes.generated.ts";
+import {
+  MATTER_CODE_NAMES,
+  MATTER_CODES_BY_NAME,
+} from "../tables/matter.tables.generated.ts";
+
+function codesByName<const T extends readonly string[]>(
+  ...names: T
+): Set<string> {
+  const codes = names.map((name) => {
+    const code =
+      MATTER_CODES_BY_NAME[name as keyof typeof MATTER_CODES_BY_NAME];
+    if (!code) {
+      throw new Error(`Missing matter code name=${name} in generated tables.`);
+    }
+    return code;
+  });
+  return new Set(codes);
+}
+
+function codesByNamePredicate(
+  predicate: (name: string) => boolean,
+): Set<string> {
+  return new Set(
+    Object.entries(MATTER_CODE_NAMES)
+      .filter(([, name]) => predicate(name))
+      .map(([code]) => code),
+  );
+}
+
+export {
+  BEXTER_CODES,
+  CIPHER_X25519_ALL_CODES,
+  DECIMAL_CODES,
+  DIGEST_CODES,
+  ESCAPE_CODES,
+  INDEXED_BOTH_SIG_CODES,
+  INDEXED_CURRENT_SIG_CODES,
+  INDEXED_SIG_CODES,
+  INDEXER_CODES,
+  LABELER_CODES,
+  NON_DIGEST_PREFIX_CODES,
+  NON_TRANSFERABLE_PREFIX_CODES,
+  NONCE_CODES,
+  NUMBER_CODES,
+  PREFIX_CODES,
+  TAG_CODES,
+  TEXTER_CODES,
+};
+
+export const VERFER_CODES = NON_DIGEST_PREFIX_CODES;
+export const SIGER_CODES = INDEXED_SIG_CODES;
+export const THOLDER_WEIGHTED_CODES = BEXTER_CODES;
+export const THOLDER_NUMERIC_CODES = NUMBER_CODES;
+export const THOLDER_CODES = new Set<string>([
+  ...THOLDER_NUMERIC_CODES,
+  ...THOLDER_WEIGHTED_CODES,
 ]);
 
-export const NONCE_CODES = new Set<string>([
-  "1AAP", // Empty
-  "0A", // Salt_128
-  "a", // Salt_256
-  ...DIGEST_CODES,
-]);
+export const SIGNER_CODES = codesByName(
+  "Ed25519_Seed",
+  "ECDSA_256k1_Seed",
+  "ECDSA_256r1_Seed",
+);
 
-export const NUMBER_CODES = new Set<string>([
-  "M", // Short
-  "0H", // Long
-  "R", // Tall
-  "N", // Big
-  "S", // Large
-  "T", // Great
-  "0A", // Huge
-  "U", // Vast
-]);
-
-export const DECIMAL_CODES = new Set<string>([
-  "4H",
-  "5H",
-  "6H",
-  "7AAH",
-  "8AAH",
-  "9AAH",
-]);
-
-export const TAG_CODES = new Set<string>([
-  "0J", // Tag1
-  "0K", // Tag2
-  "X", // Tag3
-  "1AAF", // Tag4
-  "0L", // Tag5
-  "0M", // Tag6
-  "Y", // Tag7
-  "1AAN", // Tag8
-  "0N", // Tag9
-  "0O", // Tag10
-  "Z", // Tag11
-]);
-
-export const BEXTER_CODES = new Set<string>([
-  "4A",
-  "5A",
-  "6A",
-  "7AAA",
-  "8AAA",
-  "9AAA",
-]);
-
-export const TEXTER_CODES = new Set<string>([
-  "4B",
-  "5B",
-  "6B",
-  "7AAB",
-  "8AAB",
-  "9AAB",
-]);
-
-export const LABELER_CODES = new Set<string>([
-  "1AAP", // Empty
-  ...TAG_CODES,
-  ...BEXTER_CODES,
-  ...TEXTER_CODES,
-  "V", // Label1
-  "W", // Label2
-]);
+export const SALTER_CODES = codesByName("Salt_128");
+export const ENCRYPTER_CODES = codesByName("X25519");
+export const DECRYPTER_CODES = codesByName("X25519_Private");
+export const CIGAR_CODES = codesByNamePredicate((name) =>
+  name.endsWith("_Sig")
+);
 
 export const TRAIT_TAGS = new Set<string>([
   "EO",

@@ -17,32 +17,14 @@ type KeyPart = string | Uint8Array;
 type Keys = KeyPart | Iterable<KeyPart>;
 export type KomerKind = Extract<Kind, "JSON" | "CBOR" | "MGPK">;
 
-/**
- * TypeScript-side schema hooks for `Komer` value validation and shape mapping.
- *
- * KERIpy uses a dataclass reference plus `dictify`/`datify` helpers. `keri-ts`
- * does not have an equivalent runtime dataclass system, so the same seam is
- * expressed as explicit hooks:
- * - `assert` validates a fully materialized domain value
- * - `toStored` maps a domain value to the plain serialized payload shape
- * - `fromStored` maps a decoded payload shape back into the domain value
- */
-export interface KomerSchema<T, Stored = unknown> {
-  assert?: (value: unknown) => asserts value is T;
-  toStored?: (value: T) => Stored;
-  fromStored?: (value: unknown) => T;
-}
-
-export interface KomerBaseOptions<T, Stored = unknown> {
+export interface KomerBaseOptions {
   subkey: string;
   sep?: string;
   kind?: KomerKind;
   dupsort?: boolean;
-  schema?: KomerSchema<T, Stored>;
 }
 
-export interface KomerOptions<T, Stored = unknown>
-  extends Omit<KomerBaseOptions<T, Stored>, "dupsort"> {}
+export interface KomerOptions extends Omit<KomerBaseOptions, "dupsort"> {}
 
 function assertKomerKind(kind: KomerKind): KomerKind {
   if (
@@ -79,19 +61,17 @@ function toUint8Array(bytes: Uint8Array): Uint8Array {
  * - mirrors `keri.db.koming.KomerBase`
  *
  * Current `keri-ts` differences:
- * - schema handling is expressed through explicit TS hooks instead of Python
- *   dataclass references plus `datify`/`dictify`
+ * - `Komer` is intentionally narrowed to one persisted value shape `T`
  * - only the single-record `Komer` subclass has been ported so far; the other
  *   KERIpy `KomerBase` subclasses still remain future work
  */
-export class KomerBase<T, Stored = unknown> {
+export class KomerBase<T> {
   static readonly Sep = ".";
 
   readonly db: LMDBer;
   readonly sdb: Database<BinVal, BinKey>;
   readonly sep: string;
   readonly kind: KomerKind;
-  readonly schema?: KomerSchema<T, Stored>;
   protected readonly _ser: (val: T) => Uint8Array;
   protected readonly _des: (val: Uint8Array | null) => T | null;
 
@@ -102,14 +82,12 @@ export class KomerBase<T, Stored = unknown> {
       sep = KomerBase.Sep,
       kind = Kinds.json,
       dupsort = false,
-      schema,
-    }: KomerBaseOptions<T, Stored>,
+    }: KomerBaseOptions,
   ) {
     this.db = db;
     this.sdb = this.db.openDB(subkey, dupsort);
     this.sep = sep;
     this.kind = assertKomerKind(kind);
-    this.schema = schema;
     this._ser = this._serializer(this.kind);
     this._des = this._deserializer(this.kind);
   }
@@ -164,50 +142,37 @@ export class KomerBase<T, Stored = unknown> {
     }
   }
 
-  protected toStored(val: T): Stored | T {
-    this.schema?.assert?.(val);
-    return this.schema?.toStored ? this.schema.toStored(val) : val;
-  }
-
-  protected fromStored(val: unknown): T {
-    const record = this.schema?.fromStored
-      ? this.schema.fromStored(val)
-      : val as T;
-    this.schema?.assert?.(record);
-    return record;
-  }
-
   protected serializeJSON(val: T): Uint8Array {
-    return b(JSON.stringify(this.toStored(val)));
+    return b(JSON.stringify(val));
   }
 
   protected serializeMGPK(val: T): Uint8Array {
-    return toUint8Array(encodeMsgpack(this.toStored(val)));
+    return toUint8Array(encodeMsgpack(val));
   }
 
   protected serializeCBOR(val: T): Uint8Array {
-    return encodeKeriCbor(this.toStored(val));
+    return encodeKeriCbor(val);
   }
 
   protected deserializeJSON(val: Uint8Array | null): T | null {
     if (val === null) {
       return null;
     }
-    return this.fromStored(JSON.parse(t(val)));
+    return JSON.parse(t(val)) as T;
   }
 
   protected deserializeMGPK(val: Uint8Array | null): T | null {
     if (val === null) {
       return null;
     }
-    return this.fromStored(decodeMsgpack(val));
+    return decodeMsgpack(val) as T;
   }
 
   protected deserializeCBOR(val: Uint8Array | null): T | null {
     if (val === null) {
       return null;
     }
-    return this.fromStored(decodeKeriCbor(val));
+    return decodeKeriCbor(val) as T;
   }
 
   /**
@@ -274,7 +239,6 @@ export class KomerBase<T, Stored = unknown> {
  *
  * Responsibilities:
  * - expose the KERIpy `Komer` CRUD/count API for non-duplicate subdbs
- * - validate and map domain values through the configured `KomerSchema`
  * - keep the active `Baser` and `Keeper` JSON-backed records on the KERIpy
  *   object-mapper path rather than raw LMDB access
  *
@@ -283,17 +247,15 @@ export class KomerBase<T, Stored = unknown> {
  *
  * Current `keri-ts` differences:
  * - JSON remains the live-store default even though CBOR and MGPK are available
- * - schema validation/reconstruction is opt-in via `KomerSchema`
+ * - callers are responsible for any domain-object adaptation above persisted
+ *   value shape `T`
  */
-export class Komer<T, Stored = unknown> extends KomerBase<T, Stored> {
+export class Komer<T> extends KomerBase<T> {
   constructor(
     db: LMDBer,
-    { subkey, sep = KomerBase.Sep, kind = Kinds.json, schema }: KomerOptions<
-      T,
-      Stored
-    >,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json }: KomerOptions,
   ) {
-    super(db, { subkey, sep, kind, dupsort: false, schema });
+    super(db, { subkey, sep, kind, dupsort: false });
   }
 
   put(keys: Keys, val: T): boolean {
@@ -311,16 +273,10 @@ export class Komer<T, Stored = unknown> extends KomerBase<T, Stored> {
   /**
    * Returns the plain stored-object shape for one record.
    *
-   * This mirrors KERIpy `getDict`. When a `KomerSchema` provides `toStored`,
-   * the returned value is that mapped payload shape. Otherwise the domain value
-   * itself is returned.
+   * This mirrors KERIpy `getDict` for plain persisted record shapes.
    */
-  getDict(keys: Keys): Stored | T | null {
-    const val = this.get(keys);
-    if (val === null) {
-      return null;
-    }
-    return this.toStored(val);
+  getDict(keys: Keys): T | null {
+    return this.get(keys);
   }
 
   rem(keys: Keys): boolean {

@@ -42,6 +42,11 @@ Persistent CESR parser memory for `keri-ts`.
     also map CESR-owned imports such as `@msgpack/msgpack` and `cbor-x/*`.
 13. CLI startup in `tufa` now lazy-loads handlers, so help/version paths do not
     import CESR modules until a CESR-backed command is actually selected.
+14. CESR code-family validation must consume one shared KERIpy-derived source of
+    truth: generated matter/indexer tables and codex-family sets now back
+    `Prefixer`, `Verfer`, `Signer`, `Siger`, `Cipher`, and related primitives,
+    while TS-only counter-group families live in one shared module instead of
+    being recopied across primitives.
 
 ## Key Docs
 
@@ -69,6 +74,8 @@ Persistent CESR parser memory for `keri-ts`.
 4. Re-evaluate the local-source bridge strategy between `packages/keri` and
    `packages/cesr` if local Deno install/dev ergonomics keep leaking package
    boundary problems.
+5. Keep `packages/cesr/scripts/verify-tables.ts` green whenever KERIpy parity
+   work touches code tables or semantic codex-family consumers.
 
 ## Milestone Rollup
 
@@ -131,3 +138,18 @@ Persistent CESR parser memory for `keri-ts`.
   and explicit native npm script allowances.
 - Lazy-loaded `tufa` command handlers so `--help` and `--version` no longer fail
   because CESR or LMDB modules were imported at startup.
+
+### 2026-03-16 - Codex And Code-Table Reconciliation Closed
+
+- Closed the false-completeness gap where raw matter tables were generated from
+  KERIpy but semantic codex families were still partially hand-maintained in TS.
+- Extended table generation to cover KERIpy matter codex families, mapping
+  escape families, X25519 cipher codex families, and indexer/indexed-signature
+  codex families plus indexer size/name tables.
+- Replaced handwritten `Prefixer`/`Verfer`/`Signer`/`Siger`/`Cipher` family
+  lists with shared generated codex sets, and moved TS-only counter-group
+  families like aggregate/map/seal/media/blind groups into one shared module to
+  stop copy drift across primitives.
+- Turned `verify-tables.ts` into a real drift detector for both matter and
+  indexer generated artifacts so future KERIpy code-table changes surface as a
+  failing maintenance check instead of a runtime surprise.

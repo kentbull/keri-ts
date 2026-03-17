@@ -1,14 +1,9 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { CtrDexV2 } from "../tables/counter-codex.ts";
+import { MEDIAR_CODES } from "../tables/counter-groups.ts";
 import type { CounterGroupLike } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
-
-const MEDIAR_CODES = new Set<string>([
-  CtrDexV2.TypedMediaQuadruples,
-  CtrDexV2.BigTypedMediaQuadruples,
-]);
 
 /** True when counter code belongs to typed-media tuple families. */
 export function isMediarCode(code: string): boolean {

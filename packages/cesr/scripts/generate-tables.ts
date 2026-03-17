@@ -20,6 +20,115 @@ const COMPAT_V2_COUNTER_SIZE_ALIASES: Record<
   "-J": { hs: 2, ss: 2, fs: 4 },
 };
 
+type StringCodexSpec = {
+  className: string;
+  instanceName: string;
+  constName: string;
+};
+
+const MATTER_CODEX_SPECS: readonly StringCodexSpec[] = [
+  { className: "BextCodex", instanceName: "BexDex", constName: "BEXTER_CODES" },
+  { className: "TextCodex", instanceName: "TexDex", constName: "TEXTER_CODES" },
+  {
+    className: "DecimalCodex",
+    instanceName: "DecDex",
+    constName: "DECIMAL_CODES",
+  },
+  { className: "DigCodex", instanceName: "DigDex", constName: "DIGEST_CODES" },
+  {
+    className: "NonceCodex",
+    instanceName: "NonceDex",
+    constName: "NONCE_CODES",
+  },
+  { className: "NumCodex", instanceName: "NumDex", constName: "NUMBER_CODES" },
+  { className: "TagCodex", instanceName: "TagDex", constName: "TAG_CODES" },
+  {
+    className: "LabelCodex",
+    instanceName: "LabelDex",
+    constName: "LABELER_CODES",
+  },
+  { className: "PreCodex", instanceName: "PreDex", constName: "PREFIX_CODES" },
+  {
+    className: "NonTransCodex",
+    instanceName: "NonTransDex",
+    constName: "NON_TRANSFERABLE_PREFIX_CODES",
+  },
+  {
+    className: "PreNonDigCodex",
+    instanceName: "PreNonDigDex",
+    constName: "NON_DIGEST_PREFIX_CODES",
+  },
+] as const;
+
+const MAPPING_CODEX_SPECS: readonly StringCodexSpec[] = [
+  {
+    className: "EscapeCodex",
+    instanceName: "EscapeDex",
+    constName: "ESCAPE_CODES",
+  },
+] as const;
+
+const SIGNING_CODEX_SPECS: readonly StringCodexSpec[] = [
+  {
+    className: "CipherX25519VarStrmCodex",
+    instanceName: "CiXVarStrmDex",
+    constName: "CIPHER_X25519_VARIABLE_STREAM_CODES",
+  },
+  {
+    className: "CipherX25519VarQB64Codex",
+    instanceName: "CiXVarQB64Dex",
+    constName: "CIPHER_X25519_QB64_VARIABLE_CODES",
+  },
+  {
+    className: "CipherX25519FixQB64Codex",
+    instanceName: "CiXFixQB64Dex",
+    constName: "CIPHER_X25519_FIXED_QB64_CODES",
+  },
+  {
+    className: "CipherX25519AllQB64Codex",
+    instanceName: "CiXAllQB64Dex",
+    constName: "CIPHER_X25519_ALL_QB64_CODES",
+  },
+  {
+    className: "CipherX25519QB2VarCodex",
+    instanceName: "CiXVarQB2Dex",
+    constName: "CIPHER_X25519_QB2_VARIABLE_CODES",
+  },
+  {
+    className: "CipherX25519AllVarCodex",
+    instanceName: "CiXVarDex",
+    constName: "CIPHER_X25519_ALL_VARIABLE_CODES",
+  },
+  {
+    className: "CipherX25519AllCodex",
+    instanceName: "CiXDex",
+    constName: "CIPHER_X25519_ALL_CODES",
+  },
+] as const;
+
+const INDEXER_CODEX_SPECS: readonly StringCodexSpec[] = [
+  {
+    className: "IndexerCodex",
+    instanceName: "IdrDex",
+    constName: "INDEXER_CODES",
+  },
+  {
+    className: "IndexedSigCodex",
+    instanceName: "IdxSigDex",
+    constName: "INDEXED_SIG_CODES",
+  },
+  {
+    className: "IndexedCurrentSigCodex",
+    instanceName: "IdxCrtSigDex",
+    constName: "INDEXED_CURRENT_SIG_CODES",
+  },
+  {
+    className: "IndexedBothSigCodex",
+    instanceName: "IdxBthSigDex",
+    constName: "INDEXED_BOTH_SIG_CODES",
+  },
+] as const;
+
 function resolveKeripyPath(): string {
   const env = Deno.env.get("KERIPY_PATH");
   if (env) return env;
@@ -30,19 +139,28 @@ async function readFile(path: string): Promise<string> {
   return await Deno.readTextFile(path);
 }
 
-function parseMatterCodex(text: string): Record<string, string> {
-  const start = text.indexOf("class MatterCodex");
-  if (start < 0) throw new Error("MatterCodex class not found");
-  const chunk = text.slice(
-    start,
-    text.indexOf("MtrDex = MatterCodex()", start),
-  );
-  const regex = /^\s+([A-Za-z0-9_]+):\s+str\s*=\s*'([^']+)'/gm;
+function parseStringCodex(
+  text: string,
+  { className, instanceName }: { className: string; instanceName: string },
+): Record<string, string> {
+  const start = text.indexOf(`class ${className}`);
+  if (start < 0) throw new Error(`${className} class not found`);
+  const end = text.indexOf(`${instanceName} = ${className}()`, start);
+  if (end < 0) throw new Error(`${instanceName} instance not found`);
+  const chunk = text.slice(start, end);
+  const regex = /^\s+([A-Za-z0-9_]+):\s+str\s*=\s*['"]([^'"]+)['"]/gm;
   const out: Record<string, string> = {};
   for (const match of chunk.matchAll(regex)) {
     out[match[2]] = match[1];
   }
   return out;
+}
+
+function parseMatterCodex(text: string): Record<string, string> {
+  return parseStringCodex(text, {
+    className: "MatterCodex",
+    instanceName: "MtrDex",
+  });
 }
 
 function parseMatterSizes(
@@ -66,6 +184,42 @@ function parseMatterSizes(
       hs: Number.parseInt(match[2], 10),
       ss: Number.parseInt(match[3], 10),
       xs: Number.parseInt(match[4], 10),
+      fs: match[5] === "None" ? null : Number.parseInt(match[5], 10),
+      ls: Number.parseInt(match[6], 10),
+    };
+  }
+  return out;
+}
+
+function parseIndexerCodex(text: string): Record<string, string> {
+  return parseStringCodex(text, {
+    className: "IndexerCodex",
+    instanceName: "IdrDex",
+  });
+}
+
+function parseIndexerSizes(
+  text: string,
+): Record<
+  string,
+  { hs: number; ss: number; os: number; fs: number | null; ls: number }
+> {
+  const start = text.indexOf("Sizes = {");
+  if (start < 0) throw new Error("Indexer Sizes table not found");
+  const end = text.indexOf("\n    # Bards table", start);
+  if (end < 0) throw new Error("Indexer Sizes block terminator not found");
+  const chunk = text.slice(start, end);
+  const regex =
+    /'([^']+)':\s+Xizage\(hs=(\d+),\s*ss=(\d+),\s*os=(\d+),\s*fs=(None|\d+),\s*ls=(\d+)\)/g;
+  const out: Record<
+    string,
+    { hs: number; ss: number; os: number; fs: number | null; ls: number }
+  > = {};
+  for (const match of chunk.matchAll(regex)) {
+    out[match[1]] = {
+      hs: Number.parseInt(match[2], 10),
+      ss: Number.parseInt(match[3], 10),
+      os: Number.parseInt(match[4], 10),
       fs: match[5] === "None" ? null : Number.parseInt(match[5], 10),
       ls: Number.parseInt(match[6], 10),
     };
@@ -141,6 +295,9 @@ function emitMatterTables(
   const nameEntries = Object.entries(names).sort(([a], [b]) =>
     a.localeCompare(b)
   );
+  const inverseEntries = Object.entries(names).sort(([, a], [, b]) =>
+    a.localeCompare(b)
+  );
   return `// Generated by packages/cesr/scripts/generate-tables.ts\nimport type { Sizage } from './table-types.ts';\n\nexport const MATTER_SIZES = new Map<string, Sizage>([\n${
     entries
       .map(([code, s]) =>
@@ -151,7 +308,51 @@ function emitMatterTables(
       .join("\n")
   }\n]);\n\nexport const MATTER_CODE_NAMES = {\n${
     nameEntries.map(([code, name]) => `  '${code}': '${name}',`).join("\n")
+  }\n} as const;\n\nexport const MATTER_CODES_BY_NAME = {\n${
+    inverseEntries.map(([code, name]) => `  '${name}': '${code}',`).join("\n")
   }\n} as const;\n\nexport const MATTER_HARDS = new Map<string, number>([\n  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => [c, 1] as [string, number]),\n  ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c) => [c, 1] as [string, number]),\n  ['0', 2], ['1', 4], ['2', 4], ['3', 4], ['4', 2], ['5', 2], ['6', 2], ['7', 4], ['8', 4], ['9', 4],\n]);\n`;
+}
+
+function emitIndexerTables(
+  sizes: Record<
+    string,
+    { hs: number; ss: number; os: number; fs: number | null; ls: number }
+  >,
+  names: Record<string, string>,
+): string {
+  const entries = Object.entries(sizes).sort(([a], [b]) => a.localeCompare(b));
+  const nameEntries = Object.entries(names).sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
+  const inverseEntries = Object.entries(names).sort(([, a], [, b]) =>
+    a.localeCompare(b)
+  );
+  return `// Generated by packages/cesr/scripts/generate-tables.ts\nimport type { Xizage } from './table-types.ts';\n\nexport const INDEXER_SIZES = new Map<string, Xizage>([\n${
+    entries
+      .map(([code, s]) =>
+        `  ['${code}', { hs: ${s.hs}, ss: ${s.ss}, os: ${s.os}, fs: ${
+          s.fs === null ? "null" : s.fs
+        }, ls: ${s.ls} }],`
+      )
+      .join("\n")
+  }\n]);\n\nexport const INDEXER_CODE_NAMES = {\n${
+    nameEntries.map(([code, name]) => `  '${code}': '${name}',`).join("\n")
+  }\n} as const;\n\nexport const INDEXER_CODES_BY_NAME = {\n${
+    inverseEntries.map(([code, name]) => `  '${name}': '${code}',`).join("\n")
+  }\n} as const;\n\nexport const INDEXER_HARDS = new Map<string, number>([\n  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => [c, 1] as [string, number]),\n  ...'abcdefghijklmnopqrstuvwxyz'.split('').map((c) => [c, 1] as [string, number]),\n  ['0', 2], ['1', 2], ['2', 2], ['3', 2], ['4', 2],\n]);\n`;
+}
+
+function emitStringCodexes(
+  codexes: Array<{ constName: string; entries: Record<string, string> }>,
+): string {
+  const blocks = codexes.map(({ constName, entries }) => {
+    const codes = Object.keys(entries).sort((a, b) => a.localeCompare(b));
+    return `export const ${constName} = new Set<string>([\n${
+      codes.map((code) => `  '${code}',`).join("\n")
+    }\n]);`;
+  }).join("\n\n");
+
+  return `// Generated by packages/cesr/scripts/generate-tables.ts\n${blocks}\n`;
 }
 
 function emitCounterTables(
@@ -225,13 +426,37 @@ function applyCompatV2CounterSizeAliases(
   return outSizes;
 }
 
-async function main(): Promise<void> {
-  const keripyPath = resolveKeripyPath();
+export async function buildGeneratedArtifacts(
+  keripyPath = resolveKeripyPath(),
+): Promise<Record<string, string>> {
   const coring = await readFile(`${keripyPath}/src/keri/core/coring.py`);
+  const mapping = await readFile(`${keripyPath}/src/keri/core/mapping.py`);
   const counting = await readFile(`${keripyPath}/src/keri/core/counting.py`);
+  const signing = await readFile(`${keripyPath}/src/keri/core/signing.py`);
+  const indexing = await readFile(`${keripyPath}/src/keri/core/indexing.py`);
 
   const matterSizes = parseMatterSizes(coring);
   const matterNames = parseMatterCodex(coring);
+  const matterCodexes = [
+    ...MATTER_CODEX_SPECS.map((spec) => ({
+      constName: spec.constName,
+      entries: parseStringCodex(coring, spec),
+    })),
+    ...MAPPING_CODEX_SPECS.map((spec) => ({
+      constName: spec.constName,
+      entries: parseStringCodex(mapping, spec),
+    })),
+    ...SIGNING_CODEX_SPECS.map((spec) => ({
+      constName: spec.constName,
+      entries: parseStringCodex(signing, spec),
+    })),
+  ];
+  const indexerSizes = parseIndexerSizes(indexing);
+  const indexerNames = parseIndexerCodex(indexing);
+  const indexerCodexes = INDEXER_CODEX_SPECS.map((spec) => ({
+    constName: spec.constName,
+    entries: parseStringCodex(indexing, spec),
+  }));
   const counterNames = parseCounterCodexes(counting);
   const counterSizes = parseCounterSizes(counting);
   const compatV1 = applyLegacyV1CounterAliases(
@@ -243,20 +468,35 @@ async function main(): Promise<void> {
     counterNames.v2,
   );
 
-  await Deno.writeTextFile(
-    "packages/cesr/src/tables/matter.tables.generated.ts",
-    emitMatterTables(matterSizes, matterNames),
-  );
-
-  await Deno.writeTextFile(
-    "packages/cesr/src/tables/counter.tables.generated.ts",
-    emitCounterTables(
+  return {
+    "packages/cesr/src/tables/matter.tables.generated.ts": emitMatterTables(
+      matterSizes,
+      matterNames,
+    ),
+    "packages/cesr/src/tables/matter.codexes.generated.ts": emitStringCodexes(
+      matterCodexes,
+    ),
+    "packages/cesr/src/tables/indexer.tables.generated.ts": emitIndexerTables(
+      indexerSizes,
+      indexerNames,
+    ),
+    "packages/cesr/src/tables/indexer.codexes.generated.ts": emitStringCodexes(
+      indexerCodexes,
+    ),
+    "packages/cesr/src/tables/counter.tables.generated.ts": emitCounterTables(
       compatV1.sizes,
       compatV2Sizes,
       compatV1.names,
       counterNames.v2,
     ),
-  );
+  };
+}
+
+async function main(): Promise<void> {
+  const artifacts = await buildGeneratedArtifacts();
+  for (const [path, content] of Object.entries(artifacts)) {
+    await Deno.writeTextFile(path, content);
+  }
 
   await Deno.stdout.write(
     encoder.encode("Generated CESR tables from KERIpy source.\n"),

@@ -21,9 +21,16 @@ Deno.test("prefixer: txt/qb2 parity", () => {
   assertEquals(txtValue.prefix, bnyValue.prefix);
 });
 
+Deno.test("prefixer: accepts transferable prefix derivation codes", () => {
+  const transferable = `D${KERIPY_MATTER_VECTORS.prefixerEd25519N.slice(1)}`;
+  const prefixer = parsePrefixer(txt(transferable), "txt");
+  assertEquals(prefixer.qb64, transferable);
+  assertEquals(prefixer.prefix, transferable);
+});
+
 Deno.test("prefixer: rejects non-prefix code families", () => {
   assertThrows(
-    () => parsePrefixer(txt(KERIPY_MATTER_VECTORS.verferEcdsaR1), "txt"),
+    () => parsePrefixer(txt(KERIPY_MATTER_VECTORS.signerSeedR1), "txt"),
     UnknownCodeError,
   );
 });

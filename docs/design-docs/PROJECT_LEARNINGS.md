@@ -148,6 +148,15 @@ This keeps context focused and avoids long-thread drift.
     code should use the shared CESR CBOR codec instead of direct `cbor-x`
     imports, and the encoder is configured to match KERIpy `cbor2` preferred
     map-size bytes rather than `cbor-x`'s fixed-width object-map default.
+29. LMDB wrapper generics are now an explicit parity contract: `Komer`, `Suber`,
+    and CESR-backed storage wrappers should use the narrowest real KERIpy value
+    type, and mixed-primitive stores should be modeled with explicit tuple
+    aliases rather than widened `Matter`-level fallbacks.
+30. CESR code-table parity now requires generated semantic codex families, not
+    just raw size/name tables: primitive validators should consume the shared
+    KERIpy-derived matter/indexer codex sets, and TS-only counter-group families
+    should live in one shared module so `Prefixer`-style drift cannot hide
+    behind local string sets.
 
 ## New Thread Kickoff Template
 

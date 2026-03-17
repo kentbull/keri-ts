@@ -1,4 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
+import type { HabitatRecord } from "../core/records.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
@@ -16,16 +17,6 @@ import {
 import { b, t } from "../../../cesr/mod.ts";
 
 export const SIGNER = "__signatory__";
-
-export interface HabitatRecord {
-  hid: string;
-  name: string;
-  domain?: string;
-  sid?: string;
-  mid?: string;
-  smids?: string[];
-  rmids?: string[];
-}
 
 export interface HaberyArgs {
   name: string;
@@ -109,7 +100,7 @@ function makeInceptRaw(
     data: unknown[];
     delpre?: string;
   },
-): { raw: Uint8Array; pre: string } {
+): { raw: Uint8Array; pre: string; said: string } {
   const ilk = args.delpre ? "dip" : "icp";
   const kt = args.isith ?? defaultThreshold(keys.length, 1);
   const nt = args.nsith ?? defaultThreshold(ndigs.length, 0);
@@ -141,7 +132,7 @@ function makeInceptRaw(
   if (args.code === "E") ked.i = said;
 
   const raw = serializeKed(ked);
-  return { raw, pre: ked.i as string };
+  return { raw, pre: ked.i as string, said };
 }
 
 /** Represents a local identifier habitat and its current key state. */
@@ -214,7 +205,7 @@ export class Hab {
     const ndigs = digers.map((d) => d.qb64);
     const cnfg = [...(estOnly ? ["EO"] : []), ...(DnD ? ["DND"] : [])];
 
-    const { raw, pre } = makeInceptRaw(keys, ndigs, {
+    const { raw, pre, said } = makeInceptRaw(keys, ndigs, {
       code: prefixCode,
       isith,
       nsith: nextSith,
@@ -248,6 +239,7 @@ export class Hab {
     );
 
     this.db.putEvt(b(`${pre}:0`), msg);
+    this.db.pinSigs(pre, said, sigs);
 
     this.kever = {
       pre,
@@ -264,7 +256,7 @@ export class Hab {
         name: this.name,
         domain: this.ns,
       };
-      this.db.pinHab(pre, { ...habord, sigs });
+      this.db.pinHab(pre, habord);
       this.db.pinName(this.ns ?? "", this.name, pre);
     }
   }
@@ -381,7 +373,7 @@ export class Habery {
 
   /** Populate the local habitat cache from persisted habitat records. */
   private loadHabs(): void {
-    for (const [pre, habord] of this.db.getHabItemIter<HabitatRecord>()) {
+    for (const [pre, habord] of this.db.getHabItemIter()) {
       const hid = habord.hid || pre;
       if (!habord.name || this.habs.has(hid)) {
         continue;
@@ -412,7 +404,7 @@ export class Habery {
     const pre = this.db.getName(ns ?? "", name);
     if (!pre) return null;
     if (this.habs.has(pre)) return this.habs.get(pre)!;
-    const rec = this.db.getHab<{ sigs?: string[] }>(pre);
+    const rec = this.db.getHab(pre);
     if (!rec) return null;
     const hab = new Hab(name, this.db, this.ks, this.mgr, ns, pre);
     this.habs.set(pre, hab);

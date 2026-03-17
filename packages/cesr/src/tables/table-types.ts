@@ -12,6 +12,14 @@ export interface Cizage {
   fs: number;
 }
 
+export interface Xizage {
+  hs: number;
+  ss: number;
+  os: number;
+  fs: number | null;
+  ls: number;
+}
+
 export type VersionMajor = 1 | 2;
 export type VersionMinor = number;
 

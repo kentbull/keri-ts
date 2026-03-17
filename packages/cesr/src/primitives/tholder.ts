@@ -1,18 +1,8 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
+import { THOLDER_NUMERIC_CODES, THOLDER_WEIGHTED_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 import { t } from '../core/bytes.ts'
-
-function isNumericName(name: string): boolean {
-  return name === "Short" || name === "Long" || name === "Big" ||
-    name === "Tall" ||
-    name === "Large" || name === "Great" || name === "Vast";
-}
-
-function isWeightedName(name: string): boolean {
-  return name.startsWith("StrB64_") || name.startsWith("StrB64_Big_");
-}
 
 /**
  * Threshold expression primitive.
@@ -24,19 +14,16 @@ export class Tholder extends Matter {
   constructor(init: Matter | MatterInit) {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
-    const name =
-      MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-        "";
-    if (!isNumericName(name) && !isWeightedName(name)) {
+    if (
+      !THOLDER_NUMERIC_CODES.has(this.code) &&
+      !THOLDER_WEIGHTED_CODES.has(this.code)
+    ) {
       throw new UnknownCodeError(`Expected threshold code, got ${this.code}`);
     }
   }
 
   get sith(): string {
-    const name =
-      MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-        "";
-    if (isNumericName(name)) {
+    if (THOLDER_NUMERIC_CODES.has(this.code)) {
       return [...this.raw].reduce((acc, b) => (acc << 8n) | BigInt(b), 0n)
         .toString(16);
     }

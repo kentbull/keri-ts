@@ -8,6 +8,7 @@ import { consoleLogger, type Logger } from "../core/logger.ts";
 import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
 import { CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
+import { Cipher, Prefixer, Signer } from "../../../cesr/mod.ts";
 
 export interface KeeperOptions extends LMDBerOptions {
   compat?: boolean;
@@ -59,12 +60,12 @@ export class Keeper {
 
   public gbls!: Suber;
   public pris!: CryptSignerSuber;
-  public pres!: CesrSuber;
+  public pres!: CesrSuber<Prefixer>;
   public prms!: Komer<PrePrm>;
   public sits!: Komer<PreSit>;
   public pubs!: Komer<PubSet>;
-  public prxs!: CesrSuber;
-  public nxts!: CesrSuber;
+  public prxs!: CesrSuber<Cipher>;
+  public nxts!: CesrSuber<Cipher>;
 
   static readonly TailDirPath = "keri/ks";
   static readonly AltTailDirPath = ".tufa/ks";
@@ -118,12 +119,21 @@ export class Keeper {
     try {
       this.gbls = new Suber(this.lmdber, { subkey: "gbls." });
       this.pris = new CryptSignerSuber(this.lmdber, { subkey: "pris." });
-      this.pres = new CesrSuber(this.lmdber, { subkey: "pres." });
-      this.prms = new Komer(this.lmdber, { subkey: "prms." });
-      this.sits = new Komer(this.lmdber, { subkey: "sits." });
-      this.pubs = new Komer(this.lmdber, { subkey: "pubs." });
-      this.prxs = new CesrSuber(this.lmdber, { subkey: "prxs." });
-      this.nxts = new CesrSuber(this.lmdber, { subkey: "nxts." });
+      this.pres = new CesrSuber<Prefixer>(this.lmdber, {
+        subkey: "pres.",
+        klas: Prefixer,
+      });
+      this.prms = new Komer<PrePrm>(this.lmdber, { subkey: "prms." });
+      this.sits = new Komer<PreSit>(this.lmdber, { subkey: "sits." });
+      this.pubs = new Komer<PubSet>(this.lmdber, { subkey: "pubs." });
+      this.prxs = new CesrSuber<Cipher>(this.lmdber, {
+        subkey: "prxs.",
+        klas: Cipher,
+      });
+      this.nxts = new CesrSuber<Cipher>(this.lmdber, {
+        subkey: "nxts.",
+        klas: Cipher,
+      });
       return true;
     } catch (error) {
       this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
@@ -146,27 +156,27 @@ export class Keeper {
   }
 
   putPres(pre: string, val: string): boolean {
-    return this.pres.put(pre, val);
+    return this.pres.put(pre, new Prefixer({ qb64: val }));
   }
 
   pinPres(pre: string, val: string): boolean {
-    return this.pres.pin(pre, val);
+    return this.pres.pin(pre, new Prefixer({ qb64: val }));
   }
 
   getPres(pre: string): string | null {
-    return this.pres.get(pre);
+    return this.pres.get(pre)?.qb64 ?? null;
   }
 
   putPris(pub: string, secret: string): boolean {
-    return this.pris.put(pub, secret);
+    return this.pris.put(pub, new Signer({ qb64: secret }));
   }
 
   pinPris(pub: string, secret: string): boolean {
-    return this.pris.pin(pub, secret);
+    return this.pris.pin(pub, new Signer({ qb64: secret }));
   }
 
   getPris(pub: string): string | null {
-    return this.pris.get(pub);
+    return this.pris.get(pub)?.qb64 ?? null;
   }
 
   putPrms(pre: string, val: PrePrm): boolean {
