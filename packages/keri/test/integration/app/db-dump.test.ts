@@ -3,7 +3,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
-import { b } from '../../../../cesr/mod.ts'
+import { b } from "../../../../cesr/mod.ts";
 
 /**
  * Integration test for db dump command

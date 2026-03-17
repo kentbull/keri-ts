@@ -16,7 +16,7 @@ import {
 } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
-import { b } from '../../src/index.ts'
+import { b } from "../../src/index.ts";
 
 function v1ifyAcdc(raw: string): string {
   const size = b(raw).length;

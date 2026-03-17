@@ -1,11 +1,11 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { b, codeB64ToB2, t } from '../../src/core/bytes.ts'
+import { b, codeB64ToB2, t } from "../../src/core/bytes.ts";
 import {
   type CounterGroupLike,
+  type GroupEntry,
   isCounterGroupLike,
   isPrimitiveTuple,
   type Primitive,
-  type GroupEntry,
 } from "../../src/primitives/primitive.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";

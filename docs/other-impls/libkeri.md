@@ -23,10 +23,10 @@ The focus is resolver-relevant capability:
 - Core parsing and key-event paths exist, including many attachment group types.
 - Several resolver-critical paths are partial or stubbed (`todo!`/placeholders),
   especially escrow, delegation, and attached-receipt processing.
-- There are concrete correctness defects (duplicate parser arm, witness-threshold
-  boolean logic issue, likely receipt lookup condition bug).
-- Exchange routing is wired in parser but no concrete exchanger implementation is
-  present; `BaseHab.exchange()` is not implemented.
+- There are concrete correctness defects (duplicate parser arm,
+  witness-threshold boolean logic issue, likely receipt lookup condition bug).
+- Exchange routing is wired in parser but no concrete exchanger implementation
+  is present; `BaseHab.exchange()` is not implemented.
 - Reply (`rpy`) routing via `Revery` is comparatively strong and includes
   acceptance/escrow logic.
 - The crate-level public API currently exposes very little from core KERI
@@ -35,7 +35,7 @@ The focus is resolver-relevant capability:
 ## Capability Inventory
 
 | Area                        | Status in libkeri                                                                                                               | Evidence                                                                             |
-|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | CESR primitives/codex       | Broad set present (`Matter`, counters, indexers, signer/verfer, tholder, etc.)                                                  | `src/cesr/mod.rs`, `src/cesr/tholder.rs`, `src/cesr/signing/*`                       |
 | Parser message taxonomy     | Broad message coverage (KEL events, receipts, query/reply, EXN, TEL, ACDC)                                                      | `src/keri/core/parsing.rs` `Message` enum and `process_message`                      |
 | Parser dispatch plumbing    | Dispatches to `kevery`, `revery`, `exchanger`, `tevery`, `verifier` handlers                                                    | `src/keri/core/parsing.rs` `dispatch_message(...)`                                   |
@@ -84,8 +84,8 @@ currently partial:
 - Parser orchestration/dispatch breadth:
   - `keripy/src/keri/core/parsing.py`
 - Kevery core + escrow families:
-  - `processEvent`, `processReceipt`,
-    `processAttachedReceiptCouples`, `processAttachedReceiptQuadruples`
+  - `processEvent`, `processReceipt`, `processAttachedReceiptCouples`,
+    `processAttachedReceiptQuadruples`
   - `processEscrows` and full escrow processors
   - `keripy/src/keri/core/eventing.py`
 - Exchange implementation:
@@ -102,8 +102,8 @@ currently partial:
 For a verification-grade resolver (walk KEL, validate state transitions,
 threshold signatures, delegation, and resolver-relevant replies/exchanges):
 
-- `libkeri` is materially ahead in breadth over current `keri-ts` `packages/keri`
-  surfaces, but requires hardening of known blockers.
+- `libkeri` is materially ahead in breadth over current `keri-ts`
+  `packages/keri` surfaces, but requires hardening of known blockers.
 - `keri-ts` parser maturity is high (formal parser `GO` in project learnings),
   but KEL/eventing/multisig/exchange implementation breadth is not yet on par
   with what resolver-grade verification needs.
@@ -116,4 +116,3 @@ If selecting `libkeri` as the resolver base, first hardening targets should be:
 4. Delegation validation path implementation (or explicit unsupported policy).
 5. Exchange implementation decision (implement or scope out for v1 resolver).
 6. Public crate API exposure for external resolver integration.
-

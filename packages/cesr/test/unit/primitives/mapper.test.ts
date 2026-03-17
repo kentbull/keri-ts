@@ -20,8 +20,12 @@ const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("mapper: parses KERIpy native v2 map payload", () => {
   const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(4);
-  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${payload.slice(16)}`;
-  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
+  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${
+    payload.slice(12, 16)
+  }0J_d${payload.slice(16)}`;
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)
+  }${mapPayload}`;
 
   const mapper = parseMapperBody(txt(mapBody), V2, "txt");
   assertEquals(mapper.code, CtrDexV2.MapBodyGroup);
@@ -31,7 +35,9 @@ Deno.test("mapper: parses KERIpy native v2 map payload", () => {
 
 Deno.test("mapper: syntax parse + semantic interpretation", () => {
   const payload = `0J_i${token("B")}0J_d${token("E")}`;
-  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
+  }${payload}`;
 
   const syntax = parseMapperBodySyntax(txt(mapBody), V2, "txt");
   assertEquals(syntax.entries.length, 4);

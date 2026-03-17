@@ -9,7 +9,9 @@ const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("compactor: parses KERIpy map-body shape", () => {
   const payload = `0J_i${token("B")}0J_d${token("E")}`;
-  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
+  }${payload}`;
 
   const compactor = parseCompactor(txt(mapBody), V2, "txt");
   assertEquals(compactor.code, CtrDexV2.MapBodyGroup);
@@ -18,7 +20,9 @@ Deno.test("compactor: parses KERIpy map-body shape", () => {
 
 Deno.test("compactor: rejects non-map aggregate groups", () => {
   const payload = "ABCDWXYZ";
-  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
+  const listBody = `${
+    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
+  }${payload}`;
 
   assertThrows(
     () => parseCompactor(txt(listBody), V2, "txt"),

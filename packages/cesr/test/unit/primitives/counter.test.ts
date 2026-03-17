@@ -29,8 +29,14 @@ Deno.test("counter: parses canonical v1/v2 KERIpy vectors", () => {
   const vectors: Array<{ qb64: string; version: Versionage }> = [
     { qb64: KERIPY_COUNTER_VECTORS.v1ControllerIdxSigsCount1, version: V1 },
     { qb64: KERIPY_COUNTER_VECTORS.v1ControllerIdxSigsCount5, version: V1 },
-    { qb64: KERIPY_COUNTER_VECTORS.v1BigAttachmentGroupCount100024000, version: V1 },
-    { qb64: KERIPY_COUNTER_VECTORS.v1BigPathedMaterialCouplesCount100024000, version: V1 },
+    {
+      qb64: KERIPY_COUNTER_VECTORS.v1BigAttachmentGroupCount100024000,
+      version: V1,
+    },
+    {
+      qb64: KERIPY_COUNTER_VECTORS.v1BigPathedMaterialCouplesCount100024000,
+      version: V1,
+    },
     { qb64: KERIPY_COUNTER_VECTORS.v1BigAttachmentGroupCount1024, version: V1 },
     { qb64: KERIPY_COUNTER_VECTORS.v1GenusVersion000, version: V1 },
     { qb64: KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1, version: V2 },

@@ -15,7 +15,7 @@ import {
   resolveVersionedRegistryValue,
   type VersionedRegistry,
 } from "../tables/counter-version-registry.ts";
-import { b, b64ToInt, intToB64 } from '../core/bytes.ts'
+import { b, b64ToInt, intToB64 } from "../core/bytes.ts";
 import {
   composeRecoveryDiagnosticObserver,
   type RecoveryDiagnosticObserver,
@@ -569,10 +569,11 @@ function splitOpaqueUnits(
     const count = expectedCount ?? Math.floor(payload.length / 3);
     return Array.from(
       { length: count },
-      (_v, i) => UnknownPrimitive.fromPayload(
-        payload.slice(i * 3, i * 3 + 3),
-        domain,
-      ),
+      (_v, i) =>
+        UnknownPrimitive.fromPayload(
+          payload.slice(i * 3, i * 3 + 3),
+          domain,
+        ),
     );
   }
 

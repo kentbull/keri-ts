@@ -9,7 +9,10 @@ import {
 
 Deno.test("decimer: parses KERIpy decimal vectors", () => {
   const d0 = parseDecimer(txt(KERIPY_MATTER_VECTORS.decimerZeroInt), "txt");
-  const d1 = parseDecimer(txt(KERIPY_MATTER_VECTORS.decimerFloat123456789), "txt");
+  const d1 = parseDecimer(
+    txt(KERIPY_MATTER_VECTORS.decimerFloat123456789),
+    "txt",
+  );
 
   assertEquals(d0.qb64, KERIPY_MATTER_VECTORS.decimerZeroInt);
   assertEquals(d0.dns, "0");

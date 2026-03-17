@@ -1,4 +1,4 @@
-import { t } from '../packages/cesr/mod.ts'
+import { t } from "../packages/cesr/mod.ts";
 
 const SCOPE = ["packages/keri/src", "packages/cesr/src"];
 

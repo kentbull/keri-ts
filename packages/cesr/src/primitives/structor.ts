@@ -1,4 +1,4 @@
-import { b, codeB64ToB2, encodeB64, t } from '../core/bytes.ts'
+import { b, codeB64ToB2, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
@@ -19,7 +19,9 @@ function serializeEntryQb64(entry: GroupEntry): string {
     return entry.map((item) => serializeEntryQb64(item)).join("");
   }
   if (isCounterGroupLike(entry)) {
-    return `${entry.qb64}${entry.items.map((item) => serializeEntryQb64(item)).join("")}`;
+    return `${entry.qb64}${
+      entry.items.map((item) => serializeEntryQb64(item)).join("")
+    }`;
   }
   return entry.qb64;
 }
@@ -28,10 +30,10 @@ function inferSerialized(
   group: CounterGroupLike,
   sourceDomain: ParseDomain,
 ): Uint8Array {
-  const qb64 = `${group.qb64}${group.items.map((item) => serializeEntryQb64(item)).join("")}`;
-  return sourceDomain === "txt"
-    ? b(qb64)
-    : codeB64ToB2(qb64);
+  const qb64 = `${group.qb64}${
+    group.items.map((item) => serializeEntryQb64(item)).join("")
+  }`;
+  return sourceDomain === "txt" ? b(qb64) : codeB64ToB2(qb64);
 }
 
 export interface StructorInit {

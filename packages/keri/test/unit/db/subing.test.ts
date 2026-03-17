@@ -1,6 +1,12 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";
+import {
+  parseSerder,
+  Prefixer,
+  SerderKERI,
+  Signer,
+  smell,
+} from "../../../../cesr/mod.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
@@ -43,7 +49,9 @@ function makeTestSerder(): SerderKERI {
   const encoder = new TextEncoder();
   const raw = encoder.encode(JSON.stringify({
     ...ked,
-    v: `KERI10JSON${encoder.encode(JSON.stringify(ked)).length.toString(16).padStart(6, "0")}_`,
+    v: `KERI10JSON${
+      encoder.encode(JSON.stringify(ked)).length.toString(16).padStart(6, "0")
+    }_`,
   }));
   const { smellage } = smell(raw);
   return parseSerder(raw, smellage) as SerderKERI;
@@ -144,8 +152,12 @@ Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async
       temp: true,
     });
     try {
-      const signerA = new Signer({ qb64: makeSignerMaterial("signer-a").seedQb64 });
-      const signerB = new Signer({ qb64: makeSignerMaterial("signer-b").seedQb64 });
+      const signerA = new Signer({
+        qb64: makeSignerMaterial("signer-a").seedQb64,
+      });
+      const signerB = new Signer({
+        qb64: makeSignerMaterial("signer-b").seedQb64,
+      });
       const suber = new CesrIoSetSuber<Signer>(lmdber, {
         subkey: "pris.",
         klas: Signer,

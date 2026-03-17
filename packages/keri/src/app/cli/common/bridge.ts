@@ -8,7 +8,7 @@ import {
   type Subscription,
   withResolvers,
 } from "npm:effection@^3.6.0";
-import { t } from '../../../../../cesr/mod.ts'
+import { t } from "../../../../../cesr/mod.ts";
 
 export interface KliExecResult {
   code: number;

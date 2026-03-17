@@ -5,8 +5,8 @@ import {
   codeB64ToB2,
   intToB64,
   nabSextets,
-  sceil
-} from '../core/bytes.ts'
+  sceil,
+} from "../core/bytes.ts";
 import {
   DeserializeError,
   ShortageError,

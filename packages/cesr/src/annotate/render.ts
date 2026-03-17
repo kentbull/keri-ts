@@ -14,9 +14,9 @@ import { Indexer } from "../primitives/indexer.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import {
+  type GroupEntry,
   isCounterGroupLike,
   isPrimitiveTuple,
-  type GroupEntry,
 } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import {

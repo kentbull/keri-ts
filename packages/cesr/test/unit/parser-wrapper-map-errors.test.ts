@@ -50,7 +50,8 @@ Deno.test("supplemental: compat mode preserves opaque tail remainder inside Atta
   assertEquals(attachment.items.length, 2);
   assertEquals(
     attachment.items.some(
-      (item) => item instanceof CounterGroup && item.name === "ControllerIdxSigs",
+      (item) =>
+        item instanceof CounterGroup && item.name === "ControllerIdxSigs",
     ),
     true,
   );

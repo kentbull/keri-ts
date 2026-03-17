@@ -10,8 +10,14 @@ Deno.test("signer: hydrates KERIpy signer seed vectors", () => {
   const sR1 = new Signer({ qb64: KERIPY_MATTER_VECTORS.signerSeedR1 });
   const sK1 = new Signer({ qb64: KERIPY_MATTER_VECTORS.signerSeedK1 });
 
-  assertEquals(new Set<string>(KERIPY_CODE_VECTORS.signerSeedCodes).has(sR1.code), true);
-  assertEquals(new Set<string>(KERIPY_CODE_VECTORS.signerSeedCodes).has(sK1.code), true);
+  assertEquals(
+    new Set<string>(KERIPY_CODE_VECTORS.signerSeedCodes).has(sR1.code),
+    true,
+  );
+  assertEquals(
+    new Set<string>(KERIPY_CODE_VECTORS.signerSeedCodes).has(sK1.code),
+    true,
+  );
   assertEquals(sR1.seed.length > 0, true);
   assertEquals(sK1.seed.length > 0, true);
 });

@@ -2,7 +2,7 @@ import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { THOLDER_NUMERIC_CODES, THOLDER_WEIGHTED_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
-import { t } from '../core/bytes.ts'
+import { t } from "../core/bytes.ts";
 
 /**
  * Threshold expression primitive.

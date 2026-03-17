@@ -5,7 +5,7 @@ import {
   splitKeyON,
   splitOnKey,
 } from "../../../../src/db/core/keys.ts";
-import { t } from '../../../../../cesr/mod.ts'
+import { t } from "../../../../../cesr/mod.ts";
 
 Deno.test("db/core keys - splitKey uses rightmost separator", () => {
   const [top, suffix] = splitKey("alpha.beta.gamma", ".");

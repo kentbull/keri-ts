@@ -1,5 +1,8 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
+import {
+  decode as decodeMsgpack,
+  encode as encodeMsgpack,
+} from "@msgpack/msgpack";
 import { encode as encodeDefaultCbor } from "cbor-x/encode";
 import { decodeKeriCbor, encodeKeriCbor } from "../../src/core/cbor.ts";
 

@@ -350,7 +350,12 @@ export class IoSetKomer<T> extends KomerBase<T> {
 
   /** Append one record member to the insertion-ordered set for an effective key. */
   add(keys: Keys, val: T): boolean {
-    return this.db.addIoSetVal(this.sdb, this._tokey(keys), this._ser(val), b(this.sep));
+    return this.db.addIoSetVal(
+      this.sdb,
+      this._tokey(keys),
+      this._ser(val),
+      b(this.sep),
+    );
   }
 
   /** Read all logical members for one effective key in insertion order. */
@@ -374,7 +379,11 @@ export class IoSetKomer<T> extends KomerBase<T> {
 
   /** Read the last logical member for one effective key. */
   getLast(keys: Keys): T | null {
-    const item = this.db.getIoSetLastItem(this.sdb, this._tokey(keys), b(this.sep));
+    const item = this.db.getIoSetLastItem(
+      this.sdb,
+      this._tokey(keys),
+      b(this.sep),
+    );
     if (item === null) {
       return null;
     }

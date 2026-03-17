@@ -65,8 +65,8 @@ Use this doc for:
   - `.github/workflows/cesr-npm-release.yml`
   - `.github/workflows/changesets-version-pr.yml`
 - What changed:
-  - Added a dedicated CI workflow that runs `deno fmt --check` on PRs and
-    pushes to `master`.
+  - Added a dedicated CI workflow that runs `deno fmt --check` on PRs and pushes
+    to `master`.
   - Added a workflow-policy guard that fails if CI workflow files reference
     non-Deno formatters (`prettier`, `biome`, `dprint`).
   - Added explicit `deno fmt --check` steps to existing release/version
@@ -75,9 +75,10 @@ Use this doc for:
   - Ensure formatting policy is enforced consistently across CI entry points and
     prevent accidental formatter drift.
 - Tests:
-  - Command: `rg -n "deno fmt --check|prettier|biome|dprint" .github/workflows/*.yml`
-  - Result: `deno fmt --check` present in all workflow paths; non-Deno
-    formatter references only appear in the new policy-guard regex.
+  - Command:
+    `rg -n "deno fmt --check|prettier|biome|dprint" .github/workflows/*.yml`
+  - Result: `deno fmt --check` present in all workflow paths; non-Deno formatter
+    references only appear in the new policy-guard regex.
 - Contracts/plans touched:
   - N/A
 - Risks/TODO:

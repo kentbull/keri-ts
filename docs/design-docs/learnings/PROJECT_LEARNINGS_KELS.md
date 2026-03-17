@@ -58,14 +58,13 @@ replay/verification semantics.
 16. Generic type parameters on `Komer`, `Suber`, and the CESR-backed LMDB
     wrappers are part of the parity contract, not optional TypeScript garnish:
     the storage wrapper type must describe the narrowest real persisted value
-    shape from KERIpy usage, and if a store holds a compound CESR tuple then
-    the TypeScript type should be an explicit tuple alias of those primitive
+    shape from KERIpy usage, and if a store holds a compound CESR tuple then the
+    TypeScript type should be an explicit tuple alias of those primitive
     subclasses instead of `Matter`, `Matter[]`, or another widened fallback.
 17. Local habitat key state should now be treated as DB-backed state, not
     in-memory-only `Hab.kever` state: `states.` is the source of truth,
-    `kels.`/`fels.`/`dtss.` support event ordering and reopen, and
-    `Habery.habs` remains only an in-memory cache of reconstructed `Hab`
-    objects.
+    `kels.`/`fels.`/`dtss.` support event ordering and reopen, and `Habery.habs`
+    remains only an in-memory cache of reconstructed `Hab` objects.
 18. DB parity work is not maintainer-complete until the new storage families,
     record contracts, and runtime seams are documented in source with KERIpy
     correspondence and `keri-ts` differences called out explicitly.
@@ -167,8 +166,8 @@ Use this doc for:
 ### 2026-03-16 - LMDB Wrapper Generics Became A Storage-Contract Rule
 
 - Recorded an explicit parity rule for `Komer`, `Suber`, and CESR-backed LMDB
-  wrappers: the generic type argument must model the real persisted KERIpy
-  value shape, not a convenience supertype.
+  wrappers: the generic type argument must model the real persisted KERIpy value
+  shape, not a convenience supertype.
 - Corrected the recent `pres.` regression by fixing the local `Prefixer`
   primitive to accept the full KERIpy `PreDex` family and then restoring
   `Keeper.pres` to `CesrSuber<Prefixer>` instead of widening it to `Matter`.
@@ -186,10 +185,10 @@ Use this doc for:
   needed for the local runtime arc, including `fels.`, `kels.`, `states.`,
   `dtss.`, `smids.`, `rmids.`, and the wider reply/OOBI/exchange/contact
   families.
-- `Hab.make()` now persists local inception state through the DB backbone:
-  event raw into `evts.`, sequence and first-seen indices into `kels.` and
-  `fels.`, datetime into `dtss.`, signatures into `sigs.`, and current key
-  state into `states.`.
+- `Hab.make()` now persists local inception state through the DB backbone: event
+  raw into `evts.`, sequence and first-seen indices into `kels.` and `fels.`,
+  datetime into `dtss.`, signatures into `sigs.`, and current key state into
+  `states.`.
 - Habitat reopen now rebuilds current local state from `states.` instead of
   treating `Hab.kever` as the authoritative writable state holder.
 - `Habery.habs` intentionally stayed cache-only, matching the KERIpy mental

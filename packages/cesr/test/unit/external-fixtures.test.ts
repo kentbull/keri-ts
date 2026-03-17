@@ -6,7 +6,7 @@ import {
   PARSIDE_GROUP_VECTORS,
 } from "../fixtures/external-vectors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { decodeB64, t } from '../../src/core/bytes.ts'
+import { decodeB64, t } from "../../src/core/bytes.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 

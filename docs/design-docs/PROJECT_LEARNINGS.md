@@ -171,10 +171,10 @@ This keeps context focused and avoids long-thread drift.
     back reopenable local event state, and `Habery.habs` should remain an
     in-memory reconstruction cache rather than becoming another persisted truth
     source.
-34. DB parity changes should ship with maintainer-grade source docs for the
-    new record contracts, storage families, and runtime seams; otherwise the
-    code may be behaviorally closer to KERIpy while still being too opaque for
-    safe future parity work.
+34. DB parity changes should ship with maintainer-grade source docs for the new
+    record contracts, storage families, and runtime seams; otherwise the code
+    may be behaviorally closer to KERIpy while still being too opaque for safe
+    future parity work.
 
 ## New Thread Kickoff Template
 

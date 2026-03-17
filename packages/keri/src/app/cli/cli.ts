@@ -1,11 +1,7 @@
 import { Command, Option } from "npm:commander@^10.0.1";
 import { type Operation } from "npm:effection@^3.6.0";
 import { AppError } from "../../core/errors.ts";
-import {
-  LOG_LEVELS,
-  setLogLevel,
-  type LogLevel,
-} from "../../core/logger.ts";
+import { LOG_LEVELS, type LogLevel, setLogLevel } from "../../core/logger.ts";
 import { DISPLAY_VERSION } from "../version.ts";
 import { createCmdHandlers, registerCmds } from "./command-definitions.ts";
 import { CommandHandler, type CommandSelection } from "./command-types.ts";

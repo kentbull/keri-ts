@@ -240,7 +240,12 @@ export type ReceiptCouple = [Prefixer, Cigar];
 /** Unverified non-transferable receipt triple stored in `ures.`. */
 export type UnverifiedReceiptTriple = [Diger, Prefixer, Cigar];
 /** Transferable validator receipt quadruple stored in `vrcs.`, `trqs.`, and `tsgs.`. */
-export type ValidatorReceiptQuadruple = [Prefixer, NumberPrimitive, Diger, Siger];
+export type ValidatorReceiptQuadruple = [
+  Prefixer,
+  NumberPrimitive,
+  Diger,
+  Siger,
+];
 /** Escrowed transferable validator receipt quintuple stored in `vres.`. */
 export type EscrowedValidatorReceiptQuintuple = [
   Diger,

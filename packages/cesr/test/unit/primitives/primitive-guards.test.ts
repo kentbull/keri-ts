@@ -1,13 +1,13 @@
 import { assertEquals } from "jsr:@std/assert";
 import { Counter, CounterGroup } from "../../../src/primitives/counter.ts";
 import {
+  type GroupEntry,
   isCounterGroupLike,
   isPrimitiveTuple,
-  type GroupEntry,
 } from "../../../src/primitives/primitive.ts";
 import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
 import { KERIPY_COUNTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import { b } from '../../../src/index.ts'
+import { b } from "../../../src/index.ts";
 
 Deno.test("primitive guards: detects tuple and counter-group entries", () => {
   const counter = new Counter({

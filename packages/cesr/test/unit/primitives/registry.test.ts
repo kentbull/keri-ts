@@ -5,13 +5,15 @@ import {
   supportedPrimitiveCodes,
 } from "../../../src/primitives/registry.ts";
 import {
-  KERIPY_MATTER_VECTORS,
   KERIPY_MAIN_BASELINE,
+  KERIPY_MATTER_VECTORS,
 } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("registry: parses KERIpy verifier vector token", () => {
-  const token = parsePrimitiveFromText(txt(KERIPY_MATTER_VECTORS.verferEcdsaR1));
+  const token = parsePrimitiveFromText(
+    txt(KERIPY_MATTER_VECTORS.verferEcdsaR1),
+  );
   assertEquals(token.qb64, KERIPY_MATTER_VECTORS.verferEcdsaR1);
   assertEquals(token.code, "1AAJ");
   assertEquals(token.name, "ECDSA_256r1");

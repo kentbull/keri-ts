@@ -10,7 +10,7 @@ import {
 } from "./hardening-helpers.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
-import { t } from '../../src/index.ts'
+import { t } from "../../src/index.ts";
 
 /**
  * P2 native-body breadth vectors (`V-P2-006`, `V-P2-007`).

@@ -153,8 +153,8 @@ proposed TypeScript symbol targets.
 
 1. `subing.ts` now carries the full planned `Suber` family surface used by the
    current parity push, with KERIpy method names as the primary API.
-2. `koming.ts` is now a single-generic `Komer<T>` for one persisted value
-   shape rather than a schema/codec abstraction.
+2. `koming.ts` is now a single-generic `Komer<T>` for one persisted value shape
+   rather than a schema/codec abstraction.
 3. `Baser` now uses typed record storage for habitats and a separate signature
    store:
    - `habs.` -> `Komer<HabitatRecord>`

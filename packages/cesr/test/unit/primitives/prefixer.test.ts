@@ -8,7 +8,10 @@ import {
 } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("prefixer: parses KERIpy prefix vector", () => {
-  const prefixer = parsePrefixer(txt(KERIPY_MATTER_VECTORS.prefixerEd25519N), "txt");
+  const prefixer = parsePrefixer(
+    txt(KERIPY_MATTER_VECTORS.prefixerEd25519N),
+    "txt",
+  );
   assertEquals(prefixer.qb64, KERIPY_MATTER_VECTORS.prefixerEd25519N);
   assertEquals(prefixer.prefix, KERIPY_MATTER_VECTORS.prefixerEd25519N);
 });

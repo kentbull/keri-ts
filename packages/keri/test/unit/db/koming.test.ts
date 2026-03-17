@@ -90,7 +90,9 @@ Deno.test("db/koming - Komer round-trips JSON, CBOR, and MGPK persisted records"
       },
     } satisfies PersonRecord;
 
-    for (const kind of [Kinds.json, Kinds.cbor, Kinds.mgpk] satisfies KomerKind[]) {
+    for (
+      const kind of [Kinds.json, Kinds.cbor, Kinds.mgpk] satisfies KomerKind[]
+    ) {
       const store = new Komer<PersonRecord>(lmdber, {
         subkey: `${kind.toLowerCase()}.`,
         kind,

@@ -16,7 +16,10 @@ Deno.test("unknown primitive: preserves text payload losslessly", () => {
   const unknown = UnknownPrimitive.fromPayload(payload, "txt");
   assertEquals(unknown.qb64, KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1);
   assertEquals(unknown.sourceDomain, "txt");
-  assertEquals(unknown.fullSize, KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1.length);
+  assertEquals(
+    unknown.fullSize,
+    KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1.length,
+  );
 });
 
 Deno.test("unknown primitive: preserves binary payload losslessly", () => {

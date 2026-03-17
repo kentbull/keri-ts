@@ -1,8 +1,8 @@
 import { type Database } from "npm:lmdb@3.4.4";
 import {
   b,
-  type Counter,
   Cipher,
+  type Counter,
   type Decrypter,
   type Encrypter,
   type Indexer,
@@ -10,8 +10,8 @@ import {
   parseSerder,
   type Serder,
   SerderKERI,
-  smell,
   Signer,
+  smell,
   t,
 } from "../../../cesr/mod.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
@@ -314,7 +314,12 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
   }
 
   getOnItem(keys: Keys, on = 0): [string[], number, T] | null {
-    const item = this.db.getOnItem(this.sdb, this._tokey(keys), on, b(this.sep));
+    const item = this.db.getOnItem(
+      this.sdb,
+      this._tokey(keys),
+      on,
+      b(this.sep),
+    );
     if (item === null) {
       return null;
     }
@@ -437,7 +442,9 @@ export class B64SuberBase<T extends string[] = string[]> extends Suber<T> {
     }
   }
 
-  protected _toval(vals: string | Uint8Array | Iterable<string | Uint8Array>): Uint8Array {
+  protected _toval(
+    vals: string | Uint8Array | Iterable<string | Uint8Array>,
+  ): Uint8Array {
     if (typeof vals === "string") {
       if (!isBase64UrlSegment(vals)) {
         throw new Error(`Non Base64 value=${vals}.`);
@@ -451,7 +458,9 @@ export class B64SuberBase<T extends string[] = string[]> extends Suber<T> {
       }
       return vals;
     }
-    const items = [...vals].map((item) => typeof item === "string" ? item : t(item));
+    const items = [...vals].map((item) =>
+      typeof item === "string" ? item : t(item)
+    );
     for (const item of items) {
       if (!isBase64UrlSegment(item)) {
         throw new Error(`Non Base64 value=${item}.`);
@@ -566,8 +575,9 @@ export class CesrOnSuber<T extends CesrValue = Matter> extends OnSuberBase<T> {
 /**
  * Concatenated qualified CESR tuple family (`CatCesr*`).
  */
-export class CatCesrSuberBase<T extends readonly CesrValue[] = readonly CesrValue[]>
-  extends Suber<T> {
+export class CatCesrSuberBase<
+  T extends readonly CesrValue[] = readonly CesrValue[],
+> extends Suber<T> {
   protected readonly klases: readonly QualifiedCtor<CesrValue>[];
   protected readonly strict: boolean;
 
@@ -652,13 +662,23 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
   /** Insert a logical insertion-ordered set for one effective key if absent. */
   put(keys: Keys, vals: T | Iterable<T> | null = null): boolean {
     const items = asIterable(vals).map((val) => this._ser(val));
-    return this.db.putIoSetVals(this.sdb, this._tokey(keys), items, b(this.sep));
+    return this.db.putIoSetVals(
+      this.sdb,
+      this._tokey(keys),
+      items,
+      b(this.sep),
+    );
   }
 
   /** Upsert a logical insertion-ordered set for one effective key. */
   pin(keys: Keys, vals: T | Iterable<T> | null = null): boolean {
     const items = asIterable(vals).map((val) => this._ser(val));
-    return this.db.pinIoSetVals(this.sdb, this._tokey(keys), items, b(this.sep));
+    return this.db.pinIoSetVals(
+      this.sdb,
+      this._tokey(keys),
+      items,
+      b(this.sep),
+    );
   }
 
   /** Append one logical member to the insertion-ordered set for an effective key. */
@@ -666,7 +686,12 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     if (val === null) {
       return false;
     }
-    return this.db.addIoSetVal(this.sdb, this._tokey(keys), this._ser(val), b(this.sep));
+    return this.db.addIoSetVal(
+      this.sdb,
+      this._tokey(keys),
+      this._ser(val),
+      b(this.sep),
+    );
   }
 
   getItem(keys: Keys, { ion = 0 }: { ion?: number } = {}): [string[], T][] {
@@ -706,7 +731,11 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
 
   /** Read the last logical member for one effective key. */
   getLastItem(keys: Keys): [string[], T] | null {
-    const item = this.db.getIoSetLastItem(this.sdb, this._tokey(keys), b(this.sep));
+    const item = this.db.getIoSetLastItem(
+      this.sdb,
+      this._tokey(keys),
+      b(this.sep),
+    );
     if (item === null) {
       return null;
     }
@@ -759,7 +788,13 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
   }
 
   *getLastIter(keys: Keys = ""): Generator<T> {
-    for (const val of this.db.getIoSetLastIterAll(this.sdb, this._tokey(keys), b(this.sep))) {
+    for (
+      const val of this.db.getIoSetLastIterAll(
+        this.sdb,
+        this._tokey(keys),
+        b(this.sep),
+      )
+    ) {
       const record = this._des(val);
       if (record !== null) {
         yield record;
@@ -811,7 +846,8 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
  * - synthetic keyspace virtualization (`IoSet*`)
  * - Base64-only tuple-like text payloads
  */
-export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> {
+export class B64IoSetSuber<T extends string[] = string[]>
+  extends IoSetSuber<T> {
   constructor(
     db: LMDBer,
     {
@@ -852,7 +888,8 @@ export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> 
  * - synthetic keyspace virtualization (`IoSet*`)
  * - one qualified CESR primitive per logical member
  */
-export class CesrIoSetSuber<T extends CesrValue = Matter> extends IoSetSuber<T> {
+export class CesrIoSetSuber<T extends CesrValue = Matter>
+  extends IoSetSuber<T> {
   protected readonly klas: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -956,7 +993,9 @@ export class CatCesrIoSetSuber<
 
   /** Hydrate one concatenated CESR tuple from stored qb64 bytes. */
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null ? null : splitQualified(val, this.klases) as unknown as T;
+    return val === null
+      ? null
+      : splitQualified(val, this.klases) as unknown as T;
   }
 }
 
@@ -1003,12 +1042,32 @@ export class SignerSuber extends CesrSuberBase<Signer> {
       ? maybeOptions
       : _decrypterOrOptions ?? {};
     const { topive = false } = options;
-    for (const [key, val] of this.db.getTopItemIter(this.sdb, this._tokey(keys, topive))) {
+    for (
+      const [key, val] of this.db.getTopItemIter(
+        this.sdb,
+        this._tokey(keys, topive),
+      )
+    ) {
       yield [this._tokeys(key), signerFromStored(this._tokeys(key), val)];
     }
   }
 }
 
+/**
+ * Signer family that preserves KERIpy's encrypted-signer API surface.
+ *
+ * Storage model:
+ * - single-value CESR family over signer payloads
+ * - hydrates stored values as `Signer` instances on read
+ *
+ * KERIpy correspondence:
+ * - mirrors the role of `CryptSignerSuber` for stores like keeper `pris.`
+ *
+ * Current `keri-ts` difference:
+ * - local CESR primitives do not yet implement signer encryption/decryption,
+ *   so methods that receive an `Encrypter` or `Decrypter` preserve the API
+ *   shape but fail loudly instead of silently storing incompatible bytes
+ */
 export class CryptSignerSuber extends SignerSuber {
   /**
    * Store one signer/cipher payload.
@@ -1064,9 +1123,10 @@ export class CryptSignerSuber extends SignerSuber {
         "CryptSignerSuber decryption is not implemented in local CESR primitives yet.",
       );
     }
-    yield* super.getTopItemIter(keys, maybeOptions.topive === undefined
-      ? decrypterOrOptions
-      : maybeOptions);
+    yield* super.getTopItemIter(
+      keys,
+      maybeOptions.topive === undefined ? decrypterOrOptions : maybeOptions,
+    );
   }
 }
 
@@ -1105,14 +1165,17 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
     if (this.klas === SerderKERI && !(serder instanceof SerderKERI)) {
-      throw new TypeError(`Expected ${this.klas.name}, got ${serder.constructor.name}.`);
+      throw new TypeError(
+        `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
+      );
     }
     return serder as T;
   }
 }
 
 /** Concrete single-value serder family. */
-export class SerderSuber<T extends Serder = SerderKERI> extends SerderSuberBase<T> {}
+export class SerderSuber<T extends Serder = SerderKERI>
+  extends SerderSuberBase<T> {}
 
 /**
  * Serder family over synthetic insertion-ordered sets.
@@ -1121,7 +1184,8 @@ export class SerderSuber<T extends Serder = SerderKERI> extends SerderSuberBase<
  * - synthetic keyspace virtualization (`IoSet*`)
  * - typed serder hydration through `smell()` + `parseSerder()`
  */
-export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<T> {
+export class SerderIoSetSuber<T extends Serder = SerderKERI>
+  extends IoSetSuber<T> {
   protected readonly klas: SerderCtor<T>;
 
   constructor(
@@ -1155,14 +1219,17 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
     if (this.klas === SerderKERI && !(serder instanceof SerderKERI)) {
-      throw new TypeError(`Expected ${this.klas.name}, got ${serder.constructor.name}.`);
+      throw new TypeError(
+        `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
+      );
     }
     return serder as T;
   }
 }
 
 /** Concrete schemer-style family built on the single-value serder adapter. */
-export class SchemerSuber<T extends Serder = SerderKERI> extends SerderSuberBase<T> {}
+export class SchemerSuber<T extends Serder = SerderKERI>
+  extends SerderSuberBase<T> {}
 
 /**
  * Native dupsort duplicate families (`Dup*` / `IoDup*`).
@@ -1323,7 +1390,9 @@ export class CatCesrDupSuber<
   }
 
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null ? null : splitQualified(val, this.klases) as unknown as T;
+    return val === null
+      ? null
+      : splitQualified(val, this.klases) as unknown as T;
   }
 }
 
@@ -1410,7 +1479,8 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
 }
 
 /** Base64 tuple family over insertion-ordered native duplicates. */
-export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> {
+export class B64IoDupSuber<T extends string[] = string[]>
+  extends IoDupSuber<T> {
   constructor(
     db: LMDBer,
     {
@@ -1651,7 +1721,8 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
 }
 
 /** Base64 tuple family over exposed-ordinal insertion-ordered duplicates. */
-export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber<T> {
+export class B64OnIoDupSuber<T extends string[] = string[]>
+  extends OnIoDupSuber<T> {
   constructor(
     db: LMDBer,
     {
@@ -1897,7 +1968,8 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
 }
 
 /** Base64 tuple family over exposed-ordinal synthetic insertion-ordered sets. */
-export class B64OnIoSetSuber<T extends string[] = string[]> extends OnIoSetSuber<T> {
+export class B64OnIoSetSuber<T extends string[] = string[]>
+  extends OnIoSetSuber<T> {
   constructor(
     db: LMDBer,
     {

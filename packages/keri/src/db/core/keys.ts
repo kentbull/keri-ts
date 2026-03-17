@@ -7,8 +7,8 @@
 
 import { DatabaseKeyError, ValidationError } from "../../core/errors.ts";
 
-import { b, t } from '../../../../cesr/mod.ts'
-import { to32CharHex } from '../../../../cesr/src/core/bytes.ts'
+import { b, t } from "../../../../cesr/mod.ts";
+import { to32CharHex } from "../../../../cesr/src/core/bytes.ts";
 
 /**
  * Create a digest key: prefix.digest
@@ -21,12 +21,8 @@ export function dgKey(
   pre: string | Uint8Array,
   dig: string | Uint8Array,
 ): Uint8Array {
-  const preBytes = typeof pre === "string"
-    ? b(pre)
-    : pre;
-  const digBytes = typeof dig === "string"
-    ? b(dig)
-    : dig;
+  const preBytes = typeof pre === "string" ? b(pre) : pre;
+  const digBytes = typeof dig === "string" ? b(dig) : dig;
 
   const result = new Uint8Array(preBytes.length + 1 + digBytes.length);
   result.set(preBytes, 0);
@@ -51,12 +47,8 @@ export function onKey(
   on: number,
   sep: string | Uint8Array = ".",
 ): Uint8Array {
-  const topBytes = typeof top === "string"
-    ? b(top)
-    : top;
-  const sepBytes = typeof sep === "string"
-    ? b(sep)
-    : sep;
+  const topBytes = typeof top === "string" ? b(top) : top;
+  const sepBytes = typeof sep === "string" ? b(sep) : sep;
 
   const ordinalBytes = b(to32CharHex(on));
 
@@ -93,9 +85,7 @@ export function riKey(pre: string | Uint8Array, ri: number): Uint8Array {
  * @returns Uint8Array key with separator '|'
  */
 export function dtKey(pre: string | Uint8Array, dts: string): Uint8Array {
-  const preBytes = typeof pre === "string"
-    ? b(pre)
-    : pre;
+  const preBytes = typeof pre === "string" ? b(pre) : pre;
   const dtsBytes = b(dts);
 
   const result = new Uint8Array(preBytes.length + 1 + dtsBytes.length);
@@ -118,12 +108,8 @@ export function splitKey(
   key: Uint8Array | string,
   sep: string | Uint8Array = ".",
 ): [Uint8Array, Uint8Array] {
-  const keyBytes = typeof key === "string"
-    ? b(key)
-    : key;
-  const sepBytes = typeof sep === "string"
-    ? b(sep)
-    : sep;
+  const keyBytes = typeof key === "string" ? b(key) : key;
+  const sepBytes = typeof sep === "string" ? b(sep) : sep;
 
   const sepStr = t(sepBytes);
   const keyStr = t(keyBytes);
@@ -191,12 +177,8 @@ export function suffix(
   ion: number,
   sep: string | Uint8Array = ".",
 ): Uint8Array {
-  const keyBytes = typeof key === "string"
-    ? b(key)
-    : key;
-  const sepBytes = typeof sep === "string"
-    ? b(sep)
-    : sep;
+  const keyBytes = typeof key === "string" ? b(key) : key;
+  const sepBytes = typeof sep === "string" ? b(sep) : sep;
 
   const ordinalHex = ion.toString(16).padStart(32, "0");
   const ordinalBytes = b(ordinalHex);
@@ -222,12 +204,8 @@ export function unsuffix(
   iokey: Uint8Array | string,
   sep: string | Uint8Array = ".",
 ): [Uint8Array, number] {
-  const iokeyBytes = typeof iokey === "string"
-    ? b(iokey)
-    : iokey;
-  const sepBytes = typeof sep === "string"
-    ? b(sep)
-    : sep;
+  const iokeyBytes = typeof iokey === "string" ? b(iokey) : iokey;
+  const sepBytes = typeof sep === "string" ? b(sep) : sep;
 
   const sepStr = t(sepBytes);
   const iokeyStr = t(iokeyBytes);

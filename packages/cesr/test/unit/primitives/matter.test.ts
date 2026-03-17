@@ -1,9 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { codeB64ToB2, decodeB64 } from "../../../src/core/bytes.ts";
-import {
-  ShortageError,
-  UnknownCodeError,
-} from "../../../src/core/errors.ts";
+import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import {
   Matter,
   parseMatter,

@@ -90,9 +90,9 @@ export function nabSextets(bytes: Uint8Array, sextets: number): Uint8Array {
 }
 
 /** UTF-8 string -> bytes helper. */
-export const b = (t: string): Uint8Array => encoder.encode(t)
+export const b = (t: string): Uint8Array => encoder.encode(t);
 /** UTF-8 bytes -> string helper. */
-export const t = (b: Uint8Array): string => decoder.decode(b)
+export const t = (b: Uint8Array): string => decoder.decode(b);
 
 /**
  * Normalize lmdb-js key/value payloads to `Uint8Array`.
@@ -100,9 +100,9 @@ export const t = (b: Uint8Array): string => decoder.decode(b)
  */
 export function toBytes(value: unknown): Uint8Array {
   if (value instanceof Uint8Array) {
-    return value
+    return value;
   }
-  return new Uint8Array(value as ArrayLike<number>)
+  return new Uint8Array(value as ArrayLike<number>);
 }
 
 /**
@@ -112,19 +112,20 @@ export function toBytes(value: unknown): Uint8Array {
 export const to32CharHex = (num: number): string => {
   return num
     .toString(16)
-    .padStart(32, "0")};
+    .padStart(32, "0");
+};
 
 /** Constant-time-ish byte equality for small DB keys/values. */
 export function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) {
-    return false
+    return false;
   }
   for (let i = 0; i < left.length; i++) {
     if (left[i] !== right[i]) {
-      return false
+      return false;
     }
   }
-  return true
+  return true;
 }
 
 /** Stable hex fingerprint used for set-membership dedupe of binary values. */

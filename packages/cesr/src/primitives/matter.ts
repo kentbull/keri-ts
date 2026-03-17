@@ -8,8 +8,8 @@ import {
   encodeB64,
   intToB64,
   nabSextets,
-  sceil
-} from '../core/bytes.ts'
+  sceil,
+} from "../core/bytes.ts";
 import {
   DeserializeError,
   ShortageError,
@@ -51,13 +51,13 @@ const MATTER_BARDS = new Map<string, number>(
 );
 
 function isMatterData(value: unknown): value is MatterData {
-  return typeof value === "object"
-    && value !== null
-    && "code" in value
-    && "raw" in value
-    && "qb64" in value
-    && "fullSize" in value
-    && "fullSizeB2" in value;
+  return typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    "raw" in value &&
+    "qb64" in value &&
+    "fullSize" in value &&
+    "fullSizeB2" in value;
 }
 
 function parseMatterCodeFromText(txt: string): { code: string; hs: number } {

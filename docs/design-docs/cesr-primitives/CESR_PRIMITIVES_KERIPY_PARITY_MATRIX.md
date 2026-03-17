@@ -30,7 +30,7 @@ Baseline source for the KERIpy comparisons in this document:
 ## Foundation
 
 | `keri-ts`      | KERIpy peer                 | Role/category                             | Initialization shapes                            | Encoded forms exposed                              | Parity note |
-|----------------|-----------------------------|-------------------------------------------|--------------------------------------------------|----------------------------------------------------|-------------|
+| -------------- | --------------------------- | ----------------------------------------- | ------------------------------------------------ | -------------------------------------------------- | ----------- |
 | `Matter`       | `coring.Matter`             | Non-indexed qualified material base       | `raw+code`, `qb64`, `qb64b`, `qb2`               | `raw`, `qb64`, `qb64b`, `qb2`, size fields         | `direct`    |
 | `Indexer`      | `indexing.Indexer`          | Indexed qualified material base           | `raw+code+index(+ondex)`, `qb64`, `qb64b`, `qb2` | `raw`, `qb64`, `qb64b`, `qb2`, `index`, `ondex`    | `direct`    |
 | `Counter`      | `counting.Counter`          | Versioned framing/group counter           | `code+count+version`, `qb64`, `qb64b`, `qb2`     | `qb64`, `qb64b`, `qb2`, `count`, `name`, `version` | `direct`    |
@@ -39,7 +39,7 @@ Baseline source for the KERIpy comparisons in this document:
 ## Message And Body
 
 | `keri-ts`          | KERIpy peer            | Role/category               | Initialization shapes                   | Encoded forms exposed                         | Parity note |
-|--------------------|------------------------|-----------------------------|-----------------------------------------|-----------------------------------------------|-------------|
+| ------------------ | ---------------------- | --------------------------- | --------------------------------------- | --------------------------------------------- | ----------- |
 | `Serder`           | `serdering.Serder`     | Parsed body object          | usually `parseSerder(raw, smellage)`    | `raw`, `ked`, protocol/version metadata       | `direct`    |
 | `SerderKERI`       | `serdering.SerderKERI` | KERI body subtype           | parser-produced / constructor           | same as `Serder`                              | `direct`    |
 | `SerderACDC`       | `serdering.SerderACDC` | ACDC body subtype           | parser-produced / constructor           | same as `Serder`                              | `direct`    |
@@ -50,7 +50,7 @@ Baseline source for the KERIpy comparisons in this document:
 ## Core `Matter` Derivatives
 
 | `keri-ts`         | KERIpy peer                                  | Role/category                 | Initialization shapes                               | Encoded forms exposed                              | Parity note |
-|-------------------|----------------------------------------------|-------------------------------|-----------------------------------------------------|----------------------------------------------------|-------------|
+| ----------------- | -------------------------------------------- | ----------------------------- | --------------------------------------------------- | -------------------------------------------------- | ----------- |
 | `Diger`           | `coring.Diger`                               | Digest material               | `qb64`, `qb64b`, `qb2`, `raw+code`                  | `Matter` forms                                     | `direct`    |
 | `Prefixer`        | `coring.Prefixer`                            | Identifier prefix material    | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
 | `Verfer`          | `coring.Verfer`                              | Verification-key material     | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
@@ -79,13 +79,13 @@ Baseline source for the KERIpy comparisons in this document:
 ## Indexed Signature Family
 
 | `keri-ts` | KERIpy peer      | Role/category              | Initialization shapes | Encoded forms exposed                    | Parity note |
-|-----------|------------------|----------------------------|-----------------------|------------------------------------------|-------------|
+| --------- | ---------------- | -------------------------- | --------------------- | ---------------------------------------- | ----------- |
 | `Siger`   | `indexing.Siger` | Indexed signature material | `Indexer` shapes      | `Indexer` forms plus signature semantics | `direct`    |
 
 ## Counted-Group Structor Family
 
 | `keri-ts` | KERIpy peer                      | Role/category                | Initialization shapes                  | Encoded forms exposed                  | Parity note |
-|-----------|----------------------------------|------------------------------|----------------------------------------|----------------------------------------|-------------|
+| --------- | -------------------------------- | ---------------------------- | -------------------------------------- | -------------------------------------- | ----------- |
 | `Sealer`  | `structing.Sealer`               | Seal-group wrapper           | `parseSealer(...)`, `.fromGroup(...)`  | grouped `qb64g`, `qb2g`, typed members | `direct`    |
 | `Blinder` | blinder-family structor behavior | Blind-state group wrapper    | `parseBlinder(...)`, `.fromGroup(...)` | grouped encodings and typed members    | `near`      |
 | `Mediar`  | media structor behavior          | Media-bearing group wrapper  | `parseMediar(...)`, `.fromGroup(...)`  | grouped encodings and typed members    | `near`      |
@@ -94,7 +94,7 @@ Baseline source for the KERIpy comparisons in this document:
 ## Support Surface
 
 | `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes | Encoded forms exposed        | Parity note |
-|-------------------------------------------------|----------------------------------------------------------|---------------------------------------|-----------------------|------------------------------|-------------|
+| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | --------------------- | ---------------------------- | ----------- |
 | `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants      | none; support constants only | `TS-local`  |
 | `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced       | typed unions/interfaces      | `TS-local`  |
 | `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers         | typed field projection       | `TS-local`  |

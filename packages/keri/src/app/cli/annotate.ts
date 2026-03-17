@@ -1,9 +1,5 @@
 import { annotate } from "cesr-ts";
-import {
-  type Operation,
-  spawn,
-  withResolvers,
-} from "npm:effection@^3.6.0";
+import { type Operation, spawn, withResolvers } from "npm:effection@^3.6.0";
 import { colorizeAnnotatedOutput } from "./annotate-color.ts";
 
 const TEXT_DECODER = new TextDecoder();

@@ -8,7 +8,9 @@ import {
 import { token } from "../../fixtures/counter-token-fixtures.ts";
 
 Deno.test("cipher: hydrates KERIpy cipher-seed code family", () => {
-  const cipher = new Cipher({ qb64: token(KERIPY_CODE_VECTORS.cipherSeedCode) });
+  const cipher = new Cipher({
+    qb64: token(KERIPY_CODE_VECTORS.cipherSeedCode),
+  });
   assertEquals(cipher.code, KERIPY_CODE_VECTORS.cipherSeedCode);
 });
 

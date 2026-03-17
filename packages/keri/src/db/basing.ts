@@ -52,17 +52,17 @@ import {
   Suber,
 } from "./subing.ts";
 import {
+  b,
+  Cigar,
   concatBytes,
   Counter,
   CtrDexV1,
-  b,
-  Cigar,
   Dater,
   Diger,
   Labeler,
   Noncer,
-  NumDex,
   NumberPrimitive,
+  NumDex,
   Prefixer,
   Saider,
   SerderKERI,
@@ -281,13 +281,22 @@ export class Baser {
       this.evtsRaw = this.evts.sdb;
       this.fels = new OnSuber(this.lmdber, { subkey: "fels." });
       this.kels = new OnIoDupSuber(this.lmdber, { subkey: "kels." });
-      this.dtss = new CesrSuber<Dater>(this.lmdber, { subkey: "dtss.", klas: Dater });
+      this.dtss = new CesrSuber<Dater>(this.lmdber, {
+        subkey: "dtss.",
+        klas: Dater,
+      });
       this.aess = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "aess.",
         klas: [NumberPrimitive, Diger],
       });
-      this.sigs = new CesrIoSetSuber<Siger>(this.lmdber, { subkey: "sigs.", klas: Siger });
-      this.wigs = new CesrIoSetSuber<Siger>(this.lmdber, { subkey: "wigs.", klas: Siger });
+      this.sigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+        subkey: "sigs.",
+        klas: Siger,
+      });
+      this.wigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+        subkey: "wigs.",
+        klas: Siger,
+      });
       this.rcts = new CatCesrIoSetSuber<ReceiptCouple>(this.lmdber, {
         subkey: "rcts.",
         klas: [Prefixer, Cigar],
@@ -296,14 +305,20 @@ export class Baser {
         subkey: "ures.",
         klas: [Diger, Prefixer, Cigar],
       });
-      this.vrcs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(this.lmdber, {
-        subkey: "vrcs.",
-        klas: [Prefixer, NumberPrimitive, Diger, Siger],
-      });
-      this.vres = new CatCesrIoSetSuber<EscrowedValidatorReceiptQuintuple>(this.lmdber, {
-        subkey: "vres.",
-        klas: [Diger, Prefixer, NumberPrimitive, Diger, Siger],
-      });
+      this.vrcs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
+        this.lmdber,
+        {
+          subkey: "vrcs.",
+          klas: [Prefixer, NumberPrimitive, Diger, Siger],
+        },
+      );
+      this.vres = new CatCesrIoSetSuber<EscrowedValidatorReceiptQuintuple>(
+        this.lmdber,
+        {
+          subkey: "vres.",
+          klas: [Diger, Prefixer, NumberPrimitive, Diger, Siger],
+        },
+      );
       this.pses = new OnIoDupSuber(this.lmdber, { subkey: "pses." });
       this.pwes = new OnIoDupSuber(this.lmdber, { subkey: "pwes." });
       this.pdes = new OnIoDupSuber(this.lmdber, { subkey: "pdes." });
@@ -320,11 +335,18 @@ export class Baser {
         subkey: "fons.",
         klas: NumberPrimitive,
       });
-      this.migs = new CesrSuber<Dater>(this.lmdber, { subkey: "migs.", klas: Dater });
+      this.migs = new CesrSuber<Dater>(this.lmdber, {
+        subkey: "migs.",
+        klas: Dater,
+      });
       this.vers = new Suber(this.lmdber, { subkey: "vers." });
-      this.esrs = new Komer<EventSourceRecord>(this.lmdber, { subkey: "esrs." });
+      this.esrs = new Komer<EventSourceRecord>(this.lmdber, {
+        subkey: "esrs.",
+      });
       this.misfits = new IoSetSuber<string>(this.lmdber, { subkey: "mfes." });
-      this.delegables = new IoSetSuber<string>(this.lmdber, { subkey: "dees." });
+      this.delegables = new IoSetSuber<string>(this.lmdber, {
+        subkey: "dees.",
+      });
       this.states = new Komer<KeyStateRecord>(this.lmdber, { subkey: "stts." });
       this.wits = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "wits.",
@@ -332,16 +354,34 @@ export class Baser {
       });
       this.habs = new Komer<HabitatRecord>(this.lmdber, { subkey: "habs." });
       this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
-      this.sdts = new CesrSuber<Dater>(this.lmdber, { subkey: "sdts.", klas: Dater });
-      this.ssgs = new CesrIoSetSuber<Siger>(this.lmdber, { subkey: "ssgs.", klas: Siger });
-      this.scgs = new CatCesrIoSetSuber<TransferableSignatureCouple>(this.lmdber, {
-        subkey: "scgs.",
-        klas: [Verfer, Cigar],
+      this.sdts = new CesrSuber<Dater>(this.lmdber, {
+        subkey: "sdts.",
+        klas: Dater,
       });
+      this.ssgs = new CesrIoSetSuber<Siger>(this.lmdber, {
+        subkey: "ssgs.",
+        klas: Siger,
+      });
+      this.scgs = new CatCesrIoSetSuber<TransferableSignatureCouple>(
+        this.lmdber,
+        {
+          subkey: "scgs.",
+          klas: [Verfer, Cigar],
+        },
+      );
       this.rpys = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "rpys." });
-      this.rpes = new CesrIoSetSuber<Diger>(this.lmdber, { subkey: "rpes.", klas: Diger });
-      this.eans = new CesrSuber<Diger>(this.lmdber, { subkey: "eans.", klas: Diger });
-      this.lans = new CesrSuber<Diger>(this.lmdber, { subkey: "lans.", klas: Diger });
+      this.rpes = new CesrIoSetSuber<Diger>(this.lmdber, {
+        subkey: "rpes.",
+        klas: Diger,
+      });
+      this.eans = new CesrSuber<Diger>(this.lmdber, {
+        subkey: "eans.",
+        klas: Diger,
+      });
+      this.lans = new CesrSuber<Diger>(this.lmdber, {
+        subkey: "lans.",
+        klas: Diger,
+      });
       this.ends = new Komer<EndpointRecord>(this.lmdber, { subkey: "ends." });
       this.locs = new Komer<LocationRecord>(this.lmdber, { subkey: "locs." });
       this.obvs = new Komer<ObservedRecord>(this.lmdber, { subkey: "obvs." });
@@ -358,45 +398,112 @@ export class Baser {
         subkey: "gdwe.",
         klas: [NumberPrimitive, Diger],
       });
-      this.cgms = new CesrSuber<Diger>(this.lmdber, { subkey: "cgms.", klas: Diger });
-      this.epse = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "epse." });
-      this.epsd = new CesrSuber<Dater>(this.lmdber, { subkey: "epsd.", klas: Dater });
-      this.exns = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "exns." });
-      this.erpy = new CesrSuber<Saider>(this.lmdber, { subkey: "erpy.", klas: Saider });
-      this.esigs = new CesrIoSetSuber<Siger>(this.lmdber, { subkey: "esigs.", klas: Siger });
-      this.ecigs = new CatCesrIoSetSuber<TransferableSignatureCouple>(this.lmdber, {
-        subkey: "ecigs.",
-        klas: [Verfer, Cigar],
+      this.cgms = new CesrSuber<Diger>(this.lmdber, {
+        subkey: "cgms.",
+        klas: Diger,
       });
+      this.epse = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "epse." });
+      this.epsd = new CesrSuber<Dater>(this.lmdber, {
+        subkey: "epsd.",
+        klas: Dater,
+      });
+      this.exns = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "exns." });
+      this.erpy = new CesrSuber<Saider>(this.lmdber, {
+        subkey: "erpy.",
+        klas: Saider,
+      });
+      this.esigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+        subkey: "esigs.",
+        klas: Siger,
+      });
+      this.ecigs = new CatCesrIoSetSuber<TransferableSignatureCouple>(
+        this.lmdber,
+        {
+          subkey: "ecigs.",
+          klas: [Verfer, Cigar],
+        },
+      );
       this.epath = new IoSetSuber<string>(this.lmdber, { subkey: ".epath" });
-      this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, { subkey: ".essrs", klas: Texter });
-      this.chas = new CesrIoSetSuber<Diger>(this.lmdber, { subkey: "chas.", klas: Diger });
-      this.reps = new CesrIoSetSuber<Diger>(this.lmdber, { subkey: "reps.", klas: Diger });
-      this.wkas = new IoSetKomer<WellKnownAuthN>(this.lmdber, { subkey: "wkas." });
-      this.kdts = new CesrSuber<Dater>(this.lmdber, { subkey: "kdts.", klas: Dater });
+      this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, {
+        subkey: ".essrs",
+        klas: Texter,
+      });
+      this.chas = new CesrIoSetSuber<Diger>(this.lmdber, {
+        subkey: "chas.",
+        klas: Diger,
+      });
+      this.reps = new CesrIoSetSuber<Diger>(this.lmdber, {
+        subkey: "reps.",
+        klas: Diger,
+      });
+      this.wkas = new IoSetKomer<WellKnownAuthN>(this.lmdber, {
+        subkey: "wkas.",
+      });
+      this.kdts = new CesrSuber<Dater>(this.lmdber, {
+        subkey: "kdts.",
+        klas: Dater,
+      });
       this.ksns = new Komer<KeyStateRecord>(this.lmdber, { subkey: "ksns." });
-      this.knas = new CesrSuber<Diger>(this.lmdber, { subkey: "knas.", klas: Diger });
-      this.wwas = new CesrSuber<Diger>(this.lmdber, { subkey: "wwas.", klas: Diger });
-      this.oobis = new Komer<OobiRecord>(this.lmdber, { subkey: "oobis.", sep: ">" });
-      this.eoobi = new Komer<OobiRecord>(this.lmdber, { subkey: "eoobi.", sep: ">" });
-      this.coobi = new Komer<OobiRecord>(this.lmdber, { subkey: "coobi.", sep: ">" });
-      this.roobi = new Komer<OobiRecord>(this.lmdber, { subkey: "roobi.", sep: ">" });
-      this.woobi = new Komer<OobiRecord>(this.lmdber, { subkey: "woobi.", sep: ">" });
-      this.moobi = new Komer<OobiRecord>(this.lmdber, { subkey: "moobi.", sep: ">" });
-      this.mfa = new Komer<OobiRecord>(this.lmdber, { subkey: "mfa.", sep: ">" });
-      this.rmfa = new Komer<OobiRecord>(this.lmdber, { subkey: "rmfa.", sep: ">" });
-      this.schema = new SchemerSuber<SerderKERI>(this.lmdber, { subkey: "schema." });
+      this.knas = new CesrSuber<Diger>(this.lmdber, {
+        subkey: "knas.",
+        klas: Diger,
+      });
+      this.wwas = new CesrSuber<Diger>(this.lmdber, {
+        subkey: "wwas.",
+        klas: Diger,
+      });
+      this.oobis = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "oobis.",
+        sep: ">",
+      });
+      this.eoobi = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "eoobi.",
+        sep: ">",
+      });
+      this.coobi = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "coobi.",
+        sep: ">",
+      });
+      this.roobi = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "roobi.",
+        sep: ">",
+      });
+      this.woobi = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "woobi.",
+        sep: ">",
+      });
+      this.moobi = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "moobi.",
+        sep: ">",
+      });
+      this.mfa = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "mfa.",
+        sep: ">",
+      });
+      this.rmfa = new Komer<OobiRecord>(this.lmdber, {
+        subkey: "rmfa.",
+        sep: ">",
+      });
+      this.schema = new SchemerSuber<SerderKERI>(this.lmdber, {
+        subkey: "schema.",
+      });
       this.cfld = new Suber(this.lmdber, { subkey: "cfld." });
       this.hbys = new Suber(this.lmdber, { subkey: "hbys." });
       this.cons = new Suber(this.lmdber, { subkey: "cons." });
-      this.ccigs = new CesrSuber<Cigar>(this.lmdber, { subkey: "ccigs.", klas: Cigar });
+      this.ccigs = new CesrSuber<Cigar>(this.lmdber, {
+        subkey: "ccigs.",
+        klas: Cigar,
+      });
       this.imgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
         subkey: "imgs.",
         klas: [Noncer, Noncer, Labeler, Texter],
       });
       this.ifld = new Suber(this.lmdber, { subkey: "ifld." });
       this.sids = new Suber(this.lmdber, { subkey: "sids." });
-      this.icigs = new CesrSuber<Cigar>(this.lmdber, { subkey: "icigs.", klas: Cigar });
+      this.icigs = new CesrSuber<Cigar>(this.lmdber, {
+        subkey: "icigs.",
+        klas: Cigar,
+      });
       this.iimgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
         subkey: "iimgs.",
         klas: [Noncer, Noncer, Labeler, Texter],
@@ -404,26 +511,46 @@ export class Baser {
       this.dpwe = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dpwe." });
       this.dune = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dune." });
       this.dpub = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dpub." });
-      this.cdel = new CesrOnSuber<Diger>(this.lmdber, { subkey: "cdel.", klas: Diger });
-      this.meids = new CesrIoSetSuber<Diger>(this.lmdber, { subkey: "meids.", klas: Diger });
-      this.maids = new CesrIoSetSuber<Prefixer>(this.lmdber, { subkey: "maids.", klas: Prefixer });
+      this.cdel = new CesrOnSuber<Diger>(this.lmdber, {
+        subkey: "cdel.",
+        klas: Diger,
+      });
+      this.meids = new CesrIoSetSuber<Diger>(this.lmdber, {
+        subkey: "meids.",
+        klas: Diger,
+      });
+      this.maids = new CesrIoSetSuber<Prefixer>(this.lmdber, {
+        subkey: "maids.",
+        klas: Prefixer,
+      });
       this.ctyp = new Komer<CacheTypeRecord>(this.lmdber, { subkey: "ctyp." });
       this.msgc = new Komer<MsgCacheRecord>(this.lmdber, { subkey: "msgc." });
-      this.tmsc = new Komer<TxnMsgCacheRecord>(this.lmdber, { subkey: "tmsc." });
+      this.tmsc = new Komer<TxnMsgCacheRecord>(this.lmdber, {
+        subkey: "tmsc.",
+      });
       this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
-      this.pmks = new CesrIoSetSuber<Siger>(this.lmdber, { subkey: "pmks.", klas: Siger });
+      this.pmks = new CesrIoSetSuber<Siger>(this.lmdber, {
+        subkey: "pmks.",
+        klas: Siger,
+      });
       this.pmsk = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "pmsk.",
         klas: [NumberPrimitive, Diger],
       });
-      this.trqs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(this.lmdber, {
-        subkey: "trqs.",
-        klas: [Prefixer, NumberPrimitive, Diger, Siger],
-      });
-      this.tsgs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(this.lmdber, {
-        subkey: "tsgs.",
-        klas: [Prefixer, NumberPrimitive, Diger, Siger],
-      });
+      this.trqs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
+        this.lmdber,
+        {
+          subkey: "trqs.",
+          klas: [Prefixer, NumberPrimitive, Diger, Siger],
+        },
+      );
+      this.tsgs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
+        this.lmdber,
+        {
+          subkey: "tsgs.",
+          klas: [Prefixer, NumberPrimitive, Diger, Siger],
+        },
+      );
       this.sscs = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "sscs.",
         klas: [NumberPrimitive, Diger],
@@ -784,12 +911,18 @@ export class Baser {
 
   /** Insert indexed signatures for one event in `sigs.` if absent. */
   putSigs(pre: string, said: string, sigs: string[]): boolean {
-    return this.sigs.put([pre, said], sigs.map((sig) => new Siger({ qb64: sig })));
+    return this.sigs.put(
+      [pre, said],
+      sigs.map((sig) => new Siger({ qb64: sig })),
+    );
   }
 
   /** Upsert indexed signatures for one event in `sigs.`. */
   pinSigs(pre: string, said: string, sigs: string[]): boolean {
-    return this.sigs.pin([pre, said], sigs.map((sig) => new Siger({ qb64: sig })));
+    return this.sigs.pin(
+      [pre, said],
+      sigs.map((sig) => new Siger({ qb64: sig })),
+    );
   }
 
   /** Read indexed signatures for one event from `sigs.` as qb64 text. */
