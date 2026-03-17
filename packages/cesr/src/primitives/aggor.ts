@@ -17,12 +17,21 @@ import type { Kind } from "../tables/versions.ts";
 import { DigDex } from "./codex.ts";
 import { Counter, parseCounter } from "./counter.ts";
 import { Diger } from "./diger.ts";
-import { Mapper, type MapperField, parseMapperBody } from "./mapper.ts";
+import {
+  Mapper,
+  type MapperField,
+  type MapperMap,
+  parseMapperBody,
+} from "./mapper.ts";
 import { parseMatter } from "./matter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { parseStructor, Structor } from "./structor.ts";
 
-type SadMap = Record<string, unknown>;
+/** One aggregate-list element: either a compact qb64 commitment or a disclosed map. */
+export type AggorElement = string | MapperMap;
+
+/** Semantic aggregate element list aligned with KERIpy `list[dict|str]`. */
+export type AggorList = AggorElement[];
 
 /**
  * `Aggor` is the aggregate-list sibling to `Compactor`.
@@ -54,7 +63,7 @@ export function isAggorCode(code: string): boolean {
  * for inhale from an existing aggregate wire representation.
  */
 export interface AggorInit {
-  ael?: unknown[];
+  ael?: AggorList;
   raw?: Uint8Array;
   qb64?: string;
   qb64b?: Uint8Array;
@@ -87,7 +96,7 @@ export class Aggor extends Structor {
   /** Digest code used to compute the aggregate identifier (`agid`). */
   readonly digestCode: string;
   readonly wireKind: Kind;
-  private readonly _ael: unknown[];
+  private readonly _ael: AggorList;
 
   /**
    * Construct one aggregate primitive.
@@ -151,7 +160,7 @@ export class Aggor extends Structor {
   }
 
   /** Aggregate element list in semantic form. */
-  get ael(): unknown[] {
+  get ael(): AggorList {
     return this._ael.map((entry) => Aggor.clone(entry));
   }
 
@@ -169,7 +178,7 @@ export class Aggor extends Structor {
    * the agid at position zero.
    */
   static verifyDisclosure(
-    ael: unknown[],
+    ael: AggorList,
     kind: Kind = "CESR",
     code = DigDex.Blake3_256,
     saids: Record<string, string> = { d: DigDex.Blake3_256 },
@@ -197,7 +206,7 @@ export class Aggor extends Structor {
    * Index `0` is always the agid and stays compact; only later map elements are
    * eligible for disclosure expansion.
    */
-  disclose(indices: number[] = []): [unknown[], Kind] {
+  disclose(indices: number[] = []): [AggorList, Kind] {
     if (this.kind !== "list") {
       throw new SerializeError(
         "Disclosure is only defined for aggregate lists.",
@@ -208,10 +217,10 @@ export class Aggor extends Structor {
     // - a `Mapper` that knows how to compute its own compact SAID.
     const atoms = this._ael.map((element, index) => {
       if (index === 0) {
-        return typeof element === "string" ? element : null;
+        return element;
       }
       if (element && typeof element === "object" && !Array.isArray(element)) {
-        return Mapper.fromSad(element as SadMap, {
+        return Mapper.fromSad(element, {
           strict: this.strict,
           saidive: true,
           saids: this.saids,
@@ -220,11 +229,11 @@ export class Aggor extends Structor {
           verify: false,
         });
       }
-      return typeof element === "string" ? element : null;
+      return element;
     });
 
-    const disclosure: unknown[] = atoms.map((atom) =>
-      atom instanceof Mapper ? atom.said : atom
+    const disclosure: AggorList = atoms.map((atom) =>
+      atom instanceof Mapper ? (atom.said ?? "") : atom
     );
     for (const index of indices) {
       if (index > 0 && index < atoms.length && atoms[index] instanceof Mapper) {
@@ -337,7 +346,7 @@ export class Aggor extends Structor {
   }
 
   private static serializeList(
-    ael: unknown[],
+    ael: AggorList,
     options: AggorInit,
   ): string {
     const strict = options.strict ?? true;
@@ -359,7 +368,7 @@ export class Aggor extends Structor {
       for (let idx = 1; idx < working.length; idx++) {
         const element = working[idx];
         if (element && typeof element === "object" && !Array.isArray(element)) {
-          const mapper = Mapper.fromSad(element as SadMap, {
+          const mapper = Mapper.fromSad(element, {
             strict,
             saidive: true,
             saids,
@@ -383,7 +392,7 @@ export class Aggor extends Structor {
       if (element && typeof element === "object" && !Array.isArray(element)) {
         // Aggregate list elements compact exactly like disclosed map sections:
         // nested map content collapses to its mapper-native representation.
-        const mapper = Mapper.fromSad(element as SadMap, {
+        const mapper = Mapper.fromSad(element, {
           strict,
           saidive: true,
           saids,
@@ -408,7 +417,7 @@ export class Aggor extends Structor {
     qb64: string,
     strict: boolean,
     saids: Record<string, string>,
-  ): unknown[] {
+  ): AggorList {
     // Aggregate lists are walked element-by-element from the enclosed list
     // payload. Elements may be:
     // - compact qb64 commitments, or
@@ -419,7 +428,7 @@ export class Aggor extends Structor {
       counter.fullSize,
       counter.fullSize + counter.count * 4,
     );
-    const out: unknown[] = [];
+    const out: AggorList = [];
     let offset = 0;
     while (offset < payload.length) {
       if (payload[offset] === "-".charCodeAt(0)) {
@@ -453,7 +462,7 @@ export class Aggor extends Structor {
   }
 
   private static computeAgid(
-    ael: unknown[],
+    ael: AggorList,
     kind: Kind,
     code: string,
     strict: boolean,
@@ -471,7 +480,7 @@ export class Aggor extends Structor {
         return "#".repeat(sizage.fs);
       }
       if (element && typeof element === "object" && !Array.isArray(element)) {
-        const mapper = Mapper.fromSad(element as SadMap, {
+        const mapper = Mapper.fromSad(element, {
           strict,
           saidive: true,
           saids,

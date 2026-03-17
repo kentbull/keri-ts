@@ -19,6 +19,7 @@ import {
 } from "../primitives/codex.ts";
 import { Compactor } from "../primitives/compactor.ts";
 import { Diger } from "../primitives/diger.ts";
+import type { MapperMap } from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
@@ -204,7 +205,7 @@ export function dumps(
     }
     // Native emit is factored out so `Serder`, `Serdery`, and parser-native
     // hydration all share one CESR-native serialization contract.
-    return dumpCesrNativeSad(ked as Record<string, unknown>);
+    return dumpCesrNativeSad(ked as MapperMap);
   }
   throw new SerializeError(`Unsupported serialization kind: ${kind}`);
 }
@@ -974,7 +975,7 @@ function computeAcdcFieldVariants(
     sectionConfig && value && typeof value === "object" && !Array.isArray(value)
   ) {
     const expanded = new Compactor({
-      mad: withAcdcSectionPlaceholder(label, value as SadMap),
+      mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
       kind,
       verify: false,
       saidive: true,
@@ -992,7 +993,7 @@ function computeAcdcFieldVariants(
     }
 
     const compacted = new Compactor({
-      mad: withAcdcSectionPlaceholder(label, value as SadMap),
+      mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
       kind,
       verify: false,
       saidive: true,

@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../src/core/errors.ts";
+import type { MapperMap } from "../../src/primitives/mapper.ts";
 import {
   canonicalizeCesrNativeRaw,
   dumpCesrNativeSad,
@@ -177,7 +178,7 @@ Deno.test("parseCesrNativeKed: native fixed-body fixture reconstructs the same s
 Deno.test("dumpCesrNativeSad: semantic SAD emits the same CESR native fixture that the readable helper breaks down", () => {
   // Exhale companion: starting from the semantic SAD should reproduce the
   // pinned native fixture byte-for-byte.
-  const raw = dumpCesrNativeSad(expectedNativeKeriIcpSad());
+  const raw = dumpCesrNativeSad(expectedNativeKeriIcpSad() as MapperMap);
 
   assertEquals(raw, new TextEncoder().encode(nativeKeriIcpFixtureQb64()));
 });
@@ -237,7 +238,7 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC map-body `acm` round-tri
     r: { d: "", usage: "test" },
   };
 
-  const raw = dumpCesrNativeSad(sad);
+  const raw = dumpCesrNativeSad(sad as MapperMap);
   const parsed = parseCesrNativeKed(raw, {
     proto: "ACDC",
     pvrsn: Vrsn_2_0,
@@ -326,7 +327,9 @@ Deno.test("native parity: KERIpy qry/rpy/xip/exn fixtures round-trip byte-for-by
 
     assertEquals(new TextDecoder().decode(serder.raw), fixture);
     assertEquals(
-      new TextDecoder().decode(dumpCesrNativeSad(serder.ked ?? {})),
+      new TextDecoder().decode(
+        dumpCesrNativeSad((serder.ked ?? {}) as MapperMap),
+      ),
       fixture,
     );
     assertEquals(

@@ -75,6 +75,10 @@ Persistent CESR parser memory for `keri-ts`.
     semantic construction target: mapper/native/serder code should construct
     narrow primitives when semantics are known, and any shared hydration helper
     must stay conservative and only auto-narrow unambiguous code families.
+22. `Mapper` and `Aggor` now have explicit semantic value envelopes instead of
+    `unknown`: mapper values are recursive scalar/list/map trees, aggregate
+    lists are `string | map` elements, and broader serder/KED layers should
+    cast deliberately when crossing into those mapper-native contracts.
 
 ## Key Docs
 
@@ -277,6 +281,18 @@ Persistent CESR parser memory for `keri-ts`.
 - Added regression coverage for the hydrator contract itself plus app-level
   proof that `Manager.incept()` and `Manager.sign()` now return narrow
   primitives instead of qb64-only `Matter`/`Indexer` projections.
+
+### 2026-03-17 - Mapper And Aggor Value Types Were Tightened To KERIpy Shape
+
+- Replaced the `unknown` return/value model in the recursive mapper and
+  aggregate-list deserializers with explicit TypeScript unions matching KERIpy's
+  actual semantic envelope.
+- `Mapper` now models recursive native-map values as scalar/list/map trees, and
+  `Aggor` now models aggregate element lists as `string | map` elements instead
+  of arbitrary values.
+- The broader serder/native layers intentionally remain more general than the
+  mapper core, so those seams now use explicit casts instead of silently
+  widening the mapper-native contract back to `unknown`.
 
 ### 2026-03-17 - ACDC Native And Compactification Lane Landed
 

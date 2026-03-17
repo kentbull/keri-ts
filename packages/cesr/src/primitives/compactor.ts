@@ -2,9 +2,15 @@ import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { Mapper, type MapperInit, parseMapperBody } from "./mapper.ts";
+import {
+  Mapper,
+  type MapperInit,
+  type MapperMap,
+  type MapperValue,
+  parseMapperBody,
+} from "./mapper.ts";
 
-type SadMap = Record<string, unknown>;
+type SadMap = MapperMap;
 
 /**
  * `Compactor` builds on `Mapper` by adding the recursive tree semantics needed
@@ -88,11 +94,14 @@ export class Compactor extends Mapper {
   }
 
   /** Return the nested tail value located at dotted `path`, or `null` when absent. */
-  getTail(path: string, mad: SadMap | null = null): unknown {
-    let tail: unknown = mad ?? this._mad;
+  getTail(path: string, mad: SadMap | null = null): MapperValue | null {
+    let tail: MapperValue = mad ?? this._mad;
     const parts = path.split(".").slice(1);
     for (const part of parts) {
-      if (!tail || typeof tail !== "object" || Array.isArray(tail) || !(part in (tail as SadMap))) {
+      if (
+        !tail || typeof tail !== "object" || Array.isArray(tail) ||
+        !(part in (tail as SadMap))
+      ) {
         return null;
       }
       tail = (tail as SadMap)[part];
@@ -107,7 +116,10 @@ export class Compactor extends Mapper {
    * path `.a.address` => returns the map stored at `.a` plus tail `"address"`.
    * path `` (top level) => returns `[null, ""]`.
    */
-  getMad(path: string, mad: SadMap | null = null): [SadMap | null, string | null] {
+  getMad(
+    path: string,
+    mad: SadMap | null = null,
+  ): [SadMap | null, string | null] {
     let current = mad ?? this._mad;
     const parts = path.split(".");
     const tail = parts.at(-1) ?? null;
@@ -280,7 +292,9 @@ export class Compactor extends Mapper {
     for (const [label, value] of Object.entries(mad)) {
       if (value && typeof value === "object" && !Array.isArray(value)) {
         if (label in this.saids) {
-          throw new DeserializeError(`Got nested map in said field label=${label}`);
+          throw new DeserializeError(
+            `Got nested map in said field label=${label}`,
+          );
         }
         if (this._hasSaid(value as SadMap)) {
           isLeaf = false;
@@ -324,8 +338,8 @@ export class Compactor extends Mapper {
         return true;
       }
       if (
-        value && typeof value === "object" && !Array.isArray(value)
-        && this._hasSaid(value as SadMap)
+        value && typeof value === "object" && !Array.isArray(value) &&
+        this._hasSaid(value as SadMap)
       ) {
         return true;
       }

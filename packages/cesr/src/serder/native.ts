@@ -25,7 +25,11 @@ import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Dater } from "../primitives/dater.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { Labeler, parseLabeler } from "../primitives/labeler.ts";
-import { Mapper } from "../primitives/mapper.ts";
+import {
+  Mapper,
+  type MapperMap,
+  type MapperValue,
+} from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseNoncer } from "../primitives/noncer.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
@@ -50,7 +54,7 @@ import {
 } from "../tables/versions.ts";
 import { versify } from "./smell.ts";
 
-type SadMap = Record<string, unknown>;
+type SadMap = Record<string, MapperValue>;
 type ParsedNativeField<T = unknown> = { value: T; nextOffset: number };
 type NativeBodyShape = "fixed" | "map";
 
@@ -406,7 +410,7 @@ function encodeValue(
  * existing group dispatch machinery instead of maintaining a separate
  * attachment/group decoder.
  */
-function decodeEntry(entry: GroupEntry, gvrsn: Versionage): unknown {
+function decodeEntry(entry: GroupEntry, gvrsn: Versionage): MapperValue {
   if (isPrimitiveTuple(entry)) {
     return entry.map((item) => decodeEntry(item, gvrsn));
   }
@@ -474,7 +478,7 @@ function decodeMapperField(
     }[];
   },
   gvrsn: Versionage,
-): unknown {
+): MapperValue {
   if (field.children) {
     return Object.fromEntries(
       field.children.map((
@@ -492,7 +496,7 @@ function decodeMapperField(
  * dispatch first and fall back to `Matter` only when no valid group starts at
  * the current offset.
  */
-function decodeList(raw: Uint8Array, gvrsn: Versionage): unknown[] {
+function decodeList(raw: Uint8Array, gvrsn: Versionage): MapperValue[] {
   const counter = parseCounter(raw, gvrsn, "txt");
   if (
     counter.code !== CtrDexV2.GenericListGroup &&
@@ -503,7 +507,7 @@ function decodeList(raw: Uint8Array, gvrsn: Versionage): unknown[] {
   const payload = t(
     raw.slice(counter.fullSize, counter.fullSize + counter.count * 4),
   );
-  const out: unknown[] = [];
+  const out: MapperValue[] = [];
   let offset = 0;
   while (offset < payload.length) {
     const chunk = b(payload.slice(offset));
@@ -663,7 +667,7 @@ function parseNestedSealOrDataListField(
   raw: Uint8Array,
   offset: number,
   gvrsn: Versionage,
-): ParsedNativeField<unknown[]> {
+): ParsedNativeField<MapperValue[]> {
   const listCounter = parseCounter(raw.slice(offset), gvrsn, "txt");
   const total = listCounter.fullSize + listCounter.count * 4;
   return {
@@ -685,7 +689,7 @@ function parseMapperField(
   offset: number,
   gvrsn: Versionage,
   strict = true,
-): ParsedNativeField<SadMap> {
+): ParsedNativeField<MapperMap> {
   const mapper = new Mapper({
     raw: raw.slice(offset),
     version: gvrsn,
@@ -1215,7 +1219,7 @@ function parseNativeField(
   label: string,
   spec: NativeFieldSpec,
   gvrsn: Versionage,
-): ParsedNativeField {
+): ParsedNativeField<MapperValue> {
   if (spec.kind === "said" || spec.kind === "aid") {
     return parseQb64Field(raw, offset);
   }

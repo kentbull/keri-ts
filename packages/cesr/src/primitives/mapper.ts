@@ -37,7 +37,15 @@ import type { Primitive } from "./primitive.ts";
 import { Texter } from "./texter.ts";
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
-type SadMap = Record<string, unknown>;
+
+/** Scalar semantic values representable by CESR-native `Mapper` leaves. */
+export type MapperScalar = null | boolean | number | string;
+
+/** Recursive semantic map value representable by CESR-native `Mapper`. */
+export type MapperValue = MapperScalar | MapperValue[] | MapperMap;
+
+/** Semantic map form owned by `Mapper.mad`, aligned with KERIpy `dict` usage. */
+export type MapperMap = { [key: string]: MapperValue };
 
 /**
  * `Mapper` is the base semantic primitive for CESR-native field maps.
@@ -117,7 +125,7 @@ export interface MapperBodySyntax {
  *   an existing wire representation
  */
 export interface MapperInit {
-  mad?: SadMap;
+  mad?: MapperMap;
   raw?: Uint8Array;
   qb64?: string;
   qb64b?: Uint8Array;
@@ -508,7 +516,7 @@ function serializeValue(
     return `${new Counter({ code, count: payload.length / 4 }).qb64}${payload}`;
   }
   if (value && typeof value === "object") {
-    const payload = Object.entries(value as SadMap).map(([label, entry]) =>
+    const payload = Object.entries(value as MapperMap).map(([label, entry]) =>
       `${strict ? encodeText(label) : encodeText(label)}${
         serializeValue(entry, strict)
       }`
@@ -524,7 +532,7 @@ function serializeValue(
 function deserializeValue(
   raw: Uint8Array,
   strict: boolean,
-): { value: unknown; nextOffset: number } {
+): { value: MapperValue; nextOffset: number } {
   // This is the inverse of `serializeValue()`: grouped containers first, then
   // leaf primitives. `nextOffset` tells the caller exactly how much wire space
   // was consumed by this one semantic value.
@@ -533,7 +541,7 @@ function deserializeValue(
     if (AGGOR_LIST_CODES.has(counter.code)) {
       const total = counter.fullSize + counter.count * 4;
       const payload = raw.slice(counter.fullSize, total);
-      const list: unknown[] = [];
+      const list: MapperValue[] = [];
       let offset = 0;
       while (offset < payload.length) {
         const parsed = deserializeValue(payload.slice(offset), strict);
@@ -546,7 +554,7 @@ function deserializeValue(
     if (AGGOR_MAP_CODES.has(counter.code)) {
       const total = counter.fullSize + counter.count * 4;
       const payload = raw.slice(counter.fullSize, total);
-      const map: SadMap = {};
+      const map: MapperMap = {};
       let offset = 0;
       while (offset < payload.length) {
         const labeler = parseLabeler(payload.slice(offset), "txt");
@@ -588,7 +596,7 @@ function deserializeValue(
 }
 
 function buildFieldProjection(
-  value: SadMap,
+  value: MapperMap,
   strict: boolean,
 ): MapperField[] {
   // `fields` is rebuilt from semantic data so the projection stays coherent
@@ -600,7 +608,7 @@ function buildFieldProjection(
       ? parseCounter(b(serialized), { major: 2, minor: 0 }, "txt")
       : parseMatter(b(serialized), "txt");
     const children = entry && typeof entry === "object" && !Array.isArray(entry)
-      ? buildFieldProjection(entry as SadMap, strict)
+      ? buildFieldProjection(entry as MapperMap, strict)
       : undefined;
     return {
       label,
@@ -672,7 +680,7 @@ export class Mapper {
   saids: Record<string, string>;
   saidive: boolean;
   kind: Kind;
-  _mad: SadMap;
+  _mad: MapperMap;
 
   /**
    * Create one semantic mapper from either a field map (`mad`) or raw bytes.
@@ -800,7 +808,7 @@ export class Mapper {
     }
     const totalSize = counter.fullSize + counter.count * 4;
     const payload = raw.slice(counter.fullSize, totalSize);
-    const mad: SadMap = {};
+    const mad: MapperMap = {};
     let offset = 0;
     while (offset < payload.length) {
       const labeler = parseLabeler(payload.slice(offset), "txt");
@@ -826,7 +834,7 @@ export class Mapper {
   }
 
   static fromSad(
-    mad: SadMap,
+    mad: MapperMap,
     options: Omit<MapperInit, "mad"> = {},
   ): Mapper {
     return new Mapper({ ...options, mad });
@@ -839,7 +847,7 @@ export class Mapper {
    * recursively enclosed in their own grouped payloads.
    */
   static serializeCesrMap(
-    mad: SadMap,
+    mad: MapperMap,
     strict = true,
     dummy = false,
     saids: Record<string, string> = {},
@@ -867,7 +875,7 @@ export class Mapper {
   }
 
   static serializeNonNativeMap(
-    mad: SadMap,
+    mad: MapperMap,
     kind: Exclude<Kind, "CESR">,
   ): Uint8Array {
     if (kind === "JSON") {
@@ -885,22 +893,22 @@ export class Mapper {
   static deserializeNonNativeMap(
     raw: Uint8Array,
     kind: Exclude<Kind, "CESR">,
-  ): SadMap {
+  ): MapperMap {
     if (kind === "JSON") {
-      return JSON.parse(t(raw)) as SadMap;
+      return JSON.parse(t(raw)) as MapperMap;
     }
     if (kind === "CBOR") {
-      return decodeKeriCbor(raw) as SadMap;
+      return decodeKeriCbor(raw) as MapperMap;
     }
     if (kind === "MGPK") {
-      return decodeMsgpack(raw) as SadMap;
+      return decodeMsgpack(raw) as MapperMap;
     }
     throw new DeserializeError(
       `Unsupported mapper deserialization kind=${kind}`,
     );
   }
 
-  get mad(): SadMap {
+  get mad(): MapperMap {
     // Clone on read so callers can inspect or tweak the returned object
     // without mutating mapper internals behind the class's back.
     return cloneValue(this._mad);
