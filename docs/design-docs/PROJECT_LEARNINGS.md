@@ -202,6 +202,15 @@ This keeps context focused and avoids long-thread drift.
     on the published package because that path invokes a Rollup-based JS rebuild
     step the CI runner does not provide; rebuilding only the native addon via
     `node-gyp` is the correct contract for CI.
+41. Once a PR gate grows beyond one cheap job, the real bottleneck is usually
+    feedback topology rather than raw runner speed: split static checks, interop
+    tests, package smoke, and slower cross-platform coverage into separate jobs,
+    but keep one tiny aggregate status job if branch protection already depends
+    on a stable check name.
+42. CI reproducibility for native-addon library repos means pinning the whole
+    bootstrap surface, not just the package graph: exact Deno/Node versions,
+    action commit SHAs, explicit environment assertions, and saved built
+    tarballs all reduce "works locally, shrugs in Actions" debugging time.
 
 ## New Thread Kickoff Template
 

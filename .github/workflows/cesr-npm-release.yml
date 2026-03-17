@@ -1,5 +1,10 @@
 name: CESR package npm release
 
+# Release/publish workflow for the standalone `cesr-ts` package.
+# This is simpler than the KERI release path because it has no KERIpy/LMDB
+# interop dependency, but it still follows the same runtime pinning and
+# artifact-first publish discipline.
+
 on:
   push:
     tags:
@@ -12,24 +17,30 @@ on:
         default: "false"
 
 env:
+  # Exact pins keep packaging behavior stable across reruns and align with the
+  # rest of the CI surface.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  NODE_VERSION: "20"
+  DENO_VERSION: "2.7.5"
+  NODE_VERSION: "22.14.0"
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v2
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     environment: publishing
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      # Commit-pin actions so the release path is reproducible.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
-          deno-version: v2.x
+          deno-version: ${{ env.DENO_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
@@ -37,14 +48,23 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: restore Deno dependency cache
-        uses: actions/cache@v4
+        # Shared dependency cache keeps DNT packaging from redoing identical
+        # bootstrap work every release run.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ env.DENO_DIR }}
             node_modules
-          key: ${{ runner.os }}-deno-v2-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
-            ${{ runner.os }}-deno-v2-
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-
+
+      - name: assert environment
+        # Emit the exact Deno/Node contract before tests and packaging.
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
 
       - name: check formatting
         run: deno task fmt:check
@@ -57,6 +77,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: ensure tag matches package version
+        # Catch mistaken tag pushes before we build or publish the wrong version.
         if: ${{ github.event_name == 'push' }}
         shell: bash
         run: |
@@ -68,9 +89,11 @@ jobs:
           fi
 
       - name: test cesr package
+        # Prove the CESR package is healthy before artifact generation.
         run: deno task test:cesr
 
       - name: build npm package
+        # Release/build jobs explicitly stamp CI display metadata.
         env:
           BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
         run: |
@@ -79,11 +102,26 @@ jobs:
           deno task build:npm
 
       - name: npm pack dry run
+        # Pack exactly what npm would receive, then archive that artifact.
+        id: pack
         run: |
           cd packages/cesr/npm
-          npm pack
+          TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: upload npm tarball
+        # Retain the built tarball so maintainers can inspect the precise output
+        # of the release job without rebuilding locally.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cesr-ts-npm-${{ steps.package.outputs.version }}
+          path: packages/cesr/npm/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 14
 
       - name: publish to npm
+        # Publish only after the package has passed checks and the exact tarball
+        # has been captured.
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

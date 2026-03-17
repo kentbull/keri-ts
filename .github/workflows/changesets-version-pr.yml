@@ -1,48 +1,70 @@
 name: Changesets Version PR
 
+# Version-management workflow for merges into `master`.
+# This does not publish anything. Its only job is to open/update the automated
+# version PR once `master` is already protected by the PR stage gate.
+
 on:
   push:
     branches:
       - master
 
 env:
+  # Keep version automation on the same exact runtime contract as the rest of CI
+  # so generated files are consistent across workflows.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  NODE_VERSION: "20"
+  DENO_VERSION: "2.7.5"
+  NODE_VERSION: "22.14.0"
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v2
 
 jobs:
   version:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      # Commit-pinned actions keep version automation reproducible too.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
         with:
-          deno-version: v2.x
+          deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
-        uses: actions/cache@v4
+        # Restore the same dependency graph used by the checked-in release
+        # tooling before formatting/version tasks run.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ env.DENO_DIR }}
             node_modules
-          key: ${{ runner.os }}-deno-v2-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
-            ${{ runner.os }}-deno-v2-
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-
+
+      - name: assert environment
+        # Log the toolchain before any automation mutates version state.
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
 
       - name: check formatting
+        # Version PR automation should not open formatting-dirty branches.
         run: deno task fmt:check
 
       - name: create version PR
-        uses: changesets/action@v1
+        # Changesets updates package versions/changelogs after code has already
+        # cleared the PR stage gate. Publish remains handled by tag workflows.
+        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
         with:
           version: deno task release:version
           publish: echo "Publishing is handled by keri-v*/cesr-v* tag workflows."

@@ -1,0 +1,163 @@
+name: macOS Compatibility
+
+# Scheduled platform-compatibility workflow.
+# We keep this out of the PR gate because macOS runners are slower and more
+# expensive, but we still need periodic proof that native addon, interop, and
+# packaging behavior are not Linux-only accidents.
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Match the main CI toolchain exactly so OS is the primary variable changing.
+  DENO_DIR: ${{ github.workspace }}/.deno-cache
+  DENO_VERSION: "2.7.5"
+  KERIPY_GIT_SHA: 273784cb1702348c3888a09806cc37aea1877704
+  KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
+  LMDB_DATA_V1: "true"
+  NODE_VERSION: "22.14.0"
+  PYTHON_VERSION: "3.14"
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v2
+  KERIPY_CACHE_KEY_PREFIX: keripy-v1
+
+jobs:
+  # Single job on purpose: this workflow is about end-to-end cross-platform
+  # confidence, not fastest possible feedback.
+  compatibility:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      # Keep action behavior pinned here too; platform checks are useless if the
+      # surrounding automation drifts independently.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        # Reuse as much bootstrap work as possible because hosted macOS time is
+        # expensive, but keep the cache keyed to the full runtime contract.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: rebuild LMDB-js with data v1 compatibility
+        # macOS must honor the same LMDB v1 interop contract as Linux CI or the
+        # comparison is meaningless.
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: |
+          cd packages/keri
+          deno task setup
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: restore KERIpy virtualenv cache
+        id: keripy-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.KERIPY_VENV }}
+          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
+
+      - name: install pinned KERIpy CLI
+        # Cross-platform interop confidence still depends on the same pinned
+        # external KERI peer, not the latest available KERIpy.
+        if: steps.keripy-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv "${KERIPY_VENV}"
+          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
+          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+
+      - name: add KERIpy CLI to PATH
+        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
+
+      - name: assert environment
+        # Print the macOS-side runtime, Python, LMDB, and KLI state before the
+        # actual compatibility work starts.
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+          EXPECT_KLI: "true"
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run macOS quality and test suites
+        # Re-run the main quality and test surface on macOS so native/runtime
+        # issues do not hide behind Linux-only PR validation.
+        env:
+          BUILD_METADATA: ""
+          KERI_TS_BUILD_METADATA: ""
+          CESR_TS_BUILD_METADATA: ""
+        run: |
+          deno task quality:check
+          deno task test:quality
+          deno task test:cesr
+
+      - name: build npm packages
+        # Packaging is part of compatibility too. Native/runtime issues often
+        # appear only once DNT/npm artifacts are built.
+        run: deno task npm:build:all
+
+      - name: pack keri-ts npm tarball
+        id: pack-keri
+        run: |
+          cd packages/keri/npm
+          TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: pack cesr-ts npm tarball
+        id: pack-cesr
+        run: |
+          cd packages/cesr/npm
+          TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: smoke test keri-ts tarball on macOS
+        # Install and execute the actual packed tarballs on macOS to catch
+        # platform-specific npm/bin/runtime issues after packaging.
+        run: |
+          TARBALL="${GITHUB_WORKSPACE}/packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}"
+          CESR_TARBALL="${GITHUB_WORKSPACE}/packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}"
+          SAMPLE="${GITHUB_WORKSPACE}/samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr"
+          TMP_DIR="$(mktemp -d)"
+          cd "${TMP_DIR}"
+          npm init -y >/dev/null
+          npm install "${CESR_TARBALL}" "${TARBALL}" >/dev/null
+          V1="$(npx --yes tufa version | tr -d '\r')"
+          V2="$(npx --yes tufa --version | tr -d '\r')"
+          [[ "${V1}" == "${V2}" ]]
+          OUT="$(npx --yes tufa annotate --in "${SAMPLE}" | awk 'NR==1{print; exit}')"
+          echo "${OUT}" | grep -q 'SERDER KERI JSON'
+
+      - name: upload npm tarballs
+        # Keep the macOS-built artifacts for later comparison with Linux builds.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-tarballs-macos-${{ github.run_id }}
+          path: |
+            packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}
+            packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 14

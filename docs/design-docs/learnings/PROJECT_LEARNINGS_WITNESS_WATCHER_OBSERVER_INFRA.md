@@ -224,3 +224,45 @@ Use this doc for:
   - The Linux Deno N-API panic may still need a runner/runtime pin if it proves
     independent of LMDB data-format compatibility; this change fixes the known
     missing contract first.
+
+### 2026-03-17 - CI Split Stage Gate, Exact Pins, And Artifact Smoke Paths
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/cesr-npm-release.yml`
+  - `.github/workflows/changesets-version-pr.yml`
+  - `.github/workflows/macos-compatibility.yml`
+  - `scripts/ci/assert-environment.sh`
+  - `scripts/smoke-test-keri-npm.sh`
+- What changed:
+  - Pinned Deno exactly to `2.7.5`, Node exactly to `22.14.0`, and all
+    third-party GitHub Actions to immutable commit SHAs.
+  - Split the PR stage gate into parallel static-check, KERI-test, CESR-test,
+    and npm-package-smoke jobs, then added a tiny aggregate `stage-gate` job so
+    existing branch-protection check names can stay stable.
+  - Added per-job `timeout-minutes`, explicit environment assertion output, and
+    npm-tarball artifact uploads for PR, release, and scheduled compatibility
+    paths.
+  - Added a scheduled `macOS Compatibility` workflow that reruns the interop,
+    test, package-build, and tarball-smoke surface on `macos-latest`.
+  - Strengthened the npm smoke path so `keri-ts` can be smoke-installed
+    alongside the just-built local `cesr-ts` tarball instead of silently
+    falling back to whatever version is currently published on npm.
+- Why:
+  - One giant PR job hides where time and failures actually go, and changing
+    required check names accidentally is an avoidable self-own.
+  - Native-addon library repos get most of their CI pain from drift and
+    packaging seams, so exact pins and saved artifacts are higher-value than
+    adding still more generic checks.
+- Tests:
+  - Commands: `deno task fmt`, `bash -n scripts/ci/assert-environment.sh scripts/smoke-test-keri-npm.sh`, `deno task quality:check`
+  - Result: passed locally
+  - Command: `deno task npm:build:all`
+  - Result: reached DNT's package-build/npm-install phase locally, but full end-to-end completion was not confirmed in this sandbox session
+- Contracts/plans touched:
+  - `docs/design-docs/versioning-and-release-plan.md`
+- Risks/TODO:
+  - The pinned action SHAs and scheduled macOS workflow still need live GitHub
+    Actions confirmation because this local session cannot execute the hosted
+    runners themselves.
