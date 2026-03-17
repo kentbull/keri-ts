@@ -99,7 +99,12 @@ jobs:
         run: deno task test:quality
 
       - name: build npm package
-        run: deno task build:npm
+        env:
+          BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
+        run: |
+          deno task version:generate:ci
+          cd packages/keri
+          deno task build:npm
 
       - name: npm pack dry run
         run: |

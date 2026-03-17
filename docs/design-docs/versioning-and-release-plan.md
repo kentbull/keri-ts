@@ -109,8 +109,10 @@ Add root deno.json tasks:
 - release:version -> apply bumps/changelogs (npx changeset version)
 - release:publish -> publish (npx changeset publish) for Node-side registry
   publishing pipelines
-- version:generate -> generate runtime version modules from manifests + optional
-  CI metadata
+- version:generate -> generate deterministic runtime version modules from
+  manifests without implicit CI metadata
+- version:generate:ci -> generate runtime version modules with explicit CI build
+  metadata for artifact builds
 - version:check -> verify generated files are in sync (CI guard)
 
 Also add CESR package task wrappers where useful, but centralize release
@@ -140,6 +142,10 @@ Current workflow shape:
   `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704`
 - interop cache: restore a KERIpy virtualenv keyed by the pinned Git SHA before
   reinstalling
+- quality checks force empty build metadata so `version:check` is deterministic
+  across local and CI environments
+- release build steps opt into CI metadata explicitly via
+  `deno task version:generate:ci`
 
 ### 7) Release CI
 

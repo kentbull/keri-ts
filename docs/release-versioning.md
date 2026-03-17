@@ -57,7 +57,12 @@ Rules that must hold:
   - `scripts/generate_versions.ts`
 - Output format:
   - local/default: `x.y.z`
-  - CI builds: `x.y.z+build.<run>.<sha>`
+  - explicit CI artifact builds: `x.y.z+build.<run>.<sha>`
+- Rule:
+  - `version:check` is deterministic and does not infer build metadata from the
+    ambient GitHub Actions environment.
+  - CI/release artifact workflows must opt into build metadata explicitly when
+    they want stamped runtime version modules.
 
 ## Release intent and version bumps
 

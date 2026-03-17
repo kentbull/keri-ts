@@ -130,6 +130,10 @@ Use this doc for:
   - Added dependency caching across active workflows: shared Deno/module cache
     plus npm cache everywhere, and a KERIpy virtualenv cache keyed by the
     pinned Git SHA on workflows that run interop-sensitive tests.
+  - Removed implicit GitHub-env sensitivity from runtime version checks:
+    stage-gate quality checks force empty build metadata, and artifact-building
+    release steps opt into stamped metadata explicitly instead of inheriting it
+    accidentally from runner env.
 - Why:
   - A PR status check only protects `master` if the workflow exists, runs on PR
     events, and exercises the same interop-sensitive test surface maintainers
@@ -153,3 +157,38 @@ Use this doc for:
   - The KERIpy virtualenv cache is keyed by exact SHA on purpose; that is
     maximally reproducible, but cache misses are expected whenever the pin
     moves.
+
+### 2026-03-17 - Version Checks Became Deterministic Across Local And CI
+
+- Topic docs updated:
+  - `scripts/generate_versions.ts`
+  - `deno.json`
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/cesr-npm-release.yml`
+  - `docs/release-versioning.md`
+- What changed:
+  - `generate_versions.ts` no longer derives build metadata from ambient
+    `GITHUB_*` vars unless explicitly asked via `--ci-build-metadata` or
+    explicit metadata env vars.
+  - Added `version:generate:ci` for workflows that are intentionally producing
+    stamped CI artifacts.
+  - Kept PR quality checks deterministic by forcing empty metadata on the
+    stage-gate check path, while release build steps now opt into stamped
+    metadata explicitly.
+- Why:
+  - Hidden GitHub-env behavior made `version:check` pass locally and fail in
+    CI for the same commit, which is a bad contract for a stage gate.
+- Tests:
+  - Command:
+    `GITHUB_RUN_NUMBER=2 GITHUB_SHA=70eacff790df06ff3b548aff3e2843883ddd6755 deno task version:check`
+  - Result: passed
+  - Command:
+    `BUILD_METADATA=build.2.70eacff7 deno run -A scripts/generate_versions.ts --check`
+  - Result: failed as expected, proving metadata stamping is now explicit
+- Contracts/plans touched:
+  - `docs/design-docs/versioning-and-release-plan.md`
+  - `docs/release-versioning.md`
+- Risks/TODO:
+  - Any future workflow that wants stamped runtime versions must opt in
+    explicitly; ambient GitHub env is no longer enough.

@@ -71,7 +71,12 @@ jobs:
         run: deno task test:cesr
 
       - name: build npm package
-        run: deno task cesr:build:npm
+        env:
+          BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
+        run: |
+          deno task version:generate:ci
+          cd packages/cesr
+          deno task build:npm
 
       - name: npm pack dry run
         run: |

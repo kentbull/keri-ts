@@ -82,6 +82,10 @@ jobs:
         run: deno task lint
 
       - name: run quality checks
+        env:
+          BUILD_METADATA: ""
+          KERI_TS_BUILD_METADATA: ""
+          CESR_TS_BUILD_METADATA: ""
         run: deno task quality:check
 
       - name: run tests

@@ -6,6 +6,7 @@
  *   deno run -A scripts/generate_versions.ts --check
  *   deno run -A scripts/generate_versions.ts --only keri
  *   deno run -A scripts/generate_versions.ts --only cesr
+ *   deno run -A scripts/generate_versions.ts --ci-build-metadata
  */
 
 interface GenerateTarget {
@@ -41,11 +42,17 @@ const BUILD_METADATA_REGEX = /^[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*$/;
 function parseArgs(args: string[]) {
   let check = false;
   let only: "all" | "keri" | "cesr" = "all";
+  let ciBuildMetadata = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--check") {
       check = true;
+      continue;
+    }
+
+    if (arg === "--ci-build-metadata") {
+      ciBuildMetadata = true;
       continue;
     }
 
@@ -62,7 +69,7 @@ function parseArgs(args: string[]) {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return { check, only };
+  return { check, only, ciBuildMetadata };
 }
 
 function normalizeBuildMetadata(input: string): string {
@@ -102,14 +109,17 @@ function computeDefaultBuildMetadata(): string {
   return "";
 }
 
-function getBuildMetadata(target: GenerateTarget): string {
+function getBuildMetadata(
+  target: GenerateTarget,
+  ciBuildMetadata: boolean,
+): string {
   const explicit = Deno.env.get(target.envOverrideKey)
     ?? Deno.env.get("BUILD_METADATA");
   if (explicit) {
     return normalizeBuildMetadata(explicit);
   }
 
-  return computeDefaultBuildMetadata();
+  return ciBuildMetadata ? computeDefaultBuildMetadata() : "";
 }
 
 async function readPackageVersion(path: URL): Promise<string> {
@@ -149,9 +159,10 @@ export const DISPLAY_VERSION = BUILD_METADATA
 async function ensureVersionModule(
   target: GenerateTarget,
   check: boolean,
+  ciBuildMetadata: boolean,
 ): Promise<void> {
   const packageVersion = await readPackageVersion(target.packagePath);
-  const buildMetadata = getBuildMetadata(target);
+  const buildMetadata = getBuildMetadata(target, ciBuildMetadata);
   const expected = renderVersionModule(packageVersion, buildMetadata);
 
   let current = "";
@@ -177,13 +188,13 @@ async function ensureVersionModule(
 }
 
 async function main() {
-  const { check, only } = parseArgs(Deno.args);
+  const { check, only, ciBuildMetadata } = parseArgs(Deno.args);
   const targets = only === "all"
     ? TARGETS
     : TARGETS.filter((target) => target.name === only);
 
   for (const target of targets) {
-    await ensureVersionModule(target, check);
+    await ensureVersionModule(target, check, ciBuildMetadata);
   }
 }
 

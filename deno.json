@@ -12,6 +12,7 @@
     "manifest:sync": "deno run -A scripts/sync_manifest_versions.ts",
     "manifest:check": "deno run -A scripts/sync_manifest_versions.ts --check",
     "version:generate": "deno run -A scripts/generate_versions.ts",
+    "version:generate:ci": "deno run -A scripts/generate_versions.ts --ci-build-metadata",
     "version:check": "deno task manifest:check && deno run -A scripts/generate_versions.ts --check",
     "build:npm": "deno task version:generate && cd packages/keri && deno task build:npm",
     "smoke:keri:npm": "bash scripts/smoke-test-keri-npm.sh",

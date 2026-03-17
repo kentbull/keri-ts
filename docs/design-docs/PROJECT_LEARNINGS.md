@@ -190,6 +190,10 @@ This keeps context focused and avoids long-thread drift.
     and, where interop tests run, a KERIpy virtualenv cache keyed by the pinned
     KERIpy Git SHA so expensive setup work is skipped unless dependencies
     actually change.
+38. Runtime version-module generation is no longer allowed to infer build
+    metadata implicitly from ambient GitHub env vars during checks: deterministic
+    `version:check` uses empty metadata by default, while artifact-producing CI
+    steps must opt into stamped metadata explicitly.
 
 ## New Thread Kickoff Template
 
