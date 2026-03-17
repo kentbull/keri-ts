@@ -5,10 +5,13 @@ import {
   DatabaseOperationError,
 } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
-import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
-import { b, t } from "../../../cesr/mod.ts";
+import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { Komer } from "./koming.ts";
+import { CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
 
-export interface KeeperOptions extends LMDBerOptions {}
+export interface KeeperOptions extends LMDBerOptions {
+  compat?: boolean;
+}
 
 export interface PubLot {
   pubs: string[];
@@ -35,29 +38,50 @@ export interface PubSet {
   pubs: string[];
 }
 
+/**
+ * Keystore databaser for root parameters, per-prefix state, and secret-material
+ * storage seams.
+ *
+ * Responsibilities:
+ * - own the LMDB environment for keeper data
+ * - bind typed wrappers for keeper globals, prefix metadata, and key material
+ * - provide the storage substrate consumed by `Manager`
+ *
+ * Current `keri-ts` differences:
+ * - active stores now open through `Suber`/`Komer` wrappers instead of raw
+ *   named handles
+ * - compatibility mode supports KERIpy `.keri/ks` layout visibility, but true
+ *   encrypted secret semantics remain incomplete
+ */
 export class Keeper {
   private lmdber: LMDBer;
   private readonly logger: Logger;
 
-  public gbls!: Database<BinVal, BinKey>;
-  public pris!: Database<BinVal, BinKey>;
-  public pres!: Database<BinVal, BinKey>;
-  public prms!: Database<BinVal, BinKey>;
-  public sits!: Database<BinVal, BinKey>;
-  public pubs!: Database<BinVal, BinKey>;
-  public prxs!: Database<BinVal, BinKey>;
-  public nxts!: Database<BinVal, BinKey>;
+  public gbls!: Suber;
+  public pris!: CryptSignerSuber;
+  public pres!: CesrSuber;
+  public prms!: Komer<PrePrm>;
+  public sits!: Komer<PreSit>;
+  public pubs!: Komer<PubSet>;
+  public prxs!: CesrSuber;
+  public nxts!: CesrSuber;
 
   static readonly TailDirPath = "keri/ks";
   static readonly AltTailDirPath = ".tufa/ks";
+  static readonly CompatAltTailDirPath = ".keri/ks";
   static readonly TempPrefix = "keri_ks_";
   static readonly MaxNamedDBs = 16;
 
   constructor(options: KeeperOptions = {}) {
     this.logger = options.logger ?? consoleLogger;
+    const compat = options.compat ?? false;
     this.lmdber = new LMDBer(options, {
       tailDirPath: Keeper.TailDirPath,
-      altTailDirPath: Keeper.AltTailDirPath,
+      cleanTailDirPath: "keri/clean/ks",
+      altTailDirPath: compat
+        ? Keeper.CompatAltTailDirPath
+        : Keeper.AltTailDirPath,
+      altCleanTailDirPath: compat ? ".keri/clean/ks" : ".tufa/clean/ks",
       tempPrefix: Keeper.TempPrefix,
       maxNamedDBs: Keeper.MaxNamedDBs,
     });
@@ -75,6 +99,10 @@ export class Keeper {
     return this.lmdber.opened;
   }
 
+  get readonly(): boolean {
+    return this.lmdber.readonly;
+  }
+
   get temp(): boolean {
     return this.lmdber.temp;
   }
@@ -88,14 +116,14 @@ export class Keeper {
     if (!opened) return false;
 
     try {
-      this.gbls = this.lmdber.openDB("gbls.", false);
-      this.pris = this.lmdber.openDB("pris.", false);
-      this.pres = this.lmdber.openDB("pres.", false);
-      this.prms = this.lmdber.openDB("prms.", false);
-      this.sits = this.lmdber.openDB("sits.", false);
-      this.pubs = this.lmdber.openDB("pubs.", false);
-      this.prxs = this.lmdber.openDB("prxs.", false);
-      this.nxts = this.lmdber.openDB("nxts.", false);
+      this.gbls = new Suber(this.lmdber, { subkey: "gbls." });
+      this.pris = new CryptSignerSuber(this.lmdber, { subkey: "pris." });
+      this.pres = new CesrSuber(this.lmdber, { subkey: "pres." });
+      this.prms = new Komer(this.lmdber, { subkey: "prms." });
+      this.sits = new Komer(this.lmdber, { subkey: "sits." });
+      this.pubs = new Komer(this.lmdber, { subkey: "pubs." });
+      this.prxs = new CesrSuber(this.lmdber, { subkey: "prxs." });
+      this.nxts = new CesrSuber(this.lmdber, { subkey: "nxts." });
       return true;
     } catch (error) {
       this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
@@ -109,91 +137,72 @@ export class Keeper {
     return yield* this.lmdber.close(clear);
   }
 
-  private enc(text: string): Uint8Array {
-    return b(text);
-  }
-
-  private dec(bytes: Uint8Array | null): string | null {
-    if (bytes === null) return null;
-    return t(bytes);
-  }
-
-  private encJson(value: unknown): Uint8Array {
-    return this.enc(JSON.stringify(value));
-  }
-
-  private decJson<T>(bytes: Uint8Array | null): T | null {
-    const text = this.dec(bytes);
-    if (text === null) return null;
-    return JSON.parse(text) as T;
-  }
-
   getGbls(key: string): string | null {
-    return this.dec(this.lmdber.getVal(this.gbls, this.enc(key)));
+    return this.gbls.get(key);
   }
 
   pinGbls(key: string, value: string): boolean {
-    return this.lmdber.setVal(this.gbls, this.enc(key), this.enc(value));
+    return this.gbls.pin(key, value);
   }
 
   putPres(pre: string, val: string): boolean {
-    return this.lmdber.putVal(this.pres, this.enc(pre), this.enc(val));
+    return this.pres.put(pre, val);
   }
 
   pinPres(pre: string, val: string): boolean {
-    return this.lmdber.setVal(this.pres, this.enc(pre), this.enc(val));
+    return this.pres.pin(pre, val);
   }
 
   getPres(pre: string): string | null {
-    return this.dec(this.lmdber.getVal(this.pres, this.enc(pre)));
+    return this.pres.get(pre);
   }
 
   putPris(pub: string, secret: string): boolean {
-    return this.lmdber.putVal(this.pris, this.enc(pub), this.enc(secret));
+    return this.pris.put(pub, secret);
   }
 
   pinPris(pub: string, secret: string): boolean {
-    return this.lmdber.setVal(this.pris, this.enc(pub), this.enc(secret));
+    return this.pris.pin(pub, secret);
   }
 
   getPris(pub: string): string | null {
-    return this.dec(this.lmdber.getVal(this.pris, this.enc(pub)));
+    return this.pris.get(pub);
   }
 
   putPrms(pre: string, val: PrePrm): boolean {
-    return this.lmdber.putVal(this.prms, this.enc(pre), this.encJson(val));
+    return this.prms.put(pre, val);
   }
 
   pinPrms(pre: string, val: PrePrm): boolean {
-    return this.lmdber.setVal(this.prms, this.enc(pre), this.encJson(val));
+    return this.prms.pin(pre, val);
   }
 
   getPrms(pre: string): PrePrm | null {
-    return this.decJson<PrePrm>(this.lmdber.getVal(this.prms, this.enc(pre)));
+    return this.prms.get(pre);
   }
 
   putSits(pre: string, val: PreSit): boolean {
-    return this.lmdber.putVal(this.sits, this.enc(pre), this.encJson(val));
+    return this.sits.put(pre, val);
   }
 
   pinSits(pre: string, val: PreSit): boolean {
-    return this.lmdber.setVal(this.sits, this.enc(pre), this.encJson(val));
+    return this.sits.pin(pre, val);
   }
 
   getSits(pre: string): PreSit | null {
-    return this.decJson<PreSit>(this.lmdber.getVal(this.sits, this.enc(pre)));
+    return this.sits.get(pre);
   }
 
   putPubs(key: string, val: PubSet): boolean {
-    return this.lmdber.putVal(this.pubs, this.enc(key), this.encJson(val));
+    return this.pubs.put(key, val);
   }
 
   pinPubs(key: string, val: PubSet): boolean {
-    return this.lmdber.setVal(this.pubs, this.enc(key), this.encJson(val));
+    return this.pubs.pin(key, val);
   }
 
   getPubs(key: string): PubSet | null {
-    return this.decJson<PubSet>(this.lmdber.getVal(this.pubs, this.enc(key)));
+    return this.pubs.get(key);
   }
 }
 

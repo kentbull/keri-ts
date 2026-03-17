@@ -323,6 +323,7 @@ function regListCmd(program: Command, dispatch: CommandDispatch): void {
     .description("List existing identifiers")
     .requiredOption("-n, --name <name>", "Keystore name")
     .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
@@ -334,6 +335,7 @@ function regListCmd(program: Command, dispatch: CommandDispatch): void {
         args: {
           name: options.name,
           base: options.base,
+          compat: options.compat || false,
           headDirPath: options.headDir,
           passcode: options.passcode,
         },
@@ -359,6 +361,7 @@ function regAidCmd(program: Command, dispatch: CommandDispatch): void {
       "Human readable alias for the identifier",
     )
     .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
@@ -371,6 +374,7 @@ function regAidCmd(program: Command, dispatch: CommandDispatch): void {
           name: options.name,
           alias: options.alias,
           base: options.base,
+          compat: options.compat || false,
           headDirPath: options.headDir,
           passcode: options.passcode,
         },

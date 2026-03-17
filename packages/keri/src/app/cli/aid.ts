@@ -8,6 +8,7 @@ interface AidArgs {
   headDirPath?: string;
   passcode?: string;
   alias?: string;
+  compat?: boolean;
 }
 
 /** Implements `tufa aid`. */
@@ -18,6 +19,7 @@ export function* aidCommand(args: Record<string, unknown>): Operation<void> {
     headDirPath: args.headDirPath as string | undefined,
     passcode: args.passcode as string | undefined,
     alias: args.alias as string | undefined,
+    compat: args.compat as boolean | undefined,
   };
 
   if (!aidArgs.name) {
@@ -34,6 +36,12 @@ export function* aidCommand(args: Record<string, unknown>): Operation<void> {
       aidArgs.passcode,
       false,
       aidArgs.headDirPath,
+      {
+        compat: aidArgs.compat ?? false,
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+      },
     );
     try {
       const hab = hby.habByName(aidArgs.alias!);

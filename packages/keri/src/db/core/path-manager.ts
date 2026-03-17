@@ -100,27 +100,20 @@ export const PATH_DEFAULTS: PathManagerDefaults = {
 };
 
 /**
- * PathManager manages file and directory paths
+ * Filesystem path lifecycle manager for database/config resources.
  *
- * Main file paths:
- * - persistent path: /{head}/{tail}      /{base}/{name}
- * -      clean path: /{head}/{tail}/clean/{base}/{name}
- * -        alt path: /{altHead}/{altTail}/{base}/{name}
- * - HOME (alt) path:          ~/{altTail}/{base}/{name}
+ * Responsibilities:
+ * - derive persistent, clean, alternate-home, and temporary paths from one
+ *   shared option/default contract
+ * - create directories on demand and fall back from primary system paths to
+ *   user-home alternates when the runtime lacks permission
+ * - centralize path naming constraints so higher-level DB/config wrappers do
+ *   not each reimplement filesystem policy
  *
- * Temp files:
- * -       temp path: /{tempPrefix}/{tempSuffix}{tempHead}
- *
- * The path manager will use the persistent path by default.
- * If the persistent path does not exist, the path manager will use the alt path.
- * If the alt path does not exist, the path manager will use the temp path.
- *
- * Temp files:
- *   If the temp path does not exist, the path manager will create it.
- *   If the temp path exists, the path manager will use it.
- *   If the temp path exists and is not a directory, the path manager will throw an error.
- *   If the temp path exists and is a directory, the path manager will use it.
- *   If the temp path exists and is a directory, the path manager will use it.
+ * Current `keri-ts` difference:
+ * - this is a local abstraction, not a direct KERIpy class port; it encodes
+ *   the same path-layout intent while handling Deno/Node runtime differences in
+ *   one place
  */
 export class PathManager {
   // head directory path
@@ -472,7 +465,9 @@ export class PathManager {
       return { path: primary, headDirPath };
     }
 
-    this.logger.debug(`Failed to create primary path, falling back to alt path`);
+    this.logger.debug(
+      `Failed to create primary path, falling back to alt path`,
+    );
     const altReady = yield* this._ensurePathAccessible(alt);
     if (!altReady) {
       this.logger.error(`Alt path not available at ${alt}`);

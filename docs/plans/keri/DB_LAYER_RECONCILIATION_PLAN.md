@@ -18,7 +18,7 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
 2. Stable `tufa init`/`tufa incept`/communication behavior.
 3. A clean foundation for later pluggable storage providers.
 
-## Execution Status (2026-03-03)
+## Execution Status (2026-03-15)
 
 1. `D0` is complete for its defined exit criteria:
    - symbol inventory matrix published for all baseline DB modules,
@@ -39,6 +39,29 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
    - every current `LMDBer` method now has representation in unit tests.
    - post `kli init/incept/rotate` review queued: verify continued need for
      helper sugar methods `cntTop` and `cntAll` vs removing unused API surface.
+3. Minimal `D2`/`D3` foundation has landed:
+   - `packages/keri/src/db/subing.ts` now provides a thin bootstrap slice of
+     `SuberBase`, `Suber`, `CesrSuber`, and `CryptSignerSuber`.
+   - `packages/keri/src/db/koming.ts` now provides a thin JSON-backed `Komer`
+     used on the active bootstrap path.
+   - this is not full `subing.py` / `koming.py` parity; it is the smallest
+     honest typed-store foundation needed to stop extending the raw-LMDB access
+     pattern on the current path.
+4. Minimal `D4` bootstrap migration has started on top of that foundation:
+   - `Baser.habs` is now `Komer`-backed and `Baser.names` / `Baser.hbys` are
+     `Suber`-backed.
+   - `Keeper.gbls`, `pris`, `pres`, `prms`, `sits`, `pubs`, `prxs`, and `nxts`
+     now open through the typed wrapper layer instead of ad hoc raw DB handles.
+   - compatibility mode now uses KERIpy-aligned alt tails (`.keri/db`,
+     `.keri/ks`) and KERIpy-aligned `names.` separator handling (`^`), with a
+     legacy `:` read fallback for older `keri-ts` stores.
+5. Gate C visibility groundwork is in place, but Gate C is not closed:
+   - readonly compatibility-mode opens now skip config loading and signator
+     creation for `list` / `aid` / `export`.
+   - `Manager.updateAeid()` now avoids readonly `aeid` writes during visibility
+     opens.
+   - live KLI-backed compat evidence is harness-wired, but encrypted reopen,
+     true decrypt/encrypt semantics, and config/OOBI/KEL parity remain open.
 
 ## Scope Sources (Parity Baseline)
 

@@ -8,35 +8,55 @@ import {
 } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { Komer } from "./koming.ts";
+import { Suber } from "./subing.ts";
 import { b, t } from "../../../cesr/mod.ts";
 
 export interface BaserOptions extends LMDBerOptions {
-  // Baser-specific options can be added here
+  compat?: boolean;
 }
 
-/** High-level wrapper around core KEL-related sub-databases. */
+/**
+ * High-level event-log databaser for the current KERI bootstrap path.
+ *
+ * Responsibilities:
+ * - own the LMDB environment used for KEL/event-adjacent state
+ * - bind the named subdbs needed by current habitat visibility and event export
+ * - expose a small, reviewable subset of `basing.py` behavior to the app layer
+ *
+ * Current `keri-ts` differences:
+ * - only a narrow slice of the full `Baser` surface is implemented
+ * - active habitat/name/habery stores now use `Komer`/`Suber`, but the broader
+ *   record inventory and escrow-oriented basing surfaces are still pending
+ */
 export class Baser {
   private lmdber: LMDBer;
   private readonly logger: Logger;
 
   // Named sub-databases
   public evts!: Database<BinVal, BinKey>; // Events sub-database (dgKey: serialized KEL events)
-  public habs!: Database<BinVal, BinKey>; // Habitat records keyed by pre
-  public names!: Database<BinVal, BinKey>; // (ns,name) -> pre
-  public hbys!: Database<BinVal, BinKey>; // Habery-scoped values such as __signatory__
+  public habs!: Komer<unknown>; // Habitat records keyed by pre
+  public names!: Suber; // (ns,name) -> pre
+  public hbys!: Suber; // Habery-scoped values such as __signatory__
 
   // Class constants
-  static readonly TailDirPath = "keri/db";
+  static readonly TailDirPath = "keri/db"; // TODO look at setting this TailDirPath to tufa/db and a compat path for the default KERIpy dir. cascade to other PathManager+subclasses for consistency
   static readonly AltTailDirPath = ".tufa/db";
+  static readonly CompatAltTailDirPath = ".keri/db";
   static readonly TempPrefix = "keri_db_";
   static readonly MaxNamedDBs = 96;
 
   constructor(options: BaserOptions = {}) {
     this.logger = options.logger ?? consoleLogger;
+    const compat = options.compat ?? false;
     // Create LMDBer with composition
     this.lmdber = new LMDBer(options, {
       tailDirPath: Baser.TailDirPath,
-      altTailDirPath: Baser.AltTailDirPath,
+      cleanTailDirPath: "keri/clean/db",
+      altTailDirPath: compat
+        ? Baser.CompatAltTailDirPath
+        : Baser.AltTailDirPath,
+      altCleanTailDirPath: compat ? ".keri/clean/db" : ".tufa/clean/db",
       tempPrefix: Baser.TempPrefix,
       maxNamedDBs: Baser.MaxNamedDBs,
     });
@@ -78,9 +98,9 @@ export class Baser {
     // Names end with "." to avoid namespace collisions with Base64 identifier prefixes
     try {
       this.evts = this.lmdber.openDB("evts.", false);
-      this.habs = this.lmdber.openDB("habs.", false);
-      this.names = this.lmdber.openDB("names.", false);
-      this.hbys = this.lmdber.openDB("hbys.", false);
+      this.habs = new Komer(this.lmdber, { subkey: "habs." });
+      this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
+      this.hbys = new Suber(this.lmdber, { subkey: "hbys." });
 
       return this.opened;
     } catch (error) {
@@ -150,104 +170,57 @@ export class Baser {
     return t(bytes);
   }
 
-  /** JSON encode helper. */
-  private encodeJson(value: unknown): Uint8Array {
-    return this.encodeText(JSON.stringify(value));
-  }
-
-  /** JSON decode helper; returns `null` on missing bytes. */
-  private decodeJson<T>(bytes: Uint8Array | null): T | null {
-    const text = this.decodeText(bytes);
-    if (text === null) return null;
-    return JSON.parse(text) as T;
-  }
-
   /** Insert habitat record for prefix if absent. */
   putHab(pre: string, record: unknown): boolean {
-    return this.lmdber.putVal(
-      this.habs,
-      this.encodeText(pre),
-      this.encodeJson(record),
-    );
+    return this.habs.put(pre, record);
   }
 
   /** Upsert habitat record for prefix. */
   pinHab(pre: string, record: unknown): boolean {
-    return this.lmdber.setVal(
-      this.habs,
-      this.encodeText(pre),
-      this.encodeJson(record),
-    );
+    return this.habs.pin(pre, record);
   }
 
   /** Read habitat record for prefix. */
   getHab<T>(pre: string): T | null {
-    return this.decodeJson<T>(
-      this.lmdber.getVal(this.habs, this.encodeText(pre)),
-    );
+    return this.habs.get(pre) as T | null;
   }
 
   /** Iterate persisted habitat records keyed by prefix. */
   *getHabItemIter<T>(
     top = "",
   ): Generator<[string, T]> {
-    for (
-      const [key, val] of this.lmdber.getTopItemIter(
-        this.habs,
-        this.encodeText(top),
-      )
-    ) {
-      const pre = this.decodeText(key);
-      const record = this.decodeJson<T>(val);
-      if (pre === null || record === null) {
+    for (const [keys, record] of this.habs.getTopItemIter(top)) {
+      const pre = keys[0];
+      if (!pre) {
         continue;
       }
-      yield [pre, record];
+      yield [pre, record as T];
     }
   }
 
   /** Insert namespace/name -> prefix mapping if absent. */
   putName(ns: string, name: string, pre: string): boolean {
-    const key = `${ns}:${name}`;
-    return this.lmdber.putVal(
-      this.names,
-      this.encodeText(key),
-      this.encodeText(pre),
-    );
+    return this.names.put([ns, name], pre);
   }
 
   /** Upsert namespace/name -> prefix mapping. */
   pinName(ns: string, name: string, pre: string): boolean {
-    const key = `${ns}:${name}`;
-    return this.lmdber.setVal(
-      this.names,
-      this.encodeText(key),
-      this.encodeText(pre),
-    );
+    return this.names.pin([ns, name], pre);
   }
 
   /** Read namespace/name -> prefix mapping. */
   getName(ns: string, name: string): string | null {
-    const key = `${ns}:${name}`;
-    return this.decodeText(
-      this.lmdber.getVal(this.names, this.encodeText(key)),
-    );
+    return this.names.get([ns, name]);
   }
 
   /** Upsert habery-scoped string setting in `hbys.`. */
   pinHby(name: string, value: string): boolean {
-    return this.lmdber.setVal(
-      this.hbys,
-      this.encodeText(name),
-      this.encodeText(value),
-    );
+    return this.hbys.pin(name, value);
   }
 
   /** Read habery-scoped string setting from `hbys.`. */
   getHby(name: string): string | null {
-    return this.decodeText(
-      this.lmdber.getVal(this.hbys, this.encodeText(name)),
-    );
+    return this.hbys.get(name);
   }
 }
 

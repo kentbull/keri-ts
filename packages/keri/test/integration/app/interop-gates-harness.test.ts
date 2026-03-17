@@ -13,6 +13,7 @@ type ScenarioState = "ready" | "pending";
 interface ScenarioContext {
   env: Record<string, string>;
   packageRoot: string;
+  kliCommand: string;
 }
 
 interface GateScenario {
@@ -25,6 +26,13 @@ interface GateScenario {
   run?: (ctx: ScenarioContext) => Promise<void>;
 }
 
+/**
+ * Runs a CLI command under the supplied environment and returns decoded output.
+ *
+ * The interop tests execute both `kli` and `tufa`, so keeping command execution
+ * in one helper ensures stdout/stderr decoding and cwd/env handling stay
+ * consistent across all scenarios.
+ */
 async function runCmd(
   command: string,
   args: string[],
@@ -45,15 +53,69 @@ async function runCmd(
   };
 }
 
-async function hasKli(env: Record<string, string>): Promise<boolean> {
+/**
+ * Probes a resolved `kli` candidate to verify that it is both executable and
+ * actually the KERI CLI.
+ *
+ * PATHs that flow through `pyenv` or shell shims can resolve to stale or
+ * unrelated binaries. Checking `--help` output gives the harness a cheap,
+ * non-mutating sanity check before we trust the command in live scenarios.
+ */
+async function canUseKli(
+  command: string,
+  env: Record<string, string>,
+): Promise<boolean> {
   try {
-    const res = await runCmd("kli", ["--help"], env);
-    return res.code === 0;
+    const res = await runCmd(command, ["--help"], env);
+    const text = `${res.stdout}\n${res.stderr}`;
+    return res.code === 0 && /usage:\s*kli\b/i.test(text);
   } catch {
     return false;
   }
 }
 
+/**
+ * Resolves the concrete `kli` executable to use for interop scenarios.
+ *
+ * We prefer `pyenv which kli` when available because the desktop environment
+ * may expose shims on PATH that do not survive isolated test environments. We
+ * then fall back to plain PATH lookup. Each candidate is validated with
+ * `canUseKli()` so the harness fails loudly instead of silently skipping.
+ */
+async function resolveKliCommand(env: Record<string, string>): Promise<string> {
+  const candidates: string[] = [];
+
+  try {
+    const pyenvWhich = await runCmd("pyenv", ["which", "kli"], env);
+    const resolved = pyenvWhich.stdout.trim();
+    if (pyenvWhich.code === 0 && resolved.length > 0) {
+      candidates.push(resolved);
+    }
+  } catch {
+    // Fall through to PATH resolution.
+  }
+
+  candidates.push("kli");
+
+  for (const candidate of candidates) {
+    if (await canUseKli(candidate, env)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `kli is required for interop tests but could not be resolved. Tried: ${
+      candidates.join(", ")
+    }`,
+  );
+}
+
+/**
+ * Parses the human-readable `Prefix` line emitted by both CLIs after `incept`.
+ *
+ * This helper keeps the tests focused on parity assertions instead of
+ * re-implementing line parsing at each call site.
+ */
 function extractPrefix(output: string): string {
   const line = output.split(/\r?\n/).find((line) =>
     line.trim().startsWith("Prefix")
@@ -65,6 +127,13 @@ function extractPrefix(output: string): string {
   return parts[parts.length - 1];
 }
 
+/**
+ * Normalizes non-deterministic timestamp encodings out of exported CESR text.
+ *
+ * KEL export parity should fail on semantic differences, not on attachment
+ * timestamps that are expected to vary between runs. This replaces both ISO
+ * timestamps and CESR datetime encodings with a stable token before comparing.
+ */
 function normalizeCesr(text: string): string {
   return text
     .replace(
@@ -79,6 +148,13 @@ function normalizeCesr(text: string): string {
     .trim();
 }
 
+/**
+ * Extracts only serialized KEL events from mixed CLI export output.
+ *
+ * The CLIs may include banner or status lines around an export. Gate parity is
+ * about the event stream itself, so this helper filters to the JSON KERI event
+ * payloads that should match exactly after normalization.
+ */
 function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
@@ -86,6 +162,13 @@ function extractKelStream(output: string): string {
     .join("\n");
 }
 
+/**
+ * Parses `tufa list` / `kli list` output down to the identifier summary lines.
+ *
+ * The visibility scenarios only care that the same identifiers are exposed, so
+ * this strips decorative output and retains the `alias (prefix)` records used
+ * for parity assertions.
+ */
 function extractIdentifierLines(output: string): string[] {
   return output
     .split(/\r?\n/)
@@ -93,6 +176,13 @@ function extractIdentifierLines(output: string): string[] {
     .filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line));
 }
 
+/**
+ * Returns the final meaningful line from command output.
+ *
+ * `aid` currently emits a single identifier on the last non-empty line. Using
+ * a helper makes that output contract explicit and keeps the scenario code
+ * terse.
+ */
 function extractLastNonEmptyLine(output: string): string {
   const lines = output
     .split(/\r?\n/)
@@ -105,10 +195,20 @@ function extractLastNonEmptyLine(output: string): string {
   return line;
 }
 
+/**
+ * Resolves the package root used when invoking the local `tufa` CLI entrypoint.
+ */
 function packageRoot(): string {
   return new URL("../../../", import.meta.url).pathname;
 }
 
+/**
+ * Executes the local `tufa` CLI from source rather than an installed binary.
+ *
+ * Interop tests compare installed KERIpy tooling to the in-repo implementation
+ * under development, so they intentionally run `deno run mod.ts ...` in the
+ * package root instead of assuming a globally installed `tufa`.
+ */
 async function runTufa(
   args: string[],
   env: Record<string, string>,
@@ -122,6 +222,12 @@ async function runTufa(
   );
 }
 
+/**
+ * Scrapes the top-level `tufa --help` output into a command set.
+ *
+ * The harness uses this to keep gate metadata honest by checking whether a
+ * planned scenario only references commands that the CLI actually exposes.
+ */
 async function listTufaCommands(
   env: Record<string, string>,
   cwd: string,
@@ -138,6 +244,15 @@ async function listTufaCommands(
   return commands;
 }
 
+/**
+ * Preserves the active Deno cache directory when tests override `HOME`.
+ *
+ * These interop tests create isolated homes so KERIpy and `tufa` stores do not
+ * collide. Without also carrying forward `DENO_DIR`, `deno run` may look for a
+ * different cache rooted under the temp home and spuriously fail on dependency
+ * resolution. We first respect an explicit environment override, then fall back
+ * to `deno info --json` to discover the current cache location.
+ */
 async function detectDenoDir(): Promise<string | undefined> {
   const explicit = Deno.env.get("DENO_DIR");
   if (explicit) {
@@ -172,7 +287,7 @@ async function runInitInceptExportParity(
   const kliName = `kli-${crypto.randomUUID().slice(0, 8)}`;
   const tufaName = `tufa-${crypto.randomUUID().slice(0, 8)}`;
 
-  const kliInit = await runCmd("kli", [
+  const kliInit = await runCmd(ctx.kliCommand, [
     "init",
     "--name",
     kliName,
@@ -187,7 +302,7 @@ async function runInitInceptExportParity(
     throw new Error(`kli init failed: ${kliInit.stderr}\n${kliInit.stdout}`);
   }
 
-  const kliIncept = await runCmd("kli", [
+  const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
     "--name",
     kliName,
@@ -271,7 +386,7 @@ async function runInitInceptExportParity(
     extractPrefix(kliIncept.stdout),
   );
 
-  const kliExport = await runCmd("kli", [
+  const kliExport = await runCmd(ctx.kliCommand, [
     "export",
     "--name",
     kliName,
@@ -325,7 +440,7 @@ async function runListAidVisibilityParity(
   const kliName = `kli-${crypto.randomUUID().slice(0, 8)}`;
   const tufaName = `tufa-${crypto.randomUUID().slice(0, 8)}`;
 
-  const kliInit = await runCmd("kli", [
+  const kliInit = await runCmd(ctx.kliCommand, [
     "init",
     "--name",
     kliName,
@@ -359,7 +474,7 @@ async function runListAidVisibilityParity(
     throw new Error(`tufa init failed: ${tufaInit.stderr}\n${tufaInit.stdout}`);
   }
 
-  const kliListBefore = await runCmd("kli", [
+  const kliListBefore = await runCmd(ctx.kliCommand, [
     "list",
     "--name",
     kliName,
@@ -396,7 +511,7 @@ async function runListAidVisibilityParity(
   assertEquals(extractIdentifierLines(kliListBefore.stdout), []);
   assertEquals(extractIdentifierLines(tufaListBefore.stdout), []);
 
-  const kliIncept = await runCmd("kli", [
+  const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
     "--name",
     kliName,
@@ -462,7 +577,7 @@ async function runListAidVisibilityParity(
 
   const expectedListLine = `${alias} (${tufaPre})`;
 
-  const kliListAfter = await runCmd("kli", [
+  const kliListAfter = await runCmd(ctx.kliCommand, [
     "list",
     "--name",
     kliName,
@@ -501,7 +616,7 @@ async function runListAidVisibilityParity(
     expectedListLine,
   ]);
 
-  const kliAid = await runCmd("kli", [
+  const kliAid = await runCmd(ctx.kliCommand, [
     "aid",
     "--name",
     kliName,
@@ -539,6 +654,93 @@ async function runListAidVisibilityParity(
   assertEquals(extractLastNonEmptyLine(tufaAid.stdout), tufaPre);
 }
 
+async function runKliCompatStoreOpen(
+  ctx: ScenarioContext,
+): Promise<void> {
+  const alias = "interop-aid";
+  const passcode = "MyPasscodeARealSecret";
+  const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+  const name = `kli-${crypto.randomUUID().slice(0, 8)}`;
+
+  const kliInit = await runCmd(ctx.kliCommand, [
+    "init",
+    "--name",
+    name,
+    "--passcode",
+    passcode,
+    "--salt",
+    salt,
+  ], ctx.env);
+  if (kliInit.code !== 0) {
+    throw new Error(`kli init failed: ${kliInit.stderr}\n${kliInit.stdout}`);
+  }
+
+  const kliIncept = await runCmd(ctx.kliCommand, [
+    "incept",
+    "--name",
+    name,
+    "--passcode",
+    passcode,
+    "--alias",
+    alias,
+    "--transferable",
+    "--isith",
+    "1",
+    "--icount",
+    "1",
+    "--nsith",
+    "1",
+    "--ncount",
+    "1",
+    "--toad",
+    "0",
+  ], ctx.env);
+  if (kliIncept.code !== 0) {
+    throw new Error(
+      `kli incept failed: ${kliIncept.stderr}\n${kliIncept.stdout}`,
+    );
+  }
+  const kliPre = extractPrefix(kliIncept.stdout);
+  const expectedListLine = `${alias} (${kliPre})`;
+
+  const tufaList = await runTufa(
+    [
+      "list",
+      "--name",
+      name,
+      "--passcode",
+      passcode,
+      "--compat",
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaList.code !== 0) {
+    throw new Error(`tufa list failed: ${tufaList.stderr}\n${tufaList.stdout}`);
+  }
+
+  const tufaAid = await runTufa(
+    [
+      "aid",
+      "--name",
+      name,
+      "--passcode",
+      passcode,
+      "--alias",
+      alias,
+      "--compat",
+    ],
+    ctx.env,
+    ctx.packageRoot,
+  );
+  if (tufaAid.code !== 0) {
+    throw new Error(`tufa aid failed: ${tufaAid.stderr}\n${tufaAid.stdout}`);
+  }
+
+  assertEquals(extractIdentifierLines(tufaList.stdout), [expectedListLine]);
+  assertEquals(extractLastNonEmptyLine(tufaAid.stdout), kliPre);
+}
+
 const GATE_SCENARIOS: GateScenario[] = [
   {
     id: "A-DB-FOUNDATION-READINESS",
@@ -569,12 +771,11 @@ const GATE_SCENARIOS: GateScenario[] = [
   {
     id: "C-KLI-COMPAT-STORE-OPEN",
     gate: "C",
-    state: "pending",
+    state: "ready",
     requiredTufaCommands: ["list", "aid"],
     expectedOutputShape:
       "kli-created store visible through tufa compatibility mode",
-    blockedReason:
-      "Depends on compatibility mode behavior and list/aid command surface.",
+    run: runKliCompatStoreOpen,
   },
   {
     id: "D-ENCRYPTED-AT-REST-SEMANTICS",
@@ -626,13 +827,7 @@ Deno.test("Interop gate harness executes ready scenarios", async () => {
     HOME: home,
     ...(denoDir ? { DENO_DIR: denoDir } : {}),
   };
-
-  if (!(await hasKli(env))) {
-    console.warn(
-      "Skipping gate harness interop test because kli is not available.",
-    );
-    return;
-  }
+  const kliCommand = await resolveKliCommand(env);
 
   const ready = GATE_SCENARIOS.filter((scenario) => scenario.state === "ready");
   assert(ready.length > 0, "Expected at least one ready interop scenario.");
@@ -651,6 +846,6 @@ Deno.test("Interop gate harness executes ready scenarios", async () => {
         `Ready scenario ${scenario.id} has no run() implementation.`,
       );
     }
-    await scenario.run({ env, packageRoot: packageRoot() });
+    await scenario.run({ env, packageRoot: packageRoot(), kliCommand });
   }
 });

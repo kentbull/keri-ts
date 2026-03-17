@@ -30,17 +30,16 @@ export interface ConfigerOptions extends PathManagerOptions {
 }
 
 /**
- * Habitat Config File.
+ * Habitat config-file manager.
  *
- * This TypeScript implementation intentionally uses stateless file I/O for reads
- * and an atomic-write strategy for updates (temp file + sync + rename).
- * That differs from KERIpy's handle-oriented Configer, which keeps an open file
- * handle and uses seek/truncate/write/flush on that handle.
+ * KERIpy correspondence:
+ * - mirrors the role of `keri.app.configing.Configer` as the habery-local
+ *   configuration store
  *
- * We keep the public API simple (`get`/`put`) while hardening writes against
- * partial-file outcomes during unexpected process exits.
- *
- * Supports only JSON at the moment.
+ * Current `keri-ts` differences:
+ * - intentionally uses stateless file I/O plus atomic temp-file rename instead
+ *   of KERIpy's open-handle seek/truncate/write lifecycle
+ * - currently supports JSON only
  */
 export class Configer {
   readonly name: string;

@@ -11,8 +11,9 @@ replay/verification semantics.
    active work is still the foundation layer around DB parity and practical
    `kli`/`tufa` interoperability planning.
 2. Phase 2 planning is now parity-first: P0 command/output parity and D0
-   inventory/parity artifacts are established, and D1 DB-core parity is the
-   active workstream.
+   inventory/parity artifacts are established, D1 DB-core parity is largely in
+   place, and the active edge has moved into a minimal D2/D3 foundation for
+   compatibility-mode store opening.
 3. `docs/design-docs/db/db-architecture.md` is the current cross-topic DB
    invariants reference for ordering, idempotence, serialization, lifecycle, and
    interoperability semantics that later KEL logic will rely on.
@@ -32,6 +33,28 @@ replay/verification semantics.
 9. `Habery` now eagerly reloads persisted habitat records on open, which
    unblocks honest `list`/`aid` visibility without depending on process-local
    caches.
+10. The current bootstrap path no longer stores everything through ad hoc raw
+    LMDB handles: a minimal `Suber` / `Komer` slice now backs the active `Baser`
+    / `Keeper` visibility stores, specifically to prepare honest Gate C store
+    opening work.
+11. KERIpy parity work should include source documentation parity for class
+    boundaries: maintainer-facing docstrings are part of the port, not optional
+    follow-up polish.
+12. `Komer` serializer parity is now broader than the live-store rollout:
+    JSON/CBOR/MGPK are supported at the mapper boundary, while existing
+    `Baser`/`Keeper` stores intentionally remain JSON until an explicit
+    migration/compat decision is made.
+13. Until 1.0 parity is reached, old-`keri-ts` compatibility is not a project
+    goal by default; if a choice exists between preserving prior `keri-ts`
+    behavior and matching KERIpy, we should choose KERIpy unless the task says
+    otherwise.
+14. Interop tests should now assume a working installed KERIpy CLI and fail if
+    it cannot be resolved; skipping was useful during bootstrap, but it now
+    hides real parity regressions.
+15. `Komer` is no longer intentionally flattened in `keri-ts`: the KERIpy-style
+    `KomerBase -> Komer` split is now part of the parity path, and future mapper
+    subclasses should build on that seam instead of reintroducing raw-LMDB
+    shortcuts.
 
 ## Scope Checklist
 
@@ -54,8 +77,81 @@ Use this doc for:
    output shape as those commands become executable.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
+4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
+   maintenance regression and guard against them automatically.
+
+### 2026-03-15 - Gate C Visibility Foundation Landed
+
+- Added the first minimal `subing.ts` / `koming.ts` foundation instead of
+  continuing the raw-LMDB shortcut path.
+- Migrated the active bootstrap-path `Baser` and `Keeper` stores onto those
+  typed wrappers where KERIpy already expects `Suber` / `Komer` usage.
+- Added explicit compatibility-mode `.keri/db` and `.keri/ks` open paths plus
+  KERIpy-aligned `names.` separator handling (`^`).
+- Readonly visibility commands now skip config loading and signator creation,
+  and readonly compat opens no longer try to write `aeid`.
+- Added focused unit coverage for the new typed-store seam and for readonly
+  compatibility-mode `list` / `aid` store opening.
+- This is still not full Gate C or Gate D closure: encrypted `pris` semantics,
+  true decrypter/encrypter behavior, signator reliability, config processing,
+  OOBI resolution, and KEL routing remain open.
 
 ## Milestone Rollup
+
+### 2026-03-16 - Class Documentation Parity Became A Guarded Requirement
+
+- Completed a maintainer-grade class-doc sweep across the remaining undocumented
+  `keri-ts` KERI and CESR class surfaces, starting with `Manager` and the
+  recently changed DB/app wrappers.
+- Tightened the source-documentation rule: when porting a KERIpy-corresponding
+  class, we should port its maintainer-facing documentation in the same change
+  and explicitly call out `keri-ts` divergences.
+- Added an automated class-doc coverage check so undocumented class boundaries
+  stop being silent drift.
+
+### 2026-03-16 - `Komer` Gained CBOR And MGPK Serializer Support
+
+- Expanded `Komer` to support `JSON`, `CBOR`, and `MGPK` serializer selection at
+  construction time, following the same high-level format contract as KERIpy's
+  `Komer`.
+- Kept the change capability-only: current `Baser` and `Keeper` call sites still
+  use the JSON default, so no store migration or dual-read compatibility logic
+  was introduced.
+- Added a format-matrix unit suite plus an explicit invalid-kind guard so the
+  new serializer boundary is both parity-oriented and fail-fast.
+
+### 2026-03-16 - Prior `keri-ts` Compatibility Explicitly De-Prioritized
+
+- Removed the temporary `Baser.getName()` fallback that tolerated older pre-`^`
+  `keri-ts` `names.` keys.
+- Recorded the project rule explicitly: before 1.0, we optimize for KERIpy
+  parity first and should not add back-compat shims for historical `keri-ts`
+  behavior unless they are required for KERIpy interop.
+
+### 2026-03-16 - Installed KLI Is Now Part Of Regular Interop Checks
+
+- Promoted the live KLI interop suites from opportunistic-skip behavior to
+  regular quality coverage by resolving the real KLI executable up front and
+  failing if it cannot be used.
+- Preserved the active `DENO_DIR` when tests override `HOME`, so `tufa` can run
+  under isolated test homes without trying to re-fetch npm/JSR dependencies.
+- Verified both `interop-gates-harness.test.ts` and `interop-kli-tufa.test.ts`
+  run successfully against the installed KERIpy CLI.
+
+### 2026-03-16 - `KomerBase` And `Komer` Hierarchy Ported
+
+- Refactored `koming.ts` so `keri-ts` now has the same `KomerBase -> Komer`
+  split that KERIpy uses for single-record object mappers.
+- Ported the KERIpy-style base methods and boundaries, including `_tokey`,
+  `_tokeys`, `_serializer`, `_deserializer`, `trim`, `remTop`, `getTopItemIter`,
+  and `getFullItemIter`, while expressing dataclass-like validation/mapping
+  through explicit TypeScript schema hooks.
+- Expanded the `Komer` unit suite to mirror the current KERIpy single-value
+  tests for CRUD, branch iteration, trim, schema validation failures, custom
+  serialization, and serializer/deserializer behavior.
+- Captured one important divergence explicitly: `cbor-x` and KERIpy's `cbor2`
+  can produce different raw CBOR bytes for the same logical object, so byte-for-
+  byte CBOR parity should not be assumed even when decoded payload parity holds.
 
 ### 2026-03-15 - `tufa init` Home Fallback Restored For npm/Node Runtime
 

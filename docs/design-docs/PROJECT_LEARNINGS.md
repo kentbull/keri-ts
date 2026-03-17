@@ -118,6 +118,34 @@ This keeps context focused and avoids long-thread drift.
     `@deno/shim-deno`; `syncSync()` may be unimplemented even though
     `syncDataSync()` works, so `Configer` durability paths should use the latter
     for cross-runtime compatibility.
+21. Minimal `Suber` / `Komer` foundations now exist and back the active
+    bootstrap-path `Baser` / `Keeper` stores; this is enough to stop extending
+    the raw-LMDB pattern on the Gate C visibility path, but it is not evidence
+    of full `subing.py` / `koming.py` parity.
+22. Compatibility-mode visibility now has an honest readonly-open path:
+    `.keri/db` and `.keri/ks` alt tails are supported, `list` / `aid` can skip
+    config loading and signator creation, and readonly opens no longer try to
+    write `aeid`; encrypted reopen semantics and true decrypt/encrypt behavior
+    remain the next real blockers.
+23. KERIpy-corresponding class ports need source-documentation parity as well as
+    behavior parity: when we add or translate a class, we should port its
+    maintainer-facing responsibilities and invariants into `keri-ts` source
+    docstrings in the same change, not defer them to cleanup work later.
+24. `Komer` now supports JSON, CBOR, and MGPK serializer selection at the
+    constructor boundary, matching KERIpy's format choices without changing the
+    current live-store default away from JSON.
+25. Before 1.0, `keri-ts` should optimize for KERIpy parity rather than
+    preserving compatibility with older `keri-ts` behavior; local back-compat
+    shims that are not needed for KERIpy interop are drift, not safety.
+26. KLI interop tests are now expected to run in regular quality checks against
+    the installed KERIpy CLI, not skip opportunistically; isolated test `HOME`
+    values should preserve the active `DENO_DIR`, and KLI resolution should use
+    the real executable path when pyenv shims are on `PATH`.
+27. `Komer` parity now assumes the KERIpy `KomerBase -> Komer` split exists in
+    `keri-ts`; future `IoSetKomer` / `DupKomer` work should extend that base
+    instead of re-flattening object-mapper behavior, and raw CBOR byte parity
+    should not be assumed across `cbor2` vs `cbor-x` even when decoded payloads
+    match.
 
 ## New Thread Kickoff Template
 

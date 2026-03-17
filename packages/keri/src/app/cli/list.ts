@@ -7,6 +7,7 @@ interface ListArgs {
   base?: string;
   headDirPath?: string;
   passcode?: string;
+  compat?: boolean;
 }
 
 /** Implements `tufa list`. */
@@ -16,6 +17,7 @@ export function* listCommand(args: Record<string, unknown>): Operation<void> {
     base: args.base as string | undefined,
     headDirPath: args.headDirPath as string | undefined,
     passcode: args.passcode as string | undefined,
+    compat: args.compat as boolean | undefined,
   };
 
   if (!listArgs.name) {
@@ -29,6 +31,12 @@ export function* listCommand(args: Record<string, unknown>): Operation<void> {
       listArgs.passcode,
       false,
       listArgs.headDirPath,
+      {
+        compat: listArgs.compat ?? false,
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+      },
     );
     try {
       for (const hab of hby.habs.values()) {

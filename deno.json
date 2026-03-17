@@ -2,8 +2,9 @@
   "version": "0.2.2",
   "tasks": {
     "fmt": "deno fmt",
+    "docs:check": "deno run --allow-read scripts/check_class_docstrings.ts",
     "check": "cd packages/keri && deno task check && cd ../cesr && deno check mod.ts",
-    "quality": "deno task fmt && deno task check && deno task version:check && deno task test:quality && deno task test:cesr",
+    "quality": "deno task fmt && deno task docs:check && deno task check && deno task version:check && deno task test:quality && deno task test:cesr",
     "quality:report": "deno run --allow-run=rg,scc --allow-read --allow-env=PATH,HOME,TMPDIR scripts/quality-report.ts",
     "manifest:sync": "deno run -A scripts/sync_manifest_versions.ts",
     "manifest:check": "deno run -A scripts/sync_manifest_versions.ts --check",

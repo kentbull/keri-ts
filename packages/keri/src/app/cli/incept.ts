@@ -110,6 +110,11 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
       inceptArgs.passcode,
       inceptArgs.temp ?? false,
       inceptArgs.headDirPath,
+      {
+        readonly: false,
+        skipConfig: true,
+        skipSignator: true,
+      },
     );
     try {
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {

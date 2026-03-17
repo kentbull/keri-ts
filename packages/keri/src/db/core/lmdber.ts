@@ -121,6 +121,12 @@ const DEFAULT_DB_VERSION = "1.0.0";
 /**
  * Core LMDB environment wrapper plus KERI-style storage families.
  *
+ * Responsibilities:
+ * - own LMDB environment open/close/reopen lifecycle
+ * - expose KERI-style storage families used by higher DB abstractions
+ * - centralize path/version/dupsort semantics so callers reason at the family
+ *   level instead of hand-rolling raw LMDB access
+ *
  * Read this class by storage family, not as a flat method list:
  *  - plain key/value
  *  - branch scans
@@ -130,6 +136,10 @@ const DEFAULT_DB_VERSION = "1.0.0";
  *  - `Dup*`    : native dupsort duplicates
  *  - `IoDup*`  : insertion-ordered duplicates via hidden proem
  *  - `OnIoDup*`: ordinal insertion-ordered duplicates
+ *
+ * Current `keri-ts` difference:
+ * - includes TypeScript-only `OnIoSet*` helpers and a composition-based
+ *   `PathManager` lifecycle instead of inheriting KERIpy's exact structure
  */
 export class LMDBer {
   private pathManager: PathManager;

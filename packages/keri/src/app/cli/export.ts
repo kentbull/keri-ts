@@ -47,6 +47,11 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
       exportArgs.passcode,
       false,
       exportArgs.headDirPath,
+      {
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+      },
     );
     try {
       const hab = hby.habByName(exportArgs.alias!);

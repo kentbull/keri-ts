@@ -32,7 +32,11 @@ export interface HaberyArgs {
   base?: string;
   temp?: boolean;
   headDirPath?: string;
+  compat?: boolean;
+  readonly?: boolean;
   cf?: Configer;
+  skipConfig?: boolean;
+  skipSignator?: boolean;
   bran?: string;
   seed?: string;
   aeid?: string;
@@ -272,7 +276,17 @@ export class Hab {
   }
 }
 
-/** Local signatory wrapper for `__signatory__` signing used by habery internals. */
+/**
+ * Internal signatory habitat wrapper used for habery-scoped signatures.
+ *
+ * KERIpy correspondence:
+ * - mirrors the idea of a persisted `__signatory__` habitat owned by the
+ *   enclosing habery
+ *
+ * Current `keri-ts` differences:
+ * - signing/verification are currently deterministic local-hab wrappers, not a
+ *   full parity implementation of KERIpy signatory lifecycle and reopen logic
+ */
 export class Signator {
   readonly db: Baser;
   readonly hab: Hab;
@@ -315,7 +329,21 @@ export class Signator {
   }
 }
 
-/** Top-level container for database, keystore, manager, and habitats. */
+/**
+ * Top-level controller container for databases, key manager, config, and local
+ * habitats.
+ *
+ * Responsibilities:
+ * - compose `Baser`, `Keeper`, `Manager`, optional config, and loaded habitats
+ * - eagerly reconstruct persisted habitat visibility on open
+ * - provide app-layer alias lookup and habitat creation boundaries
+ *
+ * Current `keri-ts` differences:
+ * - readonly compatibility opens may intentionally skip config processing and
+ *   signator creation for visibility-only commands
+ * - config-driven OOBI processing and broader KEL/state orchestration are not
+ *   yet at KERIpy parity
+ */
 export class Habery {
   readonly name: string;
   readonly base: string;
@@ -326,7 +354,7 @@ export class Habery {
   readonly cf?: Configer;
   readonly config: Record<string, unknown>;
   readonly habs = new Map<string, Hab>();
-  readonly signator: Signator;
+  readonly signator: Signator | null;
 
   constructor(
     name: string,
@@ -337,6 +365,7 @@ export class Habery {
     mgr: Manager,
     cf?: Configer,
     config: Record<string, unknown> = {},
+    skipSignator = false,
   ) {
     this.name = name;
     this.base = base;
@@ -346,7 +375,7 @@ export class Habery {
     this.mgr = mgr;
     this.cf = cf;
     this.config = config;
-    this.signator = new Signator(this.db, this);
+    this.signator = skipSignator ? null : new Signator(this.db, this);
     this.loadHabs();
   }
 
@@ -414,7 +443,11 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     base = "",
     temp = false,
     headDirPath,
+    compat = false,
+    readonly = false,
     cf: providedCf,
+    skipConfig = false,
+    skipSignator = false,
     bran,
     seed,
     aeid,
@@ -427,26 +460,29 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     base,
     temp,
     headDirPath,
+    compat,
     reopen: true,
-    readonly: false,
+    readonly,
   });
   const ks = yield* createKeeper({
     name,
     base,
     temp,
     headDirPath,
+    compat,
     reopen: true,
-    readonly: false,
+    readonly,
   });
 
-  const cf = providedCf ?? (yield* createConfiger({
-    name,
-    base,
-    temp,
-    headDirPath,
-    reopen: true,
-    clear: false,
-  }));
+  const cf = providedCf ??
+    (skipConfig ? undefined : (yield* createConfiger({
+      name,
+      base,
+      temp,
+      headDirPath,
+      reopen: true,
+      clear: false,
+    })));
   const config = cf ? cf.get<Record<string, unknown>>() : {};
 
   let usedSeed = seed ?? "";
@@ -465,5 +501,5 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     salt: normalizeSaltQb64(salt),
   });
 
-  return new Habery(name, base, temp, db, ks, mgr, cf, config);
+  return new Habery(name, base, temp, db, ks, mgr, cf, config, skipSignator);
 }

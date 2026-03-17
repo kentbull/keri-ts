@@ -3,11 +3,17 @@ import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { parseMatter } from "cesr-ts";
 import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
-import { b } from '../../../cesr/mod.ts'
+import { b } from "../../../cesr/mod.ts";
 
 const B64_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+/**
+ * Root key-creation strategy selectors stored in keeper globals.
+ *
+ * Only `salty` is currently implemented end-to-end in `keri-ts`; the others are
+ * preserved so the app-layer contract stays aligned with KERIpy naming.
+ */
 export enum Algos {
   randy = "randy",
   salty = "salty",
@@ -15,6 +21,13 @@ export enum Algos {
   extern = "extern",
 }
 
+/**
+ * Inputs for constructing a `Manager` over an already-open `Keeper`.
+ *
+ * The manager persists most root state in `ks.gbls`; `seed` remains
+ * process-local so readonly/inspection opens can avoid writing secrets back to
+ * disk.
+ */
 export interface ManagerArgs {
   ks: Keeper;
   seed?: string;
@@ -25,6 +38,13 @@ export interface ManagerArgs {
   tier?: string;
 }
 
+/**
+ * Controls key-material derivation for `Manager.incept()`.
+ *
+ * This is the TypeScript bootstrap slice of KERIpy's richer incept options:
+ * enough for current salty/non-transferable flows, but not yet the full keeper
+ * algorithm matrix.
+ */
 export interface ManagerInceptArgs {
   icount?: number;
   ncount?: number;
@@ -40,10 +60,22 @@ export interface ManagerInceptArgs {
   temp?: boolean;
 }
 
+/**
+ * Minimal public-key projection returned by `Manager.incept()`.
+ *
+ * We currently surface qb64-only records instead of richer CESR wrapper
+ * objects to keep the bootstrap path small.
+ */
 export interface KeyVerfer {
   qb64: string;
 }
 
+/**
+ * Minimal next-key digest projection returned by `Manager.incept()`.
+ *
+ * Mirrors the current `KeyVerfer` compromise: qb64-only until the app layer
+ * adopts fuller CESR primitive hydration.
+ */
 export interface KeyDiger {
   qb64: string;
 }
@@ -151,6 +183,17 @@ function deriveSeedFromSalt(
   });
 }
 
+/**
+ * Derive a deterministic Ed25519 signer pair from salty root material.
+ *
+ * KERIpy correspondence:
+ * - mirrors the current salty derivation path used by `Manager` for root and
+ *   per-prefix key material
+ *
+ * Current `keri-ts` difference:
+ * - returns a lightweight qb64 projection instead of richer signer objects,
+ *   because the bootstrap app layer stores the derived material separately
+ */
 export function saltySigner(
   saltQb64: string,
   path: string,
@@ -169,6 +212,24 @@ function pubsKey(pre: string, ridx: number): string {
   return `${pre}.${ridx.toString(16).padStart(32, "0")}`;
 }
 
+/**
+ * Key-management coordinator backed by `Keeper` state.
+ *
+ * Responsibilities:
+ * - own keeper-global root settings (`aeid`, `pidx`, `algo`, `salt`, `tier`)
+ * - derive incept/current/next key material
+ * - persist per-prefix parameters, situations, and public-key sets
+ *
+ * KERIpy correspondence:
+ * - mirrors the role of `keri.app.keeping.Manager`
+ *
+ * Current `keri-ts` differences:
+ * - bootstrap-first: the salty path is the only real algorithm today
+ * - AEID handling currently validates association and storage boundaries but
+ *   does not yet implement KERIpy's full re-encryption/decryption lifecycle
+ * - readonly opens intentionally avoid keeper mutation so visibility commands
+ *   can inspect stores without side effects
+ */
 export class Manager {
   private _seed: string;
   private _ks: Keeper;
@@ -261,8 +322,11 @@ export class Manager {
       }
     }
 
-    this.ks.pinGbls("aeid", aeid);
     this._seed = seed;
+    if (this.ks.readonly) {
+      return;
+    }
+    this.ks.pinGbls("aeid", aeid);
   }
 
   incept(args: ManagerInceptArgs = {}): [KeyVerfer[], KeyDiger[]] {
