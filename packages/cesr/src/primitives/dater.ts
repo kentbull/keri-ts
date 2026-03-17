@@ -1,9 +1,7 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import {
-  MATTER_CODE_NAMES,
-  MATTER_SIZES,
-} from "../tables/matter.tables.generated.ts";
+import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
+import { DATER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
 /** Project compact CESR datetime encoding to RFC3339/ISO-8601 text form. */
@@ -21,8 +19,7 @@ export class Dater extends Matter {
   constructor(init: Matter | MatterInit) {
     const matter = init instanceof Matter ? init : new Matter(init);
     super(matter);
-    const name = MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES];
-    if (name !== "DateTime") {
+    if (!DATER_CODES.has(this.code)) {
       throw new UnknownCodeError(
         `Expected dater DateTime code, got ${this.code}`,
       );

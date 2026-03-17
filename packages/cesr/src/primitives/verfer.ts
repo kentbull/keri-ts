@@ -1,7 +1,6 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
-import { VERFER_CODES } from "./codex.ts";
+import { matterCodexName, VERFER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
 /**
@@ -26,8 +25,7 @@ export class Verfer extends Matter {
   }
 
   get algorithm(): string {
-    return MATTER_CODE_NAMES[this.code as keyof typeof MATTER_CODE_NAMES] ??
-      "UnknownKey";
+    return matterCodexName(this.code) ?? "UnknownKey";
   }
 }
 

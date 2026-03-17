@@ -90,7 +90,7 @@ export const KERIPY_COUNTER_VECTORS = {
 /** KERIpy codex values reused by per-primitive tests. */
 export const KERIPY_CODE_VECTORS = {
   signerSeedCodes: ["A", "J", "Q"],
-  salterCodes: ["0A", "a"],
+  salterCodes: ["0A"],
   cipherSeedCode: "P",
   encrypterCode: "C",
   decrypterCode: "O",

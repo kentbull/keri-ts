@@ -7,8 +7,8 @@ import { Tagger } from "./tagger.ts";
 /**
  * Configuration-trait primitive for key-event trait tags.
  *
- * KERIpy semantics: trait values are compact tags validated against `TraitDex`
- * symbols (`EO`, `DND`, `RB`, `NB`, `NRB`, `DID`).
+ * KERIpy semantics: trait values are compact tags validated against canonical
+ * `TraitDex` membership rather than a local string list.
  */
 export class Traitor extends Tagger {
   constructor(init: Matter | MatterInit) {

@@ -42,11 +42,15 @@ Persistent CESR parser memory for `keri-ts`.
     also map CESR-owned imports such as `@msgpack/msgpack` and `cbor-x/*`.
 13. CLI startup in `tufa` now lazy-loads handlers, so help/version paths do not
     import CESR modules until a CESR-backed command is actually selected.
-14. CESR code-family validation must consume one shared KERIpy-derived source of
-    truth: generated matter/indexer tables and codex-family sets now back
-    `Prefixer`, `Verfer`, `Signer`, `Siger`, `Cipher`, and related primitives,
-    while TS-only counter-group families live in one shared module instead of
-    being recopied across primitives.
+14. CESR codex design is now explicitly dual-layer: generated KERIpy-parity
+    codex objects like `MtrDex`, `PreDex`, `DigDex`, and `IdrDex` are the
+    primary source of truth, while primitive-friendly sets in `codex.ts` are
+    derived readability helpers and TS-only counter-group families remain
+    centralized in one shared module.
+15. The same dual-layer rule now applies to non-cryptographic and singleton-ish
+    primitives as well: `Dater`, `Seqner`, `Ilker`, `Verser`, `Noncer`, and
+    `Traitor` should validate through canonical parity codexes or helpers
+    derived from them, not raw code-name table lookups or local magic strings.
 
 ## Key Docs
 
@@ -153,3 +157,26 @@ Persistent CESR parser memory for `keri-ts`.
 - Turned `verify-tables.ts` into a real drift detector for both matter and
   indexer generated artifacts so future KERIpy code-table changes surface as a
   failing maintenance check instead of a runtime surprise.
+
+### 2026-03-16 - Canonical Codex Layer Made Primary
+
+- Added generated KERIpy-parity codex modules for `MatterCodex`/`MtrDex`,
+  `PreDex`, `DigDex`, `NonceDex`, `LabelDex`, `IndexerCodex`/`IdrDex`,
+  `IdxSigDex`, `IdxCrtSigDex`, and `IdxBthSigDex`.
+- Reframed `primitives/codex.ts` as a derived adapter layer that computes
+  primitive-facing helper sets from those canonical codex objects instead of
+  acting like the conceptual source of truth.
+- Locked the maintainer rule that docs and parity work should teach KERIpy names
+  first, while still allowing split helper views when they improve local
+  readability.
+
+### 2026-03-16 - Singleton And Trait Primitive Codex Migration Closed
+
+- Extended the generated parity layer to include `TraitCodex`/`TraitDex` from
+  `kering.py`, so `Traitor` no longer depends on a local trait-string list.
+- Migrated singleton-ish semantic validators such as `Dater`, `Seqner`, `Ilker`,
+  `Verser`, and `Noncer` away from raw `MATTER_CODE_NAMES` checks and literal
+  code strings onto canonical codex exports or helpers derived from them.
+- Added a shared matter-codex name lookup helper so primitives such as `Diger`,
+  `Verfer`, and `Cigar` no longer read raw generated name tables directly just
+  to project algorithm names.

@@ -1,75 +1,101 @@
 import {
-  BEXTER_CODES,
-  CIPHER_X25519_ALL_CODES,
-  DECIMAL_CODES,
-  DIGEST_CODES,
-  ESCAPE_CODES,
-  LABELER_CODES,
-  NON_DIGEST_PREFIX_CODES,
-  NON_TRANSFERABLE_PREFIX_CODES,
-  NONCE_CODES,
-  NUMBER_CODES,
-  PREFIX_CODES,
-  TAG_CODES,
-  TEXTER_CODES,
-} from "../tables/matter.codexes.generated.ts";
+  BexDex,
+  CiXAllQB64Dex,
+  CiXDex,
+  CiXFixQB64Dex,
+  CiXVarDex,
+  CiXVarQB2Dex,
+  CiXVarQB64Dex,
+  CiXVarStrmDex,
+  DecDex,
+  DigDex,
+  EscapeDex,
+  LabelDex,
+  MtrDex,
+  NonceDex,
+  NonTransDex,
+  NumDex,
+  PreDex,
+  PreNonDigDex,
+  TagDex,
+  TexDex,
+} from "../tables/matter.codex.generated.ts";
 import {
-  INDEXED_BOTH_SIG_CODES,
-  INDEXED_CURRENT_SIG_CODES,
-  INDEXED_SIG_CODES,
-  INDEXER_CODES,
-} from "../tables/indexer.codexes.generated.ts";
-import {
-  MATTER_CODE_NAMES,
-  MATTER_CODES_BY_NAME,
-} from "../tables/matter.tables.generated.ts";
+  IdrDex,
+  IdxBthSigDex,
+  IdxCrtSigDex,
+  IdxSigDex,
+} from "../tables/indexer.codex.generated.ts";
+import { TraitDex } from "../tables/trait.codex.generated.ts";
+import { codexValues, invertCodex } from "../tables/codex-utils.ts";
+import { Protocols } from "../tables/versions.ts";
 
-function codesByName<const T extends readonly string[]>(
-  ...names: T
-): Set<string> {
-  const codes = names.map((name) => {
-    const code =
-      MATTER_CODES_BY_NAME[name as keyof typeof MATTER_CODES_BY_NAME];
-    if (!code) {
-      throw new Error(`Missing matter code name=${name} in generated tables.`);
-    }
-    return code;
-  });
-  return new Set(codes);
-}
-
-function codesByNamePredicate(
-  predicate: (name: string) => boolean,
-): Set<string> {
-  return new Set(
-    Object.entries(MATTER_CODE_NAMES)
-      .filter(([, name]) => predicate(name))
-      .map(([code]) => code),
-  );
-}
-
+/**
+ * Derived readability layer over the generated KERIpy-parity codex objects.
+ *
+ * Canonical names such as `MtrDex`, `PreDex`, `DigDex`, and `IdrDex` are the
+ * primary source of truth. The sets exported here are convenience views for
+ * primitive-family validation and TS ergonomics.
+ */
 export {
-  BEXTER_CODES,
-  CIPHER_X25519_ALL_CODES,
-  DECIMAL_CODES,
-  DIGEST_CODES,
-  ESCAPE_CODES,
-  INDEXED_BOTH_SIG_CODES,
-  INDEXED_CURRENT_SIG_CODES,
-  INDEXED_SIG_CODES,
-  INDEXER_CODES,
-  LABELER_CODES,
-  NON_DIGEST_PREFIX_CODES,
-  NON_TRANSFERABLE_PREFIX_CODES,
-  NONCE_CODES,
-  NUMBER_CODES,
-  PREFIX_CODES,
-  TAG_CODES,
-  TEXTER_CODES,
+  BexDex,
+  CiXAllQB64Dex,
+  CiXDex,
+  CiXFixQB64Dex,
+  CiXVarDex,
+  CiXVarQB2Dex,
+  CiXVarQB64Dex,
+  CiXVarStrmDex,
+  DecDex,
+  DigDex,
+  EscapeDex,
+  IdrDex,
+  IdxBthSigDex,
+  IdxCrtSigDex,
+  IdxSigDex,
+  LabelDex,
+  MtrDex,
+  NonceDex,
+  NonTransDex,
+  NumDex,
+  PreDex,
+  PreNonDigDex,
+  TagDex,
+  TexDex,
+  TraitDex,
 };
+
+export const BEXTER_CODES = codexValues(BexDex);
+export const TEXTER_CODES = codexValues(TexDex);
+export const DECIMAL_CODES = codexValues(DecDex);
+export const DIGEST_CODES = codexValues(DigDex);
+export const NONCE_CODES = codexValues(NonceDex);
+export const NUMBER_CODES = codexValues(NumDex);
+export const TAG_CODES = codexValues(TagDex);
+export const LABELER_CODES = codexValues(LabelDex);
+export const PREFIX_CODES = codexValues(PreDex);
+export const NON_TRANSFERABLE_PREFIX_CODES = codexValues(NonTransDex);
+export const NON_DIGEST_PREFIX_CODES = codexValues(PreNonDigDex);
+export const ESCAPE_CODES = codexValues(EscapeDex);
+
+export const CIPHER_X25519_VARIABLE_STREAM_CODES = codexValues(CiXVarStrmDex);
+export const CIPHER_X25519_QB64_VARIABLE_CODES = codexValues(CiXVarQB64Dex);
+export const CIPHER_X25519_FIXED_QB64_CODES = codexValues(CiXFixQB64Dex);
+export const CIPHER_X25519_ALL_QB64_CODES = codexValues(CiXAllQB64Dex);
+export const CIPHER_X25519_ALL_VARIABLE_CODES = codexValues(CiXVarDex);
+export const CIPHER_X25519_QB2_VARIABLE_CODES = codexValues(CiXVarQB2Dex);
+export const CIPHER_X25519_ALL_CODES = codexValues(CiXDex);
+
+export const INDEXER_CODES = codexValues(IdrDex);
+export const INDEXED_SIG_CODES = codexValues(IdxSigDex);
+export const INDEXED_CURRENT_SIG_CODES = codexValues(IdxCrtSigDex);
+export const INDEXED_BOTH_SIG_CODES = codexValues(IdxBthSigDex);
 
 export const VERFER_CODES = NON_DIGEST_PREFIX_CODES;
 export const SIGER_CODES = INDEXED_SIG_CODES;
+export const DATER_CODES = new Set<string>([MtrDex.DateTime]);
+export const SEQNER_CODES = new Set<string>([MtrDex.Salt_128]);
+export const ILKER_CODES = new Set<string>([MtrDex.Tag3]);
 export const THOLDER_WEIGHTED_CODES = BEXTER_CODES;
 export const THOLDER_NUMERIC_CODES = NUMBER_CODES;
 export const THOLDER_CODES = new Set<string>([
@@ -77,30 +103,36 @@ export const THOLDER_CODES = new Set<string>([
   ...THOLDER_WEIGHTED_CODES,
 ]);
 
-export const SIGNER_CODES = codesByName(
-  "Ed25519_Seed",
-  "ECDSA_256k1_Seed",
-  "ECDSA_256r1_Seed",
-);
-
-export const SALTER_CODES = codesByName("Salt_128");
-export const ENCRYPTER_CODES = codesByName("X25519");
-export const DECRYPTER_CODES = codesByName("X25519_Private");
-export const CIGAR_CODES = codesByNamePredicate((name) =>
-  name.endsWith("_Sig")
-);
-
-export const TRAIT_TAGS = new Set<string>([
-  "EO",
-  "DND",
-  "RB",
-  "NB",
-  "NRB",
-  "DID",
+export const SIGNER_CODES = new Set<string>([
+  MtrDex.Ed25519_Seed,
+  MtrDex.ECDSA_256k1_Seed,
+  MtrDex.ECDSA_256r1_Seed,
 ]);
 
-export const VERSER_CODES = new Set<string>(["Y", "0O"]);
-export const VERSER_PROTOCOLS = new Set<string>(["KERI", "ACDC"]);
+export const SALTER_CODES = new Set<string>([MtrDex.Salt_128]);
+export const ENCRYPTER_CODES = new Set<string>([MtrDex.X25519]);
+export const DECRYPTER_CODES = new Set<string>([MtrDex.X25519_Private]);
+export const CIGAR_CODES = new Set<string>([
+  MtrDex.Ed25519_Sig,
+  MtrDex.ECDSA_256k1_Sig,
+  MtrDex.ECDSA_256r1_Sig,
+  MtrDex.Ed448_Sig,
+]);
+
+export const TRAIT_TAGS = new Set<string>([
+  ...codexValues(TraitDex),
+]);
+
+export const VERSER_CODES = new Set<string>([MtrDex.Tag7, MtrDex.Tag10]);
+export const VERSER_PROTOCOLS = new Set<string>(Object.values(Protocols));
+
+const MATTER_CODEX_NAMES = invertCodex(MtrDex);
+
+export function matterCodexName(code: string): string | undefined {
+  return MATTER_CODEX_NAMES.get(
+    code as (typeof MtrDex)[keyof typeof MtrDex],
+  );
+}
 
 /** KERI attribute-name validator used by Labeler semantic projection. */
 export function isAttLabel(value: string): boolean {

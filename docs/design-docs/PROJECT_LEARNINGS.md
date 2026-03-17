@@ -157,6 +157,15 @@ This keeps context focused and avoids long-thread drift.
     KERIpy-derived matter/indexer codex sets, and TS-only counter-group families
     should live in one shared module so `Prefixer`-style drift cannot hide
     behind local string sets.
+31. CESR codex organization is now explicitly dual-layer: generated KERIpy
+    parity codex objects such as `MtrDex`, `PreDex`, `DigDex`, and `IdrDex` are
+    the primary source of truth, and `codex.ts` helper sets are derived
+    readability views rather than a competing authority.
+32. The dual-layer codex rule also now covers non-cryptographic and
+    singleton-ish CESR primitives: `Dater`, `Seqner`, `Ilker`, `Verser`,
+    `Noncer`, and `Traitor` should validate through canonical codex exports or
+    derived helpers, and trait semantics should come from generated `TraitDex`
+    parity rather than local string lists.
 
 ## New Thread Kickoff Template
 

@@ -51,7 +51,7 @@ Companion scan sheet:
 ### One primitive, three physical views
 
 | View   | Meaning                    | Typical use                                              |
-|--------|----------------------------|----------------------------------------------------------|
+| ------ | -------------------------- | -------------------------------------------------------- |
 | `raw`  | Unqualified payload bytes  | Crypto operations, decoded body data, direct comparisons |
 | `qb64` | Qualified Base64 text form | Stream text, logs, fixtures, human inspection            |
 | `qb2`  | Qualified binary form      | Binary stream parsing and compact framing                |
@@ -65,7 +65,7 @@ The key mental model is simple:
 ### The three base classes
 
 | Base      | Adds                                 | Best mental model                                      | Representative example                                                                     |
-|-----------|--------------------------------------|--------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| --------- | ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `Matter`  | code + raw bytes                     | "qualified material"                                   | `ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux`                                             |
 | `Indexer` | code + raw bytes + `index` / `ondex` | "qualified material with attachment position metadata" | `AACdI8OSQkMJ9r-xigjEByEjIua7LHH3AOJ22PQKqljMhuhcgh9nGRcKnsz5KvKd7K_H9-1298F4Id1DxvIoEmCQ` |
 | `Counter` | versioned framing code + count       | "stream/group framing token"                           | `-KAB`                                                                                     |
@@ -900,25 +900,37 @@ new encoding basis.
 
 ## Support Surface Added In The Same Arc
 
-### Codex subsets
+### Codex layers
 
-**What it is:** Semantic code-family subsets like `DIGEST_CODES`, `NONCE_CODES`,
-`LABELER_CODES`, and `VERSER_PROTOCOLS`.
+**What it is:** The dual-layer codex model used by `keri-ts`.
 
-**What it looks like:** Sets of code strings such as digest family
-`{ "E", "F",
-"G", "H", "I", "0D", "0E", "0F", "0G" }`.
+**What it looks like:** Two connected layers:
 
-**How you construct/parse it in `keri-ts`:** Import the sets from `codex.ts`; no
-parsing step.
+- canonical parity codexes such as `MtrDex`, `PreDex`, `DigDex`, `NonceDex`,
+  `LabelDex`, `TraitDex`, `IdrDex`, and `IdxSigDex`
+- derived readability helpers such as `DIGEST_CODES`, `PREFIX_CODES`,
+  `SIGNER_CODES`, `DATER_CODES`, `VERSER_CODES`, and `VERSER_PROTOCOLS`
 
-**Where it shows up in workflow:** Semantic validation and subclass narrowing.
+**How you construct/parse it in `keri-ts`:**
 
-**KERIpy comparison:** No one direct peer. These are derived from multiple
-KERIpy codex tables and exist to avoid lossy one-code/one-domain assumptions.
+- import KERIpy-parity codex objects from the generated table layer when you
+  want the canonical mental model
+- import helper sets from `codex.ts` when you want primitive-facing readability
 
-**Common gotchas / maintainer notes:** These are support assets, not CESR
-tokens.
+**Where it shows up in workflow:** Primitive validation, semantic subclass
+narrowing, maintainers learning the CESR code universe, and parity checks
+against KERIpy.
+
+**KERIpy comparison:** This mirrors the real KERIpy pattern more closely than a
+pure helper-set model. KERIpy keeps one canonical codex universe like
+`MatterCodex`/`MtrDex` and then defines narrower semantic codex subsets like
+`PreDex`, `DigDex`, and `NonceDex` that primitive constructors validate against.
+
+**Common gotchas / maintainer notes:** Treat the canonical codex objects as the
+source of truth. Helper sets are derived readability views, not a second source
+of authority. That rule applies even to singleton-ish semantic subclasses like
+`Dater`, `Seqner`, `Ilker`, and `Verser`, and to trait-tag validation via
+`TraitDex`.
 
 ### Mapper
 
