@@ -2,7 +2,7 @@ import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
-import { isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
+import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
 import {
   BEXTER_CODES,
@@ -16,6 +16,7 @@ import {
   PREFIX_CODES,
   TAG_CODES,
 } from "../primitives/codex.ts";
+import { Compactor } from "../primitives/compactor.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Dater } from "../primitives/dater.ts";
 import { parseIlker } from "../primitives/ilker.ts";
@@ -657,6 +658,397 @@ function parseKeriFixedField(
   throw new DeserializeError(`Unsupported KERI native fixed-field label=${label}`);
 }
 
+type NativeFieldKind =
+  | "qb64"
+  | "nonce-or-empty"
+  | "said-or-block"
+  | "agid-or-list"
+  | "text"
+  | "datetime";
+
+interface NativeFieldSpec {
+  kind: NativeFieldKind;
+}
+
+interface NativeBodyLayout {
+  shape: "fixed" | "map";
+  labels: readonly string[];
+  fields: Record<string, NativeFieldSpec>;
+}
+
+function acdcLayoutKey(version: Versionage, ilk: string | null): string {
+  return `${version.major}.${version.minor}:${ilk ?? "<none>"}`;
+}
+
+const ACDC_NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
+  [
+    acdcLayoutKey({ major: 1, minor: 0 }, null),
+    {
+      shape: "map",
+      labels: ["v", "d", "u", "i", "ri", "s", "a", "A", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        ri: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        a: { kind: "said-or-block" },
+        A: { kind: "agid-or-list" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 1, minor: 0 }, "ace"),
+    {
+      shape: "map",
+      labels: ["v", "t", "d", "u", "i", "ri", "s", "a", "A", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        ri: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        a: { kind: "said-or-block" },
+        A: { kind: "agid-or-list" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, null),
+    {
+      shape: "map",
+      labels: ["v", "d", "u", "i", "rd", "s", "a", "A", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        rd: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        a: { kind: "said-or-block" },
+        A: { kind: "agid-or-list" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "acm"),
+    {
+      shape: "map",
+      labels: ["v", "t", "d", "u", "i", "rd", "s", "a", "A", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        rd: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        a: { kind: "said-or-block" },
+        A: { kind: "agid-or-list" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "ace"),
+    {
+      shape: "map",
+      labels: ["v", "t", "d", "u", "i", "ri", "s", "a", "A", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        ri: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        a: { kind: "said-or-block" },
+        A: { kind: "agid-or-list" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "act"),
+    {
+      shape: "fixed",
+      labels: ["d", "u", "i", "rd", "s", "a", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        rd: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        a: { kind: "said-or-block" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "acg"),
+    {
+      shape: "fixed",
+      labels: ["d", "u", "i", "rd", "s", "A", "e", "r"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        rd: { kind: "qb64" },
+        s: { kind: "said-or-block" },
+        A: { kind: "agid-or-list" },
+        e: { kind: "said-or-block" },
+        r: { kind: "said-or-block" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "sch"),
+    {
+      shape: "fixed",
+      labels: ["d", "s"],
+      fields: { d: { kind: "qb64" }, s: { kind: "said-or-block" } },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "att"),
+    {
+      shape: "fixed",
+      labels: ["d", "a"],
+      fields: { d: { kind: "qb64" }, a: { kind: "said-or-block" } },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "agg"),
+    {
+      shape: "fixed",
+      labels: ["d", "A"],
+      fields: { d: { kind: "qb64" }, A: { kind: "agid-or-list" } },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "edg"),
+    {
+      shape: "fixed",
+      labels: ["d", "e"],
+      fields: { d: { kind: "qb64" }, e: { kind: "said-or-block" } },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "rul"),
+    {
+      shape: "fixed",
+      labels: ["d", "r"],
+      fields: { d: { kind: "qb64" }, r: { kind: "said-or-block" } },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "rip"),
+    {
+      shape: "fixed",
+      labels: ["d", "u", "i", "n", "dt"],
+      fields: {
+        d: { kind: "qb64" },
+        u: { kind: "nonce-or-empty" },
+        i: { kind: "qb64" },
+        n: { kind: "qb64" },
+        dt: { kind: "datetime" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "bup"),
+    {
+      shape: "fixed",
+      labels: ["d", "rd", "n", "p", "dt", "b"],
+      fields: {
+        d: { kind: "qb64" },
+        rd: { kind: "qb64" },
+        n: { kind: "qb64" },
+        p: { kind: "qb64" },
+        dt: { kind: "datetime" },
+        b: { kind: "qb64" },
+      },
+    },
+  ],
+  [
+    acdcLayoutKey({ major: 2, minor: 0 }, "upd"),
+    {
+      shape: "fixed",
+      labels: ["d", "rd", "n", "p", "dt", "td", "ts"],
+      fields: {
+        d: { kind: "qb64" },
+        rd: { kind: "qb64" },
+        n: { kind: "qb64" },
+        p: { kind: "qb64" },
+        dt: { kind: "datetime" },
+        td: { kind: "nonce-or-empty" },
+        ts: { kind: "text" },
+      },
+    },
+  ],
+]);
+
+/**
+ * Resolve the protocol-aware native body layout for one ACDC version/ilk pair.
+ *
+ * This table is the native-body counterpart to the serder field registry in
+ * `serder.ts`: body shape (`fixed` vs `map`) and field-family meaning live
+ * together here so native inhale/exhale does not regress back into ad hoc
+ * per-call branching.
+ */
+function getAcdcLayout(version: Versionage, ilk: string | null): NativeBodyLayout {
+  const layout = ACDC_NATIVE_LAYOUTS.get(acdcLayoutKey(version, ilk));
+  if (!layout) {
+    throw new DeserializeError(
+      `Unsupported ACDC native ilk=${String(ilk)} version=${version.major}.${version.minor}`,
+    );
+  }
+  return layout;
+}
+
+/**
+ * Decode one ACDC field according to the field-family rules KERIpy applies.
+ *
+ * Examples:
+ * - `s`: either a compact SAID like `E...` or a nested map block encoded as a `Compactor`
+ * - `A`: either an aggregate identifier `E...` or an aggregate list encoded as an `Aggor`
+ * - `u`/`td`: either empty nonce `1AAP` => `""` or a qualified nonce token
+ */
+function parseAcdcField(
+  raw: Uint8Array,
+  offset: number,
+  label: string,
+  spec: NativeFieldSpec,
+  gvrsn: Versionage,
+): ParsedNativeField {
+  // Each field-family branch here mirrors one conceptual CESR-native section
+  // type. Keep the branches semantic, not label-specific, so future parity
+  // work extends field families instead of multiplying special cases.
+  if (spec.kind === "qb64") {
+    return parseQb64Field(raw, offset);
+  }
+  if (spec.kind === "nonce-or-empty") {
+    const nonce = parseNoncer(raw.slice(offset), "txt");
+    return {
+      value: nonce.nonce,
+      nextOffset: offset + nonce.fullSize,
+    };
+  }
+  if (spec.kind === "datetime") {
+    const date = new Dater(new Matter({ qb64b: raw.slice(offset) }));
+    return {
+      value: date.iso8601,
+      nextOffset: offset + date.fullSize,
+    };
+  }
+  if (spec.kind === "text") {
+    const text = parseLabeler(raw.slice(offset), "txt");
+    return {
+      value: text.text,
+      nextOffset: offset + text.fullSize,
+    };
+  }
+  if (spec.kind === "said-or-block") {
+    if (raw[offset] === "-".charCodeAt(0)) {
+      const compactor = new Compactor({
+        raw: raw.slice(offset),
+        version: gvrsn,
+        kind: "CESR",
+        verify: false,
+      });
+      return {
+        value: compactor.mad,
+        nextOffset: offset + compactor.raw.length,
+      };
+    }
+    return parseQb64Field(raw, offset);
+  }
+  if (spec.kind === "agid-or-list") {
+    if (raw[offset] === "-".charCodeAt(0)) {
+      const aggor = new Aggor({
+        raw: raw.slice(offset),
+        version: gvrsn,
+        kind: "CESR",
+        verify: false,
+      });
+      return {
+        value: aggor.ael,
+        nextOffset: offset + aggor.serialized.length,
+      };
+    }
+    return parseQb64Field(raw, offset);
+  }
+  throw new DeserializeError(`Unsupported ACDC native field label=${label}`);
+}
+
+function encodeAcdcFieldValue(
+  value: unknown,
+  label: string,
+  spec: NativeFieldSpec,
+  gvrsn: Versionage,
+): string {
+  // This is the exhale companion to `parseAcdcField()`. The goal is that a
+  // maintainer can line the two functions up branch-for-branch and see the same
+  // field-family story in both directions.
+  if (spec.kind === "qb64") {
+    if (typeof value !== "string" || value.length === 0) {
+      throw new SerializeError(`Expected non-empty qb64 value for ACDC field ${label}`);
+    }
+    return value;
+  }
+  if (spec.kind === "nonce-or-empty") {
+    if (typeof value !== "string") {
+      throw new SerializeError(`Expected string nonce value for ACDC field ${label}`);
+    }
+    return value.length === 0 ? LabelDex.Empty : value;
+  }
+  if (spec.kind === "datetime") {
+    if (typeof value !== "string") {
+      throw new SerializeError(`Expected ISO-8601 string for ACDC field ${label}`);
+    }
+    return encodeDate(value);
+  }
+  if (spec.kind === "text") {
+    if (typeof value !== "string") {
+      throw new SerializeError(`Expected text string for ACDC field ${label}`);
+    }
+    return encodeLabel(value);
+  }
+  if (spec.kind === "said-or-block") {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return new Compactor({
+        mad: value as SadMap,
+        kind: "CESR",
+        verify: false,
+        saidive: true,
+      }).qb64;
+    }
+    if (typeof value !== "string") {
+      throw new SerializeError(`Expected qb64 or compactable map for ACDC field ${label}`);
+    }
+    return value;
+  }
+  if (spec.kind === "agid-or-list") {
+    if (Array.isArray(value)) {
+      return new Aggor({
+        ael: value,
+        kind: "CESR",
+        makify: false,
+        verify: false,
+      }).qb64g;
+    }
+    if (typeof value !== "string") {
+      throw new SerializeError(`Expected agid string or aggregate list for ACDC field ${label}`);
+    }
+    return value;
+  }
+  throw new SerializeError(`Unsupported ACDC field kind for ${label}`);
+}
+
 /**
  * Decode one CESR-native body into a semantic SAD plus core serder projections.
  *
@@ -751,6 +1143,33 @@ export function parseCesrNativeKed(
     };
   }
 
+  let acdcIlk = fixed
+    ? parseIlker(textRaw.slice(offset), "txt").ilk
+    : (typeof ked.t === "string" ? ked.t : null);
+  if (fixed) {
+    offset += 4;
+    ked.t = acdcIlk;
+  }
+  let acdcLayout = getAcdcLayout(smellage.pvrsn, acdcIlk);
+  if ((fixed && acdcLayout.shape !== "fixed") || (!fixed && acdcLayout.shape !== "map")) {
+    throw new DeserializeError(
+      `ACDC CESR-native ilk=${String(acdcIlk)} requires ${acdcLayout.shape} body shape`,
+    );
+  }
+
+  if (fixed) {
+    for (const label of acdcLayout.labels) {
+      const parsed = parseAcdcField(textRaw, offset, label, acdcLayout.fields[label], gvrsn);
+      ked[label] = parsed.value;
+      offset = parsed.nextOffset;
+    }
+    return {
+      ked,
+      ilk: acdcIlk,
+      said: typeof ked.d === "string" ? ked.d : null,
+    };
+  }
+
   while (offset < textRaw.length) {
     const labeler = fixed ? null : parseLabeler(textRaw.slice(offset), "txt");
     const label = fixed
@@ -768,24 +1187,28 @@ export function parseCesrNativeKed(
     if (!label) {
       break;
     }
-    const matter = new Matter({ qb64b: textRaw.slice(offset) });
-    if (label === "d" || label === "i" || label === "ri" || label === "u") {
-      ked[label] = label === "u" ? parseNoncer(matter.qb64b, "txt").nonce : matter.qb64;
-      offset += matter.fullSize;
+    if (label === "t") {
+      const token = parseLabeler(textRaw.slice(offset), "txt");
+      ked.t = token.text;
+      acdcIlk = token.text;
+      acdcLayout = getAcdcLayout(smellage.pvrsn, acdcIlk);
+      offset += token.fullSize;
       continue;
     }
-    if (label === "s") {
-      ked[label] = matter.qb64;
-      offset += matter.fullSize;
-      continue;
+    const spec = acdcLayout.fields[label];
+    if (!spec) {
+      throw new DeserializeError(
+        `Unsupported ACDC native label=${label} for ilk=${String(acdcIlk)}`,
+      );
     }
-    ked[label] = decodeEntry(matter, gvrsn);
-    offset += matter.fullSize;
+    const parsed = parseAcdcField(textRaw, offset, label, spec, gvrsn);
+    ked[label] = parsed.value;
+    offset = parsed.nextOffset;
   }
 
   return {
     ked,
-    ilk: typeof ked.t === "string" ? ked.t : null,
+    ilk: acdcIlk,
     said: typeof ked.d === "string" ? ked.d : null,
   };
 }
@@ -894,8 +1317,54 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
       }${frame}`;
     })()
     : (() => {
-      const map: SadMap = { ...sad };
-      return encodeMap(map, smellage.gvrsn, true);
+      const ilk = typeof sad.t === "string" ? sad.t : null;
+      const layout = getAcdcLayout(smellage.pvrsn, ilk);
+
+      if (layout.shape === "map") {
+        let frame = "";
+        for (const label of layout.labels) {
+          if (!(label in sad)) {
+            continue;
+          }
+          if (label === "v") {
+            frame += encodeLabel("v");
+            frame += encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn);
+            continue;
+          }
+          if (label === "t") {
+            frame += encodeLabel("t");
+            frame += encodeTag(String(sad.t));
+            continue;
+          }
+          frame += encodeLabel(label);
+          frame += encodeAcdcFieldValue(
+            sad[label],
+            label,
+            layout.fields[label],
+            smellage.gvrsn ?? Vrsn_2_0,
+          );
+        }
+        const code = frame.length / 4 < 64 ** 2 ? CtrDexV2.MapBodyGroup : CtrDexV2.BigMapBodyGroup;
+        return `${
+          new Counter({ code, count: frame.length / 4, version: smellage.gvrsn ?? Vrsn_2_0 }).qb64
+        }${frame}`;
+      }
+
+      let frame = `${encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)}${
+        encodeTag(String(ilk ?? ""))
+      }`;
+      for (const label of layout.labels) {
+        frame += encodeAcdcFieldValue(
+          sad[label],
+          label,
+          layout.fields[label],
+          smellage.gvrsn ?? Vrsn_2_0,
+        );
+      }
+      const code = frame.length / 4 < 64 ** 2 ? CtrDexV2.FixBodyGroup : CtrDexV2.BigFixBodyGroup;
+      return `${
+        new Counter({ code, count: frame.length / 4, version: smellage.gvrsn ?? Vrsn_2_0 }).qb64
+      }${frame}`;
     })();
 
   return b(body);

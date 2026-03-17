@@ -3,9 +3,10 @@ import { DeserializeError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { b } from "../../src/index.ts";
 import { Matter } from "../../src/primitives/matter.ts";
-import { parseSerder, Serder, SerderACDC, SerderKERI } from "../../src/serder/serder.ts";
-import { smell } from "../../src/serder/smell.ts";
+import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../src/serder/serder.ts";
+import { smell, versify } from "../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { Vrsn_2_0 } from "../../src/tables/versions.ts";
 import { counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -220,6 +221,88 @@ Deno.test("serder: SerderKERI rejects invalid non-transferable inception state",
         },
         makify: true,
       }),
+    DeserializeError,
+  );
+});
+
+Deno.test("serder: SerderACDC can preserve expanded sections while computing the compact-form top-level SAID", () => {
+  // This is the key ACDC compactification rule from KERIpy: the visible sad can
+  // remain expanded, while the top-level `d` is still the digest of the most
+  // compact variant.
+  const issuer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+  const regid = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
+  const template = {
+    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "JSON", size: 0 }),
+    t: "acm",
+    d: "",
+    u: "",
+    i: issuer,
+    rd: regid,
+    s: { d: "", title: "schema" },
+    a: { d: "", i: issuer, role: "holder" },
+    e: { d: "", link: regid },
+    r: { d: "", usage: "test" },
+  };
+
+  const expanded = new SerderACDC({
+    sad: template,
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+    compactify: false,
+  });
+  const compacted = new SerderACDC({
+    sad: template,
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+    compactify: true,
+  });
+
+  assertEquals(expanded.verify(), true);
+  assertEquals(compacted.verify(), true);
+  // Same top-level SAID, different caller-visible section representation.
+  assertEquals(expanded.said, compacted.said);
+  assertEquals(typeof expanded.schema, "object");
+  assertEquals(typeof expanded.attrib, "object");
+  assertEquals(typeof compacted.schema, "string");
+  assertEquals(typeof compacted.attrib, "string");
+});
+
+Deno.test("serder: SerderACDC rejects expanded-section tampering when top-level d is left stale", () => {
+  // This is the inverse of the previous test: if a maintainer changes expanded
+  // section content but leaves top-level `d` alone, verification must fail
+  // because `d` commits to the compact form of those sections.
+  const issuer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+  const regid = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
+  const serder = new SerderACDC({
+    sad: {
+      v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "JSON", size: 0 }),
+      t: "acm",
+      d: "",
+      u: "",
+      i: issuer,
+      rd: regid,
+      s: { d: "", title: "schema" },
+      a: { d: "", i: issuer, role: "holder" },
+      e: { d: "", link: regid },
+      r: { d: "", usage: "test" },
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+    compactify: false,
+  });
+
+  const tampered = serder.sad ?? {};
+  ((tampered.a as Record<string, unknown>).role) = "tampered";
+  const { raw } = sizeify(tampered, "JSON");
+
+  assertThrows(
+    () => new SerderACDC({ raw, verify: true }),
     DeserializeError,
   );
 });

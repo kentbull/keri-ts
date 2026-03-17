@@ -12,6 +12,7 @@ import {
   NON_TRANSFERABLE_PREFIX_CODES,
   PREFIX_CODES,
 } from "../primitives/codex.ts";
+import { Compactor } from "../primitives/compactor.ts";
 import { Diger } from "../primitives/diger.ts";
 import { Matter } from "../primitives/matter.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
@@ -25,6 +26,7 @@ import {
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
 import { Verfer } from "../primitives/verfer.ts";
+import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
@@ -642,13 +644,214 @@ function shallowCloneSad(sad: SadMap): SadMap {
   return Object.fromEntries(Object.entries(sad).map(([k, v]) => [k, cloneDefault(v)]));
 }
 
+/** True when the top-level ACDC ilk participates in KERIpy's most-compact SAID rule. */
+function isAcdcCompactiveIlk(ilk: string | null): boolean {
+  return ilk === null || ["acm", "ace", "act", "acg"].includes(ilk);
+}
+
+/**
+ * Build the "display" and "compact" variants of one ACDC section field.
+ *
+ * Maintainer model:
+ * - `display` is what the caller-visible SAD should keep
+ * - `compact` is what top-level `d` must be hashed over for compactive ilks
+ *
+ * This is the seam that translates plain semantic section data into the shared
+ * native primitives:
+ * - `Compactor` for `s`/`a`/`e`/`r`
+ * - `Aggor` for `A`
+ */
+function computeAcdcFieldVariants(
+  label: string,
+  value: unknown,
+  kind: Kind,
+  topLevelCompactable: boolean,
+  compactify: boolean,
+): { display: unknown; compact: unknown } {
+  if (
+    (label === "s" || label === "a" || label === "e" || label === "r")
+    && value && typeof value === "object" && !Array.isArray(value)
+  ) {
+    const expanded = new Compactor({
+      mad: value as SadMap,
+      kind,
+      verify: false,
+      saidive: true,
+    });
+    expanded.trace(true);
+
+    if (!topLevelCompactable) {
+      return {
+        display: expanded.mad,
+        compact: expanded.mad,
+      };
+    }
+
+    const compacted = new Compactor({
+      mad: value as SadMap,
+      kind,
+      verify: false,
+      saidive: true,
+    });
+    compacted.compact();
+    return {
+      display: compactify ? (compacted.said ?? compacted.mad) : expanded.mad,
+      compact: compacted.said ?? compacted.mad,
+    };
+  }
+
+  if (label === "A" && Array.isArray(value)) {
+    const aggor = new Aggor({
+      ael: cloneDefault(value),
+      kind,
+      makify: true,
+      verify: false,
+    });
+    if (!topLevelCompactable) {
+      return {
+        display: aggor.ael,
+        compact: aggor.ael,
+      };
+    }
+    return {
+      display: compactify ? (aggor.agid ?? aggor.ael) : aggor.ael,
+      compact: aggor.agid ?? aggor.ael,
+    };
+  }
+
+  return { display: cloneDefault(value), compact: cloneDefault(value) };
+}
+
+function computeAcdcSad(
+  sad: SadMap,
+  {
+    kind,
+    saids,
+    compactify,
+  }: {
+    kind: Kind;
+    saids: SaidCodeMap;
+    compactify: boolean;
+  },
+): {
+  sad: SadMap;
+  raw: Uint8Array;
+  compactSad: SadMap;
+} {
+  // This is the heart of ACDC compactification parity. KERIpy's rule is not
+  // "hash the visible sad"; it is "hash the most compact sad, while optionally
+  // preserving an expanded caller-visible sad".
+  const displaySad = shallowCloneSad(sad);
+  const compactSad = shallowCloneSad(sad);
+  const topLevelCompactable = isAcdcCompactiveIlk(typeof sad.t === "string" ? sad.t : null);
+
+  for (const label of ["s", "a", "A", "e", "r"]) {
+    if (!(label in sad)) {
+      continue;
+    }
+    const variants = computeAcdcFieldVariants(
+      label,
+      sad[label],
+      kind,
+      topLevelCompactable,
+      compactify,
+    );
+    displaySad[label] = variants.display;
+    compactSad[label] = variants.compact;
+  }
+
+  const code = saids.d ?? DigDex.Blake3_256;
+  const sizage = MATTER_SIZES.get(code);
+  if (!sizage?.fs) {
+    throw new SerializeError(`Unsupported ACDC SAID code=${code}`);
+  }
+
+  const hashSad = shallowCloneSad(compactSad);
+  hashSad.d = "#".repeat(sizage.fs);
+  // `sizeify()` must happen before digesting because non-native version strings
+  // include size, so the hashed serialization has to already carry the final
+  // version-string span.
+  sizeify(hashSad, kind);
+  const digestRaw = dumps(hashSad, kind);
+  const said = new Matter({ code, raw: Diger.digest(digestRaw, code) }).qb64;
+
+  compactSad.d = said;
+  displaySad.d = said;
+  const sizedDisplay = shallowCloneSad(displaySad);
+  const { raw } = sizeify(sizedDisplay, kind);
+  return {
+    sad: sizedDisplay,
+    raw,
+    compactSad,
+  };
+}
+
+function validateSadAgainstFieldDom(
+  ctor: typeof Serder & SerderStatic,
+  serder: Serder,
+): { fields: FieldDom; saids: SaidCodeMap; ked: SadMap } {
+  // This helper centralizes the generic field-domain checks used by both base
+  // `Serder` verification and the ACDC-specific override. Keeping it separate
+  // prevents the ACDC path from drifting on required/optional/order rules while
+  // still letting it customize SAID verification semantics afterward.
+  if (!serder.ked) {
+    throw new DeserializeError("Cannot verify Serder without decoded SAD.");
+  }
+
+  if (ctor.Protocol && serder.proto !== ctor.Protocol) {
+    throw new DeserializeError(`Required protocol=${ctor.Protocol}, got ${serder.proto}`);
+  }
+
+  const ked = serder.ked;
+  const fields = getFieldDom(ctor.Fields, serder.proto, serder.pvrsn, serder.ilk);
+  const currentKeys = Object.keys(ked);
+  const allowedKeys = Object.keys(fields.alls);
+  const extraKeys = currentKeys.filter((key) => !allowedKeys.includes(key));
+  if (extraKeys.length > 0 && (fields.strict ?? true)) {
+    throw new DeserializeError(`Unallowed extra field(s)=${extraKeys.join(",")}`);
+  }
+
+  const optional = new Set(Object.keys(fields.opts ?? {}));
+  const required = allowedKeys.filter((key) => !optional.has(key));
+  for (const label of required) {
+    if (!(label in ked)) {
+      throw new DeserializeError(`Missing required field=${label}`);
+    }
+  }
+
+  const orderWithoutExtras = currentKeys.filter((key) => allowedKeys.includes(key));
+  const expectedOrder = allowedKeys.filter((key) => key in ked);
+  if (orderWithoutExtras.join("|") !== expectedOrder.join("|")) {
+    throw new DeserializeError("Missing or out-of-order fields in SAD.");
+  }
+
+  for (const [label, alt] of Object.entries(fields.alts ?? {})) {
+    if (label in ked && alt in ked) {
+      throw new DeserializeError(
+        `Unallowed alternate fields '${label}' and '${alt}' both present.`,
+      );
+    }
+  }
+
+  const saids: SaidCodeMap = { ...(fields.saids ?? {}) };
+  for (const label of Object.keys(saids)) {
+    const code = coerceMatterCode(ked[label]);
+    if (code) {
+      saids[label] = code;
+    }
+  }
+
+  return { fields, saids, ked };
+}
+
 function normalizeSadWithFieldDom(
   sad: SadMap | undefined,
   fields: FieldDom,
 ): SadMap {
   const working = shallowCloneSad(sad ?? {});
+  const optional = new Set(Object.keys(fields.opts ?? {}));
   for (const [label, value] of Object.entries(fields.alls)) {
-    if (!(label in working)) {
+    if (!(label in working) && !optional.has(label)) {
       working[label] = cloneDefault(value);
     }
   }
@@ -852,11 +1055,17 @@ export class Serder implements CesrBody {
     });
 
     const actual = init.makify ?? false
-      ? Saider.saidifyFields(normalized, {
-        kind: resolved.kind,
-        saids: resolved.saids,
-        digest: Diger.digest,
-      })
+      ? resolved.proto === Protocols.acdc
+        ? computeAcdcSad(normalized, {
+          kind: resolved.kind,
+          saids: resolved.saids,
+          compactify: init.compactify ?? false,
+        })
+        : Saider.saidifyFields(normalized, {
+          kind: resolved.kind,
+          saids: resolved.saids,
+          digest: Diger.digest,
+        })
       : (() => {
         const existing = shallowCloneSad(normalized);
         const { raw } = sizeify(existing, resolved.kind);
@@ -942,54 +1151,8 @@ export class Serder implements CesrBody {
   }
 
   protected _verify(): void {
-    if (!this._ked) {
-      throw new DeserializeError("Cannot verify Serder without decoded SAD.");
-    }
-
     const ctor = this.constructor as typeof Serder & SerderStatic;
-    if (ctor.Protocol && this.proto !== ctor.Protocol) {
-      throw new DeserializeError(`Required protocol=${ctor.Protocol}, got ${this.proto}`);
-    }
-
-    const ked = this._ked;
-    const fields = getFieldDom(ctor.Fields, this.proto, this.pvrsn, this.ilk);
-    const currentKeys = Object.keys(ked);
-    const allowedKeys = Object.keys(fields.alls);
-    const extraKeys = currentKeys.filter((key) => !allowedKeys.includes(key));
-    if (extraKeys.length > 0 && (fields.strict ?? true)) {
-      throw new DeserializeError(`Unallowed extra field(s)=${extraKeys.join(",")}`);
-    }
-
-    const optional = new Set(Object.keys(fields.opts ?? {}));
-    const required = allowedKeys.filter((key) => !optional.has(key));
-    for (const label of required) {
-      if (!(label in ked)) {
-        throw new DeserializeError(`Missing required field=${label}`);
-      }
-    }
-
-    const orderWithoutExtras = currentKeys.filter((key) => allowedKeys.includes(key));
-    const expectedOrder = allowedKeys.filter((key) => key in ked);
-    if (orderWithoutExtras.join("|") !== expectedOrder.join("|")) {
-      throw new DeserializeError("Missing or out-of-order fields in SAD.");
-    }
-
-    for (const [label, alt] of Object.entries(fields.alts ?? {})) {
-      if (label in ked && alt in ked) {
-        throw new DeserializeError(
-          `Unallowed alternate fields '${label}' and '${alt}' both present.`,
-        );
-      }
-    }
-
-    const saids: SaidCodeMap = { ...(fields.saids ?? {}) };
-    for (const label of Object.keys(saids)) {
-      const code = coerceMatterCode(ked[label]);
-      if (code) {
-        saids[label] = code;
-      }
-    }
-
+    const { saids, ked } = validateSadAgainstFieldDom(ctor, this);
     const working = shallowCloneSad(ked);
     const actual = Saider.saidifyFields(working, {
       kind: this.kind,
@@ -1278,7 +1441,23 @@ export class SerderACDC extends Serder {
   }
 
   protected override _verify(): void {
-    super._verify();
+    const ctor = this.constructor as typeof Serder & SerderStatic;
+    const { ked, saids } = validateSadAgainstFieldDom(ctor, this);
+    const actual = computeAcdcSad(shallowCloneSad(ked), {
+      kind: this.kind,
+      saids,
+      compactify: false,
+    });
+
+    if (typeof ked.d !== "string" || actual.sad.d !== ked.d) {
+      throw new DeserializeError("Invalid compact-form ACDC SAID.");
+    }
+
+    const serialized = shallowCloneSad(ked);
+    const { raw } = sizeify(serialized, this.kind);
+    if (t(raw) !== t(this.raw)) {
+      throw new DeserializeError("Invalid ACDC raw serialization against SAD.");
+    }
 
     if (this.ilk === null || ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)) {
       const issuer = this.issuer;

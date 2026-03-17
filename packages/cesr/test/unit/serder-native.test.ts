@@ -7,6 +7,8 @@ import {
 } from "../../src/serder/native.ts";
 import { SerderKERI } from "../../src/serder/serder.ts";
 import { Serdery } from "../../src/serder/serdery.ts";
+import { versify } from "../../src/serder/smell.ts";
+import { Vrsn_2_0 } from "../../src/tables/versions.ts";
 import {
   breakdownNativeKeriIcpFixture,
   expectedNativeKeriIcpSad,
@@ -16,6 +18,10 @@ import {
   nativeKeriIcpSmellage,
   renderNativeSegmentSummary,
 } from "../fixtures/native-serder-test-helpers.ts";
+
+// This file is the maintainers' native-serder walkthrough. The tests are meant
+// to read like worked examples of the native story:
+// KERI fixed-body basics first, then the ACDC map/fixed section lane.
 
 Deno.test("native helper: KERI v2 icp fixture is broken down into readable top-level CESR segments", () => {
   // This is the "teach me the wire shape" test. The helper should expose the
@@ -128,4 +134,69 @@ Deno.test("Serdery: native fixture reaps to the same SerderKERI in txt and qb2 d
   assertEquals(bny.ked, expectedNativeKeriIcpSad());
   assertEquals(txt.raw, new TextEncoder().encode(nativeKeriIcpFixtureQb64()));
   assertEquals(bny.raw, new TextEncoder().encode(nativeKeriIcpFixtureQb64()));
+});
+
+Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC map-body `acm` round-trips compactable section fields", () => {
+  // This is the ACDC map-body teaching test: top-level `acm` stays map-shaped,
+  // while section fields like `s` and `a` may themselves be compactable nested
+  // blocks carried as CESR-native map groups.
+  const sad = {
+    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    t: "acm",
+    d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+    u: "",
+    i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+    rd: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+    s: { d: "", title: "schema" },
+    a: { d: "", role: "holder" },
+    e: { d: "", link: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN" },
+    r: { d: "", usage: "test" },
+  };
+
+  const raw = dumpCesrNativeSad(sad);
+  const parsed = parseCesrNativeKed(raw, {
+    proto: "ACDC",
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "CESR",
+    size: raw.length,
+  });
+
+  assertEquals(parsed.ilk, "acm");
+  assertEquals(parsed.ked, {
+    ...sad,
+    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+  });
+});
+
+Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC fixed-body `act` round-trips compactable section fields", () => {
+  // Fixed-body ACDC ilks put the ilk in a fixed slot after the verser, then
+  // serialize the remaining fields in protocol order without explicit labels.
+  const sad = {
+    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    t: "act",
+    d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+    u: "",
+    i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+    rd: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+    s: { d: "", title: "schema" },
+    a: { d: "", role: "holder" },
+    e: { d: "", link: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN" },
+    r: { d: "", usage: "test" },
+  };
+
+  const raw = dumpCesrNativeSad(sad);
+  const parsed = parseCesrNativeKed(raw, {
+    proto: "ACDC",
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "CESR",
+    size: raw.length,
+  });
+
+  assertEquals(parsed.ilk, "act");
+  assertEquals(parsed.ked, {
+    ...sad,
+    v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+  });
 });

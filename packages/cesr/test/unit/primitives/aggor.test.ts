@@ -9,7 +9,12 @@ import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 const V2 = { major: 2, minor: 0 } as const;
 
+// These tests teach the two personalities of `Aggor`:
+// - parser-facing compatibility for generic list/map counter families
+// - real aggregate-list semantics (`agid`, disclosure, verification)
+
 Deno.test("aggor: parses list aggregate groups", () => {
+  // Minimal parser-compat inhale example for a plain generic list group.
   const payload = "ABCDWXYZ";
   const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
 
@@ -33,6 +38,8 @@ Deno.test("aggor: parses KERIpy empty-list aggregate vector", () => {
 });
 
 Deno.test("aggor: parses map aggregate groups", () => {
+  // TS still preserves map-family aggor compatibility for parser projections,
+  // even though the richer semantic lane is the list/aggregate path.
   const payload = `0J_i${token("B")}`;
   const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
 
@@ -43,6 +50,8 @@ Deno.test("aggor: parses map aggregate groups", () => {
 });
 
 Deno.test("aggor: qb2 parsing keeps KERIpy-derived payload stable", () => {
+  // Like the rest of native CESR, qb2 should canonicalize back to the same qb64
+  // text-domain shape a maintainer can actually read and reason about.
   const payload = KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload;
   const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
   const qb2 = codeB64ToB2(listBody);
@@ -54,9 +63,37 @@ Deno.test("aggor: qb2 parsing keeps KERIpy-derived payload stable", () => {
 });
 
 Deno.test("aggor: rejects non-aggregate counter groups", () => {
+  // Counter-family routing matters: random attachment groups must not sneak
+  // into the aggregate primitive just because they are counted.
   const bad = counterV2(CtrDexV2.ControllerIdxSigs, 1);
   assertThrows(
     () => parseAggor(txt(bad), V2, "txt"),
     UnknownCodeError,
   );
+});
+
+Deno.test("aggor: makify/disclose/verifyDisclosure explain aggregate-list semantics", () => {
+  // Aggregate lists are the list-form sibling of compacted maps: slot zero is
+  // the commitment (`agid`), and later map elements may be disclosed either as
+  // their compact SAID or as the full map body.
+  const aggor = new Aggor({
+    ael: [
+      "",
+      {
+        d: "",
+        role: "issuer",
+      },
+      "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+    ],
+    makify: true,
+    verify: true,
+  });
+
+  assertEquals(typeof aggor.agid, "string");
+  assertEquals(Array.isArray(aggor.ael), true);
+
+  const [disclosed] = aggor.disclose([1]);
+  assertEquals(typeof disclosed[0], "string");
+  assertEquals(typeof disclosed[1], "object");
+  assertEquals(Aggor.verifyDisclosure(disclosed), true);
 });

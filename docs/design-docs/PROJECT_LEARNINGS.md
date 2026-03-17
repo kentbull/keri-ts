@@ -218,23 +218,32 @@ This keeps context focused and avoids long-thread drift.
     individually addressable scenarios so one slow parity lane does not dominate
     the whole PR gate.
 44. `keri-ts` now has a real non-native `Serder` construction/verification seam
+45. CESR-native parity work is no longer just a parser concern: `Mapper`,
+    `Compactor`, and `Aggor` are now evolving into semantic CESR-native
+    primitives, and ACDC top-level `Serder` verification depends on their
+    compact/disclose behavior rather than generic `saidifyFields` alone.
+46. ACDC parity has a special verification rule that must stay explicit in TS:
+    expanded top-level ACDC bodies may carry a `d` derived from the most
+    compact variant, so `SerderACDC` must verify compact-form SAID semantics
+    separately from "does the visible raw reserialize from the visible SAD?"
+    semantics.
     for JSON/CBOR/MGPK KERI and ACDC bodies, and local habitat inception now
     consumes a `SerderKERI` instead of raw saidify helper output; however,
     CESR-native serder parity and deeper ACDC compactification behavior remain
     open, so maintainers should not treat this milestone as full
     `serdering.py` closure yet.
-45. CESR-native parser hydration is now a stricter KERIpy-parity contract at
+47. CESR-native parser hydration is now a stricter KERIpy-parity contract at
     the top-level frame seam: once the parser classifies a native
     `FixBodyGroup`/`MapBodyGroup` as a message body, success means full
     `SerderKERI`/`SerderACDC` hydration and anything less should be a parse
     error. Generic native map/list corpora still belong to lower-level
     mapper/aggor/compactor surfaces, not metadata-only top-level frame bodies.
-46. KERI native top-level message bodies are fixed-field only; even a
+48. KERI native top-level message bodies are fixed-field only; even a
     message-shaped native `MapBodyGroup` carrying `v`/`t`/`d`/`i` and the rest
     of the expected KERI labels must be rejected by the shared native
     serder/reaper layer. Native map-body top-level semantics belong to ACDC and
     lower-level mapping surfaces, not KERI messages.
-47. Digest-code ownership belongs at the CESR primitive layer, not in app code
+49. Digest-code ownership belongs at the CESR primitive layer, not in app code
     or serder-local helpers: `DigDex` stays the canonical codex namespace, but
     `Diger` should own `code -> digest implementation` dispatch so `Saider`,
     `Serder`, and habitat flows can consume digest behavior without carrying

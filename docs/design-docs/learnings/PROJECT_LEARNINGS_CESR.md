@@ -51,6 +51,14 @@ Persistent CESR parser memory for `keri-ts`.
     primitives as well: `Dater`, `Seqner`, `Ilker`, `Verser`, `Noncer`, and
     `Traitor` should validate through canonical parity codexes or helpers
     derived from them, not raw code-name table lookups or local magic strings.
+16. CESR-native parity is no longer "KERI fixed-body only": `Mapper`,
+    `Compactor`, and `Aggor` now matter as first-class semantic primitives for
+    ACDC-native map/list sections, and future native parity work should extend
+    those primitives instead of rebuilding section semantics ad hoc inside
+    parser or serder helpers.
+17. ACDC Serder verification is explicitly two-track: the visible raw body must
+    still round-trip from the visible SAD, but the top-level `d` for compactable
+    ACDC ilks must be checked against the most compact variant of that SAD.
 
 ## Key Docs
 
@@ -238,6 +246,31 @@ Persistent CESR parser memory for `keri-ts`.
   ilks, full ACDC native semantics, and ACDC compactification remain open.
 
 ### 2026-03-17 - Top-Level Native Message Contract Tightened To Match KERIpy
+
+### 2026-03-17 - ACDC Native And Compactification Lane Landed
+
+- Promoted `Mapper` from a syntax-only parse artifact into a semantic native map
+  primitive with real `mad`/`raw`/`qb64`/`qb2` behavior, while keeping the
+  older syntax/projection helpers as compatibility wrappers for parser-oriented
+  tests.
+- Promoted `Compactor` and `Aggor` from parse wrappers into maintainer-readable
+  semantic primitives:
+  `Compactor` now exposes `trace()`, `compact()`, `expand()`, `leaves`, and
+  `partials`, while `Aggor` now exposes `ael`, `agid`, `disclose()`, and
+  `verifyDisclosure()`.
+- Added ACDC CESR-native top-level body-shape rules and section-field handling
+  in the shared native serder layer:
+  map-body `acm`/`ace`/`<none>` and fixed-body `act`/`acg`/`sch`/`att`/`agg`/
+  `edg`/`rul`/`rip`/`bup`/`upd` now decode/encode through field-family helpers
+  instead of generic fallback parsing.
+- Added the first real ACDC compactification-aware `SerderACDC` makify/verify
+  behavior: expanded ACDC bodies can now preserve expanded section maps while
+  still computing/verifying top-level `d` from the most compact variant, and
+  `compactify=true` can persist compact section references in the visible SAD.
+- Locked the maintainer rule that CESR-native tests should stay pedagogical:
+  new coverage now includes example-driven `Compactor`/`Aggor` lifecycle tests,
+  ACDC-native fixed/map round trips, and explicit expanded-vs-compact ACDC
+  serder tests instead of relying only on opaque fixture comparisons.
 
 - Removed the parser's metadata-only success fallback for top-level native
   `FixBodyGroup` / `MapBodyGroup` frames. Once the frame parser classifies a
