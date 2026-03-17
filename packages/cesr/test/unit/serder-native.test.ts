@@ -9,6 +9,7 @@ import { SerderKERI } from "../../src/serder/serder.ts";
 import { Serdery } from "../../src/serder/serdery.ts";
 import { versify } from "../../src/serder/smell.ts";
 import { Vrsn_2_0 } from "../../src/tables/versions.ts";
+import { KERIPY_MATTER_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import {
   breakdownNativeKeriIcpFixture,
   expectedNativeKeriIcpSad,
@@ -167,6 +168,83 @@ Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC map-body `acm` round-tri
     ...sad,
     v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
   });
+});
+
+Deno.test("parseCesrNativeKed + dumpCesrNativeSad: KERI v2 qry round-trips route and mapper fields through the native matrix", () => {
+  // This is the broader KERI matrix test: not another ICP-shaped body, but a
+  // route/query message with datetime, path, return-route, and native mapper
+  // payload fields.
+  const sad = {
+    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    t: "qry",
+    d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+    i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+    dt: "2026-03-17T12:34:56.000000+00:00",
+    r: "ksn",
+    rr: "reply",
+    q: { pre: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx", sn: "0" },
+  };
+
+  const raw = dumpCesrNativeSad(sad);
+  const parsed = parseCesrNativeKed(raw, {
+    proto: "KERI",
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "CESR",
+    size: raw.length,
+  });
+
+  assertEquals(parsed.ilk, "qry");
+  assertEquals(parsed.ked, {
+    ...sad,
+    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+  });
+});
+
+Deno.test("parseCesrNativeKed + dumpCesrNativeSad: KERI v2 xip round-trips nonce, route, and mapper fields", () => {
+  // This is the nonce-bearing KERI native case. It proves the matrix handles
+  // KERI `u` as a qualified nonce token, not the ACDC empty-or-value rule.
+  const sad = {
+    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+    t: "xip",
+    d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+    u: KERIPY_MATTER_VECTORS.noncerSalt128,
+    i: "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx",
+    ri: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+    dt: "2026-03-17T12:34:56.000000+00:00",
+    r: "ipex",
+    q: { role: "issuer" },
+    a: { d: "", action: "grant" },
+  };
+
+  const raw = dumpCesrNativeSad(sad);
+  const parsed = parseCesrNativeKed(raw, {
+    proto: "KERI",
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "CESR",
+    size: raw.length,
+  });
+
+  assertEquals(parsed.ilk, "xip");
+  assertEquals(parsed.ked, {
+    ...sad,
+    v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: raw.length }),
+  });
+});
+
+Deno.test("dumpCesrNativeSad: non-native-only KERI ilks are rejected by the native support matrix", () => {
+  // Guardrail test: the native matrix should reject KERI ilks we have not
+  // declared native-compatible instead of best-effort serializing them.
+  assertThrows(
+    () =>
+      dumpCesrNativeSad({
+        v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "CESR", size: 0 }),
+        t: "vcp",
+        d: "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
+      }),
+    DeserializeError,
+  );
 });
 
 Deno.test("parseCesrNativeKed + dumpCesrNativeSad: ACDC fixed-body `act` round-trips compactable section fields", () => {

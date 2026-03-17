@@ -4,10 +4,12 @@ import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
+import { Bexter } from "../primitives/bexter.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import {
   DigDex,
   DIGEST_CODES,
+  LabelDex,
   NON_DIGEST_PREFIX_CODES,
   NON_TRANSFERABLE_PREFIX_CODES,
   PREFIX_CODES,
@@ -16,7 +18,7 @@ import { Compactor } from "../primitives/compactor.ts";
 import { Diger } from "../primitives/diger.ts";
 import { Matter } from "../primitives/matter.ts";
 import { isMediarCode, Mediar } from "../primitives/mediar.ts";
-import { Prefixer } from "../primitives/prefixer.ts";
+import { NumberPrimitive } from "../primitives/number.ts";
 import {
   type CounterGroupLike,
   type GroupEntry,
@@ -25,6 +27,7 @@ import {
 } from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
+import { Tholder } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -62,6 +65,69 @@ function cloneDefault<T>(value: T): T {
     ) as T;
   }
   return value;
+}
+
+const NUMBER_CAPACITIES = [
+  { code: "M", rawSize: 2 },
+  { code: "0H", rawSize: 4 },
+  { code: "R", rawSize: 5 },
+  { code: "N", rawSize: 8 },
+  { code: "S", rawSize: 11 },
+  { code: "T", rawSize: 14 },
+  { code: "0A", rawSize: 16 },
+  { code: "U", rawSize: 17 },
+];
+
+function bigintToBytes(value: bigint): Uint8Array {
+  if (value < 0n) {
+    throw new SerializeError(`Negative CESR number=${value}`);
+  }
+  if (value === 0n) {
+    return new Uint8Array([0]);
+  }
+  const bytes: number[] = [];
+  let working = value;
+  while (working > 0n) {
+    bytes.unshift(Number(working & 0xffn));
+    working >>= 8n;
+  }
+  return new Uint8Array(bytes);
+}
+
+function makeNumberPrimitive(value: string | null): NumberPrimitive | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const bigint = BigInt(`0x${value || "0"}`);
+  const raw = bigintToBytes(bigint);
+  const entry = NUMBER_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
+  if (!entry) {
+    throw new SerializeError(`Unsupported number width=${raw.length}`);
+  }
+  const padded = new Uint8Array(entry.rawSize);
+  padded.set(raw, entry.rawSize - raw.length);
+  return new NumberPrimitive({ code: entry.code, raw: padded });
+}
+
+/** Convert semantic `sith` text back into a `Tholder` wrapper when possible. */
+function makeThreshold(value: string | null): Tholder | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  if (/^[0-9a-f]+$/i.test(value)) {
+    const number = makeNumberPrimitive(value);
+    return number ? new Tholder(number) : null;
+  }
+  if (/^[A-Za-z0-9_-]+$/.test(value)) {
+    const rem = value.length % 4;
+    const code = rem === 0
+      ? LabelDex.StrB64_L0
+      : rem === 1
+      ? LabelDex.StrB64_L1
+      : LabelDex.StrB64_L2;
+    return new Tholder({ code, raw: Bexter.rawify(value) });
+  }
+  return null;
 }
 
 function normalizeDecodedMap(
@@ -649,6 +715,45 @@ function isAcdcCompactiveIlk(ilk: string | null): boolean {
   return ilk === null || ["acm", "ace", "act", "acg"].includes(ilk);
 }
 
+/** True when the message is an ACDC section-message that must verify embedded section ids. */
+function isAcdcPartialSectionIlk(ilk: string | null): boolean {
+  return ["sch", "att", "agg", "edg", "rul"].includes(ilk ?? "");
+}
+
+/** Map ACDC section labels onto the saidive policy KERIpy applies to that section family. */
+function acdcSectionConfig(
+  label: string,
+): { strict: boolean; saids: SaidCodeMap } | null {
+  if (label === "s") {
+    return {
+      strict: false,
+      saids: { $id: DigDex.Blake3_256 },
+    };
+  }
+  if (label === "a" || label === "e" || label === "r") {
+    return {
+      strict: true,
+      saids: { d: DigDex.Blake3_256 },
+    };
+  }
+  return null;
+}
+
+/** Ensure the section carries the saidive placeholder label KERIpy computes over. */
+function withAcdcSectionPlaceholder(
+  label: string,
+  value: SadMap,
+): SadMap {
+  const copy = shallowCloneSad(value);
+  if (label === "s" && !("$id" in copy)) {
+    copy.$id = "";
+  }
+  if ((label === "a" || label === "e" || label === "r") && !("d" in copy)) {
+    copy.d = "";
+  }
+  return copy;
+}
+
 /**
  * Build the "display" and "compact" variants of one ACDC section field.
  *
@@ -667,16 +772,18 @@ function computeAcdcFieldVariants(
   kind: Kind,
   topLevelCompactable: boolean,
   compactify: boolean,
+  partialSection: boolean,
 ): { display: unknown; compact: unknown } {
-  if (
-    (label === "s" || label === "a" || label === "e" || label === "r")
-    && value && typeof value === "object" && !Array.isArray(value)
-  ) {
+  const sectionConfig = acdcSectionConfig(label);
+  if (sectionConfig && value && typeof value === "object" && !Array.isArray(value)) {
     const expanded = new Compactor({
-      mad: value as SadMap,
+      mad: withAcdcSectionPlaceholder(label, value as SadMap),
       kind,
       verify: false,
       saidive: true,
+      strict: sectionConfig.strict,
+      saids: sectionConfig.saids,
+      makify: true,
     });
     expanded.trace(true);
 
@@ -688,10 +795,13 @@ function computeAcdcFieldVariants(
     }
 
     const compacted = new Compactor({
-      mad: value as SadMap,
+      mad: withAcdcSectionPlaceholder(label, value as SadMap),
       kind,
       verify: false,
       saidive: true,
+      strict: sectionConfig.strict,
+      saids: sectionConfig.saids,
+      makify: true,
     });
     compacted.compact();
     return {
@@ -707,7 +817,7 @@ function computeAcdcFieldVariants(
       makify: true,
       verify: false,
     });
-    if (!topLevelCompactable) {
+    if (!topLevelCompactable || partialSection) {
       return {
         display: aggor.ael,
         compact: aggor.ael,
@@ -743,7 +853,9 @@ function computeAcdcSad(
   // preserving an expanded caller-visible sad".
   const displaySad = shallowCloneSad(sad);
   const compactSad = shallowCloneSad(sad);
-  const topLevelCompactable = isAcdcCompactiveIlk(typeof sad.t === "string" ? sad.t : null);
+  const ilk = typeof sad.t === "string" ? sad.t : null;
+  const topLevelCompactable = isAcdcCompactiveIlk(ilk);
+  const partialSection = isAcdcPartialSectionIlk(ilk);
 
   for (const label of ["s", "a", "A", "e", "r"]) {
     if (!(label in sad)) {
@@ -755,6 +867,7 @@ function computeAcdcSad(
       kind,
       topLevelCompactable,
       compactify,
+      partialSection,
     );
     displaySad[label] = variants.display;
     compactSad[label] = variants.compact;
@@ -1333,8 +1446,12 @@ export class SerderKERI extends Serder {
     return this.pre ? b(this.pre) : null;
   }
 
+  get sner(): NumberPrimitive | null {
+    return makeNumberPrimitive(this.snh);
+  }
+
   get sn(): number | null {
-    return this.ked && this.ked.s !== undefined ? Number.parseInt(String(this.ked.s), 16) : null;
+    return this.sner ? Number(this.sner.num) : null;
   }
 
   get snh(): string | null {
@@ -1349,6 +1466,10 @@ export class SerderKERI extends Serder {
     return Array.isArray(this.ked?.c)
       ? this.ked.c.filter((value): value is string => typeof value === "string")
       : [];
+  }
+
+  get tholder(): Tholder | null {
+    return makeThreshold(typeof this.ked?.kt === "string" ? this.ked.kt : null);
   }
 
   get keys(): string[] {
@@ -1367,12 +1488,22 @@ export class SerderKERI extends Serder {
       : [];
   }
 
+  get ntholder(): Tholder | null {
+    return makeThreshold(typeof this.ked?.nt === "string" ? this.ked.nt : null);
+  }
+
   get ndigers(): Diger[] {
     return this.ndigs.map((dig) => new Diger({ qb64: dig }));
   }
 
+  get bner(): NumberPrimitive | null {
+    return makeNumberPrimitive(
+      this.ked && typeof this.ked.bt === "string" ? this.ked.bt : null,
+    );
+  }
+
   get bn(): number | null {
-    return this.ked && this.ked.bt !== undefined ? Number.parseInt(String(this.ked.bt), 16) : null;
+    return this.bner ? Number(this.bner.num) : null;
   }
 
   get backs(): string[] {
@@ -1381,8 +1512,8 @@ export class SerderKERI extends Serder {
       : [];
   }
 
-  get berfers(): Prefixer[] {
-    return this.backs.map((back) => new Prefixer({ qb64: back }));
+  get berfers(): Verfer[] {
+    return this.backs.map((back) => new Verfer({ qb64: back }));
   }
 
   get prior(): string | null {
@@ -1422,6 +1553,9 @@ export class SerderKERI extends Serder {
   }
 
   get nonce(): string | null {
+    if (this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === "vcp") {
+      return this.ked && typeof this.ked.n === "string" ? this.ked.n : null;
+    }
     return this.uuid;
   }
 }

@@ -248,6 +248,20 @@ This keeps context focused and avoids long-thread drift.
     `Diger` should own `code -> digest implementation` dispatch so `Saider`,
     `Serder`, and habitat flows can consume digest behavior without carrying
     private hash switches.
+50. CESR-native serder parity is now organized around one protocol/version/ilk
+    support matrix in `native.ts` instead of a split "hard-coded KERI plus
+    separate ACDC layout table" design; parser hydration, `Serdery`, and
+    native inhale/exhale should all extend that one matrix rather than adding
+    sidecar native branching.
+51. ACDC section parity depends on two different identifier rules that must stay
+    explicit in TS: top-level compactive ilks hash over the most compact
+    section form, while partial section-message ilks keep the visible section
+    expanded but still require embedded `$id`/`d`/`agid` values to be computed
+    and verified.
+52. Long-tail KERI serder parity now includes wrapper accessors, not just raw
+    scalar projections: `sner`, `tholder`, `ntholder`, `bner`, and KERIpy-like
+    `berfers` typing are part of the subtype contract and should be regression
+    tested when serder projection behavior changes.
 
 ## New Thread Kickoff Template
 

@@ -59,6 +59,18 @@ Persistent CESR parser memory for `keri-ts`.
 17. ACDC Serder verification is explicitly two-track: the visible raw body must
     still round-trip from the visible SAD, but the top-level `d` for compactable
     ACDC ilks must be checked against the most compact variant of that SAD.
+18. Native serder parity is now organized around one shared support matrix in
+    `packages/cesr/src/serder/native.ts`, keyed by protocol/version/ilk and
+    field-family semantics; extending native support should modify that matrix
+    and its field-family helpers instead of adding new top-level `if/switch`
+    branches.
+19. The native matrix now covers a broader KERI lane than the original
+    ICP-shaped helper, including route/query/noncer-style KERI ilks such as
+    `qry` and `xip`, while still rejecting non-native-only KERI ilks at the
+    matrix boundary.
+20. ACDC section parity now requires section-label-aware saidive normalization:
+    schema sections compute `$id`, ordinary saidive sections compute `d`, and
+    aggregate sections compute/verify `agid` through `Aggor`.
 
 ## Key Docs
 
@@ -258,6 +270,25 @@ Persistent CESR parser memory for `keri-ts`.
   `Compactor` now exposes `trace()`, `compact()`, `expand()`, `leaves`, and
   `partials`, while `Aggor` now exposes `ael`, `agid`, `disclose()`, and
   `verifyDisclosure()`.
+
+### 2026-03-17 - Native Support Matrix And Deeper Section Parity Landed
+
+- Replaced the split native-body logic in `packages/cesr/src/serder/native.ts`
+  with one protocol/version/ilk support matrix that now drives both native
+  inhale and exhale.
+- Extended the KERI native lane beyond the earlier ICP-only shape so route/map
+  and nonce-bearing ilks such as `qry` and `xip` now round-trip through the
+  serder layer.
+- Corrected ACDC native field-family semantics that were still drifting from
+  KERIpy, including numeric `n` fields and the difference between qualified
+  nonce tokens and empty-or-value nonce semantics.
+- Deepened `SerderACDC` compactification so schema sections compute `$id`,
+  section messages keep expanded visible sections while still verifying their
+  embedded identifiers, and compactable top-level ACDCs still hash over the
+  most compact section form.
+- Added matrix-focused native tests plus accessor/partial-section tests so the
+  new parity surface is documented by readable examples instead of only by the
+  implementation.
 - Added ACDC CESR-native top-level body-shape rules and section-field handling
   in the shared native serder layer:
   map-body `acm`/`ace`/`<none>` and fixed-body `act`/`acg`/`sch`/`att`/`agg`/

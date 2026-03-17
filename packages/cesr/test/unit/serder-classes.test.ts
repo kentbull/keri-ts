@@ -201,6 +201,45 @@ Deno.test("serder: SerderKERI preserves non-digestive i code from existing prefi
   assertEquals(serder.verify(), true);
 });
 
+Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backer wrapper accessors", () => {
+  // This is the accessor parity test for the KERI subtype: the semantic hex
+  // strings stay available, but the wrapper projections should also exist for
+  // maintainers who want the same object-level surface KERIpy exposes.
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+  const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";
+  const backer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+
+  const serder = new SerderKERI({
+    sad: {
+      v: versify({ proto: "KERI", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "JSON", size: 0 }),
+      t: "icp",
+      d: "",
+      i: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+      s: "a",
+      kt: "1",
+      k: [key],
+      nt: "1",
+      n: [nxt],
+      bt: "1",
+      b: [backer],
+      c: [],
+      a: [],
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+
+  assertEquals(serder.sner?.numh, "a");
+  assertEquals(serder.sn, 10);
+  assertEquals(serder.tholder?.sith, "1");
+  assertEquals(serder.ntholder?.sith, "1");
+  assertEquals(serder.bner?.numh, "1");
+  assertEquals(serder.bn, 1);
+  assertEquals(serder.berfers.map((verfer) => verfer.qb64), [backer]);
+});
+
 Deno.test("serder: SerderKERI rejects invalid non-transferable inception state", () => {
   const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
 
@@ -305,4 +344,25 @@ Deno.test("serder: SerderACDC rejects expanded-section tampering when top-level 
     () => new SerderACDC({ raw, verify: true }),
     DeserializeError,
   );
+});
+
+Deno.test("serder: SerderACDC partial schema sections compute and verify $id while leaving the visible section expanded", () => {
+  // Partial section ilks are not top-level compactable, but they still have
+  // embedded section identifier rules. For `sch`, that identifier is `$id`.
+  const serder = new SerderACDC({
+    sad: {
+      v: versify({ proto: "ACDC", pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0, kind: "JSON", size: 0 }),
+      t: "sch",
+      d: "",
+      s: { title: "schema" },
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+
+  assertEquals(serder.verify(), true);
+  assertEquals(typeof serder.schema, "object");
+  assertEquals(typeof (serder.schema as Record<string, unknown>).$id, "string");
 });
