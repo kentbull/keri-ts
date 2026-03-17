@@ -11,6 +11,8 @@
     "**/*.{ts,tsx,js,jsx,mjs,cjs,json,md}"
   ],
   "excludes": [
+    "**/.deno-cache",
+    "**/.deno-cache/**",
     "**/node_modules",
     "**/npm",
     "**/dist",
