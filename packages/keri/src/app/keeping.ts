@@ -2,8 +2,8 @@ import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import {
   Cigar,
-  Decrypter,
   decodeB64,
+  Decrypter,
   Diger,
   Encrypter,
   hydrateMatter,
@@ -20,8 +20,8 @@ import {
 import { b } from "../../../cesr/mod.ts";
 import {
   decryptSaltQb64,
-  ensureKeeperCryptoReady,
   encryptSaltQb64,
+  ensureKeeperCryptoReady,
   makeDecrypterFromSeed,
   makeEncrypterFromAeid,
   seedMatchesAeid,

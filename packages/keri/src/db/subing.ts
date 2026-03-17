@@ -14,10 +14,7 @@ import {
   smell,
   t,
 } from "../../../cesr/mod.ts";
-import {
-  decryptSigner,
-  encryptSigner,
-} from "../core/keeper-crypto.ts";
+import { decryptSigner, encryptSigner } from "../core/keeper-crypto.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -1167,7 +1164,10 @@ export class CryptSignerSuber extends SignerSuber {
         this._tokey(keys, topive),
       )
     ) {
-      yield [this._tokeys(key), decrypter ? decryptSigner(val, decrypter) : signerFromStored(this._tokeys(key), val)];
+      yield [
+        this._tokeys(key),
+        decrypter ? decryptSigner(val, decrypter) : signerFromStored(this._tokeys(key), val),
+      ];
     }
   }
 }

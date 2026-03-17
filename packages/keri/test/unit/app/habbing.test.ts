@@ -1,9 +1,5 @@
 import { run } from "effection";
-import {
-  assertEquals,
-  assertInstanceOf,
-  assertRejects,
-} from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { Cigar, SerderKERI, Siger, smell } from "../../../../cesr/mod.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";

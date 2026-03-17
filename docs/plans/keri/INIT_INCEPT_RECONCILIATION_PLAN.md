@@ -19,6 +19,8 @@ This is Phase 2 of a 4-phase project.
 3. Complete LMDB layer feature parity first; only then implement multi-provider
    storage abstraction (IndexedDB/SQLite/etc), with implementation of
    abstraction delayed until LMDB parity closure.
+4. Keep storage-facing semantics isolated while doing LMDB-first work so later
+   provider support is an adapter exercise, not a behavioral rewrite.
 
 ## Non-Negotiable Design Requirements
 
@@ -33,6 +35,10 @@ This is Phase 2 of a 4-phase project.
 4. Abstraction timing rule:
    - Database provider abstraction design can be specified now, but code-level
      implementation starts only after LMDB parity closure.
+5. Storage-semantics isolation rule:
+   - Even before provider abstraction exists, app and keeper code should avoid
+     depending directly on LMDB-specific ordering, dupsort quirks, or raw-handle
+     assumptions beyond the DB seam.
 
 ## Scope
 
@@ -56,6 +62,7 @@ Out of scope for immediate completion:
 - Witness/delegation breadth closure.
 - Multisig/ACDC/IPEX breadth closure.
 - Full alternative-provider runtime implementation before LMDB parity closure.
+- IndexedDB/mobile-web storage implementation before 1.0 / LMDB parity closure.
 
 ## DB Planning Artifact
 
@@ -87,6 +94,9 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
 5. The DB layer bootstrap path now runs through typed `Suber` / `Komer`
    wrappers with broad `Baser` / `Keeper` named-subdb binding, but escrow
    infrastructure and row-by-row parity closure are still open.
+6. Browser/mobile storage remains deferred until after 1.0, but the codebase
+   should keep storage-facing semantics isolated now so later IndexedDB support
+   does not become a hidden rewrite.
 
 ## Hard Gates
 

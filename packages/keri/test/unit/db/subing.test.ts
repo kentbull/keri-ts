@@ -11,10 +11,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
-import {
-  makeDecrypterFromSeed,
-  makeEncrypterFromAeid,
-} from "../../../src/core/keeper-crypto.ts";
+import { makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
   CesrIoSetSuber,

@@ -1,9 +1,5 @@
 import { run } from "effection";
-import {
-  assertEquals,
-  assertInstanceOf,
-  assertThrows,
-} from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { Cigar, Diger, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
 import { encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
@@ -168,10 +164,11 @@ Deno.test("app/keeping - encrypted manager persists sealed secrets and reopens w
     });
     try {
       assertThrows(
-        () => new Manager({
-          ks: keeper,
-          seed: branToSeedAeid("WrongPasscodeSecretAB").seed,
-        }),
+        () =>
+          new Manager({
+            ks: keeper,
+            seed: branToSeedAeid("WrongPasscodeSecretAB").seed,
+          }),
         Error,
         "Last seed missing or provided last seed not associated",
       );

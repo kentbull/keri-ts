@@ -1,12 +1,5 @@
 import sodium from "npm:libsodium-wrappers@0.8.2";
-import {
-  Cipher,
-  Decrypter,
-  Encrypter,
-  Salter,
-  Signer,
-  Verfer,
-} from "../../../cesr/mod.ts";
+import { Cipher, Decrypter, Encrypter, Salter, Signer, Verfer } from "../../../cesr/mod.ts";
 
 /**
  * KERI-local sodium bridge for Gate D keeper encryption semantics.
