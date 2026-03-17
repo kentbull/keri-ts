@@ -198,6 +198,10 @@ This keeps context focused and avoids long-thread drift.
     preserving LMDB-js data-format v1 semantics as a CI/runtime contract; the
     KERI workflows should export `LMDB_DATA_V1=true` and rebuild/cache the
     native addon accordingly instead of assuming runner defaults are compatible.
+40. The LMDB-js v1-compat rebuild path must avoid `npm rebuild ... --build-from-source`
+    on the published package because that path invokes a Rollup-based JS rebuild
+    step the CI runner does not provide; rebuilding only the native addon via
+    `node-gyp` is the correct contract for CI.
 
 ## New Thread Kickoff Template
 
