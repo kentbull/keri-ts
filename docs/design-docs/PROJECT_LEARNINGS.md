@@ -295,6 +295,23 @@ This keeps context focused and avoids long-thread drift.
     short invariant-focused helper docstrings are the preferred pattern, while
     obviously derived constant families such as codex-set blocks can stay
     documented at the grouped block level instead of one symbol at a time.
+59. Later KERIpy DB parity now depends on exposing normalized ordinal-wrapper
+    APIs before upper-layer event routing arrives: `Komer.cntAll()`, `Suber`
+    branch iteration via `getTopItemIter()`, and the non-legacy `OnSuber*` /
+    `OnIoDup*` / `OnIoSet*` method families should be the preferred forward
+    surface, while older `getOn*` names remain temporary compatibility aliases
+    until current local call sites migrate.
+60. Ordinal-wrapper call-site migration has to follow the real upstream graph,
+    not a blanket rename instinct: current KERIpy has genuinely moved some
+    paths such as `fels.` onto normalized `getAll*` iterators, while other
+    paths such as `kels.` still legitimately use `addOn()` /
+    `getOnLast()`-style calls. When the upstream refactor is uneven, mirroring
+    that unevenness is safer than "cleaning up" into invented parity.
+61. Maintainer-grade DB documentation now has to cover storage-family methods
+    and adapter seams, not just class boundaries. For `LMDBer`, `Baser`,
+    `Komer`, `Suber`, and the `On*`/`IoSet*`/`Dup*` families, method docs should
+    explain the storage model, hidden suffix/proem behavior, and whether a name
+    is the forward parity surface or a temporary compatibility alias.
 
 ## New Thread Kickoff Template
 

@@ -159,10 +159,12 @@ export class SuberBase<T = string> {
     return t(key).split(this.sep);
   }
 
+  /** Serialize one logical value into the raw LMDB byte representation. */
   protected _ser(val: T): Uint8Array {
     return b(String(val));
   }
 
+  /** Deserialize one raw LMDB byte value into the logical wrapper type. */
   protected _des(val: Uint8Array | null): T | null {
     return val === null ? null : t(val) as T;
   }
@@ -183,6 +185,7 @@ export class SuberBase<T = string> {
     return this.trim(keys, { topive });
   }
 
+  /** Count all physical entries under one logical branch prefix. */
   cntTop(
     keys: Keys = "",
     { topive = false }: { topive?: boolean } = {},
@@ -190,10 +193,12 @@ export class SuberBase<T = string> {
     return this.db.cntTop(this.sdb, this._tokey(keys, topive));
   }
 
+  /** Count every stored entry in this subdb family. */
   cntAll(): number {
     return this.db.cntAll(this.sdb);
   }
 
+  /** Alias matching KERIpy's mixed wrapper counting vocabulary. */
   cnt(): number {
     return this.cntAll();
   }
@@ -250,22 +255,27 @@ export class Suber<T = string> extends SuberBase<T> {
     super(db, { subkey, dupsort: false, sep, verify });
   }
 
+  /** Insert one single-value record if the effective key is absent. */
   put(keys: Keys, val: T): boolean {
     return this.db.putVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
+  /** Upsert one single-value record at its effective key. */
   pin(keys: Keys, val: T): boolean {
     return this.db.setVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
+  /** Read one single-value record from its effective key. */
   get(keys: Keys): T | null {
     return this._des(this.db.getVal(this.sdb, this._tokey(keys)));
   }
 
+  /** Remove one single-value record by its effective key. */
   rem(keys: Keys): boolean {
     return this.db.delVal(this.sdb, this._tokey(keys));
   }
 
+  /** Compatibility alias; `getTopItemIter()` is the parity branch iterator. */
   *getItemIter(
     keys: Keys = "",
     { topive = false }: { topive?: boolean } = {},
@@ -276,8 +286,15 @@ export class Suber<T = string> extends SuberBase<T> {
 
 /**
  * Exposed-ordinal key family (`On*`).
+ *
+ * Maintainer note:
+ * - KERIpy normalized this family around `getTopItemIter` / `getAllItemIter` /
+ *   `getAllIter`
+ * - the older `getOn*` names remain here as compatibility wrappers so current
+ *   `keri-ts` call sites do not need to migrate yet
  */
 export class OnSuberBase<T = string> extends SuberBase<T> {
+  /** Insert one value at an exposed ordinal bucket if that exact bucket is empty. */
   putOn(keys: Keys, on = 0, val: T | null = null): boolean {
     if (val === null) {
       return false;
@@ -291,6 +308,7 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Upsert one value at an exposed ordinal bucket. */
   pinOn(keys: Keys, on = 0, val: T | null = null): boolean {
     if (val === null) {
       return false;
@@ -304,6 +322,7 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Append one value at the next exposed ordinal bucket for a logical key path. */
   appendOn(keys: Keys, val: T): number {
     return this.db.appendOnVal(
       this.sdb,
@@ -313,6 +332,7 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Read the full `(keys, on, value)` triple for one exact exposed ordinal bucket. */
   getOnItem(keys: Keys, on = 0): [string[], number, T] | null {
     const item = this.db.getOnItem(
       this.sdb,
@@ -331,20 +351,24 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     return [this._tokeys(key), currentOn, record];
   }
 
+  /** Read the value stored at one exact exposed ordinal bucket. */
   getOn(keys: Keys, on = 0): T | null {
     return this._des(
       this.db.getOnVal(this.sdb, this._tokey(keys), on, b(this.sep)),
     );
   }
 
+  /** Remove one exact exposed ordinal bucket. */
   remOn(keys: Keys, on = 0): boolean {
     return this.db.remOn(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
+  /** Remove all ordinal buckets from `on` onward under one logical branch. */
   remOnAll(keys: Keys = "", on = 0): boolean {
     return this.db.remOnAll(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
+  /** Count ordinal buckets from one starting ordinal under a logical key path. */
   cntOn(keys: Keys = "", on = 0): number {
     if (
       (typeof keys === "string" && keys.length === 0)
@@ -355,11 +379,20 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     return this.db.cntOnAll(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
+  /** Count ordinal buckets from one starting ordinal across a branch or whole db. */
   cntOnAll(keys: Keys = "", on = 0): number {
     return this.db.cntOnAll(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
-  *getOnTopItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
+  override getTopItemIter(keys?: Keys): Generator<[string[], number, T]>;
+  override getTopItemIter(
+    keys?: Keys,
+    _options?: { topive?: boolean },
+  ): Generator<[string[], T]>;
+  override *getTopItemIter(
+    keys: Keys = "",
+    _options?: { topive?: boolean },
+  ): Generator<[string[], number, T] | [string[], T]> {
     for (
       const [key, on, val] of this.db.getOnTopItemIter(
         this.sdb,
@@ -375,11 +408,18 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
-    yield* this.getOnTopItemIter(keys);
+  /** Compatibility alias for the normalized ordinal-branch iterator. */
+  *getOnTopItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
+    yield* this.getTopItemIter(keys);
   }
 
-  *getOnAllItemIter(
+  /** Older alias retained for parity with pre-normalization ordinal scans. */
+  *getOnItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
+    yield* this.getTopItemIter(keys);
+  }
+
+  /** Iterate all ordinal buckets from `on` onward, preserving the exposed ordinal. */
+  *getAllItemIter(
     keys: Keys = "",
     on = 0,
   ): Generator<[string[], number, T]> {
@@ -399,21 +439,37 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Compatibility alias for `getAllItemIter()`. */
+  *getOnAllItemIter(
+    keys: Keys = "",
+    on = 0,
+  ): Generator<[string[], number, T]> {
+    yield* this.getAllItemIter(keys, on);
+  }
+
+  /** Older alias for full ordinal scans across a branch. */
   *getOnItemIterAll(
     keys: Keys = "",
     on = 0,
   ): Generator<[string[], number, T]> {
-    yield* this.getOnAllItemIter(keys, on);
+    yield* this.getAllItemIter(keys, on);
   }
 
-  *getOnAllIter(keys: Keys = "", on = 0): Generator<T> {
-    for (const [, , val] of this.getOnAllItemIter(keys, on)) {
+  /** Iterate only values across ordinal buckets from `on` onward. */
+  *getAllIter(keys: Keys = "", on = 0): Generator<T> {
+    for (const [, , val] of this.getAllItemIter(keys, on)) {
       yield val;
     }
   }
 
+  /** Compatibility alias for `getAllIter()`. */
+  *getOnAllIter(keys: Keys = "", on = 0): Generator<T> {
+    yield* this.getAllIter(keys, on);
+  }
+
+  /** Older alias for the normalized value-only ordinal scan. */
   *getOnIterAll(keys: Keys = "", on = 0): Generator<T> {
-    yield* this.getOnAllIter(keys, on);
+    yield* this.getAllIter(keys, on);
   }
 }
 
@@ -442,6 +498,7 @@ export class B64SuberBase<T extends string[] = string[]> extends Suber<T> {
     }
   }
 
+  /** Join one Base64-url tuple into its stored byte representation. */
   protected _toval(
     vals: string | Uint8Array | Iterable<string | Uint8Array>,
   ): Uint8Array {
@@ -467,14 +524,17 @@ export class B64SuberBase<T extends string[] = string[]> extends Suber<T> {
     return b(items.join(this.sep));
   }
 
+  /** Split one stored Base64-url tuple payload back into logical string parts. */
   protected _tovals(val: Uint8Array): T {
     return t(val).split(this.sep) as T;
   }
 
+  /** Serialize one Base64-url tuple using the configured non-Base64 separator. */
   protected override _ser(val: T): Uint8Array {
     return this._toval(val);
   }
 
+  /** Deserialize one stored Base64-url tuple payload into logical tuple parts. */
   protected override _des(val: Uint8Array | null): T | null {
     return val === null ? null : this._tovals(val);
   }
@@ -692,6 +752,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Materialize the logical `(keys, value)` view for one insertion-ordered set bucket. */
   getItem(keys: Keys, { ion = 0 }: { ion?: number } = {}): [string[], T][] {
     return [...this.getItemIter(keys, { ion })];
   }
@@ -701,6 +762,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     return [...this.getIter(keys, { ion })];
   }
 
+  /** Iterate logical `(keys, value)` members for one insertion-ordered set bucket. */
   *getItemIter(
     keys: Keys,
     { ion = 0 }: { ion?: number } = {},
@@ -721,6 +783,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Iterate only logical values for one insertion-ordered set bucket. */
   *getIter(keys: Keys, { ion = 0 }: { ion?: number } = {}): Generator<T> {
     for (const [, val] of this.getItemIter(keys, { ion })) {
       yield val;
@@ -742,11 +805,13 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     return record === null ? null : [this._tokeys(key), record];
   }
 
+  /** Read only the value component of `getLastItem()`. */
   getLast(keys: Keys): T | null {
     const item = this.getLastItem(keys);
     return item ? item[1] : null;
   }
 
+  /** Remove one member, or all members when `val` is `null`, from one effective key. */
   rem(keys: Keys, val: T | null = null): boolean {
     return this.db.remIoSetVal(
       this.sdb,
@@ -756,6 +821,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Count members for one effective key, or the whole subdb when the key is empty. */
   override cnt(keys: Keys = "", { ion = 0 }: { ion?: number } = {}): number {
     if (
       (typeof keys === "string" && keys.length === 0)
@@ -785,6 +851,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Iterate the last logical value from each effective key in a branch. */
   *getLastIter(keys: Keys = ""): Generator<T> {
     for (
       const val of this.db.getIoSetLastIterAll(
@@ -863,6 +930,7 @@ export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> 
     }
   }
 
+  /** Serialize one Base64-url tuple duplicate member with the configured separator. */
   protected override _ser(val: T): Uint8Array {
     const items = asIterable(val).map((item) => String(item));
     for (const item of items) {
@@ -873,6 +941,7 @@ export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> 
     return b(items.join(this.sep));
   }
 
+  /** Deserialize one stored Base64-url duplicate member into logical tuple parts. */
   protected override _des(val: Uint8Array | null): T | null {
     return val === null ? null : t(val).split(this.sep) as T;
   }
@@ -1293,6 +1362,7 @@ export class DupSuber<T = string> extends SuberBase<T> {
     super(db, { subkey, dupsort: true, sep, verify });
   }
 
+  /** Insert all duplicate values at one key if none of those values already exist. */
   put(keys: Keys, vals: T | Iterable<T>): boolean {
     return this.db.putVals(
       this.sdb,
@@ -1301,16 +1371,19 @@ export class DupSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Replace the entire duplicate set at one key. */
   pin(keys: Keys, vals: T | Iterable<T>): boolean {
     const key = this._tokey(keys);
     this.db.delVals(this.sdb, key);
     return this.put(keys, vals);
   }
 
+  /** Add one duplicate value if it is not already present at the key. */
   add(keys: Keys, val: T): boolean {
     return this.db.addVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
+  /** Read all duplicate values stored at one effective key. */
   get(keys: Keys): T[] {
     return this.db.getVals(this.sdb, this._tokey(keys)).flatMap((val) => {
       const record = this._des(val);
@@ -1318,10 +1391,12 @@ export class DupSuber<T = string> extends SuberBase<T> {
     });
   }
 
+  /** Read the lexicographically last duplicate value for one effective key. */
   getLast(keys: Keys): T | null {
     return this._des(this.db.getValLast(this.sdb, this._tokey(keys)));
   }
 
+  /** Iterate duplicate values at one effective key in LMDB duplicate order. */
   *getIter(keys: Keys): Generator<T> {
     for (const val of this.db.getValsIter(this.sdb, this._tokey(keys))) {
       const record = this._des(val);
@@ -1331,6 +1406,7 @@ export class DupSuber<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Count duplicate values at one key, or the whole subdb when the key is empty. */
   override cnt(keys: Keys = ""): number {
     if (
       (typeof keys === "string" && keys.length === 0)
@@ -1341,6 +1417,7 @@ export class DupSuber<T = string> extends SuberBase<T> {
     return this.db.cntVals(this.sdb, this._tokey(keys));
   }
 
+  /** Remove one duplicate value, or the whole duplicate set when `val` is `null`. */
   rem(keys: Keys, val: T | null = null): boolean {
     if (val === null) {
       return this.db.delVals(this.sdb, this._tokey(keys));
@@ -1447,6 +1524,7 @@ export class CatCesrDupSuber<
  * - hidden insertion-order proem in stored duplicate values
  */
 export class IoDupSuber<T = string> extends DupSuber<T> {
+  /** Insert insertion-ordered duplicate values if their logical members are absent. */
   override put(keys: Keys, vals: T | Iterable<T>): boolean {
     return this.db.putIoDupVals(
       this.sdb,
@@ -1455,16 +1533,19 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
     );
   }
 
+  /** Replace the entire insertion-ordered duplicate set for one effective key. */
   override pin(keys: Keys, vals: T | Iterable<T>): boolean {
     const key = this._tokey(keys);
     this.db.delIoDupVals(this.sdb, key);
     return this.put(keys, vals);
   }
 
+  /** Add one logical member if it is not already present in the insertion-ordered set. */
   override add(keys: Keys, val: T): boolean {
     return this.db.addIoDupVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
+  /** Read all logical members for one insertion-ordered duplicate set. */
   override get(keys: Keys): T[] {
     return this.db.getIoDupVals(this.sdb, this._tokey(keys)).flatMap((val) => {
       const record = this._des(val);
@@ -1472,6 +1553,7 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
     });
   }
 
+  /** Iterate logical members for one insertion-ordered duplicate set. */
   override *getIter(keys: Keys): Generator<T> {
     for (const val of this.db.getIoDupValsIter(this.sdb, this._tokey(keys))) {
       const record = this._des(val);
@@ -1481,10 +1563,12 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
     }
   }
 
+  /** Read the last inserted logical member for one insertion-ordered duplicate set. */
   override getLast(keys: Keys): T | null {
     return this._des(this.db.getIoDupValLast(this.sdb, this._tokey(keys)));
   }
 
+  /** Remove one logical member, or the whole duplicate set when `val` is `null`. */
   override rem(keys: Keys, val: T | null = null): boolean {
     if (val === null) {
       return this.db.delIoDupVals(this.sdb, this._tokey(keys));
@@ -1492,6 +1576,7 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
     return this.db.delIoDupVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
+  /** Count insertion-ordered duplicate members at one key or across the whole subdb. */
   override cnt(keys: Keys = ""): number {
     if (
       (typeof keys === "string" && keys.length === 0)
@@ -1502,6 +1587,7 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
     return this.db.cntIoDups(this.sdb, this._tokey(keys));
   }
 
+  /** Iterate logical branch items while stripping the hidden insertion-order proem. */
   override *getTopItemIter(
     keys: Keys = "",
     { topive = false }: { topive?: boolean } = {},
@@ -1541,6 +1627,7 @@ export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> 
     }
   }
 
+  /** Serialize one Base64-url tuple member for an exposed-ordinal insertion-ordered set. */
   protected override _ser(val: T): Uint8Array {
     const items = asIterable(val).map((item) => String(item));
     for (const item of items) {
@@ -1551,6 +1638,7 @@ export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> 
     return b(items.join(this.sep));
   }
 
+  /** Deserialize one stored Base64-url ordinal-set member into logical tuple parts. */
   protected override _des(val: Uint8Array | null): T | null {
     return val === null ? null : t(val).split(this.sep) as T;
   }
@@ -1562,6 +1650,11 @@ export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> 
  * Storage model:
  * - exposed ordinal in the physical key (`On*`)
  * - native dupsort duplicates carrying a hidden insertion-order proem
+ *
+ * Maintainer note:
+ * - KERIpy now prefers normalized names such as `put`, `getTopItemIter`,
+ *   `getAllItemIter`, and `getAllIter`
+ * - the older `*On*` names stay available here until upper layers migrate
  */
 export class OnIoDupSuber<T = string> extends SuberBase<T> {
   constructor(
@@ -1579,7 +1672,8 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     super(db, { subkey, dupsort: true, sep, verify });
   }
 
-  putOn(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
+  /** Insert all logical duplicate members into one exact exposed ordinal bucket if absent. */
+  put(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
     return this.db.putOnIoDupVals(
       this.sdb,
       this._tokey(keys),
@@ -1589,11 +1683,18 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     );
   }
 
-  pinOn(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
-    this.db.delOnIoDups(this.sdb, this._tokey(keys), on, b(this.sep));
-    return this.putOn(keys, on, vals);
+  /** Compatibility alias retained while higher layers still call the older name. */
+  putOn(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
+    return this.put(keys, on, vals);
   }
 
+  /** Replace the entire logical duplicate set at one exact exposed ordinal bucket. */
+  pinOn(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
+    this.db.delOnIoDups(this.sdb, this._tokey(keys), on, b(this.sep));
+    return this.put(keys, on, vals);
+  }
+
+  /** Add one logical duplicate member to one exact exposed ordinal bucket if absent. */
   addOn(keys: Keys, on = 0, val: T): boolean {
     return this.db.addOnIoDupVal(
       this.sdb,
@@ -1614,6 +1715,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Read all logical duplicate members for one exact exposed ordinal bucket. */
   getOn(keys: Keys, on = 0): T[] {
     return this.db.getOnIoDupVals(
       this.sdb,
@@ -1626,6 +1728,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     });
   }
 
+  /** Iterate logical duplicate members for one exact exposed ordinal bucket. */
   *getOnIter(keys: Keys, on = 0): Generator<T> {
     for (
       const val of this.db.getOnIoDupValsIter(
@@ -1642,12 +1745,14 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Read the last inserted logical duplicate member for one exposed ordinal bucket. */
   getOnLast(keys: Keys, on = 0): T | null {
     return this._des(
       this.db.getOnIoDupLast(this.sdb, this._tokey(keys), on, b(this.sep)),
     );
   }
 
+  /** Remove one logical member, or the whole exposed-ordinal duplicate bucket. */
   remOn(keys: Keys, on = 0, val: T | null = null): boolean {
     if (val === null) {
       return this.db.delOnIoDups(this.sdb, this._tokey(keys), on, b(this.sep));
@@ -1661,6 +1766,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Count logical duplicate members for one exposed ordinal bucket or branch. */
   cntOn(keys: Keys = "", on = 0): number {
     if (
       (typeof keys === "string" && keys.length === 0)
@@ -1671,8 +1777,37 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     return this.db.cntOnIoDups(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
+  override getTopItemIter(keys?: Keys): Generator<[string[], number, T]>;
+  override getTopItemIter(
+    keys?: Keys,
+    _options?: { topive?: boolean },
+  ): Generator<[string[], T]>;
+  override *getTopItemIter(
+    keys: Keys = "",
+    _options?: { topive?: boolean },
+  ): Generator<[string[], number, T] | [string[], T]> {
+    for (
+      const [key, currentOn, val] of this.db.getOnTopIoDupItemIter(
+        this.sdb,
+        this._tokey(keys),
+        b(this.sep),
+      )
+    ) {
+      const record = this._des(val);
+      if (record === null) {
+        continue;
+      }
+      yield [this._tokeys(key), currentOn, record];
+    }
+  }
+
+  /** Compatibility alias for the normalized top-branch ordinal iterator. */
+  *getOnTopItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
+    yield* this.getTopItemIter(keys);
+  }
+
   /** Iterate logical items across ordinal buckets in forward order. */
-  *getOnItemIterAll(
+  *getAllItemIter(
     keys: Keys = "",
     on = 0,
   ): Generator<[string[], number, T]> {
@@ -1692,12 +1827,26 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnIterAll(keys: Keys = "", on = 0): Generator<T> {
-    for (const [, , val] of this.getOnItemIterAll(keys, on)) {
+  *getOnItemIterAll(
+    keys: Keys = "",
+    on = 0,
+  ): Generator<[string[], number, T]> {
+    yield* this.getAllItemIter(keys, on);
+  }
+
+  /** Iterate only logical values across ordinal buckets from `on` onward. */
+  *getAllIter(keys: Keys = "", on = 0): Generator<T> {
+    for (const [, , val] of this.getAllItemIter(keys, on)) {
       yield val;
     }
   }
 
+  /** Compatibility alias for `getAllIter()`. */
+  *getOnIterAll(keys: Keys = "", on = 0): Generator<T> {
+    yield* this.getAllIter(keys, on);
+  }
+
+  /** Iterate the last logical duplicate value from each ordinal bucket. */
   *getOnLastIter(keys: Keys = "", on = 0): Generator<T> {
     for (
       const val of this.db.getOnIoDupLastValIter(
@@ -1735,6 +1884,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Iterate logical duplicate items in reverse exposed-ordinal order. */
   *getOnItemBackIter(
     keys: Keys = "",
     on = 0,
@@ -1755,6 +1905,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     }
   }
 
+  /** Iterate only logical values in reverse exposed-ordinal order. */
   *getOnBackIter(keys: Keys = "", on = 0): Generator<T> {
     for (const [, , val] of this.getOnItemBackIter(keys, on)) {
       yield val;
@@ -1782,6 +1933,7 @@ export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber
     }
   }
 
+  /** Serialize one Base64-url tuple member for an exposed-ordinal duplicate bucket. */
   protected override _ser(val: T): Uint8Array {
     const items = asIterable(val).map((item) => String(item));
     for (const item of items) {
@@ -1792,6 +1944,7 @@ export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber
     return b(items.join(this.sep));
   }
 
+  /** Deserialize one stored Base64-url ordinal-duplicate member into logical tuple parts. */
   protected override _des(val: Uint8Array | null): T | null {
     return val === null ? null : t(val).split(this.sep) as T;
   }
@@ -1799,6 +1952,12 @@ export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber
 
 /**
  * Exposed-ordinal insertion-ordered synthetic sets (`OnIoSet*`).
+ *
+ * Maintainer note:
+ * - KERIpy normalized this family onto the same public verb set used by the
+ *   simpler Suber families, with `on` remaining an explicit parameter
+ * - the older `*On*` names remain here as compatibility wrappers for existing
+ *   `keri-ts` DB call sites
  */
 export class OnIoSetSuber<T = string> extends SuberBase<T> {
   constructor(
@@ -1816,6 +1975,7 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     super(db, { subkey, dupsort: false, sep, verify });
   }
 
+  /** Insert an exposed-ordinal insertion-ordered set bucket if absent. */
   putOn(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
     return this.db.putOnIoSetVals(
       this.sdb,
@@ -1826,6 +1986,7 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Replace the insertion-ordered set members for one exact exposed ordinal bucket. */
   pinOn(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
     return this.db.pinOnIoSetVals(
       this.sdb,
@@ -1836,6 +1997,7 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Add one logical set member to one exact exposed ordinal bucket if absent. */
   addOn(keys: Keys, on = 0, val: T): boolean {
     return this.db.addOnIoSetVal(
       this.sdb,
@@ -1846,6 +2008,7 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Append a new exposed ordinal bucket populated with one or more logical set members. */
   appendOn(keys: Keys, vals: T | Iterable<T> | null = null): number {
     return this.db.appendOnIoSetVals(
       this.sdb,
@@ -1855,21 +2018,48 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     );
   }
 
-  getOnItem(keys: Keys, on = 0): [string[], number, T][] {
-    return [...this.getOnItemIter(keys, on)];
+  /** Normalized alias for `putOn()` matching later KERIpy `OnIoSetSuber`. */
+  put(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
+    return this.putOn(keys, on, vals);
   }
 
-  getOn(keys: Keys, on = 0): T[] {
-    return [...this.getOnIter(keys, on)];
+  /** Normalized alias for `pinOn()`. */
+  pin(keys: Keys, on = 0, vals: T | Iterable<T> | null = null): boolean {
+    return this.pinOn(keys, on, vals);
   }
 
-  *getOnItemIter(keys: Keys, on = 0): Generator<[string[], number, T]> {
+  /** Normalized alias for `addOn()`. */
+  add(keys: Keys, on = 0, val: T): boolean {
+    return this.addOn(keys, on, val);
+  }
+
+  /** Normalized alias for `appendOn()`. */
+  append(keys: Keys, vals: T | Iterable<T> | null = null): number {
+    return this.appendOn(keys, vals);
+  }
+
+  /** Materialize the logical `(keys, on, value)` view for one ordinal-set bucket. */
+  getItem(keys: Keys, on = 0, ion = 0): [string[], number, T][] {
+    return [...this.getItemIter(keys, on, ion)];
+  }
+
+  /** Read all logical members from one exposed-ordinal insertion-ordered set bucket. */
+  get(keys: Keys, on = 0, ion = 0): T[] {
+    return [...this.getIter(keys, on, ion)];
+  }
+
+  /** Iterate logical `(keys, on, value)` triples for one ordinal-set bucket. */
+  *getItemIter(
+    keys: Keys,
+    on = 0,
+    ion = 0,
+  ): Generator<[string[], number, T]> {
     for (
       const [key, currentOn, val] of this.db.getOnIoSetItemIter(
         this.sdb,
         this._tokey(keys),
         on,
-        0,
+        ion,
         b(this.sep),
       )
     ) {
@@ -1881,13 +2071,15 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnIter(keys: Keys, on = 0): Generator<T> {
-    for (const [, , val] of this.getOnItemIter(keys, on)) {
+  /** Iterate only logical values from one ordinal-set bucket. */
+  *getIter(keys: Keys, on = 0, ion = 0): Generator<T> {
+    for (const [, , val] of this.getItemIter(keys, on, ion)) {
       yield val;
     }
   }
 
-  getOnLastItem(keys: Keys, on = 0): [string[], number, T] | null {
+  /** Read the last logical member from one exact exposed ordinal-set bucket. */
+  getLastItem(keys: Keys, on = 0): [string[], number, T] | null {
     const item = this.db.getOnIoSetLastItem(
       this.sdb,
       this._tokey(keys),
@@ -1902,30 +2094,45 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     return record === null ? null : [this._tokeys(key), currentOn, record];
   }
 
-  getOnLast(keys: Keys, on = 0): T | null {
-    const item = this.getOnLastItem(keys, on);
+  /** Read only the value component of `getLastItem()`. */
+  getLast(keys: Keys, on = 0): T | null {
+    const item = this.getLastItem(keys, on);
     return item ? item[2] : null;
   }
 
-  remOn(keys: Keys, on = 0, val: T | null = null): boolean {
-    return this.db.remOnIoSetVal(
-      this.sdb,
-      this._tokey(keys),
-      on,
-      val === null ? null : this._ser(val),
-      b(this.sep),
-    );
+  /** Remove one logical member from an ordinal-set bucket, or the whole bucket when `val` is `null`. */
+  rem(keys: Keys, on = 0, val: T | null = null): boolean {
+    return this.remOn(keys, on, val);
   }
 
-  cntOn(keys: Keys, on = 0): number {
-    return this.db.cntOnIoSet(this.sdb, this._tokey(keys), on, 0, b(this.sep));
+  /** Remove all ordinal-set buckets from `on` onward under a branch. */
+  remAll(keys: Keys = "", on = 0): boolean {
+    return this.db.remOnAllIoSet(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
-  cntOnAll(keys: Keys = "", on = 0): number {
+  override cnt(): number;
+  override cnt(keys: Keys, on?: number, ion?: number): number;
+  /** Count logical members inside one exact ordinal-set bucket. */
+  override cnt(keys: Keys = "", on = 0, ion = 0): number {
+    return this.db.cntOnIoSet(this.sdb, this._tokey(keys), on, ion, b(this.sep));
+  }
+
+  override cntAll(): number;
+  override cntAll(keys?: Keys, on?: number): number;
+  /** Count logical members across ordinal buckets from `on` onward. */
+  override cntAll(keys: Keys = "", on = 0): number {
     return this.db.cntOnAllIoSet(this.sdb, this._tokey(keys), on, b(this.sep));
   }
 
-  *getOnTopItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
+  override getTopItemIter(keys?: Keys): Generator<[string[], number, T]>;
+  override getTopItemIter(
+    keys?: Keys,
+    _options?: { topive?: boolean },
+  ): Generator<[string[], T]>;
+  override *getTopItemIter(
+    keys: Keys = "",
+    _options?: { topive?: boolean },
+  ): Generator<[string[], number, T] | [string[], T]> {
     for (
       const [key, currentOn, val] of this.db.getOnTopIoSetItemIter(
         this.sdb,
@@ -1941,7 +2148,8 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnAllItemIter(
+  /** Iterate logical members across ordinal buckets from `on` onward. */
+  *getAllItemIter(
     keys: Keys = "",
     on = 0,
   ): Generator<[string[], number, T]> {
@@ -1961,7 +2169,15 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnLastItemIter(
+  /** Iterate only logical values across ordinal-set buckets from `on` onward. */
+  *getAllIter(keys: Keys = "", on = 0): Generator<T> {
+    for (const [, , val] of this.getAllItemIter(keys, on)) {
+      yield val;
+    }
+  }
+
+  /** Iterate the last logical member from each ordinal-set bucket. */
+  *getAllLastItemIter(
     keys: Keys = "",
     on = 0,
   ): Generator<[string[], number, T]> {
@@ -1981,9 +2197,17 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnItemBackIter(
+  /** Iterate only the last logical values from each ordinal-set bucket. */
+  *getAllLastIter(keys: Keys = "", on = 0): Generator<T> {
+    for (const [, , val] of this.getAllLastItemIter(keys, on)) {
+      yield val;
+    }
+  }
+
+  /** Iterate logical members in reverse exposed-ordinal order across a branch. */
+  *getAllItemBackIter(
     keys: Keys = "",
-    on = 0,
+    on: number | null = 0,
   ): Generator<[string[], number, T]> {
     for (
       const [key, currentOn, val] of this.db.getOnAllIoSetItemBackIter(
@@ -2001,10 +2225,124 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
     }
   }
 
-  *getOnBackIter(keys: Keys = "", on = 0): Generator<T> {
-    for (const [, , val] of this.getOnItemBackIter(keys, on)) {
+  /** Iterate only logical values in reverse exposed-ordinal order. */
+  *getAllBackIter(keys: Keys = "", on: number | null = 0): Generator<T> {
+    for (const [, , val] of this.getAllItemBackIter(keys, on)) {
       yield val;
     }
+  }
+
+  /** Iterate the last logical member from each ordinal bucket in reverse order. */
+  *getAllLastItemBackIter(
+    keys: Keys = "",
+    on: number | null = 0,
+  ): Generator<[string[], number, T]> {
+    for (
+      const [key, currentOn, val] of this.db.getOnAllIoSetLastItemBackIter(
+        this.sdb,
+        this._tokey(keys),
+        on,
+        b(this.sep),
+      )
+    ) {
+      const record = this._des(val);
+      if (record === null) {
+        continue;
+      }
+      yield [this._tokeys(key), currentOn, record];
+    }
+  }
+
+  /** Iterate only the last logical values from each ordinal bucket in reverse order. */
+  *getAllLastBackIter(keys: Keys = "", on: number | null = 0): Generator<T> {
+    for (const [, , val] of this.getAllLastItemBackIter(keys, on)) {
+      yield val;
+    }
+  }
+
+  /** Legacy alias for `getItem()`. */
+  getOnItem(keys: Keys, on = 0): [string[], number, T][] {
+    return this.getItem(keys, on);
+  }
+
+  /** Legacy alias for `get()`. */
+  getOn(keys: Keys, on = 0): T[] {
+    return this.get(keys, on);
+  }
+
+  /** Legacy alias for `getItemIter()`. */
+  *getOnItemIter(keys: Keys, on = 0): Generator<[string[], number, T]> {
+    yield* this.getItemIter(keys, on);
+  }
+
+  /** Legacy alias for `getIter()`. */
+  *getOnIter(keys: Keys, on = 0): Generator<T> {
+    yield* this.getIter(keys, on);
+  }
+
+  /** Legacy alias for `getLastItem()`. */
+  getOnLastItem(keys: Keys, on = 0): [string[], number, T] | null {
+    return this.getLastItem(keys, on);
+  }
+
+  /** Legacy alias for `getLast()`. */
+  getOnLast(keys: Keys, on = 0): T | null {
+    return this.getLast(keys, on);
+  }
+
+  /** Legacy removal surface that still mirrors current upstream call sites. */
+  remOn(keys: Keys, on = 0, val: T | null = null): boolean {
+    return this.db.remOnIoSetVal(
+      this.sdb,
+      this._tokey(keys),
+      on,
+      val === null ? null : this._ser(val),
+      b(this.sep),
+    );
+  }
+
+  /** Legacy alias for `cnt()`. */
+  cntOn(keys: Keys, on = 0): number {
+    return this.cnt(keys, on);
+  }
+
+  /** Legacy alias for `cntAll()`. */
+  cntOnAll(keys: Keys = "", on = 0): number {
+    return this.cntAll(keys, on);
+  }
+
+  /** Legacy alias for `getTopItemIter()`. */
+  *getOnTopItemIter(keys: Keys = ""): Generator<[string[], number, T]> {
+    yield* this.getTopItemIter(keys);
+  }
+
+  /** Legacy alias for `getAllItemIter()`. */
+  *getOnAllItemIter(
+    keys: Keys = "",
+    on = 0,
+  ): Generator<[string[], number, T]> {
+    yield* this.getAllItemIter(keys, on);
+  }
+
+  /** Legacy alias for `getAllLastItemIter()`. */
+  *getOnLastItemIter(
+    keys: Keys = "",
+    on = 0,
+  ): Generator<[string[], number, T]> {
+    yield* this.getAllLastItemIter(keys, on);
+  }
+
+  /** Legacy alias for `getAllItemBackIter()`. */
+  *getOnItemBackIter(
+    keys: Keys = "",
+    on: number | null = 0,
+  ): Generator<[string[], number, T]> {
+    yield* this.getAllItemBackIter(keys, on);
+  }
+
+  /** Legacy alias for `getAllBackIter()`. */
+  *getOnBackIter(keys: Keys = "", on: number | null = 0): Generator<T> {
+    yield* this.getAllBackIter(keys, on);
   }
 }
 

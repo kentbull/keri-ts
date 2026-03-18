@@ -76,6 +76,11 @@ replay/verification semantics.
     signing should expose `Siger[]`/`Cigar[]`, and DB helpers should accept the
     narrow primitive types directly instead of rehydrating every signature from
     strings at the last minute.
+21. DB-layer parity now includes the later KERIpy normalized ordinal-wrapper
+    API shape: `Komer`/`Suber`/`OnSuber*`/`OnIoDup*`/`OnIoSet*` should expose the
+    newer `getTop*` / `getAll*` / non-`On` method families as the forward
+    parity surface, while legacy `getOn*` and plain `Suber.getItemIter()`
+    remain temporary compatibility aliases until higher layers migrate.
 
 ## Scope Checklist
 
@@ -100,6 +105,48 @@ Use this doc for:
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
    maintenance regression and guard against them automatically.
+
+### 2026-03-18 - DB Wrapper Surface Normalized For Later KERIpy Parity
+
+- Added the later KERIpy DB-surface normalization from `subing.py` into
+  `keri-ts` without breaking current local call sites: the forward parity API is
+  now the non-legacy `getTop*` / `getAll*` / non-`On` method family, while the
+  older `getOn*` and plain `Suber.getItemIter()` names remain compatibility
+  wrappers.
+- `Komer` now exposes `cntAll()` as the same additive counting alias KERIpy
+  expects, which lets future mapper call sites use the mixed wrapper-counting
+  vocabulary without reopening the storage review.
+- `OnSuberBase`, `OnIoDupSuber`, and `OnIoSetSuber` now expose the newer
+  KERIpy-style normalized methods directly, including branch scans, exact-ordinal
+  accessors, all-ordinal iterators, last-item views, backward scans, and count
+  aliases, while retaining the pre-normalization `*On*` surface as wrappers.
+- `LMDBer` now includes `getOnTopIoDupItemIter()`, which closes the remaining
+  DB-core helper gap needed by the normalized `OnIoDupSuber.getTopItemIter()`
+  surface.
+- Added targeted unit coverage for the normalized ordinal-wrapper methods and
+  the retained legacy aliases so future parity work can prefer the new names
+  without rediscovering which old calls are still intentionally supported.
+- Follow-up call-site migration in `Baser` proved the important boundary:
+  `fels.` now uses the normalized `getAllItemIter()` surface just like current
+  upstream KERIpy, but `kels.` intentionally still uses `addOn()` /
+  `getOnLast()` / `getOnLastItemIter()` because upstream has not actually
+  normalized that path yet. The parity rule is to follow the real upstream call
+  graph, not to blanket-rename every ordinal-wrapper access just because newer
+  aliases exist elsewhere.
+
+### 2026-03-18 - DB Method Documentation Became Family-Level Contract Coverage
+
+- The DB documentation rule is no longer satisfied by class docstrings alone.
+  `LMDBer`, `Baser`, `Komer`, `Suber`, and the ordinal/dup/io-set wrapper
+  families now need maintainer-grade method docs on the public storage
+  operations and on the important adapter seams that reinterpret raw LMDB bytes.
+- The useful unit of documentation is the storage family, not the file. Method
+  docs should explain the storage model (`On*`, `IoSet*`, `Dup*`, `IoDup*`),
+  what hidden suffixes/proems are being stripped or preserved, and whether a
+  method is the normalized forward API or a retained compatibility alias.
+- Helper conversion seams such as Base64 tuple serializers, CESR tuple splitters,
+  and root lifecycle getters matter enough to document because maintainers
+  otherwise end up re-deriving byte-level invariants from implementation code.
 
 ### 2026-03-17 - Gate D Encrypted Keeper Semantics Landed
 

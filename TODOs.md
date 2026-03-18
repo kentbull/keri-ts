@@ -10,3 +10,6 @@ Things to come back and do at some point:
     their KERIpy equivalents to ensure everything is properly documented.
 - make sure logging works properly including switching between levels.
 - add an interop test on passcode properly working between KERIpy and keri-ts
+- do a repo-wide pass over the remaining higher-level DB consumers beyond
+  `Baser` to separate real upstream parity opportunities from false-cleanup
+  temptations.
