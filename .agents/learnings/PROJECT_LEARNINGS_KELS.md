@@ -106,6 +106,32 @@ Use this doc for:
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
    maintenance regression and guard against them automatically.
 
+### 2026-03-27 - `PathManager` ADR Locked The `Filer` Comparison Boundary
+
+- Topic docs updated:
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `.agents/PROJECT_LEARNINGS.md`
+- What changed:
+  - Added `docs/adr/adr-0002-path-manager-filer-seam.md` to document
+    `PathManager` as the `keri-ts` equivalent of HIO `Filer`'s path-policy
+    responsibilities.
+  - Captured the maintainer rule that shared path derivation/fallback belongs in
+    `PathManager`, while LMDB env ownership and config-file durability semantics
+    stay with `LMDBer` and `Configer`.
+- Why:
+  - Future parity work could otherwise cargo-cult Python `Filer` inheritance
+    and accidentally blur the boundary between path policy and resource
+    lifecycle ownership.
+- Tests:
+  - Command: N/A (documentation-only ADR)
+  - Result: N/A
+- Contracts/plans touched:
+  - `docs/adr/adr-0002-path-manager-filer-seam.md`
+- Risks/TODO:
+  - If a future caller truly needs shared file-handle semantics, treat that as a
+    separate design decision instead of silently extending `PathManager` as if
+    it were already full `Filer` parity.
+
 ### 2026-03-18 - DB Wrapper Surface Normalized For Later KERIpy Parity
 
 - Added the later KERIpy DB-surface normalization from `subing.py` into

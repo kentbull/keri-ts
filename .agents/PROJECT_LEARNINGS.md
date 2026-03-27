@@ -312,6 +312,10 @@ This keeps context focused and avoids long-thread drift.
     `Komer`, `Suber`, and the `On*`/`IoSet*`/`Dup*` families, method docs should
     explain the storage model, hidden suffix/proem behavior, and whether a name
     is the forward parity surface or a temporary compatibility alias.
+62. `PathManager` is now explicitly documented as the local adaptation of HIO
+    `Filer` responsibilities: shared path derivation, temp/clean/alt-home
+    fallback, and reuse/clear policy stay centralized there, while resource
+    lifecycles remain with owners such as `LMDBer` and `Configer`.
 
 ## New Thread Kickoff Template
 
