@@ -1,9 +1,6 @@
 import { b, b64ToInt, intToB64 } from "../core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
-import {
-  composeRecoveryDiagnosticObserver,
-  type RecoveryDiagnosticObserver,
-} from "../core/recovery-diagnostics.ts";
+import { composeRecoveryDiagnosticObserver, type RecoveryDiagnosticObserver } from "../core/recovery-diagnostics.ts";
 import type { AttachmentGroup } from "../core/types.ts";
 import { Counter, CounterGroup, parseCounter } from "../primitives/counter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
@@ -11,10 +8,7 @@ import { parseMatter } from "../primitives/matter.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
-import {
-  resolveVersionedRegistryValue,
-  type VersionedRegistry,
-} from "../tables/counter-version-registry.ts";
+import { resolveVersionedRegistryValue, type VersionedRegistry } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import {
   type AttachmentDispatchDomain,
@@ -581,9 +575,7 @@ function splitOpaqueUnits(
         ),
     );
   }
-  return (text.match(/.{1,4}/g) ?? []).map((token) =>
-    UnknownPrimitive.fromPayload(b(token), domain)
-  );
+  return (text.match(/.{1,4}/g) ?? []).map((token) => UnknownPrimitive.fromPayload(b(token), domain));
 }
 
 /** Parse nested siger-list group headed by a version-appropriate siger counter. */

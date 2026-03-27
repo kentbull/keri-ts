@@ -56,6 +56,7 @@ Deno.test("db/koming - Komer stores one persisted record shape", async () => {
     assertEquals(people.get(keys), sue);
     assertEquals(people.getDict(keys), sue);
     assertEquals(people.cnt(), 1);
+    assertEquals(people.cntAll(), 1);
 
     const kip: PersonRecord = {
       first: "Kip",

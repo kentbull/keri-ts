@@ -1,10 +1,5 @@
 import { codexValues, invertCodex } from "../tables/codex-utils.ts";
-import {
-  IdrDex,
-  IdxBthSigDex,
-  IdxCrtSigDex,
-  IdxSigDex,
-} from "../tables/indexer.codex.generated.ts";
+import { IdrDex, IdxBthSigDex, IdxCrtSigDex, IdxSigDex } from "../tables/indexer.codex.generated.ts";
 import {
   BexDex,
   CiXAllQB64Dex,

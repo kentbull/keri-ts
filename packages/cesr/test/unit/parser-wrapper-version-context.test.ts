@@ -9,9 +9,7 @@ import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${
-    intToB64(0, 1)
-  }`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(0, 1)}`;
 }
 
 function wrapQuadletGroupV2(code: string, payload: string): string {
@@ -51,9 +49,7 @@ Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups tha
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   // Use a v2-only counter token that fails immediately under v1 dispatch.
   const v2OnlyNested = counterV2(CtrDexV2.BigBlindedStateQuadruples, 1);
-  const wrappedV1Attachment = `${
-    counterV1(CtrDexV1.AttachmentGroup, v2OnlyNested.length / 4)
-  }${v2OnlyNested}`;
+  const wrappedV1Attachment = `${counterV1(CtrDexV1.AttachmentGroup, v2OnlyNested.length / 4)}${v2OnlyNested}`;
   const stream = `${body}${wrappedV1Attachment}`;
 
   const parser = createParser({ attachmentDispatchMode: "strict" });

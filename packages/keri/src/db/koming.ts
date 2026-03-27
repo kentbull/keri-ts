@@ -131,18 +131,22 @@ export class KomerBase<T> {
     }
   }
 
+  /** Encode one logical record as UTF-8 JSON bytes. */
   protected serializeJSON(val: T): Uint8Array {
     return b(JSON.stringify(val));
   }
 
+  /** Encode one logical record as MGPK/MessagePack bytes. */
   protected serializeMGPK(val: T): Uint8Array {
     return toUint8Array(encodeMsgpack(val));
   }
 
+  /** Encode one logical record as KERI-compatible CBOR bytes. */
   protected serializeCBOR(val: T): Uint8Array {
     return encodeKeriCbor(val);
   }
 
+  /** Decode one JSON byte payload into the logical record type. */
   protected deserializeJSON(val: Uint8Array | null): T | null {
     if (val === null) {
       return null;
@@ -150,6 +154,7 @@ export class KomerBase<T> {
     return JSON.parse(t(val)) as T;
   }
 
+  /** Decode one MGPK/MessagePack payload into the logical record type. */
   protected deserializeMGPK(val: Uint8Array | null): T | null {
     if (val === null) {
       return null;
@@ -157,6 +162,7 @@ export class KomerBase<T> {
     return decodeMsgpack(val) as T;
   }
 
+  /** Decode one KERI-compatible CBOR payload into the logical record type. */
   protected deserializeCBOR(val: Uint8Array | null): T | null {
     if (val === null) {
       return null;
@@ -279,6 +285,11 @@ export class Komer<T> extends KomerBase<T> {
   /** Count all stored records in this `Komer` subdb. */
   cnt(): number {
     return this.db.cntAll(this.sdb);
+  }
+
+  /** Alias matching the normalized KERIpy counting surface. */
+  cntAll(): number {
+    return this.cnt();
   }
 }
 

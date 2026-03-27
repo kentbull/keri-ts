@@ -72,6 +72,7 @@ import {
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
+/** Encode a replay/first-seen ordinal using the huge CESR number code family. */
 function encodeHugeOrdinal(num: number): NumberPrimitive {
   const raw = new Uint8Array(16);
   let value = BigInt(num);
@@ -235,26 +236,32 @@ export class Baser {
     });
   }
 
+  /** Expose the resolved logical database name delegated from the root LMDBer. */
   get name(): string {
     return this.lmdber.name;
   }
 
+  /** Expose the resolved database base prefix delegated from the root LMDBer. */
   get base(): string {
     return this.lmdber.base;
   }
 
+  /** Report whether the root LMDB environment and typed subdb bindings are open. */
   get opened(): boolean {
     return this.lmdber.opened;
   }
 
+  /** Report whether this `Baser` uses a temporary backing directory. */
   get temp(): boolean {
     return this.lmdber.temp;
   }
 
+  /** Expose the resolved filesystem path of the active backing environment. */
   get path(): string | null {
     return this.lmdber.path;
   }
 
+  /** Expose the raw LMDB environment for low-level tests and debugging only. */
   get env() {
     return this.lmdber.env;
   }
@@ -818,10 +825,12 @@ export class Baser {
     return yield* this.lmdber.close(clear);
   }
 
+  /** Read the root LMDB version marker through the shared lifecycle owner. */
   getVer(): string | null {
     return this.lmdber.getVer();
   }
 
+  /** Write the root LMDB version marker through the shared lifecycle owner. */
   setVer(val: string): void {
     this.lmdber.setVer(val);
   }
@@ -902,7 +911,7 @@ export class Baser {
 
   /** Resolve the first-seen ordinal for one previously stored event digest. */
   getFelFn(pre: string, said: string): number | null {
-    for (const [, fn, current] of this.fels.getOnItemIterAll(pre)) {
+    for (const [, fn, current] of this.fels.getAllItemIter(pre)) {
       if (current === said) {
         return fn;
       }
@@ -1094,7 +1103,7 @@ export class Baser {
    * can continue streaming later entries, matching KERIpy's clone behavior.
    */
   *clonePreIter(pre: string, fn = 0): Generator<Uint8Array> {
-    for (const [, currentFn, said] of this.fels.getOnItemIterAll(pre, fn)) {
+    for (const [, currentFn, said] of this.fels.getAllItemIter(pre, fn)) {
       try {
         yield this.cloneEvtMsg(pre, currentFn, said);
       } catch {

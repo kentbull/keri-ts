@@ -6,11 +6,7 @@ import { action, type Operation } from "npm:effection@^3.6.0";
 import { Database, Key, open, RootDatabase } from "npm:lmdb@3.5.2";
 import { b, bytesEqual, bytesHex, t, toBytes } from "../../../../cesr/mod.ts";
 import { startsWith } from "../../core/bytes.ts";
-import {
-  DatabaseKeyError,
-  DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../../core/errors.ts";
+import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
 import { onKey, splitOnKey, suffix, unsuffix } from "./keys.ts";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
@@ -183,26 +179,32 @@ export class LMDBer {
     this.readonly = options.readonly || false;
   }
 
+  /** Expose the resolved logical database name used for path derivation and temp dirs. */
   get name(): string {
     return this.pathManager.name;
   }
 
+  /** Expose the resolved database base prefix used by the shared path manager. */
   get base(): string {
     return this.pathManager.base;
   }
 
+  /** Report whether the LMDB environment is currently open and backed by a live root handle. */
   get opened(): boolean {
     return this.pathManager.opened && this.env !== null;
   }
 
+  /** Report whether this environment uses a temporary backing directory. */
   get temp(): boolean {
     return this.pathManager.temp;
   }
 
+  /** Expose the resolved filesystem path for the active environment, when available. */
   get path(): string | null {
     return this.pathManager.path;
   }
 
+  /** Require a live root LMDB environment before performing any storage operation. */
   private requireEnv(): RootDatabase<any, Key> {
     if (!this.env) {
       throw new DatabaseNotOpenError("LMDB environment is not open");
@@ -210,6 +212,7 @@ export class LMDBer {
     return this.env;
   }
 
+  /** Normalize low-level LMDB key-shape failures into one project-specific error type. */
   private formatDbKeyError(key: Uint8Array, error: unknown): DatabaseKeyError {
     const message = error instanceof Error ? error.message : String(error);
     return new DatabaseKeyError(
@@ -2063,6 +2066,23 @@ export class LMDBer {
 
     if (lonkey !== null && lkey && last) {
       yield [lkey, lon, stripIoDupProem(last)];
+    }
+  }
+
+  /**
+   * Iterate `(key, on, val)` logical duplicates across a top branch.
+   *
+   * This mirrors the KERIpy helper added for normalized `OnIoDupSuber`
+   * branch iteration and strips the hidden insertion-order proem from each
+   * duplicate value before yielding it.
+   */
+  *getOnTopIoDupItemIter(
+    db: Database<BinVal, BinKey>,
+    top: Uint8Array = new Uint8Array(0),
+    sep: Uint8Array = DOT_SEP,
+  ): Generator<[Uint8Array, number, Uint8Array]> {
+    for (const [key, on, val] of this.getOnTopItemIter(db, top, sep)) {
+      yield [key, on, stripIoDupProem(val)];
     }
   }
 

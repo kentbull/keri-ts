@@ -23,9 +23,7 @@ Deno.test("native primitive smoke: verser/ilker/labeler", () => {
 
 Deno.test("native primitive smoke: mapper over KERIpy v2 body", () => {
   const payload = KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(4);
-  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${
-    payload.slice(16)
-  }`;
+  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${payload.slice(16)}`;
   const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
 
   const mapper = parseMapperBody(txt(mapBody), V2, "txt");

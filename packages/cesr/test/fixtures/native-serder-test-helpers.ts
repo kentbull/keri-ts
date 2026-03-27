@@ -98,7 +98,9 @@ export function expectedNativeKeriIcpSad(): Record<string, unknown> {
  */
 export function invalidNativeKeriIcpMapBodyQb64(): string {
   const segments = breakdownNativeKeriIcpFixture();
-  const byName = new Map(segments.map((segment) => [segment.name, segment.qb64]));
+  const byName = new Map(
+    segments.map((segment) => [segment.name, segment.qb64]),
+  );
   const payload = [
     "0J_v",
     byName.get("verser"),
@@ -325,5 +327,6 @@ export function renderNativeSegmentSummary(
 ): string {
   // The summary is intentionally one line so test failures stay easy to scan in
   // CI logs while still teaching the segment order at a glance.
-  return segments.map((segment) => `${segment.name}=${shorten(segment.qb64)}`).join(" | ");
+  return segments.map((segment) => `${segment.name}=${shorten(segment.qb64)}`)
+    .join(" | ");
 }

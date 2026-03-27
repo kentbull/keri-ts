@@ -9,9 +9,7 @@ import { txt } from "../../fixtures/primitive-test-helpers.ts";
 const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("mediar: parses typed-media group", () => {
-  const ims = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
+  const ims = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${token("D")}${token("M")}`;
   const mediar = parseMediar(txt(ims), V2, "txt");
   assertEquals(mediar instanceof Mediar, true);
   assertEquals(mediar.code, CtrDexV2.TypedMediaQuadruples);

@@ -1,18 +1,7 @@
-import {
-  b,
-  b64ToInt,
-  codeB2ToB64,
-  codeB64ToB2,
-  intToB64,
-  nabSextets,
-  sceil,
-} from "../core/bytes.ts";
+import { b, b64ToInt, codeB2ToB64, codeB64ToB2, intToB64, nabSextets, sceil } from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import {
-  resolveCounterCodeNameTable,
-  resolveCounterSizeTable,
-} from "../tables/counter-version-registry.ts";
+import { resolveCounterCodeNameTable, resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
 import { COUNTER_HARDS } from "../tables/counter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { GroupEntry } from "./primitive.ts";

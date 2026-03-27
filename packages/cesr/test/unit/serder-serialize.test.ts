@@ -12,15 +12,33 @@ Deno.test("dumps: JSON/CBOR/MGPK payloads round-trip through parseSerder", () =>
   const cases = [
     {
       kind: "JSON" as const,
-      ked: { v: versify({ size: 0, kind: "JSON" }), t: "icp", d: "Eabc", i: "Eabc", s: "0" },
+      ked: {
+        v: versify({ size: 0, kind: "JSON" }),
+        t: "icp",
+        d: "Eabc",
+        i: "Eabc",
+        s: "0",
+      },
     },
     {
       kind: "CBOR" as const,
-      ked: { v: versify({ size: 0, kind: "CBOR" }), t: "icp", d: "Eabc", i: "Eabc", s: "0" },
+      ked: {
+        v: versify({ size: 0, kind: "CBOR" }),
+        t: "icp",
+        d: "Eabc",
+        i: "Eabc",
+        s: "0",
+      },
     },
     {
       kind: "MGPK" as const,
-      ked: { v: versify({ size: 0, kind: "MGPK" }), t: "icp", d: "Eabc", i: "Eabc", s: "0" },
+      ked: {
+        v: versify({ size: 0, kind: "MGPK" }),
+        t: "icp",
+        d: "Eabc",
+        i: "Eabc",
+        s: "0",
+      },
     },
   ];
 
@@ -49,7 +67,9 @@ Deno.test("sizeify: rewrites version size to final serialized length", () => {
 });
 
 Deno.test("dumps: CESR native KERI sad round-trips through reapSerder", () => {
-  const { serder } = reapSerder(new TextEncoder().encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
+  const { serder } = reapSerder(
+    new TextEncoder().encode(KERIPY_NATIVE_V2_ICP_FIX_BODY),
+  );
   const raw = dumps((serder as Serder).sad ?? {}, "CESR");
   assertEquals(raw, new TextEncoder().encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
 });

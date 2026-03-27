@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { Cipher } from "../../../src/primitives/cipher.ts";
 import { token } from "../../fixtures/counter-token-fixtures.ts";
-import {
-  KERIPY_CODE_VECTORS,
-  KERIPY_MATTER_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_CODE_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
 Deno.test("cipher: hydrates KERIpy cipher-seed code family", () => {
   const cipher = new Cipher({

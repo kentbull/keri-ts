@@ -181,6 +181,25 @@ Deno.test("db/core lmdber oniodup - last-per-ordinal iterators group by ordinal 
   });
 });
 
+Deno.test("db/core lmdber oniodup - top-branch iterator returns logical duplicate triples with stripped proems", async () => {
+  await withTempLMDBer("oniodup-top", (lmdber) => {
+    const dups = lmdber.openDB("dups.", true);
+
+    lmdber.putOnIoDupVals(dups, b("ledger"), 0, [b("red"), b("blue")]);
+    lmdber.putOnIoDupVals(dups, b("ledger"), 1, [b("green")]);
+    lmdber.putOnIoDupVals(dups, b("other"), 0, [b("side")]);
+
+    assertEquals(
+      onItemsAsText(lmdber.getOnTopIoDupItemIter(dups, b("ledger"))),
+      [
+        "ledger:0=red",
+        "ledger:0=blue",
+        "ledger:1=green",
+      ],
+    );
+  });
+});
+
 Deno.test("db/core lmdber oniodup - delete, count, and full-scan helpers work across ordinals and mixed keys", async () => {
   await withTempLMDBer("oniodup-delete", (lmdber) => {
     const dups = lmdber.openDB("dups.", true);

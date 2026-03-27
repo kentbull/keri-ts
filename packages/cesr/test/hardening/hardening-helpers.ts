@@ -93,9 +93,7 @@ export function summarizeFrames(frames: CesrFrame[]): FrameSummary[] {
       ilk: event.frame.body.ilk ?? "",
       said: event.frame.body.said ?? "",
       nativeBodyCode: event.frame.body.native?.bodyCode ?? "",
-      attachments: event.frame.attachments.map((attachment) =>
-        `${attachment.code}:${attachment.count}`
-      ),
+      attachments: event.frame.attachments.map((attachment) => `${attachment.code}:${attachment.count}`),
     }));
 }
 
@@ -225,9 +223,7 @@ export function wrapQuadletGroupV2(code: string, payload: string): string {
 /** Build `KERIACDCGenusVersion` selector token for explicit version-context vectors. */
 export function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${
-    intToB64(patch, 1)
-  }`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
 }
 
 /**

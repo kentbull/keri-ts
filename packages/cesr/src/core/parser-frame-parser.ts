@@ -5,11 +5,7 @@ import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
-import {
-  interpretMapperBodySyntax,
-  type MapperBodySyntax,
-  parseMapperBodySyntax,
-} from "../primitives/mapper.ts";
+import { interpretMapperBodySyntax, type MapperBodySyntax, parseMapperBodySyntax } from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import type { Primitive } from "../primitives/primitive.ts";
 import { parseVerser } from "../primitives/verser.ts";

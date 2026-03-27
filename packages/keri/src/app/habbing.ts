@@ -1,13 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import {
-  Cigar,
-  DigDex,
-  DIGEST_CODES,
-  parseMatter,
-  PREFIX_CODES,
-  SerderKERI,
-  Siger,
-} from "../../../cesr/mod.ts";
+import { Cigar, DigDex, DIGEST_CODES, parseMatter, PREFIX_CODES, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
 import { Baser, createBaser } from "../db/basing.ts";

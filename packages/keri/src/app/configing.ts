@@ -248,9 +248,7 @@ export class Configer {
       return JSON.parse(raw) as T;
     } catch (error) {
       throw new ValidationError(
-        `Invalid JSON configuration at ${path}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Invalid JSON configuration at ${path}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

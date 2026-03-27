@@ -341,7 +341,10 @@ export class Manager {
     const currentAeid = this.aeid;
 
     if (currentAeid) {
-      if (!this.seed || !this.encrypter || !seedMatchesAeid(this.seed, currentAeid)) {
+      if (
+        !this.seed || !this.encrypter
+        || !seedMatchesAeid(this.seed, currentAeid)
+      ) {
         throw new Error(
           `Last seed missing or provided last seed not associated with last aeid=${currentAeid}.`,
         );
@@ -383,7 +386,9 @@ export class Manager {
       // `pris.` stores signer seeds keyed by their public verifier. Reads here
       // are intentionally plaintext through the decrypter so the subdb can
       // immediately re-pin under the new encryption policy.
-      for (const [keys, signer] of this.ks.pris.getTopItemIter("", this.decrypter)) {
+      for (
+        const [keys, signer] of this.ks.pris.getTopItemIter("", this.decrypter)
+      ) {
         this.ks.pris.pin(keys, signer, this.encrypter ?? undefined);
       }
     }
@@ -567,7 +572,9 @@ export class Manager {
    */
   private signIndexed(ser: Uint8Array, pubs: string[]): Siger[] {
     if (this.aeid && !this.decrypter) {
-      throw new Error("Unauthorized decryption attempt. Aeid but no decrypter.");
+      throw new Error(
+        "Unauthorized decryption attempt. Aeid but no decrypter.",
+      );
     }
     const sigers: Siger[] = [];
     for (const [idx, pub] of pubs.entries()) {
@@ -590,7 +597,9 @@ export class Manager {
    */
   private signUnindexed(ser: Uint8Array, pubs: string[]): Cigar[] {
     if (this.aeid && !this.decrypter) {
-      throw new Error("Unauthorized decryption attempt. Aeid but no decrypter.");
+      throw new Error(
+        "Unauthorized decryption attempt. Aeid but no decrypter.",
+      );
     }
     const cigars: Cigar[] = [];
     for (const pub of pubs) {

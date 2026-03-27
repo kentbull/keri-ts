@@ -1,10 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { Encrypter } from "../../../src/primitives/encrypter.ts";
-import {
-  KERIPY_CODE_VECTORS,
-  KERIPY_MATTER_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_CODE_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
 Deno.test("encrypter: hydrates KERIpy X25519 vector", () => {
   const encrypter = new Encrypter({

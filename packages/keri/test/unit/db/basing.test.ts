@@ -12,6 +12,7 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
     try {
       const dater = encodeDateTimeToDater("2026-03-16T12:34:56.000000+00:00");
       assertEquals(baser.putKel("Epre", 0, "Esaid"), true);
+      assertEquals(baser.putKel("Epre", 1, "Esaid1"), true);
       assertEquals(baser.appendFel("Epre", "Esaid"), 0);
       assertEquals(baser.putDts("Epre", "Esaid", dater), true);
       assertEquals(
@@ -36,6 +37,10 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
       );
 
       assertEquals(baser.getKel("Epre", 0), "Esaid");
+      assertEquals([...baser.getKelItemIter("Epre")], [
+        [0, "Esaid"],
+        [1, "Esaid1"],
+      ]);
       assertEquals(baser.getFel("Epre", 0), "Esaid");
       assertEquals(baser.getFelFn("Epre", "Esaid"), 0);
       assertEquals(baser.getDts("Epre", "Esaid"), dater);

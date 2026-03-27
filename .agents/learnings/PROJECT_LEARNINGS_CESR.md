@@ -77,8 +77,8 @@ Persistent CESR parser memory for `keri-ts`.
     must stay conservative and only auto-narrow unambiguous code families.
 22. `Mapper` and `Aggor` now have explicit semantic value envelopes instead of
     `unknown`: mapper values are recursive scalar/list/map trees, aggregate
-    lists are `string | map` elements, and broader serder/KED layers should
-    cast deliberately when crossing into those mapper-native contracts.
+    lists are `string | map` elements, and broader serder/KED layers should cast
+    deliberately when crossing into those mapper-native contracts.
 23. CESR codex interpretation must keep the KERIpy layering straight: `Matter`
     and `Indexer` each have one shared, non-versioned base code space plus
     semantic subset codexes such as `PreDex`, `NonceDex`, and `IdxSigDex`;
@@ -282,8 +282,8 @@ Persistent CESR parser memory for `keri-ts`.
 - Added a shared `hydrate.ts` seam for generic callers, but made it
   intentionally conservative after auditing KERIpy's codex layering: many
   semantic subset codexes reuse literals from the shared base `Matter` or
-  `Indexer` code spaces, so automatic narrowing is only honest for
-  unambiguous families such as `Dater`, `Decimer`, `Cigar`, and `Siger`.
+  `Indexer` code spaces, so automatic narrowing is only honest for unambiguous
+  families such as `Dater`, `Decimer`, `Cigar`, and `Siger`.
 - Added regression coverage for the hydrator contract itself plus app-level
   proof that `Manager.incept()` and `Manager.sign()` now return narrow
   primitives instead of qb64-only `Matter`/`Indexer` projections.
@@ -423,8 +423,8 @@ Persistent CESR parser memory for `keri-ts`.
 - Completed a broad maintainer-doc pass across CESR exported helper/type seams
   in annotate, adapters, parser, serder, core, and table modules.
 - Added short maintainer comments to dense helper ladders in `render.ts`,
-  `serder.ts`, `matter.ts`, `indexer.ts`, and `counter.ts` so parser/native
-  flow and primitive inhale/exhale responsibilities are reviewable without
+  `serder.ts`, `matter.ts`, `indexer.ts`, and `counter.ts` so parser/native flow
+  and primitive inhale/exhale responsibilities are reviewable without
   re-deriving them from control flow.
 - Captured the preferred doc pattern for codex/table families explicitly:
   grouped block comments are correct for obviously derived semantic-set exports,

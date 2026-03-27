@@ -6,8 +6,7 @@ import { type Kind, type Protocol, Vrsn_1_0 } from "../tables/versions.ts";
 
 // KERIpy parity: allow version token to begin within the first 12 bytes.
 const MAXVSOFFSET = 12;
-const VER1 =
-  /(?<proto1>[A-Z]{4})(?<major1>[0-9a-f])(?<minor1>[0-9a-f])(?<kind1>[A-Z]{4})(?<size1>[0-9a-f]{6})_/;
+const VER1 = /(?<proto1>[A-Z]{4})(?<major1>[0-9a-f])(?<minor1>[0-9a-f])(?<kind1>[A-Z]{4})(?<size1>[0-9a-f]{6})_/;
 const VER2 =
   /(?<proto2>[A-Z]{4})(?<pmajor2>[A-Za-z0-9_-])(?<pminor2>[A-Za-z0-9_-]{2})(?<gmajor2>[A-Za-z0-9_-])(?<gminor2>[A-Za-z0-9_-]{2})(?<kind2>[A-Z]{4})(?<size2>[A-Za-z0-9_-]{4})\./;
 

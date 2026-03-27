@@ -1,13 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.2";
-import {
-  Cipher,
-  type Decrypter,
-  type Encrypter,
-  NumberPrimitive,
-  Prefixer,
-  Signer,
-} from "../../../cesr/mod.ts";
+import { Cipher, type Decrypter, type Encrypter, NumberPrimitive, Prefixer, Signer } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple } from "../core/records.ts";
@@ -131,26 +124,32 @@ export class Keeper {
     });
   }
 
+  /** Expose the resolved keeper database name delegated from the root LMDBer. */
   get name(): string {
     return this.lmdber.name;
   }
 
+  /** Expose the resolved keeper base prefix delegated from the root LMDBer. */
   get base(): string {
     return this.lmdber.base;
   }
 
+  /** Report whether the keeper LMDB environment and named subdb surface are open. */
   get opened(): boolean {
     return this.lmdber.opened;
   }
 
+  /** Report whether the keeper environment is opened in read-only mode. */
   get readonly(): boolean {
     return this.lmdber.readonly;
   }
 
+  /** Report whether this keeper uses a temporary backing directory. */
   get temp(): boolean {
     return this.lmdber.temp;
   }
 
+  /** Expose the resolved filesystem path for the keeper environment, when open. */
   get path(): string | null {
     return this.lmdber.path;
   }
@@ -236,6 +235,7 @@ export class Keeper {
     }
   }
 
+  /** Close the underlying keeper LMDB environment. */
   *close(clear = false): Operation<boolean> {
     return yield* this.lmdber.close(clear);
   }

@@ -8,10 +8,7 @@ import {
   parseCounterFromText,
 } from "../../../src/primitives/counter.ts";
 import type { Versionage } from "../../../src/tables/table-types.ts";
-import {
-  KERIPY_COUNTER_VECTORS,
-  KERIPY_MAIN_BASELINE,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_COUNTER_VECTORS, KERIPY_MAIN_BASELINE } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 const V1 = { major: 1, minor: 0 } as const;

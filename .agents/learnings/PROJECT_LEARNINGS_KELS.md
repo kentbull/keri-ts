@@ -76,6 +76,11 @@ replay/verification semantics.
     signing should expose `Siger[]`/`Cigar[]`, and DB helpers should accept the
     narrow primitive types directly instead of rehydrating every signature from
     strings at the last minute.
+21. DB-layer parity now includes the later KERIpy normalized ordinal-wrapper API
+    shape: `Komer`/`Suber`/`OnSuber*`/`OnIoDup*`/`OnIoSet*` should expose the
+    newer `getTop*` / `getAll*` / non-`On` method families as the forward parity
+    surface, while legacy `getOn*` and plain `Suber.getItemIter()` remain
+    temporary compatibility aliases until higher layers migrate.
 
 ## Scope Checklist
 
@@ -101,13 +106,57 @@ Use this doc for:
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
    maintenance regression and guard against them automatically.
 
+### 2026-03-18 - DB Wrapper Surface Normalized For Later KERIpy Parity
+
+- Added the later KERIpy DB-surface normalization from `subing.py` into
+  `keri-ts` without breaking current local call sites: the forward parity API is
+  now the non-legacy `getTop*` / `getAll*` / non-`On` method family, while the
+  older `getOn*` and plain `Suber.getItemIter()` names remain compatibility
+  wrappers.
+- `Komer` now exposes `cntAll()` as the same additive counting alias KERIpy
+  expects, which lets future mapper call sites use the mixed wrapper-counting
+  vocabulary without reopening the storage review.
+- `OnSuberBase`, `OnIoDupSuber`, and `OnIoSetSuber` now expose the newer
+  KERIpy-style normalized methods directly, including branch scans,
+  exact-ordinal accessors, all-ordinal iterators, last-item views, backward
+  scans, and count aliases, while retaining the pre-normalization `*On*` surface
+  as wrappers.
+- `LMDBer` now includes `getOnTopIoDupItemIter()`, which closes the remaining
+  DB-core helper gap needed by the normalized `OnIoDupSuber.getTopItemIter()`
+  surface.
+- Added targeted unit coverage for the normalized ordinal-wrapper methods and
+  the retained legacy aliases so future parity work can prefer the new names
+  without rediscovering which old calls are still intentionally supported.
+- Follow-up call-site migration in `Baser` proved the important boundary:
+  `fels.` now uses the normalized `getAllItemIter()` surface just like current
+  upstream KERIpy, but `kels.` intentionally still uses `addOn()` /
+  `getOnLast()` / `getOnLastItemIter()` because upstream has not actually
+  normalized that path yet. The parity rule is to follow the real upstream call
+  graph, not to blanket-rename every ordinal-wrapper access just because newer
+  aliases exist elsewhere.
+
+### 2026-03-18 - DB Method Documentation Became Family-Level Contract Coverage
+
+- The DB documentation rule is no longer satisfied by class docstrings alone.
+  `LMDBer`, `Baser`, `Komer`, `Suber`, and the ordinal/dup/io-set wrapper
+  families now need maintainer-grade method docs on the public storage
+  operations and on the important adapter seams that reinterpret raw LMDB bytes.
+- The useful unit of documentation is the storage family, not the file. Method
+  docs should explain the storage model (`On*`, `IoSet*`, `Dup*`, `IoDup*`),
+  what hidden suffixes/proems are being stripped or preserved, and whether a
+  method is the normalized forward API or a retained compatibility alias.
+- Helper conversion seams such as Base64 tuple serializers, CESR tuple
+  splitters, and root lifecycle getters matter enough to document because
+  maintainers otherwise end up re-deriving byte-level invariants from
+  implementation code.
+
 ### 2026-03-17 - Gate D Encrypted Keeper Semantics Landed
 
 - Added a KERI-local `libsodium-wrappers@0.8.2` JS+WASM backend for sealed-box
   behavior instead of hand-rolling the missing pieces around `@noble`.
 - `Manager` now performs real AEID-backed salt and signer encryption, keeper
-  reopen decryption, and `updateAeid()` re-encryption for root salt,
-  per-prefix salts, and `pris.` signer seeds.
+  reopen decryption, and `updateAeid()` re-encryption for root salt, per-prefix
+  salts, and `pris.` signer seeds.
 - `CryptSignerSuber` is no longer a placeholder seam; it now stores ciphertext
   at rest and decrypts signer seeds on read when given a decrypter.
 - Encrypted signator reopen is now covered directly, so Gate D is not just
@@ -257,8 +306,9 @@ Use this doc for:
   KLI-created encrypted store using `tufa list --compat` / `tufa aid --compat`.
 - Promoted the repo memory accordingly: Gate C visibility should no longer be
   described as merely "harness-ready" or "tufa-side only".
-- Verdict: the visibility-only compat-store plumbing is no longer the bottleneck;
-  the real blocker is Gate D encrypted secret semantics and reopen reliability.
+- Verdict: the visibility-only compat-store plumbing is no longer the
+  bottleneck; the real blocker is Gate D encrypted secret semantics and reopen
+  reliability.
 
 ### 2026-03-17 - Inception Construction Moved Onto Shared `SerderKERI` Semantics
 
@@ -267,8 +317,8 @@ Use this doc for:
 - Added focused unit evidence for two parity-sensitive cases: non-transferable
   prefixes that must equal the signing key, and digestive prefix-code overrides
   that must not collapse back to the signing key path.
-- Verdict: init/incept parity should now evolve through shared serder logic,
-  not through more bootstrap-local event-construction helpers.
+- Verdict: init/incept parity should now evolve through shared serder logic, not
+  through more bootstrap-local event-construction helpers.
 
 ### 2026-03-16 - Exact `cbor2` Byte Parity Became A Shared Codec Rule
 
@@ -431,6 +481,6 @@ Use this doc for:
 - The important maintainer lesson is that DB/app parity drift does not only
   happen in classes. Tiny exported helpers and aliases can silently become the
   real contract future work relies on, so they now need meaning-first docs too.
-- Kept the docs additive around actively changing files such as `habbing.ts`
-  and `keeping.ts`; the sweep was intentionally documentation-only and did not
+- Kept the docs additive around actively changing files such as `habbing.ts` and
+  `keeping.ts`; the sweep was intentionally documentation-only and did not
   revert or reshape the surrounding in-flight implementation work.

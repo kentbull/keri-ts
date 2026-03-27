@@ -17,12 +17,12 @@ organized by component with clear implementation priorities.
 3. The bootstrap `subing.ts` / `koming.ts` / `basing.ts` / `keeping.ts` slice is
    live enough to back Gate B and Gate C visibility, including typed CESR and
    serder wrappers plus broad `Baser` / `Keeper` named-subdb binding.
-4. This checklist is partially stale: unchecked boxes below do not mean
-   "missing in code"; many Phase 1 and bootstrap Phase 2 items are landed but
-   have not been rescored row-by-row in this document yet.
-5. Path note: base `LMDBer` defaults to `.tufa/db` / `.tufa/clean/db`;
-   `.keri/*` tails are selected by compat-aware `Baser` / `Keeper`, not by the
-   base `LMDBer` default.
+4. This checklist is partially stale: unchecked boxes below do not mean "missing
+   in code"; many Phase 1 and bootstrap Phase 2 items are landed but have not
+   been rescored row-by-row in this document yet.
+5. Path note: base `LMDBer` defaults to `.tufa/db` / `.tufa/clean/db`; `.keri/*`
+   tails are selected by compat-aware `Baser` / `Keeper`, not by the base
+   `LMDBer` default.
 6. The real next blockers are Gate E/F/G command breadth, escrow/process-loop
    infrastructure, and matrix refresh, not the initial creation of core LMDB
    helpers.

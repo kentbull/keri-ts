@@ -4,10 +4,7 @@ import { createParser } from "../../src/core/parser-engine.ts";
 import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
-import {
-  KERIPY_NATIVE_V2_ICP_FIX_BODY,
-  PARSIDE_GROUP_VECTORS,
-} from "../fixtures/external-vectors.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 Deno.test("parside fixtures parse as expected CESR groups", () => {
@@ -163,9 +160,7 @@ Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with att
 Deno.test("top-level native MapBodyGroup without version field is rejected as non-message", () => {
   const base = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   const payload = base.slice(4);
-  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${
-    payload.slice(16)
-  }`;
+  const mapPayload = `0J_i${payload.slice(0, 12)}0J_s${payload.slice(12, 16)}0J_d${payload.slice(16)}`;
   const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, mapPayload.length / 4)}${mapPayload}`;
 
   const parser = createParser();

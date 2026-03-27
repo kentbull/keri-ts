@@ -13,8 +13,8 @@
 
 This decision is based on:
 
-- `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
-- `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
 - `packages/cesr` test baselines captured during reconciliation
 
 ## GO Criteria Check
