@@ -42,6 +42,7 @@ env:
   NODE_VERSION: "22.14.0"
   PYTHON_VERSION: "3.14"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v2
+  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v1
   KERIPY_CACHE_KEY_PREFIX: keripy-v1
 
 jobs:
@@ -242,8 +243,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: restore interop LMDB node_modules cache
+        id: interop-node-modules-cache
+        # The shared deps cache is only bootstrap state. Interop jobs need a
+        # second authoritative cache for node_modules after `deno task setup`
+        # has rebuilt LMDB-js with the required v1 data format.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
       - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.deps-cache.outputs.cache-hit != 'true'
+        # Only the interop node_modules cache proves the native addon was
+        # rebuilt for KERIpy-compatible LMDB v1 semantics.
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
           deno task setup
@@ -306,8 +321,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: restore interop LMDB node_modules cache
+        id: interop-node-modules-cache
+        # The shared deps cache is only bootstrap state. Interop jobs need a
+        # second authoritative cache for node_modules after `deno task setup`
+        # has rebuilt LMDB-js with the required v1 data format.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
       - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.deps-cache.outputs.cache-hit != 'true'
+        # Only the interop node_modules cache proves the native addon was
+        # rebuilt for KERIpy-compatible LMDB v1 semantics.
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
           deno task setup
@@ -370,8 +399,22 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: restore interop LMDB node_modules cache
+        id: interop-node-modules-cache
+        # The shared deps cache is only bootstrap state. Interop jobs need a
+        # second authoritative cache for node_modules after `deno task setup`
+        # has rebuilt LMDB-js with the required v1 data format.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
       - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.deps-cache.outputs.cache-hit != 'true'
+        # Only the interop node_modules cache proves the native addon was
+        # rebuilt for KERIpy-compatible LMDB v1 semantics.
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
           deno task setup

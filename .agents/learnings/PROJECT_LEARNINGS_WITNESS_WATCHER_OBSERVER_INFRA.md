@@ -37,6 +37,40 @@ Use this doc for:
 
 ## Handoff Log
 
+### 2026-03-27 - Interop CI Cache Split Made LMDB V1 Rebuild Deterministic
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/macos-compatibility.yml`
+- What changed:
+  - Kept the shared Deno/bootstrap cache, but added a second
+    interop-only `node_modules` cache keyed separately for LMDB v1-sensitive
+    jobs.
+  - Changed the interop/release/macOS workflows so `deno task setup` is gated
+    on the interop-specific cache hit, not the shared bootstrap cache hit.
+  - This makes the native-addon contract deterministic: generic jobs may still
+    warm shared dependency caches, but only an interop job that actually ran
+    the LMDB v1 rebuild can satisfy the cache that suppresses future rebuilds.
+- Why:
+  - The prior shared cache allowed non-interop jobs to populate `node_modules`
+    and then caused interop jobs to skip the only step that rebuilt `lmdb-js`
+    for KERIpy-compatible v1 storage semantics.
+  - The resulting failure mode reproduced as a Deno Linux N-API panic during
+    Gate C compat-store open, so the cache topology itself had to become more
+    precise.
+- Tests:
+  - Command: not run locally; workflow semantics change only
+  - Result: pending GitHub Actions verification
+- Contracts/plans touched:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/macos-compatibility.yml`
+- Risks/TODO:
+  - If Gate C still panics after the new interop cache is warmed, the next
+    suspect is Deno `2.7.5`'s Linux N-API runtime seam rather than stale cache
+    population.
+
 ### 2026-03-03 - LMDB `dupsort` Design Reference Added
 
 - Topic docs updated:
