@@ -10,9 +10,9 @@ KELS, ACDC, crypto, and infra work.
 At the start of each new task thread, read these files first:
 
 1. `AGENTS.md` (this file)
-2. `docs/design-docs/PROJECT_LEARNINGS.md` (top-level index)
+2. `.agents/PROJECT_LEARNINGS.md` (top-level index)
 3. Task-relevant topic learnings docs listed under "Current Focus" in
-   `docs/design-docs/PROJECT_LEARNINGS.md`
+   `.agents/PROJECT_LEARNINGS.md`
 4. Any task-specific contract/ADR/plan docs referenced by those topic docs
 5. As needed, remember to refer, on a task by task basis, to the KERIpy python
    reference implementation stored at `$HOME/code/keri/kentbull/keripy` for
@@ -31,19 +31,19 @@ For tasks where significant changes have been made, before final response,
 update:
 
 1. The appropriate topic learnings doc(s) for the task context
-2. `docs/design-docs/PROJECT_LEARNINGS.md` with a concise cross-topic summary
+2. `.agents/PROJECT_LEARNINGS.md` with a concise cross-topic summary
 3. Relevant ADRs, architectural, or design docs from `docs/adr`,
    `docs/design-docs`, or otherwise.
 
-Use the handoff templates in `docs/design-docs/PROJECT_LEARNINGS.md`.
+Use the handoff templates in `.agents/PROJECT_LEARNINGS.md`.
 
 ## Learnings Document Policy
 
 Use a hierarchical memory model:
 
-1. `docs/design-docs/PROJECT_LEARNINGS.md`: index, current focus, cross-topic
+1. `.agents/PROJECT_LEARNINGS.md`: index, current focus, cross-topic
    summary, routing.
-2. `docs/design-docs/learnings/PROJECT_LEARNINGS_*.md`: deeper topic-specific
+2. `.agents/learnings/PROJECT_LEARNINGS_*.md`: deeper topic-specific
    learnings and handoff log.
 
 Split guideline:

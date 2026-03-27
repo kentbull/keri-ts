@@ -73,8 +73,8 @@ Use this doc for:
 ### 2026-03-17 - Section `$id` / `d` / `agid` Parity Became Explicit
 
 - Topic docs updated:
-  - `docs/design-docs/PROJECT_LEARNINGS.md`
-  - `docs/design-docs/learnings/PROJECT_LEARNINGS_CESR.md`
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
 - What changed:
   - `SerderACDC` now normalizes and verifies section identifiers using the same
     section-family split KERIpy uses:

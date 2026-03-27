@@ -219,7 +219,7 @@ Use this doc for:
   - Result: workflow/test logic updated; next GitHub Actions run is the real
     verification point
 - Contracts/plans touched:
-  - `docs/design-docs/PROJECT_LEARNINGS.md`
+  - `.agents/PROJECT_LEARNINGS.md`
 - Risks/TODO:
   - The Linux Deno N-API panic may still need a runner/runtime pin if it proves
     independent of LMDB data-format compatibility; this change fixes the known
@@ -301,7 +301,7 @@ Use this doc for:
     `deno task test:quality:keri:interop-gates-c`
   - Result: all passed locally
 - Contracts/plans touched:
-  - `docs/design-docs/PROJECT_LEARNINGS.md`
+  - `.agents/PROJECT_LEARNINGS.md`
 - Risks/TODO:
   - On a cold GitHub cache, the extra KERI job fan-out will increase duplicate
     dependency/bootstrap work before cache reuse stabilizes; the tradeoff is

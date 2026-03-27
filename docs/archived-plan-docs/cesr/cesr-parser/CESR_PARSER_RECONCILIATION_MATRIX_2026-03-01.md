@@ -6,12 +6,12 @@ This matrix reconciles CESR parser commitments from:
 
 - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 - `docs/design-docs/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
-- `docs/design-docs/cesr-parser/initial-plan-docs/CESR_PARSER_CONSOLIDATED_PLAN_AND_RESULTS.md`
-- `docs/design-docs/cesr-parser/CESR_PARSER_MAINTAINER_GUIDE.md`
-- `docs/design-docs/cesr-parser/initial-plan-docs/CESR_PARSER_FLOW_FROM_TUFA_ANNOTATE.md`
-- `docs/design-docs/cesr-parser/initial-plan-docs/CESR_PARSER_PROGRESS_SUMMARY_2026-02-13.md`
-- `docs/design-docs/cesr-parser/initial-plan-docs/CESR_ANNOTATION_PLAN.md`
-- `docs/design-docs/cesr-parser/initial-plan-docs/my-cesr-plan.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_CONSOLIDATED_PLAN_AND_RESULTS.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_MAINTAINER_GUIDE.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_FLOW_FROM_TUFA_ANNOTATE.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_PROGRESS_SUMMARY_2026-02-13.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_ANNOTATION_PLAN.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/my-cesr-plan.md`
 - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
 - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
 - `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
