@@ -63,7 +63,7 @@ baseline constraints for readability refactors:
 
 - Point 1 deliverables are complete as of 2026-02-28:
   - canonical lifecycle contract
-    (`docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`)
+    (`docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`)
   - parser lifecycle comments and transition invariants
   - explicit ordering and flush behavior lock tests (including `V-P1-014`)
 - Explicit two-track frame lifecycle:
@@ -117,7 +117,7 @@ Status:
 
 - Completed on 2026-02-28.
 - Completion evidence:
-  - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+  - `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
   - `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-014`, `V-P1-012`,
     `V-P0-008`, `V-P0-009`)
   - parser lifecycle comment/invariant updates in
@@ -425,7 +425,7 @@ Why:
 Progress note:
 
 - P0/P1 parity vectors are implemented and tracked in:
-  - `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+  - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 - Phase 5 invariants are implemented in:
   - `packages/cesr/test/unit/counter-version-registry.test.ts`
   - `packages/cesr/test/unit/dispatch-spec-invariants.test.ts`
@@ -434,7 +434,7 @@ Progress note:
   - with fixture updates in:
     - `packages/cesr/test/fixtures/external-vectors.ts`
 - Deferred breadth hardening is tracked in:
-  - `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+  - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-p2-hardening-interop-plan.md`
 
 ### 9) Apply naming and terminology normalization pass
 
@@ -443,8 +443,8 @@ Status:
 - Completed on 2026-03-01 (documentation-first, targeted scope).
 - Completion evidence:
   - parser terminology glossaries added/aligned in:
-    - `docs/design-docs/CESR_PARSER_MAINTAINER_GUIDE.md`
-    - `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+    - `docs/design-docs/cesr/CESR_PARSER_MAINTAINER_GUIDE.md`
+    - `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
   - targeted ambiguity-reducing identifier/comment normalization in:
     - `packages/cesr/src/annotate/annotator.ts`
     - `packages/cesr/src/core/parser-attachment-collector.ts`
@@ -495,7 +495,7 @@ complete.
 Deliverables:
 
 - use and extend deferred perf plan:
-  - `docs/plans/cesr/cesr-parser-buffer-perf-plan.md`
+  - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-buffer-perf-plan.md`
 - ensure optimized internals remain hidden behind readable abstractions
 - add/refresh microbenchmark baselines before introducing optimization deltas
 - include rollback criteria when complexity increase is not justified by
@@ -525,8 +525,8 @@ Why:
 ## Related Docs
 
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
-- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-- `docs/plans/cesr/cesr-parser-buffer-perf-plan.md`
-- `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
-- `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-buffer-perf-plan.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-p2-hardening-interop-plan.md`
 - `packages/cesr/test/unit/parser.test.ts`

@@ -4,12 +4,12 @@
 
 This document condenses and de-duplicates the parser planning content from:
 
-- `docs/design-docs/codex-plan.md`
+- (deleted) former `codex-plan.md` draft
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/my-cesr-plan.md`
-- (deleted) `docs/design-docs/CESR_IMPLEMENTATION_ANALYSIS_COMPOSER.md`
-- (deleted) `docs/design-docs/CESR_IMPLEMENTATION_ANALYSIS_GPT5Codex.md`
-- (deleted) `docs/design-docs/CESR_IMPLEMENTATION_ANALYSIS_GROK.md`
-- (deleted) `docs/design-docs/CESR_IMPLEMENTATION_ANALYSIS_Sonnet.md`
+- (deleted) former CESR implementation analysis draft (`COMPOSER`)
+- (deleted) former CESR implementation analysis draft (`GPT5Codex`)
+- (deleted) former CESR implementation analysis draft (`GROK`)
+- (deleted) former CESR implementation analysis draft (`Sonnet`)
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_ANNOTATION_PLAN.md`
 
 ## Consolidated Design Goals

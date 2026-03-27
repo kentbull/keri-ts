@@ -8,7 +8,7 @@ invariants that should stay stable as we push toward full KERIpy parity.
 
 Canonical parser lifecycle/state-machine contract:
 
-- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 
 ## Parser terminology (normative)
 

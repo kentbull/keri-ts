@@ -75,8 +75,7 @@ export interface PubSet {
  * Current `keri-ts` differences:
  * - active stores now open through `Suber`/`Komer` wrappers instead of raw
  *   named handles
- * - compatibility mode supports KERIpy `.keri/ks` layout visibility, but true
- *   encrypted secret semantics remain incomplete
+ * - compatibility mode supports KERIpy `.keri/ks` layout visibility
  */
 export class Keeper {
   private lmdber: LMDBer;

@@ -31,9 +31,9 @@ I touch `tufa init`" use case, not for exhaustive API reference.
 
 Parser cross-links:
 
-- [CESR Parser Maintainer Guide](../cesr-parser/CESR_PARSER_MAINTAINER_GUIDE.md)
-- [CESR Parser State Machine Contract](../CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-- [CESR Atomic Bounded Parser Architecture](../CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md)
+- [CESR Parser Maintainer Guide](../../../design-docs/cesr/CESR_PARSER_MAINTAINER_GUIDE.md)
+- [CESR Parser State Machine Contract](../../../design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md)
+- [CESR Atomic Bounded Parser Architecture](../../../design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md)
 
 Companion scan sheet:
 

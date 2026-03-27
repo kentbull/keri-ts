@@ -6,7 +6,7 @@
 - Updated: 2026-03-02
 - Priority: medium (post P0/P1 parity closure, pre broad ecosystem rollout)
 - Source backlog: extracted from
-  `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md` PARTIAL
+  `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md` PARTIAL
   rows
 
 ## Goal
@@ -20,10 +20,10 @@ P0/P1 parity lock so:
 ## Relationship to Existing Plans
 
 - Readability plan:
-  `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
-- Phased roadmap: `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
+  `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-improvement-plan.md`
+- Phased roadmap: `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-phased-roadmap.md`
 - P0/P1 matrix:
-  `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+  `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md`
 
 This document is the dedicated backlog for deferred breadth and hardening
 vectors.

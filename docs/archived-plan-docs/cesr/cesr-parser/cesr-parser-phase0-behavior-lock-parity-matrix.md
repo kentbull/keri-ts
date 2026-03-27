@@ -5,8 +5,8 @@
 - Created: 2026-02-27
 - Phase: 0 (Baseline and Evidence Capture)
 - Depends on:
-  - `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
-  - `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
+  - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-improvement-plan.md`
+  - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-phased-roadmap.md`
 - Source of truth target: `keripy` main (`keripy/src/keri/core/parsing.py` and
   `keripy/tests/core/test_parsing.py`)
 
@@ -307,7 +307,7 @@ None currently.
 
 Breadth/scale/parity-hardening coverage is tracked in:
 
-- `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-p2-hardening-interop-plan.md`
 
 ## Proposed Parity Test File Additions
 

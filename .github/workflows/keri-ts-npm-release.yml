@@ -31,6 +31,7 @@ env:
   NODE_VERSION: "22.14.0"
   PYTHON_VERSION: "3.14"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v2
+  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v1
   KERIPY_CACHE_KEY_PREFIX: keripy-v1
 
 jobs:
@@ -70,11 +71,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: restore interop LMDB node_modules cache
+        id: interop-node-modules-cache
+        # Release validation needs the same deterministic LMDB-js rebuild seam
+        # as PR interop jobs, so compat-sensitive node_modules are cached
+        # separately from generic dependency bootstrap state.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
       - name: rebuild LMDB-js with data v1 compatibility
         # The release test gate must respect the same LMDB data-format contract
         # as interop CI or we risk shipping a package validated against the
         # wrong native storage behavior.
-        if: steps.deps-cache.outputs.cache-hit != 'true'
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
           deno task setup

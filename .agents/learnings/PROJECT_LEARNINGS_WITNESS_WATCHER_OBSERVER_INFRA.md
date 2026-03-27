@@ -37,6 +37,40 @@ Use this doc for:
 
 ## Handoff Log
 
+### 2026-03-27 - Interop CI Cache Split Made LMDB V1 Rebuild Deterministic
+
+- Topic docs updated:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/macos-compatibility.yml`
+- What changed:
+  - Kept the shared Deno/bootstrap cache, but added a second
+    interop-only `node_modules` cache keyed separately for LMDB v1-sensitive
+    jobs.
+  - Changed the interop/release/macOS workflows so `deno task setup` is gated
+    on the interop-specific cache hit, not the shared bootstrap cache hit.
+  - This makes the native-addon contract deterministic: generic jobs may still
+    warm shared dependency caches, but only an interop job that actually ran
+    the LMDB v1 rebuild can satisfy the cache that suppresses future rebuilds.
+- Why:
+  - The prior shared cache allowed non-interop jobs to populate `node_modules`
+    and then caused interop jobs to skip the only step that rebuilt `lmdb-js`
+    for KERIpy-compatible v1 storage semantics.
+  - The resulting failure mode reproduced as a Deno Linux N-API panic during
+    Gate C compat-store open, so the cache topology itself had to become more
+    precise.
+- Tests:
+  - Command: not run locally; workflow semantics change only
+  - Result: pending GitHub Actions verification
+- Contracts/plans touched:
+  - `.github/workflows/pr-stage-gate.yml`
+  - `.github/workflows/keri-ts-npm-release.yml`
+  - `.github/workflows/macos-compatibility.yml`
+- Risks/TODO:
+  - If Gate C still panics after the new interop cache is warmed, the next
+    suspect is Deno `2.7.5`'s Linux N-API runtime seam rather than stale cache
+    population.
+
 ### 2026-03-03 - LMDB `dupsort` Design Reference Added
 
 - Topic docs updated:
@@ -147,7 +181,7 @@ Use this doc for:
   - Result: all passed locally; `fmt:check` emitted only a sandbox-local
     `dprint` incremental-cache write warning
 - Contracts/plans touched:
-  - `docs/design-docs/versioning-and-release-plan.md`
+  - `docs/versioning/versioning-and-release-plan.md`
 - Risks/TODO:
   - Branch protection in GitHub still needs to require the new PR workflow's
     status check if that rule is not already configured.
@@ -165,7 +199,7 @@ Use this doc for:
   - `.github/workflows/pr-stage-gate.yml`
   - `.github/workflows/keri-ts-npm-release.yml`
   - `.github/workflows/cesr-npm-release.yml`
-  - `docs/release-versioning.md`
+  - `docs/versioning/release-versioning.md`
 - What changed:
   - `generate_versions.ts` no longer derives build metadata from ambient
     `GITHUB_*` vars unless explicitly asked via `--ci-build-metadata` or
@@ -186,8 +220,8 @@ Use this doc for:
     `BUILD_METADATA=build.2.70eacff7 deno run -A scripts/generate_versions.ts --check`
   - Result: failed as expected, proving metadata stamping is now explicit
 - Contracts/plans touched:
-  - `docs/design-docs/versioning-and-release-plan.md`
-  - `docs/release-versioning.md`
+  - `docs/versioning/versioning-and-release-plan.md`
+  - `docs/versioning/release-versioning.md`
 - Risks/TODO:
   - Any future workflow that wants stamped runtime versions must opt in
     explicitly; ambient GitHub env is no longer enough.
@@ -263,7 +297,7 @@ Use this doc for:
   - Result: reached DNT's package-build/npm-install phase locally, but full
     end-to-end completion was not confirmed in this sandbox session
 - Contracts/plans touched:
-  - `docs/design-docs/versioning-and-release-plan.md`
+  - `docs/versioning/versioning-and-release-plan.md`
 - Risks/TODO:
   - The pinned action SHAs and scheduled macOS workflow still need live GitHub
     Actions confirmation because this local session cannot execute the hosted

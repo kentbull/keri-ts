@@ -9,7 +9,7 @@ Persistent CESR parser memory for `keri-ts`.
 1. Parser completeness has a formal `GO` decision against the KERIpy baseline;
    no open `S0/S1` reconciliation gaps are currently tracked for the parser
    contract surface.
-2. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the normative
+2. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the normative
    lifecycle contract, and parser behavior changes should stay mapped to that
    contract and its tests.
 3. Parser architecture remains intentionally atomic/bounded-substream first;
@@ -87,18 +87,18 @@ Persistent CESR parser memory for `keri-ts`.
 
 ## Key Docs
 
-1. `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-2. `docs/design-docs/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
-3. `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
-4. `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
-5. `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
-6. `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+2. `docs/design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
+3. `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-improvement-plan.md`
+4. `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-phased-roadmap.md`
+5. `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+6. `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-p2-hardening-interop-plan.md`
 7. `docs/adr/adr-0001-parser-atomic-bounded-first.md`
-8. `docs/design-docs/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
-9. `docs/design-docs/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
-10. `docs/design-docs/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
-11. `docs/design-docs/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
-12. `docs/design-docs/cesr-primitives/CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md`
+8. `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_RECONCILIATION_MATRIX_2026-03-01.md`
+9. `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_CROSS_IMPL_COMPARISON_2026-03-01.md`
+10. `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
+11. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
+12. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md`
 
 ## Current Follow-Ups
 
