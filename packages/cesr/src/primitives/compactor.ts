@@ -2,13 +2,7 @@ import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import {
-  Mapper,
-  type MapperInit,
-  type MapperMap,
-  type MapperValue,
-  parseMapperBody,
-} from "./mapper.ts";
+import { Mapper, type MapperInit, type MapperMap, type MapperValue, parseMapperBody } from "./mapper.ts";
 
 type SadMap = MapperMap;
 

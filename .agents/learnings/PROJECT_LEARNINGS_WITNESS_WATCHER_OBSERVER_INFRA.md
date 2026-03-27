@@ -65,11 +65,11 @@ Use this doc for:
   - `.github/workflows/cesr-npm-release.yml`
   - `.github/workflows/changesets-version-pr.yml`
 - What changed:
-  - Historical note only: CI originally standardized on `deno fmt --check`
-    plus a workflow-policy guard against other formatters.
+  - Historical note only: CI originally standardized on `deno fmt --check` plus
+    a workflow-policy guard against other formatters.
 - Why:
-  - Preserve the rationale chain for the later move from `deno fmt` to
-    `dprint`; this entry is superseded, not current policy.
+  - Preserve the rationale chain for the later move from `deno fmt` to `dprint`;
+    this entry is superseded, not current policy.
 - Tests:
   - Command: historical only
   - Result: superseded by the 2026-03-16 formatter-policy entry below
@@ -93,9 +93,9 @@ Use this doc for:
   - Updated generated-artifact formatting in CESR table generation to use
     `dprint` instead of `deno fmt`.
 - Why:
-  - `deno fmt` was too rigid for the desired whitespace style; `dprint`
-    provides more control over wrapping behavior and is a better fit for
-    maintainers who care strongly about layout.
+  - `deno fmt` was too rigid for the desired whitespace style; `dprint` provides
+    more control over wrapping behavior and is a better fit for maintainers who
+    care strongly about layout.
 - Tests:
   - Command: `deno check packages/cesr/scripts/generate-tables.ts`
   - Result: passed
@@ -115,9 +115,9 @@ Use this doc for:
   - `packages/keri/deno.json`
   - `packages/cesr/deno.json`
 - What changed:
-  - Added a dedicated PR workflow for pull requests targeting `master` that
-    runs formatting, linting, static quality checks, and both KERI/CESR test
-    suites as one merge gate.
+  - Added a dedicated PR workflow for pull requests targeting `master` that runs
+    formatting, linting, static quality checks, and both KERI/CESR test suites
+    as one merge gate.
   - Added an explicit repo lint task based on Deno's recommended rules with
     targeted exclusions for the repo's current Deno-import/Effection patterns,
     and fixed the concrete code/test issues needed for that lint pass to go
@@ -128,8 +128,8 @@ Use this doc for:
   - Applied the same pinned KERIpy install step to the `keri-ts` npm release
     workflow before its quality-test gate.
   - Added dependency caching across active workflows: shared Deno/module cache
-    plus npm cache everywhere, and a KERIpy virtualenv cache keyed by the
-    pinned Git SHA on workflows that run interop-sensitive tests.
+    plus npm cache everywhere, and a KERIpy virtualenv cache keyed by the pinned
+    Git SHA on workflows that run interop-sensitive tests.
   - Removed implicit GitHub-env sensitivity from runtime version checks:
     stage-gate quality checks force empty build metadata, and artifact-building
     release steps opt into stamped metadata explicitly instead of inheriting it
@@ -143,8 +143,7 @@ Use this doc for:
     the pinned KERIpy version changed.
 - Tests:
   - Commands: `deno task fmt:check`, `deno task lint`,
-    `deno task quality:check`, `deno task test:quality`,
-    `deno task test:cesr`
+    `deno task quality:check`, `deno task test:quality`, `deno task test:cesr`
   - Result: all passed locally; `fmt:check` emitted only a sandbox-local
     `dprint` incremental-cache write warning
 - Contracts/plans touched:
@@ -177,8 +176,8 @@ Use this doc for:
     stage-gate check path, while release build steps now opt into stamped
     metadata explicitly.
 - Why:
-  - Hidden GitHub-env behavior made `version:check` pass locally and fail in
-    CI for the same commit, which is a bad contract for a stage gate.
+  - Hidden GitHub-env behavior made `version:check` pass locally and fail in CI
+    for the same commit, which is a bad contract for a stage gate.
 - Tests:
   - Command:
     `GITHUB_RUN_NUMBER=2 GITHUB_SHA=70eacff790df06ff3b548aff3e2843883ddd6755 deno task version:check`
@@ -247,8 +246,8 @@ Use this doc for:
   - Added a scheduled `macOS Compatibility` workflow that reruns the interop,
     test, package-build, and tarball-smoke surface on `macos-latest`.
   - Strengthened the npm smoke path so `keri-ts` can be smoke-installed
-    alongside the just-built local `cesr-ts` tarball instead of silently
-    falling back to whatever version is currently published on npm.
+    alongside the just-built local `cesr-ts` tarball instead of silently falling
+    back to whatever version is currently published on npm.
 - Why:
   - One giant PR job hides where time and failures actually go, and changing
     required check names accidentally is an avoidable self-own.
@@ -256,10 +255,13 @@ Use this doc for:
     packaging seams, so exact pins and saved artifacts are higher-value than
     adding still more generic checks.
 - Tests:
-  - Commands: `deno task fmt`, `bash -n scripts/ci/assert-environment.sh scripts/smoke-test-keri-npm.sh`, `deno task quality:check`
+  - Commands: `deno task fmt`,
+    `bash -n scripts/ci/assert-environment.sh scripts/smoke-test-keri-npm.sh`,
+    `deno task quality:check`
   - Result: passed locally
   - Command: `deno task npm:build:all`
-  - Result: reached DNT's package-build/npm-install phase locally, but full end-to-end completion was not confirmed in this sandbox session
+  - Result: reached DNT's package-build/npm-install phase locally, but full
+    end-to-end completion was not confirmed in this sandbox session
 - Contracts/plans touched:
   - `docs/design-docs/versioning-and-release-plan.md`
 - Risks/TODO:
@@ -283,8 +285,8 @@ Use this doc for:
   - Added a documented CI runner script that encodes which groups are safe for
     `deno test --parallel` and which must stay isolated at file granularity.
   - Refactored the interop gate harness so ready scenarios are individual
-    `Deno.test(...)` cases, making them filterable and CI-addressable instead
-    of one long opaque test.
+    `Deno.test(...)` cases, making them filterable and CI-addressable instead of
+    one long opaque test.
   - Updated the PR stage gate to fan KERI coverage out across multiple jobs
     instead of one catch-all `keri-tests` lane.
 - Why:
@@ -292,8 +294,7 @@ Use this doc for:
     test file, and several CLI/app files mutate process-global state in ways
     that make naive `--parallel` usage flaky.
 - Tests:
-  - Commands:
-    `deno task test:quality:keri:fast`,
+  - Commands: `deno task test:quality:keri:fast`,
     `deno task test:quality:keri:app-stateful-a`,
     `deno task test:quality:keri:app-stateful-b`,
     `deno task test:quality:keri:interop-parity`,

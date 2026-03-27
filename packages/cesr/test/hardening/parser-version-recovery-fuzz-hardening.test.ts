@@ -37,9 +37,7 @@ Deno.test(
     // v1 wrapper intentionally carries explicit v2 selector + v2 body to lock
     // context transition behavior in mixed legacy/explicit streams.
     const v1WrapperPayload = `${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
-    const explicitV2Wrapped = `${
-      counterV1(CtrDexV1.GenericGroup, v1WrapperPayload.length / 4)
-    }${v1WrapperPayload}`;
+    const explicitV2Wrapped = `${counterV1(CtrDexV1.GenericGroup, v1WrapperPayload.length / 4)}${v1WrapperPayload}`;
     const stream = `${v1OpaqueNonNativeFrame()}${explicitV2Wrapped}`;
     const frames = parseFramesNoError(
       encode(stream),
@@ -64,8 +62,7 @@ Deno.test(
       CtrDexV2.AttachmentGroup,
       `${genusVersionCounter(1)}${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`,
     );
-    const stream =
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSelectorAttachment}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSelectorAttachment}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const frames = parseFramesNoError(encode(stream));
 
     assertEquals(frames.length, 2);
@@ -89,9 +86,7 @@ Deno.test(
     const wrapped = encode(
       wrapQuadletGroupV2(
         CtrDexV2.BodyWithAttachmentGroup,
-        `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
-          counterV2(CtrDexV2.ControllerIdxSigs, 1)
-        }${sigerToken()}`,
+        `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`,
       ),
     );
     const mgpk = minimalV1MgpkBody();
@@ -167,9 +162,7 @@ Deno.test(
     const baseCorpus = [
       wrapperHeavyV2Stream(),
       `${v1OpaqueNonNativeFrame()}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`,
-      `${genusVersionCounter(1)}${v1OpaqueNonNativeFrame()}${
-        genusVersionCounter(2)
-      }${KERIPY_NATIVE_V2_ICP_FIX_BODY}`,
+      `${genusVersionCounter(1)}${v1OpaqueNonNativeFrame()}${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`,
     ];
 
     for (const base of baseCorpus) {

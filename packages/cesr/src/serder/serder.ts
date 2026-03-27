@@ -1632,9 +1632,7 @@ export class SerderKERI extends Serder {
     const actualKeys = Object.keys(sad);
     if (allowedKeys.join("|") !== actualKeys.join("|")) {
       throw new DeserializeError(
-        `Invalid top level field list. Expected ${allowedKeys.join(",")} got ${
-          actualKeys.join(",")
-        }.`,
+        `Invalid top level field list. Expected ${allowedKeys.join(",")} got ${actualKeys.join(",")}.`,
       );
     }
 

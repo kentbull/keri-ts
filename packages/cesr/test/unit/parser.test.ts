@@ -7,11 +7,7 @@ import { COUNTER_CODE_NAMES_V1 } from "../../src/tables/counter.tables.generated
 import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
-import {
-  minimalV1CborBody,
-  minimalV1MgpkBody,
-  v1ify,
-} from "../fixtures/versioned-body-fixtures.ts";
+import { minimalV1CborBody, minimalV1MgpkBody, v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {
   const candidates = [
@@ -253,9 +249,7 @@ Deno.test("V-P0-010: parser ignores leading and repeated annotation bytes before
 
 Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
   const parser = createParser();
-  const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${
-    KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)
-  }`;
+  const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)}`;
   const frames = [...parser.feed(encode(bad)), ...parser.flush()];
   assertEquals(frames.some((e) => e.type === "error"), true);
 });

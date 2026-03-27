@@ -924,10 +924,10 @@ against KERIpy.
 **KERIpy comparison:** This mirrors the real KERIpy pattern more closely than a
 pure helper-set model. KERIpy keeps one canonical codex universe like
 `MatterCodex`/`MtrDex` and `IndexerCodex`/`IdrDex`, then defines narrower
-semantic codex subsets like `PreDex`, `DigDex`, `NonceDex`, and `IdxSigDex`
-that primitive constructors validate against. Those subsets reuse the same base
-code space; they are not competing protocol/genus-version tables. Counter
-codices are the separate layer that is genus/version-aware.
+semantic codex subsets like `PreDex`, `DigDex`, `NonceDex`, and `IdxSigDex` that
+primitive constructors validate against. Those subsets reuse the same base code
+space; they are not competing protocol/genus-version tables. Counter codices are
+the separate layer that is genus/version-aware.
 
 **Common gotchas / maintainer notes:** Treat the canonical codex objects as the
 source of truth. Helper sets are derived readability views, not a second source

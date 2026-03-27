@@ -20,13 +20,13 @@ Use this file to:
 
 ## Topic Learnings Index
 
-| Topic                          | File                                                                             | Scope                                                                        |
-| ------------------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| CESR Parser                    | `.agents/learnings/PROJECT_LEARNINGS_CESR.md`                                    | Parser architecture, state machine contract, parity, binary handling         |
-| Crypto Suite                   | `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`                            | Primitive semantics, key material, signing/verification behavior and interop |
-| KELs                           | `.agents/learnings/PROJECT_LEARNINGS_KELS.md`                                    | Event-log/state-transition work, DB parity, replay/verification semantics    |
-| ACDC                           | `.agents/learnings/PROJECT_LEARNINGS_ACDC.md`                                    | Credential issuance/exchange semantics and data-model concerns               |
-| Witness/Watcher/Observer Infra | `.agents/learnings/PROJECT_LEARNINGS_WITNESS_WATCHER_OBSERVER_INFRA.md`          | Network roles, deployment, ops/interoperability notes                        |
+| Topic                          | File                                                                    | Scope                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| CESR Parser                    | `.agents/learnings/PROJECT_LEARNINGS_CESR.md`                           | Parser architecture, state machine contract, parity, binary handling         |
+| Crypto Suite                   | `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`                   | Primitive semantics, key material, signing/verification behavior and interop |
+| KELs                           | `.agents/learnings/PROJECT_LEARNINGS_KELS.md`                           | Event-log/state-transition work, DB parity, replay/verification semantics    |
+| ACDC                           | `.agents/learnings/PROJECT_LEARNINGS_ACDC.md`                           | Credential issuance/exchange semantics and data-model concerns               |
+| Witness/Watcher/Observer Infra | `.agents/learnings/PROJECT_LEARNINGS_WITNESS_WATCHER_OBSERVER_INFRA.md` | Network roles, deployment, ops/interoperability notes                        |
 
 ## Context Pack Policy
 
@@ -122,11 +122,11 @@ This keeps context focused and avoids long-thread drift.
     bootstrap-path `Baser` / `Keeper` stores; this is enough to stop extending
     the raw-LMDB pattern on the Gate C visibility path, but it is not evidence
     of full `subing.py` / `koming.py` parity.
-22. Compatibility-mode visibility is now a demonstrated interop path, not just
-    a readonly-open design: `.keri/db` and `.keri/ks` alt tails are supported,
+22. Compatibility-mode visibility is now a demonstrated interop path, not just a
+    readonly-open design: `.keri/db` and `.keri/ks` alt tails are supported,
     `list` / `aid` can skip config loading and signator creation, and the live
-    interop harness verifies encrypted KLI-store visibility via `--compat`;
-    true decrypt/encrypt semantics remain the next real blocker.
+    interop harness verifies encrypted KLI-store visibility via `--compat`; true
+    decrypt/encrypt semantics remain the next real blocker.
 23. KERIpy-corresponding class ports need source-documentation parity as well as
     behavior parity: when we add or translate a class, we should port its
     maintainer-facing responsibilities and invariants into `keri-ts` source
@@ -290,9 +290,9 @@ This keeps context focused and avoids long-thread drift.
     the callee implementation should return explicitly typed homogeneous arrays
     instead of a union-widened `map(...)` result.
 58. Maintainer-doc coverage is no longer just a class-boundary rule. The
-    broadest ongoing drift risk is exported helper/type/fixture seams and
-    dense internal helper ladders; for those areas, grouped family comments and
-    short invariant-focused helper docstrings are the preferred pattern, while
+    broadest ongoing drift risk is exported helper/type/fixture seams and dense
+    internal helper ladders; for those areas, grouped family comments and short
+    invariant-focused helper docstrings are the preferred pattern, while
     obviously derived constant families such as codex-set blocks can stay
     documented at the grouped block level instead of one symbol at a time.
 59. Later KERIpy DB parity now depends on exposing normalized ordinal-wrapper
@@ -302,11 +302,11 @@ This keeps context focused and avoids long-thread drift.
     surface, while older `getOn*` names remain temporary compatibility aliases
     until current local call sites migrate.
 60. Ordinal-wrapper call-site migration has to follow the real upstream graph,
-    not a blanket rename instinct: current KERIpy has genuinely moved some
-    paths such as `fels.` onto normalized `getAll*` iterators, while other
-    paths such as `kels.` still legitimately use `addOn()` /
-    `getOnLast()`-style calls. When the upstream refactor is uneven, mirroring
-    that unevenness is safer than "cleaning up" into invented parity.
+    not a blanket rename instinct: current KERIpy has genuinely moved some paths
+    such as `fels.` onto normalized `getAll*` iterators, while other paths such
+    as `kels.` still legitimately use `addOn()` / `getOnLast()`-style calls.
+    When the upstream refactor is uneven, mirroring that unevenness is safer
+    than "cleaning up" into invented parity.
 61. Maintainer-grade DB documentation now has to cover storage-family methods
     and adapter seams, not just class boundaries. For `LMDBer`, `Baser`,
     `Komer`, `Suber`, and the `On*`/`IoSet*`/`Dup*` families, method docs should

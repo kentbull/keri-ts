@@ -98,7 +98,9 @@ function asCipher(value: Cipher | string | Uint8Array): Cipher {
  * - mirrors `Encrypter(verkey=aeid)` behavior where the keeper's public box key
  *   is derived from the Ed25519 verifier bound to the non-transferable AEID.
  */
-function curvePublicKeyFromAeid(aeid: Verfer | string | Uint8Array): Uint8Array {
+function curvePublicKeyFromAeid(
+  aeid: Verfer | string | Uint8Array,
+): Uint8Array {
   const verfer = asVerfer(aeid);
   return new Uint8Array(
     sodium.crypto_sign_ed25519_pk_to_curve25519(verfer.raw),
@@ -215,7 +217,11 @@ export function encryptSigner(
   signer: Signer | string | Uint8Array,
   encrypter: Encrypter,
 ): Cipher {
-  return encryptQb64Payload(asSigner(signer).qb64b, encrypter, CIPHER_SEED_CODE);
+  return encryptQb64Payload(
+    asSigner(signer).qb64b,
+    encrypter,
+    CIPHER_SEED_CODE,
+  );
 }
 
 /** Decrypt one stored keeper signer cipher back into a CESR `Signer`. */

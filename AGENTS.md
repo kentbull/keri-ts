@@ -41,10 +41,10 @@ Use the handoff templates in `.agents/PROJECT_LEARNINGS.md`.
 
 Use a hierarchical memory model:
 
-1. `.agents/PROJECT_LEARNINGS.md`: index, current focus, cross-topic
-   summary, routing.
-2. `.agents/learnings/PROJECT_LEARNINGS_*.md`: deeper topic-specific
-   learnings and handoff log.
+1. `.agents/PROJECT_LEARNINGS.md`: index, current focus, cross-topic summary,
+   routing.
+2. `.agents/learnings/PROJECT_LEARNINGS_*.md`: deeper topic-specific learnings
+   and handoff log.
 
 Split guideline:
 

@@ -11,10 +11,7 @@ import { DeferredFrameLifecycle } from "./parser-deferred-frames.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
 import { createFrameBoundaryPolicy, type FrameBoundaryPolicy } from "./parser-policy.ts";
 import { ParserStreamState } from "./parser-stream-state.ts";
-import {
-  composeRecoveryDiagnosticObserver,
-  type RecoveryDiagnosticObserver,
-} from "./recovery-diagnostics.ts";
+import { composeRecoveryDiagnosticObserver, type RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import type { CesrFrame, CesrMessage } from "./types.ts";
 
 /**
@@ -93,8 +90,7 @@ export class CesrParser {
       frameBoundaryPolicy: this.frameBoundaryPolicy,
       attachmentVersionFallbackPolicy,
       recoveryDiagnosticObserver: this.recoveryDiagnosticObserver,
-      isFrameBoundaryAhead: (input, version, cold) =>
-        this.frameParser.isFrameBoundaryAhead(input, version, cold),
+      isFrameBoundaryAhead: (input, version, cold) => this.frameParser.isFrameBoundaryAhead(input, version, cold),
     });
   }
 

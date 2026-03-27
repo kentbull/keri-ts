@@ -32,9 +32,7 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
   const messages = out.filter((event) => event.type === "frame");
   return messages.map((event) => {
     const att = event.frame.attachments.map((group) => group.code).join(",");
-    return `${event.frame.body.kind}|${event.frame.body.ilk ?? ""}|${
-      event.frame.body.said ?? ""
-    }|${att}`;
+    return `${event.frame.body.kind}|${event.frame.body.ilk ?? ""}|${event.frame.body.said ?? ""}|${att}`;
   });
 }
 

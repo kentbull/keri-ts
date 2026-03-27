@@ -23,8 +23,8 @@ credential interoperability.
    require embedded identifiers to be correct.
 3. Native ACDC support now runs through the shared native support matrix in
    `packages/cesr/src/serder/native.ts`, so map/fixed body shape, field-family
-   semantics, and empty/non-empty rules are centralized instead of spread
-   across parser and serder code.
+   semantics, and empty/non-empty rules are centralized instead of spread across
+   parser and serder code.
 
 ## Scope Checklist
 
@@ -77,9 +77,8 @@ Use this doc for:
   - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
 - What changed:
   - `SerderACDC` now normalizes and verifies section identifiers using the same
-    section-family split KERIpy uses:
-    schema uses `$id`, normal section maps use `d`, and aggregate lists use
-    `agid`.
+    section-family split KERIpy uses: schema uses `$id`, normal section maps use
+    `d`, and aggregate lists use `agid`.
   - ACDC native handling now shares the same matrix-driven support layer as the
     broader CESR-native serder path.
 - Why:

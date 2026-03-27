@@ -1101,7 +1101,7 @@ export class Baser {
    *
    * Errors rebuilding individual events are skipped so export/replay callers
    * can continue streaming later entries, matching KERIpy's clone behavior.
-  */
+   */
   *clonePreIter(pre: string, fn = 0): Generator<Uint8Array> {
     for (const [, currentFn, said] of this.fels.getAllItemIter(pre, fn)) {
       try {

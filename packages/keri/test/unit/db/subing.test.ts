@@ -1,14 +1,6 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import {
-  b,
-  Cipher,
-  parseSerder,
-  Prefixer,
-  SerderKERI,
-  Signer,
-  smell,
-} from "../../../../cesr/mod.ts";
+import { b, Cipher, parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
@@ -159,7 +151,9 @@ Deno.test("db/subing - CesrSuber hydrates typed CESR primitives", async () => {
       assertEquals(suber.put("alice", prefixer), true);
       assertEquals(suber.get("alice")?.qb64, prefixer.qb64);
       assertEquals(
-        [...suber.getTopItemIter("")].map(([keys, value]) => [keys, value.qb64]),
+        [...suber.getTopItemIter("")].map((
+          [keys, value],
+        ) => [keys, value.qb64]),
         [[["alice"], prefixer.qb64]],
       );
       assertEquals(
@@ -195,13 +189,21 @@ Deno.test("db/subing - OnIoDupSuber supports normalized iterators while retainin
         [["ledger"], 0, "blue"],
         [["ledger"], 1, "green"],
       ]);
-      assertEquals([...suber.getAllIter("ledger", 0)], ["red", "blue", "green"]);
+      assertEquals([...suber.getAllIter("ledger", 0)], [
+        "red",
+        "blue",
+        "green",
+      ]);
       assertEquals([...suber.getOnItemIterAll("ledger", 0)], [
         [["ledger"], 0, "red"],
         [["ledger"], 0, "blue"],
         [["ledger"], 1, "green"],
       ]);
-      assertEquals([...suber.getOnIterAll("ledger", 0)], ["red", "blue", "green"]);
+      assertEquals([...suber.getOnIterAll("ledger", 0)], [
+        "red",
+        "blue",
+        "green",
+      ]);
       assertEquals(suber.remOn("ledger", 0, "red"), true);
       assertEquals([...suber.getAllIter("ledger", 0)], ["blue", "green"]);
     } finally {
@@ -281,7 +283,11 @@ Deno.test("db/subing - OnIoSetSuber exposes normalized KERIpy-style methods and 
         [["group"], 1, "y"],
         [["group"], 0, "c"],
       ]);
-      assertEquals([...suber.getAllLastBackIter("group", 2)], ["tail", "y", "c"]);
+      assertEquals([...suber.getAllLastBackIter("group", 2)], [
+        "tail",
+        "y",
+        "c",
+      ]);
       assertEquals(suber.rem("group", 0, "b"), true);
       assertEquals(suber.get("group", 0), ["a", "c"]);
       assertEquals(suber.remAll("group", 1), true);

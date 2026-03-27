@@ -9,9 +9,7 @@ import { txt } from "../../fixtures/primitive-test-helpers.ts";
 const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("blinder: parses blinded-state group", () => {
-  const ims = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
+  const ims = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${token("E")}${token("D")}${token("M")}`;
   const blinder = parseBlinder(txt(ims), V2, "txt");
   assertEquals(blinder instanceof Blinder, true);
   assertEquals(blinder.code, CtrDexV2.BlindedStateQuadruples);

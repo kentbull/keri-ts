@@ -64,9 +64,7 @@ Deno.test("V-P1-005: multi-message mixed stream ordering is split-deterministic"
 
   const wrappedNestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
-  const wrappedFrame = `${
-    counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)
-  }${wrappedPayload}`;
+  const wrappedFrame = `${counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)}${wrappedPayload}`;
 
   const stream = encode(
     `${jsonFrame}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedFrame}`,

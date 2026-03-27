@@ -1,11 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { b } from "../../../src/index.ts";
 import { Counter, CounterGroup } from "../../../src/primitives/counter.ts";
-import {
-  type GroupEntry,
-  isCounterGroupLike,
-  isPrimitiveTuple,
-} from "../../../src/primitives/primitive.ts";
+import { type GroupEntry, isCounterGroupLike, isPrimitiveTuple } from "../../../src/primitives/primitive.ts";
 import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
 import { KERIPY_COUNTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 

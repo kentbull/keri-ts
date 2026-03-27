@@ -80,12 +80,10 @@ Deno.test("serder: structor projection classifies attachment families", () => {
   const aggorPayload = `${token("B")}${token("E")}`;
   const aggor = `${counterV2(CtrDexV2.GenericListGroup, aggorPayload.length / 4)}${aggorPayload}`;
   const sealer = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${token("E")}`;
-  const blinder = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
-  const mediar = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${
-    token("D")
-  }${token("M")}`;
+  const blinder = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${token("E")}${token("D")}${
+    token("M")
+  }`;
+  const mediar = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${token("D")}${token("M")}`;
   const stream = `${body}${aggor}${sealer}${blinder}${mediar}`;
 
   const parser = createParser();
@@ -114,9 +112,7 @@ Deno.test("serder: projection traverses nested wrapper groups and preserves othe
   const nestedSealer = `${counterV2(CtrDexV2.TypedDigestSealCouples, 1)}${sealerPayload}`;
   const nestedControllerSigs = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const wrapperPayload = `${nestedSealer}${nestedControllerSigs}`;
-  const wrapper = `${
-    counterV2(CtrDexV2.AttachmentGroup, wrapperPayload.length / 4)
-  }${wrapperPayload}`;
+  const wrapper = `${counterV2(CtrDexV2.AttachmentGroup, wrapperPayload.length / 4)}${wrapperPayload}`;
   const stream = `${body}${wrapper}`;
 
   const parser = createParser();

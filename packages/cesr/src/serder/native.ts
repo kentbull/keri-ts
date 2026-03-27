@@ -262,9 +262,7 @@ function encodeThreshold(value: string | number): string {
 
 /** CESR-native datetimes substitute base64-safe glyphs for RFC3339 punctuation. */
 function encodeDate(iso8601: string): string {
-  return `${MtrDex.DateTime}${
-    iso8601.replaceAll(":", "c").replaceAll(".", "d").replaceAll("+", "p")
-  }`;
+  return `${MtrDex.DateTime}${iso8601.replaceAll(":", "c").replaceAll(".", "d").replaceAll("+", "p")}`;
 }
 
 /**
@@ -1700,9 +1698,7 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
           `Missing ilk for fixed-body native ${smellage.proto} message`,
         );
       }
-      let frame = `${encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)}${
-        encodeTag(ilk)
-      }`;
+      let frame = `${encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)}${encodeTag(ilk)}`;
       for (const label of layout.labels) {
         const spec = layout.fields[label];
         if (!spec) {

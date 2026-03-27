@@ -17,14 +17,7 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind } from "../tables/versions.ts";
 import { Bexter } from "./bexter.ts";
-import {
-  BEXTER_CODES,
-  DECIMAL_CODES,
-  ESCAPE_CODES,
-  LabelDex,
-  LABELER_CODES,
-  MtrDex,
-} from "./codex.ts";
+import { BEXTER_CODES, DECIMAL_CODES, ESCAPE_CODES, LabelDex, LABELER_CODES, MtrDex } from "./codex.ts";
 import { Counter, parseCounter } from "./counter.ts";
 import { Decimer } from "./decimer.ts";
 import { Diger } from "./diger.ts";

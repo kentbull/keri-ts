@@ -888,7 +888,10 @@ async function runEncryptedKeeperSemantics(
 
   assertEquals(extractIdentifierLines(tufaList.stdout), [expectedListLine]);
   assertEquals(extractLastNonEmptyLine(tufaAid.stdout), pre);
-  assertEquals(normalizeCesr(extractKelStream(tufaExport.stdout)).length > 0, true);
+  assertEquals(
+    normalizeCesr(extractKelStream(tufaExport.stdout)).length > 0,
+    true,
+  );
   assertEquals(wrongList.code === 0, false);
   assert(
     /too many attempts|not associated with last aeid|valid passcode required/i
@@ -965,9 +968,7 @@ const GATE_SCENARIOS: GateScenario[] = [
 ];
 
 function readyScenario(id: string): GateScenario {
-  const scenario = GATE_SCENARIOS.find((scenario) =>
-    scenario.id === id && scenario.state === "ready"
-  );
+  const scenario = GATE_SCENARIOS.find((scenario) => scenario.id === id && scenario.state === "ready");
   if (!scenario) {
     throw new Error(`Expected ready interop scenario '${id}' to exist.`);
   }
@@ -987,7 +988,9 @@ async function runReadyScenario(id: string): Promise<void> {
   }
 
   if (!scenario.run) {
-    throw new Error(`Ready scenario ${scenario.id} has no run() implementation.`);
+    throw new Error(
+      `Ready scenario ${scenario.id} has no run() implementation.`,
+    );
   }
 
   await scenario.run(ctx);

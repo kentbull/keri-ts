@@ -91,9 +91,9 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
 4. `Manager`, `Hab`, and `Signator` now use primitive-first signing surfaces,
    `Hab.make()` builds inception events through `SerderKERI`, and encrypted
    signator reopen behavior is covered by focused reopen tests.
-5. The DB layer bootstrap path now runs through typed `Suber` / `Komer`
-   wrappers with broad `Baser` / `Keeper` named-subdb binding, but escrow
-   infrastructure and row-by-row parity closure are still open.
+5. The DB layer bootstrap path now runs through typed `Suber` / `Komer` wrappers
+   with broad `Baser` / `Keeper` named-subdb binding, but escrow infrastructure
+   and row-by-row parity closure are still open.
 6. Browser/mobile storage remains deferred until after 1.0, but the codebase
    should keep storage-facing semantics isolated now so later IndexedDB support
    does not become a hidden rewrite.

@@ -5,10 +5,7 @@ import { denot } from "../../src/annotate/denot.ts";
 import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
-import {
-  KERIPY_NATIVE_V2_ICP_FIX_BODY,
-  PARSIDE_GROUP_VECTORS,
-} from "../fixtures/external-vectors.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 const TEXT_ENCODER = new TextEncoder();
@@ -16,24 +13,18 @@ const TEXT_DECODER = new TextDecoder();
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${
-    intToB64(patch, 1)
-  }`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
 }
 
 Deno.test("annotate + denot roundtrip for CESR text stream", () => {
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const annotated = annotate(ims);
   const restored = denot(annotated);
   assertEquals(TEXT_DECODER.decode(restored), ims);
 });
 
 Deno.test("annotate qb2 stream emits canonical annotated text", () => {
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const annotated = annotate(decodeB64(ims), { domainHint: "bny" });
   assertStringIncludes(annotated, "FixBodyGroup");
   assertStringIncludes(annotated, "ControllerIdxSigs");

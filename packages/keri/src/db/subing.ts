@@ -1159,7 +1159,8 @@ export class CryptSignerSuber extends SignerSuber {
   ): boolean {
     const stored = encrypter && !(val instanceof Cipher)
       ? encryptSigner(
-        val instanceof Signer || typeof val === "string" || val instanceof Uint8Array
+        val instanceof Signer || typeof val === "string"
+          || val instanceof Uint8Array
           ? val
           : new Signer({ qb64b: signerToStored(val) }),
         encrypter,
@@ -1181,7 +1182,8 @@ export class CryptSignerSuber extends SignerSuber {
   ): boolean {
     const stored = encrypter && !(val instanceof Cipher)
       ? encryptSigner(
-        val instanceof Signer || typeof val === "string" || val instanceof Uint8Array
+        val instanceof Signer || typeof val === "string"
+          || val instanceof Uint8Array
           ? val
           : new Signer({ qb64b: signerToStored(val) }),
         encrypter,
@@ -1235,7 +1237,9 @@ export class CryptSignerSuber extends SignerSuber {
     ) {
       yield [
         this._tokeys(key),
-        decrypter ? decryptSigner(val, decrypter) : signerFromStored(this._tokeys(key), val),
+        decrypter
+          ? decryptSigner(val, decrypter)
+          : signerFromStored(this._tokeys(key), val),
       ];
     }
   }
@@ -2114,7 +2118,13 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
   override cnt(keys: Keys, on?: number, ion?: number): number;
   /** Count logical members inside one exact ordinal-set bucket. */
   override cnt(keys: Keys = "", on = 0, ion = 0): number {
-    return this.db.cntOnIoSet(this.sdb, this._tokey(keys), on, ion, b(this.sep));
+    return this.db.cntOnIoSet(
+      this.sdb,
+      this._tokey(keys),
+      on,
+      ion,
+      b(this.sep),
+    );
   }
 
   override cntAll(): number;

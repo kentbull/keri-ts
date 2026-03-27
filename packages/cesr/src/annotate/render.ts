@@ -1,10 +1,5 @@
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
-import {
-  DeserializeError,
-  GroupSizeError,
-  ShortageError,
-  UnknownCodeError,
-} from "../core/errors.ts";
+import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { CesrMessage } from "../core/types.ts";
 import { sniff } from "../parser/cold-start.ts";
@@ -15,12 +10,7 @@ import { Matter, parseMatter } from "../primitives/matter.ts";
 import { type GroupEntry, isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import {
-  counterCodeName,
-  counterCodeNameForVersion,
-  matterCodeName,
-  nativeLabelName,
-} from "./comments.ts";
+import { counterCodeName, counterCodeNameForVersion, matterCodeName, nativeLabelName } from "./comments.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
 const TEXT_DECODER = new TextDecoder();
@@ -329,9 +319,7 @@ function renderNativeBody(
 
     const matter = parseMatter(slice, domain);
     const matterSize = domain === "bny" ? matter.fullSizeB2 : matter.fullSize;
-    const field = frame.body.native?.fields.find((candidate) =>
-      candidate.primitive.qb64 === matter.qb64
-    );
+    const field = frame.body.native?.fields.find((candidate) => candidate.primitive.qb64 === matter.qb64);
     const label = field ? nativeLabelName(field.label) : null;
     const primitiveComment = matter instanceof Indexer
       ? `Indexer ${matter.code}`

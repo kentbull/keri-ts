@@ -32,8 +32,7 @@ export const KERIPY_MATTER_VECTORS = {
   noncerSalt128: "0AAxyHwW6htOZ_rANOaZb2N2",
   prefixerEd25519N: "BKxy2sgzfplyr-tgwIxS19f2OchFHtLwPWD3v4oYimBx",
   verferEcdsaR1: "1AAJA3cK_P2CDlh-_EMFPvyqTPI1POkw-dr14DANx5JEXDCZ",
-  cigarEcdsaR1:
-    "0ICM-rRAAdKrSrzFlouiZXbNUZ07QMM1IXOaG-gv4TAo4QeQCKZC1z82jJYy_wFkAxgIhbikl3a-nOTXxecF2lEj",
+  cigarEcdsaR1: "0ICM-rRAAdKrSrzFlouiZXbNUZ07QMM1IXOaG-gv4TAo4QeQCKZC1z82jJYy_wFkAxgIhbikl3a-nOTXxecF2lEj",
   saiderAcdc: "EMRvS7lGxc1eDleXBkvSHkFs8vUrslRcla6UXOJdcczw",
   numberShort: "MPd_",
   seqnerZero: "0AAAAAAAAAAAAAAAAAAAAAAA",
@@ -55,21 +54,15 @@ export const KERIPY_MATTER_VECTORS = {
 
 /** Selected Indexer/Siger vectors from KERIpy tests. */
 export const KERIPY_INDEXER_VECTORS = {
-  ed25519SigIdx0:
-    "AACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519SigIdx5:
-    "AFCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519BigSigIdx67:
-    "2ABDBDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519SigIdx0: "AACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519SigIdx5: "AFCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519BigSigIdx67: "2ABDBDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
   ed25519BigSigIdx90Ondex65:
     "2ABaBBCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519CrtSigIdx3:
-    "BDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519BigCrtSigIdx68:
-    "2BBEAACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519CrtSigIdx3: "BDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519BigCrtSigIdx68: "2BBEAACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
   tbd0Label: "0zAEHello_World_Peep",
-  sigerSample:
-    "AACdI8OSQkMJ9r-xigjEByEjIua7LHH3AOJ22PQKqljMhuhcgh9nGRcKnsz5KvKd7K_H9-1298F4Id1DxvIoEmCQ",
+  sigerSample: "AACdI8OSQkMJ9r-xigjEByEjIua7LHH3AOJ22PQKqljMhuhcgh9nGRcKnsz5KvKd7K_H9-1298F4Id1DxvIoEmCQ",
 } as const;
 
 /** Selected Counter vectors from KERIpy tests. */

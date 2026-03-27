@@ -148,7 +148,11 @@ Deno.test("app/keeping - encrypted manager persists sealed secrets and reopens w
     });
     try {
       const manager = new Manager({ ks: keeper, seed });
-      const sigers = manager.sign(new TextEncoder().encode("reopen"), [pub], true);
+      const sigers = manager.sign(
+        new TextEncoder().encode("reopen"),
+        [pub],
+        true,
+      );
       assertEquals(sigers.length, 1);
       assertInstanceOf(sigers[0], Siger);
     } finally {
@@ -215,7 +219,9 @@ Deno.test("app/keeping - updateAeid re-encrypts stored salts and signer secrets"
         () => keeper.getPris(pub, makeDecrypterFromSeed(first.seed)),
         Error,
       );
-      const sigers = manager.sign(new TextEncoder().encode("re-encrypted"), [pub], true);
+      const sigers = manager.sign(new TextEncoder().encode("re-encrypted"), [
+        pub,
+      ], true);
       assertEquals(sigers.length, 1);
     } finally {
       yield* keeper.close(true);

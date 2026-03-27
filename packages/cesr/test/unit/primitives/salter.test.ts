@@ -1,10 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { Salter } from "../../../src/primitives/salter.ts";
-import {
-  KERIPY_CODE_VECTORS,
-  KERIPY_MATTER_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_CODE_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
 Deno.test("salter: hydrates KERIpy salt vector", () => {
   const salter = new Salter({ qb64: KERIPY_MATTER_VECTORS.salterFixed });

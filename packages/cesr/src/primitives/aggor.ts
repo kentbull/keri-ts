@@ -219,9 +219,7 @@ export class Aggor extends Structor {
       return element;
     });
 
-    const disclosure: AggorList = atoms.map((atom) =>
-      atom instanceof Mapper ? (atom.said ?? "") : atom
-    );
+    const disclosure: AggorList = atoms.map((atom) => atom instanceof Mapper ? (atom.said ?? "") : atom);
     for (const index of indices) {
       if (index > 0 && index < atoms.length && atoms[index] instanceof Mapper) {
         // Disclosure only expands selected post-agid map elements. The agid at

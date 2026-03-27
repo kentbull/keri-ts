@@ -1,9 +1,6 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../src/core/errors.ts";
-import {
-  parseAttachmentDispatch,
-  parseAttachmentDispatchCompat,
-} from "../../src/parser/group-dispatch.ts";
+import { parseAttachmentDispatch, parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
