@@ -18,7 +18,7 @@ Scope:
 
 Canonical lifecycle contract:
 
-- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
 
 ## Core Idea
 

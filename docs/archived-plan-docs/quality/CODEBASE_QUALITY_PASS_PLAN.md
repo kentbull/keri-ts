@@ -8,7 +8,7 @@ evolvability across `keri-ts` (app, db, CESR) without destabilizing behavior.
 ## Status Update (2026-02-14)
 
 - Phase 0: completed.
-  - `docs/design-docs/ARCHITECTURE_MAP.md` added.
+  - `docs/ARCHITECTURE_MAP.md` added.
   - quality gate tasks and static quality report task are in `deno.json`.
 - Phase 1: in progress with major items completed.
   - Typed errors propagated through db/core + CLI validation paths.

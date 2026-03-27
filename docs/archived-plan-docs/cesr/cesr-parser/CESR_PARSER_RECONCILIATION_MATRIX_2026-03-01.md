@@ -4,18 +4,18 @@
 
 This matrix reconciles CESR parser commitments from:
 
-- `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-- `docs/design-docs/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
+- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+- `docs/design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_CONSOLIDATED_PLAN_AND_RESULTS.md`
-- `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_MAINTAINER_GUIDE.md`
+- `docs/design-docs/cesr/CESR_PARSER_MAINTAINER_GUIDE.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_FLOW_FROM_TUFA_ANNOTATE.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_PARSER_PROGRESS_SUMMARY_2026-02-13.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/CESR_ANNOTATION_PLAN.md`
 - `docs/archived-plan-docs/cesr/cesr-parser/initial-plan-docs/my-cesr-plan.md`
-- `docs/plans/cesr/cesr-parser-readability-improvement-plan.md`
-- `docs/plans/cesr/cesr-parser-readability-phased-roadmap.md`
-- `docs/plans/cesr/cesr-parser-phase0-behavior-lock-parity-matrix.md`
-- `docs/plans/cesr/cesr-parser-p2-hardening-interop-plan.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-improvement-plan.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-phased-roadmap.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+- `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-p2-hardening-interop-plan.md`
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 
 Status target legend:
@@ -50,7 +50,7 @@ Status target legend:
 | REQ-CESR-019 | P2 high-priority breadth vectors (`H`)        | High-value wrapper/version/mixed-stream/recovery hardening passes                                                          | `packages/cesr/test/hardening/parser-p2-high-priority-hardening.test.ts`                                                                                 | `V-P2-001`, `002`, `005`, `008`, `011`, `012`, `014`, `015`                                                                 | Implemented+Tested |
 | REQ-CESR-020 | P2 medium/low backlog                         | Medium/low breadth/fuzz vectors are implemented and lock-tested                                                            | `packages/cesr/test/hardening/parser-wrapper-breadth.test.ts`, `parser-native-body-breadth.test.ts`, `parser-version-recovery-fuzz-hardening.test.ts`    | `V-P2-003`, `004`, `006`, `007`, `009`, `010`, `013`, `016`, `020`, `021`                                                   | Implemented+Tested |
 | REQ-CESR-021 | Annotate CLI deterministic rendering          | `cesr:annotate` supports stream parsing + deterministic output and qb2 mode                                                | `packages/cesr/src/annotate/*.ts`                                                                                                                        | `annotate.test.ts`, CLI task tests                                                                                          | Implemented+Tested |
-| REQ-CESR-022 | Readability plan Point 8 closure expectation  | Point 8 parity hardening closure is complete with full P2 vector coverage                                                  | `docs/plans/cesr/cesr-parser-readability-improvement-plan.md` (Point 8 status)                                                                           | P2 high-priority + medium/low suites complete                                                                               | Implemented+Tested |
+| REQ-CESR-022 | Readability plan Point 8 closure expectation  | Point 8 parity hardening closure is complete with full P2 vector coverage                                                  | `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-improvement-plan.md` (Point 8 status)                                                 | P2 high-priority + medium/low suites complete                                                                               | Implemented+Tested |
 | REQ-CESR-023 | Performance gate policy                       | Benchmark flow exists; perf complexity remains gated behind evidence/rollback criteria                                     | `packages/cesr/test/unit/parser-benchmark.test.ts`, benchmark tasks in package scripts                                                                   | parser benchmark tests                                                                                                      | Implemented+Tested |
 | REQ-CESR-024 | CESR v1/v2 support with comprehensive vectors | CESR v1/v2 support is covered with comprehensive vectors across P0/P1/P2-H/P2-M/L                                          | Parser core + version registry + parity suites                                                                                                           | Full suite + P0/P1/P2-H + P2-M/L + KERIpy golden tests                                                                      | Implemented+Tested |
 

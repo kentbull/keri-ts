@@ -147,7 +147,7 @@ Use this doc for:
   - Result: all passed locally; `fmt:check` emitted only a sandbox-local
     `dprint` incremental-cache write warning
 - Contracts/plans touched:
-  - `docs/design-docs/versioning-and-release-plan.md`
+  - `docs/versioning/versioning-and-release-plan.md`
 - Risks/TODO:
   - Branch protection in GitHub still needs to require the new PR workflow's
     status check if that rule is not already configured.
@@ -165,7 +165,7 @@ Use this doc for:
   - `.github/workflows/pr-stage-gate.yml`
   - `.github/workflows/keri-ts-npm-release.yml`
   - `.github/workflows/cesr-npm-release.yml`
-  - `docs/release-versioning.md`
+  - `docs/versioning/release-versioning.md`
 - What changed:
   - `generate_versions.ts` no longer derives build metadata from ambient
     `GITHUB_*` vars unless explicitly asked via `--ci-build-metadata` or
@@ -186,8 +186,8 @@ Use this doc for:
     `BUILD_METADATA=build.2.70eacff7 deno run -A scripts/generate_versions.ts --check`
   - Result: failed as expected, proving metadata stamping is now explicit
 - Contracts/plans touched:
-  - `docs/design-docs/versioning-and-release-plan.md`
-  - `docs/release-versioning.md`
+  - `docs/versioning/versioning-and-release-plan.md`
+  - `docs/versioning/release-versioning.md`
 - Risks/TODO:
   - Any future workflow that wants stamped runtime versions must opt in
     explicitly; ambient GitHub env is no longer enough.
@@ -263,7 +263,7 @@ Use this doc for:
   - Result: reached DNT's package-build/npm-install phase locally, but full
     end-to-end completion was not confirmed in this sandbox session
 - Contracts/plans touched:
-  - `docs/design-docs/versioning-and-release-plan.md`
+  - `docs/versioning/versioning-and-release-plan.md`
 - Risks/TODO:
   - The pinned action SHAs and scheduled macOS workflow still need live GitHub
     Actions confirmation because this local session cannot execute the hosted

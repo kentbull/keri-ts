@@ -51,7 +51,7 @@ This keeps context focused and avoids long-thread drift.
 ## Cross-Topic Snapshot
 
 1. CESR parser lifecycle behavior is governed by
-   `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md`; parser-adjacent
+   `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`; parser-adjacent
    changes should preserve KERIpy parity and contract-to-test traceability.
 2. CESR parser architecture remains intentionally atomic/bounded-substream
    first; incremental nested parsing is deferred behind explicit performance

@@ -58,7 +58,7 @@ Split guideline:
 
 For parser lifecycle changes:
 
-- Treat `docs/design-docs/CESR_PARSER_STATE_MACHINE_CONTRACT.md` as normative.
+- Treat `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` as normative.
 - Keep the contract-to-test matrix in sync with behavior changes.
 - Update parity vectors/docs when behavior contracts change.
 

@@ -183,8 +183,8 @@ low-level table/size semantics.
 To support long-term correctness and maintainability:
 
 - Added architecture and quality-pass planning docs:
-  - `docs/design-docs/ARCHITECTURE_MAP.md`
-  - `docs/design-docs/archived-plan-docs/CODEBASE_QUALITY_PASS_PLAN.md`
+  - `docs/ARCHITECTURE_MAP.md`
+  - `docs/archived-plan-docs/quality/CODEBASE_QUALITY_PASS_PLAN.md`
 - Added quality gate tasks and static debt reporting:
   - `deno task quality`
   - `deno task quality:report`
