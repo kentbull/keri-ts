@@ -431,7 +431,7 @@ export class Revery {
           diger: tsg.diger,
           sigers: [...tsg.sigers],
         });
-        this.cues.push({ kin: "query", q: { pre: tsg.pre } });
+        this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
         continue;
       }
 

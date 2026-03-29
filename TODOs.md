@@ -17,6 +17,8 @@ Things to come back and do at some point:
   rather than having something like processOobiJob reach down into the DB layer to
   call db.oobis.pin directly. That is something that should be hidden by an
   abstraction layer.
+  - See the loc.ts for hby.db.locs.get and the like and consider Habery or Hab functions
+    that abstract over DB shape so we can easily switch between LMDB and IndexedDB or other DB.
 - Does it really make sense to use Reflection based method dispatch in the Router and
   Revery? This doesn't smell right for Typescript and should be refactored. It seems
   like there should be a compile-time stable dispatch map with a lookup based on
@@ -29,6 +31,8 @@ Things to come back and do at some point:
 - Why is our reply construction function not doing both v1 and v2? It appears to only be v1 compatible.
 - We need full instructions on how to use the new endpoint role addition and location scheme addition
 - Reconsider the records.ts and dispatch.ts class and type names. Maybe they should be renamed or tweaked.
+- Look at why cues are filtered in KERIpy and determine why they are filtered and what we
+  need to mimic there, if at all.
 
 ## Missing
 - mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow

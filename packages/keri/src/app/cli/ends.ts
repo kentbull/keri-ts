@@ -75,7 +75,7 @@ export function* endsAddCommand(args: Record<string, unknown>): Operation<void> 
 
     const runtime = createAgentRuntime(hby, { mode: "local" });
     ingestKeriBytes(runtime, hab.makeEndRole(commandArgs.eid, commandArgs.role, true));
-    yield* processRuntimeTurn(runtime);
+    yield* processRuntimeTurn(runtime, { hab });
 
     const end = hby.db.ends.get([hab.pre, commandArgs.role, commandArgs.eid]);
     if (!end?.allowed) {

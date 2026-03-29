@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import {
   type AttachmentGroup,
-  type CesrFrame,
+  type CesrMessage,
   createParser,
   type GroupEntry,
   isCounterGroupLike,
@@ -105,7 +105,7 @@ export class Reactor {
         if (frame.type === "error") {
           throw frame.error;
         }
-        this.dispatchEnvelope(envelopeFromFrame(frame.frame, this.local));
+        this.dispatchEnvelope(envelopeFromMessage(frame.frame, this.local));
       }
     }
   }
@@ -189,15 +189,15 @@ export class Reactor {
  * already done the top-level body classification work. Recomputing this once in
  * one helper keeps the serder boundary explicit.
  */
-function smellageFromFrame(
-  frame: Extract<CesrFrame, { type: "frame" }>["frame"],
+function smellageFromMessage(
+  message: CesrMessage,
 ): Smellage {
   return {
-    proto: frame.body.proto,
-    pvrsn: frame.body.pvrsn,
-    kind: frame.body.kind,
-    size: frame.body.size,
-    gvrsn: frame.body.gvrsn,
+    proto: message.body.proto,
+    pvrsn: message.body.pvrsn,
+    kind: message.body.kind,
+    size: message.body.size,
+    gvrsn: message.body.gvrsn,
   };
 }
 
@@ -526,20 +526,20 @@ function normalizeAttachmentGroup(
  * material and local runtime-ingested KERI messages should flow through this
  * shape before app-layer dispatch.
  */
-function envelopeFromFrame(
-  frame: Extract<CesrFrame, { type: "frame" }>["frame"],
+function envelopeFromMessage(
+  message: CesrMessage,
   local = false,
 ): KeriDispatchEnvelope {
   const serder = parseSerder(
-    frame.body.raw,
-    smellageFromFrame(frame),
+    message.body.raw,
+    smellageFromMessage(message),
   ) as KeriDispatchEnvelope["serder"];
   const envelope = new KeriDispatchEnvelope({
     serder,
-    attachmentGroups: frame.attachments,
+    attachmentGroups: message.attachments,
     local,
   });
-  for (const group of frame.attachments) {
+  for (const group of message.attachments) {
     normalizeAttachmentGroup(group, envelope);
   }
   return envelope;

@@ -218,6 +218,15 @@ This keeps context focused and avoids long-thread drift.
     action commit SHAs, explicit environment assertions, and saved built
     tarballs all reduce "works locally, shrugs in Actions" debugging time.
 44. Test parallelization needs to follow isolation boundaries, not folder names:
+45. Cue handling is now an explicit shared-runtime architecture seam, not a
+    helper hidden inside commands: `AgentRuntime` keeps the shared root cue
+    deck, `Hab.processCuesIter()` owns cue semantics, `processCuesOnce()` /
+    `cueDo()` own delivery, and hosts consume structured `CueEmission` values
+    instead of raw bytes only.
+46. Local location-scheme mutation now has its own KLI-parity command surface:
+    `tufa loc add` must feed a signed `/loc/scheme` reply back through the
+    parser -> `Revery` -> reply-store path, and local CLI commands should not
+    shortcut `locs.` / `lans.` with direct DB writes.
 45. KERIpy-style parser family names on their own are not sufficient
     maintainability parity: once `KeriDispatchEnvelope` grew beyond a bootstrap
     subset, the anonymous `{ prefixer, seqner, diger, sigers }`-style element

@@ -58,6 +58,7 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["aid", lazyCommand(() => import("./aid.ts"), "aidCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     ["ends.add", lazyCommand(() => import("./ends.ts"), "endsAddCommand")],
+    ["loc.add", lazyCommand(() => import("./loc.ts"), "locAddCommand")],
     ["oobi.generate", lazyCommand(() => import("./oobi.ts"), "oobiGenerateCommand")],
     ["oobi.resolve", lazyCommand(() => import("./oobi.ts"), "oobiResolveCommand")],
     ["annotate", lazyCommand(() => import("./annotate.ts"), "annotateCommand")],
@@ -91,6 +92,7 @@ export function registerCmds(
   regAnnotateCmd(program, dispatch);
   regAgentCmd(program, dispatch);
   regEndsSubCmd(program, dispatch);
+  regLocSubCmd(program, dispatch);
   regOobiSubCmd(program, dispatch);
   regBenchmarkSubCmd(program, dispatch);
 
@@ -499,6 +501,48 @@ function regEndsSubCmd(program: Command, dispatch: CommandDispatch): void {
           alias: options.alias,
           role: options.role,
           eid: options.eid,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return;
+    });
+}
+
+/**
+ * Register the `loc` subcommands.
+ *
+ * Current Gate E scope is the local `loc add` parity path used to seed
+ * accepted `LocationScheme` reply state through normal parser/routing flows.
+ */
+function regLocSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const loc = program.command("loc").description("Manage local endpoint locations");
+  loc
+    .command("add")
+    .description("Add one local location scheme record through reply acceptance")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-u, --url <url>", "Endpoint URL")
+    .option("-e, --eid <eid>", "Endpoint AID (defaults to the local habitat prefix)")
+    .option("-t, --time <time>", "Explicit reply timestamp")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "loc.add",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          url: options.url,
+          eid: options.eid,
+          time: options.time,
           base: options.base,
           compat: options.compat || false,
           headDirPath: options.headDir,

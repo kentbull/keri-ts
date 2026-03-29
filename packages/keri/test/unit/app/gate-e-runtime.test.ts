@@ -10,6 +10,7 @@ import {
 import { startServer } from "../../../src/app/server.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
+import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import {
   oobiGenerateCommand,
   oobiResolveCommand,
@@ -20,7 +21,7 @@ import {
   waitForServer,
   waitForTaskHalt,
 } from "../../effection-http.ts";
-import { testCLICommand } from "../../utils.ts";
+import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 Deno.test("Gate E - ends add command persists mailbox role through runtime path", async () => {
   const name = `gate-e-ends-${crypto.randomUUID()}`;
@@ -115,7 +116,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
       ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.controller, true));
       ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.agent, true));
       ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true));
-      yield* processRuntimeTurn(runtime);
+      yield* processRuntimeTurn(runtime, { hab });
     } finally {
       yield* hby.close();
     }
@@ -166,9 +167,10 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
       headDirPath: sourceHeadDirPath,
       skipConfig: true,
     });
+    const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime);
+      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
     const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
@@ -225,4 +227,75 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
       yield* hby.close();
     }
   });
+});
+
+Deno.test("Gate E - loc add command persists location state through reply acceptance", async () => {
+  const name = `gate-e-loc-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-gate-e-loc-${crypto.randomUUID()}`;
+  const alias = "alice";
+  let pre = "";
+  const url = "http://127.0.0.1:5642";
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      skipConfig: true,
+    });
+    try {
+      pre = hby.makeHab(alias, undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      }).pre;
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const result = await run(() =>
+    testCLICommand(
+      locAddCommand({
+        name,
+        headDirPath,
+        alias,
+        url,
+      }),
+    )
+  );
+  assertEquals(
+    result.output.at(-1),
+    `Location ${url} added for aid ${pre} with scheme http`,
+  );
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.habByName(alias);
+      assertEquals(hby.db.locs.get([pre, "http"])?.url, url);
+      assertEquals(hby.db.lans.get([pre, "http"])?.qb64.length! > 0, true);
+      assertEquals((hab?.loadLocScheme(pre, "http").length ?? 0) > 0, true);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Gate E - loc add command rejects malformed URLs deterministically", async () => {
+  await assertOperationThrows(
+    locAddCommand({
+      name: `gate-e-loc-invalid-${crypto.randomUUID()}`,
+      headDirPath: `/tmp/tufa-gate-e-loc-invalid-${crypto.randomUUID()}`,
+      alias: "alice",
+      url: "not-a-url",
+    }),
+    "Invalid URL not-a-url",
+  );
 });

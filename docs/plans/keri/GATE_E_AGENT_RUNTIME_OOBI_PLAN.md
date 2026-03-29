@@ -16,6 +16,7 @@
 - Require full BADA-RUN parity in reply handling.
 - Minimum Gate E outcome is:
   - add mailbox endpoint role auth
+  - add local `loc add` parity for accepted `LocationScheme` records
   - generate mailbox OOBIs
   - resolve mailbox OOBIs
   - resolve witness and agent OOBIs from the wider KERI ecosystem
@@ -71,6 +72,13 @@
   - no localhost admin/control surface
 
 ## Cue Matrix
+
+Maintainer note:
+
+- the fuller cue-runtime taxonomy, KERIpy producer/consumer trace, and
+  `keri-ts` host-sink rationale now live in
+  `docs/adr/adr-0004-cue-runtime-portability.md`
+- this matrix remains the Gate E work-planning summary view
 
 | Producer       | `kin`           | Payload Shape                                 | Consumer                    | Expected Side Effect                     |
 |----------------|-----------------|-----------------------------------------------|-----------------------------|------------------------------------------|

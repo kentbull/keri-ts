@@ -5,7 +5,8 @@ import type {
   KeriDispatchEnvelope,
   TransIdxSigGroup,
 } from "../core/dispatch.ts";
-import type { Habery } from "./habbing.ts";
+import type { Hab, Habery } from "./habbing.ts";
+import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import { Reactor } from "./reactor.ts";
 import { Oobiery, type OobiJob } from "./oobiery.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -20,6 +21,7 @@ import { runtimeTurn } from "./runtime-turn.ts";
 export type AgentMode = "local" | "indirect" | "direct" | "both";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
+export type { CueSink };
 
 /**
  * Shared runtime composition root owned by one `Habery`.
@@ -107,15 +109,25 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  * Turn order:
  * 1. `Reactor.processOnce()` drains queued ingress
  * 2. `Oobiery.processOnce()` resolves at most one durable OOBI record
- * 3. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
+ * 3. `processCuesOnce()` emits cues from fresh ingress/OOBI work
+ * 4. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
+ * 5. `processCuesOnce()` emits cues created during escrow progress
  *
  * This helper remains because command-local CLI flows and focused tests need a
  * single deterministic step without having to spawn the long-lived doers.
  */
-export function* processRuntimeTurn(runtime: AgentRuntime): Operation<void> {
+export function* processRuntimeTurn(
+  runtime: AgentRuntime,
+  options: {
+    hab?: Hab;
+    sink?: CueSink;
+  } = {},
+): Operation<void> {
   runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
+  yield* processCuesOnce(runtime, options);
   runtime.reactor.processEscrowsOnce();
+  yield* processCuesOnce(runtime, options);
 }
 
 /**
@@ -138,10 +150,19 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * The root itself now acts as a composition host: it starts the component
  * doers and stays alive until the surrounding Effection scope halts.
  */
-export function* runAgentRuntime(runtime: AgentRuntime): Operation<never> {
+export function* runAgentRuntime(
+  runtime: AgentRuntime,
+  options: {
+    hab?: Hab;
+    sink?: CueSink;
+  } = {},
+): Operation<never> {
   const tasks = [
     yield* spawn(function* () {
       yield* runtime.reactor.msgDo();
+    }),
+    yield* spawn(function* () {
+      yield* cueDo(runtime, options);
     }),
     yield* spawn(function* () {
       yield* runtime.reactor.escrowDo();

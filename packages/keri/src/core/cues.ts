@@ -1,4 +1,5 @@
-import type { Siger, SerderKERI } from "../../../cesr/mod.ts";
+import type { Dater, Siger, SerderKERI } from "../../../cesr/mod.ts";
+import type { DispatchOrdinal } from "./dispatch.ts";
 import type { KeyStateRecord } from "./records.ts";
 
 /** Shared `kin` discriminator carried by all cue payloads. */
@@ -35,20 +36,34 @@ export interface QueryCue extends CueBase {
   pre?: string;
   src?: string;
   route?: string;
+  query?: Record<string, unknown>;
   q?: Record<string, unknown>;
+  dest?: string;
 }
 
 /** Cue carrying a prebuilt replay byte stream back to the host or transport layer. */
 export interface ReplayCue extends CueBase {
   kin: "replay";
   msgs: Uint8Array;
+  pre?: string;
+  src?: string;
+  dest?: string;
 }
 
-/** Cue requesting that one new local reply message be built and emitted. */
+/**
+ * Cue requesting that one local reply message be emitted.
+ *
+ * KERIpy producers sometimes hand back route/data pairs and sometimes a
+ * prebuilt reply serder. `keri-ts` keeps both forms so later `/ksn` parity
+ * does not need another cue-shape migration.
+ */
 export interface ReplyCue extends CueBase {
   kin: "reply";
   route: string;
-  data: Record<string, unknown>;
+  data?: Record<string, unknown>;
+  serder?: SerderKERI;
+  src?: string;
+  dest?: string;
 }
 
 /** Cue carrying one streaming publication request plus its topic metadata. */
@@ -66,11 +81,39 @@ export interface KeyStateSavedCue extends CueBase {
   ksn: KeyStateRecord;
 }
 
+/** Cue notifying that a cloned event replay used the wrong first-seen ordinal. */
+export interface NoticeBadCloneFNCue extends CueBase {
+  kin: "noticeBadCloneFN";
+  serder: SerderKERI;
+  fn: number;
+  firner: DispatchOrdinal;
+  dater: Dater;
+}
+
+/** Cue notifying that one inbound query or routed message was invalid. */
+export interface InvalidCue extends CueBase {
+  kin: "invalid";
+  serder: SerderKERI;
+  reason?: string;
+}
+
 /** Cue reserved for future partial-signature escrow recovery flows. */
 export interface PartialSigUnescrowCue extends CueBase {
   kin: "psUnescrow";
   serder: SerderKERI;
   sigers?: Siger[];
+}
+
+/**
+ * Cue emitted when a remote event included locally membered signatures.
+ *
+ * KERIpy uses this as a diagnostic/security signal when remote events try to
+ * satisfy threshold with signatures from keys that belong to a local group.
+ */
+export interface RemoteMemberedSigCue extends CueBase {
+  kin: "remoteMemberedSig";
+  serder: SerderKERI;
+  index: number;
 }
 
 /** Cue emitted when an OOBI URL is accepted into the local resolution queue. */
@@ -96,6 +139,22 @@ export interface OobiFailedCue extends CueBase {
   reason: string;
 }
 
+/** Output category used by the runtime cue-delivery seam. */
+export type CueEmissionKind = "wire" | "notify" | "transport";
+
+/**
+ * Structured cue interpretation result consumed by runtime hosts.
+ *
+ * `keri-ts` keeps the originating cue attached to any emitted wire messages so
+ * command-local and long-lived hosts can observe KERI semantics without having
+ * to reverse-engineer them back from raw bytes.
+ */
+export interface CueEmission {
+  cue: AgentCue;
+  msgs: Uint8Array[];
+  kind: CueEmissionKind;
+}
+
 /**
  * Gate E runtime cue union.
  *
@@ -112,7 +171,10 @@ export type AgentCue =
   | ReplyCue
   | StreamCue
   | KeyStateSavedCue
+  | NoticeBadCloneFNCue
+  | InvalidCue
   | PartialSigUnescrowCue
+  | RemoteMemberedSigCue
   | OobiQueuedCue
   | OobiResolvedCue
   | OobiFailedCue;

@@ -93,6 +93,21 @@ replay/verification semantics.
     parser normalization seam presently yields compact number-coded ordinals for
     these attachment groups; forcing everything into `Seqner` is a model error,
     not extra parity.
+24. Cue handling is now a first-class KEL/runtime porting seam. The shared root
+    cue deck remains on `AgentRuntime`, but cue semantics are habitat-owned via
+    `Hab.processCuesIter()`, runtime delivery happens through
+    `processCuesOnce()` / `cueDo()`, and hosts consume structured
+    `CueEmission`s instead of byte-only yields.
+25. KERIpy cue behavior is the semantic contract, not the Python structure:
+    `receipt`, `witness`, `query`, `reply`, `replay`, `notice`,
+    `noticeBadCloneFN`, `keyStateSaved`, `invalid`, `psUnescrow`,
+    `remoteMemberedSig`, `stream`, and OOBI result cues should be modeled
+    explicitly even when the current `keri-ts` producer/consumer breadth is
+    still incomplete.
+26. Local `LocationScheme` work is part of honest Gate E runtime parity. `loc`
+    state should be created through signed `/loc/scheme` replies parsed back
+    through `Revery`, not by direct writes to `locs.` / `lans.`, because OOBI
+    generation and OOBI serving both depend on accepted location state.
 
 ## Scope Checklist
 

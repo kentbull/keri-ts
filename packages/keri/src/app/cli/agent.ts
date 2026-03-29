@@ -78,13 +78,14 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       ingestKeriBytes(runtime, hab.makeLocScheme(publicUrl, hab.pre, "http"));
       ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.controller, true));
       ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.agent, true));
-      yield* processRuntimeTurn(runtime);
+      yield* processRuntimeTurn(runtime, { hab });
     }
 
     console.log(`Starting server on port ${port}`);
+    const cueHab = hby.habs.values().next().value;
     // spawn here creates a child Effection frame and immediately starts it. Lifetime is this lexical scope.
     const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime);
+      yield* runAgentRuntime(runtime, { hab: cueHab });
     });
     try {
       yield* startServer(port, consoleLogger, runtime);

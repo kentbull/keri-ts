@@ -14,10 +14,11 @@ import {
   Prefixer,
   SerderKERI,
   Siger,
+  Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
-import type { AgentCue } from "../core/cues.ts";
+import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { CigarCouple, TransIdxSigGroup } from "../core/dispatch.ts";
 import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
@@ -155,6 +156,30 @@ function makeReplySerder(
 }
 
 /**
+ * Build one canonical `qry` serder from route, query body, and timestamp.
+ *
+ * Current `keri-ts` scope:
+ * - follows the KERIpy version-1 message shape used by `BaseHab.query()`
+ * - keeps `src` inside `q` rather than relying on a version-2 outer `i` field
+ */
+function makeQuerySerder(
+  route: string,
+  query: Record<string, unknown>,
+  stamp = makeNowIso8601(),
+): SerderKERI {
+  return new SerderKERI({
+    sad: {
+      t: "qry",
+      dt: stamp,
+      r: route,
+      rr: "",
+      q: query,
+    },
+    makify: true,
+  });
+}
+
+/**
  * Wrap one reply attachment payload in the outer `AttachmentGroup`.
  *
  * The group count is expressed in quadlets, matching the same wire rule used
@@ -179,13 +204,13 @@ function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
 }
 
 /**
- * Build one full reply message including any attached signature material.
+ * Build one fully attached endorsed message from an arbitrary KERI body serder.
  *
- * Supported attachment shapes for the Gate E bootstrap slice:
+ * Supported attachment shapes for the current bootstrap slice:
  * - transferable controller signature groups
  * - non-transferable receipt couples when replaying stored replies
  */
-function buildReplyMessage(args: {
+function buildEndorsedMessage(args: {
   serder: SerderKERI;
   tsg?: TransIdxSigGroup;
   cigars?: readonly CigarCouple[];
@@ -286,7 +311,7 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
   const tsgs = fetchReplyTsgs(db, said);
   if (tsgs.length > 0) {
     const lead = tsgs[0];
-    return buildReplyMessage({
+    return buildEndorsedMessage({
       serder,
       tsg: lead,
     });
@@ -294,7 +319,7 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
 
   const cigars = db.scgs.get([said]);
   if (cigars.length > 0) {
-    return buildReplyMessage({
+    return buildEndorsedMessage({
       serder,
       cigars: cigars.map((entry) => CigarCouple.fromTuple(entry)),
     });
@@ -619,21 +644,32 @@ export class Hab {
   }
 
   /**
-   * Create and sign one reply event with this habitat's current establishment keys.
+   * Endorse one already-built KERI message body with this habitat's current
+   * establishment keys.
    *
-   * The returned bytes are a complete wire message. Transferable reply
-   * attachments are anchored to the habitat's latest accepted establishment
-   * event, matching the KERI reply-endorsement model.
+   * Current supported endorsement shapes:
+   * - transferable indexed signature groups anchored to the latest accepted
+   *   establishment event
+   * - non-transferable detached signature couples for local replay/reload flows
+   *
+   * Current `keri-ts` limitation:
+   * - the Gate E bootstrap path only actively uses the transferable branch for
+   *   locally generated replies and queries
    */
-  reply(
-    route: string,
-    data: Record<string, unknown>,
-    stamp = makeNowIso8601(),
-  ): Uint8Array {
+  endorse(serder: SerderKERI): Uint8Array {
     if (!this.pre) {
-      throw new Error("Cannot build a reply before habitat inception.");
+      throw new Error("Cannot endorse a message before habitat inception.");
     }
-    const serder = makeReplySerder(route, data, stamp);
+    const prefixer = new Prefixer({ qb64: this.pre });
+    if (prefixer.code === "B") {
+      return buildEndorsedMessage({
+        serder,
+        cigars: (this.sign(serder.raw, false) as Cigar[]).map((cigar) =>
+          new CigarCouple(new Verfer({ qb64: this.pre! }), cigar)
+        ),
+      });
+    }
+
     const sigers = this.sign(serder.raw, true) as Siger[];
     const state = this.db.getState(this.pre);
     const estSaid = state?.ee?.d || state?.d;
@@ -646,15 +682,51 @@ export class Hab {
       throw new Error(`Missing establishment sequence number for ${this.pre}.`);
     }
 
-    return buildReplyMessage({
+    return buildEndorsedMessage({
       serder,
       tsg: new TransIdxSigGroup(
-        new Prefixer({ qb64: this.pre }),
+        prefixer,
         seqner,
         new Diger({ qb64: estSaid }),
         sigers,
       ),
     });
+  }
+
+  /**
+   * Create and sign one reply event with this habitat's current establishment keys.
+ *
+ * The returned bytes are a complete wire message. Transferable reply
+ * attachments are anchored to the habitat's latest accepted establishment
+ * event, matching the KERI reply-endorsement model.
+ */
+  reply(
+    route: string,
+    data: Record<string, unknown>,
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    if (!this.pre) {
+      throw new Error("Cannot build a reply before habitat inception.");
+    }
+    return this.endorse(makeReplySerder(route, data, stamp));
+  }
+
+  /**
+   * Create and sign one query message from this habitat.
+   *
+   * This mirrors the intent of KERIpy's `BaseHab.query()` while staying within
+   * the current Gate E bootstrap message surface.
+   */
+  query(
+    pre: string,
+    src: string,
+    query: Record<string, unknown> = {},
+    route = "",
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    return this.endorse(
+      makeQuerySerder(route, { ...query, i: pre, src }, stamp),
+    );
   }
 
   /**
@@ -888,21 +960,25 @@ export class Hab {
   }
 
   /**
-   * Process KERI-style cues and emit any message bytes requested by those cues.
+   * Process KERI-style cues and yield structured runtime cue emissions.
    *
-   * This intentionally mirrors the recognisable KERIpy cue loop shape even
-   * though only the Gate E cue families are active today.
+   * KERIpy correspondence:
+   * - this is the `keri-ts` equivalent of `BaseHab.processCuesIter()`
    *
-   * Current handled cues:
-   * - `replay` emits a prebuilt message stream
-   * - `reply` builds and emits one fresh local reply
+   * `keri-ts` difference:
+   * - the cue identity is preserved in the yielded `CueEmission` instead of
+   *   collapsing everything immediately to raw bytes
    *
-   * All other cue kinds are currently ignored until their producers and
-   * consumers exist in the surrounding runtime.
+   * Current support:
+   * - `replay`, `reply`, and complete `query` cues emit wire messages
+   * - `stream` emits transport requests without flattening them into bytes
+   * - observer/runtime cues remain visible as notify emissions
+   * - `receipt` and `witness` are surfaced as notify emissions until the
+   *   receipt/witness message builders land in the broader KEL port
    */
   *processCuesIter(
     cues: Deck<AgentCue> | Iterable<AgentCue>,
-  ): Generator<Uint8Array> {
+  ): Generator<CueEmission> {
     const queue = cues instanceof Deck ? cues : new Deck(cues);
     while (!queue.empty) {
       const cue = queue.pull();
@@ -910,11 +986,48 @@ export class Hab {
         continue;
       }
       switch (cue.kin) {
+        case "receipt":
+        case "witness":
+          yield { cue, msgs: [], kind: "notify" };
+          break;
         case "replay":
-          yield cue.msgs;
+          yield { cue, msgs: [cue.msgs], kind: "wire" };
           break;
         case "reply":
-          yield this.reply(cue.route, cue.data);
+          yield {
+            cue,
+            msgs: [
+              cue.serder ? this.endorse(cue.serder) : this.reply(cue.route, cue.data ?? {}),
+            ],
+            kind: "wire",
+          };
+          break;
+        case "query": {
+          const query = cue.query ?? cue.q ?? {};
+          if (cue.pre && cue.src) {
+            yield {
+              cue,
+              msgs: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
+              kind: "wire",
+            };
+            break;
+          }
+          yield { cue, msgs: [], kind: "notify" };
+          break;
+        }
+        case "stream":
+          yield { cue, msgs: [], kind: "transport" };
+          break;
+        case "notice":
+        case "noticeBadCloneFN":
+        case "keyStateSaved":
+        case "invalid":
+        case "psUnescrow":
+        case "remoteMemberedSig":
+        case "oobiQueued":
+        case "oobiResolved":
+        case "oobiFailed":
+          yield { cue, msgs: [], kind: "notify" };
           break;
         default:
           break;
