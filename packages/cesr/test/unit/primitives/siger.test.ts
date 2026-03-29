@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import { parseSiger } from "../../../src/primitives/siger.ts";
+import { Siger, parseSiger } from "../../../src/primitives/siger.ts";
 import { KERIPY_INDEXER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
@@ -16,6 +16,13 @@ Deno.test("siger: txt/qb2 parity", () => {
     parseSiger,
   );
   assertEquals(txtValue.index, bnyValue.index);
+});
+
+Deno.test("siger: constructor preserves signature raw through qb64 roundtrip", () => {
+  const src = new Siger({ qb64: KERIPY_INDEXER_VECTORS.sigerSample });
+  const rebuilt = new Siger({ qb64: src.qb64 });
+  assertEquals(rebuilt.qb64, src.qb64);
+  assertEquals(rebuilt.raw, src.raw);
 });
 
 Deno.test("siger: rejects non-signature indexer families", () => {

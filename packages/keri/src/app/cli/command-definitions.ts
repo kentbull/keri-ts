@@ -1,8 +1,9 @@
 import { Command } from "npm:commander@^10.0.1";
-import { type Operation, spawn, withResolvers } from "npm:effection@^3.6.0";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { DISPLAY_VERSION } from "../version.ts";
 import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
 
+/** Shape used for lazily imported command modules before handler extraction. */
 type CommandModule = Record<string, unknown>;
 
 /**
@@ -14,14 +15,12 @@ type CommandModule = Record<string, unknown>;
 function* loadModule<TModule extends CommandModule>(
   load: () => Promise<TModule>,
 ): Operation<TModule> {
-  const { operation, resolve, reject } = withResolvers<TModule>();
-  const task = yield* spawn(function*() {
+  return yield* action((resolve, reject) => {
     load()
       .then(resolve)
       .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+    return () => {};
   });
-  yield* task;
-  return yield* operation;
 }
 
 /**
@@ -58,6 +57,9 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["list", lazyCommand(() => import("./list.ts"), "listCommand")],
     ["aid", lazyCommand(() => import("./aid.ts"), "aidCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
+    ["ends.add", lazyCommand(() => import("./ends.ts"), "endsAddCommand")],
+    ["oobi.generate", lazyCommand(() => import("./oobi.ts"), "oobiGenerateCommand")],
+    ["oobi.resolve", lazyCommand(() => import("./oobi.ts"), "oobiResolveCommand")],
     ["annotate", lazyCommand(() => import("./annotate.ts"), "annotateCommand")],
     [
       "benchmark.cesr",
@@ -70,7 +72,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
 }
 
 /**
- * registers core commands with the program
+ * Register the CLI command tree on the provided Commander program.
+ *
+ * The registered names must stay aligned with `createCmdHandlers()` so parse
+ * results continue to dispatch to the intended lazy-loaded operations.
  */
 export function registerCmds(
   program: Command,
@@ -85,6 +90,8 @@ export function registerCmds(
   regAidCmd(program, dispatch);
   regAnnotateCmd(program, dispatch);
   regAgentCmd(program, dispatch);
+  regEndsSubCmd(program, dispatch);
+  regOobiSubCmd(program, dispatch);
   regBenchmarkSubCmd(program, dispatch);
 
   // sub commands
@@ -105,7 +112,6 @@ function regVersionCmd(program: Command): void {
     .description("Show tufa version")
     .action(() => {
       console.log(DISPLAY_VERSION);
-      return Promise.resolve();
     });
 }
 
@@ -169,7 +175,6 @@ function regInitCmd(program: Command, dispatch: CommandDispatch): void {
           seed: options.seed,
         },
       });
-      return Promise.resolve();
     });
 }
 
@@ -265,7 +270,7 @@ function regInceptCmd(program: Command, dispatch: CommandDispatch): void {
           delpre: options.delpre,
         },
       });
-      return Promise.resolve();
+      return;
     });
 }
 
@@ -306,7 +311,7 @@ function regExportCmd(program: Command, dispatch: CommandDispatch): void {
           ends: options.ends || false,
         },
       });
-      return Promise.resolve();
+      return;
     });
 }
 
@@ -340,7 +345,7 @@ function regListCmd(program: Command, dispatch: CommandDispatch): void {
           passcode: options.passcode,
         },
       });
-      return Promise.resolve();
+      return;
     });
 }
 
@@ -379,7 +384,7 @@ function regAidCmd(program: Command, dispatch: CommandDispatch): void {
           passcode: options.passcode,
         },
       });
-      return Promise.resolve();
+      return;
     });
 }
 
@@ -418,13 +423,18 @@ function regAnnotateCmd(program: Command, dispatch: CommandDispatch): void {
             colored: options.colored || false,
           },
         });
-        return Promise.resolve();
+        return;
       },
     );
 }
 
 /**
  * Registers the agent command with the program.
+ *
+ * Operator contract:
+ * - this starts the long-lived indirect-mode host for one local habery
+ * - the command still dispatches lazily through the shared CLI command loader,
+ *   so `tufa --help` does not eagerly import Gate E runtime dependencies
  *
  * @param program The tufa Commander program instance
  * @param dispatch The command dispatch function
@@ -433,20 +443,138 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("agent")
     .description("Start the KERI agent server")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
     .option(
-      "-p, --port <port>",
-      "Port number for the server (default: 8000)",
-      "8000",
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .option("--port <port>", "Port number for the server (default: 8000)", "8000")
     .action(function(this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",
         args: {
+          name: options.name,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
           port: options.port ? Number(options.port) : 8000,
         },
       });
-      return Promise.resolve();
+      return;
+    });
+}
+
+/**
+ * Register the `ends` subcommands.
+ *
+ * Current Gate E scope is intentionally narrow: only `ends add` is exposed
+ * until the wider endpoint authorization surface reaches parity.
+ */
+function regEndsSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const ends = program.command("ends").description("Manage endpoint authorizations");
+  ends
+    .command("add")
+    .description("Authorize an endpoint role for one AID")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-r, --role <role>", "Endpoint role")
+    .requiredOption("-e, --eid <eid>", "Endpoint AID")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "ends.add",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          role: options.role,
+          eid: options.eid,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return;
+    });
+}
+
+/**
+ * Register the `oobi` subcommands.
+ *
+ * The generate/resolve pair both dispatch through the same shared runtime
+ * design, but `generate` is readonly while `resolve` mutates local OOBI and
+ * reply/KEL state through normal protocol processing.
+ */
+function regOobiSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const oobi = program.command("oobi").description("Generate and resolve OOBIs");
+
+  oobi
+    .command("generate")
+    .description("Generate OOBI URL(s) for one local identifier")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-r, --role <role>", "OOBI role")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "oobi.generate",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          role: options.role,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return;
+    });
+
+  oobi
+    .command("resolve")
+    .description("Resolve one remote OOBI URL")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-u, --url <url>", "Remote OOBI URL")
+    .option("-A, --oobi-alias <alias>", "Alias hint for the resolved OOBI")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "oobi.resolve",
+        args: {
+          name: options.name,
+          url: options.url,
+          oobiAlias: options.oobiAlias,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+      return;
     });
 }
 
@@ -516,7 +644,7 @@ function regBenchmarkCesrCmd(
           json: options.json || false,
         },
       });
-      return Promise.resolve();
+      return;
     });
 }
 
@@ -553,7 +681,7 @@ function regDbDumpCmd(dbCommand: Command, dispatch: CommandDispatch): void {
           temp: options.temp || false,
         },
       });
-      return Promise.resolve();
+      return;
     });
 }
 
@@ -575,6 +703,7 @@ function regExperimentalSubCmd(
   regWitnessCmd(experimentalCommand, dispatch);
 }
 
+/** Register the placeholder experimental interact command. */
 function regInteractCmd(
   experimentalCommand: Command,
   dispatch: CommandDispatch,
@@ -584,10 +713,11 @@ function regInteractCmd(
     .description("Create an interaction event (placeholder)")
     .action(() => {
       dispatch({ name: "interact", args: {} });
-      return Promise.resolve();
+      return;
     });
 }
 
+/** Register the placeholder experimental witness command. */
 function regWitnessCmd(
   experimentalCommand: Command,
   dispatch: CommandDispatch,
@@ -597,15 +727,27 @@ function regWitnessCmd(
     .description("Start a witness server (placeholder)")
     .action(() => {
       dispatch({ name: "witness", args: {} });
-      return Promise.resolve();
+      return;
     });
 }
 
+/**
+ * Placeholder handler for the future experimental interact command surface.
+ *
+ * The real implementation is intentionally deferred; this keeps the CLI route
+ * wired while making the unfinished status explicit.
+ */
 // deno-lint-ignore require-yield
 function* interactCommand(_args: CommandArgs): Operation<void> {
   console.log("tufa experimental interact command - coming soon!");
 }
 
+/**
+ * Placeholder handler for the future experimental witness command surface.
+ *
+ * Like `interactCommand`, this exists so the parser/dispatch path remains
+ * stable while the underlying feature work is still pending.
+ */
 // deno-lint-ignore require-yield
 function* witnessCommand(_args: CommandArgs): Operation<void> {
   console.log("tufa experimental witness command - coming soon!");

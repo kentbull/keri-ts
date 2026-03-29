@@ -17,6 +17,9 @@ export class AppError extends Error {
 /** Invalid caller input or state transition at an application boundary. */
 export class ValidationError extends AppError {}
 
+/** Reply/event material that is structurally valid but not yet verifiable. */
+export class UnverifiedReplyError extends ValidationError {}
+
 /** Filesystem or path-resolution failure from path-managed resources. */
 export class PathError extends AppError {}
 

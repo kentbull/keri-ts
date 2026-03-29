@@ -1,7 +1,26 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { Cigar, DigDex, DIGEST_CODES, parseMatter, PREFIX_CODES, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import {
+  Cigar,
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  Dater,
+  DigDex,
+  Diger,
+  DIGEST_CODES,
+  NumberPrimitive,
+  parseMatter,
+  PREFIX_CODES,
+  Prefixer,
+  SerderKERI,
+  Siger,
+} from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
+import type { AgentCue } from "../core/cues.ts";
+import { Deck } from "../core/deck.ts";
+import { CigarCouple, TransIdxSigGroup } from "../core/dispatch.ts";
+import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
 import { Configer, createConfiger } from "./configing.ts";
@@ -72,6 +91,15 @@ export interface KeverState {
   wits: string[];
 }
 
+/**
+ * Fixed KERI version tuple used when emitting bootstrap counters.
+ *
+ * Keeping this centralized avoids silently diverging counter headers across
+ * locally generated reply and inception messages.
+ */
+const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
+
+/** Return the current UTC time in the KERI-friendly extended ISO-8601 form. */
 function makeNowIso8601(): string {
   const now = new Date();
   const y = now.getUTCFullYear().toString().padStart(4, "0");
@@ -84,10 +112,203 @@ function makeNowIso8601(): string {
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
 }
 
+/**
+ * Produce the default simple numeric signing threshold for a key count.
+ *
+ * This intentionally stays in simple-numeric territory for the current
+ * bootstrap slice; weighted threshold expressions are deferred.
+ */
 function defaultThreshold(count: number, min: number): string {
   return `${Math.max(min, Math.ceil(count / 2)).toString(16)}`;
 }
 
+/** Shared zero-length message value used when a reply/resource has no payload. */
+function emptyMessage(): Uint8Array {
+  return new Uint8Array();
+}
+
+/** Concatenate a list of wire messages while preserving empty-list semantics. */
+function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
+  return messages.length === 0 ? emptyMessage() : concatBytes(...messages);
+}
+
+/**
+ * Build one canonical `rpy` serder from route, attributes, and timestamp.
+ *
+ * Keeping reply creation centralized prevents the local endpoint/OOBI helpers
+ * from drifting in field ordering or reply-body structure.
+ */
+function makeReplySerder(
+  route: string,
+  data: Record<string, unknown>,
+  stamp = makeNowIso8601(),
+): SerderKERI {
+  return new SerderKERI({
+    sad: {
+      t: "rpy",
+      dt: stamp,
+      r: route,
+      a: data,
+    },
+    makify: true,
+  });
+}
+
+/**
+ * Wrap one reply attachment payload in the outer `AttachmentGroup`.
+ *
+ * The group count is expressed in quadlets, matching the same wire rule used
+ * by event replay/export helpers elsewhere in the app layer.
+ */
+function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
+  if (attachments.length === 0) {
+    return emptyMessage();
+  }
+  const raw = concatBytes(...attachments);
+  if (raw.length % 4 !== 0) {
+    throw new Error(
+      "Reply attachments must occupy an integral number of quadlets.",
+    );
+  }
+  const group = new Counter({
+    code: CtrDexV1.AttachmentGroup,
+    count: raw.length / 4,
+    version: KERI_V1,
+  });
+  return concatBytes(group.qb64b, raw);
+}
+
+/**
+ * Build one full reply message including any attached signature material.
+ *
+ * Supported attachment shapes for the Gate E bootstrap slice:
+ * - transferable controller signature groups
+ * - non-transferable receipt couples when replaying stored replies
+ */
+function buildReplyMessage(args: {
+  serder: SerderKERI;
+  tsg?: TransIdxSigGroup;
+  cigars?: readonly CigarCouple[];
+}): Uint8Array {
+  const attachments: Uint8Array[] = [];
+
+  if (args.tsg && args.tsg.sigers.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.TransIdxSigGroups,
+        count: 1,
+        version: KERI_V1,
+      }).qb64b,
+      args.tsg.prefixer.qb64b,
+      args.tsg.seqner.qb64b,
+      args.tsg.diger.qb64b,
+      new Counter({
+        code: CtrDexV1.ControllerIdxSigs,
+        count: args.tsg.sigers.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.tsg.sigers.map((siger) => siger.qb64b),
+    );
+  } else if (args.cigars && args.cigars.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.NonTransReceiptCouples,
+        count: args.cigars.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.cigars.flatMap((cigarCouple) => [
+        cigarCouple.verfer.qb64b,
+        cigarCouple.cigar.qb64b,
+      ]),
+    );
+  }
+
+  return concatBytes(
+    args.serder.raw,
+    makeReplyAttachmentGroup(attachments),
+  );
+}
+
+/**
+ * Rebuild stored transferable reply signature groups from `ssgs.`.
+ *
+ * This helper is used when accepted replies are reloaded for OOBI/resource
+ * dissemination and the caller needs a full wire message again.
+ */
+function fetchReplyTsgs(
+  db: Baser,
+  said: string,
+): TransIdxSigGroup[] {
+  const grouped = new Map<string, TransIdxSigGroup>();
+
+  for (
+    const [keys, siger] of db.ssgs.getTopItemIter([said], { topive: true })
+  ) {
+    const prefix = keys[1];
+    const dig = keys[3];
+    if (!prefix || !dig) {
+      continue;
+    }
+    const estEvent = db.getEvtSerder(prefix, dig);
+    const seqner = estEvent?.sner;
+    if (!seqner) {
+      continue;
+    }
+    const groupKey = `${prefix}.${seqner.qb64}.${dig}`;
+    let group = grouped.get(groupKey);
+    if (!group) {
+      group = new TransIdxSigGroup(
+        new Prefixer({ qb64: prefix }),
+        seqner,
+        new Diger({ qb64: dig }),
+        [],
+      );
+      grouped.set(groupKey, group);
+    }
+    group.sigers.push(siger);
+  }
+
+  return [...grouped.values()].sort((a, b) => Number(b.sn - a.sn));
+}
+
+/**
+ * Reload one persisted reply plus all of its stored attachments by SAID.
+ *
+ * Returns an empty message when the reply SAID is not present in reply-state
+ * storage.
+ */
+function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
+  const serder = db.rpys.get([said]);
+  if (!serder) {
+    return emptyMessage();
+  }
+
+  const tsgs = fetchReplyTsgs(db, said);
+  if (tsgs.length > 0) {
+    const lead = tsgs[0];
+    return buildReplyMessage({
+      serder,
+      tsg: lead,
+    });
+  }
+
+  const cigars = db.scgs.get([said]);
+  if (cigars.length > 0) {
+    return buildReplyMessage({
+      serder,
+      cigars: cigars.map((entry) => CigarCouple.fromTuple(entry)),
+    });
+  }
+
+  return serder.raw;
+}
+
+/**
+ * Convert one persisted key-state record into the lightweight in-memory cache shape.
+ *
+ * `Hab.kever` uses this projection so callers can inspect current verification
+ * keys without depending directly on DB record layout.
+ */
 function keverStateFromRecord(record: KeyStateRecord): KeverState {
   return {
     pre: record.i ?? "",
@@ -99,6 +320,12 @@ function keverStateFromRecord(record: KeyStateRecord): KeverState {
   };
 }
 
+/**
+ * Build the durable key-state record persisted for a newly incepted habitat.
+ *
+ * This captures the bootstrap subset of current-state fields needed by reopen,
+ * OOBI reply generation, and event verification.
+ */
 function makeKeyStateRecord(args: {
   pre: string;
   said: string;
@@ -140,6 +367,14 @@ function makeKeyStateRecord(args: {
   };
 }
 
+/**
+ * Build one inception/delgated-inception serder from generated keys and config.
+ *
+ * Current scope:
+ * - supports local `icp` and delegated `dip` bootstrap events
+ * - relies on simple numeric threshold defaults
+ * - keeps SAID code resolution centralized for prefix derivation consistency
+ */
 function makeInceptRaw(
   keys: string[],
   ndigs: string[],
@@ -184,6 +419,14 @@ function makeInceptRaw(
   });
 }
 
+/**
+ * Resolve SAID derivation codes for one inceptive event body.
+ *
+ * KERI substance:
+ * - `d` always uses the event digest code
+ * - `i` may use either an explicit prefix code or an already-populated prefix
+ *   value when it is parseable as CESR matter
+ */
 function resolveInceptiveSaidCodes(
   ked: Record<string, unknown>,
   explicitPrefixCode?: string,
@@ -219,6 +462,7 @@ export class Hab {
   pre = "";
   kever: KeverState | null = null;
 
+  /** Create one habitat wrapper over shared DB/keeper/manager infrastructure. */
   constructor(
     name: string,
     db: Baser,
@@ -373,6 +617,310 @@ export class Hab {
     }
     return this.mgr.sign(ser, pubs, false);
   }
+
+  /**
+   * Create and sign one reply event with this habitat's current establishment keys.
+   *
+   * The returned bytes are a complete wire message. Transferable reply
+   * attachments are anchored to the habitat's latest accepted establishment
+   * event, matching the KERI reply-endorsement model.
+   */
+  reply(
+    route: string,
+    data: Record<string, unknown>,
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    if (!this.pre) {
+      throw new Error("Cannot build a reply before habitat inception.");
+    }
+    const serder = makeReplySerder(route, data, stamp);
+    const sigers = this.sign(serder.raw, true) as Siger[];
+    const state = this.db.getState(this.pre);
+    const estSaid = state?.ee?.d || state?.d;
+    if (!estSaid) {
+      throw new Error(`Missing establishment event for ${this.pre}.`);
+    }
+    const estEvent = this.db.getEvtSerder(this.pre, estSaid);
+    const seqner = estEvent?.sner;
+    if (!seqner) {
+      throw new Error(`Missing establishment sequence number for ${this.pre}.`);
+    }
+
+    return buildReplyMessage({
+      serder,
+      tsg: new TransIdxSigGroup(
+        new Prefixer({ qb64: this.pre }),
+        seqner,
+        new Diger({ qb64: estSaid }),
+        sigers,
+      ),
+    });
+  }
+
+  /**
+   * Create one signed endpoint-role authorization reply for this habitat.
+   *
+   * This is the local helper behind `tufa ends add` and endpoint-role OOBI
+   * dissemination.
+   */
+  makeEndRole(
+    eid: string,
+    role: EndpointRole | string = EndpointRoles.controller,
+    allow = true,
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    return this.reply(
+      allow ? "/end/role/add" : "/end/role/cut",
+      { cid: this.pre, role, eid },
+      stamp,
+    );
+  }
+
+  /**
+   * Create one signed endpoint-location reply for this habitat.
+   *
+   * The endpoint AID defaults to the habitat's own prefix because the most
+   * common bootstrap case is self-advertised controller/agent/mailbox hosting.
+   */
+  makeLocScheme(
+    url: string,
+    eid = this.pre,
+    scheme = "http",
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    return this.reply("/loc/scheme", { eid, scheme, url }, stamp);
+  }
+
+  /**
+   * Return stored non-empty location URLs keyed by scheme for one endpoint AID.
+   *
+   * This is a pure projection over `locs.`; it does not synthesize default
+   * schemes or perform any lookup beyond local state.
+   */
+  fetchUrls(eid: string, scheme = ""): Record<string, string> {
+    const urls: Record<string, string> = {};
+    const keys = scheme ? [eid, scheme] : [eid];
+    for (
+      const [path, loc] of this.db.locs.getTopItemIter(keys, {
+        topive: !scheme,
+      })
+    ) {
+      const currentScheme = path[1];
+      if (!currentScheme || !loc.url) {
+        continue;
+      }
+      urls[currentScheme] = loc.url;
+    }
+    return urls;
+  }
+
+  /**
+   * Project authorized endpoint URLs for one controller AID.
+   *
+   * Output shape:
+   * - role -> endpoint AID -> scheme-keyed URL map
+   *
+   * Witnesses are derived from current key state as well as stored location
+   * replies because witness membership is partly a KEL concern, not just an
+   * endpoint-authorization concern.
+   */
+  endsFor(pre: string): Record<string, Record<string, Record<string, string>>> {
+    const ends: Record<string, Record<string, Record<string, string>>> = {};
+
+    for (
+      const [keys, end] of this.db.ends.getTopItemIter([pre], { topive: true })
+    ) {
+      const role = keys[1];
+      const eid = keys[2];
+      if (!role || !eid || !(end.allowed || end.enabled)) {
+        continue;
+      }
+      const urls = this.fetchUrls(eid);
+      if (Object.keys(urls).length === 0) {
+        continue;
+      }
+      ends[role] ??= {};
+      ends[role][eid] = urls;
+    }
+
+    const state = this.db.getState(pre);
+    if (state?.b && state.b.length > 0) {
+      const witnessUrls: Record<string, Record<string, string>> = {};
+      for (const eid of state.b) {
+        const urls = this.fetchUrls(eid);
+        if (Object.keys(urls).length === 0) {
+          continue;
+        }
+        witnessUrls[eid] = urls;
+      }
+      if (Object.keys(witnessUrls).length > 0) {
+        ends[EndpointRoles.witness] = witnessUrls;
+      }
+    }
+
+    return ends;
+  }
+
+  /**
+   * Reload one stored `/end/role/*` reply message from reply-state DBs.
+   *
+   * Returns an empty message when the requested authorization is not presently
+   * enabled or allowed.
+   */
+  loadEndRole(
+    cid: string,
+    eid: string,
+    role: EndpointRole | string = EndpointRoles.controller,
+  ): Uint8Array {
+    const end = this.db.ends.get([cid, role, eid]);
+    if (!end || !(end.allowed || end.enabled)) {
+      return emptyMessage();
+    }
+    const said = this.db.eans.get([cid, role, eid]);
+    return said ? loadReplyMessageBySaid(this.db, said.qb64) : emptyMessage();
+  }
+
+  /**
+   * Reload stored `/loc/scheme` reply messages for one endpoint and optional scheme.
+   *
+   * Without a scheme filter this may concatenate multiple stored scheme replies
+   * into one outbound byte stream.
+   */
+  loadLocScheme(eid: string, scheme?: string): Uint8Array {
+    const messages: Uint8Array[] = [];
+    const keys = scheme ? [eid, scheme] : [eid];
+    for (
+      const [, said] of this.db.lans.getTopItemIter(keys, { topive: !scheme })
+    ) {
+      messages.push(loadReplyMessageBySaid(this.db, said.qb64));
+    }
+    return concatMessages(messages.filter((msg) => msg.length > 0));
+  }
+
+  /**
+   * Generate fresh `/loc/scheme` replies from local location state.
+   *
+   * This is used when the local habitat is the authoritative speaker for the
+   * endpoint, so a newly signed reply is preferred over replaying an older
+   * stored reply.
+   */
+  replyLocScheme(eid: string, scheme = ""): Uint8Array {
+    const messages: Uint8Array[] = [];
+    for (
+      const [currentScheme, url] of Object.entries(this.fetchUrls(eid, scheme))
+    ) {
+      messages.push(this.makeLocScheme(url, eid, currentScheme));
+    }
+    return concatMessages(messages);
+  }
+
+  /**
+   * Generate the reply/message stream used for role-based OOBI discovery.
+   *
+   * Current composition order:
+   * 1. cloned KEL messages for the controller AID
+   * 2. witness location/auth material when serving witness OOBIs
+   * 3. endpoint location/auth replies from `locs.` and `ends.`
+   *
+   * This mirrors the shape of KERIpy's `replyEndRole()` output while remaining
+   * limited to the Gate E bootstrap role families.
+   */
+  replyEndRole(
+    cid: string,
+    role?: EndpointRole | string,
+    eids: string[] = [],
+    scheme = "",
+  ): Uint8Array {
+    const messages: Uint8Array[] = [];
+    messages.push(...this.db.clonePreIter(cid));
+
+    if (role === EndpointRoles.witness) {
+      const state = this.db.getState(cid);
+      for (const eid of state?.b ?? []) {
+        if (eids.length > 0 && !eids.includes(eid)) {
+          continue;
+        }
+        messages.push(
+          eid === this.pre
+            ? this.replyLocScheme(eid, scheme)
+            : this.loadLocScheme(eid, scheme),
+        );
+        if (cid === this.pre) {
+          messages.push(this.makeEndRole(eid, EndpointRoles.witness, true));
+        }
+      }
+    }
+
+    for (
+      const [keys, end] of this.db.ends.getTopItemIter([cid], { topive: true })
+    ) {
+      const currentRole = keys[1];
+      const eid = keys[2];
+      if (!currentRole || !eid || !(end.allowed || end.enabled)) {
+        continue;
+      }
+      if (role && currentRole !== role) {
+        continue;
+      }
+      if (eids.length > 0 && !eids.includes(eid)) {
+        continue;
+      }
+      messages.push(this.loadLocScheme(eid, scheme));
+      messages.push(this.loadEndRole(cid, eid, currentRole));
+    }
+
+    return concatMessages(messages.filter((msg) => msg.length > 0));
+  }
+
+  /**
+   * Entry point used by OOBI HTTP resource serving.
+   *
+   * The current bootstrap implementation delegates directly to `replyEndRole()`
+   * so the recognizable KERIpy seam exists before broader discovery policy is
+   * implemented.
+   */
+  replyToOobi(
+    aid: string,
+    role: EndpointRole | string,
+    eids: string[] = [],
+  ): Uint8Array {
+    return this.replyEndRole(aid, role, eids);
+  }
+
+  /**
+   * Process KERI-style cues and emit any message bytes requested by those cues.
+   *
+   * This intentionally mirrors the recognisable KERIpy cue loop shape even
+   * though only the Gate E cue families are active today.
+   *
+   * Current handled cues:
+   * - `replay` emits a prebuilt message stream
+   * - `reply` builds and emits one fresh local reply
+   *
+   * All other cue kinds are currently ignored until their producers and
+   * consumers exist in the surrounding runtime.
+   */
+  *processCuesIter(
+    cues: Deck<AgentCue> | Iterable<AgentCue>,
+  ): Generator<Uint8Array> {
+    const queue = cues instanceof Deck ? cues : new Deck(cues);
+    while (!queue.empty) {
+      const cue = queue.pull();
+      if (!cue) {
+        continue;
+      }
+      switch (cue.kin) {
+        case "replay":
+          yield cue.msgs;
+          break;
+        case "reply":
+          yield this.reply(cue.route, cue.data);
+          break;
+        default:
+          break;
+      }
+    }
+  }
 }
 
 /**
@@ -391,6 +939,7 @@ export class Signator {
   readonly hab: Hab;
   pre: string;
 
+  /** Reopen or create the habery-owned `__signatory__` habitat wrapper. */
   constructor(db: Baser, habery: Habery) {
     this.db = db;
     const spre = this.db.getHby(SIGNER);
@@ -414,14 +963,25 @@ export class Signator {
     }
   }
 
-  /** Signs arbitrary serialized bytes with the habery-owned signatory habitat. */
+  /**
+   * Sign arbitrary serialized bytes with the habery-owned signatory habitat.
+   *
+   * Current `keri-ts` difference:
+   * - this is a deterministic local wrapper, not the full KERIpy signatory
+   *   lifecycle and endorsement surface
+   */
   sign(ser: Uint8Array): string {
     const sig = this.hab.sign(ser, false)[0];
     if (!sig) throw new Error("Unable to sign");
     return sig.qb64;
   }
 
-  /** Verifies by recomputing the expected deterministic signature. */
+  /**
+   * Verify one detached signature by recomputing the expected local signator output.
+   *
+   * This narrow verification rule is only valid for the current deterministic
+   * local signatory model.
+   */
   verify(ser: Uint8Array, cigar: string): boolean {
     const expected = this.sign(ser);
     return expected === cigar;
@@ -463,6 +1023,7 @@ export class Habery {
   readonly habs = new Map<string, Hab>();
   readonly signator: Signator | null;
 
+  /** Compose one habery from already-opened storage, manager, and config surfaces. */
   constructor(
     name: string,
     base: string,
@@ -484,6 +1045,7 @@ export class Habery {
     this.config = config;
     this.signator = skipSignator ? null : new Signator(this.db, this);
     this.loadHabs();
+    this.reconfigure();
   }
 
   /**
@@ -507,6 +1069,41 @@ export class Habery {
         hid,
       );
       this.habs.set(hid, hab);
+    }
+  }
+
+  /** Local AID prefixes currently managed by this habery. */
+  get prefixes(): string[] {
+    return [...this.habs.keys()];
+  }
+
+  /**
+   * Seed OOBI queues from config-file preload material.
+   *
+   * Config is treated as immutable bootstrap input, matching KERIpy's
+   * "preload the database, do not use config as a mutable database" rule.
+   *
+   * Stores touched:
+   * - `oobis.` for controller/delegate bootstrap URLs
+   * - `woobi.` for witness bootstrap URLs
+   */
+  reconfigure(): void {
+    const conf = this.config;
+    if (typeof conf.dt !== "string") {
+      return;
+    }
+
+    const date = conf.dt;
+    const loadUrls = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === "string")
+        : [];
+
+    for (const url of [...loadUrls(conf.iurls), ...loadUrls(conf.durls)]) {
+      this.db.oobis.pin(url, { date, state: "queued" });
+    }
+    for (const url of loadUrls(conf.wurls)) {
+      this.db.woobi.pin(url, { date, state: "queued" });
     }
   }
 
@@ -546,7 +1143,13 @@ export class Habery {
   }
 }
 
-/** Derives deterministic seed/aeid values from passcode material exactly as KERIpy bran flow. */
+/**
+ * Derive deterministic seed/AEID material from one passcode string.
+ *
+ * KERIpy correspondence:
+ * - mirrors the `bran` -> `seed`/`aeid` derivation used for encrypted habery
+ *   reopen flows
+ */
 export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
   const branSalt = branToSaltQb64(bran);
   const signer = saltySigner(branSalt, "", false, "low", false);
@@ -596,8 +1199,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     readonly,
   });
 
-  const cf = providedCf
-    ?? (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf ??
+    (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,

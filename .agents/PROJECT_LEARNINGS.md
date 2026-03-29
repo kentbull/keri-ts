@@ -51,8 +51,9 @@ This keeps context focused and avoids long-thread drift.
 ## Cross-Topic Snapshot
 
 1. CESR parser lifecycle behavior is governed by
-   `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`; parser-adjacent
-   changes should preserve KERIpy parity and contract-to-test traceability.
+   `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`;
+   parser-adjacent changes should preserve KERIpy parity and contract-to-test
+   traceability.
 2. CESR parser architecture remains intentionally atomic/bounded-substream
    first; incremental nested parsing is deferred behind explicit performance
    evidence.
@@ -217,22 +218,39 @@ This keeps context focused and avoids long-thread drift.
     action commit SHAs, explicit environment assertions, and saved built
     tarballs all reduce "works locally, shrugs in Actions" debugging time.
 44. Test parallelization needs to follow isolation boundaries, not folder names:
-    DB-core tests can safely use Deno module parallelism, but CLI/app tests that
-    mutate `console`, `HOME`, or persisted local stores need file-level
-    isolation, and long interop harnesses should be split into individually
-    addressable scenarios so one slow parity lane does not dominate the whole PR
-    gate.
-45. `Matter` and `Indexer` should now be treated as low-level parser/storage
+45. KERIpy-style parser family names on their own are not sufficient
+    maintainability parity: once `KeriDispatchEnvelope` grew beyond a bootstrap
+    subset, the anonymous `{ prefixer, seqner, diger, sigers }`-style element
+    objects became architectural debt. The durable rule is to keep the KERIpy
+    family names (`tsgs`, `trqs`, `ssgs`, etc.) but promote each family element
+    into a named dispatch value object in `core/dispatch.ts`, with CESR
+    primitives plus TS-friendly derived getters.
+46. Parser-dispatch normalization must follow the actual CESR parser output, not
+    an idealized KERIpy class guess: in the current `keri-ts` parser seam the
+    ordinal material inside transferable groups and source-seal families arrives
+    as compact `NumberPrimitive` values, not fixed-width `Seqner` instances, so
+    the runtime dispatch layer should model a shared ordinal union instead of
+    forcing an incorrect `Seqner` assumption. DB-core tests can safely use Deno
+    module parallelism, but CLI/app tests that mutate `console`, `HOME`, or
+    persisted local stores need file-level isolation, and long interop harnesses
+    should be split into individually addressable scenarios so one slow parity
+    lane does not dominate the whole PR gate.
+47. Gate E now has a real shared `AgentRuntime` seam and plan artifact: mailbox
+    endpoint auth plus mailbox/agent OOBI generate+resolve work through a
+    cue/deck runtime hosted either command-local or by `tufa agent`, but the
+    current closure is still a bootstrap slice, not full KERIpy escrow/TEL
+    parity.
+48. `Matter` and `Indexer` should now be treated as low-level parser/storage
     bases rather than normal semantic construction surfaces: when the code
     already knows it is handling a signer/verfer/diger/siger/cigar/etc., it
     should instantiate and return that narrow subclass directly, while truly
     generic seams stay on parser outputs or explicit `Matter`/`Indexer` bases.
-46. `keri-ts` now has a real non-native `Serder` construction/verification seam
-47. CESR-native parity work is no longer just a parser concern: `Mapper`,
+49. `keri-ts` now has a real non-native `Serder` construction/verification seam
+50. CESR-native parity work is no longer just a parser concern: `Mapper`,
     `Compactor`, and `Aggor` are now evolving into semantic CESR-native
     primitives, and ACDC top-level `Serder` verification depends on their
     compact/disclose behavior rather than generic `saidifyFields` alone.
-48. ACDC parity has a special verification rule that must stay explicit in TS:
+51. ACDC parity has a special verification rule that must stay explicit in TS:
     expanded top-level ACDC bodies may carry a `d` derived from the most compact
     variant, so `SerderACDC` must verify compact-form SAID semantics separately
     from "does the visible raw reserialize from the visible SAD?" semantics. for
@@ -241,81 +259,109 @@ This keeps context focused and avoids long-thread drift.
     CESR-native serder parity and deeper ACDC compactification behavior remain
     open, so maintainers should not treat this milestone as full `serdering.py`
     closure yet.
-49. CESR-native parser hydration is now a stricter KERIpy-parity contract at the
+52. CESR-native parser hydration is now a stricter KERIpy-parity contract at the
     top-level frame seam: once the parser classifies a native
     `FixBodyGroup`/`MapBodyGroup` as a message body, success means full
     `SerderKERI`/`SerderACDC` hydration and anything less should be a parse
     error. Generic native map/list corpora still belong to lower-level
     mapper/aggor/compactor surfaces, not metadata-only top-level frame bodies.
-50. KERI native top-level message bodies are fixed-field only; even a
+53. KERI native top-level message bodies are fixed-field only; even a
     message-shaped native `MapBodyGroup` carrying `v`/`t`/`d`/`i` and the rest
     of the expected KERI labels must be rejected by the shared native
     serder/reaper layer. Native map-body top-level semantics belong to ACDC and
     lower-level mapping surfaces, not KERI messages.
-51. Digest-code ownership belongs at the CESR primitive layer, not in app code
-    or serder-local helpers: `DigDex` stays the canonical codex namespace, but
+54. Digest-code ownership belongs at the CESR primitive layer, not in app code
+55. The Gate E runtime root should stay a composition root, not a queue bag:
+    shared state such as `hby`, host mode, and the cue deck may live on
+    `AgentRuntime`, but topic-local flow state belongs to component-owned
+    classes like `Reactor` and `Oobiery`, with durable worklists defaulting to
+    KERIpy-style DB stores instead of new root-level in-memory decks. or
+    serder-local helpers: `DigDex` stays the canonical codex namespace, but
     `Diger` should own `code -> digest implementation` dispatch so `Saider`,
     `Serder`, and habitat flows can consume digest behavior without carrying
     private hash switches.
-52. CESR-native serder parity is now organized around one protocol/version/ilk
+56. CESR-native serder parity is now organized around one protocol/version/ilk
     support matrix in `native.ts` instead of a split "hard-coded KERI plus
     separate ACDC layout table" design; parser hydration, `Serdery`, and native
     inhale/exhale should all extend that one matrix rather than adding sidecar
     native branching.
-53. ACDC section parity depends on two different identifier rules that must stay
+57. ACDC section parity depends on two different identifier rules that must stay
     explicit in TS: top-level compactive ilks hash over the most compact section
     form, while partial section-message ilks keep the visible section expanded
     but still require embedded `$id`/`d`/`agid` values to be computed and
     verified.
-54. Long-tail KERI serder parity now includes wrapper accessors, not just raw
+58. Long-tail KERI serder parity now includes wrapper accessors, not just raw
     scalar projections: `sner`, `tholder`, `ntholder`, `bner`, and KERIpy-like
     `berfers` typing are part of the subtype contract and should be regression
     tested when serder projection behavior changes.
-55. Native KERI route fields are a `Pather` problem, not a `Labeler` problem.
+59. Native KERI route fields are a `Pather` problem, not a `Labeler` problem.
     Even simple semantic routes like `ksn` or `reply` must serialize through
     KERIpy's `Pather(path=..., relative=True, pathive=False)` rules, which
     choose a StrB64/Bytes code family based on the compact path payload. A
     "label-looking" workaround can preserve semantics for some fixtures while
     still breaking byte parity.
-56. Native serder construction/verification cannot feed CESR-native raw back
+60. Native serder construction/verification cannot feed CESR-native raw back
     through non-native `smell()` logic. For native `kind=CESR`, the serder
     already knows `proto`/`pvrsn`/`gvrsn`; it must carry that smellage
     explicitly while validating the byte round-trip instead of trying to sniff a
     self-describing version string that native bodies do not contain.
-57. TypeScript literal-overload APIs do not survive boolean forwarding. When a
+61. TypeScript literal-overload APIs do not survive boolean forwarding. When a
     caller-facing method like `Hab.sign(..., true|false)` forwards a plain
     `boolean` into an overloaded callee like `Manager.sign(...)`, the narrow
     return-type contract is lost even if the runtime logic is fine. The stable
     fix is to branch before the call and pass literal `true` / `false`, while
     the callee implementation should return explicitly typed homogeneous arrays
     instead of a union-widened `map(...)` result.
-58. Maintainer-doc coverage is no longer just a class-boundary rule. The
+62. Maintainer-doc coverage is no longer just a class-boundary rule. The
     broadest ongoing drift risk is exported helper/type/fixture seams and dense
     internal helper ladders; for those areas, grouped family comments and short
     invariant-focused helper docstrings are the preferred pattern, while
     obviously derived constant families such as codex-set blocks can stay
     documented at the grouped block level instead of one symbol at a time.
-59. Later KERIpy DB parity now depends on exposing normalized ordinal-wrapper
+63. Later KERIpy DB parity now depends on exposing normalized ordinal-wrapper
     APIs before upper-layer event routing arrives: `Komer.cntAll()`, `Suber`
     branch iteration via `getTopItemIter()`, and the non-legacy `OnSuber*` /
     `OnIoDup*` / `OnIoSet*` method families should be the preferred forward
     surface, while older `getOn*` names remain temporary compatibility aliases
     until current local call sites migrate.
-60. Ordinal-wrapper call-site migration has to follow the real upstream graph,
+64. Ordinal-wrapper call-site migration has to follow the real upstream graph,
     not a blanket rename instinct: current KERIpy has genuinely moved some paths
     such as `fels.` onto normalized `getAll*` iterators, while other paths such
     as `kels.` still legitimately use `addOn()` / `getOnLast()`-style calls.
     When the upstream refactor is uneven, mirroring that unevenness is safer
     than "cleaning up" into invented parity.
-61. Maintainer-grade DB documentation now has to cover storage-family methods
+65. Maintainer-grade DB documentation now has to cover storage-family methods
     and adapter seams, not just class boundaries. For `LMDBer`, `Baser`,
     `Komer`, `Suber`, and the `On*`/`IoSet*`/`Dup*` families, method docs should
     explain the storage model, hidden suffix/proem behavior, and whether a name
     is the forward parity surface or a temporary compatibility alias.
-62. `PathManager` is now explicitly documented as the local adaptation of HIO
+66. `PathManager` is now explicitly documented as the local adaptation of HIO
     `Filer` responsibilities: shared path derivation, temp/clean/alt-home
     fallback, and reuse/clear policy stay centralized there, while resource
     lifecycles remain with owners such as `LMDBer` and `Configer`.
+67. Gate E parity work now has an explicit documentation floor: runtime seams
+    such as `AgentRuntime`, `Revery`, `Kevery`, `Hab.reply*`, CLI runtime hosts,
+    and cue/deck contracts must ship with source docs that explain DB stores
+    touched, cue/escrow side effects, BADA/idempotence rules, and any current
+    `keri-ts` divergence from KERIpy. Plan docs alone are not an adequate
+    substitute once maintainers start porting behavior cue-by-cue.
+68. Gate E runtime turns should stay Effection-native: `processRuntimeTurn()`
+    and similar orchestration seams should be `Operation`s, not promise helpers
+    wrapped back into Effection. The only legitimate promise-adaptation boundary
+    is the real host API edge such as `fetch()` / response-body reads; widening
+    that boundary obscures cancellation semantics and can hide bugs like
+    aborting a successfully fetched OOBI response before its body is read.
+69. The same Effection boundary rule now applies to recent CLI/server glue:
+    Commander registration callbacks should stay synchronous if they only
+    dispatch selection state, and promise-returning host APIs such as dynamic
+    import or `Deno.serve().finished` should be adapted locally inside small
+    `action()` helpers rather than spread across `withResolvers()`/`spawn()`
+    plumbing or monolithic lifecycle wrappers.
+70. If `KeriDispatchEnvelope` is the parser-to-runtime seam, it must mirror the
+    full KERIpy parser `exts` accumulation contract rather than only the
+    currently consumed bootstrap fields; otherwise every later receipt/query/
+    EXN/TEL port will be tempted to bypass the seam and re-parse attachments ad
+    hoc.
 
 ## New Thread Kickoff Template
 

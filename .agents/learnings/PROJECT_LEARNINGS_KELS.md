@@ -81,6 +81,18 @@ replay/verification semantics.
     newer `getTop*` / `getAll*` / non-`On` method families as the forward parity
     surface, while legacy `getOn*` and plain `Suber.getItemIter()` remain
     temporary compatibility aliases until higher layers migrate.
+22. The parser-to-runtime dispatch seam is now a first-class KEL architecture
+    surface: `KeriDispatchEnvelope` and its family element classes live in
+    `core/dispatch.ts`, not in `Reactor`, and maintainers should preserve the
+    KERIpy family names (`trqs`, `tsgs`, `ssgs`, `frcs`, `sscs`, `ssts`, etc.)
+    while expressing each family element as a named value object instead of an
+    anonymous object literal.
+23. Runtime dispatch value objects should hold real CESR primitives plus derived
+    getters. For ordinal-bearing families this currently means a shared
+    `DispatchOrdinal = Seqner | NumberPrimitive` union, because the `keri-ts`
+    parser normalization seam presently yields compact number-coded ordinals for
+    these attachment groups; forcing everything into `Seqner` is a model error,
+    not extra parity.
 
 ## Scope Checklist
 
@@ -119,9 +131,9 @@ Use this doc for:
     `PathManager`, while LMDB env ownership and config-file durability semantics
     stay with `LMDBer` and `Configer`.
 - Why:
-  - Future parity work could otherwise cargo-cult Python `Filer` inheritance
-    and accidentally blur the boundary between path policy and resource
-    lifecycle ownership.
+  - Future parity work could otherwise cargo-cult Python `Filer` inheritance and
+    accidentally blur the boundary between path policy and resource lifecycle
+    ownership.
 - Tests:
   - Command: N/A (documentation-only ADR)
   - Result: N/A
@@ -510,3 +522,255 @@ Use this doc for:
 - Kept the docs additive around actively changing files such as `habbing.ts` and
   `keeping.ts`; the sweep was intentionally documentation-only and did not
   revert or reshape the surrounding in-flight implementation work.
+
+### 2026-03-27 - Gate E Bootstrap Runtime Lands As A Shared Cue/Deck Host
+
+- Topic docs updated:
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+- What changed:
+  - Added a real shared `AgentRuntime` seam with `Deck`-backed ingress/cues/OOBI
+    queues, reusable both command-local and from `tufa agent`.
+  - Landed the first Gate E bootstrap slice: `ends add` mailbox auth through the
+    runtime path, protocol-only OOBI serving, and mailbox/agent OOBI
+    generate+resolve over the same shared runtime.
+  - Added `Router`/`Revery`-backed reply handling for `/end/role/*` and
+    `/loc/scheme`, minimal `Kevery` inception acceptance with first-seen
+    persistence, and the Gate E plan artifact pointer in the main reconciliation
+    plan.
+  - Fixed an important BADA-style idempotence bug: `/loc/scheme` replays with
+    the same SAID must be treated as harmless duplicates rather than rejected.
+  - Fixed an Effection-hosting bug in the long-lived runtime: a microtask-only
+    loop starved sibling tasks, so the continuous runtime now yields
+    cooperatively between turns instead of monopolizing the host.
+- Why:
+  - Gate E could not be honestly advanced with CLI-only one-shot helpers. OOBI
+    resolution needs a recognisable long-running runtime seam with parser,
+    routing, first-seen logic, and escrow processing all hosted in one place.
+  - The hostile lesson here is that "continuous loop" and "cooperative loop" are
+    not the same thing in Effection. A starvation loop is not fidelity to
+    KERIpy's doer model; it is a broken host abstraction.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/deck.test.ts packages/keri/test/unit/app/gate-e-runtime.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+- Risks/TODO:
+  - This is still only the bootstrap slice of Gate E. Most `Kevery` escrow
+    families remain stubs, reply routing is still narrow, and TEL / EXN /
+    registrar runtime breadth is not closed by this pass.
+
+### 2026-03-28 - Gate E Bootstrap Seams Now Have Maintainer-Grade Source Docs
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+- What changed:
+  - Added or deepened JSDoc across the Gate E bootstrap runtime surfaces:
+    `routing.ts`, `agent-runtime.ts`, `eventing.ts`, `habbing.ts`, `cues.ts`,
+    `server.ts`, and the Gate E CLI command files.
+  - Documented the real behavioral seams maintainers will port against:
+    `Revery.processReply()`, `Revery.acceptReply()`, reply escrow/update paths,
+    `Kevery.processEvent()`, first-seen persistence, OOBI runtime jobs,
+    `Hab.reply*()` helpers, and cue/deck ownership and flow.
+  - Marked the still-unfinished parity areas honestly in source, especially the
+    many `Kevery` escrow stubs and the narrow bootstrap scope of the current
+    reply/OOBI implementation.
+- Why:
+  - The earlier Gate E code landed the behavior, but left too much meaning in
+    the maintainers' heads. That is a trap. KERIpy maintainers trying to port
+    cue-by-cue need the invariants, store effects, and BADA/idempotence rules
+    stated where they read the code, not only in plans or thread history.
+  - The real lesson is that runtime parity without source-documentation parity
+    is false progress: the next maintainer still has to reverse-engineer the
+    port before they can safely extend it.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command: `deno check packages/cesr/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/gate-e-runtime.test.ts packages/keri/test/unit/core/deck.test.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally
+  - Command:
+    `deno test --config packages/cesr/deno.json packages/cesr/test/unit/primitives/indexer.test.ts packages/cesr/test/unit/primitives/siger.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - None
+- Risks/TODO:
+  - This was intentionally documentation-only. It did not close the still-open
+    Gate E behavior gaps such as the wider `Kevery` escrow families, richer
+    BADA-RUN reply coverage, or TEL / EXN / registrar runtime breadth.
+
+### 2026-03-28 - Runtime Turn Orchestration Must Stay In Effection
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+- What changed:
+  - Converted `processRuntimeTurn()` from a promise-returning helper into a
+    proper Effection `Operation`.
+  - Updated `tufa agent`, `ends add`, `oobi resolve`, and the Gate E runtime
+    tests to `yield* processRuntimeTurn(runtime)` directly instead of wrapping
+    `.then()` back through `action()`.
+  - Narrowed promise adaptation to the real host boundary in OOBI fetch logic:
+    `fetch()` and `response.arrayBuffer()` now live behind small `action()`
+    helpers inside `agent-runtime.ts`.
+  - Fixed the cancellation bug that fell out of this refactor: aborting the
+    fetch action during normal cleanup was aborting the successfully returned
+    response before its body was read.
+- Why:
+  - The promise-shaped turn loop was a bad abstraction. It made the runtime look
+    async/await-native when the correct mental model is an Effection doer loop
+    with explicit host-API adaptation only at the edges.
+  - The deeper lesson is that widening a promise boundary is not just style
+    drift; it changes cancellation behavior and can hide lifecycle bugs.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/gate-e-runtime.test.ts packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - None
+- Risks/TODO:
+  - This fixes the orchestration seam and the fetch cleanup bug, but it does not
+    yet imply broader Effection cleanup across every future network or TEL/EXN
+    runtime boundary. That rule still has to be enforced as Gate E/F breadth
+    grows.
+
+### 2026-03-28 - Recent Gate E CLI And Server Glue Now Respects The Same Boundary Rule
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+- What changed:
+  - Simplified `command-definitions.ts` lazy loading so dynamic imports are
+    adapted directly inside one `action()`-backed operation instead of being
+    threaded through `withResolvers()` and a spawned helper task.
+  - Removed the fake `Promise.resolve()` returns from Commander `.action()`
+    callbacks; those callbacks only dispatch selection state and should stay
+    synchronous.
+  - Split the HTTP server lifecycle in `server.ts` into explicit seams: host
+    startup/cleanup and `server.finished` waiting are now separate helpers
+    instead of one monolithic action body.
+  - Extracted shared Effection HTTP test helpers for the touched Gate E tests
+    and gave `fetchOp()` real cancellation-aware cleanup so the tests teach the
+    same boundary discipline as production code.
+- Why:
+  - The earlier runtime-turn cleanup solved the biggest abstraction leak, but
+    the surrounding CLI/server glue was still teaching the wrong lesson:
+    promise-shaped glue was being kept alive where synchronous dispatch or
+    smaller local boundary adapters were enough.
+  - The real lesson is that explicit local adaptation is the style rule, not
+    “remove promises everywhere.” Host promises still exist; they just should
+    not leak across internal orchestration seams.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/cli.test.ts packages/keri/test/integration/app/main.test.ts packages/keri/test/unit/app/gate-e-runtime.test.ts packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - None
+- Risks/TODO:
+  - Promise-based host boundaries still remain where they are legitimate, such
+    as dynamic import, `server.finished`, `fetch()`, and response-body reads.
+    Future cleanup should target leaked orchestration promises, not erase those
+    real platform boundaries.
+
+### 2026-03-28 - `AgentRuntime` Should Stay A Composition Root, Not A Queue Bag
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `docs/adr/adr-0003-agent-runtime-composition-root.md`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- What changed:
+  - Split the old flat Gate E runtime into a small composition root plus two
+    component-owned runtime seams:
+    - `Reactor` now owns parser ingress, attachment normalization, `Router`,
+      `Revery`, `Kevery`, and the continuous message/escrow doers.
+    - `Oobiery` now owns durable OOBI queue processing over `oobis.` / `coobi.`
+      / `eoobi.` / `roobi.` and exposes the continuous `oobiDo()` loop.
+  - Shrunk `AgentRuntime` so it now keeps only shared state: `hby`, host `mode`,
+    the shared cue `Deck`, and component instances.
+  - Removed the root-level `oobiJobs`, `completions`, and `transport` decks.
+  - Kept `processRuntimeTurn()` for command-local CLI/test stepping, but turned
+    it into a delegating helper over `reactor.processOnce()`,
+    `oobiery.processOnce()`, and `reactor.processEscrowsOnce()`.
+  - Added ADR-0003 to document the architectural rule and the KERIpy/Effection
+    mental-model mapping.
+- Why:
+  - The flat runtime was a bootstrap convenience, but it taught the wrong mental
+    model. KERIpy maintainers think in component-owned doers, not in a root
+    object that owns every queue in the system.
+  - The real lesson is that plain helpers like `processIngress()` are not the
+    problem. Ownership is the problem. A helper is fine when it lives on the
+    component that owns the corresponding state and long-running operation.
+  - Durable queue-like workflow state should default to KERIpy DB-backed stores
+    unless there is a strong reason to do otherwise.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/cli.test.ts packages/keri/test/integration/app/main.test.ts packages/keri/test/unit/app/gate-e-runtime.test.ts packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally (`16 passed, 0 failed`)
+- Contracts/plans touched:
+  - `docs/adr/adr-0003-agent-runtime-composition-root.md`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- Risks/TODO:
+  - `Oobiery` now uses the durable `oobis.` path, but it still only covers the
+    current Gate E bootstrap slice. Richer KERIpy parity such as `woobi.`
+    continuation, retry policy, and broader convergence semantics still remain
+    future work.
+
+### 2026-03-29 - `KeriDispatchEnvelope` Now Carries The Full KERIpy Parser-State Families
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- What changed:
+  - Expanded `KeriDispatchEnvelope` in `packages/keri/src/app/reactor.ts` from a
+    narrow bootstrap payload into the typed `keri-ts` equivalent of KERIpy's
+    parser `exts` accumulation dict.
+  - Added normalization coverage for the full parser-state families we will need
+    for later routing/event work:
+    - `trqs`
+    - `ssgs`
+    - `frcs`
+    - `sscs`
+    - `ssts`
+    - `tdcs`
+    - `ptds`
+    - `essrs`
+    - `bsqs`
+    - `bsss`
+    - `tmqs`
+    - `local`
+  - Kept the old bootstrap aliases `firstSeen` and `sourceSeals` so current
+    runtime consumers did not need to change in the same pass.
+- Why:
+  - The earlier envelope was enough for the bootstrap OOBI slice, but it was not
+    a real Chunk 3 seam. It only represented what current consumers used, not
+    what KERIpy's parser actually accumulates before dispatch.
+  - That shape would have created architecture debt immediately: receipts,
+    queries, EXN, TEL, and delegated/seal-heavy event flows would each be
+    tempted to bypass the envelope and reach back into parser-specific
+    attachment graphs.
+  - The rule going forward is simple: if a family is part of KERIpy parser
+    dispatch accumulation, it belongs on the envelope even before a consumer
+    exists in `keri-ts`.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/gate-e-runtime.test.ts packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally (`5 passed, 0 failed`)
+- Contracts/plans touched:
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- Risks/TODO:
+  - The envelope is now broad enough, but dispatch consumers are still narrow.
+    `Reactor` still only routes the bootstrap ilks, so later work must consume
+    these new fields instead of letting them stay dead weight.

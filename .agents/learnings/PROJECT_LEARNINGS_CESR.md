@@ -432,3 +432,32 @@ Persistent CESR parser memory for `keri-ts`.
 - Fixture provenance is now clearer too: the cross-implementation/native
   external vectors used by hardening and parity suites carry explicit
   maintainer-facing origin/intent comments.
+
+### 2026-03-27 - Indexed Signature Roundtrip Needed Mid-Pad Parity
+
+- Topic docs updated:
+  - `packages/cesr/src/primitives/indexer.ts`
+  - `packages/cesr/test/unit/primitives/indexer.test.ts`
+  - `packages/cesr/test/unit/primitives/siger.test.ts`
+- What changed:
+  - Fixed `Indexer` text/binary inhale so it mirrors `Matter`'s mid-pad rules:
+    when reconstructing raw bytes from `qb64`, the parser must restore the
+    text-domain pad sextets before base64 decode and then strip `ps + ls`, not
+    just `ls`.
+  - Added explicit roundtrip regression coverage proving `Indexer` and `Siger`
+    preserve `raw` bytes across `qb64` reconstruction, not merely `qb64`
+    string equality.
+- Why:
+  - Gate E runtime work exposed the lie in the old tests: parsed indexed
+    signatures could look correct as `qb64` strings while carrying different raw
+    signature bytes, which silently breaks Ed25519 verification after CESR
+    parse/replay.
+  - The real maintainer lesson is brutal and simple: for signature material,
+    `qb64` equality is not enough. Raw-byte roundtrip is the actual contract.
+- Tests:
+  - Command: `deno test --config packages/cesr/deno.json packages/cesr/test/unit/primitives/indexer.test.ts packages/cesr/test/unit/primitives/siger.test.ts`
+  - Result: passed locally
+- Risks/TODO:
+  - Any higher-layer code that previously relied on parsed `Indexer.raw` being
+    trustworthy without explicit roundtrip tests should now be treated with more
+    suspicion until the surrounding path has real verification coverage.

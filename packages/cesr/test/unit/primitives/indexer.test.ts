@@ -52,6 +52,14 @@ Deno.test("indexer: constructor roundtrip and qb2 trimming", () => {
   assertEquals(parsed.qb64, src.qb64);
 });
 
+Deno.test("indexer: raw bytes roundtrip through qb64 constructor", () => {
+  const raw = decodeB64("A".repeat(2) + KERIPY_INDEXER_VECTORS.ed25519SigIdx5.slice(2)).slice(2);
+  const src = new Indexer({ code: "A", raw, index: 5 });
+  const rebuilt = new Indexer({ qb64: src.qb64 });
+  assertEquals(rebuilt.qb64, src.qb64);
+  assertEquals(rebuilt.raw, src.raw);
+});
+
 Deno.test("indexer: rejects invalid inputs", () => {
   assertThrows(
     () => parseIndexerFromText(txt("?AAA")),

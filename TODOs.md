@@ -13,3 +13,34 @@ Things to come back and do at some point:
 - do a repo-wide pass over the remaining higher-level DB consumers beyond
   `Baser` to separate real upstream parity opportunities from false-cleanup
   temptations.
+- consider changing the Habery impl. or otherwise to have functions like `saveOobi`
+  rather than having something like processOobiJob reach down into the DB layer to
+  call db.oobis.pin directly. That is something that should be hidden by an
+  abstraction layer.
+- Does it really make sense to use Reflection based method dispatch in the Router and
+  Revery? This doesn't smell right for Typescript and should be refactored. It seems
+  like there should be a compile-time stable dispatch map with a lookup based on
+  reply message type.
+- How closely is our Oobiery storing Obr records and the like in our LMDB?
+  Have we made any divergences that are unjustified? We should use the KERIpy model unless
+  we have a really good reason not to.
+- look through the cues and determine whether they properly map to KERIpy cues.
+  Build a cue mapping table and make sure that we are cue by cue compatible with KERIpy's mental model.
+- Why is our reply construction function not doing both v1 and v2? It appears to only be v1 compatible.
+- We need full instructions on how to use the new endpoint role addition and location scheme addition
+- Reconsider the records.ts and dispatch.ts class and type names. Maybe they should be renamed or tweaked.
+
+## Missing
+- mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow
+
+
+## Review Queue
+- endpoint add
+- endpoint generate
+- reply message generate
+- oobi generate
+- oobi resolve
+- agent server
+- agent works as mailbox?
+- eventing Kevery.processInception -> Where's the Kever?
+- routing.ts

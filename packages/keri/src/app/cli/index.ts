@@ -7,3 +7,5 @@ export { tufa } from "./cli.ts";
 export { exportCommand } from "./export.ts";
 export { inceptCommand } from "./incept.ts";
 export { initCommand } from "./init.ts";
+export { endsAddCommand } from "./ends.ts";
+export { oobiGenerateCommand, oobiResolveCommand } from "./oobi.ts";

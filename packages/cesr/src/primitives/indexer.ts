@@ -104,7 +104,8 @@ function parseIndexerFromTextData(input: Uint8Array): IndexerData {
   }
 
   const qb64 = txt.slice(0, fullSize);
-  const raw = decodeB64(qb64.slice(cs)).slice(sizage.ls);
+  const ps = cs % 4;
+  const raw = decodeB64("A".repeat(ps) + qb64.slice(cs)).slice(ps + sizage.ls);
   const { index, ondex } = parseIndexFields(code, qb64);
 
   return {
@@ -159,7 +160,8 @@ function parseIndexerFromBinaryData(input: Uint8Array): IndexerData {
 
   const qb2 = input.slice(0, bfs);
   const qb64 = codeB2ToB64(qb2, fs);
-  const raw = decodeB64(qb64.slice(cs)).slice(sizage.ls);
+  const ps = cs % 4;
+  const raw = decodeB64("A".repeat(ps) + qb64.slice(cs)).slice(ps + sizage.ls);
   const { index, ondex } = parseIndexFields(hard, qb64);
 
   return {

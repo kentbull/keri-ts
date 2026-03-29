@@ -23,11 +23,14 @@ import {
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
-import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
+import {
+  DatabaseNotOpenError,
+  DatabaseOperationError,
+} from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
   BlindedImageTuple,
-  BoundStateQuadruple,
+  BlindedStateQuadrupleTuple,
   BoundStateSextuple,
   CacheTypeRecord,
   EndpointRecord,
@@ -47,7 +50,7 @@ import {
   TransferableSignatureCouple,
   TxnMsgCacheRecord,
   TypedDigestSealCouple,
-  TypeMediaQuadruple,
+  TypedMediaQuadrupleTuple,
   UnverifiedReceiptTriple,
   ValidatorReceiptQuadruple,
   WellKnownAuthN,
@@ -211,9 +214,9 @@ export class Baser {
   public frcs!: CatCesrIoSetSuber<FirstSeenReplayCouple>; // First-seen replay couples.
   public tdcs!: CatCesrIoSetSuber<TypedDigestSealCouple>; // Typed digest seal couples.
   public ptds!: IoSetSuber<string>; // Pathed streams stored as raw bytes.
-  public bsqs!: CatCesrIoSetSuber<BoundStateQuadruple>; // Blind state quadruples.
+  public bsqs!: CatCesrIoSetSuber<BlindedStateQuadrupleTuple>; // Blind state quadruples.
   public bsss!: CatCesrIoSetSuber<BoundStateSextuple>; // Bound state sextuples.
-  public tmqs!: CatCesrIoSetSuber<TypeMediaQuadruple>; // Type-media quadruples.
+  public tmqs!: CatCesrIoSetSuber<TypedMediaQuadrupleTuple>; // Type-media quadruples.
 
   static readonly TailDirPath = "keri/db";
   static readonly AltTailDirPath = ".tufa/db";
@@ -793,10 +796,13 @@ export class Baser {
       this.ptds = new IoSetSuber<string>(this.lmdber, { subkey: "ptds." });
 
       // Blind state quadruples.
-      this.bsqs = new CatCesrIoSetSuber<BoundStateQuadruple>(this.lmdber, {
-        subkey: "bsqs.",
-        klas: [Diger, Noncer, Noncer, Labeler],
-      });
+      this.bsqs = new CatCesrIoSetSuber<BlindedStateQuadrupleTuple>(
+        this.lmdber,
+        {
+          subkey: "bsqs.",
+          klas: [Diger, Noncer, Noncer, Labeler],
+        },
+      );
 
       // Bound state sextuples.
       this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.lmdber, {
@@ -805,7 +811,7 @@ export class Baser {
       });
 
       // Type-media quadruples.
-      this.tmqs = new CatCesrIoSetSuber<TypeMediaQuadruple>(this.lmdber, {
+      this.tmqs = new CatCesrIoSetSuber<TypedMediaQuadrupleTuple>(this.lmdber, {
         subkey: "tmqs.",
         klas: [Diger, Noncer, Labeler, Texter],
       });
@@ -1148,7 +1154,9 @@ export class Baser {
   ): boolean {
     return this.sigs.put(
       [pre, said],
-      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
+      sigs.map((sig) =>
+        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
+      ),
     );
   }
 
@@ -1160,7 +1168,9 @@ export class Baser {
   ): boolean {
     return this.sigs.pin(
       [pre, said],
-      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
+      sigs.map((sig) =>
+        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
+      ),
     );
   }
 

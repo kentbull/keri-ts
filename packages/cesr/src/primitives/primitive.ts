@@ -16,6 +16,14 @@ export interface CounterGroupLike extends Counter {
 
 /** Any first-class hydrated CESR primitive returned by parser hydration. */
 export type Primitive = Matter | Indexer | Counter | UnknownPrimitive;
+/**
+ * Rehydratable qualified primitive from one parsed recursive group graph.
+ *
+ * These entries are safe to pass through `new X({ qb64b: entry.qb64b })` style
+ * reconstruction because they are real qualified CESR primitives, not tuple
+ * payloads, nested counted groups, or lossless unknown placeholders.
+ */
+export type QualifiedPrimitive = Matter | Indexer | Counter;
 /** Ordered tuple payload used by grouped attachments (for fixed small tuples). */
 export type PrimitiveTuple = readonly GroupEntry[];
 /** Recursive parser graph entry for attachment/native payloads. */
@@ -32,4 +40,21 @@ export function isCounterGroupLike(
 ): entry is CounterGroupLike {
   return typeof entry === "object" && entry !== null && !Array.isArray(entry)
     && "items" in entry && "count" in entry && "code" in entry;
+}
+
+/**
+ * Runtime guard for one rehydratable qualified primitive in a parsed group graph.
+ *
+ * This intentionally means "real CESR primitive with `qb64b`" rather than
+ * "any parser primitive union member", so tuples, nested counter groups, and
+ * `UnknownPrimitive` placeholders are all excluded.
+ */
+export function isQualifiedPrimitive(
+  entry: unknown,
+): entry is QualifiedPrimitive {
+  return typeof entry === "object"
+    && entry !== null
+    && !Array.isArray(entry)
+    && !isCounterGroupLike(entry as GroupEntry)
+    && "qb64b" in entry;
 }

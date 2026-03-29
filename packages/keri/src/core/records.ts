@@ -264,10 +264,10 @@ export type FirstSeenReplayCouple = [NumberPrimitive, Dater];
 export type TypedDigestSealCouple = [Verser, Diger];
 /** Transferable/non-indexed signature couple stored in `scgs.` and `ecigs.`. */
 export type TransferableSignatureCouple = [Verfer, Cigar];
-/** Type-media quadruple stored in `tmqs.`. */
-export type TypeMediaQuadruple = [Diger, Noncer, Labeler, Texter];
-/** Blind-state quadruple stored in `bsqs.`. */
-export type BoundStateQuadruple = [Diger, Noncer, Noncer, Labeler];
+/** Typed-media quadruple stored in `tmqs.`. */
+export type TypedMediaQuadrupleTuple = [Diger, Noncer, Labeler, Texter];
+/** Blinded-state quadruple stored in `bsqs.`. */
+export type BlindedStateQuadrupleTuple = [Diger, Noncer, Noncer, Labeler];
 /** Bound-state sextuple stored in `bsss.`. */
 export type BoundStateSextuple = [
   Diger,
