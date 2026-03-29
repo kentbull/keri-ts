@@ -4,11 +4,9 @@ import {
   concatBytes,
   Counter,
   CtrDexV1,
-  Dater,
   DigDex,
   Diger,
   DIGEST_CODES,
-  NumberPrimitive,
   parseMatter,
   PREFIX_CODES,
   Prefixer,
@@ -17,10 +15,12 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
-import type { HabitatRecord, KeyStateRecord } from "../core/records.ts";
+import type { HabitatRecord } from "../core/records.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { CigarCouple, TransIdxSigGroup } from "../core/dispatch.ts";
+import { Kevery } from "../core/eventing.ts";
+import { Kever } from "../core/kever.ts";
 import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
@@ -28,7 +28,6 @@ import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
   branToSaltQb64,
-  encodeDateTimeToDater,
   ensureKeeperCryptoReady,
   Manager,
   normalizeSaltQb64,
@@ -74,22 +73,6 @@ export interface MakeHabArgs {
   algo?: Algos;
   salt?: string;
   tier?: string;
-}
-
-/**
- * Minimal in-memory projection of current key state for one habitat.
- *
- * Current `keri-ts` difference:
- * - this is a derived cache rebuilt from `Baser.states` rather than an
- *   independently authoritative persisted object
- */
-export interface KeverState {
-  pre: string;
-  verfers: string[];
-  digers: string[];
-  sn: number;
-  delpre?: string;
-  wits: string[];
 }
 
 /**
@@ -329,70 +312,6 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
 }
 
 /**
- * Convert one persisted key-state record into the lightweight in-memory cache shape.
- *
- * `Hab.kever` uses this projection so callers can inspect current verification
- * keys without depending directly on DB record layout.
- */
-function keverStateFromRecord(record: KeyStateRecord): KeverState {
-  return {
-    pre: record.i ?? "",
-    verfers: record.k ?? [],
-    digers: record.n ?? [],
-    sn: Number.parseInt(record.s ?? "0", 16),
-    delpre: record.di || undefined,
-    wits: record.b ?? [],
-  };
-}
-
-/**
- * Build the durable key-state record persisted for a newly incepted habitat.
- *
- * This captures the bootstrap subset of current-state fields needed by reopen,
- * OOBI reply generation, and event verification.
- */
-function makeKeyStateRecord(args: {
-  pre: string;
-  said: string;
-  dt: string;
-  ilk: string;
-  fn: number;
-  isith: string;
-  nsith: string;
-  keys: string[];
-  ndigs: string[];
-  toad: number;
-  wits: string[];
-  cnfg: string[];
-  delpre?: string;
-}): KeyStateRecord {
-  return {
-    vn: [1, 0],
-    i: args.pre,
-    s: "0",
-    p: "",
-    d: args.said,
-    f: args.fn.toString(16),
-    dt: args.dt,
-    et: args.ilk,
-    kt: args.isith,
-    k: args.keys,
-    nt: args.nsith,
-    n: args.ndigs,
-    bt: args.toad.toString(16),
-    b: args.wits,
-    c: args.cnfg,
-    ee: {
-      s: "0",
-      d: args.said,
-      br: [],
-      ba: [],
-    },
-    di: args.delpre ?? "",
-  };
-}
-
-/**
  * Build one inception/delgated-inception serder from generated keys and config.
  *
  * Current scope:
@@ -485,7 +404,6 @@ export class Hab {
   readonly ks: Keeper;
   readonly mgr: Manager;
   pre = "";
-  kever: KeverState | null = null;
 
   /** Create one habitat wrapper over shared DB/keeper/manager infrastructure. */
   constructor(
@@ -502,26 +420,54 @@ export class Hab {
     this.mgr = mgr;
     this.ns = ns;
     this.pre = pre;
-    if (this.pre) {
-      this.refreshKever();
-    }
   }
 
-  /** Refresh the cached `kever` projection from durable `Baser.states` content. */
-  private refreshKever(): void {
-    if (!this.pre) {
-      this.kever = null;
-      return;
-    }
-    const state = this.db.getState(this.pre);
-    this.kever = state ? keverStateFromRecord(state) : null;
+  /** Return true when this habitat has accepted local key state. */
+  get accepted(): boolean {
+    return !!this.pre && this.db.getKever(this.pre) !== null;
+  }
+
+  /** Return the live accepted-state `Kever` for this habitat when available. */
+  get kever(): Kever | null {
+    return this.pre ? this.db.getKever(this.pre) : null;
   }
 
   /**
-   * Incept this habitat and persist the local bootstrap state backbone.
+   * Accept one locally generated event through the same `Kevery`/`Kever` path
+   * used by remote processing.
    *
-   * Durable writes performed here include `evts.`, `kels.`, `fels.`, `dtss.`,
-   * `sigs.`, `esrs.`, `states.`, and, when visible, `habs.` plus `names.`.
+   * This keeps local habitat inception and later state transitions aligned with
+   * the main accepted-state machine instead of duplicating direct DB writes in
+   * the habitat layer.
+   */
+  private acceptLocally(
+    serder: SerderKERI,
+    sigers: readonly Siger[],
+  ): Kever {
+    const kvy = new Kevery(this.db, { cues: new Deck<AgentCue>(), local: true });
+    kvy.processEvent({
+      serder,
+      sigers: [...sigers],
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    const kever = this.db.getKever(this.pre);
+    if (!kever) {
+      throw new Error(`Local acceptance did not produce a Kever for ${this.pre}.`);
+    }
+    return kever;
+  }
+
+  /**
+   * Incept this habitat through the shared accepted-state path.
+   *
+   * KERIpy correspondence:
+   * - mirrors the pattern where local inception is signed in the habitat layer
+   *   and then fed through `Kevery.processEvent()` rather than hand-writing
+   *   `states.`/`kels.` directly
    */
   make(args: MakeHabArgs = {}): void {
     const {
@@ -579,44 +525,15 @@ export class Hab {
       delpre,
     });
     const pre = serder.pre;
-    const said = serder.said;
-    if (!pre || !said) {
+    if (!pre || !serder.said) {
       throw new Error(
         "Expected inception serder to provide string pre and said.",
       );
     }
-    const raw = serder.raw;
 
     const opre = verfers[0].qb64;
     this.mgr.move(opre, pre);
     this.pre = pre;
-
-    const sigs = this.mgr.sign(raw, keys, true);
-    const now = makeNowIso8601();
-    const ilk = delpre ? "dip" : "icp";
-    this.db.putEvtSerder(pre, said, raw);
-    this.db.putKel(pre, 0, said);
-    const fn = this.db.appendFel(pre, said);
-    this.db.putDts(pre, said, encodeDateTimeToDater(now));
-    this.db.pinSigs(pre, said, sigs);
-    this.db.pinEsr(pre, said, { local: true });
-    const state = makeKeyStateRecord({
-      pre,
-      said,
-      dt: now,
-      ilk,
-      fn,
-      isith: currentSith,
-      nsith: nextThreshold,
-      keys,
-      ndigs,
-      toad,
-      wits,
-      cnfg,
-      delpre,
-    });
-    this.db.pinState(pre, state);
-    this.kever = keverStateFromRecord(state);
 
     if (!hidden) {
       const habord: HabitatRecord = {
@@ -626,6 +543,17 @@ export class Hab {
       };
       this.db.pinHab(pre, habord);
       this.db.pinName(this.ns ?? "", this.name, pre);
+      this.db.prefixes.add(pre);
+    }
+
+    const sigs = this.mgr.sign(serder.raw, keys, true);
+    try {
+      this.acceptLocally(serder, sigs);
+    } catch (error) {
+      if (!hidden) {
+        this.db.prefixes.delete(pre);
+      }
+      throw error;
     }
   }
 
@@ -633,10 +561,7 @@ export class Hab {
   sign(ser: Uint8Array, indexed: true): Siger[];
   sign(ser: Uint8Array, indexed?: false): Cigar[];
   sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
-    if (!this.kever && this.pre) {
-      this.refreshKever();
-    }
-    const pubs = this.kever?.verfers ?? [];
+    const pubs = this.kever?.verfers.map((verfer) => verfer.qb64) ?? [];
     if (indexed) {
       return this.mgr.sign(ser, pubs, true);
     }
@@ -660,7 +585,11 @@ export class Hab {
     if (!this.pre) {
       throw new Error("Cannot endorse a message before habitat inception.");
     }
-    const prefixer = new Prefixer({ qb64: this.pre });
+    const kever = this.kever;
+    if (!kever) {
+      throw new Error(`Missing accepted key state for ${this.pre}.`);
+    }
+    const prefixer = kever.prefixer;
     if (prefixer.code === "B") {
       return buildEndorsedMessage({
         serder,
@@ -671,8 +600,7 @@ export class Hab {
     }
 
     const sigers = this.sign(serder.raw, true) as Siger[];
-    const state = this.db.getState(this.pre);
-    const estSaid = state?.ee?.d || state?.d;
+    const estSaid = kever.lastEst.d || kever.said;
     if (!estSaid) {
       throw new Error(`Missing establishment event for ${this.pre}.`);
     }
@@ -815,10 +743,10 @@ export class Hab {
       ends[role][eid] = urls;
     }
 
-    const state = this.db.getState(pre);
-    if (state?.b && state.b.length > 0) {
+    const kever = this.db.getKever(pre);
+    if (kever?.wits && kever.wits.length > 0) {
       const witnessUrls: Record<string, Record<string, string>> = {};
-      for (const eid of state.b) {
+      for (const eid of kever.wits) {
         const urls = this.fetchUrls(eid);
         if (Object.keys(urls).length === 0) {
           continue;
@@ -907,8 +835,8 @@ export class Hab {
     messages.push(...this.db.clonePreIter(cid));
 
     if (role === EndpointRoles.witness) {
-      const state = this.db.getState(cid);
-      for (const eid of state?.b ?? []) {
+      const kever = this.db.getKever(cid);
+      for (const eid of kever?.wits ?? []) {
         if (eids.length > 0 && !eids.includes(eid)) {
           continue;
         }
@@ -1115,8 +1043,10 @@ export class Signator {
  * - durable habitat metadata lives in `habs.`
  * - durable current key state lives in `states.` with supporting `evts.`,
  *   `kels.`, `fels.`, and `dtss.` data in `Baser`
- * - `Hab.kever` is a derived cache rebuilt from DB state, not the sole source
- *   of truth
+ * - accepted current key state is owned by live `Kever` instances reloaded into
+ *   `Baser.kevers`
+ * - `Hab.kever` resolves that accepted-state cache instead of reconstructing a
+ *   thin projection ad hoc
  *
  * Current `keri-ts` differences:
  * - readonly compatibility opens may intentionally skip config processing and
@@ -1164,13 +1094,13 @@ export class Habery {
   /**
    * Populate the in-memory habitat cache from durable `habs.` + `states.` data.
    *
-   * Bare metadata records without corresponding current state are skipped so
-   * `Habery.habs` only contains reopenable local habitats.
+   * Bare metadata records without corresponding accepted key state are skipped
+   * so `Habery.habs` only contains reopenable local habitats.
    */
   private loadHabs(): void {
     for (const [pre, habord] of this.db.getHabItemIter()) {
       const hid = habord.hid || pre;
-      if (!habord.name || this.habs.has(hid) || !this.db.getState(hid)) {
+      if (!habord.name || this.habs.has(hid) || !this.db.getKever(hid)) {
         continue;
       }
       const hab = new Hab(
@@ -1187,7 +1117,7 @@ export class Habery {
 
   /** Local AID prefixes currently managed by this habery. */
   get prefixes(): string[] {
-    return [...this.habs.keys()];
+    return [...this.db.prefixes];
   }
 
   /**
@@ -1232,15 +1162,16 @@ export class Habery {
   /**
    * Resolve a habitat by alias (and optional namespace) using DB-backed state.
    *
-   * This uses `names.` for alias lookup, `habs.` for metadata, and `states.`
-   * for reopenable current state before materializing a cached `Hab`.
+   * This uses `names.` for alias lookup, `habs.` for metadata, and accepted
+   * `Kever` state for reopenable current state before materializing a cached
+   * `Hab`.
    */
   habByName(name: string, ns?: string): Hab | null {
     const pre = this.db.getName(ns ?? "", name);
     if (!pre) return null;
     if (this.habs.has(pre)) return this.habs.get(pre)!;
     const rec = this.db.getHab(pre);
-    if (!rec || !this.db.getState(pre)) return null;
+    if (!rec || !this.db.getKever(pre)) return null;
     const hab = new Hab(name, this.db, this.ks, this.mgr, ns, pre);
     this.habs.set(pre, hab);
     return hab;

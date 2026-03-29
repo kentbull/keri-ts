@@ -30,9 +30,12 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(storedHab ? "sigs" in storedHab : false, false);
       const state = hby.db.getState(hab.pre);
       assertEquals(state?.i, hab.pre);
-      assertEquals(state?.k, hab.kever?.verfers);
+      assertEquals(state?.k, hab.kever?.verfers.map((verfer) => verfer.qb64));
       assertEquals(hby.db.getKel(hab.pre, 0), state?.d);
       assertEquals(hby.db.getFel(hab.pre, 0), state?.d);
+      assertEquals(hab.accepted, true);
+      assertEquals(hby.db.getKever(hab.pre)?.pre, hab.pre);
+      assertEquals(hby.prefixes.includes(hab.pre), true);
 
       const evt = state?.d ? hby.db.getEvt(dgKey(hab.pre, state.d)) : null;
       const evtText = evt ? new TextDecoder().decode(evt) : "";
@@ -67,13 +70,16 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(hab?.name, alias);
       assertEquals(hby.habByName(alias)?.pre, hab?.pre);
       assertEquals(hab?.kever?.pre, hab?.pre);
+      assertEquals(hab?.accepted, true);
+      assertEquals(hby.prefixes.includes(hab?.pre ?? ""), true);
       const storedHab = hab ? hby.db.getHab(hab.pre) : null;
       assertEquals(storedHab?.hid, hab?.pre);
       assertEquals(storedHab?.name, alias);
       assertEquals(storedHab ? "sigs" in storedHab : false, false);
       const state = hab ? hby.db.getState(hab.pre) : null;
       assertEquals(state?.i, hab?.pre);
-      assertEquals(state?.k, hab?.kever?.verfers);
+      assertEquals(state?.k, hab?.kever?.verfers.map((verfer) => verfer.qb64));
+      assertEquals(hab ? hby.db.getKever(hab.pre)?.pre : null, hab?.pre ?? null);
     } finally {
       yield* hby.close();
     }

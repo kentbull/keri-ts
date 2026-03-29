@@ -371,6 +371,13 @@ This keeps context focused and avoids long-thread drift.
     currently consumed bootstrap fields; otherwise every later receipt/query/
     EXN/TEL port will be tempted to bypass the seam and re-parse attachments ad
     hoc.
+71. Accepted identifier state in `keri-ts` should now live in one place: the
+    live `Kever` cache on `Baser`. `Hab` may resolve a `Kever`, and `Kevery`
+    may create/update one, but habitat code should not reintroduce thin
+    `states.` projections or hand-written local event logging. Local inception
+    must feed signed events through the same `Kevery`/`Kever` acceptance path
+    used for remote processing, or the codebase will immediately drift back
+    into split-brain state handling.
 
 ## New Thread Kickoff Template
 

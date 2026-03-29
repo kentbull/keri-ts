@@ -1,132 +1,44 @@
-import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
-import type { SerderKERI, Siger } from "../../../cesr/mod.ts";
+import { Prefixer } from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
-import { encodeDateTimeToDater } from "../app/keeping.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import type { FirstSeenReplayCouple } from "./dispatch.ts";
+import type { KeriDispatchEnvelope } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
-import type { KeyStateRecord } from "./records.ts";
+import { Kever } from "./kever.ts";
 
 /**
- * Build one UTC ISO-8601 timestamp in the text form expected by KERI records.
+ * KEL event envelope consumed by the current `Kevery`.
  *
- * This is used only as a fallback when inbound first-seen material does not
- * provide a dater and the bootstrap runtime still needs a durable timestamp.
- */
-function makeNowIso8601(): string {
-  const now = new Date();
-  const y = now.getUTCFullYear().toString().padStart(4, "0");
-  const m = (now.getUTCMonth() + 1).toString().padStart(2, "0");
-  const d = now.getUTCDate().toString().padStart(2, "0");
-  const hh = now.getUTCHours().toString().padStart(2, "0");
-  const mm = now.getUTCMinutes().toString().padStart(2, "0");
-  const ss = now.getUTCSeconds().toString().padStart(2, "0");
-  const micros = (now.getUTCMilliseconds() * 1000).toString().padStart(6, "0");
-  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
-}
-
-/**
- * Convert one simple hex threshold into a numeric signature threshold.
+ * KERIpy correspondence:
+ * - this is the KEL-focused subset of the parser `exts`/dispatch envelope used
+ *   by `Kevery.processEvent()`
  *
- * Current `keri-ts` limitation:
- * - this bootstrap `Kevery` only supports simple numeric thresholds
- * - weighted thresholds and richer `Tholder` semantics remain later parity work
+ * Design rule:
+ * - keep this shaped like the richer dispatch envelope so later receipt,
+ *   delegation, and witness work does not need another event-envelope rewrite
  */
-function parseNumericThreshold(
-  sith: string | null | undefined,
-  count: number,
-): number {
-  if (!sith) {
-    return Math.max(1, count);
-  }
-  const parsed = Number.parseInt(sith, 16);
-  return Number.isNaN(parsed) ? Math.max(1, count) : parsed;
-}
+export type KeverEventEnvelope = Pick<
+  KeriDispatchEnvelope,
+  "serder" | "sigers" | "wigers" | "frcs" | "sscs" | "ssts" | "local"
+>;
 
 /**
- * Build the durable `states.` projection for one accepted bootstrap inception.
- *
- * This mirrors the KERI key-state record shape closely enough for Gate E OOBI
- * bootstrap, but it is not yet the full evolving-state updater used by a
- * complete `Kevery`.
- */
-function makeKeyStateRecord(args: {
-  pre: string;
-  said: string;
-  dt: string;
-  ilk: string;
-  fn: number;
-  isith: string;
-  nsith: string;
-  keys: string[];
-  ndigs: string[];
-  toad: number;
-  wits: string[];
-  cnfg: string[];
-  delpre?: string | null;
-}): KeyStateRecord {
-  return {
-    vn: [1, 0],
-    i: args.pre,
-    s: "0",
-    p: "",
-    d: args.said,
-    f: args.fn.toString(16),
-    dt: args.dt,
-    et: args.ilk,
-    kt: args.isith,
-    k: args.keys,
-    nt: args.nsith,
-    n: args.ndigs,
-    bt: args.toad.toString(16),
-    b: args.wits,
-    c: args.cnfg,
-    ee: {
-      s: "0",
-      d: args.said,
-      br: [],
-      ba: [],
-    },
-    di: args.delpre ?? "",
-  };
-}
-
-/**
- * Normalized event envelope consumed by the bootstrap `Kevery`.
- *
- * The runtime is responsible for converting parser attachments into this
- * shape before calling `processEvent()`.
- */
-export interface KeverEnvelope {
-  serder: SerderKERI;
-  sigers: Siger[];
-  frcs: FirstSeenReplayCouple[];
-}
-
-/**
- * Minimal KEL event processor for Gate E bootstrap.
+ * Minimal but real KEL event processor backed by live `Kever` instances.
  *
  * Current scope:
- * - accepts and persists fresh `icp`/`dip` events with indexed signatures
- * - records first-seen ordinal/timestamp locally
- * - emits `keyStateSaved` cues on accepted state
+ * - first-seen `icp` / `dip`
+ * - update scaffolding for `rot` / `drt` / `ixn`
+ * - post-acceptance cue emission and live-`Kever` cache ownership via `Baser`
  *
  * Deferred breadth:
- * - rotations, interactions, witness receipts, duplication handling, and the
- *   full escrow family remain follow-on work on this same surface
+ * - full duplication, out-of-order, witness receipt, delegation, and recovery
+ *   parity remains later escrow work
  */
 export class Kevery {
   readonly db: Baser;
   readonly cues: Deck<AgentCue>;
   readonly local: boolean;
 
-  /**
-   * Create one bootstrap `Kevery` bound to one database and shared cue deck.
-   *
-   * `local` controls the provenance flag written into the event-source record
-   * when an event is accepted.
-   */
   constructor(
     db: Baser,
     { cues, local = false }: { cues?: Deck<AgentCue>; local?: boolean } = {},
@@ -136,29 +48,102 @@ export class Kevery {
     this.local = local;
   }
 
+  /** Live accepted-state cache delegated from the backing `Baser`. */
+  get kevers(): Map<string, Kever> {
+    return this.db.kevers;
+  }
+
+  /** Locally managed AIDs delegated from the backing `Baser`. */
+  get prefixes(): Set<string> {
+    return this.db.prefixes;
+  }
+
   /**
-   * Process one normalized remote event envelope.
+   * Process one normalized KEL event envelope.
    *
-   * Current scope:
-   * - accepts fresh `icp` and `dip`
-   *
-   * Deferred parity:
-   * - all later KEL ilks still intentionally fail fast so this bootstrap slice
-   *   does not masquerade as a full `Kevery`
+   * Flow:
+   * - validate prefix material
+   * - first-seen inception/delception creates a new `Kever`
+   * - later accepted events delegate to the existing `Kever.update()`
+   * - post-acceptance cues remain `Kevery` owned
    */
-  processEvent(envelope: KeverEnvelope): void {
-    switch (envelope.serder.ilk) {
-      case "icp":
-      case "dip":
-        this.processInception(envelope);
-        return;
-      default:
-        throw new ValidationError(
-          `Remote event ilk=${
-            String(envelope.serder.ilk)
-          } is not yet implemented in Kevery.`,
-        );
+  processEvent(envelope: KeverEventEnvelope): void {
+    const { serder } = envelope;
+    const pre = serder.pre;
+    const ilk = serder.ilk;
+    const said = serder.said;
+    const sn = serder.sn;
+
+    if (!pre || !ilk || !said || sn === null) {
+      throw new ValidationError(
+        "KEL event must include pre, ilk, said, and sn.",
+      );
     }
+
+    try {
+      new Prefixer({ qb64: pre });
+    } catch (error) {
+      throw new ValidationError(`Invalid pre=${pre} for event ${said}.`, {
+        cause: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const local = envelope.local ?? this.local;
+    if (!this.kevers.has(pre)) {
+      if (ilk !== "icp" && ilk !== "dip") {
+        throw new ValidationError(
+          `Out-of-order event ilk=${ilk} for unknown prefix ${pre} is not yet implemented.`,
+        );
+      }
+
+      const kever = new Kever({
+        db: this.db,
+        cues: this.cues,
+        serder,
+        sigers: envelope.sigers,
+        wigers: envelope.wigers,
+        frcs: envelope.frcs,
+        sscs: envelope.sscs,
+        ssts: envelope.ssts,
+        local,
+      });
+      this.kevers.set(pre, kever);
+      this.emitAcceptanceCues(kever, serder, local);
+      return;
+    }
+
+    if (ilk === "icp" || ilk === "dip") {
+      const kever = this.kevers.get(pre)!;
+      if (sn !== 0) {
+        throw new ValidationError(
+          `Duplicate inception event ${said} for ${pre} must keep sn=0.`,
+        );
+      }
+      if (kever.said === said) {
+        kever.logEvent({
+          serder,
+          sigers: envelope.sigers,
+          wigers: envelope.wigers,
+          local,
+        });
+        return;
+      }
+      throw new ValidationError(
+        `Likely duplicitous inception for ${pre}; existing SAID=${kever.said}, got ${said}.`,
+      );
+    }
+
+    const kever = this.kevers.get(pre)!;
+    kever.update({
+      serder,
+      sigers: envelope.sigers,
+      wigers: envelope.wigers,
+      frcs: envelope.frcs,
+      sscs: envelope.sscs,
+      ssts: envelope.ssts,
+      local,
+    });
+    this.emitAcceptanceCues(kever, serder, local);
   }
 
   /** Placeholder for KERIpy out-of-order event escrow processing. */
@@ -185,8 +170,8 @@ export class Kevery {
   /**
    * Run one full bootstrap KEL escrow sweep.
    *
-   * The method ordering mirrors the planned Gate E continuous-loop order even
-   * though the individual escrow handlers are still stubbed at this stage.
+   * The call ordering is already aligned with the planned continuous-loop
+   * runtime even though most escrow handlers remain stubbed today.
    */
   processEscrows(): void {
     this.processEscrowOutOfOrders();
@@ -197,88 +182,32 @@ export class Kevery {
     this.processEscrowPartialWigs();
     this.processEscrowPartialSigs();
     this.processEscrowDuplicitous();
-    this.processEscrowDelegables(); // TODO remove processEscrowDelegables from this call since it should be manual for now
+    this.processEscrowDelegables();
     this.processQueryNotFound();
   }
 
   /**
-   * Accept and persist one fresh inception or delegated inception event.
+   * Emit post-acceptance cues for one finalized event.
    *
-   * Stores touched on success:
-   * - `evts.`, `kels.`, `fels.`, `dtss.`, `sigs.`, `esrs.`, `states.`
-   *
-   * Side effects:
-   * - emits one `keyStateSaved` cue with the durable key-state projection
-   *
-   * Current `keri-ts` differences:
-   * - only first-seen bootstrap acceptance is implemented
-   * - replay, rotation, interaction, receipts, and escrow recovery are still
-   *   follow-on work
+   * Ownership rule:
+   * - `Kever` owns validation and state mutation
+   * - `Kevery` owns the higher-level cue side effects that follow acceptance
    */
-  private processInception(envelope: KeverEnvelope): void {
-    const { serder, sigers } = envelope;
-    const pre = serder.pre;
-    const said = serder.said;
-    const sn = serder.sn;
-    if (!pre || !said || sn === null) {
-      throw new ValidationError(
-        "Inception event must include pre, said, and sn.",
-      );
-    }
-    if (sn !== 0) {
-      throw new ValidationError(`Inception event ${said} must have sn=0.`);
-    }
-    if (this.db.getState(pre)) {
-      return;
+  private emitAcceptanceCues(
+    kever: Kever,
+    serder: KeverEventEnvelope["serder"],
+    local: boolean,
+  ): void {
+    if (!this.prefixes.has(kever.pre)) {
+      this.cues.push({ kin: "receipt", serder });
+    } else if (!local) {
+      this.cues.push({ kin: "notice", serder });
     }
 
-    const verfers = serder.verfers;
-    const threshold = parseNumericThreshold(
-      serder.tholder?.sith,
-      verfers.length,
-    );
-    const verified = new Set<number>();
-    for (const siger of sigers) {
-      const verfer = verfers[siger.index];
-      if (!verfer || verified.has(siger.index)) {
-        continue;
-      }
-      if (!ed25519.verify(siger.raw, serder.raw, verfer.raw)) {
-        continue;
-      }
-      verified.add(siger.index);
-    }
-    if (verified.size < threshold) {
-      throw new ValidationError(
-        `Inception event ${said} does not meet signature threshold.`,
-      );
+    if (local && kever.locallyWitnessed()) {
+      this.cues.push({ kin: "witness", serder });
     }
 
-    this.db.putEvtSerder(pre, said, serder.raw);
-    this.db.putKel(pre, 0, said);
-    const fn = this.db.appendFel(pre, said);
-    const firstSeen = envelope.frcs[0]?.dater.qb64 ??
-      encodeDateTimeToDater(makeNowIso8601());
-    this.db.putDts(pre, said, firstSeen);
-    this.db.pinSigs(pre, said, sigers);
-    this.db.pinEsr(pre, said, { local: this.local });
-    const state = makeKeyStateRecord({
-      pre,
-      said,
-      dt: envelope.frcs[0]?.dater.iso8601 ?? makeNowIso8601(),
-      ilk: serder.ilk ?? "icp",
-      fn,
-      isith: serder.tholder?.sith ??
-        `${Math.max(1, verfers.length).toString(16)}`,
-      nsith: serder.ntholder?.sith ?? "0",
-      keys: serder.keys,
-      ndigs: serder.ndigs,
-      toad: serder.bn ?? 0,
-      wits: serder.backs,
-      cnfg: serder.traits,
-      delpre: serder.delpre,
-    });
-    this.db.pinState(pre, state);
-    this.cues.push({ kin: "keyStateSaved", ksn: state });
+    this.cues.push({ kin: "keyStateSaved", ksn: kever.state() });
   }
 }

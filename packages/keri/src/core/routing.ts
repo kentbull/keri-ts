@@ -317,7 +317,7 @@ export class Revery {
 
   /** Local prefixes used for self-attachment policy decisions. */
   get prefixes(): string[] {
-    return [...this.db.getHabItemIter()].map(([pre]) => pre);
+    return [...this.db.prefixes];
   }
 
   /**

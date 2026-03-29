@@ -789,3 +789,56 @@ Use this doc for:
   - The envelope is now broad enough, but dispatch consumers are still narrow.
     `Reactor` still only routes the bootstrap ilks, so later work must consume
     these new fields instead of letting them stay dead weight.
+
+### 2026-03-29 - `Kever` Now Owns Accepted Key State Instead Of Habitat Projections
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Added a real `Kever` port at `packages/keri/src/core/kever.ts` with
+    constructor/reload/state/log support for accepted `icp`/`dip` events and
+    bootstrap `update()` support for `rot`, `drt`, and `ixn`.
+  - Added live accepted-state caches to `Baser`:
+    - `kevers`
+    - `prefixes`
+    - `groups`
+  - Reworked `Kevery` so it now creates or updates live `Kever` instances
+    instead of owning bootstrap inception logic itself.
+  - Reworked `Hab` so local inception no longer hand-writes `evts.`, `kels.`,
+    `fels.`, `dtss.`, `sigs.`, `esrs.`, and `states.`. It now signs the local
+    event and feeds it through the same acceptance path as remote processing.
+  - Changed `Hab.kever` from a thin `KeyStateRecord`-shaped projection into a
+    resolver for the live `Kever` owned by `Baser`.
+- Why:
+  - The absence of a real `Kever` was architectural debt, not just a missing
+    class name. Constructor-like validation, accepted-state mutation, and
+    durable logging were split between `Kevery.processInception()` and
+    `Hab.make()`, which guaranteed local/remote divergence.
+  - Once `Kever` exists, accepted state has a single owner again. `Kevery`
+    dispatches and cues; `Hab` builds/signs local events; `Baser` owns the live
+    accepted-state cache that both of them rely on.
+  - This follows KERIpy's behavioral contract while keeping the TS design more
+    explicit: live state is a `Map`, local prefixes/groups are `Set`s, and
+    reopen semantics are loader helpers instead of Python read-through dicts.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/app/habbing.test.ts packages/keri/test/unit/db/basing.test.ts`
+  - Result: passed locally (`9 passed, 0 failed`)
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/reactor.test.ts packages/keri/test/unit/app/gate-e-runtime.test.ts packages/keri/test/unit/app/cue-runtime.test.ts packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally (`10 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever.ts`
+  - `packages/keri/src/core/eventing.ts`
+  - `packages/keri/src/db/basing.ts`
+  - `packages/keri/src/app/habbing.ts`
+- Risks/TODO:
+  - `Kever.update()` currently covers the bootstrap `rot`/`drt`/`ixn` slice,
+    not full KERIpy parity. Witness, delegation, and escrow-heavy acceptance
+    breadth still needs to move deeper into `Kever`/`Kevery`.
+  - Cue emission is still owned by `Kevery`, which is the right split for now,
+    but later clone/duplicitous anomaly handling may justify limited
+    state-machine-local cues from `Kever` itself.

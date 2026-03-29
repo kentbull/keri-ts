@@ -27,6 +27,7 @@ import {
   DatabaseNotOpenError,
   DatabaseOperationError,
 } from "../core/errors.ts";
+import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
   BlindedImageTuple,
@@ -116,6 +117,9 @@ export class Baser {
   private lmdber: LMDBer;
   private readonly logger: Logger;
   private evtsRaw!: Database<BinVal, BinKey>;
+  readonly kevers = new Map<string, Kever>();
+  readonly prefixes = new Set<string>();
+  readonly groups = new Set<string>();
 
   public evts!: SerderSuber<SerderKERI>; // Serialized KEL events keyed by event digest.
   public fels!: OnSuber<string>; // First-seen event log entries keyed by prefix and ordinal.
@@ -816,6 +820,7 @@ export class Baser {
         klas: [Diger, Noncer, Labeler, Texter],
       });
 
+      this.reloadKevers();
       return this.opened;
     } catch (error) {
       this.logger.error(`Failed to open Baser sub-databases: ${error}`);
@@ -828,6 +833,9 @@ export class Baser {
 
   /** Close the underlying LMDB resources. */
   *close(clear = false): Operation<boolean> {
+    this.kevers.clear();
+    this.prefixes.clear();
+    this.groups.clear();
     return yield* this.lmdber.close(clear);
   }
 
@@ -963,6 +971,58 @@ export class Baser {
   /** Read one current key-state record from `states.`. */
   getState(pre: string): KeyStateRecord | null {
     return this.states.get(pre);
+  }
+
+  /**
+   * Rebuild accepted local-hab kevers from durable `habs.` and `states.`.
+   *
+   * KERIpy correspondence:
+   * - mirrors the eager local-hab portion of `Baser.reload()`
+   *
+   * `keri-ts` difference:
+   * - non-hab accepted state such as hidden signators is loaded lazily through
+   *   `getKever()` instead of a Python-style read-through mapping
+   */
+  reloadKevers(): void {
+    this.kevers.clear();
+    this.prefixes.clear();
+    this.groups.clear();
+
+    for (const [pre, habord] of this.getHabItemIter()) {
+      const hid = habord.hid || pre;
+      const state = this.getState(hid);
+      if (!state) {
+        continue;
+      }
+      const kever = new Kever({ state, db: this });
+      this.kevers.set(kever.pre, kever);
+      this.prefixes.add(kever.pre);
+      if (habord.mid) {
+        this.groups.add(kever.pre);
+      }
+    }
+  }
+
+  /**
+   * Return one live `Kever`, rehydrating it from `states.` when needed.
+   *
+   * This is the TypeScript-native replacement for KERIpy's read-through
+   * `db.kevers` dict behavior.
+   */
+  getKever(pre: string): Kever | null {
+    const current = this.kevers.get(pre);
+    if (current) {
+      return current;
+    }
+
+    const state = this.getState(pre);
+    if (!state) {
+      return null;
+    }
+
+    const kever = new Kever({ state, db: this });
+    this.kevers.set(pre, kever);
+    return kever;
   }
 
   /** Iterate raw serialized events in KEL order for one identifier prefix. */

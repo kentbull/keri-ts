@@ -48,3 +48,12 @@ Things to come back and do at some point:
 - agent works as mailbox?
 - eventing Kevery.processInception -> Where's the Kever?
 - routing.ts
+- Kever functions
+  - constructor
+  - reload
+  - incept
+  - config
+  - update
+  - logEvent
+  - validateSignatures
+  - 

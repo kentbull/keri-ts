@@ -8,6 +8,7 @@ import {
   isPrimitiveTuple,
   isQualifiedPrimitive,
   parseSerder,
+  SerderKERI,
   Siger,
   type Smellage,
   Texter,
@@ -170,11 +171,10 @@ export class Reactor {
         break;
       case "icp":
       case "dip":
-        this.kevery.processEvent({
-          serder: envelope.serder,
-          sigers: envelope.sigers,
-          frcs: envelope.frcs,
-        });
+      case "rot":
+      case "drt":
+      case "ixn":
+        this.kevery.processEvent(envelope);
         break;
       default:
         break;
@@ -533,7 +533,7 @@ function envelopeFromMessage(
   const serder = parseSerder(
     message.body.raw,
     smellageFromMessage(message),
-  ) as KeriDispatchEnvelope["serder"];
+  ) as SerderKERI;
   const envelope = new KeriDispatchEnvelope({
     serder,
     attachmentGroups: message.attachments,

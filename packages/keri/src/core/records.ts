@@ -35,8 +35,8 @@ export interface StateEERecord {
  * - mirrors `KeyStateRecord` from `keri.recording`
  *
  * Stored in `Baser.states` / `stts.` and used as the durable source of truth
- * for current local habitat state. `Hab.kever` is reconstructed from this
- * record rather than treated as independently authoritative state.
+ * for accepted current key state. Live `Kever` instances are reloaded from
+ * this record rather than treating in-memory habitat wrappers as authoritative.
  */
 export interface KeyStateRecord {
   vn?: number[];
