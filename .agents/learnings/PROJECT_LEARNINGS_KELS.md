@@ -1010,3 +1010,45 @@ Use this doc for:
     processing and reply verification, but it does not implement multisig group
     orchestration. Later multisig work should consume these threshold surfaces
     instead of inventing another threshold representation.
+
+### 2026-04-02 - `Kever` Attachment Validation Comments Must Carry The KERIpy Mental Model
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Expanded the maintainer-facing comments in `packages/keri/src/core/kever.ts`
+    around `evaluateInception()`, `verifyIncept()`, `evaluateRotation()`,
+    `validateAttachmentsInternal()`, `validateDelegation()`,
+    `fetchDelegatingEvent()`, `deriveBacksDecision()`, and `logEvent()`.
+  - Ported the substantive KERIpy mental model for attachment processing into
+    the TypeScript decision flow: two-phase inception evaluation, stale vs
+    recovery rotation reasoning, remote-membered signature stripping,
+    misfit-before-weaker-escrow ordering, witness-threshold staging, and the
+    protected-party versus third-party delegation model.
+  - Added explicit scope notes where the current `keri-ts` port intentionally
+    stops short of KERIpy, especially around recursive delegated-recovery
+    traversal, original-vs-superseding delegation search, and `.aess` repair.
+- Why:
+  - The earlier code had most of the right behavior but not enough of the
+    maintainer narrative. Readers could follow the branch mechanics, but they
+    still had to re-derive why the attachment checks were ordered that way and
+    which trust-domain assumptions each branch depended on.
+  - The durable rule is that KERIpy parity for dense state-machine ports is not
+    satisfied by class docstrings alone. When a validation ladder is the real
+    mental-model bottleneck, the source needs comments at the actual decision
+    points.
+- Tests:
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
+  - Result: passed locally (`11 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever.ts`
+- Risks/TODO:
+  - This pass is documentation-only and intentionally does not claim behavior
+    parity that the code does not yet have. If later work adds recursive
+    delegated-recovery logic or `.aess` repair, these comments should be
+    revisited so they describe the new reality instead of the current partial
+    scope.

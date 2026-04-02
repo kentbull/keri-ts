@@ -412,6 +412,13 @@ This keeps context focused and avoids long-thread drift.
     string-only hex, and both `Kever` and `Revery` should treat
     `tholder.satisfy(...)` as the authoritative signer-threshold check instead
     of reintroducing numeric `parseInt(..., 16)` shortcuts.
+76. KERIpy documentation parity for dense state-machine code now includes
+    intra-method maintainer comments, not just class/function docstrings. For
+    `Kever` attachment-processing paths, `keri-ts` source should explain the
+    trust-domain model (`local` vs remote), misfit-before-weaker-escrow
+    ordering, witness-threshold staging, and delegation-role semantics at the
+    actual decision points, while explicitly calling out any delegation-recovery
+    parity that is still not implemented.
 
 ## New Thread Kickoff Template
 

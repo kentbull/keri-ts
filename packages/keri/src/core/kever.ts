@@ -334,6 +334,16 @@ export class Kever {
 
   /**
    * Evaluate one first-seen inception or delegated inception without mutating DB.
+   *
+   * This is intentionally a two-phase decision seam:
+   * - `verifyIncept()` checks the inception event body itself
+   * - once that passes, `Kever` builds provisional accepted state and a scratch
+   *   live kever so attachment validation can run against the same state shape
+   *   later acceptance will persist
+   *
+   * This mirrors the substance of KERIpy's `__init__` + `incept()` +
+   * `valSigsWigsDel()` flow while keeping normal outcomes as typed decisions
+   * instead of exception-driven control flow.
    */
   static evaluateInception(init: KeverEventInit): KeverDecision {
     const { serder } = init;
@@ -344,8 +354,9 @@ export class Kever {
     if (verification) {
       return verification;
     }
-    // all event verification checks passed so create initial key state and continue on to
-    // threshold and attachment verification
+    // Once the inception body is structurally valid, attachment validation
+    // should run against provisional accepted state instead of ad hoc serder
+    // fields so inception and later update paths share the same mental model.
     const verifiedPre = pre!;
     const verifiedSaid = said!;
     const verifiedSn = sn!;
@@ -383,10 +394,14 @@ export class Kever {
     };
     const runtime = { db: init.db, cues: init.cues };
 
-    // Create new Kever to be stored
+    // Attachment validation needs a live kever-shaped view of the provisional
+    // state because local/remote witness and delegation rules are defined in
+    // terms of accepted-state helpers, not raw inception fields.
     const scratch = Kever.fromTransition(icpTransition, runtime);
 
-    // Like KERIpy's valSigsWigsDel and validateDelegation
+    // This is the TypeScript equivalent of KERIpy's controller-signature,
+    // witness-receipt, and delegation-validation pass, expressed as a typed
+    // attachment decision.
     const attachments = Kever.validateAttachments({
       kever: scratch,
       serder,
@@ -536,6 +551,15 @@ export class Kever {
    *
    * This is the shared logging seam used by fresh acceptance, late signatures,
    * and future replay/recovery flows.
+   *
+   * Logging rules are intentionally split:
+   * - accepted-event material (`dtss.`, `sigs.`, `wigs.`, `wits.`, `evts.`) is
+   *   always safe to write idempotently
+   * - delegator source seals are only persisted for accepted delegated
+   *   non-`ixn` events so provisional or malicious source-seal attachments do
+   *   not become accepted state
+   * - first-seen side effects (`fels.`/`fons.` and replay-fn anomaly cues)
+   *   remain isolated behind `first`
    */
   logEvent(args: KELEventState): { fn: number | null; dater: Dater } {
     const local = args.local ?? false;
@@ -656,11 +680,19 @@ export class Kever {
   /**
    * Fetch the delegating event that anchors the supplied delegated event.
    *
+   * Lookup order:
+   * - if a source seal is attached, treat it as a hint and only trust it after
+   *   confirming the referenced delegating event actually anchors the delegate
+   *   event
+   * - if no usable attached seal is available and `eager` is enabled, fall
+   *   back to a linear walk of the delegator KEL for a matching anchor
+   *
    * Current `keri-ts` scope:
    * - validates explicit source seals first
    * - optionally performs an eager linear KEL walk when no usable seal is
    *   attached and `eager` is enabled
-   * - recursive superseding-delegation parity remains later work
+   * - does not yet implement KERIpy's original-vs-superseding delegation walk,
+   *   recursive recovery search, or `.aess` repair behavior
    */
   fetchDelegatingEvent(
     delpre: string,
@@ -676,6 +708,8 @@ export class Kever {
     const eventMatches = (candidate: SerderKERI | null): candidate is SerderKERI =>
       !!candidate && this.eventAnchorsSeal(candidate, serder);
 
+    // Never trust the attached source-seal couple on its own; the referenced
+    // delegating event must still contain the delegate's event seal.
     if (sourceSeal) {
       const bySaid = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
       if (eventMatches(bySaid)) {
@@ -694,6 +728,9 @@ export class Kever {
       return null;
     }
 
+    // Eager mode is the "try harder before escrowing again" path. The current
+    // port uses a simple accepted-KEL scan instead of KERIpy's richer
+    // original/superseding delegation traversal.
     for (const [, said] of this.db.getKelItemIter(delpre)) {
       const candidate = this.db.getEvtSerder(delpre, said);
       if (eventMatches(candidate)) {
@@ -742,7 +779,18 @@ export class Kever {
     this.serder = serder;
   }
 
-  /** Evaluate one non-mutating rotation or delegated rotation transition. */
+  /**
+   * Evaluate one non-mutating rotation or delegated rotation transition.
+   *
+   * The branch structure mirrors KERIpy's `rotate()` / `update()` split:
+   * - in-order events advance normally
+   * - same-or-earlier sequence numbers are either stale or recovery candidates
+   * - stale same-sn arrivals are still defended here even though `Kevery`
+   *   normally gets the first chance to classify duplicitous routing
+   *
+   * Recovery is intentionally narrow: only a rotation may supersede an `ixn`
+   * state at the same sequence number.
+   */
   private evaluateRotation(init: KeverEventInit, local: boolean): KeverDecision {
     const { serder } = init;
     const ilk = serder.ilk ?? "rot";
@@ -768,6 +816,9 @@ export class Kever {
       );
     }
     if (sn <= this.sn) {
+      // Same-or-earlier sequence numbers are either stale or recovery
+      // candidates. A bare `Kever` still enforces those rules even when the
+      // normal remote-processing path routes through `Kevery` first.
       if ((ilk === "rot" && sn <= this.lastEst.s) || (ilk === "drt" && sn < this.lastEst.s)) {
         return Kever.reject(
           "stale",
@@ -781,6 +832,8 @@ export class Kever {
         );
       }
 
+      // Recovery compares against the accepted event immediately before the
+      // candidate recovery point, not just against current head state.
       const psn = sn - 1;
       const pdig = this.db.getKel(this.pre, psn);
       if (!pdig) {
@@ -812,6 +865,9 @@ export class Kever {
       );
     }
 
+    // Witness derivation happens before attachment validation so controller
+    // signatures, witness receipts, and delegation checks all see the same
+    // post-establishment witness set.
     const derived = this.deriveBacksDecision(serder);
     if (!derived) {
       return Kever.reject(
@@ -988,7 +1044,23 @@ export class Kever {
     };
   }
 
-  /** Validate attachments using explicit decisions instead of exception flow. */
+  /**
+   * Validate attachments using explicit decisions instead of exception flow.
+   *
+   * Validation order is intentional and carries over the substantive KERIpy
+   * `valSigsWigsDel()` model:
+   * - strip remotely supplied signatures that came from local group members
+   * - require at least one verified controller signature before any escrow path
+   * - run misfit checks before partial-signature, witness, or delegation
+   *   escrows so locally protected events never fall into a weaker escrow class
+   * - satisfy controller threshold, then prior-next exposure threshold for
+   *   establishment rotations, then witness threshold, and only then
+   *   delegation approval
+   *
+   * The TypeScript difference is that each branch returns `verified`,
+   * `escrow`, or `reject` instead of raising the KERIpy family of normal
+   * control-flow exceptions.
+   */
   private validateAttachmentsInternal(
     input: AttachmentValidationInput,
   ): AttachmentDecision {
@@ -1008,6 +1080,9 @@ export class Kever {
       );
     }
 
+    // Remote processing may not count signatures contributed by local members
+    // of a locally membered group AID. Otherwise a remotely compromised local
+    // member key could satisfy threshold from the wrong trust domain.
     if (!input.local && this.locallyMembered()) {
       const indices = this.locallyContributedIndices(verfers);
       if (indices.length > 0) {
@@ -1035,6 +1110,10 @@ export class Kever {
       );
     }
 
+    // Once at least one controller signature verifies, the event is eligible
+    // for escrow. Misfit checks come first so locally protected events do not
+    // leak into a more permissive partial-signature or partial-delegation
+    // class.
     if (
       !input.local &&
       (this.locallyOwned() || this.locallyWitnessed({ wits: [...input.wits] }) ||
@@ -1057,6 +1136,8 @@ export class Kever {
       );
     }
 
+    // Establishment rotations must also satisfy the prior-next threshold
+    // exposed by the newly current signatures against the prior digest list.
     if (
       input.isEstablishment &&
       this.ntholder &&
@@ -1088,6 +1169,10 @@ export class Kever {
         );
       }
     } else if (!(this.locallyOwned() || this.locallyMembered() || this.locallyWitnessed({ wits: [...input.wits] }))) {
+      // Only non-protected validators require the witness threshold to be
+      // satisfied up front. Local controllers, local witnesses, and locally
+      // membered groups may accept earlier so they can drive later receipts and
+      // follow-on approval work.
       if (input.toader.num < 1n || input.toader.num > BigInt(input.wits.length)) {
         return Kever.rejectAttachment(
           "invalidWitnessThreshold",
@@ -1115,6 +1200,9 @@ export class Kever {
       }
     }
 
+    // Delegation is the final attachment gate because it depends on the event
+    // already being controller-valid and, for non-protected validators,
+    // witnessed enough to ask whether the delegator has actually anchored it.
     const delegation = this.validateDelegation({
       ...input,
       delpre,
@@ -1140,7 +1228,25 @@ export class Kever {
     };
   }
 
-  /** Validate delegation or produce typed delegation-related escrow/reject results. */
+  /**
+   * Validate delegation or produce typed delegation-related escrow/reject results.
+   *
+   * Role model carried over from KERIpy:
+   * - local delegatees and local witnesses may accept without waiting for the
+   *   remote-validator form of delegator proof, because their local acceptance
+   *   is what triggers later witness receipts and delegator approval
+   * - local delegators still withhold acceptance until they have supplied an
+   *   approval source seal, which maps here to `delegables` escrow
+   * - everyone else behaves like a third-party validator and requires a known
+   *   delegator KEL plus an anchoring delegating event
+   *
+   * Current `keri-ts` scope:
+   * - preserves the protected-vs-remote delegation model and the initial
+   *   delegated recovery ordering gate
+   * - does not yet implement KERIpy's recursive superseding-delegation
+   *   recovery walk, original-vs-superseding search split, or `.aess` repair
+   *   behavior
+   */
   private validateDelegation(
     input: AttachmentValidationInput & {
       delpre: string | null;
@@ -1148,6 +1254,8 @@ export class Kever {
     },
   ): AttachmentDecision {
     const delpre = input.delpre;
+    // Non-delegated events short-circuit here so the caller can keep one
+    // attachment pipeline for delegated and non-delegated events.
     if (!delpre) {
       return {
         kind: "verified",
@@ -1161,6 +1269,9 @@ export class Kever {
       };
     }
 
+    // Protected parties to the delegation may accept before full remote-style
+    // delegation proof because their local acceptance is what drives later
+    // witness and approval processing.
     if (
       this.locallyOwned() ||
       this.locallyMembered() ||
@@ -1178,6 +1289,8 @@ export class Kever {
       };
     }
 
+    // Third-party-style validators need the delegator KEL before any attached
+    // source seal can be treated as meaningful.
     const delegator = this.db.getKever(delpre);
     if (!delegator) {
       return this.makeAttachmentEscrowDecision(
@@ -1199,6 +1312,9 @@ export class Kever {
       );
     }
 
+    // A local delegator without an attached approval seal is not a generic
+    // partial-delegation case. It is specifically waiting for local
+    // out-of-band approval to be attached and reprocessed.
     if (
       (input.serder.ilk === "dip" || input.serder.ilk === "drt") &&
       this.locallyDelegated(delpre) &&
@@ -1212,6 +1328,9 @@ export class Kever {
       );
     }
 
+    // At this point the event is controller-valid and witnessed enough for the
+    // current trust domain, so the remaining question is whether the delegator
+    // has actually anchored it.
     const delegatingEvent = this.fetchDelegatingEvent(delpre, input.serder, {
       sourceSeal: input.sourceSeal,
       eager: input.eager ?? false,
@@ -1233,6 +1352,8 @@ export class Kever {
       );
     }
 
+    // Current parity stops at the first delegated recovery ordering gate.
+    // KERIpy's recursive boss/original chain comparison is later work.
     if (
       input.serder.ilk === "drt" &&
       input.serder.sn !== null &&
@@ -1288,7 +1409,16 @@ export class Kever {
     };
   }
 
-  /** Verify inception-specific event semantics before attachment validation. */
+  /**
+   * Verify inception-specific event semantics before attachment validation.
+   *
+   * This method only checks the inception event body itself: prefix/ilk/sn,
+   * threshold material, transferability constraints, witness-set shape, and
+   * inception-only non-transferable restrictions. Signature, witness, and
+   * delegation approval rules are intentionally deferred to the later
+   * attachment phase so `evaluateInception()` can keep one acceptance pipeline
+   * for both `icp` and `dip`.
+   */
   private static verifyIncept(init: KeverEventInit): KeverDecision | null {
     const { serder } = init;
     const pre = serder.pre;
@@ -1430,7 +1560,16 @@ export class Kever {
     };
   }
 
-  /** Derive the post-establishment witness set for one event or return `null`. */
+  /**
+   * Derive the post-establishment witness set for one event or return `null`.
+   *
+   * KERIpy correspondence:
+   * - this is the decision-returning equivalent of `deriveBacks()`
+   *
+   * The important invariant is witness ordering. Cuts/adds are validated before
+   * composing the next witness list so later indexed witness receipts still
+   * refer to the correct witness positions across establishment events.
+   */
   private deriveBacksDecision(serder: SerderKERI): DerivedBacksResult | null {
     if (serder.ilk === "icp" || serder.ilk === "dip") {
       return {
@@ -1443,6 +1582,8 @@ export class Kever {
 
     const cuts = [...serder.cuts];
     const adds = [...serder.adds];
+    // Ordered witness math matters here: duplicate or intersecting cut/add
+    // sets would make the next witness list ambiguous for indexed receipts.
     if (!hasUniqueEntries(cuts) || !hasUniqueEntries(adds)) {
       return null;
     }
