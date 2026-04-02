@@ -17,20 +17,7 @@ import {
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isEndpointRole } from "./roles.ts";
-
-/**
- * Encode one ISO-8601 datetime string into the CESR `Dater` qb64 text form.
- *
- * Maintainer note:
- * - `routing.py` builds `Dater` directly from datetime text
- * - this helper keeps Gate E bootstrap code lightweight until a fuller
- *   `Dater(dts=...)`-style constructor parity layer exists in `cesr-ts`
- */
-function encodeDateTimeToDater(dts: string): string {
-  return `1AAG${
-    dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")
-  }`;
-}
+import { encodeDateTimeToDater } from "../time/mod.ts";
 
 /**
  * Convert one hex-threshold string into a numeric verification threshold.

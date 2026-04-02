@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { encodeDateTimeToDater } from "../../../src/app/keeping.ts";
+import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 
 Deno.test("db/basing - Baser binds DB-backed state and record stores", async () => {

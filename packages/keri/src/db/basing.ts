@@ -994,7 +994,7 @@ export class Baser {
       if (!state) {
         continue;
       }
-      const kever = new Kever({ state, db: this });
+      const kever = Kever.fromState({ state, db: this });
       this.kevers.set(kever.pre, kever);
       this.prefixes.add(kever.pre);
       if (habord.mid) {
@@ -1020,7 +1020,7 @@ export class Baser {
       return null;
     }
 
-    const kever = new Kever({ state, db: this });
+    const kever = Kever.fromState({ state, db: this });
     this.kevers.set(pre, kever);
     return kever;
   }

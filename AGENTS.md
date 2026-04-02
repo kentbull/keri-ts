@@ -62,6 +62,31 @@ For parser lifecycle changes:
 - Keep the contract-to-test matrix in sync with behavior changes.
 - Update parity vectors/docs when behavior contracts change.
 
+## State-Machine Control-Flow Rule
+
+For work touching `Kever`, `Kevery`, escrows, or future state-machine ports
+such as `Tever`, `Tevery`, and similar processors:
+
+- Treat `docs/adr/adr-0005-kel-decision-control-flow.md` as normative.
+- Rehydrate this mental model at session start:
+  - expected remote-processing outcomes are typed decisions, not thrown
+    exceptions
+  - state-machine classes such as `Kever`/`Tever` decide validation outcomes
+  - orchestrators such as `Kevery`/`Tevery` own routing, escrow persistence,
+    duplicate handling, and post-acceptance side effects
+- Preserve the explicit decision taxonomy whenever it fits the domain:
+  - `accept`
+  - `duplicate`
+  - `escrow`
+  - `reject`
+- Use exceptions only for invariant failures, corrupt durable state,
+  infrastructure failures, or programmer misuse of accepted-state-only helpers.
+- Do not reintroduce KERIpy-style exception-driven control flow for ordinary
+  branch outcomes just because the Python reference currently uses it.
+- When porting a new state-machine family, split evaluation from application
+  early instead of hiding routing/escrow branches inside constructors or
+  side-effectful validators.
+
 ## Maintainer Docstrings Rule
 
 For new modules/classes/functions introduced during feature work:

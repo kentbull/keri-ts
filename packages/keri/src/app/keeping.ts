@@ -630,11 +630,6 @@ export function branToSaltQb64(bran: string): string {
   return `0AA${bran.slice(0, 21)}`;
 }
 
-/** Encode an ISO datetime into the qualified `Dater` text form used in KERI DB records. */
-export function encodeDateTimeToDater(dts: string): string {
-  return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
-}
-
 /** Encode one v1 counter token directly when higher layers already know code/count. */
 export function encodeCounterV1(code: string, count: number): string {
   return `${code}${intToB64(count, 2)}`;
