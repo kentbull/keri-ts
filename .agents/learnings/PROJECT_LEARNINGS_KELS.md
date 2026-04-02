@@ -1011,7 +1011,7 @@ Use this doc for:
     orchestration. Later multisig work should consume these threshold surfaces
     instead of inventing another threshold representation.
 
-### 2026-04-02 - `Kever` Attachment Validation Comments Must Carry The KERIpy Mental Model
+### 2026-04-02 - `Kever` Attachment Validation Comments And Delegated Recovery Parity Landed
 
 - Topic docs updated:
   - `.agents/PROJECT_LEARNINGS.md`
@@ -1026,9 +1026,19 @@ Use this doc for:
     recovery rotation reasoning, remote-membered signature stripping,
     misfit-before-weaker-escrow ordering, witness-threshold staging, and the
     protected-party versus third-party delegation model.
-  - Added explicit scope notes where the current `keri-ts` port intentionally
-    stops short of KERIpy, especially around recursive delegated-recovery
-    traversal, original-vs-superseding delegation search, and `.aess` repair.
+  - Implemented the missing delegated-recovery parity in
+    `packages/keri/src/core/kever.ts`: `fetchDelegatingEvent()` now separates
+    original accepted-boss lookup from current authoritative-boss lookup,
+    repairs `.aess` for accepted delegated events when it rediscovers their
+    delegation chain, and `validateDelegation()` now applies the recursive
+    boss-chain superseding rules for delegated recovery rotations.
+  - Fixed `Kever.verifyIndexedSignatures()` so verified `Siger`s retain their
+    `verfer`; without that, `exposeds()` cannot satisfy prior-next threshold
+    checks and delegated rotations stall in `partialSigs` before recovery logic
+    is even reached.
+  - Added focused eventing coverage for the two substantive KERIpy delegated
+    recovery acceptance cases: later delegating event wins, and later seal in
+    the same delegating event wins.
 - Why:
   - The earlier code had most of the right behavior but not enough of the
     maintainer narrative. Readers could follow the branch mechanics, but they
@@ -1038,17 +1048,21 @@ Use this doc for:
     satisfied by class docstrings alone. When a validation ladder is the real
     mental-model bottleneck, the source needs comments at the actual decision
     points.
+  - The comment pass surfaced a real runtime hole: the source was already
+    describing delegated recovery as partial parity, and the implementation gap
+    turned out to be real. Closing it required both the recursive delegation
+    walk and the lower-level `verfer` propagation fix for prior-next exposure.
 - Tests:
   - Command: `deno check packages/keri/mod.ts`
   - Result: passed locally
   - Command:
     `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
-  - Result: passed locally (`11 passed, 0 failed`)
+  - Result: passed locally (`13 passed, 0 failed`)
 - Contracts/plans touched:
   - `packages/keri/src/core/kever.ts`
+  - `packages/keri/test/unit/core/eventing.test.ts`
 - Risks/TODO:
-  - This pass is documentation-only and intentionally does not claim behavior
-    parity that the code does not yet have. If later work adds recursive
-    delegated-recovery logic or `.aess` repair, these comments should be
-    revisited so they describe the new reality instead of the current partial
-    scope.
+  - The focused tests cover the substantive B1/B2 delegated recovery cases, but
+    deeper multi-level delegated boss recursion should keep accumulating direct
+    tests as more delegated-delegator scenarios become easy to synthesize in
+    the harness.

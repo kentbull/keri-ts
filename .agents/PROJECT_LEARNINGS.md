@@ -273,6 +273,12 @@ This keeps context focused and avoids long-thread drift.
     JSON/CBOR/MGPK KERI and ACDC bodies, and local habitat inception now
     consumes a `SerderKERI` instead of raw saidify helper output; however,
     CESR-native serder parity and deeper ACDC compactification behavior remain
+52. Delegated rotation recovery parity depends on two coupled invariants:
+    `fetchDelegatingEvent()` must distinguish original accepted boss lookups
+    from current authoritative boss lookups and repair `.aess` when it
+    rediscovers accepted delegation chains, and `verifyIndexedSignatures()` must
+    carry verified `verfer` material forward so prior-next exposure thresholds
+    still work during delegated recovery validation.
     open, so maintainers should not treat this milestone as full `serdering.py`
     closure yet.
 52. CESR-native parser hydration is now a stricter KERIpy-parity contract at the

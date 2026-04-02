@@ -6,7 +6,7 @@ import {
   NumberPrimitive,
   Prefixer,
   SerderKERI,
-  type Siger,
+  Siger,
   Tholder,
   Verfer,
 } from "../../../cesr/mod.ts";
@@ -156,6 +156,12 @@ interface AttachmentValidationInput {
   eager?: boolean;
   check?: boolean;
   isEstablishment?: boolean;
+}
+
+interface DelegatingEventLookup {
+  serder: SerderKERI;
+  sourceSeal: SourceSealCouple;
+  sealIndex: number;
 }
 
 /**
@@ -681,46 +687,68 @@ export class Kever {
    * Fetch the delegating event that anchors the supplied delegated event.
    *
    * Lookup order:
-   * - if a source seal is attached, treat it as a hint and only trust it after
-   *   confirming the referenced delegating event actually anchors the delegate
-   *   event
-   * - if no usable attached seal is available and `eager` is enabled, fall
-   *   back to a linear walk of the delegator KEL for a matching anchor
+   * - for already accepted delegated events being treated as the "original"
+   *   recovery candidate, prefer the stored `.aess` source seal because it
+   *   preserves the accepted authorizing event even if that event was later
+   *   superseded in the delegator's KEL
+   * - for a new or superseding candidate, treat any attached source seal as a
+   *   hint to the delegating-event sequence number, but always resolve that
+   *   hint through the latest authoritative event at that sequence number
+   * - if the hint path fails and `eager` is enabled, search the delegator KEL:
+   *   across all accepted events for `original`, or only the current
+   *   authoritative branch for a new candidate
    *
-   * Current `keri-ts` scope:
-   * - validates explicit source seals first
-   * - optionally performs an eager linear KEL walk when no usable seal is
-   *   attached and `eager` is enabled
-   * - does not yet implement KERIpy's original-vs-superseding delegation walk,
-   *   recursive recovery search, or `.aess` repair behavior
+   * This is the TypeScript equivalent of KERIpy's
+   * `fetchDelegatingEvent(... original=...)`. When an accepted delegated event
+   * is rediscovered via the KEL walk, the `.aess` hint is repaired so later
+   * recursive delegation-recovery checks can start from durable source-seal
+   * state instead of re-walking the KEL every time.
    */
   fetchDelegatingEvent(
     delpre: string,
     serder: SerderKERI,
     {
       sourceSeal,
+      original = false,
       eager = false,
     }: {
       sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+      original?: boolean;
       eager?: boolean;
     } = {},
-  ): SerderKERI | null {
-    const eventMatches = (candidate: SerderKERI | null): candidate is SerderKERI =>
-      !!candidate && this.eventAnchorsSeal(candidate, serder);
-
-    // Never trust the attached source-seal couple on its own; the referenced
-    // delegating event must still contain the delegate's event seal.
-    if (sourceSeal) {
-      const bySaid = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
-      if (eventMatches(bySaid)) {
-        return bySaid;
-      }
-      const bySn = this.db.getKel(delpre, ordinalNumber(sourceSeal.seqner));
-      if (bySn) {
-        const event = this.db.getEvtSerder(delpre, bySn);
-        if (eventMatches(event)) {
-          return event;
+  ): DelegatingEventLookup | null {
+    if (original) {
+      const stored = this.acceptedSourceSealForEvent(serder);
+      if (stored) {
+        const exact = this.lookupAcceptedDelegatingEvent(delpre, stored, serder);
+        if (exact) {
+          return exact;
         }
+        this.dropAcceptedSourceSeal(serder);
+      }
+      if (!eager) {
+        return null;
+      }
+      const found = this.searchDelegatingEvent(delpre, serder, { original: true });
+      if (found) {
+        this.repairAcceptedSourceSeal(serder, found);
+      }
+      return found;
+    }
+
+    if (sourceSeal) {
+      const hinted = this.lookupAuthoritativeDelegatingEvent(delpre, sourceSeal, serder);
+      if (hinted) {
+        return hinted;
+      }
+    }
+
+    const stored = this.acceptedSourceSealForEvent(serder);
+    if (stored) {
+      const authoritative = this.lookupAuthoritativeDelegatingEvent(delpre, stored, serder);
+      if (authoritative) {
+        this.repairAcceptedSourceSeal(serder, authoritative);
+        return authoritative;
       }
     }
 
@@ -728,17 +756,11 @@ export class Kever {
       return null;
     }
 
-    // Eager mode is the "try harder before escrowing again" path. The current
-    // port uses a simple accepted-KEL scan instead of KERIpy's richer
-    // original/superseding delegation traversal.
-    for (const [, said] of this.db.getKelItemIter(delpre)) {
-      const candidate = this.db.getEvtSerder(delpre, said);
-      if (eventMatches(candidate)) {
-        return candidate;
-      }
+    const found = this.searchDelegatingEvent(delpre, serder, { original: false });
+    if (found) {
+      this.repairAcceptedSourceSeal(serder, found);
     }
-
-    return null;
+    return found;
   }
 
   /**
@@ -1081,7 +1103,7 @@ export class Kever {
     }
 
     // Remote processing may not count signatures contributed by local members
-    // of a locally membered group AID. Otherwise a remotely compromised local
+    // of a locally membered group AID. Otherwise, a remotely compromised local
     // member key could satisfy threshold from the wrong trust domain.
     if (!input.local && this.locallyMembered()) {
       const indices = this.locallyContributedIndices(verfers);
@@ -1102,6 +1124,7 @@ export class Kever {
       }
     }
 
+    // get unique, verified sigers and indices lists from sigers list
     const verified = Kever.verifyIndexedSignatures(input.serder.raw, sigers, verfers);
     if (verified.sigers.length === 0) {
       return Kever.rejectAttachment(
@@ -1240,13 +1263,17 @@ export class Kever {
    * - everyone else behaves like a third-party validator and requires a known
    *   delegator KEL plus an anchoring delegating event
    *
-   * Current `keri-ts` scope:
-   * - preserves the protected-vs-remote delegation model and the initial
-   *   delegated recovery ordering gate
-   * - does not yet implement KERIpy's recursive superseding-delegation
-   *   recovery walk, original-vs-superseding search split, or `.aess` repair
-   *   behavior
-   */
+   * Superseding delegated recovery:
+   * - once the current event is controller-valid, witnessed enough, and known
+   *   to be anchored, `drt` recovery compares the new delegating-event chain to
+   *   the latest accepted delegated establishment event at the same delegate
+   *   sequence number
+   * - the comparison implements the substantive KERIpy B/C rules: later
+   *   delegating-event sequence number wins, later seal index in the same
+   *   delegating event wins, a delegating rotation may supersede a delegating
+   *   `ixn` at the same sequence number, and otherwise the comparison climbs
+   *   recursively through the delegator's own delegation chain
+    */
   private validateDelegation(
     input: AttachmentValidationInput & {
       delpre: string | null;
@@ -1333,6 +1360,7 @@ export class Kever {
     // has actually anchored it.
     const delegatingEvent = this.fetchDelegatingEvent(delpre, input.serder, {
       sourceSeal: input.sourceSeal,
+      original: false,
       eager: input.eager ?? false,
     });
     if (!delegatingEvent) {
@@ -1352,18 +1380,68 @@ export class Kever {
       );
     }
 
-    // Current parity stops at the first delegated recovery ordering gate.
-    // KERIpy's recursive boss/original chain comparison is later work.
+    // The simple cases are the same as KERIpy: inception is never a recovery
+    // problem, an in-order delegated rotation is fine once anchored, and a
+    // same-sn `drt` may directly supersede an `ixn` head state.
     if (
-      input.serder.ilk === "drt" &&
-      input.serder.sn !== null &&
-      input.serder.sn <= this.sn &&
-      !(input.serder.sn === this.sn && this.ilk === "ixn")
+      input.serder.ilk !== "drt" ||
+      input.serder.sn === null ||
+      input.serder.sn === this.sn + 1 ||
+      (input.serder.sn === this.sn && this.ilk === "ixn")
     ) {
+      return {
+        kind: "verified",
+        attachments: {
+          sigers: [],
+          wigers: [],
+          wits: [...input.wits],
+          delpre,
+          sourceSeal: delegatingEvent.sourceSeal,
+        },
+      };
+    }
+
+    const originalDelegatedEvent = this.latestAcceptedDelegatedEventAtSn(
+      input.serder.sn,
+    );
+    if (!originalDelegatedEvent) {
       return Kever.rejectAttachment(
         "invalidDelegation",
-        `Invalid delegated recovery ordering for ${input.serder.said ?? "<unknown>"}.`,
+        `Missing accepted delegated establishment event at sn=${input.serder.sn} for ${this.pre}.`,
       );
+    }
+
+    const originalDelegatingEvent = this.fetchDelegatingEvent(
+      delpre,
+      originalDelegatedEvent,
+      {
+        original: true,
+        eager: input.eager ?? false,
+      },
+    );
+    if (!originalDelegatingEvent) {
+      return this.makeAttachmentEscrowDecision(
+        "partialDels",
+        input,
+        `No original delegation seal found for accepted recovery target ${originalDelegatedEvent.said ?? "<unknown>"}.`,
+        [{
+          kin: "query",
+          q: { pre: delpre ?? undefined },
+          pre: delpre ?? undefined,
+        }],
+      );
+    }
+
+    const recoveryDecision = this.validateDelegatedRecovery({
+      input,
+      delpre,
+      candidateEvent: input.serder,
+      candidateDelegation: delegatingEvent,
+      originalEvent: originalDelegatedEvent,
+      originalDelegation: originalDelegatingEvent,
+    });
+    if (recoveryDecision) {
+      return recoveryDecision;
     }
 
     return {
@@ -1373,10 +1451,310 @@ export class Kever {
         wigers: [],
         wits: [...input.wits],
         delpre,
-        sourceSeal: input.sourceSeal ??
-          new SourceSealCouple(delegatingEvent.sner ?? encodeHugeOrdinal(delegatingEvent.sn ?? 0), new Diger({ qb64: delegatingEvent.said ?? "" })),
+        sourceSeal: delegatingEvent.sourceSeal,
       },
     };
+  }
+
+  /**
+   * Compare a candidate delegated recovery against the latest accepted
+   * delegated establishment chain it wants to supersede.
+   *
+   * The comparison climbs one boss/original pair at a time until one of the
+   * KERIpy superseding rules succeeds or the undelegated root is reached.
+   */
+  private validateDelegatedRecovery(
+    {
+      input,
+      delpre,
+      candidateEvent,
+      candidateDelegation,
+      originalEvent,
+      originalDelegation,
+    }: {
+      input: AttachmentValidationInput & {
+        delpre: string | null;
+        sourceSeal: SourceSealCouple | SourceSealTriple | null;
+      };
+      delpre: string;
+      candidateEvent: SerderKERI;
+      candidateDelegation: DelegatingEventLookup;
+      originalEvent: SerderKERI;
+      originalDelegation: DelegatingEventLookup;
+    },
+  ): AttachmentDecision | null {
+    let currentDelpre = delpre;
+    let candidate = candidateEvent;
+    let candidateBoss = candidateDelegation;
+    let original = originalEvent;
+    let originalBoss = originalDelegation;
+    const visited = new Set<string>();
+
+    while (true) {
+      const candidateBossSn = candidateBoss.serder.sn;
+      const originalBossSn = originalBoss.serder.sn;
+      if (candidateBossSn === null || originalBossSn === null) {
+        return Kever.rejectAttachment(
+          "invalidDelegation",
+          `Delegation recovery chain for ${candidateEvent.said ?? "<unknown>"} is missing sequence numbers.`,
+        );
+      }
+
+      const cycleKey = `${currentDelpre}:${candidateBoss.serder.said ?? ""}:${originalBoss.serder.said ?? ""}`;
+      if (visited.has(cycleKey)) {
+        return Kever.rejectAttachment(
+          "invalidDelegation",
+          `Delegation recovery chain for ${candidateEvent.said ?? "<unknown>"} contains a cycle.`,
+        );
+      }
+      visited.add(cycleKey);
+
+      if (candidateBossSn > originalBossSn) {
+        return null;
+      }
+
+      const candidateBossIlk = candidateBoss.serder.ilk;
+      const originalBossIlk = originalBoss.serder.ilk;
+      if (
+        candidateBossSn === originalBossSn &&
+        (candidateBossIlk === "rot" || candidateBossIlk === "drt") &&
+        originalBossIlk === "ixn"
+      ) {
+        return null;
+      }
+
+      if (candidateBoss.serder.said === originalBoss.serder.said) {
+        if (candidateBoss.sealIndex > originalBoss.sealIndex) {
+          return null;
+        }
+        return Kever.rejectAttachment(
+          "invalidDelegation",
+          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} does not supersede accepted event ${originalEvent.said ?? "<unknown>"}.`,
+        );
+      }
+
+      const upstreamDelpre = this.delegatorPreForEvent(candidateBoss.serder);
+      const originalUpstreamDelpre = this.delegatorPreForEvent(originalBoss.serder);
+      if (!upstreamDelpre || !originalUpstreamDelpre) {
+        return Kever.rejectAttachment(
+          "invalidDelegation",
+          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} is not later than the accepted delegation chain rooted at ${currentDelpre}.`,
+        );
+      }
+      if (upstreamDelpre !== originalUpstreamDelpre) {
+        return Kever.rejectAttachment(
+          "invalidDelegation",
+          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} diverges across delegator chains ${upstreamDelpre} and ${originalUpstreamDelpre}.`,
+        );
+      }
+
+      currentDelpre = upstreamDelpre;
+      candidate = candidateBoss.serder;
+      original = originalBoss.serder;
+
+      const nextCandidateBoss = this.fetchDelegatingEvent(currentDelpre, candidate, {
+        original: false,
+        eager: input.eager ?? false,
+      });
+      if (!nextCandidateBoss) {
+        return this.makeAttachmentEscrowDecision(
+          "partialDels",
+          input,
+          `No delegating recovery chain found for ${candidate.said ?? "<unknown>"} under ${currentDelpre}.`,
+          [{
+            kin: "query",
+            q: { pre: currentDelpre ?? undefined },
+            pre: currentDelpre ?? undefined,
+          }],
+        );
+      }
+
+      const nextOriginalBoss = this.fetchDelegatingEvent(currentDelpre, original, {
+        original: true,
+        eager: input.eager ?? false,
+      });
+      if (!nextOriginalBoss) {
+        return this.makeAttachmentEscrowDecision(
+          "partialDels",
+          input,
+          `No original delegating recovery chain found for ${original.said ?? "<unknown>"} under ${currentDelpre}.`,
+          [{
+            kin: "query",
+            q: { pre: currentDelpre ?? undefined },
+            pre: currentDelpre ?? undefined,
+          }],
+        );
+      }
+
+      candidateBoss = nextCandidateBoss;
+      originalBoss = nextOriginalBoss;
+    }
+  }
+
+  /** Load the authoritative accepted delegated establishment event at `sn`. */
+  private latestAcceptedDelegatedEventAtSn(sn: number): SerderKERI | null {
+    if (this.lastEst.s !== sn) {
+      return null;
+    }
+    return this.db.getEvtSerder(this.pre, this.lastEst.d);
+  }
+
+  /** Read the stored accepted source-seal hint for one already accepted event. */
+  private acceptedSourceSealForEvent(serder: SerderKERI): SourceSealCouple | null {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) {
+      return null;
+    }
+    const seal = this.db.aess.get([pre, said]);
+    if (!seal) {
+      return null;
+    }
+    return new SourceSealCouple(seal[0], seal[1]);
+  }
+
+  /** Remove one broken accepted source-seal hint so a later eager pass can repair it. */
+  private dropAcceptedSourceSeal(serder: SerderKERI): void {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) {
+      return;
+    }
+    this.db.aess.rem([pre, said]);
+  }
+
+  /** Repair `.aess` for accepted delegated events after re-discovering the real boss. */
+  private repairAcceptedSourceSeal(
+    serder: SerderKERI,
+    lookup: DelegatingEventLookup,
+  ): void {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said || !this.db.fons.get([pre, said])) {
+      return;
+    }
+    this.db.aess.pin([pre, said], [
+      normalizeOrdinal(lookup.sourceSeal.seqner),
+      lookup.sourceSeal.diger,
+    ]);
+  }
+
+  /** Resolve one stored source seal to the exact accepted delegating event it names. */
+  private lookupAcceptedDelegatingEvent(
+    delpre: string,
+    sourceSeal: SourceSealCouple | SourceSealTriple,
+    serder: SerderKERI,
+  ): DelegatingEventLookup | null {
+    const candidate = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
+    if (!candidate || !candidate.said || !this.db.fons.get([delpre, candidate.said])) {
+      return null;
+    }
+    return this.delegatingLookup(candidate, serder);
+  }
+
+  /**
+   * Resolve one source-seal hint through the current authoritative event at
+   * that delegator sequence number.
+   */
+  private lookupAuthoritativeDelegatingEvent(
+    delpre: string,
+    sourceSeal: SourceSealCouple | SourceSealTriple,
+    serder: SerderKERI,
+  ): DelegatingEventLookup | null {
+    const said = this.db.getKel(delpre, ordinalNumber(sourceSeal.seqner));
+    if (!said) {
+      return null;
+    }
+    return this.delegatingLookup(this.db.getEvtSerder(delpre, said), serder);
+  }
+
+  /** Search the delegator KEL for the best sealing event for one delegated event. */
+  private searchDelegatingEvent(
+    delpre: string,
+    serder: SerderKERI,
+    { original }: { original: boolean },
+  ): DelegatingEventLookup | null {
+    if (original) {
+      let best: DelegatingEventLookup | null = null;
+      let bestFn: bigint | null = null;
+      for (const [, , said] of this.db.kels.getAllItemIter(delpre)) {
+        const fn = this.db.fons.get([delpre, said]);
+        if (!fn) {
+          continue;
+        }
+        const lookup = this.delegatingLookup(this.db.getEvtSerder(delpre, said), serder);
+        if (!lookup) {
+          continue;
+        }
+        if (bestFn === null || fn.num > bestFn) {
+          best = lookup;
+          bestFn = fn.num;
+        }
+      }
+      return best;
+    }
+
+    let best: DelegatingEventLookup | null = null;
+    for (const [, said] of this.db.getKelItemIter(delpre)) {
+      const lookup = this.delegatingLookup(this.db.getEvtSerder(delpre, said), serder);
+      if (lookup) {
+        best = lookup;
+      }
+    }
+    return best;
+  }
+
+  /** Normalize one accepted delegating event plus the matching seal index. */
+  private delegatingLookup(
+    candidate: SerderKERI | null,
+    serder: SerderKERI,
+  ): DelegatingEventLookup | null {
+    if (!candidate || candidate.sn === null || !candidate.said) {
+      return null;
+    }
+    const sealIndex = this.eventAnchorSealIndex(candidate, serder);
+    if (sealIndex < 0) {
+      return null;
+    }
+    return {
+      serder: candidate,
+      sourceSeal: new SourceSealCouple(
+        candidate.sner ?? encodeHugeOrdinal(candidate.sn),
+        new Diger({ qb64: candidate.said }),
+      ),
+      sealIndex,
+    };
+  }
+
+  /** Resolve whether one accepted event's AID is itself delegated. */
+  private delegatorPreForEvent(serder: SerderKERI): string | null {
+    const pre = serder.pre;
+    if (!pre) {
+      return null;
+    }
+    if (serder.ilk === "dip" && serder.delpre) {
+      return serder.delpre;
+    }
+    return this.db.getState(pre)?.di || null;
+  }
+
+  /** Return the zero-based index of the matching event seal or `-1`. */
+  private eventAnchorSealIndex(candidate: SerderKERI, serder: SerderKERI): number {
+    for (const [index, seal] of candidate.seals.entries()) {
+      if (
+        typeof seal === "object" &&
+        seal !== null &&
+        "i" in seal &&
+        "s" in seal &&
+        "d" in seal &&
+        seal.i === serder.pre &&
+        seal.s === serder.snh &&
+        seal.d === serder.said
+      ) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   /**
@@ -1399,7 +1777,18 @@ export class Kever {
       if (!ed25519.verify(siger.raw, raw, verfer.raw)) {
         continue;
       }
-      verified.set(siger.index, siger);
+      verified.set(
+        siger.index,
+        new Siger(
+          {
+            code: siger.code,
+            raw: siger.raw,
+            index: siger.index,
+            ondex: siger.ondex,
+          },
+          verfer,
+        ),
+      );
     }
 
     const ordered = [...verified.entries()].sort((a, b) => a[0] - b[0]);
@@ -1621,21 +2010,7 @@ export class Kever {
 
   /** Return true when one delegating event contains the seal for the supplied event. */
   private eventAnchorsSeal(candidate: SerderKERI, serder: SerderKERI): boolean {
-    for (const seal of candidate.seals) {
-      if (
-        typeof seal === "object" &&
-        seal !== null &&
-        "i" in seal &&
-        "s" in seal &&
-        "d" in seal &&
-        seal.i === serder.pre &&
-        seal.s === serder.snh &&
-        seal.d === serder.said
-      ) {
-        return true;
-      }
-    }
-    return false;
+    return this.eventAnchorSealIndex(candidate, serder) >= 0;
   }
 
   /** Build one typed duplicate/escrow decision from an attachment decision. */
