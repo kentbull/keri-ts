@@ -49,22 +49,22 @@ function encodeHugeOrdinal(num: number | bigint): NumberPrimitive {
   return new NumberPrimitive({ code: "0A", raw });
 }
 
-/**
- * Convert one simple hex threshold into a numeric signature threshold.
- *
- * Current `keri-ts` limitation:
- * - the active `Kever` port only enforces simple numeric threshold expressions
- * - weighted threshold satisfaction remains later parity work
- */
-function parseNumericThreshold(
-  sith: string | null | undefined,
+/** Return true when threshold material exists and the key list is large enough. */
+function hasValidThresholdMaterial(
+  tholder: Tholder | null,
   count: number,
-): number {
-  if (!sith) {
-    return Math.max(1, count);
+): boolean {
+  return tholder !== null && count >= tholder.size;
+}
+
+/** Render one threshold expression for diagnostics without losing structure. */
+function formatThreshold(tholder: Tholder | null): string {
+  if (!tholder) {
+    return "null";
   }
-  const parsed = Number.parseInt(sith, 16);
-  return Number.isNaN(parsed) ? Math.max(1, count) : parsed;
+  return typeof tholder.sith === "string"
+    ? tholder.sith
+    : JSON.stringify(tholder.sith);
 }
 
 /** Convert one dispatch ordinal into the Huge-number family used in DB tuples. */
@@ -723,8 +723,8 @@ export class Kever {
     this.fner = encodeHugeOrdinal(BigInt(`0x${state.f}`));
     this.dater = new Dater({ qb64: encodeDateTimeToDater(state.dt) });
     this.ilk = state.et;
-    this.tholder = state.kt ? serderThreshold(state.kt) : null;
-    this.ntholder = state.nt ? serderThreshold(state.nt) : null;
+    this.tholder = state.kt !== undefined ? new Tholder({ sith: state.kt }) : null;
+    this.ntholder = state.nt !== undefined ? new Tholder({ sith: state.nt }) : null;
     this.verfers = (state.k ?? []).map((key) => new Verfer({ qb64: key }));
     this.ndigers = (state.n ?? []).map((dig) => new Diger({ qb64: dig }));
     this.toader = numberPrimitiveFromHex(state.bt ?? "0");
@@ -805,7 +805,7 @@ export class Kever {
 
     const tholder = serder.tholder;
     const ntholder = serder.ntholder;
-    if (serder.verfers.length < parseNumericThreshold(tholder?.sith, 0)) {
+    if (!hasValidThresholdMaterial(tholder, serder.verfers.length)) {
       return Kever.reject(
         "invalidThreshold",
         `Rotation ${serder.said ?? "<unknown>"} does not carry enough current keys.`,
@@ -996,11 +996,12 @@ export class Kever {
     const verfers = [...input.verfers];
     const sigers = [...input.sigers];
     const wigers = [...input.wigers];
+    const tholder = input.tholder;
     const delpre = input.delpre ?? null;
     const pre = this.pre;
     const said = input.serder.said ?? "<unknown>";
 
-    if (verfers.length < parseNumericThreshold(input.tholder?.sith, verfers.length)) {
+    if (!hasValidThresholdMaterial(tholder, verfers.length)) {
       return Kever.rejectAttachment(
         "invalidThreshold",
         `Invalid threshold material for event ${said}.`,
@@ -1034,11 +1035,6 @@ export class Kever {
       );
     }
 
-    const verifiedThreshold = parseNumericThreshold(
-      input.tholder?.sith,
-      verfers.length,
-    );
-
     if (
       !input.local &&
       (this.locallyOwned() || this.locallyWitnessed({ wits: [...input.wits] }) ||
@@ -1052,11 +1048,11 @@ export class Kever {
       );
     }
 
-    if (verified.sigers.length < verifiedThreshold) {
+    if (!tholder || !tholder.satisfy(verified.indices)) {
       return this.makeAttachmentEscrowDecision(
         "partialSigs",
         input,
-        `Event ${said} does not yet satisfy controller threshold ${verifiedThreshold}.`,
+        `Event ${said} does not yet satisfy controller threshold ${formatThreshold(tholder)}.`,
         remoteMemberedCues,
       );
     }
@@ -1067,11 +1063,11 @@ export class Kever {
       (input.serder.ilk === "rot" || input.serder.ilk === "drt")
     ) {
       const ondices = this.exposeds(verified.sigers);
-      if (ondices.length < parseNumericThreshold(this.ntholder.sith, this.ndigers.length)) {
+      if (!this.ntholder.satisfy(ondices)) {
         return this.makeAttachmentEscrowDecision(
           "partialSigs",
           input,
-          `Event ${said} does not yet satisfy prior-next threshold ${this.ntholder.sith}.`,
+          `Event ${said} does not yet satisfy prior-next threshold ${formatThreshold(this.ntholder)}.`,
           remoteMemberedCues,
         );
       }
@@ -1339,7 +1335,7 @@ export class Kever {
     const transferable = !NON_TRANSFERABLE_PREFIX_CODES.has(
       new Prefixer({ qb64: pre }).code,
     );
-    if (serder.verfers.length < parseNumericThreshold(serder.tholder?.sith, 0)) {
+    if (!hasValidThresholdMaterial(serder.tholder, serder.verfers.length)) {
       return Kever.reject(
         "invalidThreshold",
         `Invalid inception threshold for ${said}: not enough keys.`,
@@ -1608,11 +1604,6 @@ export class Kever {
       cues,
     };
   }
-}
-
-/** Rehydrate one threshold primitive directly from a hex threshold expression. */
-function serderThreshold(sith: string): Tholder {
-  return new Tholder(numberPrimitiveFromHex(sith));
 }
 
 /** Rehydrate one numeric primitive directly from a hex threshold expression. */

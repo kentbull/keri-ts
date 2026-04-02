@@ -490,3 +490,41 @@ Persistent CESR parser memory for `keri-ts`.
   - `bn` is still a JS `number` convenience accessor, so callers that need
     exact large integer behavior should continue to prefer `bner.num`/`.numh`
     rather than treating `bn` as an arbitrary-precision contract.
+
+### 2026-04-02 - Weighted Thresholds Became Real Semantic CESR Primitives
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Expanded `packages/cesr/src/primitives/tholder.ts` from a code-family
+    wrapper into a semantic primitive with weighted/numeric normalization,
+    exact threshold-size calculation, `limen`/`sith` projection, and
+    KERIpy-compatible `satisfy(indices)` support for nested weighted groups.
+  - Widened serder/native threshold handling so `kt`/`nt` can round-trip as
+    numeric hex strings or weighted semantic arrays across JSON, CBOR, and
+    CESR-native paths.
+  - Added focused regression coverage for flat weighted thresholds, nested
+    weighted groups, semantic-array `SerderKERI` accessors, and binary-body
+    parser hydration of weighted threshold accessors.
+- Why:
+  - The old `Tholder` port only proved CESR code-family parity. It did not own
+    the meaning of a threshold, which pushed KERI layers toward re-parsing or
+    collapsing weighted material into numeric shortcuts.
+  - The maintainer rule now is simple: if code needs to know whether signatures
+    satisfy a threshold expression, the answer lives in `Tholder`, not in
+    ad hoc string parsing at higher layers.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/cesr/test/unit/primitives/tholder.test.ts packages/cesr/test/unit/serder-classes.test.ts packages/cesr/test/unit/parser-binary-serder.test.ts`
+  - Result: passed locally (`25 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/tholder.ts`
+  - `packages/cesr/src/serder/serder.ts`
+  - `packages/cesr/src/serder/native.ts`
+  - `docs/design-docs/keri/WEIGHTED_THRESHOLD_PARITY.md`
+- Risks/TODO:
+  - `ThresholdSith` now permits structured `kt`/`nt` payloads; any future
+    schema narrowing or CLI/config validation work must preserve those weighted
+    forms instead of implicitly stringifying them away.

@@ -961,3 +961,52 @@ Use this doc for:
   - `DuplicateLogPlan` still carries older naming and may be worth renaming in a
     later readability pass if it starts to pull maintainers back toward a
     planner/scheduler mental model instead of an immutable event-state model.
+
+### 2026-04-02 - KEL Threshold Validation Now Uses `Tholder` Semantics End To End
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Replaced KEL-side numeric threshold shortcuts with `Tholder` semantics:
+    `Kever` now validates threshold material via `tholder.size`, evaluates
+    controller and prior-next satisfaction via `tholder.satisfy(indices)`, and
+    reloads durable `kt`/`nt` state through semantic `Tholder` construction
+    instead of the old hex-only helper.
+  - Widened `KeyStateRecord.kt`/`nt` and local authoring inputs
+    (`MakeHabArgs`, CLI/file incept options) so weighted threshold structures
+    survive build -> accept -> persist -> reload without flattening.
+  - Updated `Revery.acceptReply()` so transferable reply endorsements now use
+    the same threshold semantics as KEL validation instead of a numeric count
+    comparison.
+  - Added KEL/runtime regressions covering weighted local inception, weighted
+    `ixn` signature escrow/acceptance, weighted durable-state reload, weighted
+    CLI inception input, and weighted reply-signature aggregation.
+- Why:
+  - The real parity bug was not “missing one `Tholder` class method”; it was a
+    systemic representation leak. `keri-ts` could parse weighted thresholds at
+    the edges but then discarded that meaning before `Kever`, `Hab`, or
+    `Revery` used it.
+  - The durable rule now is brutal and clear: if a path depends on signer
+    threshold logic, it must consume `Tholder` directly rather than recreating
+    numeric threshold semantics locally.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/app/incept.test.ts packages/keri/test/unit/app/habbing.test.ts packages/keri/test/unit/core/eventing.test.ts packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/routing.test.ts`
+  - Result: passed locally (`23 passed, 0 failed`)
+  - Command: `deno check --config packages/keri/deno.json packages/keri/mod.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever.ts`
+  - `packages/keri/src/core/routing.ts`
+  - `packages/keri/src/core/records.ts`
+  - `packages/keri/src/app/habbing.ts`
+  - `packages/keri/src/app/cli/incept.ts`
+  - `packages/keri/src/app/cli/common/parsing.ts`
+  - `docs/design-docs/keri/WEIGHTED_THRESHOLD_PARITY.md`
+- Risks/TODO:
+  - This pass covers weighted threshold semantics for single-controller KEL
+    processing and reply verification, but it does not implement multisig group
+    orchestration. Later multisig work should consume these threshold surfaces
+    instead of inventing another threshold representation.

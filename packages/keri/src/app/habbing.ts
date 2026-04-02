@@ -12,6 +12,7 @@ import {
   Prefixer,
   SerderKERI,
   Siger,
+  type ThresholdSith,
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
@@ -61,9 +62,9 @@ export interface HaberyArgs {
 export interface MakeHabArgs {
   code?: string;
   transferable?: boolean;
-  isith?: string;
+  isith?: ThresholdSith;
   icount?: number;
-  nsith?: string;
+  nsith?: ThresholdSith;
   ncount?: number;
   toad?: number;
   wits?: string[];
@@ -313,8 +314,8 @@ function makeInceptRaw(
   ndigs: string[],
   args: {
     code: string;
-    isith?: string;
-    nsith?: string;
+    isith?: ThresholdSith;
+    nsith?: ThresholdSith;
     toad: number;
     wits: string[];
     cnfg: string[];

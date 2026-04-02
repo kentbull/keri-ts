@@ -1,7 +1,12 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { setupHby } from "./common/existing.ts";
-import { InceptFileOptions, loadInceptFileOptions, parseDataItems } from "./common/parsing.ts";
+import {
+  InceptFileOptions,
+  loadInceptFileOptions,
+  parseDataItems,
+  parseThresholdOption,
+} from "./common/parsing.ts";
 
 interface InceptArgs {
   name?: string;
@@ -38,9 +43,9 @@ function mergeWithFile(args: InceptArgs): InceptFileOptions {
   if (args.transferable !== undefined) opts.transferable = args.transferable;
   if (args.wits && args.wits.length > 0) opts.wits = args.wits;
   if (args.icount !== undefined) opts.icount = Number(args.icount);
-  if (args.isith !== undefined) opts.isith = args.isith;
+  if (args.isith !== undefined) opts.isith = parseThresholdOption(args.isith);
   if (args.ncount !== undefined) opts.ncount = Number(args.ncount);
-  if (args.nsith !== undefined) opts.nsith = args.nsith;
+  if (args.nsith !== undefined) opts.nsith = parseThresholdOption(args.nsith);
   if (args.toad !== undefined) opts.toad = Number(args.toad);
   if (args.estOnly !== undefined) opts.estOnly = args.estOnly;
   if (args.delpre !== undefined) opts.delpre = args.delpre;

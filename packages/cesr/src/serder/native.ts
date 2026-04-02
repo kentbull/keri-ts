@@ -29,7 +29,10 @@ import type { GroupEntry } from "../primitives/primitive.ts";
 import { isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Texter } from "../primitives/texter.ts";
-import { Tholder } from "../primitives/tholder.ts";
+import {
+  type ThresholdSith,
+  Tholder,
+} from "../primitives/tholder.ts";
 import { parseTraitor } from "../primitives/traitor.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
@@ -248,16 +251,17 @@ function encodeNumber(value: string | number | bigint): string {
   return new NumberPrimitive({ code: entry.code, raw: padded }).qb64;
 }
 
-/** KERI thresholds are either numeric hex strings or weighted Bexter expressions. */
-function encodeThreshold(value: string | number): string {
-  const text = String(value);
-  if (/^[0-9a-f]+$/i.test(text)) {
-    return encodeNumber(text);
+/** KERI thresholds are either numeric hex strings or weighted clause expressions. */
+function encodeThreshold(value: ThresholdSith | number | bigint): string {
+  try {
+    return new Tholder({ sith: value }).qb64;
+  } catch (error) {
+    throw new SerializeError(
+      `Unsupported CESR threshold=${JSON.stringify(value)}`,
+      undefined,
+      error instanceof Error ? error.message : undefined,
+    );
   }
-  if (/^[A-Za-z0-9_-]+$/.test(text)) {
-    return encodeBext(text);
-  }
-  throw new SerializeError(`Unsupported CESR threshold=${text}`);
 }
 
 /** CESR-native datetimes substitute base64-safe glyphs for RFC3339 punctuation. */
@@ -558,7 +562,7 @@ function parseNumericHexField(
 function parseThresholdSithField(
   raw: Uint8Array,
   offset: number,
-): ParsedNativeField<string> {
+): ParsedNativeField<ThresholdSith> {
   const matter = new Tholder({ qb64b: raw.slice(offset) });
   return {
     value: matter.sith,
@@ -1331,12 +1335,17 @@ function encodeNativeFieldValue(
     return encodeNumber(value);
   }
   if (spec.kind === "threshold") {
-    if (typeof value !== "string" && typeof value !== "number") {
+    if (
+      typeof value !== "string"
+      && typeof value !== "number"
+      && typeof value !== "bigint"
+      && !Array.isArray(value)
+    ) {
       throw new SerializeError(
         `Expected threshold value for native field ${label}`,
       );
     }
-    return encodeThreshold(value);
+    return encodeThreshold(value as ThresholdSith | number | bigint);
   }
   if (spec.kind === "primitive-list") {
     if (!Array.isArray(value)) {

@@ -244,6 +244,40 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
   assertEquals(serder.mucodes.FixBodyGroup, CtrDexV2.FixBodyGroup);
 });
 
+Deno.test("serder: SerderKERI hydrates weighted threshold accessors from semantic arrays", () => {
+  const keyA = "DHGF1NUOc-vwViJHL5vQ4pwJK2a41rRonZ4kJlMUZ-xF";
+  const keyB = "DFtTn4J6D8SIe8TXtEX12ce06obMjWaV-jncEV1Goypd";
+  const nxtA = "EGKa8UzUyVkfZmNi3bRwFm0lB8KJwYahjKwcMEbLNcq0";
+  const nxtB = "EJzwX8-rUGej2owHHc9P3-ELUjl-oHkFPQo4bHLLllId";
+  const nested = [{ "1": ["1/2", "1/2"] }];
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "icp",
+      i: "",
+      kt: ["1/2", "1/2"],
+      k: [keyA, keyB],
+      nt: nested,
+      n: [nxtA, nxtB],
+      bt: "0",
+      b: [],
+      c: [],
+      a: [],
+    },
+    makify: true,
+    saids: {
+      d: "E",
+      i: "E",
+    },
+  });
+
+  assertEquals(serder.verify(), true);
+  assertEquals(serder.tholder?.weighted, true);
+  assertEquals(serder.tholder?.sith, ["1/2", "1/2"]);
+  assertEquals(serder.ntholder?.weighted, true);
+  assertEquals(serder.ntholder?.sith, nested);
+});
+
 Deno.test("serder: SerderKERI exposes raw `a` separately from list-only `seals`", () => {
   const cid = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
 

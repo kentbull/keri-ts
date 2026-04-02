@@ -404,6 +404,14 @@ This keeps context focused and avoids long-thread drift.
     anonymous object-literal union members, and prefer field names like
     `transition` and `attachments` over vague transport names like `plan` or
     `atc`.
+75. Weighted threshold parity is now a cross-layer contract, not just a CESR
+    primitive nicety: `Tholder` owns semantic threshold normalization and
+    `satisfy(indices)`, `SerderKERI` must preserve weighted `kt`/`nt` forms
+    across JSON/CBOR/CESR-native parsing and makify, durable `KeyStateRecord`
+    fields `kt`/`nt` may now be structured threshold expressions instead of
+    string-only hex, and both `Kever` and `Revery` should treat
+    `tholder.satisfy(...)` as the authoritative signer-threshold check instead
+    of reintroducing numeric `parseInt(..., 16)` shortcuts.
 
 ## New Thread Kickoff Template
 

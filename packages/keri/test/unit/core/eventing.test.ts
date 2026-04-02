@@ -196,3 +196,67 @@ Deno.test("Kevery.processEvent rejects invalid local ixn without throwing normal
     }
   });
 });
+
+Deno.test("Kevery applies weighted threshold satisfaction to local ixn signatures", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-weighted-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const nested = [{ "1": ["1/2", "1/2"] }];
+      const hab = hby.makeHab("weighted", undefined, {
+        transferable: true,
+        icount: 2,
+        isith: nested,
+        ncount: 2,
+        nsith: nested,
+        toad: 0,
+      });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const serder = new SerderKERI({
+        sad: {
+          t: "ixn",
+          i: hab.pre,
+          s: "1",
+          p: kever.said,
+          a: [],
+        },
+        makify: true,
+      });
+      const sigers = hab.sign(serder.raw, true);
+      const kvy = new Kevery(hby.db, { local: true });
+
+      const partial = kvy.decideEvent({
+        serder,
+        sigers: [sigers[0]],
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+      assertEquals(partial.kind, "escrow");
+      if (partial.kind !== "escrow") {
+        throw new Error("Expected weighted partial signature escrow.");
+      }
+      assertEquals(partial.reason, "partialSigs");
+
+      const accepted = kvy.processEvent({
+        serder,
+        sigers,
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+      assertEquals(accepted.kind, "accept");
+      assertEquals(hby.db.getKever(hab.pre)?.sn, 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

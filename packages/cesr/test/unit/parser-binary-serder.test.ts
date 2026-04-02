@@ -2,6 +2,7 @@ import { encode as encodeMsgpack } from "@msgpack/msgpack";
 import { assertEquals } from "jsr:@std/assert";
 import { encodeKeriCbor } from "../../src/core/cbor.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
+import { SerderKERI } from "../../src/serder/serder.ts";
 
 type Encodable =
   | string
@@ -83,4 +84,11 @@ Deno.test("V-P1-013: cold-start CBOR Serder body populates ked/ilk/said", () => 
   assertEquals(frame.body.ked?.t, "icp");
   assertEquals(frame.body.ked?.d, REAL_ICP_EVENT.d);
   assertEquals((frame.body.ked?.k as unknown[])?.length ?? 0, 2);
+});
+
+Deno.test("V-P1-013: weighted threshold accessors survive binary serder parsing", () => {
+  const frame = parseSingle(buildV1Serder("CBOR"));
+  const serder = frame.body as SerderKERI;
+  assertEquals(serder.tholder?.sith, ["1/2", "1/2"]);
+  assertEquals(serder.ntholder?.sith, ["1/2", "1/2"]);
 });

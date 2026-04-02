@@ -36,6 +36,36 @@ Deno.test("Kever reloads durable state and serializes back to the same key-state
   });
 });
 
+Deno.test("Kever reloads weighted threshold state without flattening it", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kever-weighted-roundtrip-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const nested = [{ "1": ["1/2", "1/2"] }];
+      const hab = hby.makeHab("weighted", undefined, {
+        transferable: true,
+        icount: 2,
+        isith: ["1/2", "1/2"],
+        ncount: 2,
+        nsith: nested,
+        toad: 0,
+      });
+
+      const state = hby.db.getState(hab.pre);
+      assertExists(state);
+      const reloaded = Kever.fromState({ state, db: hby.db });
+
+      assertEquals(reloaded.tholder?.sith, ["1/2", "1/2"]);
+      assertEquals(reloaded.ntholder?.sith, nested);
+      assertEquals(reloaded.state(), state);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Kever constructor path preserves delegated inception state", async () => {
   await run(function*() {
     const hby = yield* createHabery({

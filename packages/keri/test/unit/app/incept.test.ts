@@ -83,3 +83,31 @@ Deno.test("CLI - incept command works with custom head directory", async () => {
     harness.restoreOutput();
   }
 });
+
+Deno.test("CLI - incept command accepts weighted threshold JSON expressions", async () => {
+  const name = `incept-weighted-${crypto.randomUUID()}`;
+  await run(() => initCommand({ name, temp: true, nopasscode: true }));
+
+  const harness = new CLITestHarness();
+  harness.captureOutput();
+  try {
+    await run(() =>
+      inceptCommand({
+        name,
+        temp: true,
+        alias: "weighted",
+        transferable: true,
+        icount: 2,
+        isith: '["1/2","1/2"]',
+        ncount: 2,
+        nsith: '[{"1":["1/2","1/2"]}]',
+        toad: 0,
+      })
+    );
+    const output = harness.getOutput().join("\n");
+    assertStringIncludes(output, "Prefix");
+    assertStringIncludes(output, "Public key 2");
+  } finally {
+    harness.restoreOutput();
+  }
+});

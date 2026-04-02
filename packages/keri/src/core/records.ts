@@ -7,6 +7,7 @@ import type {
   NumberPrimitive,
   Prefixer,
   Siger,
+  ThresholdSith,
   Texter,
   Verfer,
   Verser,
@@ -47,9 +48,9 @@ export interface KeyStateRecord {
   f?: string;
   dt?: string;
   et?: string;
-  kt?: string;
+  kt?: ThresholdSith;
   k?: string[];
-  nt?: string;
+  nt?: ThresholdSith;
   n?: string[];
   bt?: string;
   b?: string[];

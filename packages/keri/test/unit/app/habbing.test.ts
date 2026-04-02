@@ -142,6 +142,39 @@ Deno.test("Habery inception honors digestive prefix codex overrides for i", asyn
   });
 });
 
+Deno.test("Habery inception persists weighted and nested threshold state", async () => {
+  const name = `habery-weighted-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  const nested = [{ "1": ["1/2", "1/2"] }];
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("weighted", undefined, {
+        transferable: true,
+        icount: 2,
+        isith: ["1/2", "1/2"],
+        ncount: 2,
+        nsith: nested,
+        toad: 0,
+      });
+      const state = hby.db.getState(hab.pre);
+
+      assertEquals(state?.kt, ["1/2", "1/2"]);
+      assertEquals(state?.nt, nested);
+      assertEquals(hab.kever?.tholder?.sith, ["1/2", "1/2"]);
+      assertEquals(hab.kever?.tholder?.weighted, true);
+      assertEquals(hab.kever?.ntholder?.sith, nested);
+      assertEquals(hab.kever?.ntholder?.weighted, true);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior intact", async () => {
   const name = `habery-sign-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;

@@ -4,12 +4,10 @@ import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
-import { Bexter } from "../primitives/bexter.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import {
   DigDex,
   DIGEST_CODES,
-  LabelDex,
   NON_DIGEST_PREFIX_CODES,
   NON_TRANSFERABLE_PREFIX_CODES,
   PREFIX_CODES,
@@ -28,7 +26,10 @@ import {
 } from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
-import { Tholder } from "../primitives/tholder.ts";
+import {
+  type ThresholdInput,
+  Tholder,
+} from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
 import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
@@ -142,25 +143,16 @@ function makeNumberPrimitive(
   return new NumberPrimitive({ code: entry.code, raw: padded });
 }
 
-/** Convert semantic `sith` text back into a `Tholder` wrapper when possible. */
-function makeThreshold(value: string | null): Tholder | null {
-  if (typeof value !== "string") {
+/** Convert semantic `sith` content back into a `Tholder` wrapper when possible. */
+function makeThreshold(value: unknown): Tholder | null {
+  if (value === null || value === undefined) {
     return null;
   }
-  if (/^[0-9a-f]+$/i.test(value)) {
-    const number = makeNumberPrimitive(value);
-    return number ? new Tholder(number) : null;
+  try {
+    return new Tholder({ sith: value as ThresholdInput });
+  } catch {
+    return null;
   }
-  if (/^[A-Za-z0-9_-]+$/.test(value)) {
-    const rem = value.length % 4;
-    const code = rem === 0
-      ? LabelDex.StrB64_L0
-      : rem === 1
-      ? LabelDex.StrB64_L1
-      : LabelDex.StrB64_L2;
-    return new Tholder({ code, raw: Bexter.rawify(value) });
-  }
-  return null;
 }
 
 function normalizeDecodedMap(
@@ -1667,7 +1659,7 @@ export class SerderKERI extends Serder {
               `Non-digestive prefix ${code} requires exactly one key.`,
             );
           }
-          if (this.ked?.kt !== "1") {
+          if (this.tholder?.num !== 1n || this.tholder.weighted) {
             throw new DeserializeError(
               `Non-digestive prefix ${code} requires signing threshold 1.`,
             );
@@ -1750,7 +1742,7 @@ export class SerderKERI extends Serder {
   }
 
   get tholder(): Tholder | null {
-    return makeThreshold(typeof this.ked?.kt === "string" ? this.ked.kt : null);
+    return makeThreshold(this.ked?.kt ?? null);
   }
 
   get keys(): string[] {
@@ -1770,7 +1762,7 @@ export class SerderKERI extends Serder {
   }
 
   get ntholder(): Tholder | null {
-    return makeThreshold(typeof this.ked?.nt === "string" ? this.ked.nt : null);
+    return makeThreshold(this.ked?.nt ?? null);
   }
 
   get ndigers(): Diger[] {

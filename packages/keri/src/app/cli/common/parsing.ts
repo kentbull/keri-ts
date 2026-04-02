@@ -1,15 +1,31 @@
+import type { ThresholdSith } from "../../../../../cesr/mod.ts";
+
 /** JSON file schema for `tufa incept --file` option loading. */
 export interface InceptFileOptions {
   transferable?: boolean;
   wits?: string[];
   icount?: number;
-  isith?: string;
+  isith?: ThresholdSith;
   ncount?: number;
-  nsith?: string;
+  nsith?: ThresholdSith;
   toad?: number;
   estOnly?: boolean;
   data?: unknown[];
   delpre?: string;
+}
+
+/** Parse one CLI/file threshold input into semantic numeric or weighted form. */
+export function parseThresholdOption(
+  value: string | undefined,
+): ThresholdSith | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.startsWith("[")) {
+    return JSON.parse(trimmed) as ThresholdSith;
+  }
+  return trimmed;
 }
 
 /** Parse inline JSON values or `@file` references used by CLI `--data` flags. */

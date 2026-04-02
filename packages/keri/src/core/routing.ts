@@ -19,23 +19,11 @@ import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isEndpointRole } from "./roles.ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";
 
-/**
- * Convert one hex-threshold string into a numeric verification threshold.
- *
- * KERI substance:
- * - reply verification and KEL verification both need a signer-threshold check
- * - the bootstrap slice only supports simple numeric thresholds, so this helper
- *   intentionally does not attempt weighted-threshold semantics yet
- */
-function parseNumericThreshold(
-  sith: string | null | undefined,
-  count: number,
-): number {
-  if (!sith) {
-    return Math.max(1, count);
-  }
-  const parsed = Number.parseInt(sith, 16);
-  return Number.isNaN(parsed) ? Math.max(1, count) : parsed;
+/** Return true when a reply signer has usable threshold material for its key set. */
+function hasValidReplyThreshold(
+  serder: SerderKERI,
+): boolean {
+  return serder.tholder !== null && serder.verfers.length >= serder.tholder.size;
 }
 
 /** Return the hex ordinal text used for DB keys from either Seqner or Number. */
@@ -443,10 +431,17 @@ export class Revery {
         tsg.snh,
         tsg.said,
       ]);
-      const threshold = parseNumericThreshold(
-        estEvent.tholder?.sith,
-        estEvent.verfers.length,
-      );
+      if (!hasValidReplyThreshold(estEvent)) {
+        throw new ValidationError(
+          `Invalid threshold material on reply signer state ${tsg.pre}:${tsg.said}.`,
+        );
+      }
+      const tholder = estEvent.tholder;
+      if (!tholder || estEvent.verfers.length < tholder.size) {
+        throw new ValidationError(
+          `Invalid threshold material on reply signer state ${tsg.pre}:${tsg.said}.`,
+        );
+      }
       const verified: Siger[] = [];
       const seen = new Set<number>();
       for (const siger of [...tsg.sigers, ...escrowed]) {
@@ -461,7 +456,7 @@ export class Revery {
         seen.add(siger.index);
       }
 
-      if (verified.length >= threshold) {
+      if (tholder.satisfy([...seen])) {
         this.updateReply({
           serder: args.serder,
           saider: args.saider,
