@@ -397,6 +397,13 @@ This keeps context focused and avoids long-thread drift.
     return anonymous “almost a decision” unions. Either return a named internal
     plan/input type with one clear purpose, or collapse the helper into the
     decision method so only the public decision seam returns `KeverDecision`.
+74. Typed decision families stay readable when both the union variants and their
+    payload nouns are explicitly named. Prefer `KeverAccept` /
+    `KeverDuplicate` / `KeverEscrow` / `KeverReject` and
+    `AttachmentVerified` / `AttachmentEscrow` / `AttachmentReject` over
+    anonymous object-literal union members, and prefer field names like
+    `transition` and `attachments` over vague transport names like `plan` or
+    `atc`.
 
 ## New Thread Kickoff Template
 

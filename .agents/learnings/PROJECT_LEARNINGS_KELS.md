@@ -921,3 +921,43 @@ Use this doc for:
     escrow-heavy processor ports: do not let internal helpers invent anonymous
     pre-decision unions when the real boundary contract is already a typed
     decision family.
+
+### 2026-04-02 - Decision Variants Should Be Named Types, Not Anonymous Unions
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Replaced the anonymous object-literal members in `AttachmentDecision` and
+    `KeverDecision` with named interfaces such as `AttachmentVerified`,
+    `AttachmentEscrow`, `AttachmentReject`, `KeverAccept`, `KeverDuplicate`,
+    `KeverEscrow`, and `KeverReject`.
+  - Renamed the accepted payload field from `plan` to `transition` and the
+    validated attachment payload field from `atc` to `attachments`, then
+    propagated that vocabulary through `Kever`, `Kevery`, and the focused KEL
+    unit tests.
+  - Aligned the supporting factory/apply method names with the new nouns so the
+    acceptance path now reads in terms of transitions and event state rather
+    than leftover `*Plan` terminology.
+- Why:
+  - The earlier design was functionally sound but cognitively sloppy: readers
+    had to infer the meaning of each union member from its field shape, and the
+    mixed `plan`/`atc` vocabulary obscured the functional design where typed
+    decisions carry immutable payload nouns forward to the applying layer.
+  - Named decision variants preserve the TypeScript-native control-flow model
+    while making the state-machine taxonomy easier to scan, grep, and extend.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
+  - Result: passed locally (`9 passed, 0 failed`)
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever-decisions.ts`
+  - `packages/keri/src/core/kever.ts`
+  - `packages/keri/src/core/eventing.ts`
+  - `packages/keri/test/unit/core/kever.test.ts`
+- Risks/TODO:
+  - `DuplicateLogPlan` still carries older naming and may be worth renaming in a
+    later readability pass if it starts to pull maintainers back toward a
+    planner/scheduler mental model instead of an immutable event-state model.

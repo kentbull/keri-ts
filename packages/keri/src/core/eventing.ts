@@ -13,8 +13,8 @@ import {
   type EscrowKind,
   type EscrowInstruction,
   type KeverDecision,
-  type KeverLogPlan,
-  type KeverTransitionPlan,
+  type KELEventState,
+  type KeverTransition,
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
 
@@ -186,21 +186,25 @@ export class Kevery {
   applyDecision(decision: KeverDecision): void {
     switch (decision.kind) {
       case "accept": {
-        let kever = this.kevers.get(decision.plan.pre);
-        if (!kever || decision.plan.mode === "create") {
-          kever = Kever.fromTransitionPlan(decision.plan, {
+        let kever = this.kevers.get(decision.transition.pre);
+        if (!kever || decision.transition.mode === "create") {
+          kever = Kever.fromTransition(decision.transition, {
             db: this.db,
             cues: this.cues,
           });
         }
-        const logged = kever.logEvent(decision.plan.log);
-        const plan = this.applyFirstSeenState(decision.plan, logged.fn, logged.dater.iso8601);
-        kever.applyTransitionPlan(plan);
-        this.db.pinState(plan.pre, plan.state);
-        this.kevers.set(plan.pre, kever);
-        this.db.udes.rem([plan.pre, plan.said]);
+        const logged = kever.logEvent(decision.transition.log);
+        const transition = this.applyFirstSeenState(
+          decision.transition,
+          logged.fn,
+          logged.dater.iso8601,
+        );
+        kever.applyTransition(transition);
+        this.db.pinState(transition.pre, transition.state);
+        this.kevers.set(transition.pre, kever);
+        this.db.udes.rem([transition.pre, transition.said]);
         this.emitDecisionCues(decision.cues);
-        this.emitAcceptanceCues(kever, plan.log.serder, plan.log.local);
+        this.emitAcceptanceCues(kever, transition.log.serder, transition.log.local);
         break;
       }
       case "duplicate": {
@@ -415,15 +419,15 @@ export class Kevery {
 
   /** Apply accepted first-seen/datetime state after event logging fixes those values. */
   private applyFirstSeenState(
-    plan: KeverTransitionPlan,
+    transition: KeverTransition,
     fn: number | null,
     dt: string,
-  ): KeverTransitionPlan {
-    const state = { ...plan.state, dt };
+  ): KeverTransition {
+    const state = { ...transition.state, dt };
     if (fn !== null) {
       state.f = fn.toString(16);
     }
-    return { ...plan, state };
+    return { ...transition, state };
   }
 
   /** Persist non-accepted event material plus its escrow bucket membership. */
@@ -458,7 +462,7 @@ export class Kevery {
   }
 
   /** Persist event material required for later escrow reprocessing. */
-  private persistEscrowEventMaterial(log: KeverLogPlan): void {
+  private persistEscrowEventMaterial(log: KELEventState): void {
     const pre = log.serder.pre;
     const said = log.serder.said;
     if (!pre || !said) {

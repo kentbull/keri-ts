@@ -22,13 +22,15 @@ import {
 } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import type {
+  AttachmentEscrow,
   AttachmentDecision,
-  AttachmentValidationPlan,
-  EscrowInstruction,
+  AttachmentReject,
   EscrowKind,
   KeverDecision,
-  KeverLogPlan,
-  KeverTransitionPlan,
+  KeverEscrow,
+  KeverReject,
+  KELEventState,
+  KeverTransition,
   RejectKind,
 } from "./kever-decisions.ts";
 import type { KeyStateRecord } from "./records.ts";
@@ -213,23 +215,23 @@ export class Kever {
   }
 
   /**
-   * Materialize one live `Kever` from an already accepted transition plan.
+   * Materialize one live `Kever` from an already accepted transition.
    *
    * This constructor bypasses durable-event reload because `applyDecision()`
-   * may need a working `Kever` instance before the log plan has been persisted.
+   * may need a working `Kever` instance before the event state has been persisted.
    */
-  static fromTransitionPlan(
-    plan: KeverTransitionPlan,
+  static fromTransition(
+    transition: KeverTransition,
     { db, cues }: { db: Baser; cues?: Deck<AgentCue> },
   ): Kever {
     const kever = new Kever(db, cues);
-    kever.loadState(plan.state, plan.log.serder);
+    kever.loadState(transition.state, transition.log.serder);
     return kever;
   }
 
-  /** Apply one previously accepted transition plan onto this live kever. */
-  applyTransitionPlan(plan: KeverTransitionPlan): void {
-    this.loadState(plan.state, plan.log.serder);
+  /** Apply one previously accepted transition onto this live kever. */
+  applyTransition(transition: KeverTransition): void {
+    this.loadState(transition.state, transition.log.serder);
   }
 
   /** Current identifier prefix. */
@@ -360,7 +362,7 @@ export class Kever {
       toader,
       frc,
     });
-    const logPlan: KeverLogPlan = {
+    const eventState: KELEventState = {
       serder,
       sigers: [],
       wigers: [],
@@ -370,19 +372,19 @@ export class Kever {
       sourceSeal: provisionalSourceSeal,
       local: init.local ?? false,
     };
-    const createInceptionPlan: KeverTransitionPlan = {
+    const icpTransition: KeverTransition = {
       mode: "create",
       acceptKind: "inception",
       pre: verifiedPre,
       said: verifiedSaid,
       sn: verifiedSn,
       state: provisionalState,
-      log: logPlan,
+      log: eventState,
     };
-    const keverInits = { db: init.db, cues: init.cues }
+    const runtime = { db: init.db, cues: init.cues };
 
     // Create new Kever to be stored
-    const scratch = Kever.fromTransitionPlan(createInceptionPlan, keverInits);
+    const scratch = Kever.fromTransition(icpTransition, runtime);
 
     // Like KERIpy's valSigsWigsDel and validateDelegation
     const attachments = Kever.validateAttachments({
@@ -407,7 +409,7 @@ export class Kever {
 
     return {
       kind: "accept",
-      plan: {
+      transition: {
         mode: "create",
         acceptKind: "inception",
         pre: verifiedPre,
@@ -416,16 +418,16 @@ export class Kever {
         state: provisionalState,
         log: {
           serder,
-          sigers: attachments.plan.sigers,
-          wigers: attachments.plan.wigers,
-          wits: attachments.plan.wits,
+          sigers: attachments.attachments.sigers,
+          wigers: attachments.attachments.wigers,
+          wits: attachments.attachments.wits,
           first: !init.check,
           frc,
-          sourceSeal: attachments.plan.sourceSeal ?? provisionalSourceSeal,
+          sourceSeal: attachments.attachments.sourceSeal ?? provisionalSourceSeal,
           local: init.local ?? false,
         },
       },
-      cues: attachments.plan.cues,
+      cues: attachments.attachments.cues,
     };
   }
 
@@ -535,7 +537,7 @@ export class Kever {
    * This is the shared logging seam used by fresh acceptance, late signatures,
    * and future replay/recovery flows.
    */
-  logEvent(args: KeverLogPlan): { fn: number | null; dater: Dater } {
+  logEvent(args: KELEventState): { fn: number | null; dater: Dater } {
     const local = args.local ?? false;
     const pre = args.serder.pre;
     const said = args.serder.said;
@@ -705,7 +707,7 @@ export class Kever {
   /**
    * Load one state record and its corresponding serder into the live kever.
    *
-   * This is used by both durable reload and decision-plan application.
+   * This is used by both durable reload and accepted-transition application.
    */
   private loadState(state: KeyStateRecord, serder: SerderKERI): void {
     if (!state.i || !state.d || !state.s || !state.f || !state.dt || !state.et) {
@@ -867,7 +869,7 @@ export class Kever {
 
     return {
       kind: "accept",
-      plan: {
+      transition: {
         mode: "update",
         acceptKind: sn <= this.sn ? "recovery" : "update",
         pre: this.pre,
@@ -876,16 +878,16 @@ export class Kever {
         state,
         log: {
           serder,
-          sigers: attachments.plan.sigers,
-          wigers: attachments.plan.wigers,
-          wits: attachments.plan.wits,
+          sigers: attachments.attachments.sigers,
+          wigers: attachments.attachments.wigers,
+          wits: attachments.attachments.wits,
           first: !init.check,
           frc: init.frcs?.[0] ?? null,
-          sourceSeal: attachments.plan.sourceSeal,
+          sourceSeal: attachments.attachments.sourceSeal,
           local,
         },
       },
-      cues: attachments.plan.cues,
+      cues: attachments.attachments.cues,
     };
   }
 
@@ -940,7 +942,7 @@ export class Kever {
 
     return {
       kind: "accept",
-      plan: {
+      transition: {
         mode: "update",
         acceptKind: "update",
         pre: this.pre,
@@ -975,14 +977,14 @@ export class Kever {
         },
         log: {
           serder,
-          sigers: attachments.plan.sigers,
-          wigers: attachments.plan.wigers,
+          sigers: attachments.attachments.sigers,
+          wigers: attachments.attachments.wigers,
           first: !init.check,
           frc: init.frcs?.[0] ?? null,
           local,
         },
       },
-      cues: attachments.plan.cues,
+      cues: attachments.attachments.cues,
     };
   }
 
@@ -1131,13 +1133,13 @@ export class Kever {
 
     return {
       kind: "verified",
-      plan: {
+      attachments: {
         sigers: verified.sigers,
         wigers: verifiedWigs,
         wits: [...input.wits],
         delpre,
-        sourceSeal: delegation.plan.sourceSeal ?? input.sourceSeal ?? null,
-        cues: [...remoteMemberedCues, ...(delegation.plan.cues ?? [])],
+        sourceSeal: delegation.attachments.sourceSeal ?? input.sourceSeal ?? null,
+        cues: [...remoteMemberedCues, ...(delegation.attachments.cues ?? [])],
       },
     };
   }
@@ -1153,7 +1155,7 @@ export class Kever {
     if (!delpre) {
       return {
         kind: "verified",
-        plan: {
+        attachments: {
           sigers: [],
           wigers: [],
           wits: [...input.wits],
@@ -1170,7 +1172,7 @@ export class Kever {
     ) {
       return {
         kind: "verified",
-        plan: {
+        attachments: {
           sigers: [],
           wigers: [],
           wits: [...input.wits],
@@ -1249,7 +1251,7 @@ export class Kever {
 
     return {
       kind: "verified",
-      plan: {
+      attachments: {
         sigers: [],
         wigers: [],
         wits: [...input.wits],
@@ -1500,7 +1502,9 @@ export class Kever {
   }
 
   /** Build one typed duplicate/escrow decision from an attachment decision. */
-  private static fromAttachmentDecision(decision: AttachmentDecision): KeverDecision {
+  private static fromAttachmentDecision(
+    decision: AttachmentDecision,
+  ): KeverEscrow | KeverReject {
     if (decision.kind === "reject") {
       return {
         kind: "reject",
@@ -1531,7 +1535,7 @@ export class Kever {
     code: RejectKind,
     message: string,
     context?: Record<string, unknown>,
-  ): KeverDecision {
+  ): KeverReject {
     return { kind: "reject", code, message, context };
   }
 
@@ -1540,7 +1544,7 @@ export class Kever {
     code: RejectKind,
     message: string,
     context?: Record<string, unknown>,
-  ): AttachmentDecision {
+  ): AttachmentReject {
     return { kind: "reject", code, message, context };
   }
 
@@ -1550,7 +1554,7 @@ export class Kever {
     init: KeverEventInit,
     message: string,
     cues?: readonly AgentCue[],
-  ): KeverDecision {
+  ): KeverEscrow {
     const serder = init.serder;
     return {
       kind: "escrow",
@@ -1581,7 +1585,7 @@ export class Kever {
     input: AttachmentValidationInput,
     message: string,
     cues?: readonly AgentCue[],
-  ): AttachmentDecision {
+  ): AttachmentEscrow {
     return {
       kind: "escrow",
       reason: escrow,

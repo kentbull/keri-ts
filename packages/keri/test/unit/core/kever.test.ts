@@ -129,8 +129,8 @@ Deno.test("Kever evaluateInception normalizes deprecated intive bt inputs before
       if (decision.kind !== "accept") {
         throw new Error("Expected accept decision.");
       }
-      assertEquals(decision.plan.state.bt, "1");
-      assertEquals(decision.plan.log.wits, [witness.pre]);
+      assertEquals(decision.transition.state.bt, "1");
+      assertEquals(decision.transition.log.wits, [witness.pre]);
     } finally {
       yield* hby.close(true);
     }
