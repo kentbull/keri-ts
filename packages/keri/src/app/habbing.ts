@@ -21,9 +21,11 @@ import { Deck } from "../core/deck.ts";
 import { CigarCouple, TransIdxSigGroup } from "../core/dispatch.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
+import { ValidationError } from "../core/errors.ts";
 import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
+import { makeNowIso8601 } from "../time/mod.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
@@ -82,19 +84,6 @@ export interface MakeHabArgs {
  * locally generated reply and inception messages.
  */
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
-
-/** Return the current UTC time in the KERI-friendly extended ISO-8601 form. */
-function makeNowIso8601(): string {
-  const now = new Date();
-  const y = now.getUTCFullYear().toString().padStart(4, "0");
-  const m = (now.getUTCMonth() + 1).toString().padStart(2, "0");
-  const d = now.getUTCDate().toString().padStart(2, "0");
-  const hh = now.getUTCHours().toString().padStart(2, "0");
-  const mm = now.getUTCMinutes().toString().padStart(2, "0");
-  const ss = now.getUTCSeconds().toString().padStart(2, "0");
-  const micros = (now.getUTCMilliseconds() * 1000).toString().padStart(6, "0");
-  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
-}
 
 /**
  * Produce the default simple numeric signing threshold for a key count.
@@ -445,7 +434,7 @@ export class Hab {
     sigers: readonly Siger[],
   ): Kever {
     const kvy = new Kevery(this.db, { cues: new Deck<AgentCue>(), local: true });
-    kvy.processEvent({
+    const decision = kvy.processEvent({
       serder,
       sigers: [...sigers],
       wigers: [],
@@ -454,6 +443,12 @@ export class Hab {
       ssts: [],
       local: true,
     });
+    if (decision.kind !== "accept") {
+      throw new ValidationError(
+        `Local event ${serder.said ?? "<unknown>"} was not accepted.`,
+        { decision },
+      );
+    }
     const kever = this.db.getKever(this.pre);
     if (!kever) {
       throw new Error(`Local acceptance did not produce a Kever for ${this.pre}.`);

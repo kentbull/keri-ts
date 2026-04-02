@@ -11,6 +11,7 @@ export * from "./dispatch.ts";
 export * from "./eventing.ts";
 export * from "./errors.ts";
 export * from "./kever.ts";
+export * from "./kever-decisions.ts";
 export * from "./logger.ts";
 export * from "./records.ts";
 export * from "./roles.ts";

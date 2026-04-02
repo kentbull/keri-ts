@@ -461,3 +461,32 @@ Persistent CESR parser memory for `keri-ts`.
   - Any higher-layer code that previously relied on parsed `Indexer.raw` being
     trustworthy without explicit roundtrip tests should now be treated with more
     suspicion until the surrounding path has real verification coverage.
+
+### 2026-04-02 - `SerderKERI.bner` Must Normalize Deprecated Intive `bt` Inputs
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Extended the internal numeric-wrapper helper used by `SerderKERI` so
+    `bner` now accepts semantic `bt` values supplied as lowercase hex text,
+    deprecated intive JSON numbers, or exact `bigint` inputs.
+  - Added regression coverage proving `bner`/`bn` normalize deprecated intive
+    `bt` inputs both on the constructor SAD path and after reparsing raw JSON.
+- Why:
+  - The real `bt` bug hypothesis was wrong at the field-selection layer:
+    `bner` is just the wrapper projection over `bt`, matching KERIpy. The
+    actual drift was that `keri-ts` only normalized string `bt` values, which
+    broke compatibility with KERIpy's still-supported deprecated intive input
+    surface.
+- Tests:
+  - Command:
+    `deno test --config packages/cesr/deno.json packages/cesr/test/unit/serder-classes.test.ts`
+  - Result: passed locally (`14 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/serder/serder.ts`
+  - `packages/cesr/test/unit/serder-classes.test.ts`
+- Risks/TODO:
+  - `bn` is still a JS `number` convenience accessor, so callers that need
+    exact large integer behavior should continue to prefer `bner.num`/`.numh`
+    rather than treating `bn` as an arbitrary-precision contract.

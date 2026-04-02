@@ -218,6 +218,13 @@ This keeps context focused and avoids long-thread drift.
     action commit SHAs, explicit environment assertions, and saved built
     tarballs all reduce "works locally, shrugs in Actions" debugging time.
 44. Test parallelization needs to follow isolation boundaries, not folder names:
+45. KEL state-machine readability improved materially once normal processing
+    outcomes became typed decisions instead of exception-driven branch control;
+    this is now the preferred porting rule for `Kever`/`Kevery`, escrows, and
+    future `Tever`/`Tevery`-style processors. Preserve the split
+    `state-machine decides` / `orchestrator applies`, and treat
+    `docs/adr/adr-0005-kel-decision-control-flow.md` as the normative contract
+    for this family of designs.
 45. Cue handling is now an explicit shared-runtime architecture seam, not a
     helper hidden inside commands: `AgentRuntime` keeps the shared root cue
     deck, `Hab.processCuesIter()` owns cue semantics, `processCuesOnce()` /
@@ -378,6 +385,18 @@ This keeps context focused and avoids long-thread drift.
     must feed signed events through the same `Kevery`/`Kever` acceptance path
     used for remote processing, or the codebase will immediately drift back
     into split-brain state handling.
+72. `bt` is the semantic backer-threshold field; `bner` is the wrapper view of
+    that field, and `bn` is only a scalar convenience projection. The real
+    parity risk is not choosing `bn` versus `bt`, but collapsing the threshold
+    to a JS `number` too early in `Kever`/state code. Carry `NumberPrimitive`
+    or `bigint`-exact threshold values through validation and state
+    serialization, and normalize deprecated intive numeric `bt` inputs in
+    `SerderKERI.bner` so the KERIpy compatibility surface stays intact.
+73. For `Kever` decision helpers, keep the decision boundary explicit: helper
+    functions that run below `evaluateInception()`/`evaluateUpdate()` should not
+    return anonymous “almost a decision” unions. Either return a named internal
+    plan/input type with one clear purpose, or collapse the helper into the
+    decision method so only the public decision seam returns `KeverDecision`.
 
 ## New Thread Kickoff Template
 

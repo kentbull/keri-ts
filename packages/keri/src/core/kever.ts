@@ -10,36 +10,28 @@ import {
   Tholder,
   Verfer,
 } from "../../../cesr/mod.ts";
-import { encodeDateTimeToDater } from "../app/keeping.ts";
 import type { Baser } from "../db/basing.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import type {
+import {
   DispatchOrdinal,
   FirstSeenReplayCouple,
   SourceSealCouple,
   SourceSealTriple,
 } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
+import type {
+  AttachmentDecision,
+  AttachmentValidationPlan,
+  EscrowInstruction,
+  EscrowKind,
+  KeverDecision,
+  KeverLogPlan,
+  KeverTransitionPlan,
+  RejectKind,
+} from "./kever-decisions.ts";
 import type { KeyStateRecord } from "./records.ts";
-
-/**
- * Build one UTC ISO-8601 timestamp in the text form expected by KERI records.
- *
- * This is used when inbound first-seen replay attachments do not provide a
- * datetime and the local runtime still needs a deterministic durable stamp.
- */
-function makeNowIso8601(): string {
-  const now = new Date();
-  const y = now.getUTCFullYear().toString().padStart(4, "0");
-  const m = (now.getUTCMonth() + 1).toString().padStart(2, "0");
-  const d = now.getUTCDate().toString().padStart(2, "0");
-  const hh = now.getUTCHours().toString().padStart(2, "0");
-  const mm = now.getUTCMinutes().toString().padStart(2, "0");
-  const ss = now.getUTCSeconds().toString().padStart(2, "0");
-  const micros = (now.getUTCMilliseconds() * 1000).toString().padStart(6, "0");
-  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
-}
 
 /**
  * Convert one integer into the Huge-number CESR family used for durable replay
@@ -80,6 +72,16 @@ function normalizeOrdinal(ordinal: DispatchOrdinal): NumberPrimitive {
     : encodeHugeOrdinal(ordinal.sn);
 }
 
+/** Project one dispatch ordinal into its numeric value. */
+function ordinalNumber(ordinal: DispatchOrdinal): number {
+  return Number(ordinal instanceof NumberPrimitive ? ordinal.num : ordinal.sn);
+}
+
+/** Project one dispatch ordinal into its hex-text representation. */
+function ordinalHex(ordinal: DispatchOrdinal): string {
+  return ordinal instanceof NumberPrimitive ? ordinal.numh : ordinal.snh;
+}
+
 /** Return true when a string list has no duplicates. */
 function hasUniqueEntries(values: readonly string[]): boolean {
   return new Set(values).size === values.length;
@@ -96,12 +98,7 @@ const THOLDER_NUMERIC_CAPACITIES = [
   { code: "U", rawSize: 17 },
 ] as const;
 
-/**
- * Small latest-establishment pointer carried in a live `Kever`.
- *
- * KERIpy correspondence:
- * - mirrors `LastEstLoc`, but stays as a plain immutable TS object
- */
+/** Small latest-establishment pointer carried in a live `Kever`. */
 export interface LastEstLoc {
   s: number;
   d: string;
@@ -120,7 +117,7 @@ export interface KeverStateInit extends KeverBaseInit {
   state: KeyStateRecord;
 }
 
-/** Create one live `Kever` from an accepted first-seen inception event. */
+/** Evaluate or accept one normalized KEL event against a `Kever`. */
 export interface KeverEventInit extends KeverBaseInit {
   serder: SerderKERI;
   sigers: readonly Siger[];
@@ -128,9 +125,36 @@ export interface KeverEventInit extends KeverBaseInit {
   frcs?: readonly FirstSeenReplayCouple[];
   sscs?: readonly SourceSealCouple[];
   ssts?: readonly SourceSealTriple[];
+  eager?: boolean;
 }
 
-export type KeverInit = KeverStateInit | KeverEventInit;
+interface SignerVerificationResult {
+  sigers: Siger[];
+  indices: number[];
+}
+
+interface DerivedBacksResult {
+  wits: string[];
+  cuts: string[];
+  adds: string[];
+  toader: NumberPrimitive;
+}
+
+interface AttachmentValidationInput {
+  serder: SerderKERI;
+  sigers: readonly Siger[];
+  wigers: readonly Siger[];
+  verfers: readonly Verfer[];
+  tholder: Tholder | null;
+  wits: readonly string[];
+  toader: NumberPrimitive;
+  delpre?: string | null;
+  sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+  local: boolean;
+  eager?: boolean;
+  check?: boolean;
+  isEstablishment?: boolean;
+}
 
 /**
  * One live current-state machine for an accepted identifier KEL.
@@ -138,13 +162,11 @@ export type KeverInit = KeverStateInit | KeverEventInit;
  * KERIpy correspondence:
  * - this is the `keri-ts` port of `keri.core.eventing.Kever`
  *
- * Current scope:
- * - constructor/reload/state/log parity for accepted `icp`/`dip`
- * - bootstrap `update()` support for `rot`, `drt`, and `ixn`
- *
- * Deferred parity:
- * - full witness, delegation, misfit, duplicitous, and recovery breadth still
- *   lives in later `Kevery` + escrow work
+ * `keri-ts` difference:
+ * - normal remote-processing outcomes are returned through typed decisions
+ *   instead of using exceptions as regular control flow
+ * - exceptions remain for invariant failures, corrupt durable state, and misuse
+ *   of accepted-state-only helpers
  */
 export class Kever {
   readonly db: Baser;
@@ -171,57 +193,43 @@ export class Kever {
   delegated = false;
   delpre: string | null = null;
 
-  constructor(init: KeverInit) {
-    this.db = init.db;
-    this.cues = init.cues ?? new Deck();
+  /**
+   * Bind the live dependency context shared by all `Kever` hydration modes.
+   *
+   * Hydration itself stays in explicit factory methods so durable-state reload
+   * and accepted-transition materialization do not have to fight over one
+   * constructor policy.
+   */
+  private constructor(db: Baser, cues?: Deck<AgentCue>) {
+    this.db = db;
+    this.cues = cues ?? new Deck();
+  }
 
-    if ("state" in init) {
-      this.reload(init.state);
-      return;
-    }
+  /** Rebuild one live `Kever` from durable key-state content. */
+  static fromState(init: KeverStateInit): Kever {
+    const kever = new Kever(init.db, init.cues);
+    kever.reload(init.state);
+    return kever;
+  }
 
-    const { serder } = init;
-    if (!serder || init.sigers.length === 0) {
-      throw new ValidationError(
-        "Missing required Kever constructor event or indexed signatures.",
-      );
-    }
+  /**
+   * Materialize one live `Kever` from an already accepted transition plan.
+   *
+   * This constructor bypasses durable-event reload because `applyDecision()`
+   * may need a working `Kever` instance before the log plan has been persisted.
+   */
+  static fromTransitionPlan(
+    plan: KeverTransitionPlan,
+    { db, cues }: { db: Baser; cues?: Deck<AgentCue> },
+  ): Kever {
+    const kever = new Kever(db, cues);
+    kever.loadState(plan.state, plan.log.serder);
+    return kever;
+  }
 
-    this.version = [serder.pvrsn.major, serder.pvrsn.minor];
-    if (serder.ilk !== "icp" && serder.ilk !== "dip") {
-      throw new ValidationError(
-        `Expected icp or dip for Kever constructor, got ${String(serder.ilk)}.`,
-      );
-    }
-
-    this.ilk = serder.ilk;
-    this.incept(serder);
-    this.config(serder);
-
-    const verified = this.validateSignatures(
-      serder.raw,
-      init.sigers,
-      serder.verfers,
-      this.tholder,
-      serder.said ?? "<unknown>",
-    );
-
-    const { fn, dater } = this.logEvent({
-      serder,
-      sigers: verified,
-      wigers: init.wigers ?? [],
-      wits: this.wits,
-      first: !init.check,
-      frc: init.frcs?.[0] ?? null,
-      sourceSeal: this.normalizeSourceSeal(init.sscs, init.ssts),
-      local: init.local ?? false,
-    });
-
-    if (fn !== null) {
-      this.fner = encodeHugeOrdinal(fn);
-      this.dater = dater;
-      this.db.pinState(this.pre, this.state());
-    }
+  /** Apply one previously accepted transition plan onto this live kever. */
+  applyTransitionPlan(plan: KeverTransitionPlan): void {
+    this.loadState(plan.state, plan.log.serder);
   }
 
   /** Current identifier prefix. */
@@ -284,6 +292,17 @@ export class Kever {
   }
 
   /**
+   * Return true when this kever represents a locally membered group AID.
+   *
+   * Current `keri-ts` scope:
+   * - mirrors the KERIpy concept but currently relies on `db.groups`
+   * - richer per-member provenance is later multisig work
+   */
+  locallyMembered(): boolean {
+    return this.groups.has(this.pre);
+  }
+
+  /**
    * Return true when the current or derived witness set includes a local AID.
    *
    * This follows the KERIpy intent while keeping the derivation logic explicit
@@ -301,10 +320,163 @@ export class Kever {
         if (opts.serder.pre !== this.pre) {
           return false;
         }
-        wits = opts.serder.estive ? this.deriveBacks(opts.serder).wits : this.wits;
+        const derived = this.deriveBacksDecision(opts.serder);
+        if (!derived) {
+          return false;
+        }
+        wits = derived.wits;
       }
     }
     return wits.some((wit) => this.prefixes.has(wit));
+  }
+
+  /**
+   * Evaluate one first-seen inception or delegated inception without mutating DB.
+   */
+  static evaluateInception(init: KeverEventInit): KeverDecision {
+    const { serder } = init;
+    const pre = serder.pre;
+    const said = serder.said;
+    const sn = serder.sn;
+    const verification = Kever.verifyIncept(init);
+    if (verification) {
+      return verification;
+    }
+    // all event verification checks passed so create initial key state and continue on to
+    // threshold and attachment verification
+    const verifiedPre = pre!;
+    const verifiedSaid = said!;
+    const verifiedSn = sn!;
+
+    const toader = serder.bner ?? numberPrimitiveFromBigInt(0n);
+    const provisionalWits = [...serder.backs];
+    const provisionalDelpre = serder.delpre;
+    const provisionalSourceSeal = (init.ssts?.[0] ?? init.sscs?.[0]) ?? null;
+    const frc = init.frcs?.[0] ?? null;
+    const provisionalState = Kever.initialKeyState({
+      serder,
+      pre: verifiedPre,
+      said: verifiedSaid,
+      toader,
+      frc,
+    });
+    const logPlan: KeverLogPlan = {
+      serder,
+      sigers: [],
+      wigers: [],
+      wits: provisionalWits,
+      first: !init.check,
+      frc,
+      sourceSeal: provisionalSourceSeal,
+      local: init.local ?? false,
+    };
+    const createInceptionPlan: KeverTransitionPlan = {
+      mode: "create",
+      acceptKind: "inception",
+      pre: verifiedPre,
+      said: verifiedSaid,
+      sn: verifiedSn,
+      state: provisionalState,
+      log: logPlan,
+    };
+    const keverInits = { db: init.db, cues: init.cues }
+
+    // Create new Kever to be stored
+    const scratch = Kever.fromTransitionPlan(createInceptionPlan, keverInits);
+
+    // Like KERIpy's valSigsWigsDel and validateDelegation
+    const attachments = Kever.validateAttachments({
+      kever: scratch,
+      serder,
+      sigers: init.sigers,
+      wigers: init.wigers ?? [],
+      verfers: serder.verfers,
+      tholder: serder.tholder,
+      wits: provisionalWits,
+      toader,
+      delpre: provisionalDelpre,
+      sourceSeal: provisionalSourceSeal,
+      local: init.local ?? false,
+      eager: init.eager,
+      check: init.check,
+      isEstablishment: true,
+    });
+    if (attachments.kind !== "verified") {
+      return Kever.fromAttachmentDecision(attachments);
+    }
+
+    return {
+      kind: "accept",
+      plan: {
+        mode: "create",
+        acceptKind: "inception",
+        pre: verifiedPre,
+        said: verifiedSaid,
+        sn: verifiedSn,
+        state: provisionalState,
+        log: {
+          serder,
+          sigers: attachments.plan.sigers,
+          wigers: attachments.plan.wigers,
+          wits: attachments.plan.wits,
+          first: !init.check,
+          frc,
+          sourceSeal: attachments.plan.sourceSeal ?? provisionalSourceSeal,
+          local: init.local ?? false,
+        },
+      },
+      cues: attachments.plan.cues,
+    };
+  }
+
+  /** Evaluate one non-inceptive event against the current accepted state. */
+  evaluateUpdate(init: KeverEventInit): KeverDecision {
+    const { serder } = init;
+    const ilk = serder.ilk;
+    const sn = serder.sn;
+    const local = init.local ?? false;
+
+    if (!this.transferable) {
+      return Kever.reject(
+        "nontransferableViolation",
+        `Unexpected event ${String(ilk)} for non-transferable AID ${this.pre}.`,
+      );
+    }
+    if (serder.pre !== this.pre) {
+      return Kever.reject(
+        "invalidPre",
+        `Event prefix ${String(serder.pre)} does not match Kever ${this.pre}.`,
+      );
+    }
+    if (!ilk) {
+      return Kever.reject("invalidIlk", "Event update requires ilk.");
+    }
+    if (sn === null) {
+      return Kever.reject("invalidSn", "Event update requires sn.");
+    }
+
+    switch (ilk) {
+      case "rot":
+      case "drt":
+        return this.evaluateRotation(init, local);
+      case "ixn":
+        return this.evaluateInteraction(init, local);
+      default:
+        return Kever.reject(
+          "unsupported",
+          `Unsupported Kever update ilk=${String(ilk)} for ${this.pre}.`,
+        );
+    }
+  }
+
+  /**
+   * Validate signatures, witnesses, misfit rules, and delegation as a typed
+   * attachment decision.
+   */
+  static validateAttachments(
+    input: AttachmentValidationInput & { kever: Kever },
+  ): AttachmentDecision {
+    return input.kever.validateAttachmentsInternal(input);
   }
 
   /**
@@ -317,280 +489,44 @@ export class Kever {
     if (!state.i || !state.d || !state.s || !state.f || !state.dt || !state.et) {
       throw new ValidationError("Incomplete key-state record for Kever reload.");
     }
-
-    this.version = [
-      typeof state.vn?.[0] === "number" ? state.vn[0] : 1,
-      typeof state.vn?.[1] === "number" ? state.vn[1] : 0,
-    ];
-    this.prefixer = new Prefixer({ qb64: state.i });
-    this.sner = encodeHugeOrdinal(BigInt(`0x${state.s}`));
-    this.fner = encodeHugeOrdinal(BigInt(`0x${state.f}`));
-    this.dater = new Dater({ qb64: encodeDateTimeToDater(state.dt) });
-    this.ilk = state.et;
-    this.tholder = state.kt ? serderThreshold(state.kt) : null;
-    this.ntholder = state.nt ? serderThreshold(state.nt) : null;
-    this.verfers = (state.k ?? []).map((key) => new Verfer({ qb64: key }));
-    this.ndigers = (state.n ?? []).map((dig) => new Diger({ qb64: dig }));
-    this.toader = encodeHugeOrdinal(BigInt(`0x${state.bt ?? "0"}`));
-    this.wits = [...(state.b ?? [])];
-    this.cuts = [...(state.ee?.br ?? [])];
-    this.adds = [...(state.ee?.ba ?? [])];
-    this.estOnly = (state.c ?? []).includes("EO");
-    this.doNotDelegate = (state.c ?? []).includes("DND");
-    this.lastEst = {
-      s: Number.parseInt(state.ee?.s ?? "0", 16),
-      d: state.ee?.d ?? state.d,
-    };
-    this.delpre = state.di || null;
-    this.delegated = !!this.delpre;
-
-    const serder = this.db.getEvtSerder(this.pre, state.d);
+    const serder = this.db.getEvtSerder(state.i, state.d);
     if (!serder) {
       throw new ValidationError(
-        `Missing accepted event for reloaded Kever state ${this.pre}:${state.d}.`,
+        `Missing accepted event for reloaded Kever state ${state.i}:${state.d}.`,
       );
     }
-    this.serder = serder;
+    this.loadState(state, serder);
   }
 
-  /**
-   * Verify and apply one first-seen inception or delegated inception event.
-   *
-   * This is the constructor-time state initializer for accepted KELs.
-   */
-  incept(serder: SerderKERI): void {
-    const pre = serder.pre;
-    const said = serder.said;
-    const sn = serder.sn;
-    if (!pre || !said || sn === null) {
-      throw new ValidationError(
-        "Inception event must include pre, said, and sn.",
-      );
-    }
-    if (sn !== 0) {
-      throw new ValidationError(`Inception event ${said} must have sn=0.`);
-    }
-
-    this.prefixer = new Prefixer({ qb64: pre });
-    this.serder = serder;
-    this.sner = serder.sner ?? encodeHugeOrdinal(0);
-    this.ilk = serder.ilk ?? "icp";
-    this.verfers = serder.verfers;
-    this.tholder = serder.tholder;
-    if (this.verfers.length < parseNumericThreshold(this.tholder?.sith, 0)) {
-      throw new ValidationError(
-        `Invalid inception threshold for ${said}: not enough keys.`,
-      );
-    }
-
-    if (!this.transferable && serder.ndigs.length > 0) {
-      throw new ValidationError(
-        `Non-transferable inception ${said} may not include next key digests.`,
-      );
-    }
-    this.ndigers = serder.ndigers;
-    this.ntholder = serder.ntholder;
-    this.cuts = [];
-    this.adds = [];
-
-    if (!hasUniqueEntries(serder.backs)) {
-      throw new ValidationError(
-        `Inception event ${said} has duplicate witnesses/backers.`,
-      );
-    }
-    if (!this.transferable && serder.backs.length > 0) {
-      throw new ValidationError(
-        `Non-transferable inception ${said} may not include witnesses.`,
-      );
-    }
-
-    const toad = serder.bn ?? 0;
-    if (serder.backs.length > 0) {
-      if (toad < 1 || toad > serder.backs.length) {
-        throw new ValidationError(
-          `Invalid witness threshold ${toad} for inception ${said}.`,
-        );
-      }
-    } else if (toad !== 0) {
-      throw new ValidationError(
-        `Invalid witness threshold ${toad} without witnesses for inception ${said}.`,
-      );
-    }
-
-    this.wits = [...serder.backs];
-    this.toader = encodeHugeOrdinal(toad);
-    if (!this.transferable && serder.seals.length > 0) {
-      throw new ValidationError(
-        `Non-transferable inception ${said} may not include seal data.`,
-      );
-    }
-
-    this.lastEst = { s: 0, d: said };
-    this.delpre = serder.delpre;
-    this.delegated = !!this.delpre;
-  }
-
-  /**
-   * Apply configuration traits from one accepted establishment event.
-   *
-   * Current scope:
-   * - `EO` establishment-only
-   * - `DND` do-not-delegate
-   */
-  config(serder: SerderKERI): void {
-    const cnfg = serder.traits;
-    this.estOnly = cnfg.includes("EO");
-    this.doNotDelegate = cnfg.includes("DND");
-  }
-
-  /**
-   * Update this `Kever` with one accepted non-inceptive event.
-   *
-   * Current scope:
-   * - `rot`
-   * - `drt`
-   * - `ixn`
-   *
-   * Deferred parity:
-   * - full delegation/witness/escrow breadth remains later work on this seam
-   */
-  update(init: Omit<KeverEventInit, "db" | "cues">): void {
-    const { serder } = init;
-    if (!this.transferable) {
-      throw new ValidationError(
-        `Unexpected event ${serder.ilk ?? "<unknown>"} for non-transferable AID ${this.pre}.`,
-      );
-    }
-    if (serder.pre !== this.pre) {
-      throw new ValidationError(
-        `Event prefix ${String(serder.pre)} does not match Kever ${this.pre}.`,
-      );
-    }
-
-    const ilk = serder.ilk;
-    const sn = serder.sn;
-    if (!ilk || sn === null) {
-      throw new ValidationError("Event update requires ilk and sn.");
-    }
-
-    switch (ilk) {
-      case "rot":
-      case "drt": {
-        if (this.delegated && ilk !== "drt") {
-          throw new ValidationError(
-            `Delegated AID ${this.pre} requires drt, not rot.`,
-          );
-        }
-        if (!this.delegated && ilk === "drt") {
-          throw new ValidationError(
-            `Non-delegated AID ${this.pre} may not accept drt.`,
-          );
-        }
-        if (sn !== this.sn + 1) {
-          throw new ValidationError(
-            `Rotation for ${this.pre} must advance from sn=${this.sn} to ${this.sn + 1}.`,
-          );
-        }
-        if (serder.prior !== this.said) {
-          throw new ValidationError(
-            `Rotation prior ${String(serder.prior)} does not match current SAID ${this.said}.`,
-          );
-        }
-
-        const tholder = serder.tholder;
-        const ntholder = serder.ntholder;
-        if (serder.verfers.length < parseNumericThreshold(tholder?.sith, 0)) {
-          throw new ValidationError(
-            `Rotation ${serder.said ?? "<unknown>"} does not carry enough current keys.`,
-          );
-        }
-
-        const { wits, cuts, adds, toader } = this.deriveBacks(serder);
-        const verified = this.validateSignatures(
-          serder.raw,
-          init.sigers,
-          serder.verfers,
-          tholder,
-          serder.said ?? "<unknown>",
-        );
-        const { fn, dater } = this.logEvent({
-          serder,
-          sigers: verified,
-          wigers: init.wigers ?? [],
-          wits,
-          first: !init.check,
-          frc: init.frcs?.[0] ?? null,
-          sourceSeal: this.normalizeSourceSeal(init.sscs, init.ssts),
-          local: init.local ?? false,
-        });
-
-        this.sner = serder.sner ?? encodeHugeOrdinal(sn);
-        this.serder = serder;
-        this.ilk = ilk;
-        this.tholder = tholder;
-        this.verfers = serder.verfers;
-        this.ndigers = serder.ndigers;
-        this.ntholder = ntholder;
-        this.toader = encodeHugeOrdinal(toader);
-        this.wits = wits;
-        this.cuts = cuts;
-        this.adds = adds;
-        this.lastEst = { s: sn, d: serder.said ?? "" };
-        if (fn !== null) {
-          this.fner = encodeHugeOrdinal(fn);
-          this.dater = dater;
-          this.db.pinState(this.pre, this.state());
-        }
-        return;
-      }
-      case "ixn": {
-        if (this.estOnly) {
-          throw new ValidationError(
-            `Unexpected ixn for establishment-only AID ${this.pre}.`,
-          );
-        }
-        if (sn !== this.sn + 1) {
-          throw new ValidationError(
-            `Interaction for ${this.pre} must advance from sn=${this.sn} to ${this.sn + 1}.`,
-          );
-        }
-        if (serder.prior !== this.said) {
-          throw new ValidationError(
-            `Interaction prior ${String(serder.prior)} does not match current SAID ${this.said}.`,
-          );
-        }
-
-        const verified = this.validateSignatures(
-          serder.raw,
-          init.sigers,
-          this.verfers,
-          this.tholder,
-          serder.said ?? "<unknown>",
-        );
-        const { fn, dater } = this.logEvent({
-          serder,
-          sigers: verified,
-          wigers: init.wigers ?? [],
-          first: !init.check,
-          frc: init.frcs?.[0] ?? null,
-          local: init.local ?? false,
-        });
-
-        this.sner = serder.sner ?? encodeHugeOrdinal(sn);
-        this.serder = serder;
-        this.ilk = ilk;
-        if (fn !== null) {
-          this.fner = encodeHugeOrdinal(fn);
-          this.dater = dater;
-          this.db.pinState(this.pre, this.state());
-        }
-        return;
-      }
-      default:
-        throw new ValidationError(
-          `Unsupported Kever update ilk=${String(ilk)} for ${this.pre}.`,
-        );
-    }
+  /** Serialize the current accepted state into durable `states.` form. */
+  state(): KeyStateRecord {
+    return {
+      vn: [...this.version],
+      i: this.pre,
+      s: this.sn.toString(16),
+      p: this.serder.prior ?? "",
+      d: this.said,
+      f: this.fn.toString(16),
+      dt: this.dater.iso8601,
+      et: this.ilk,
+      kt: this.tholder?.sith ?? "0",
+      k: this.verfers.map((verfer) => verfer.qb64),
+      nt: this.ntholder?.sith ?? "0",
+      n: this.ndigs,
+      bt: this.toader.numh,
+      b: [...this.wits],
+      c: [
+        ...(this.estOnly ? ["EO"] : []),
+        ...(this.doNotDelegate ? ["DND"] : []),
+      ],
+      ee: {
+        s: this.lastEst.s.toString(16),
+        d: this.lastEst.d,
+        br: [...this.cuts],
+        ba: [...this.adds],
+      },
+      di: this.delpre ?? "",
+    };
   }
 
   /**
@@ -599,16 +535,7 @@ export class Kever {
    * This is the shared logging seam used by fresh acceptance, late signatures,
    * and future replay/recovery flows.
    */
-  logEvent(args: {
-    serder: SerderKERI;
-    sigers?: readonly Siger[];
-    wigers?: readonly Siger[];
-    wits?: readonly string[];
-    first?: boolean;
-    frc?: FirstSeenReplayCouple | null;
-    sourceSeal?: SourceSealCouple | SourceSealTriple | null;
-    local?: boolean;
-  }): { fn: number | null; dater: Dater } {
+  logEvent(args: KeverLogPlan): { fn: number | null; dater: Dater } {
     const local = args.local ?? false;
     const pre = args.serder.pre;
     const said = args.serder.said;
@@ -675,54 +602,676 @@ export class Kever {
     return { fn, dater: nowDater };
   }
 
-  /** Serialize the current accepted state into durable `states.` form. */
-  state(): KeyStateRecord {
-    return {
+  /**
+   * Return the exposed prior-next digest indices satisfied by `sigers`.
+   *
+   * This is the TypeScript port of KERIpy `Kever.exposeds`.
+   */
+  exposeds(sigers: readonly Siger[]): number[] {
+    const indices: number[] = [];
+    for (const siger of sigers) {
+      if (typeof siger.ondex !== "number") {
+        continue;
+      }
+      const diger = this.ndigers[siger.ondex];
+      if (!diger || !siger.verfer) {
+        continue;
+      }
+      if (Diger.compare(siger.verfer.qb64b, diger.code, diger.raw)) {
+        indices.push(siger.ondex);
+      }
+    }
+    return indices;
+  }
+
+  /**
+   * Return indices contributed by keys also present in a locally controlled KEL.
+   *
+   * Current `keri-ts` scope:
+   * - approximates KERIpy's locally membered signature filtering by comparing
+   *   verfer qb64 values across locally accepted kevers
+   */
+  locallyContributedIndices(verfers: readonly Verfer[]): number[] {
+    const localKeys = new Set<string>();
+    for (const pre of this.prefixes) {
+      const kever = this.db.getKever(pre);
+      if (!kever) {
+        continue;
+      }
+      for (const verfer of kever.verfers) {
+        localKeys.add(verfer.qb64);
+      }
+    }
+    const indices: number[] = [];
+    for (const [index, verfer] of verfers.entries()) {
+      if (localKeys.has(verfer.qb64)) {
+        indices.push(index);
+      }
+    }
+    return indices;
+  }
+
+  /**
+   * Fetch the delegating event that anchors the supplied delegated event.
+   *
+   * Current `keri-ts` scope:
+   * - validates explicit source seals first
+   * - optionally performs an eager linear KEL walk when no usable seal is
+   *   attached and `eager` is enabled
+   * - recursive superseding-delegation parity remains later work
+   */
+  fetchDelegatingEvent(
+    delpre: string,
+    serder: SerderKERI,
+    {
+      sourceSeal,
+      eager = false,
+    }: {
+      sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+      eager?: boolean;
+    } = {},
+  ): SerderKERI | null {
+    const eventMatches = (candidate: SerderKERI | null): candidate is SerderKERI =>
+      !!candidate && this.eventAnchorsSeal(candidate, serder);
+
+    if (sourceSeal) {
+      const bySaid = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
+      if (eventMatches(bySaid)) {
+        return bySaid;
+      }
+      const bySn = this.db.getKel(delpre, ordinalNumber(sourceSeal.seqner));
+      if (bySn) {
+        const event = this.db.getEvtSerder(delpre, bySn);
+        if (eventMatches(event)) {
+          return event;
+        }
+      }
+    }
+
+    if (!eager) {
+      return null;
+    }
+
+    for (const [, said] of this.db.getKelItemIter(delpre)) {
+      const candidate = this.db.getEvtSerder(delpre, said);
+      if (eventMatches(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Load one state record and its corresponding serder into the live kever.
+   *
+   * This is used by both durable reload and decision-plan application.
+   */
+  private loadState(state: KeyStateRecord, serder: SerderKERI): void {
+    if (!state.i || !state.d || !state.s || !state.f || !state.dt || !state.et) {
+      throw new ValidationError("Incomplete key-state record for Kever load.");
+    }
+
+    this.version = [
+      typeof state.vn?.[0] === "number" ? state.vn[0] : 1,
+      typeof state.vn?.[1] === "number" ? state.vn[1] : 0,
+    ];
+    this.prefixer = new Prefixer({ qb64: state.i });
+    this.sner = encodeHugeOrdinal(BigInt(`0x${state.s}`));
+    this.fner = encodeHugeOrdinal(BigInt(`0x${state.f}`));
+    this.dater = new Dater({ qb64: encodeDateTimeToDater(state.dt) });
+    this.ilk = state.et;
+    this.tholder = state.kt ? serderThreshold(state.kt) : null;
+    this.ntholder = state.nt ? serderThreshold(state.nt) : null;
+    this.verfers = (state.k ?? []).map((key) => new Verfer({ qb64: key }));
+    this.ndigers = (state.n ?? []).map((dig) => new Diger({ qb64: dig }));
+    this.toader = numberPrimitiveFromHex(state.bt ?? "0");
+    this.wits = [...(state.b ?? [])];
+    this.cuts = [...(state.ee?.br ?? [])];
+    this.adds = [...(state.ee?.ba ?? [])];
+    this.estOnly = (state.c ?? []).includes("EO");
+    this.doNotDelegate = (state.c ?? []).includes("DND");
+    this.lastEst = {
+      s: Number.parseInt(state.ee?.s ?? "0", 16),
+      d: state.ee?.d ?? state.d,
+    };
+    this.delpre = state.di || null;
+    this.delegated = !!this.delpre;
+    this.serder = serder;
+  }
+
+  /** Evaluate one non-mutating rotation or delegated rotation transition. */
+  private evaluateRotation(init: KeverEventInit, local: boolean): KeverDecision {
+    const { serder } = init;
+    const ilk = serder.ilk ?? "rot";
+    const sn = serder.sn ?? -1;
+
+    if (this.delegated && ilk !== "drt") {
+      return Kever.reject(
+        "invalidDelegation",
+        `Delegated AID ${this.pre} requires drt, not rot.`,
+      );
+    }
+    if (!this.delegated && ilk === "drt") {
+      return Kever.reject(
+        "invalidDelegation",
+        `Non-delegated AID ${this.pre} may not accept drt.`,
+      );
+    }
+    if (sn > this.sn + 1) {
+      return this.makeEscrowDecision(
+        "ooo",
+        init,
+        `Rotation for ${this.pre} arrived out of order at sn=${sn}.`,
+      );
+    }
+    if (sn <= this.sn) {
+      if ((ilk === "rot" && sn <= this.lastEst.s) || (ilk === "drt" && sn < this.lastEst.s)) {
+        return Kever.reject(
+          "stale",
+          `Stale ${ilk} event sn=${sn} for ${this.pre}.`,
+        );
+      }
+      if (ilk === "rot" && this.ilk !== "ixn") {
+        return Kever.reject(
+          "invalidRecovery",
+          `Recovery rotation for ${this.pre} may only supersede an ixn state.`,
+        );
+      }
+
+      const psn = sn - 1;
+      const pdig = this.db.getKel(this.pre, psn);
+      if (!pdig) {
+        return Kever.reject(
+          "invalidRecovery",
+          `Recovery rotation for ${this.pre} is missing prior event at sn=${psn}.`,
+        );
+      }
+      const pserder = this.db.getEvtSerder(this.pre, pdig);
+      if (!pserder || !pserder.compare(serder.prior ?? "")) {
+        return Kever.reject(
+          "invalidRecovery",
+          `Recovery rotation prior ${String(serder.prior)} does not match stored state for ${this.pre}.`,
+        );
+      }
+    } else if (serder.prior !== this.said) {
+      return Kever.reject(
+        "invalidPriorDigest",
+        `Rotation prior ${String(serder.prior)} does not match current SAID ${this.said}.`,
+      );
+    }
+
+    const tholder = serder.tholder;
+    const ntholder = serder.ntholder;
+    if (serder.verfers.length < parseNumericThreshold(tholder?.sith, 0)) {
+      return Kever.reject(
+        "invalidThreshold",
+        `Rotation ${serder.said ?? "<unknown>"} does not carry enough current keys.`,
+      );
+    }
+
+    const derived = this.deriveBacksDecision(serder);
+    if (!derived) {
+      return Kever.reject(
+        "invalidWitnessSet",
+        `Rotation ${serder.said ?? "<unknown>"} carries invalid witness cuts/adds.`,
+      );
+    }
+
+    const attachments = this.validateAttachmentsInternal({
+      serder,
+      sigers: init.sigers,
+      wigers: init.wigers ?? [],
+      verfers: serder.verfers,
+      tholder,
+      wits: derived.wits,
+      toader: derived.toader,
+      delpre: this.delpre,
+      sourceSeal: this.normalizeSourceSeal(init.sscs, init.ssts),
+      local,
+      eager: init.eager,
+      check: init.check,
+      isEstablishment: true,
+    });
+    if (attachments.kind !== "verified") {
+      return Kever.fromAttachmentDecision(attachments);
+    }
+
+    const state: KeyStateRecord = {
       vn: [...this.version],
       i: this.pre,
-      s: this.sn.toString(16),
-      p: this.serder.prior ?? "",
-      d: this.said,
+      s: sn.toString(16),
+      p: serder.prior ?? "",
+      d: serder.said ?? "",
       f: this.fn.toString(16),
       dt: this.dater.iso8601,
-      et: this.ilk,
-      kt: this.tholder?.sith ?? "0",
-      k: this.verfers.map((verfer) => verfer.qb64),
-      nt: this.ntholder?.sith ?? "0",
-      n: this.ndigs,
-      bt: Number(this.toader.num).toString(16),
-      b: [...this.wits],
+      et: ilk,
+      kt: tholder?.sith ?? "0",
+      k: serder.verfers.map((verfer) => verfer.qb64),
+      nt: ntholder?.sith ?? "0",
+      n: serder.ndigers.map((diger) => diger.qb64),
+      bt: derived.toader.numh,
+      b: [...derived.wits],
       c: [
-        ...(this.estOnly ? ["EO"] : []),
-        ...(this.doNotDelegate ? ["DND"] : []),
+        ...(serder.traits.includes("EO") ? ["EO"] : []),
+        ...(serder.traits.includes("DND") ? ["DND"] : []),
       ],
       ee: {
-        s: this.lastEst.s.toString(16),
-        d: this.lastEst.d,
-        br: [...this.cuts],
-        ba: [...this.adds],
+        s: sn.toString(16),
+        d: serder.said ?? "",
+        br: [...derived.cuts],
+        ba: [...derived.adds],
       },
       di: this.delpre ?? "",
+    };
+
+    return {
+      kind: "accept",
+      plan: {
+        mode: "update",
+        acceptKind: sn <= this.sn ? "recovery" : "update",
+        pre: this.pre,
+        said: serder.said ?? "",
+        sn,
+        state,
+        log: {
+          serder,
+          sigers: attachments.plan.sigers,
+          wigers: attachments.plan.wigers,
+          wits: attachments.plan.wits,
+          first: !init.check,
+          frc: init.frcs?.[0] ?? null,
+          sourceSeal: attachments.plan.sourceSeal,
+          local,
+        },
+      },
+      cues: attachments.plan.cues,
+    };
+  }
+
+  /** Evaluate one non-mutating interaction transition. */
+  private evaluateInteraction(init: KeverEventInit, local: boolean): KeverDecision {
+    const { serder } = init;
+    const sn = serder.sn ?? -1;
+
+    if (this.estOnly) {
+      return Kever.reject(
+        "estOnlyViolation",
+        `Unexpected ixn for establishment-only AID ${this.pre}.`,
+      );
+    }
+    if (sn > this.sn + 1) {
+      return this.makeEscrowDecision(
+        "ooo",
+        init,
+        `Interaction for ${this.pre} arrived out of order at sn=${sn}.`,
+      );
+    }
+    if (sn <= this.sn) {
+      return Kever.reject(
+        "stale",
+        `Stale ixn event sn=${sn} for ${this.pre}.`,
+      );
+    }
+    if (serder.prior !== this.said) {
+      return Kever.reject(
+        "invalidPriorDigest",
+        `Interaction prior ${String(serder.prior)} does not match current SAID ${this.said}.`,
+      );
+    }
+
+    const attachments = this.validateAttachmentsInternal({
+      serder,
+      sigers: init.sigers,
+      wigers: init.wigers ?? [],
+      verfers: this.verfers,
+      tholder: this.tholder,
+      wits: this.wits,
+      toader: this.toader,
+      delpre: null,
+      sourceSeal: null,
+      local,
+      eager: init.eager,
+      check: init.check,
+    });
+    if (attachments.kind !== "verified") {
+      return Kever.fromAttachmentDecision(attachments);
+    }
+
+    return {
+      kind: "accept",
+      plan: {
+        mode: "update",
+        acceptKind: "update",
+        pre: this.pre,
+        said: serder.said ?? "",
+        sn,
+        state: {
+          vn: [...this.version],
+          i: this.pre,
+          s: sn.toString(16),
+          p: serder.prior ?? "",
+          d: serder.said ?? "",
+          f: this.fn.toString(16),
+          dt: this.dater.iso8601,
+          et: "ixn",
+          kt: this.tholder?.sith ?? "0",
+          k: this.verfers.map((verfer) => verfer.qb64),
+          nt: this.ntholder?.sith ?? "0",
+          n: this.ndigers.map((diger) => diger.qb64),
+          bt: this.toader.numh,
+          b: [...this.wits],
+          c: [
+            ...(this.estOnly ? ["EO"] : []),
+            ...(this.doNotDelegate ? ["DND"] : []),
+          ],
+          ee: {
+            s: this.lastEst.s.toString(16),
+            d: this.lastEst.d,
+            br: [...this.cuts],
+            ba: [...this.adds],
+          },
+          di: this.delpre ?? "",
+        },
+        log: {
+          serder,
+          sigers: attachments.plan.sigers,
+          wigers: attachments.plan.wigers,
+          first: !init.check,
+          frc: init.frcs?.[0] ?? null,
+          local,
+        },
+      },
+      cues: attachments.plan.cues,
+    };
+  }
+
+  /** Validate attachments using explicit decisions instead of exception flow. */
+  private validateAttachmentsInternal(
+    input: AttachmentValidationInput,
+  ): AttachmentDecision {
+    const remoteMemberedCues: AgentCue[] = [];
+    const verfers = [...input.verfers];
+    const sigers = [...input.sigers];
+    const wigers = [...input.wigers];
+    const delpre = input.delpre ?? null;
+    const pre = this.pre;
+    const said = input.serder.said ?? "<unknown>";
+
+    if (verfers.length < parseNumericThreshold(input.tholder?.sith, verfers.length)) {
+      return Kever.rejectAttachment(
+        "invalidThreshold",
+        `Invalid threshold material for event ${said}.`,
+      );
+    }
+
+    if (!input.local && this.locallyMembered()) {
+      const indices = this.locallyContributedIndices(verfers);
+      if (indices.length > 0) {
+        for (const siger of [...sigers]) {
+          if (indices.includes(siger.index)) {
+            const position = sigers.indexOf(siger);
+            if (position >= 0) {
+              sigers.splice(position, 1);
+            }
+            remoteMemberedCues.push({
+              kin: "remoteMemberedSig",
+              serder: input.serder,
+              index: siger.index,
+            });
+          }
+        }
+      }
+    }
+
+    const verified = Kever.verifyIndexedSignatures(input.serder.raw, sigers, verfers);
+    if (verified.sigers.length === 0) {
+      return Kever.rejectAttachment(
+        "invalidThreshold",
+        `No verified signatures for event ${said}.`,
+      );
+    }
+
+    const verifiedThreshold = parseNumericThreshold(
+      input.tholder?.sith,
+      verfers.length,
+    );
+
+    if (
+      !input.local &&
+      (this.locallyOwned() || this.locallyWitnessed({ wits: [...input.wits] }) ||
+        this.locallyDelegated(delpre))
+    ) {
+      return this.makeAttachmentEscrowDecision(
+        "misfit",
+        input,
+        `Nonlocal source for locally protected event ${said}.`,
+        remoteMemberedCues,
+      );
+    }
+
+    if (verified.sigers.length < verifiedThreshold) {
+      return this.makeAttachmentEscrowDecision(
+        "partialSigs",
+        input,
+        `Event ${said} does not yet satisfy controller threshold ${verifiedThreshold}.`,
+        remoteMemberedCues,
+      );
+    }
+
+    if (
+      input.isEstablishment &&
+      this.ntholder &&
+      (input.serder.ilk === "rot" || input.serder.ilk === "drt")
+    ) {
+      const ondices = this.exposeds(verified.sigers);
+      if (ondices.length < parseNumericThreshold(this.ntholder.sith, this.ndigers.length)) {
+        return this.makeAttachmentEscrowDecision(
+          "partialSigs",
+          input,
+          `Event ${said} does not yet satisfy prior-next threshold ${this.ntholder.sith}.`,
+          remoteMemberedCues,
+        );
+      }
+    }
+
+    const werfers = [...input.wits].map((wit) => new Verfer({ qb64: wit }));
+    const verifiedWigs = Kever.verifyIndexedSignatures(
+      input.serder.raw,
+      wigers,
+      werfers,
+    ).sigers;
+
+    if (input.wits.length === 0) {
+      if (input.toader.num !== 0n) {
+        return Kever.rejectAttachment(
+          "invalidWitnessThreshold",
+          `Invalid witness threshold ${input.toader.num} without witnesses for ${said}.`,
+        );
+      }
+    } else if (!(this.locallyOwned() || this.locallyMembered() || this.locallyWitnessed({ wits: [...input.wits] }))) {
+      if (input.toader.num < 1n || input.toader.num > BigInt(input.wits.length)) {
+        return Kever.rejectAttachment(
+          "invalidWitnessThreshold",
+          `Invalid witness threshold ${input.toader.num} for event ${said}.`,
+        );
+      }
+
+      if (BigInt(verifiedWigs.length) < input.toader.num) {
+        return this.makeAttachmentEscrowDecision(
+          "partialWigs",
+          input,
+          `Event ${said} does not yet satisfy witness threshold ${input.toader.num}.`,
+          [
+            ...remoteMemberedCues,
+            {
+              kin: "query",
+              q: {
+                pre: input.serder.pre ?? undefined,
+                sn: input.serder.snh ?? undefined,
+              },
+              pre: input.serder.pre ?? undefined,
+            },
+          ],
+        );
+      }
+    }
+
+    const delegation = this.validateDelegation({
+      ...input,
+      delpre,
+      sourceSeal: input.sourceSeal ?? null,
+    });
+    if (delegation.kind !== "verified") {
+      if (remoteMemberedCues.length > 0 && delegation.kind === "escrow") {
+        delegation.cues = [...(delegation.cues ?? []), ...remoteMemberedCues];
+      }
+      return delegation;
+    }
+
+    return {
+      kind: "verified",
+      plan: {
+        sigers: verified.sigers,
+        wigers: verifiedWigs,
+        wits: [...input.wits],
+        delpre,
+        sourceSeal: delegation.plan.sourceSeal ?? input.sourceSeal ?? null,
+        cues: [...remoteMemberedCues, ...(delegation.plan.cues ?? [])],
+      },
+    };
+  }
+
+  /** Validate delegation or produce typed delegation-related escrow/reject results. */
+  private validateDelegation(
+    input: AttachmentValidationInput & {
+      delpre: string | null;
+      sourceSeal: SourceSealCouple | SourceSealTriple | null;
+    },
+  ): AttachmentDecision {
+    const delpre = input.delpre;
+    if (!delpre) {
+      return {
+        kind: "verified",
+        plan: {
+          sigers: [],
+          wigers: [],
+          wits: [...input.wits],
+          delpre: null,
+          sourceSeal: null,
+        },
+      };
+    }
+
+    if (
+      this.locallyOwned() ||
+      this.locallyMembered() ||
+      this.locallyWitnessed({ wits: [...input.wits] })
+    ) {
+      return {
+        kind: "verified",
+        plan: {
+          sigers: [],
+          wigers: [],
+          wits: [...input.wits],
+          delpre,
+          sourceSeal: input.sourceSeal,
+        },
+      };
+    }
+
+    const delegator = this.db.getKever(delpre);
+    if (!delegator) {
+      return this.makeAttachmentEscrowDecision(
+        "partialDels",
+        input,
+        `Missing delegator KEL for ${delpre} while validating ${input.serder.said ?? "<unknown>"}.`,
+        [{
+          kin: "query",
+          q: { pre: delpre ?? undefined },
+          pre: delpre ?? undefined,
+        }],
+      );
+    }
+
+    if (delegator.doNotDelegate) {
+      return Kever.rejectAttachment(
+        "delegationPolicyViolation",
+        `Delegator ${delpre} does not allow delegation for ${input.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
+    if (
+      (input.serder.ilk === "dip" || input.serder.ilk === "drt") &&
+      this.locallyDelegated(delpre) &&
+      !this.locallyOwned() &&
+      !input.sourceSeal
+    ) {
+      return this.makeAttachmentEscrowDecision(
+        "delegables",
+        input,
+        `Missing local delegator approval for delegated event ${input.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
+    const delegatingEvent = this.fetchDelegatingEvent(delpre, input.serder, {
+      sourceSeal: input.sourceSeal,
+      eager: input.eager ?? false,
+    });
+    if (!delegatingEvent) {
+      return this.makeAttachmentEscrowDecision(
+        "partialDels",
+        input,
+        `No delegation seal found for ${input.serder.said ?? "<unknown>"}.`,
+        [{
+          kin: "query",
+          q: {
+            pre: delpre ?? undefined,
+            sn: input.sourceSeal ? ordinalHex(input.sourceSeal.seqner) : undefined,
+            dig: input.sourceSeal?.diger.qb64,
+          },
+          pre: delpre ?? undefined,
+        }],
+      );
+    }
+
+    if (
+      input.serder.ilk === "drt" &&
+      input.serder.sn !== null &&
+      input.serder.sn <= this.sn &&
+      !(input.serder.sn === this.sn && this.ilk === "ixn")
+    ) {
+      return Kever.rejectAttachment(
+        "invalidDelegation",
+        `Invalid delegated recovery ordering for ${input.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
+    return {
+      kind: "verified",
+      plan: {
+        sigers: [],
+        wigers: [],
+        wits: [...input.wits],
+        delpre,
+        sourceSeal: input.sourceSeal ??
+          new SourceSealCouple(delegatingEvent.sner ?? encodeHugeOrdinal(delegatingEvent.sn ?? 0), new Diger({ qb64: delegatingEvent.said ?? "" })),
+      },
     };
   }
 
   /**
-   * Verify indexed signatures against one key set and return the verified list.
+   * Verify one indexed-signature set against a given verifier list.
    *
-   * Current scope:
-   * - threshold satisfaction is numeric-only
-   * - duplicate signature indices are ignored after the first verified signer
+   * The return value is ordered by signer index and ignores duplicates after the
+   * first verified signer for a given index.
    */
-  private validateSignatures(
+  static verifyIndexedSignatures(
     raw: Uint8Array,
     sigers: readonly Siger[],
     verfers: readonly Verfer[],
-    tholder: Tholder | null,
-    said: string,
-  ): Siger[] {
-    const threshold = parseNumericThreshold(tholder?.sith, verfers.length);
+  ): SignerVerificationResult {
     const verified = new Map<number, Siger>();
-
     for (const siger of sigers) {
       const verfer = verfers[siger.index];
       if (!verfer || verified.has(siger.index)) {
@@ -734,46 +1283,173 @@ export class Kever {
       verified.set(siger.index, siger);
     }
 
-    if (verified.size < threshold) {
-      throw new ValidationError(
-        `Event ${said} does not satisfy signature threshold ${threshold}.`,
+    const ordered = [...verified.entries()].sort((a, b) => a[0] - b[0]);
+    return {
+      sigers: ordered.map(([, siger]) => siger),
+      indices: ordered.map(([index]) => index),
+    };
+  }
+
+  /** Verify inception-specific event semantics before attachment validation. */
+  private static verifyIncept(init: KeverEventInit): KeverDecision | null {
+    const { serder } = init;
+    const pre = serder.pre;
+    const said = serder.said;
+    const sn = serder.sn;
+    const ilk = serder.ilk;
+
+    if (!pre) {
+      return Kever.reject(
+        "invalidPre",
+        `Inception event ${said ?? "<unknown>"} is missing a prefix.`,
+      );
+    }
+    try {
+      new Prefixer({ qb64: pre });
+    } catch (error) {
+      return Kever.reject(
+        "invalidPre",
+        `Invalid prefix ${pre} for inception ${said ?? "<unknown>"}.`,
+        { cause: error instanceof Error ? error.message : String(error) },
+      );
+    }
+    if (!said || sn === null) {
+      return Kever.reject(
+        "invalidSn",
+        "Inception event must include said and sn.",
+      );
+    }
+    if (ilk !== "icp" && ilk !== "dip") {
+      return Kever.reject(
+        "invalidIlk",
+        `Expected icp or dip for inception, got ${String(ilk)}.`,
+      );
+    }
+    if (sn !== 0) {
+      return Kever.reject(
+        "invalidSn",
+        `Inception event ${said} must have sn=0.`,
       );
     }
 
-    return [...verified.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, siger]) => siger);
+    const backers = serder.backs.length;
+    const nextKeyDigs = serder.ndigs.length;
+    const transferable = !NON_TRANSFERABLE_PREFIX_CODES.has(
+      new Prefixer({ qb64: pre }).code,
+    );
+    if (serder.verfers.length < parseNumericThreshold(serder.tholder?.sith, 0)) {
+      return Kever.reject(
+        "invalidThreshold",
+        `Invalid inception threshold for ${said}: not enough keys.`,
+      );
+    }
+    if (!transferable && nextKeyDigs > 0) {
+      return Kever.reject(
+        "nontransferableViolation",
+        `Non-transferable inception ${said} may not include next key digests.`,
+      );
+    }
+    if (!transferable && backers > 0) {
+      return Kever.reject(
+        "nontransferableViolation",
+        `Non-transferable inception ${said} may not include witnesses.`,
+      );
+    }
+    if (!hasUniqueEntries(serder.backs)) {
+      return Kever.reject(
+        "invalidWitnessSet",
+        `Inception event ${said} has duplicate witnesses/backers.`,
+      );
+    }
+
+    const toader = serder.bner ?? numberPrimitiveFromBigInt(0n);
+    if (backers > 0) {
+      if (toader.num < 1n || toader.num > BigInt(backers)) {
+        return Kever.reject(
+          "invalidWitnessThreshold",
+          `Invalid witness threshold ${toader.num} for inception ${said} with ${backers} backers.`,
+        );
+      }
+    } else if (toader.num !== 0n) {
+      return Kever.reject(
+        "invalidWitnessThreshold",
+        `Invalid witness threshold ${toader.num} without witnesses for inception ${said}.`,
+      );
+    }
+
+    if (!transferable && serder.seals.length > 0) {
+      return Kever.reject(
+        "nontransferableViolation",
+        `Non-transferable inception ${said} may not include seal data.`,
+      );
+    }
+
+    return null;
   }
 
-  /**
-   * Derive the post-establishment witness set for one inception/rotation event.
-   *
-   * This is the small TS-native equivalent of KERIpy's witness-derivation
-   * logic used by establishment validation and local witness queries.
-   */
-  private deriveBacks(
-    serder: SerderKERI,
-  ): { wits: string[]; cuts: string[]; adds: string[]; toader: number } {
+  /** Build the initial durable key-state projection for one accepted inception. */
+  private static initialKeyState(
+    {
+      serder,
+      pre,
+      said,
+      toader,
+      frc,
+    }: {
+      serder: SerderKERI;
+      pre: string;
+      said: string;
+      toader: NumberPrimitive;
+      frc: FirstSeenReplayCouple | null;
+    },
+  ): KeyStateRecord {
+    return {
+      vn: [serder.pvrsn.major, serder.pvrsn.minor],
+      i: pre,
+      s: "0",
+      p: "",
+      d: said,
+      f: frc ? frc.fnh : "0",
+      dt: frc?.dater.iso8601 ?? makeNowIso8601(),
+      et: serder.ilk ?? "icp",
+      kt: serder.tholder?.sith ?? "0",
+      k: serder.verfers.map((verfer) => verfer.qb64),
+      nt: serder.ntholder?.sith ?? "0",
+      n: serder.ndigers.map((diger) => diger.qb64),
+      bt: toader.numh,
+      b: [...serder.backs],
+      c: [
+        ...(serder.traits.includes("EO") ? ["EO"] : []),
+        ...(serder.traits.includes("DND") ? ["DND"] : []),
+      ],
+      ee: {
+        s: "0",
+        d: said,
+        br: [],
+        ba: [],
+      },
+      di: serder.delpre ?? "",
+    };
+  }
+
+  /** Derive the post-establishment witness set for one event or return `null`. */
+  private deriveBacksDecision(serder: SerderKERI): DerivedBacksResult | null {
     if (serder.ilk === "icp" || serder.ilk === "dip") {
       return {
         wits: [...serder.backs],
         cuts: [],
         adds: [],
-        toader: serder.bn ?? 0,
+        toader: serder.bner ?? numberPrimitiveFromBigInt(0n),
       };
     }
 
     const cuts = [...serder.cuts];
     const adds = [...serder.adds];
     if (!hasUniqueEntries(cuts) || !hasUniqueEntries(adds)) {
-      throw new ValidationError(
-        `Rotation ${serder.said ?? "<unknown>"} has duplicate witness cuts/adds.`,
-      );
+      return null;
     }
     if (cuts.some((wit) => adds.includes(wit))) {
-      throw new ValidationError(
-        `Rotation ${serder.said ?? "<unknown>"} has overlapping witness cuts/adds.`,
-      );
+      return null;
     }
 
     const next = this.wits.filter((wit) => !cuts.includes(wit));
@@ -781,22 +1457,16 @@ export class Kever {
       next.push(add);
     }
     if (!hasUniqueEntries(next)) {
-      throw new ValidationError(
-        `Rotation ${serder.said ?? "<unknown>"} produces duplicate witnesses.`,
-      );
+      return null;
     }
 
-    const toader = serder.bn ?? 0;
+    const toader = serder.bner ?? numberPrimitiveFromBigInt(0n);
     if (next.length > 0) {
-      if (toader < 1 || toader > next.length) {
-        throw new ValidationError(
-          `Invalid witness threshold ${toader} for rotation ${serder.said ?? "<unknown>"}.`,
-        );
+      if (toader.num < 1n || toader.num > BigInt(next.length)) {
+        return null;
       }
-    } else if (toader !== 0) {
-      throw new ValidationError(
-        `Invalid witness threshold ${toader} without witnesses for rotation ${serder.said ?? "<unknown>"}.`,
-      );
+    } else if (toader.num !== 0n) {
+      return null;
     }
 
     return { wits: next, cuts, adds, toader };
@@ -809,11 +1479,145 @@ export class Kever {
   ): SourceSealCouple | SourceSealTriple | null {
     return ssts?.[0] ?? sscs?.[0] ?? null;
   }
+
+  /** Return true when one delegating event contains the seal for the supplied event. */
+  private eventAnchorsSeal(candidate: SerderKERI, serder: SerderKERI): boolean {
+    for (const seal of candidate.seals) {
+      if (
+        typeof seal === "object" &&
+        seal !== null &&
+        "i" in seal &&
+        "s" in seal &&
+        "d" in seal &&
+        seal.i === serder.pre &&
+        seal.s === serder.snh &&
+        seal.d === serder.said
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Build one typed duplicate/escrow decision from an attachment decision. */
+  private static fromAttachmentDecision(decision: AttachmentDecision): KeverDecision {
+    if (decision.kind === "reject") {
+      return {
+        kind: "reject",
+        code: decision.code,
+        message: decision.message,
+        context: decision.context,
+      };
+    }
+    if (decision.kind === "escrow") {
+      return {
+        kind: "escrow",
+        reason: decision.reason,
+        message: decision.message,
+        instruction: decision.instruction,
+        cues: decision.cues,
+        context: decision.context,
+      };
+    }
+    return {
+      kind: "reject",
+      code: "unsupported",
+      message: "Unexpected verified attachment decision at event boundary.",
+    };
+  }
+
+  /** Helper to produce one reject decision. */
+  private static reject(
+    code: RejectKind,
+    message: string,
+    context?: Record<string, unknown>,
+  ): KeverDecision {
+    return { kind: "reject", code, message, context };
+  }
+
+  /** Helper to produce one reject attachment decision. */
+  private static rejectAttachment(
+    code: RejectKind,
+    message: string,
+    context?: Record<string, unknown>,
+  ): AttachmentDecision {
+    return { kind: "reject", code, message, context };
+  }
+
+  /** Build one typed escrow decision for event-level routing. */
+  private makeEscrowDecision(
+    escrow: EscrowKind,
+    init: KeverEventInit,
+    message: string,
+    cues?: readonly AgentCue[],
+  ): KeverDecision {
+    const serder = init.serder;
+    return {
+      kind: "escrow",
+      reason: escrow,
+      message,
+      instruction: {
+        escrow,
+        pre: serder.pre ?? this.pre,
+        said: serder.said ?? "",
+        sn: serder.sn ?? -1,
+        log: {
+          serder,
+          sigers: [...init.sigers],
+          wigers: [...(init.wigers ?? [])],
+          first: false,
+          frc: init.frcs?.[0] ?? null,
+          sourceSeal: this.normalizeSourceSeal(init.sscs, init.ssts),
+          local: init.local ?? false,
+        },
+      },
+      cues,
+    };
+  }
+
+  /** Build one typed attachment-escrow decision. */
+  private makeAttachmentEscrowDecision(
+    escrow: EscrowKind,
+    input: AttachmentValidationInput,
+    message: string,
+    cues?: readonly AgentCue[],
+  ): AttachmentDecision {
+    return {
+      kind: "escrow",
+      reason: escrow,
+      message,
+      instruction: {
+        escrow,
+        pre: input.serder.pre ?? this.pre,
+        said: input.serder.said ?? "",
+        sn: input.serder.sn ?? -1,
+        log: {
+          serder: input.serder,
+          sigers: [...input.sigers],
+          wigers: [...input.wigers],
+          wits: [...input.wits],
+          first: false,
+          sourceSeal: input.sourceSeal,
+          local: input.local,
+        },
+      },
+      cues,
+    };
+  }
 }
 
 /** Rehydrate one threshold primitive directly from a hex threshold expression. */
 function serderThreshold(sith: string): Tholder {
-  const value = BigInt(`0x${sith || "0"}`);
+  return new Tholder(numberPrimitiveFromHex(sith));
+}
+
+/** Rehydrate one numeric primitive directly from a hex threshold expression. */
+function numberPrimitiveFromHex(value: string): NumberPrimitive {
+  return numberPrimitiveFromBigInt(BigInt(`0x${value || "0"}`));
+}
+
+/** Rehydrate one numeric primitive directly from an exact integer value. */
+function numberPrimitiveFromBigInt(value: bigint): NumberPrimitive {
   const raw = value === 0n ? new Uint8Array([0]) : (() => {
     const bytes: number[] = [];
     let current = value;
@@ -828,9 +1632,9 @@ function serderThreshold(sith: string): Tholder {
     raw.length <= rawSize
   );
   if (!entry) {
-    throw new ValidationError(`Unsupported numeric threshold width for sith=${sith}.`);
+    throw new ValidationError(`Unsupported numeric threshold width for value=${value.toString(16)}.`);
   }
   const padded = new Uint8Array(entry.rawSize);
   padded.set(raw, entry.rawSize - raw.length);
-  return new Tholder({ code: entry.code, raw: padded });
+  return new NumberPrimitive({ code: entry.code, raw: padded });
 }

@@ -244,6 +244,77 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
   assertEquals(serder.mucodes.FixBodyGroup, CtrDexV2.FixBodyGroup);
 });
 
+Deno.test("serder: SerderKERI exposes raw `a` separately from list-only `seals`", () => {
+  const cid = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+
+  const serder = new SerderKERI({
+    sad: {
+      v: versify({
+        proto: "KERI",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "rpy",
+      d: "",
+      i: cid,
+      dt: "2026-03-17T12:34:56.000000+00:00",
+      r: "introduce",
+      a: { cid },
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+
+  assertEquals(serder.a, { cid });
+  assertEquals(serder.seals, []);
+});
+
+Deno.test("serder: SerderKERI normalizes deprecated intive bt inputs for both sad and raw paths", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+  const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";
+  const backer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+
+  const fromSad = new SerderKERI({
+    sad: {
+      v: versify({
+        proto: "KERI",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "icp",
+      d: "",
+      i: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+      s: "a",
+      kt: "1",
+      k: [key],
+      nt: "1",
+      n: [nxt],
+      bt: 1,
+      b: [backer],
+      c: [],
+      a: [],
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+  const fromRaw = new SerderKERI({ raw: fromSad.raw });
+
+  assertEquals(fromSad.ked?.bt, 1);
+  assertEquals(fromSad.bner?.numh, "1");
+  assertEquals(fromSad.bn, 1);
+  assertEquals(fromRaw.ked?.bt, 1);
+  assertEquals(fromRaw.bner?.numh, "1");
+  assertEquals(fromRaw.bn, 1);
+});
+
 Deno.test("serder: SerderKERI rejects invalid non-transferable inception state", () => {
   const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
 

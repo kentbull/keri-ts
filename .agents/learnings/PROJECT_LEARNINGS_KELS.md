@@ -108,6 +108,13 @@ replay/verification semantics.
     state should be created through signed `/loc/scheme` replies parsed back
     through `Revery`, not by direct writes to `locs.` / `lans.`, because OOBI
     generation and OOBI serving both depend on accepted location state.
+27. KEL control flow is now intentionally TypeScript-native: normal processing
+    outcomes should be modeled as typed decisions (`accept`, `duplicate`,
+    `escrow`, `reject`) rather than exception-driven branches. Preserve the
+    split where `Kever` decides state-machine validity and `Kevery` owns
+    routing, escrow persistence, duplicate handling, and post-acceptance side
+    effects. This rule should also guide future `Tever`/`Tevery` and similar
+    processor ports; see `docs/adr/adr-0005-kel-decision-control-flow.md`.
 
 ## Scope Checklist
 
@@ -121,6 +128,7 @@ Use this doc for:
 ## Cross-Topic Design References
 
 1. `docs/design-docs/db/db-architecture.md`
+2. `docs/adr/adr-0005-kel-decision-control-flow.md`
 
 ## Current Follow-Ups
 
@@ -842,3 +850,74 @@ Use this doc for:
   - Cue emission is still owned by `Kevery`, which is the right split for now,
     but later clone/duplicitous anomaly handling may justify limited
     state-machine-local cues from `Kever` itself.
+
+### 2026-04-02 - Backer Threshold Exactness Lives In `Kever`, Not Just In Serder Accessors
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Reworked the `Kever` backer-threshold path so provisional establishment
+    validation carries `NumberPrimitive` `toader` values end-to-end instead of
+    collapsing them immediately to JS `number`.
+  - Switched `bt` state serialization from `Number(...).toString(16)` to exact
+    `.numh` emission and reloaded durable `bt` state through the compact
+    number-primitive helper instead of the fixed Huge-number path.
+  - Added KEL regressions proving `Kever.evaluateInception()` accepts
+    deprecated intive `bt` inputs and that `Kever.fromState().state()` no
+    longer drifts large `bt` hex values through `bigint -> number -> hex`
+    coercion.
+- Why:
+  - The original suspicion that `bn` was reading the wrong field was a
+    category error. `bt` is the field; `bn`/`bner` are projections of that same
+    field. The real parity bug was representation loss: once `Kever` dropped
+    `bt` to a JS `number`, large thresholds could no longer round-trip exactly,
+    even though KERIpy keeps wrapper/exact-integer form until serialization.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts`
+  - Result: passed locally (`5 passed, 0 failed`)
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever.ts`
+  - `packages/keri/test/unit/core/kever.test.ts`
+- Risks/TODO:
+  - This pass intentionally scoped exactness fixes to the `bt`/`toader` path.
+    Other scalar convenience projections such as `sn`/`fn` still collapse
+    `NumberPrimitive.num` to JS `number`, so broader large-ordinal exactness is
+    separate follow-on work.
+
+### 2026-04-02 - `evaluateInception()` Should Own The Whole Inception Decision
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Collapsed the one-off `buildInceptionState()` helper into
+    `Kever.evaluateInception()` so the inception decision path no longer relies
+    on an anonymous union of `KeverDecision | { state, wits, toader, ... }`.
+  - Kept the provisional inception data local to `evaluateInception()` and
+    preserved the existing decision/logging phase split for attachment
+    verification and first-seen replay handling.
+- Why:
+  - The old helper returned an unnamed “almost a decision” object shape, which
+    forced readers to re-derive the abstraction and made the `\"kind\" in ...`
+    narrowing feel like control-flow trivia instead of state-machine intent.
+  - The durable rule is simpler: `evaluateInception()` is the decision seam, so
+    it should assemble the whole decision. Internal helpers below that seam
+    should either return a named plan/input type or stay local.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts`
+  - Result: passed locally (`5 passed, 0 failed`)
+  - Command: `deno check packages/keri/mod.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever.ts`
+- Risks/TODO:
+  - The same readability rule should be enforced on future `Tever`/`Tevery` or
+    escrow-heavy processor ports: do not let internal helpers invent anonymous
+    pre-decision unions when the real boundary contract is already a typed
+    decision family.

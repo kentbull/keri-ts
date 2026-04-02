@@ -111,11 +111,27 @@ function bigintToBytes(value: bigint): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-function makeNumberPrimitive(value: string | null): NumberPrimitive | null {
-  if (typeof value !== "string") {
+function makeNumberPrimitive(
+  value: string | number | bigint | null | undefined,
+): NumberPrimitive | null {
+  if (value === null || value === undefined) {
     return null;
   }
-  const bigint = BigInt(`0x${value || "0"}`);
+  const bigint = typeof value === "string"
+    ? BigInt(`0x${value || "0"}`)
+    : typeof value === "number"
+    ? (() => {
+      if (!Number.isInteger(value) || value < 0) {
+        throw new SerializeError(`Invalid numeric CESR number=${value}`);
+      }
+      return BigInt(value);
+    })()
+    : (() => {
+      if (value < 0n) {
+        throw new SerializeError(`Negative CESR number=${value}`);
+      }
+      return value;
+    })();
   const raw = bigintToBytes(bigint);
   const entry = NUMBER_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
   if (!entry) {
@@ -1719,6 +1735,10 @@ export class SerderKERI extends Serder {
     return this.ked && typeof this.ked.s === "string" ? this.ked.s : null;
   }
 
+  get a(): unknown {
+    return this.ked?.a;
+  }
+
   get seals(): unknown[] {
     return Array.isArray(this.ked?.a) ? [...this.ked.a] : [];
   }
@@ -1759,7 +1779,11 @@ export class SerderKERI extends Serder {
 
   get bner(): NumberPrimitive | null {
     return makeNumberPrimitive(
-      this.ked && typeof this.ked.bt === "string" ? this.ked.bt : null,
+      this.ked &&
+          (typeof this.ked.bt === "string" || typeof this.ked.bt === "number" ||
+            typeof this.ked.bt === "bigint")
+        ? this.ked.bt
+        : null,
     );
   }
 
