@@ -33,6 +33,8 @@ Things to come back and do at some point:
 - Reconsider the records.ts and dispatch.ts class and type names. Maybe they should be renamed or tweaked.
 - Look at why cues are filtered in KERIpy and determine why they are filtered and what we
   need to mimic there, if at all.
+- Make Komer type system simple as possible with as few generics as possible.
+- Look at collapsing the types like PreSitShape and PreSit
 
 ## Missing
 
@@ -62,3 +64,4 @@ Things to come back and do at some point:
 - eventing.test.ts
 - kever-decisions.ts
 - Encrypter/Decrypter, CryptSignerSuber, and Manager integration
+

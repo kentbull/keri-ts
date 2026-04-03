@@ -18,8 +18,8 @@ import {
 const textEncoder = new TextEncoder();
 
 function toUint8Array(bytes: Uint8Array): Uint8Array {
-  return bytes instanceof Uint8Array
-      && Object.getPrototypeOf(bytes) === Uint8Array.prototype
+  return bytes instanceof Uint8Array &&
+      Object.getPrototypeOf(bytes) === Uint8Array.prototype
     ? bytes
     : new Uint8Array(bytes);
 }
@@ -27,9 +27,9 @@ function toUint8Array(bytes: Uint8Array): Uint8Array {
 function isPlainObject(
   value: unknown,
 ): value is Record<string, unknown> {
-  return typeof value === "object"
-    && value !== null
-    && Object.getPrototypeOf(value) === Object.prototype;
+  return typeof value === "object" &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function normalizeRecordValue(value: unknown): unknown {
@@ -87,12 +87,6 @@ function assignDefined<T extends object>(
   }
 }
 
-/** Constructor contract used by `Komer` hydrators for `RawRecord` families. */
-export interface RawRecordCtor<TRecord extends RawRecord, TInput = unknown> {
-  new(data?: TInput): TRecord;
-  fromDict(data?: unknown): TRecord;
-}
-
 /**
  * Shared persisted-record helper base.
  *
@@ -103,8 +97,10 @@ export interface RawRecordCtor<TRecord extends RawRecord, TInput = unknown> {
  * - keeps current stored-shape stability by preserving omitted fields rather
  *   than eagerly materializing every KERIpy dataclass default into JSON
  */
-export abstract class RawRecord {
-  constructor(data?: object | null) {
+export abstract class RawRecord<
+  TShape extends object | undefined = Record<string, unknown>,
+> {
+  constructor(data?: TShape | null) {
     assignDefined(this, data);
   }
 
@@ -114,22 +110,22 @@ export abstract class RawRecord {
    * Subclasses that carry nested record members should override this to
    * rehydrate those nested values explicitly.
    */
-  static fromDict<TRecord extends RawRecord>(
-    this: RawRecordCtor<TRecord, any>,
+  static fromDict<TThis extends RawRecordClass<RawRecord<any>>>(
+    this: TThis,
     data?: unknown,
-  ): TRecord {
+  ): InstanceType<TThis> {
     if (data instanceof this) {
-      return data;
+      return data as InstanceType<TThis>;
     }
-    return new this(data);
+    return new this(data) as InstanceType<TThis>;
   }
 
   /** KERIpy-style underscore alias retained for parity-oriented call sites. */
-  static _fromdict<TRecord extends RawRecord>(
-    this: RawRecordCtor<TRecord, any>,
+  static _fromdict<TThis extends RawRecordClass<RawRecord<any>>>(
+    this: TThis,
     data?: unknown,
-  ): TRecord {
-    return this.fromDict(data);
+  ): InstanceType<TThis> {
+    return this.fromDict(data) as InstanceType<TThis>;
   }
 
   /** Iterate plain-record keys, matching KERIpy `__iter__` substance. */
@@ -139,7 +135,9 @@ export abstract class RawRecord {
 
   /** Return the plain stored-object projection for this record. */
   asDict(): Record<string, unknown> {
-    return normalizeRecordValue(Object.fromEntries(Object.entries(this))) as Record<string, unknown>;
+    return normalizeRecordValue(
+      Object.fromEntries(Object.entries(this)),
+    ) as Record<string, unknown>;
   }
 
   /** KERIpy-style underscore alias retained for parity-oriented call sites. */
@@ -178,6 +176,24 @@ export abstract class RawRecord {
   }
 }
 
+/** Stored plain-object shape carried by one `RawRecord` subclass. */
+export type RecordShapeOf<TRecord extends RawRecord<any>> = TRecord extends
+  RawRecord<infer TShape> ? TShape : never;
+
+/** Accepted write value for one `RawRecord` family. */
+export type RecordInputOf<TRecord extends RawRecord<any>> =
+  | TRecord
+  | RecordShapeOf<TRecord>;
+
+/** Runtime record-class contract consumed by `Komer` and related mappers. */
+export interface RawRecordClass<TRecord extends RawRecord<any>> {
+  new (...args: any[]): TRecord;
+  fromDict<TThis extends RawRecordClass<TRecord>>(
+    this: TThis,
+    data?: unknown,
+  ): InstanceType<TThis>;
+}
+
 export interface StateEERecordShape {
   s?: string;
   d?: string;
@@ -194,7 +210,8 @@ export interface StateEERecordShape {
  * This sub-record captures the latest establishment event referenced by the
  * current key state, including witness/backer cuts and adds.
  */
-export class StateEERecord extends RawRecord implements StateEERecordShape {
+export class StateEERecord extends RawRecord<StateEERecordShape>
+  implements StateEERecordShape {
   declare s?: string;
   declare d?: string;
   declare br?: string[];
@@ -240,7 +257,8 @@ export interface KeyStateRecordShape {
  * for accepted current key state. Live `Kever` instances are reloaded from
  * this record rather than treating in-memory habitat wrappers as authoritative.
  */
-export class KeyStateRecord extends RawRecord implements KeyStateRecordShape {
+export class KeyStateRecord extends RawRecord<KeyStateRecordShape>
+  implements KeyStateRecordShape {
   declare vn?: number[];
   declare i?: string;
   declare s?: string;
@@ -286,7 +304,8 @@ export interface EventSourceRecordShape {
  * Used in `Baser.esrs` to distinguish locally protected events from remote
  * events that may still require stronger validation/authentication treatment.
  */
-export class EventSourceRecord extends RawRecord implements EventSourceRecordShape {
+export class EventSourceRecord extends RawRecord<EventSourceRecordShape>
+  implements EventSourceRecordShape {
   declare local?: boolean;
 }
 
@@ -310,7 +329,8 @@ export interface HabitatRecordShape {
  * This record is intentionally metadata-only. Durable event/key state belongs
  * in `states.`/`kels.`/`fels.` and signatures belong in separate DB families.
  */
-export class HabitatRecord extends RawRecord implements HabitatRecordShape {
+export class HabitatRecord extends RawRecord<HabitatRecordShape>
+  implements HabitatRecordShape {
   declare hid: string;
   declare name?: string;
   declare domain?: string;
@@ -344,7 +364,8 @@ export interface TopicsRecordShape {
  * Used in `Baser.tops` to track last-seen per-topic indices for witness mailbox
  * retrieval flows.
  */
-export class TopicsRecord extends RawRecord implements TopicsRecordShape {
+export class TopicsRecord extends RawRecord<TopicsRecordShape>
+  implements TopicsRecordShape {
   declare topics: Record<string, number>;
 }
 
@@ -365,7 +386,8 @@ export interface OobiQueryRecordShape {
  * - the record contract is ported, but `Baser` does not yet bind an `oobiq`
  *   store because current KERIpy does not actively wire that family either
  */
-export class OobiQueryRecord extends RawRecord implements OobiQueryRecordShape {
+export class OobiQueryRecord extends RawRecord<OobiQueryRecordShape>
+  implements OobiQueryRecordShape {
   declare cid?: string | null;
   declare role?: string | null;
   declare eids?: string[];
@@ -399,7 +421,8 @@ export interface OobiRecordShape {
  *
  * Shared by the active, escrowed, resolved, MFA, and related OOBI stores.
  */
-export class OobiRecord extends RawRecord implements OobiRecordShape {
+export class OobiRecord extends RawRecord<OobiRecordShape>
+  implements OobiRecordShape {
   declare oobialias?: string | null;
   declare said?: string | null;
   declare cid?: string | null;
@@ -433,7 +456,8 @@ export interface EndpointRecordShape {
  * Stored in `Baser.ends` for `(cid, role, eid)` paths and populated from
  * reply/expose message processing when those higher-layer flows are ported.
  */
-export class EndpointRecord extends RawRecord implements EndpointRecordShape {
+export class EndpointRecord extends RawRecord<EndpointRecordShape>
+  implements EndpointRecordShape {
   declare allowed?: boolean | null;
   declare enabled?: boolean | null;
   declare name?: string;
@@ -450,7 +474,8 @@ export interface EndAuthRecordShape {
  * KERIpy correspondence:
  * - mirrors `EndAuthRecord` from `keri.recording`
  */
-export class EndAuthRecord extends RawRecord implements EndAuthRecordShape {
+export class EndAuthRecord extends RawRecord<EndAuthRecordShape>
+  implements EndAuthRecordShape {
   declare cid?: string;
   declare roles?: string[];
 
@@ -473,7 +498,8 @@ export interface LocationRecordShape {
  * KERIpy correspondence:
  * - mirrors `LocationRecord` from `keri.recording`
  */
-export class LocationRecord extends RawRecord implements LocationRecordShape {
+export class LocationRecord extends RawRecord<LocationRecordShape>
+  implements LocationRecordShape {
   declare url: string;
 }
 
@@ -491,7 +517,8 @@ export interface ObservedRecordShape {
  *
  * Stored in `Baser.obvs` for `(cid, aid, oid)` paths.
  */
-export class ObservedRecord extends RawRecord implements ObservedRecordShape {
+export class ObservedRecord extends RawRecord<ObservedRecordShape>
+  implements ObservedRecordShape {
   declare enabled?: boolean | null;
   declare name?: string;
   declare datetime?: string | null;
@@ -513,7 +540,8 @@ export interface CacheTypeRecordShape {
  * KERIpy correspondence:
  * - mirrors `CacheTypeRecord` from `keri.recording`
  */
-export class CacheTypeRecord extends RawRecord implements CacheTypeRecordShape {
+export class CacheTypeRecord extends RawRecord<CacheTypeRecordShape>
+  implements CacheTypeRecordShape {
   declare d?: number;
   declare sl?: number;
   declare ll?: number;
@@ -538,7 +566,8 @@ export interface MsgCacheRecordShape {
  * KERIpy correspondence:
  * - mirrors `MsgCacheRecord` from `keri.recording`
  */
-export class MsgCacheRecord extends RawRecord implements MsgCacheRecordShape {
+export class MsgCacheRecord extends RawRecord<MsgCacheRecordShape>
+  implements MsgCacheRecordShape {
   declare mdt?: string;
   declare d?: number;
   declare ml?: number;
@@ -563,7 +592,8 @@ export interface TxnMsgCacheRecordShape {
  * KERIpy correspondence:
  * - mirrors `TxnMsgCacheRecord` from `keri.recording`
  */
-export class TxnMsgCacheRecord extends RawRecord implements TxnMsgCacheRecordShape {
+export class TxnMsgCacheRecord extends RawRecord<TxnMsgCacheRecordShape>
+  implements TxnMsgCacheRecordShape {
   declare mdt?: string;
   declare xdt?: string;
   declare d?: number;
@@ -586,7 +616,8 @@ export interface WellKnownAuthNShape {
  *
  * Stored through `IoSetKomer` in `Baser.wkas`.
  */
-export class WellKnownAuthN extends RawRecord implements WellKnownAuthNShape {
+export class WellKnownAuthN extends RawRecord<WellKnownAuthNShape>
+  implements WellKnownAuthNShape {
   declare url: string;
   declare dt: string;
 }

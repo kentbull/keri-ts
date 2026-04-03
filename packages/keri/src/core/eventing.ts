@@ -1,9 +1,19 @@
-import { Dater, Ilks, NumberPrimitive, Prefixer, Verfer } from "../../../cesr/mod.ts";
+import {
+  Dater,
+  Ilks,
+  NumberPrimitive,
+  Prefixer,
+  Verfer,
+} from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { type DispatchOrdinal, type KeriDispatchEnvelope, SourceSealCouple } from "./dispatch.ts";
+import {
+  type DispatchOrdinal,
+  type KeriDispatchEnvelope,
+  SourceSealCouple,
+} from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import {
   type EscrowInstruction,
@@ -13,6 +23,7 @@ import {
   type KeverTransition,
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
+import { KeyStateRecord } from "./records.ts";
 
 /** Normalize one dispatch ordinal into the number primitive expected by DB seal tuples. */
 function normalizeSealOrdinal(
@@ -142,7 +153,8 @@ export class Kevery {
         return {
           kind: "reject",
           code: "invalidSn",
-          message: `Duplicate inception event ${said} for ${pre} must keep sn=0.`,
+          message:
+            `Duplicate inception event ${said} for ${pre} must keep sn=0.`,
         };
       }
       if (kever.said === said) {
@@ -200,7 +212,11 @@ export class Kevery {
         this.kevers.set(transition.pre, kever);
         this.db.udes.rem([transition.pre, transition.said]);
         this.emitDecisionCues(decision.cues);
-        this.emitAcceptanceCues(kever, transition.log.serder, transition.log.local);
+        this.emitAcceptanceCues(
+          kever,
+          transition.log.serder,
+          transition.log.local,
+        );
         break;
       }
       case "duplicate": {
@@ -370,14 +386,19 @@ export class Kevery {
     init: KeverEventInit,
   ): KeverDecision {
     const serder = init.serder;
-    const storedWitnesses = this.db.wits.get([kever.pre, serder.said ?? ""]).map((
-      wit,
-    ) => wit.qb64);
+    const storedWitnesses = this.db.wits.get([kever.pre, serder.said ?? ""])
+      .map((
+        wit,
+      ) => wit.qb64);
     const existingSigs = new Set(
-      this.db.sigs.get([kever.pre, serder.said ?? ""]).map((siger) => siger.qb64),
+      this.db.sigs.get([kever.pre, serder.said ?? ""]).map((siger) =>
+        siger.qb64
+      ),
     );
     const existingWigs = new Set(
-      this.db.wigs.get([kever.pre, serder.said ?? ""]).map((wiger) => wiger.qb64),
+      this.db.wigs.get([kever.pre, serder.said ?? ""]).map((wiger) =>
+        wiger.qb64
+      ),
     );
     const verfers = serder.ilk === Ilks.icp || serder.ilk === Ilks.dip
       ? serder.verfers
@@ -419,7 +440,7 @@ export class Kevery {
     fn: number | null,
     dt: string,
   ): KeverTransition {
-    const state = { ...transition.state, dt };
+    const state = KeyStateRecord.fromDict({ ...transition.state, dt });
     if (fn !== null) {
       state.f = fn.toString(16);
     }
@@ -468,7 +489,8 @@ export class Kevery {
     if (!this.db.dtss.get([pre, said])) {
       this.db.dtss.put(
         [pre, said],
-        log.frc?.dater ?? new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+        log.frc?.dater ??
+          new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
       );
     }
     if (log.sigers.length > 0) {
@@ -502,7 +524,10 @@ export class Kevery {
   }
 
   /** Reconstruct one escrowed event envelope from durable event/sig state. */
-  private rehydrateEscrowEnvelope(pre: string, said: string): KeverEventEnvelope | null {
+  private rehydrateEscrowEnvelope(
+    pre: string,
+    said: string,
+  ): KeverEventEnvelope | null {
     const serder = this.db.getEvtSerder(pre, said);
     if (!serder) {
       return null;
@@ -524,15 +549,25 @@ export class Kevery {
     const entries = (() => {
       switch (kind) {
         case "ooo":
-          return [...this.db.ooes.getTopItemIter()] as Array<[string[], number, string]>;
+          return [...this.db.ooes.getTopItemIter()] as Array<
+            [string[], number, string]
+          >;
         case "partialSigs":
-          return [...this.db.pses.getTopItemIter()] as Array<[string[], number, string]>;
+          return [...this.db.pses.getTopItemIter()] as Array<
+            [string[], number, string]
+          >;
         case "partialWigs":
-          return [...this.db.pwes.getTopItemIter()] as Array<[string[], number, string]>;
+          return [...this.db.pwes.getTopItemIter()] as Array<
+            [string[], number, string]
+          >;
         case "partialDels":
-          return [...this.db.pdes.getTopItemIter()] as Array<[string[], number, string]>;
+          return [...this.db.pdes.getTopItemIter()] as Array<
+            [string[], number, string]
+          >;
         case "duplicitous":
-          return [...this.db.ldes.getTopItemIter()] as Array<[string[], number, string]>;
+          return [...this.db.ldes.getTopItemIter()] as Array<
+            [string[], number, string]
+          >;
         default:
           return [];
       }

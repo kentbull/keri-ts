@@ -130,10 +130,15 @@ replay/verification semantics.
     five-row missing surface (`RawRecord`, `OobiQueryRecord`, `DupKomer`,
     `BaserDoer`, `Broker`) is landed, and the real remaining gap is promotion of
     high-value `Partial` rows plus the still-generic `fetchTsgs` helper shape.
-31. Record-contract parity in TypeScript should use `FooRecord` for the
-    hydrated runtime class and `FooRecordShape` for the persisted plain-object
-    contract. Exported `*Like` aliases are drift because they encode a TS type
-    workaround, not a KERIpy concept.
+31. Record-contract parity in TypeScript should use `FooRecord` for the hydrated
+    runtime class and `FooRecordShape` for the persisted plain-object contract.
+    Exported `*Like` aliases are drift because they encode a TS type workaround,
+    not a KERIpy concept.
+32. `Komer`'s public TypeScript model should be record-class-centric:
+    `recordClass` plus one public generic for the hydrated record type.
+    Plain-object write convenience may exist at the mapper boundary, but public
+    `hydrate` / `normalize` seams and dual generic `T` / `TInput` APIs are
+    migration leakage rather than durable DB architecture.
 
 ## Scope Checklist
 
@@ -154,9 +159,9 @@ Use this doc for:
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
 2. Treat Gates B, C, D, and the honest Gate E bootstrap slice as closed enough
-   to move main attention to the Gate E continuation/Gate F bridge:
-   `/ksn`, `/introduce`, fuller cue materialization, receipt/query escrows, and
-   the init/incept runtime-integration work those later gates depend on.
+   to move main attention to the Gate E continuation/Gate F bridge: `/ksn`,
+   `/introduce`, fuller cue materialization, receipt/query escrows, and the
+   init/incept runtime-integration work those later gates depend on.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
@@ -170,8 +175,8 @@ Use this doc for:
 - What changed:
   - Landed the previously missing DB rows: `RawRecord`, `OobiQueryRecord`,
     `DupKomer`, `BaserDoer`, and `Broker`.
-  - Added direct unit coverage for record serialization/hydration,
-    `DupKomer`, `BaserDoer`, and `Broker`.
+  - Added direct unit coverage for record serialization/hydration, `DupKomer`,
+    `BaserDoer`, and `Broker`.
   - Updated the parity docs so those rows are no longer `Missing`; the symbol
     matrix now has `0` row-level `Missing` items and keeps `fetchTsgs` as a
     separate `Partial`.
@@ -180,10 +185,11 @@ Use this doc for:
 - Why:
   - The old "missing surface" was no longer the real blocker once the code
     landed. The real next phase is evidence-driven promotion of `Partial` rows,
-    and the record-layer naming needed to reflect the actual KERIpy mental
-    model instead of a TypeScript workaround.
+    and the record-layer naming needed to reflect the actual KERIpy mental model
+    instead of a TypeScript workaround.
 - Tests:
-  - Command: `deno test -A packages/keri/test/unit/core/records.test.ts packages/keri/test/unit/db/koming.test.ts packages/keri/test/unit/db/basing.test.ts packages/keri/test/unit/db/escrowing.test.ts`
+  - Command:
+    `deno test -A packages/keri/test/unit/core/records.test.ts packages/keri/test/unit/db/koming.test.ts packages/keri/test/unit/db/basing.test.ts packages/keri/test/unit/db/escrowing.test.ts`
   - Result: 15 passed, 0 failed
 - Contracts/plans touched:
   - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
@@ -1447,18 +1453,18 @@ Use this doc for:
     consuming `oobis.`.
   - Updated `packages/keri/src/app/habbing.ts` so `replyEndRole()` clones the
     endpoint AID's KEL into OOBI responses when the endpoint AID differs from
-    the controller AID; without that clone, remote witness/service
-    `/loc/scheme` replies fail verification.
+    the controller AID; without that clone, remote witness/service `/loc/scheme`
+    replies fail verification.
   - Added Gate E runtime coverage for controller and witness OOBIs, config
     preload via `iurls` / `durls` / `wurls`, and the protocol-only `tufa agent`
     host surface.
   - Promoted the Gate E interop harness scenario to a real executable lane with
-    live KERIpy parity evidence for `tufa loc add`, `tufa ends add`, and
-    mailbox OOBI generate/resolve.
+    live KERIpy parity evidence for `tufa loc add`, `tufa ends add`, and mailbox
+    OOBI generate/resolve.
   - Rewrote the Gate E planning/tracking docs so Gate E is marked complete only
     for the honest bootstrap/runtime slice, with `/ksn`, receipt-family
-    cue/escrow breadth, and richer `woobi.` continuation moved out of the Gate
-    E exit criteria.
+    cue/escrow breadth, and richer `woobi.` continuation moved out of the Gate E
+    exit criteria.
 - Why:
   - The repository had the worst possible combination of drift: it understated
     the landed CLI/runtime surface while still overstating the original broad
@@ -1469,11 +1475,9 @@ Use this doc for:
   - Command:
     `deno test -A packages/keri/test/integration/app/interop-gates-harness.test.ts --filter E-ENDS-OOBI-BOOTSTRAP`
   - Result: passed locally (`1 passed, 0 failed`)
-  - Command:
-    `deno test -A packages/keri/test/unit/app/gate-e-runtime.test.ts`
+  - Command: `deno test -A packages/keri/test/unit/app/gate-e-runtime.test.ts`
   - Result: passed locally (`7 passed, 0 failed`)
-  - Command:
-    `deno test -A packages/keri/test/integration/app/server.test.ts`
+  - Command: `deno test -A packages/keri/test/integration/app/server.test.ts`
   - Result: passed locally (`3 passed, 0 failed`)
   - Command:
     `deno test -A packages/keri/test/unit/app/reactor.test.ts packages/keri/test/unit/app/cue-runtime.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/eventing.test.ts packages/keri/test/unit/core/deck.test.ts`
@@ -1549,9 +1553,9 @@ Use this doc for:
   - Reframed the next real work as "Chunks 4-6 plus the enabling slices of
     Chunks 7-9" instead of pretending reply routing, introductions, and full
     escrow handling can be closed by touching only one chunk family.
-  - Captured the ownership split that matters for future ports:
-    `Revery` is the generic verifier/BADA/reply-escrow engine, `/ksn` belongs
-    with `Kevery`, and `/introduce` belongs with `Oobiery`.
+  - Captured the ownership split that matters for future ports: `Revery` is the
+    generic verifier/BADA/reply-escrow engine, `/ksn` belongs with `Kevery`, and
+    `/introduce` belongs with `Oobiery`.
   - Updated the init/incept reconciliation plan so `tufa init` now explicitly
     needs command-local runtime convergence for config-seeded OOBIs and
     `tufa incept` is no longer allowed to stay permanently runtime-blind when
@@ -1593,8 +1597,8 @@ Use this doc for:
 - Why:
   - The older DB planning docs were no longer trustworthy enough for sequencing
     future parity work. They overstated missing `subing.py` / `koming.py`
-    surface, misattributed record-contract rows to `basing.py`, and obscured
-    the real remaining blockers.
+    surface, misattributed record-contract rows to `basing.py`, and obscured the
+    real remaining blockers.
 - Tests:
   - Command: N/A (documentation audit against local source)
   - Result: N/A
@@ -1603,7 +1607,48 @@ Use this doc for:
   - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
 - Risks/TODO:
   - The refreshed matrix is intentionally conservative, so most landed rows are
-    still `Partial` until row-specific parity evidence is stronger. The
-    same-day follow-on later closed the previously missing five-row surface, so
-    the real remaining work is now continued `Partial` -> `Equivalent`
-    promotion with real evidence instead of symbol existence alone.
+    still `Partial` until row-specific parity evidence is stronger. The same-day
+    follow-on later closed the previously missing five-row surface, so the real
+    remaining work is now continued `Partial` -> `Equivalent` promotion with
+    real evidence instead of symbol existence alone.
+
+### 2026-04-03 - `Komer` Public API Was Tightened Around Record Classes
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/design-docs/db/db-architecture.md`
+- What changed:
+  - Reframed `Komer`, `IoSetKomer`, and `DupKomer` around a single public
+    record-class mental model using `recordClass` instead of exposing public
+    `hydrate` / `normalize` hooks or a two-generic `T` / `TInput` surface.
+  - Tightened `RawRecord` typing around a self-typed `fromDict(...)`
+    record-class contract so mapper reads return the concrete record class
+    without forcing exact constructor-shape compatibility into the public API.
+  - Ported keeper-side mapper records fully into that model: `PubLot`, `PreSit`,
+    `PrePrm`, and `PubSet` now behave as real record classes at the
+    mapper/runtime seam instead of letting hydrated records drift back into
+    plain-object mutation.
+  - Preserved KERIpy's `PrePrm.tier=''` stored-state allowance by widening that
+    one record field instead of lying to the type system with casts.
+- Why:
+  - The earlier API shape let migration pressure leak into the public mental
+    model. That made `Komer` read like a configurable transformer pipeline when
+    the durable abstraction is much simpler: one mapper owns one record class.
+- Tests:
+  - Command:
+    `deno test -A packages/keri/test/unit/core/records.test.ts packages/keri/test/unit/db/koming.test.ts packages/keri/test/unit/db/basing.test.ts packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/db/escrowing.test.ts`
+  - Result: type-check and substantial targeted runtime coverage passed far
+    enough to validate the refactor shape, but full completion was blocked by a
+    recurring Deno macOS arm64 N-API panic
+    (`Cannot remove cleanup hook which
+    was not registered`) during
+    LMDB-backed test cleanup. This did not present as a code-level assertion
+    failure in the Komer/record-path changes.
+- Risks/TODO:
+  - Verification remains partly constrained by the current Deno + LMDB runtime
+    panic, so future work should keep distinguishing behavioral failures from
+    environment cleanup failures.
+  - The follow-on phase is still the same parity work: promote high-value
+    `Partial` rows to `Equivalent`, especially the `Komer` family rows this
+    refactor clarified.

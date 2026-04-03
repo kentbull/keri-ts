@@ -27,10 +27,16 @@ fi
 cd "${PACKAGE_DIR}"
 
 COMMON_ARGS=(deno test --allow-all --unstable-ffi)
+DB_FAST_ARGS=(deno test --allow-all)
 
 run_parallel_group() {
   echo "==> Running parallel-safe group: $*"
   "${COMMON_ARGS[@]}" --parallel "$@"
+}
+
+run_db_fast_parallel_group() {
+  echo "==> Running db-fast parallel-safe group: $*"
+  "${DB_FAST_ARGS[@]}" --parallel "$@"
 }
 
 run_isolated_files() {
@@ -51,9 +57,31 @@ run_quality_groups() {
   "$0" interop-gates-c
 }
 
+run_db_fast_groups() {
+  echo "==> Running db-fast core group"
+  run_db_fast_parallel_group \
+    test/unit/db/core/path-manager.test.ts \
+    test/unit/db/core/keys.test.ts \
+    test/unit/db/core/lmdber-core-parity.test.ts \
+    test/unit/db/core/lmdber-dup.test.ts \
+    test/unit/db/core/lmdber-helpers.test.ts \
+    test/unit/db/core/lmdber-ioset.test.ts \
+    test/unit/db/core/lmdber-lifecycle.test.ts \
+    test/unit/db/core/lmdber-on.test.ts \
+    test/unit/db/core/lmdber-plain.test.ts
+
+  echo "==> Running db-fast wrapper group"
+  run_db_fast_parallel_group \
+    test/unit/db/basing.test.ts \
+    test/unit/db/escrowing.test.ts \
+    test/unit/db/keeping.test.ts \
+    test/unit/db/koming.test.ts \
+    test/unit/db/subing.test.ts
+}
+
 case "${GROUP}" in
   db-fast)
-    run_parallel_group test/unit/db
+    run_db_fast_groups
     ;;
   app-light)
     run_isolated_files \
