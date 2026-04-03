@@ -436,6 +436,17 @@ This keeps context focused and avoids long-thread drift.
     orchestration layer over creators, keeper state, AEID policy, and replay.
     When those responsibilities blur, suite drift and keeper-state drift follow
     almost immediately.
+83. `Manager.sign({ pre, path })` is now a keeper-addressing API, not a raw
+    derivation-path API. `path` means `(ridx, kidx)` for one managed key lot;
+    `salty` managers reconstruct signers from persisted keeper parameters and
+    must validate them against stored pubs, while `randy` managers use the same
+    address only to select the stored signer set. Also: persisted keeper state
+    does not retain `temp=true`, so derived salty signing is only reliable for
+    normal persisted sequences.
+84. The architectural rationale for derived-path signing is now captured in
+    `docs/adr/adr-0006-manager-derived-path-signing.md`: treat `Manager.sign({ pre, path })` as keeper-state addressing, preserve KERIpy precedence, do
+    not invent deterministic `randy` derivation, and do not add new LMDB state
+    just to make the branch work.
 
 ## New Thread Kickoff Template
 

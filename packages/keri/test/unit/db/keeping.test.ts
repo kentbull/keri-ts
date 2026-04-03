@@ -10,6 +10,10 @@ function keeperPubsKey(pre: string, ridx: number): string {
   return `${pre}.${ridx.toString(16).padStart(32, "0")}`;
 }
 
+function signatureQb64s(signatures: Array<Siger | Cigar>): string[] {
+  return signatures.map((signature) => signature.qb64);
+}
+
 Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () => {
   await run(function*() {
     const keeper = yield* createKeeper({
@@ -141,6 +145,406 @@ Deno.test("app/keeping - Manager.sign preserves overload behavior for indexed an
       assertInstanceOf(indexed[0], Siger);
       assertInstanceOf(unindexed[0], Cigar);
       assertEquals(indexed[0]?.index, 0);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derives current salty signers from pre and current path metadata", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-derived-current-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 3,
+        ncount: 2,
+        stem: "phlegm",
+        transferable: true,
+        temp: false,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("derived-current");
+
+      const derivedDefault = manager.sign(ser, { pre, indexed: true });
+      const derivedExplicit = manager.sign(ser, {
+        pre,
+        path: { ridx: sit.new.ridx, kidx: sit.new.kidx },
+        indexed: true,
+      });
+      const explicit = manager.sign(ser, {
+        pubs: sit.new.pubs,
+        indexed: true,
+      });
+
+      assertEquals(signatureQb64s(derivedDefault), signatureQb64s(explicit));
+      assertEquals(signatureQb64s(derivedExplicit), signatureQb64s(explicit));
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derives next-lot salty signers from explicit path metadata", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-derived-next-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 2,
+        stem: "phlegm",
+        transferable: true,
+        temp: false,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("derived-next");
+      const sigers = manager.sign(ser, {
+        pre,
+        path: { ridx: sit.nxt.ridx, kidx: sit.nxt.kidx },
+        indexed: true,
+      });
+
+      assertEquals(sigers.length, sit.nxt.pubs.length);
+      assertEquals(sigers.map((siger) => siger.verfer?.qb64), sit.nxt.pubs);
+      for (const [idx, siger] of sigers.entries()) {
+        assertEquals(new Verfer({ qb64: sit.nxt.pubs[idx] }).verify(siger.raw, ser), true);
+      }
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derived-path indices select and order salty signers for indexed and unindexed output", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-derived-indices-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 4,
+        ncount: 1,
+        stem: "phlegm",
+        transferable: true,
+        temp: false,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("derived-indices");
+
+      const indexedSelection = [3, 1];
+      const indexed = manager.sign(ser, {
+        pre,
+        indexed: true,
+        indices: indexedSelection,
+      });
+      const explicitIndexed = manager.sign(ser, {
+        pubs: indexedSelection.map((index) => sit.new.pubs[index]),
+        indexed: true,
+        indices: indexedSelection,
+      });
+
+      assertEquals(indexed.map((siger) => siger.index), indexedSelection);
+      assertEquals(indexed.map((siger) => siger.verfer?.qb64), indexedSelection.map((index) => sit.new.pubs[index]));
+      assertEquals(signatureQb64s(indexed), signatureQb64s(explicitIndexed));
+
+      const unindexedSelection = [2, 0];
+      const unindexed = manager.sign(ser, {
+        pre,
+        indexed: false,
+        indices: unindexedSelection,
+      });
+
+      assertEquals(unindexed.length, unindexedSelection.length);
+      for (const [offset, cigar] of unindexed.entries()) {
+        assertEquals(
+          new Verfer({ qb64: sit.new.pubs[unindexedSelection[offset]] }).verify(cigar.raw, ser),
+          true,
+        );
+      }
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derived-path ondices match explicit pubs semantics", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-derived-ondices-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 4,
+        ncount: 1,
+        stem: "phlegm",
+        transferable: true,
+        temp: false,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("derived-ondices");
+      const indices = [3, 2, 1, 0];
+      const ondices = [2, null, null, 0];
+
+      const derived = manager.sign(ser, {
+        pre,
+        indexed: true,
+        indices,
+        ondices,
+      });
+      const explicit = manager.sign(ser, {
+        pubs: indices.map((index) => sit.new.pubs[index]),
+        indexed: true,
+        indices,
+        ondices,
+      });
+
+      assertEquals(
+        derived.map((siger) => ({ code: siger.code, index: siger.index, ondex: siger.ondex })),
+        explicit.map((siger) => ({ code: siger.code, index: siger.index, ondex: siger.ondex })),
+      );
+      assertEquals(signatureQb64s(derived), signatureQb64s(explicit));
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign resolves randy prefixes by addressed pub lots", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-derived-randy-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        algo: Algos.randy,
+      });
+      const [verfers] = manager.incept({
+        icount: 2,
+        ncount: 2,
+        algo: Algos.randy,
+        rooted: false,
+        transferable: true,
+        temp: true,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("derived-randy");
+
+      const current = manager.sign(ser, { pre, indexed: true });
+      const currentExplicit = manager.sign(ser, { pubs: sit.new.pubs, indexed: true });
+      const next = manager.sign(ser, {
+        pre,
+        path: { ridx: sit.nxt.ridx, kidx: sit.nxt.kidx },
+        indexed: true,
+      });
+      const nextExplicit = manager.sign(ser, { pubs: sit.nxt.pubs, indexed: true });
+
+      assertEquals(signatureQb64s(current), signatureQb64s(currentExplicit));
+      assertEquals(signatureQb64s(next), signatureQb64s(nextExplicit));
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derives historical salty lots from pubs storage when no signer secrets remain", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-derived-history-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        stem: "phlegm",
+        transferable: true,
+        temp: false,
+      });
+      const pre = verfers[0].qb64;
+      const ser = new TextEncoder().encode("derived-history");
+
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
+
+      assertEquals(keeper.pris.get(verfers[0].qb64), null);
+
+      const historical = manager.sign(ser, {
+        pre,
+        path: { ridx: 0, kidx: 0 },
+        indexed: true,
+      });
+      const historicalPub = keeper.getPubs(keeperPubsKey(pre, 0))!.pubs[0];
+
+      assertEquals(historical[0].verfer?.qb64, historicalPub);
+      assertEquals(new Verfer({ qb64: historicalPub }).verify(historical[0].raw, ser), true);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign preserves branch precedence for pubs then verfers then pre", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-sign-precedence-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        stem: "phlegm",
+        transferable: true,
+        temp: false,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("sign-precedence");
+      const nextVerfer = new Verfer({ qb64: sit.nxt.pubs[0] });
+
+      const pubsPreferred = manager.sign(ser, {
+        pubs: sit.new.pubs,
+        verfers: [nextVerfer],
+        pre,
+        path: { ridx: sit.nxt.ridx, kidx: sit.nxt.kidx },
+        indexed: true,
+      });
+      const pubsOnly = manager.sign(ser, { pubs: sit.new.pubs, indexed: true });
+      const verfersPreferred = manager.sign(ser, {
+        verfers: [nextVerfer],
+        pre,
+        path: { ridx: sit.new.ridx, kidx: sit.new.kidx },
+        indexed: true,
+      });
+      const verfersOnly = manager.sign(ser, { verfers: [nextVerfer], indexed: true });
+
+      assertEquals(signatureQb64s(pubsPreferred), signatureQb64s(pubsOnly));
+      assertEquals(signatureQb64s(verfersPreferred), signatureQb64s(verfersOnly));
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derived-path rejects invalid indices and mismatched known kidx", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-sign-derived-errors-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 2,
+        ncount: 1,
+        stem: "phlegm",
+        transferable: true,
+        temp: true,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre)!;
+      const ser = new TextEncoder().encode("derived-errors");
+
+      assertThrows(
+        () => manager.sign(ser, { pre, indexed: true, indices: [2] }),
+        Error,
+        "out of range",
+      );
+      assertThrows(
+        () =>
+          manager.sign(ser, {
+            pre,
+            path: { ridx: sit.new.ridx, kidx: sit.new.kidx + 1 },
+            indexed: true,
+          }),
+        Error,
+        "Invalid signing path kidx",
+      );
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign derived-path fails when historical pubs are missing or salty state is tampered", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-sign-derived-missing-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        stem: "phlegm",
+        transferable: true,
+        temp: true,
+      });
+      const pre = verfers[0].qb64;
+      const ser = new TextEncoder().encode("derived-missing");
+
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
+
+      keeper.pubs.rem(keeperPubsKey(pre, 0));
+      assertThrows(
+        () => manager.sign(ser, { pre, path: { ridx: 0, kidx: 0 }, indexed: true }),
+        Error,
+        "Missing pubs",
+      );
+
+      const prm = keeper.getPrms(pre)!;
+      assertEquals(keeper.pinPrms(pre, { ...prm, stem: "tampered" }), true);
+      assertThrows(
+        () => manager.sign(ser, { pre, indexed: true }),
+        Error,
+        "Derived signer mismatch",
+      );
     } finally {
       yield* keeper.close(true);
     }

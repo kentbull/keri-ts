@@ -111,6 +111,23 @@ export function verferCodeForSignerCode(
   }
 }
 
+/** Project one verifier code back to the signer seed code for the same suite. */
+export function signerCodeForVerferCode(verferCode: string): string {
+  assertSupportedVerferCode(verferCode);
+
+  switch (verferCode) {
+    case MtrDex.Ed25519:
+    case MtrDex.Ed25519N:
+      return MtrDex.Ed25519_Seed;
+    case MtrDex.ECDSA_256k1:
+    case MtrDex.ECDSA_256k1N:
+      return MtrDex.ECDSA_256k1_Seed;
+    case MtrDex.ECDSA_256r1:
+    case MtrDex.ECDSA_256r1N:
+      return MtrDex.ECDSA_256r1_Seed;
+  }
+}
+
 /** Project one verifier code back to transferability semantics. */
 export function transferableForVerferCode(verferCode: string): boolean {
   assertSupportedVerferCode(verferCode);

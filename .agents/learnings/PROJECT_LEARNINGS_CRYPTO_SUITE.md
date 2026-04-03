@@ -186,3 +186,6 @@ Use this doc for:
   - `Encrypter` / `Decrypter` / `Cipher` remain separate from the signer-model
     cleanup; do not overread this milestone as "all crypto primitives now own
     their whole workflow."
+  - The internal suite seam now also needs the inverse verifier->signer mapping
+    used by `Manager.sign({ pre, path })`; keep that table private to CESR so
+    app code never reintroduces hard-coded suite branching.

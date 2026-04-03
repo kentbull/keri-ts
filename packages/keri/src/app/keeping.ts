@@ -17,6 +17,7 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
+import { signerCodeForVerferCode } from "../../../cesr/src/primitives/signature-suite.ts";
 import {
   decryptCipherQb64b,
   decryptSaltQb64,
@@ -27,7 +28,7 @@ import {
   makeEncrypterFromAeid,
   seedMatchesAeid,
 } from "../core/keeper-crypto.ts";
-import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
+import { Keeper, type PrePrm, type PreSit, type PubLot } from "../db/keeping.ts";
 
 /**
  * Root key-creation strategy selectors stored in keeper globals.
@@ -95,6 +96,25 @@ export interface ManagerRotateArgs {
   erase?: boolean;
 }
 
+/**
+ * Manager-level key-lot address metadata inferred from KERIpy's documented
+ * `Manager.sign(..., pre=..., path=...)` intent.
+ *
+ * This is not a raw salty derivation path string. It is the tuple part
+ * `(ridx, kidx)` used to identify one key list inside one managed prefix:
+ * - `ridx` is the optional rotation index of the establishment event that uses
+ *   the addressed public-key set
+ * - `kidx` is the required zeroth key index of that key list in the full key
+ *   sequence
+ *
+ * The manager uses `pre` to look up keeper state and, for `salty`, reconstructs
+ * the fully derived signer paths from the stored stem/pidx plus this metadata.
+ */
+export interface SigningPath {
+  ridx?: number;
+  kidx: number;
+}
+
 export interface ManagerSignArgs {
   pubs?: string[];
   verfers?: Verfer[];
@@ -102,7 +122,7 @@ export interface ManagerSignArgs {
   indices?: number[];
   ondices?: Array<number | null | undefined>;
   pre?: string;
-  path?: string;
+  path?: SigningPath;
 }
 
 export interface ManagerDecryptArgs {
@@ -148,6 +168,22 @@ interface SignerMaterial {
   verfer: Verfer;
 }
 
+interface AddressedSigningLot {
+  pubs: string[];
+  ridx: number;
+  kidx: number;
+}
+
+interface SelectedSigningKey {
+  pub: string;
+  offset: number;
+}
+
+interface ResolvedSigningRequest {
+  signers: Signer[];
+  indices?: number[];
+}
+
 function parseQb64Raw(qb64: string): Uint8Array {
   return parseMatter(b(qb64), "txt").raw;
 }
@@ -155,6 +191,16 @@ function parseQb64Raw(qb64: string): Uint8Array {
 function randomSaltQb64(): string {
   const raw = crypto.getRandomValues(new Uint8Array(16));
   return new Salter({ code: MtrDex.Salt_128, raw }).qb64;
+}
+
+function isWholeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function assertSigningIndex(index: unknown): asserts index is number {
+  if (!isWholeNumber(index)) {
+    throw new Error(`Invalid signing index = ${index}, not whole number.`);
+  }
 }
 
 /**
@@ -337,12 +383,16 @@ function resolveSuiteCodes(
     return [...codes];
   }
   if ((!allowZero && count <= 0) || (allowZero && count < 0)) {
-    throw new Error(`Invalid ${label}=${count} must be ${allowZero ? ">=" : ">"} 0.`);
+    throw new Error(
+      `Invalid ${label}=${count} must be ${allowZero ? ">=" : ">"} 0.`,
+    );
   }
   return Array.from({ length: count }, () => code);
 }
 
-function emptyLot(dt = ""): { pubs: string[]; ridx: number; kidx: number; dt: string } {
+function emptyLot(
+  dt = "",
+): { pubs: string[]; ridx: number; kidx: number; dt: string } {
   return { pubs: [], ridx: 0, kidx: 0, dt };
 }
 
@@ -609,7 +659,10 @@ export class Manager {
   }
 
   private getSigners(
-    { pubs, verfers }: Pick<ManagerSignArgs | ManagerDecryptArgs, "pubs" | "verfers">,
+    { pubs, verfers }: Pick<
+      ManagerSignArgs | ManagerDecryptArgs,
+      "pubs" | "verfers"
+    >,
   ): Signer[] {
     if (pubs && pubs.length > 0) {
       return pubs.map((pub) => this.getSignerByPub(pub));
@@ -620,12 +673,185 @@ export class Manager {
     return [];
   }
 
+  private knownSigningLot(ps: PreSit, ridx: number): PubLot | null {
+    // Prefer the current lot first so inception-state `old/new` ridx overlap
+    // still resolves `pre` defaults to the live signing keys.
+    for (const lot of [ps.new, ps.nxt, ps.old]) {
+      if (lot.ridx === ridx) {
+        return lot;
+      }
+    }
+    return null;
+  }
+
+  private resolveSigningPath(
+    pre: string,
+    ps: PreSit,
+    path?: SigningPath,
+  ): AddressedSigningLot {
+    // KERIpy's documented default is "the current .new key info" when no path
+    // is supplied. In the public-key-lot model that means the current lot's
+    // `(ridx, kidx)` pair.
+    const ridx = path?.ridx ?? ps.new.ridx;
+    const kidx = path?.kidx ?? ps.new.kidx;
+
+    if (!isWholeNumber(ridx)) {
+      throw new Error(`Invalid signing path ridx=${ridx}, not whole number.`);
+    }
+    if (!isWholeNumber(kidx)) {
+      throw new Error(`Invalid signing path kidx=${kidx}, not whole number.`);
+    }
+
+    const lot = this.knownSigningLot(ps, ridx);
+    if (lot) {
+      if (kidx !== lot.kidx) {
+        throw new Error(
+          `Invalid signing path kidx=${kidx} for pre=${pre} ri=${ridx}; expected ${lot.kidx}.`,
+        );
+      }
+      return {
+        pubs: [...lot.pubs],
+        ridx: lot.ridx,
+        kidx: lot.kidx,
+      };
+    }
+
+    const pubset = this.ks.getPubs(pubsKey(pre, ridx));
+    if (!pubset) {
+      throw new Error(`Missing pubs for pre=${pre} ri=${ridx}.`);
+    }
+    return {
+      pubs: [...pubset.pubs],
+      ridx,
+      kidx,
+    };
+  }
+
+  private selectSigningKeys(
+    pre: string,
+    lot: AddressedSigningLot,
+    indices?: number[],
+  ): SelectedSigningKey[] {
+    // For the derived `pre/path` branch, KERIpy's stub comments imply that the
+    // supplied indices offset from the zeroth `kidx` of the addressed key list.
+    // In TS we already have the concrete public-key lot, so the same rule is
+    // implemented by selecting offsets from that stored list in caller order.
+    if (!indices) {
+      return lot.pubs.map((pub, offset) => ({ pub, offset }));
+    }
+
+    return indices.map((index) => {
+      assertSigningIndex(index);
+      if (index >= lot.pubs.length) {
+        throw new Error(
+          `Invalid signing index = ${index}, out of range for pre=${pre} ri=${lot.ridx}.`,
+        );
+      }
+      return {
+        pub: lot.pubs[index],
+        offset: index,
+      };
+    });
+  }
+
+  private deriveSaltySigningSigners(
+    pre: string,
+    pp: PrePrm,
+    lot: AddressedSigningLot,
+    keys: SelectedSigningKey[],
+  ): Signer[] {
+    if (!pp.salt) {
+      throw new Error(`Missing salty salt for pre=${pre}.`);
+    }
+
+    const creator = new Creatory(Algos.salty).make({
+      salt: this.decryptPreSalt(pp.salt),
+      stem: pp.stem,
+      tier: pp.tier,
+    });
+
+    return keys.map(({ pub, offset }) => {
+      const verfer = new Verfer({ qb64: pub });
+      const signer = creator.create({
+        codes: [signerCodeForVerferCode(verfer.code)],
+        pidx: pp.pidx,
+        ridx: lot.ridx,
+        kidx: lot.kidx + offset,
+        transferable: verfer.transferable,
+        // Persisted keeper parameters do not retain temp/stretch mode, so
+        // derived signing must use the normal persisted-sequence behavior.
+        temp: false,
+      })[0];
+
+      if (!signer || signer.verfer.qb64 !== pub) {
+        throw new Error(
+          `Derived signer mismatch for pre=${pre} ri=${lot.ridx} kidx=${lot.kidx + offset}.`,
+        );
+      }
+      return signer;
+    });
+  }
+
+  private resolveSigningRequest(args: ManagerSignArgs): ResolvedSigningRequest {
+    // Preserve KERIpy branch precedence exactly: explicit pubs first, then
+    // explicit verfers, then managed prefix/path lookup.
+    if (args.pubs && args.pubs.length > 0) {
+      return {
+        signers: this.getSigners({ pubs: args.pubs }),
+        indices: args.indices,
+      };
+    }
+
+    if (args.verfers && args.verfers.length > 0) {
+      return {
+        signers: this.getSigners({ verfers: args.verfers }),
+        indices: args.indices,
+      };
+    }
+
+    if (!args.pre) {
+      throw new Error("pubs or verfers or pre required");
+    }
+
+    const pp = this.ks.getPrms(args.pre);
+    if (!pp) {
+      throw new Error(`Attempt to sign nonexistent pre=${args.pre}.`);
+    }
+    const ps = this.ks.getSits(args.pre);
+    if (!ps) {
+      throw new Error(`Attempt to sign nonexistent pre=${args.pre}.`);
+    }
+
+    const lot = this.resolveSigningPath(args.pre, ps, args.path);
+    const keys = this.selectSigningKeys(args.pre, lot, args.indices);
+
+    switch (pp.algo as Algos) {
+      case Algos.salty:
+        return {
+          signers: this.deriveSaltySigningSigners(args.pre, pp, lot, keys),
+          indices: args.indices,
+        };
+      case Algos.randy:
+        // Randy has no deterministic path re-derivation seam. The addressed
+        // `(ridx, kidx)` lot only tells us which stored signers to load.
+        return {
+          signers: keys.map(({ pub }) => this.getSignerByPub(pub)),
+          indices: args.indices,
+        };
+      case Algos.group:
+      case Algos.extern:
+        throw new Error(`Unsupported derived signing algorithm =${pp.algo}.`);
+    }
+  }
+
   private decryptPreSalt(salt: string): string {
     if (!salt) {
       return "";
     }
     const decrypter = this.signerDecrypter();
-    return decrypter ? decryptSaltQb64(salt, decrypter) : new Salter({ qb64: salt }).qb64;
+    return decrypter
+      ? decryptSaltQb64(salt, decrypter)
+      : new Salter({ qb64: salt }).qb64;
   }
 
   /**
@@ -729,7 +955,9 @@ export class Manager {
 
     const opre = verfers[0]?.qb64;
     if (!opre) {
-      throw new Error("Invalid incept configuration produced no current verfers.");
+      throw new Error(
+        "Invalid incept configuration produced no current verfers.",
+      );
     }
     if (!this.ks.putPres(opre, opre)) {
       throw new Error(`Already incepted pre=${opre}.`);
@@ -766,7 +994,9 @@ export class Manager {
 
     const oldPrm = this.ks.getPrms(oldPre);
     if (!oldPrm) {
-      throw new Error(`Nonexistent old prm for pre=${oldPre}, nothing to move.`);
+      throw new Error(
+        `Nonexistent old prm for pre=${oldPre}, nothing to move.`,
+      );
     }
     if (this.ks.getPrms(newPre) !== null) {
       throw new Error(`Preexistent new prm for pre=${newPre} may not clobber.`);
@@ -774,19 +1004,25 @@ export class Manager {
 
     const oldSit = this.ks.getSits(oldPre);
     if (!oldSit) {
-      throw new Error(`Nonexistent old sit for pre=${oldPre}, nothing to move.`);
+      throw new Error(
+        `Nonexistent old sit for pre=${oldPre}, nothing to move.`,
+      );
     }
     if (this.ks.getSits(newPre) !== null) {
       throw new Error(`Preexistent new sit for pre=${newPre} may not clobber.`);
     }
 
     if (!this.ks.putPrms(newPre, oldPrm)) {
-      throw new Error(`Failed moving prm from old pre=${oldPre} to new pre=${newPre}.`);
+      throw new Error(
+        `Failed moving prm from old pre=${oldPre} to new pre=${newPre}.`,
+      );
     }
     this.ks.prms.rem(oldPre);
 
     if (!this.ks.putSits(newPre, oldSit)) {
-      throw new Error(`Failed moving sit from old pre=${oldPre} to new pre=${newPre}.`);
+      throw new Error(
+        `Failed moving sit from old pre=${oldPre} to new pre=${newPre}.`,
+      );
     }
     this.ks.sits.rem(oldPre);
 
@@ -797,13 +1033,17 @@ export class Manager {
         break;
       }
       if (!this.ks.putPubs(pubsKey(newPre, ri), pubset)) {
-        throw new Error(`Failed moving pubs at pre=${oldPre} ri=${ri} to new pre=${newPre}.`);
+        throw new Error(
+          `Failed moving pubs at pre=${oldPre} ri=${ri} to new pre=${newPre}.`,
+        );
       }
       ri += 1;
     }
 
     if (!this.ks.pinPres(oldPre, newPre)) {
-      throw new Error(`Failed assigning new pre=${newPre} to old pre=${oldPre}.`);
+      throw new Error(
+        `Failed assigning new pre=${newPre} to old pre=${oldPre}.`,
+      );
     }
     if (!this.ks.putPres(newPre, newPre)) {
       throw new Error(`Failed assigning new pre=${newPre}.`);
@@ -891,6 +1131,31 @@ export class Manager {
     return [verfers, digers];
   }
 
+  /**
+   * Sign through either explicit stored signers (`pubs` / `verfers`) or one
+   * managed keeper prefix (`pre` plus optional key-list path metadata).
+   *
+   * KERIpy parity note:
+   * - the `pre/path` branch is inferred from KERIpy's documented `Manager.sign`
+   *   intent because upstream left that branch stubbed
+   * - `path` is not a raw salty derivation string; it identifies one key list by
+   *   `(ridx, kidx)` so the manager can resolve or reconstruct the correct signers
+   *
+   * Maintainer warning:
+   * - derived salty signing depends only on persisted keeper parameters
+   * - temporary stretch mode (`temp=true`) is not part of `PrePrm`, so this path
+   *   is intended for normal persisted key sequences rather than temp-only tests
+   *
+   * Signature-index semantics adapted from KERIpy:
+   * - explicit `pubs` / `verfers` keep the usual coherent-list behavior:
+   *   `indices` set each returned `Siger.index`, and `ondices` set each
+   *   returned `Siger.ondex`
+   * - derived `pre/path` signing adds one more meaning hinted at by KERIpy's
+   *   stubbed branch: `indices` also select offsets from the addressed key lot,
+   *   in caller order, before those same values are emitted as `Siger.index`
+   * - when `path` is omitted, the addressed key lot defaults to the current
+   *   `.new` lot for `pre`
+   */
   sign(ser: Uint8Array, pubs: string[], indexed: true): Siger[];
   sign(ser: Uint8Array, pubs: string[], indexed?: false): Cigar[];
   sign(ser: Uint8Array, args: ManagerSignArgs & { indexed: true }): Siger[];
@@ -903,18 +1168,11 @@ export class Manager {
     const args = Array.isArray(pubsOrArgs)
       ? { pubs: pubsOrArgs, indexed }
       : pubsOrArgs;
-    const signers = this.getSigners(args);
+    const { signers, indices } = this.resolveSigningRequest(args);
 
-    if (!signers.length) {
-      if (args.pre || args.path) {
-        throw new Error("Manager.sign derived-path signing is not implemented yet.");
-      }
-      throw new Error("pubs or verfers or pre required");
-    }
-
-    if (args.indices && args.indices.length !== signers.length) {
+    if (indices && indices.length !== signers.length) {
       throw new Error(
-        `Mismatch indices length=${args.indices.length} and resultant signers length=${signers.length}`,
+        `Mismatch indices length=${indices.length} and resultant signers length=${signers.length}`,
       );
     }
     if (args.ondices && args.ondices.length !== signers.length) {
@@ -928,12 +1186,8 @@ export class Manager {
     }
 
     return signers.map((signer, idx) => {
-      const index = args.indices ? args.indices[idx] : idx;
-      if (
-        typeof index !== "number" || !Number.isInteger(index) || index < 0
-      ) {
-        throw new Error(`Invalid signing index = ${index}, not whole number.`);
-      }
+      const index = indices ? indices[idx] : idx;
+      assertSigningIndex(index);
 
       if (!args.ondices) {
         return signer.sign(ser, { index, only: false, ondex: index }) as Siger;
@@ -1065,9 +1319,7 @@ export class Manager {
       this.ks.putPubs(pubsKey(pre, ridx), { pubs });
 
       if (ridx === Math.max(iridx - 1, 0)) {
-        const old = iridx === 0
-          ? emptyLot()
-          : { pubs, ridx, kidx, dt };
+        const old = iridx === 0 ? emptyLot() : { pubs, ridx, kidx, dt };
         const ps: PreSit = {
           old,
           new: emptyLot(),
@@ -1166,7 +1418,9 @@ export class Manager {
       const csize = ps.new.pubs.length;
       const pubset = this.ks.getPubs(pubsKey(pre, ridx + 1));
       if (!pubset) {
-        throw new RangeError(`Invalid replay attempt of pre=${pre} at ridx=${ridx}.`);
+        throw new RangeError(
+          `Invalid replay attempt of pre=${pre} at ridx=${ridx}.`,
+        );
       }
       ps.nxt = {
         pubs: pubset.pubs,

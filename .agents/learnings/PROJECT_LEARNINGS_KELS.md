@@ -417,9 +417,48 @@ Use this doc for:
   - `packages/keri/src/db/subing.ts`
   - `packages/keri/src/core/keeper-crypto.ts`
 - Risks/TODO:
-  - `Manager.sign({ pre, path })` still rejects derived-path signing for now;
-    the lifecycle model is ported, but that specific KERIpy seam is still
-    intentionally unsupported until there is a real caller and parity test.
+  - `Manager.sign({ pre, path })` now follows KERIpy's documented intent rather
+    than rejecting the branch: `path` addresses one managed key lot by
+    `(ridx, kidx)`, `salty` managers re-derive and validate signers against the
+    stored pubs, and `randy` managers use the same address only to load stored
+    signer secrets from `pris.`.
+  - Persisted keeper state still does not store `temp=true`, so derived salty
+    signing should be treated as a persisted-sequence seam, not as a guarantee
+    for ephemeral test derivations.
+
+### 2026-04-02 - Derived-Path Signing Landed On `Manager.sign({ pre, path })`
+
+- Topic docs updated:
+  - `docs/adr/adr-0006-manager-derived-path-signing.md`
+- What changed:
+  - Added `SigningPath { ridx?: number; kidx: number }` in
+    `packages/keri/src/app/keeping.ts` and taught `Manager.sign(...)` to resolve
+    keeper-managed signer lots by KERIpy-style `(ridx, kidx)` metadata instead
+    of rejecting the `pre/path` branch.
+  - Preserved KERIpy branch precedence exactly: explicit `pubs` win, then
+    explicit `verfers`, then managed `pre/path`.
+  - Implemented `salty` derived signing by reconstructing signers from
+    persisted keeper parameters and validating each derived signer against the
+    stored public key before signing.
+  - Implemented `randy` derived signing as addressed pub-lot resolution plus
+    lookup of stored signer secrets from `pris.`; no fake deterministic
+    derivation was added where none exists.
+- Why:
+  - The real mental model is that manager-level `path` is keeper-state
+    addressing, not a raw derivation-string passthrough. Without that split,
+    `Manager.sign({ pre, path })` stays ambiguous and future callers will
+    quietly depend on the wrong abstraction.
+  - KERIpy leaves this branch stubbed, but its docstring plus `SaltyCreator`
+    storage patterns make the intended semantics recoverable enough to port.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/db/subing.test.ts packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/app/habbing.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
+  - Result: passed locally (`56 passed, 0 failed`)
+- Failure conditions:
+  - Known `ps.old/new/nxt` lots must match the supplied `kidx`; only historical
+    `pubs.`-only lots trust caller-supplied `kidx`.
+  - Derived `salty` signing depends on persisted keeper parameters only, so
+    `temp=true` sequences are not reconstructible from keeper state alone.
 
 ### 2026-03-17 - Inception Construction Moved Onto Shared `SerderKERI` Semantics
 

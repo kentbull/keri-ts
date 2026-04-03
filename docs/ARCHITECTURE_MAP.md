@@ -92,6 +92,10 @@ internal-only implementation areas so refactors can preserve stable contracts.
   call `Verfer.verify()`, and higher-layer signing should flow through
   `Signer.sign()` or `Manager` orchestration rather than importing concrete
   curve code or suite helpers directly.
+- Treat `Manager.sign({ pre, path })` as keeper-state addressing, not as a raw
+  derivation-string passthrough. `path` identifies a managed key lot by
+  `(ridx, kidx)`; `salty` managers may reconstruct it from persisted derivation
+  parameters, while `randy` managers can only resolve it back to stored signers.
 
 ## Ownership Heuristics
 
