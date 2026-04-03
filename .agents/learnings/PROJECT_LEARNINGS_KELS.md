@@ -460,6 +460,23 @@ Use this doc for:
   - Derived `salty` signing depends on persisted keeper parameters only, so
     `temp=true` sequences are not reconstructible from keeper state alone.
 
+### 2026-04-02 - `Signator` Now Matches KERIpy's Detached Signature Surface
+
+- What changed:
+  - `packages/keri/src/app/habbing.ts` now exposes `Signator.verfer`, returns a
+    hydrated `Cigar` from `Signator.sign(...)`, and verifies through
+    `Signator.verfer.verify(cigar.raw, ser)` instead of reconstructing verifier
+    state or using `qb64` text shims.
+- Why:
+  - The old TS shape was bootstrap drift: it rebuilt `Verfer` from `pre` on
+    demand and returned `qb64` text where KERIpy returns a detached `Cigar`.
+    That worked only because the signator is non-transferable, not because it
+    was the right abstraction.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/app/habbing.test.ts`
+  - Result: passed locally (`7 passed, 0 failed`)
+
 ### 2026-03-17 - Inception Construction Moved Onto Shared `SerderKERI` Semantics
 
 - `Hab.make()` now constructs inception events through `SerderKERI` instead of

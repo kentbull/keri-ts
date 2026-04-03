@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
-import { Cigar, SerderKERI, Siger, smell } from "../../../../cesr/mod.ts";
+import { Cigar, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -233,7 +233,10 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
       assertInstanceOf(indexed[0], Siger);
       assertInstanceOf(unindexed[0], Cigar);
       assertEquals(indexed[0]?.index, 0);
-      assertEquals(typeof signatorSig, "string");
+      assertInstanceOf(signatorSig, Cigar);
+      assertInstanceOf(hby.signator?.verfer, Verfer);
+      assertEquals(hby.signator?.verfer.qb64, hby.signator?.pre);
+      assertEquals(hby.signator?.verfer.qb64, hby.signator?.hab.kever?.verfers[0]?.qb64);
       assertEquals(
         signatorSig ? hby.signator?.verify(ser, signatorSig) : false,
         true,
@@ -275,7 +278,9 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
       const sig = hby.signator?.sign(ser);
 
       signatoryPre = hby.db.getHby(SIGNER) ?? "";
-      assertEquals(typeof sig, "string");
+      assertInstanceOf(sig, Cigar);
+      assertInstanceOf(hby.signator?.verfer, Verfer);
+      assertEquals(hby.signator?.verfer.qb64, signatoryPre);
       assertEquals(
         sig ? hby.signator?.verify(ser, sig) : false,
         true,
@@ -298,7 +303,10 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
 
       assertEquals(hby.signator?.pre, signatoryPre);
       assertEquals(hby.db.getHby(SIGNER), signatoryPre);
-      assertEquals(typeof sig, "string");
+      assertInstanceOf(sig, Cigar);
+      assertInstanceOf(hby.signator?.verfer, Verfer);
+      assertEquals(hby.signator?.verfer.qb64, signatoryPre);
+      assertEquals(hby.signator?.verfer.qb64, hby.signator?.hab.kever?.verfers[0]?.qb64);
       assertEquals(
         sig ? hby.signator?.verify(ser, sig) : false,
         true,

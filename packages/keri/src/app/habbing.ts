@@ -968,10 +968,12 @@ export class Hab {
  * KERIpy correspondence:
  * - mirrors the idea of a persisted `__signatory__` habitat owned by the
  *   enclosing habery
+ * - verifies through the live signatory habitat verifier instead of
+ *   reconstructing one ad hoc from the prefix
  *
  * Current `keri-ts` differences:
- * - signing/verification are currently deterministic local-hab wrappers, not a
- *   full parity implementation of KERIpy signatory lifecycle and reopen logic
+ * - signing/verification are deterministic local-hab wrappers, not a full
+ *   parity implementation of KERIpy signatory lifecycle and reopen logic
  */
 export class Signator {
   readonly db: Baser;
@@ -1005,22 +1007,28 @@ export class Signator {
   /**
    * Sign arbitrary serialized bytes with the habery-owned signatory habitat.
    *
-   * Current `keri-ts` difference:
-   * - this is a deterministic local wrapper, not the full KERIpy signatory
-   *   lifecycle and endorsement surface
+   * KERIpy parity:
+   * - delegates to the underlying hab with `indexed=false`
+   * - returns the first hydrated detached `Cigar`
    */
-  sign(ser: Uint8Array): string {
+  sign(ser: Uint8Array): Cigar {
     const sig = this.hab.sign(ser, false)[0];
     if (!sig) throw new Error("Unable to sign");
-    return sig.qb64;
+    return sig;
   }
 
-  /** Verify one detached signature through the signatory habitat's verifier. */
-  verify(ser: Uint8Array, cigar: string): boolean {
-    return new Verfer({ qb64: this.pre }).verify(
-      new Cigar({ qb64: cigar }).raw,
-      ser,
-    );
+  /** Return the current verifier from the signatory habitat's accepted key state. */
+  get verfer(): Verfer {
+    const verfer = this.hab.kever?.verfers[0];
+    if (!verfer) {
+      throw new Error("Signator has no accepted verifier.");
+    }
+    return verfer;
+  }
+
+  /** Verify one detached `Cigar` through the signatory habitat's live verifier. */
+  verify(ser: Uint8Array, cigar: Cigar): boolean {
+    return this.verfer.verify(cigar.raw, ser);
   }
 }
 
