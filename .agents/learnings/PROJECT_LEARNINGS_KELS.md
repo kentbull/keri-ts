@@ -123,6 +123,13 @@ replay/verification semantics.
     sealed-box behavior (`Cipher`/`Encrypter`/`Decrypter`), while KERI layers
     own keeper-state selection, storage, and AEID orchestration. A keeper-local
     crypto engine is drift, not an architectural seam.
+30. The DB parity matrix is now audited against current source instead of older
+    bootstrap assumptions: `recording.py` is the authoritative source for the
+    persisted record contracts, all 30 inventoried `subing.py` rows now map to
+    real `subing.ts` classes, `DupKomer` is the only missing inventoried
+    `koming.py` row, and the true row-level missing surface is concentrated in
+    `RawRecord`, `OobiQueryRecord`, `BaserDoer`, `Broker`, and the still-generic
+    `fetchTsgs` helper shape.
 
 ## Scope Checklist
 
@@ -142,8 +149,9 @@ Use this doc for:
 
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
-2. Treat Gates B, C, and D as closed enough to move main attention to Gate E
-   command surfaces plus the escrow/process-loop work that Gate F/G depend on.
+2. Treat Gates B, C, D, and the honest Gate E bootstrap slice as closed enough
+   to move main attention to Gate F/G communications breadth plus the deferred
+   reply/receipt/escrow work those gates depend on.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
@@ -1385,3 +1393,140 @@ Use this doc for:
     is still not behaviorally closed multisig freshness tracking. Later group
     parity work should tighten the model instead of treating the comment as the
     fix.
+
+### 2026-04-03 - Gate E Was Closed Honestly As A Bootstrap Slice
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`
+- What changed:
+  - Updated `packages/keri/src/app/oobiery.ts` so the shared runtime now drains
+    both `oobis.` and config-seeded `woobi.` bootstrap queues instead of only
+    consuming `oobis.`.
+  - Updated `packages/keri/src/app/habbing.ts` so `replyEndRole()` clones the
+    endpoint AID's KEL into OOBI responses when the endpoint AID differs from
+    the controller AID; without that clone, remote witness/service
+    `/loc/scheme` replies fail verification.
+  - Added Gate E runtime coverage for controller and witness OOBIs, config
+    preload via `iurls` / `durls` / `wurls`, and the protocol-only `tufa agent`
+    host surface.
+  - Promoted the Gate E interop harness scenario to a real executable lane with
+    live KERIpy parity evidence for `tufa loc add`, `tufa ends add`, and
+    mailbox OOBI generate/resolve.
+  - Rewrote the Gate E planning/tracking docs so Gate E is marked complete only
+    for the honest bootstrap/runtime slice, with `/ksn`, receipt-family
+    cue/escrow breadth, and richer `woobi.` continuation moved out of the Gate
+    E exit criteria.
+- Why:
+  - The repository had the worst possible combination of drift: it understated
+    the landed CLI/runtime surface while still overstating the original broad
+    Gate E scope. That is how teams mark the wrong thing complete.
+  - Gate E was only closable after we added missing evidence for the real
+    bootstrap contract and then narrowed the written contract to match the code.
+- Tests:
+  - Command:
+    `deno test -A packages/keri/test/integration/app/interop-gates-harness.test.ts --filter E-ENDS-OOBI-BOOTSTRAP`
+  - Result: passed locally (`1 passed, 0 failed`)
+  - Command:
+    `deno test -A packages/keri/test/unit/app/gate-e-runtime.test.ts`
+  - Result: passed locally (`7 passed, 0 failed`)
+  - Command:
+    `deno test -A packages/keri/test/integration/app/server.test.ts`
+  - Result: passed locally (`3 passed, 0 failed`)
+  - Command:
+    `deno test -A packages/keri/test/unit/app/reactor.test.ts packages/keri/test/unit/app/cue-runtime.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/eventing.test.ts packages/keri/test/unit/core/deck.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/app/oobiery.ts`
+  - `packages/keri/src/app/habbing.ts`
+  - `packages/keri/test/unit/app/gate-e-runtime.test.ts`
+  - `packages/keri/test/integration/app/interop-gates-harness.test.ts`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+  - `docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`
+- Risks/TODO:
+  - Gate E closure is intentionally narrow. `/ksn`, receipt/witness cue
+    materialization, receipt-family unverified escrow passes, and broader
+    `woobi.` continuation still need explicit later-gate ownership.
+  - The Gate E live harness currently proves mailbox OOBI interop against
+    KERIpy. Controller, witness, agent, and config-preload flows are covered by
+    shared-runtime tests rather than by a second live KERIpy lane.
+
+### 2026-04-03 - Interop Harness Ownership Was Re-Aligned With Effection
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Added maintainer docs to the newer interop harness helpers in
+    `packages/keri/test/integration/app/interop-gates-harness.test.ts` so the
+    file now explains which helpers are intentionally host-boundary async glue
+    and which helpers are real Effection-owned resources.
+  - Converted `withProcessEnv()`, `inspectHabery()`, `stopChild()`, and
+    `startTufaAgent()` into Effection-facing operations, and added
+    `withTufaAgent()` as the generator-scoped owner that keeps a subprocess
+    alive across a scenario body and then `yield* stopChild(...)` in `finally`.
+  - Kept helpers such as `runCmd()`, `runTufa()`, `detectDenoDir()`, and
+    `waitForHealth()` promise-based, but documented why that is not drift: they
+    only adapt raw host APIs and do not own long-lived resources.
+- Why:
+  - The first refactor temptation was wrong: shoving asynchronous child-process
+    shutdown into an `action()` cleanup callback looks Effection-ish but is not
+    a real structured-concurrency boundary, because cleanup callbacks cannot
+    `yield*` and wait for orderly teardown.
+  - The actual rule is sharper and more useful: keep host glue as plain async
+    where appropriate, but move ownership of mutable globals, opened Haberies,
+    and long-lived subprocesses into generator-scoped helpers.
+- Tests:
+  - Command:
+    `deno test -A packages/keri/test/integration/app/interop-gates-harness.test.ts --filter E-ENDS-OOBI-BOOTSTRAP`
+  - Result: passed locally (`1 passed, 0 failed`)
+  - Command:
+    `deno run -A npm:dprint@0.49.0 check packages/keri/test/integration/app/interop-gates-harness.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/test/integration/app/interop-gates-harness.test.ts`
+- Risks/TODO:
+  - Older interop helpers still use simpler promise-only subprocess patterns.
+    That is acceptable while they only wrap one-shot host calls, but any future
+    long-lived child-process test should follow the new `withTufaAgent()` model
+    instead of cloning ad hoc `try/finally` shutdown glue.
+
+### 2026-04-03 - DB Parity Matrix Was Re-Audited Against Current Source
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Re-audited `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md` row by row against
+    the current local `keripy` and `keri-ts` source trees.
+  - Corrected the matrix's stale source mapping by moving persisted
+    record-contract rows to `keripy/src/keri/recording.py` and
+    `packages/keri/src/core/records.ts`.
+  - Refreshed the row statuses so the matrix now reflects the actual current
+    wrapper/databaser surface: `subing.ts` now covers all 30 inventoried
+    `subing.py` classes, `koming.ts` now covers `KomerBase` / `Komer` /
+    `IoSetKomer`, and the true missing row set is much smaller than the old
+    matrix implied.
+  - Updated `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md` so its execution
+    status matches the audited state instead of the earlier bootstrap-only view.
+- Why:
+  - The older DB planning docs were no longer trustworthy enough for sequencing
+    future parity work. They overstated missing `subing.py` / `koming.py`
+    surface, misattributed record-contract rows to `basing.py`, and obscured
+    the real remaining blockers.
+- Tests:
+  - Command: N/A (documentation audit against local source)
+  - Result: N/A
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+- Risks/TODO:
+  - The refreshed matrix is intentionally conservative, so most landed rows are
+    still `Partial` until row-specific parity evidence is stronger. The next
+    work should close the true missing surface (`RawRecord`, `OobiQueryRecord`,
+    `DupKomer`, `BaserDoer`, `Broker`) and then keep promoting rows with real
+    evidence instead of symbol existence alone.

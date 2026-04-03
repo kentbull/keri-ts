@@ -134,15 +134,22 @@ for.
   coverage for keeper reopen, wrong-passcode rejection, AEID re-encryption, and
   signator reopen.
 
-### Gate E: Endpoint + OOBI Bootstrap (`ends add`, `oobi`)
+### Gate E: Endpoint + OOBI Bootstrap (`loc add`, `ends add`, `oobi`, `agent`)
 
 Across `cha1`/`cha2`:
 
+- `loc add` persists accepted `LocationScheme` replies through the shared
+  runtime.
 - `ends add` persists mailbox role auth usable by OOBI logic.
 - `oobi generate` and `oobi resolve` interoperate with KERIpy.
+- `tufa agent` serves only protocol routes needed for bootstrap OOBI/resource
+  exchange.
 - Design and implementation details for this gate are tracked in the dedicated
   subplan:
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- Current status: Gate E is now considered complete only for the honest
+  bootstrap/runtime slice. Broader reply families, receipt-family escrow work,
+  and richer communications/runtime breadth remain later-gate work.
 
 ### Gate F: Communications Interop (Direct + Mailbox)
 
@@ -209,8 +216,9 @@ P0 tracking artifacts:
 - Land/finish `init`, `incept`, `list`, `aid` parity flow (Gate B/C).
 - Current state: Gate B is implemented with live interop evidence, and Gate C
   visibility now passes live against encrypted KLI stores; Gate D encrypted
-  secret semantics are also closed, so the next blocker is the Gate E command
-  surface rather than keeper unlock behavior.
+  secret semantics are also closed, and Gate E bootstrap parity is now closed
+  with live harness evidence, so the next blocker is communications/runtime
+  breadth rather than keeper unlock or bootstrap endpoint work.
 
 ## P6 - AEID + Manager + Signator Reliability
 
@@ -224,10 +232,15 @@ P0 tracking artifacts:
 
 - Implement endpoint role authorization path and persistence.
 - Ensure mailbox role data supports OOBI/mailbox flow.
+- Current state: closed for the Gate E bootstrap slice, with live parity
+  evidence for `tufa ends add` and runtime-backed persistence.
 
 ## P8 - OOBI Generate/Resolve
 
 - Implement OOBI command parity needed for two-controller bootstrap.
+- Current state: closed for the Gate E bootstrap slice, with live mailbox
+  generate/resolve parity against KERIpy and local shared-runtime coverage for
+  controller, witness, and agent OOBIs.
 
 ## P9 - Direct + Mailbox Communications
 
@@ -257,13 +270,13 @@ P0 tracking artifacts:
 
 ## Recommended Next Focus (2026-03-17)
 
-1. Gate E: implement `ends` / `oobi` command surfaces on top of the endpoint and
-   OOBI stores that are already bound in `Baser`.
+1. Gate F/G readiness: deepen the shared runtime for communications, challenge,
+   and deferred receipt/reply breadth without reopening the now-closed Gate E
+   bootstrap slice.
 2. Gate A/H bookkeeping: refresh the DB-layer symbol and K/V matrices so the
    plans stop understating landed `Suber` / `Komer` / `Baser` work.
-3. Gate F/G readiness: add escrow/process-loop infrastructure needed for
-   endpoint, OOBI, comms, and challenge flows before chasing higher-level CLI
-   parity.
+3. Gate H tail: keep DB parity closure moving so later app/runtime work does
+   not accrete new storage shortcuts.
 
 ## Milestones
 

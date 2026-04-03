@@ -24,6 +24,8 @@ export interface OobiJob {
   state?: string;
 }
 
+type OobiQueueKind = "oobis" | "woobi";
+
 /**
  * Durable OOBI processing component for one `Habery`.
  *
@@ -31,8 +33,8 @@ export interface OobiJob {
  * - this is the closest local analogue to `Oobiery`
  *
  * Ownership model:
- * - authoritative queue state lives in `oobis.`, `coobi.`, `eoobi.`, and
- *   `roobi.`
+ * - authoritative queue state lives in `oobis.`, `woobi.`, `coobi.`, `eoobi.`,
+ *   and `roobi.`
  * - this component owns the fetch/parse/persist flow for those records
  * - transient in-memory state stays local to the fetch operation and does not
  *   leak back to the `AgentRuntime` root
@@ -61,15 +63,7 @@ export class Oobiery {
    */
   resolve(url: string, alias?: string): void {
     const meta = parseOobiUrl(url, alias);
-    this.hby.db.oobis.pin(url, {
-      date: new Date().toISOString(),
-      state: "queued",
-      cid: meta.cid ?? null,
-      eid: meta.eid ?? null,
-      role: meta.role ?? null,
-      oobialias: meta.alias ?? null,
-      said: meta.said ?? null,
-    });
+    this.pinQueuedRecord("oobis", url, meta);
     this.cues.push({ kin: "oobiQueued", url, alias: meta.alias });
   }
 
@@ -77,22 +71,18 @@ export class Oobiery {
    * Process one queued durable OOBI record, if any.
    *
    * Behavior:
-   * - reads the next `oobis.` record
+   * - reads the next queued `oobis.` / `woobi.` record
    * - fetches it under Effection cancellation control
    * - routes any returned KERI bytes through `Reactor`
    * - transitions the durable record into `eoobi.` or `roobi.`
-   *
-   * Current limitation:
-   * - this Gate E bootstrap slice only handles `oobis.`, not the richer
-   *   KERIpy `woobi.` / MFA continuation paths yet
    */
   *processOnce(): Operation<void> {
     const item = this.nextQueued();
     if (!item) {
       return;
     }
-    const [url, record] = item;
-    yield* this.processJob(url, record);
+    const [kind, url, record] = item;
+    yield* this.processJob(kind, url, record);
   }
 
   /**
@@ -109,27 +99,38 @@ export class Oobiery {
   }
 
   /** Return the next queued durable OOBI record, if any. */
-  private nextQueued(): [string, OobiRecord] | null {
-    for (const [keys, record] of this.hby.db.oobis.getTopItemIter()) {
-      const url = keys[0];
-      if (!url) {
-        continue;
+  private nextQueued(): [OobiQueueKind, string, OobiRecord] | null {
+    const nextFrom = (
+      kind: OobiQueueKind,
+    ): [OobiQueueKind, string, OobiRecord] | null => {
+      const store = kind === "woobi" ? this.hby.db.woobi : this.hby.db.oobis;
+      for (const [keys, record] of store.getTopItemIter()) {
+        const url = keys[0];
+        if (!url) {
+          continue;
+        }
+        return [kind, url, record];
       }
-      return [url, record];
-    }
-    return null;
+      return null;
+    };
+
+    return nextFrom("oobis") ?? nextFrom("woobi");
   }
 
   /**
    * Resolve one queued OOBI record through fetch -> parse -> route -> persist.
    *
    * Stores touched:
-   * - `oobis.` as the durable queued worklist
+   * - `oobis.` / `woobi.` as the durable queued worklists
    * - `coobi.` while a fetched response is being processed
    * - `eoobi.` on HTTP failure
    * - `roobi.` after parser/routing success
    */
-  private *processJob(url: string, record: OobiRecord): Operation<void> {
+  private *processJob(
+    kind: OobiQueueKind,
+    url: string,
+    record: OobiRecord,
+  ): Operation<void> {
     const meta = {
       ...parseOobiUrl(url, record.oobialias ?? undefined),
       ...record,
@@ -145,11 +146,11 @@ export class Oobiery {
       oobialias: meta.alias ?? meta.oobialias ?? null,
       said: meta.said ?? null,
     };
-    this.hby.db.oobis.pin(url, queuedRecord);
+    this.pinQueueStore(kind, url, queuedRecord);
 
     const response = yield* fetchOobiResponse(url);
     if (!response.ok) {
-      this.hby.db.oobis.rem(url);
+      this.remQueueStore(kind, url);
       this.hby.db.eoobi.pin(url, {
         ...queuedRecord,
         date: new Date().toISOString(),
@@ -164,7 +165,7 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
-    this.hby.db.oobis.rem(url);
+    this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
       date: new Date().toISOString(),
@@ -186,6 +187,39 @@ export class Oobiery {
       cid: meta.cid ?? undefined,
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
+    });
+  }
+
+  /** Persist one queued record into the selected durable queue. */
+  private pinQueueStore(
+    kind: OobiQueueKind,
+    url: string,
+    record: OobiRecord,
+  ): void {
+    const store = kind === "woobi" ? this.hby.db.woobi : this.hby.db.oobis;
+    store.pin(url, record);
+  }
+
+  /** Remove one queued record from the selected durable queue. */
+  private remQueueStore(kind: OobiQueueKind, url: string): void {
+    const store = kind === "woobi" ? this.hby.db.woobi : this.hby.db.oobis;
+    store.rem(url);
+  }
+
+  /** Normalize and persist one new queued OOBI record into the default queue. */
+  private pinQueuedRecord(
+    kind: OobiQueueKind,
+    url: string,
+    meta: OobiJob,
+  ): void {
+    this.pinQueueStore(kind, url, {
+      date: new Date().toISOString(),
+      state: "queued",
+      cid: meta.cid ?? null,
+      eid: meta.eid ?? null,
+      role: meta.role ?? null,
+      oobialias: meta.alias ?? null,
+      said: meta.said ?? null,
     });
   }
 }

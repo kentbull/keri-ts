@@ -480,6 +480,31 @@ This keeps context focused and avoids long-thread drift.
     groupings, suite-dispatch helpers, sealed-box adapters, keeper record types,
     and decision-bearing Kever helper methods all need maintainer docs once they
     become the actual home of upstream semantics.
+91. Gate E is now closed as an honest bootstrap slice rather than as a vague
+    promise of full runtime breadth: live KERIpy parity exists for runtime-backed
+    `tufa loc add`, `tufa ends add`, and mailbox OOBI generate/resolve; local
+    shared-runtime tests also cover controller, witness, agent, and
+    config-preload bootstrap flows. Two portability traps were important to
+    capture: witness/service endpoint replies must include the endpoint AID's
+    cloned KEL so remote `/loc/scheme` replies verify, and subprocess-backed
+    interop tests must drain or cancel child stdout/stderr streams or Deno will
+    fail the evidence run with leak errors. Broader `/ksn`, receipt-family
+    cue/escrow work, and richer `woobi.` continuation remain later-gate work.
+92. The DB parity matrix was re-audited against current source on 2026-04-03:
+    `recording.py` is the real home of the persisted DB record contracts, the
+    earlier matrix had drifted badly on `subing.py` / `koming.py` status, and
+    the true remaining row-level DB gaps are now concentrated in `RawRecord`,
+    `OobiQueryRecord`, `DupKomer`, `BaserDoer`, `Broker`, and the still-generic
+    `fetchTsgs` helper shape.
+93. Effection boundary discipline in interop tests is narrower than "all async
+    becomes `Operation`": raw CLI invocation, help scraping, cache discovery,
+    and HTTP polling may stay promise-based host glue, but helpers that own
+    temporary process env, `Habery` open/close, or long-lived child-process
+    lifetime should be generator-owned operations. Also: `action()` cleanup
+    callbacks are the wrong place for teardown that must `yield*` and wait. If
+    a subprocess needs orderly awaited shutdown, wrap it in a generator-scoped
+    owner like `withTufaAgent(...){ ... } finally { yield* stopChild(...) }`
+    instead of hiding async stop logic in the cleanup callback.
 
 ## New Thread Kickoff Template
 

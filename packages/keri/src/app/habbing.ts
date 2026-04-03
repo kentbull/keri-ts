@@ -857,7 +857,15 @@ export class Hab {
     scheme = "",
   ): Uint8Array {
     const messages: Uint8Array[] = [];
-    messages.push(...this.db.clonePreIter(cid));
+    const cloned = new Set<string>();
+    const appendClone = (pre: string) => {
+      if (!pre || cloned.has(pre)) {
+        return;
+      }
+      messages.push(...this.db.clonePreIter(pre));
+      cloned.add(pre);
+    };
+    appendClone(cid);
 
     if (role === Roles.witness) {
       const kever = this.db.getKever(cid);
@@ -865,6 +873,7 @@ export class Hab {
         if (eids.length > 0 && !eids.includes(eid)) {
           continue;
         }
+        appendClone(eid);
         messages.push(
           eid === this.pre
             ? this.replyLocScheme(eid, scheme)
@@ -890,6 +899,7 @@ export class Hab {
       if (eids.length > 0 && !eids.includes(eid)) {
         continue;
       }
+      appendClone(eid);
       messages.push(this.loadLocScheme(eid, scheme));
       messages.push(this.loadEndRole(cid, eid, currentRole));
     }

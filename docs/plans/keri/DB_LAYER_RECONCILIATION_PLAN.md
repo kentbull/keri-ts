@@ -21,50 +21,49 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
    other providers to preserve behavior without re-deriving LMDB assumptions
    from app-layer code.
 
-## Execution Status (2026-03-15)
+## Execution Status (2026-04-03)
 
-1. `D0` is complete for its defined exit criteria:
-   - symbol inventory matrix published for all baseline DB modules,
-   - K/V inventory seeded and split into Gate A-G worklist vs Gate H backlog,
-   - gate mappings and rationales published for Gate A-G rows.
-2. `D1` is in progress:
-   - `LMDBer` now includes `cntTop`, `cntAll`, and `delTop` branch primitives.
-   - lifecycle behavior now stamps `__version__` metadata for temp/new writeable
-     DB opens (closer to KERIpy `LMDBer.reopen` behavior).
-   - `LMDBer` now covers the remaining `dbing.py` core method families needed
-     before Suber migration (`On*`, `OnAll*`, `IoSet*`, `OnIoSet*`, `dup*`,
-     `IoDup*`, and `OnIoDup*` surfaces).
-   - unit parity coverage now includes lifecycle reopen/version behavior, branch
-     count/iteration/delete semantics, ordinal-key semantics, io-set semantics,
-     and dup/io-dup semantics in non-dup + dupsort DBs.
-   - strict oracle vectors from KERIpy now lock backward-iterator and mixed-key
-     edge behavior for `OnIoSet` and `OnIoDup` iterator families.
-   - every current `LMDBer` method now has representation in unit tests.
-   - post `kli init/incept/rotate` review queued: verify continued need for
-     helper sugar methods `cntTop` and `cntAll` vs removing unused API surface.
-3. Minimal `D2`/`D3` foundation has landed:
-   - `packages/keri/src/db/subing.ts` now provides a thin bootstrap slice of
-     `SuberBase`, `Suber`, `CesrSuber`, and `CryptSignerSuber`.
-   - `packages/keri/src/db/koming.ts` now provides a thin JSON-backed `Komer`
-     used on the active bootstrap path.
-   - this is not full `subing.py` / `koming.py` parity; it is the smallest
-     honest typed-store foundation needed to stop extending the raw-LMDB access
-     pattern on the current path.
-4. Minimal `D4` bootstrap migration has started on top of that foundation:
-   - `Baser.habs` is now `Komer`-backed and `Baser.names` / `Baser.hbys` are
-     `Suber`-backed.
-   - `Keeper.gbls`, `pris`, `pres`, `prms`, `sits`, `pubs`, `prxs`, and `nxts`
-     now open through the typed wrapper layer instead of ad hoc raw DB handles.
-   - compatibility mode now uses KERIpy-aligned alt tails (`.keri/db`,
-     `.keri/ks`) and KERIpy-aligned `names.` separator handling (`^`), with a
-     legacy `:` read fallback for older `keri-ts` stores.
-5. Gate C visibility groundwork is in place, but Gate C is not closed:
-   - readonly compatibility-mode opens now skip config loading and signator
-     creation for `list` / `aid` / `export`.
-   - `Manager.updateAeid()` now avoids readonly `aeid` writes during visibility
-     opens.
-   - live KLI-backed compat evidence is harness-wired, but encrypted reopen,
-     true decrypt/encrypt semantics, and config/OOBI/KEL parity remain open.
+1. `D0` is complete and was re-audited on 2026-04-03:
+   - the symbol matrix now reflects the current local KERIpy line numbers,
+   - `recording.py` is now an explicit parity source instead of incorrectly
+     attributing record-contract rows to `basing.py`,
+   - the row inventory now covers 70 parity-relevant symbols with corrected
+     `Partial`/`Missing`/`Equivalent` statuses.
+2. `D1` remains substantially landed but not fully parity-closed:
+   - `LMDBer` covers the required `dbing.py` method families used by downstream
+     wrappers (`On*`, `OnAll*`, `IoSet*`, `OnIoSet*`, `dup*`, `IoDup*`, and
+     `OnIoDup*`),
+   - unit coverage spans lifecycle, branch helpers, ordinal-key semantics,
+     io-set semantics, dup/io-dup semantics, and KERIpy oracle vectors for
+     mixed-key reverse scans,
+   - several helper rows remain intentionally `Partial` because the TS API shape
+     still differs from KERIpy (`openLMDB` factory style, key-helper
+     return-type differences, `splitKeyDT` string vs datetime behavior).
+3. `D2` is much further along than the earlier bootstrap-only description:
+   - all 30 inventoried `subing.py` class families now exist in
+     `packages/keri/src/db/subing.ts`,
+   - most rows remain `Partial` because direct row-specific parity evidence is
+     still incomplete,
+   - `CryptSignerSuber` is currently the only audited `Equivalent` row in the
+     wrapper layer.
+4. `D3` is also materially further along than the earlier bootstrap view:
+   - `koming.ts` now includes `KomerBase`, `Komer`, and `IoSetKomer`,
+   - JSON/CBOR/MGPK serializer selection is present at the `KomerBase` seam,
+   - the only truly missing inventoried `koming.py` row is `DupKomer`.
+5. `D4` now has a broad databaser/record-contract foundation in place:
+   - `Baser` binds the large named-subdb surface used by the current runtime
+     arc rather than only a narrow visibility slice,
+   - persisted record contracts now live explicitly in
+     `packages/keri/src/core/records.ts`,
+   - KERIpy's `statedict` read-through behavior is approximated by explicit
+     `reloadKevers()` / `getKever()` helpers instead of a Python dict subclass,
+   - the true remaining missing D4 rows are `RawRecord`, `OobiQueryRecord`, and
+     `BaserDoer`.
+6. `D5` has not started in earnest:
+   - `Broker` / `escrowing.ts` is still missing,
+   - the main remaining blockers are now concentrated in record-helper closure,
+     `DupKomer`, escrow/process-loop breadth, and the later K/V/Gate H surface
+     rather than in the old Gate C encrypted-secret bootstrap work.
 
 ## Scope Sources (Parity Baseline)
 
@@ -73,6 +72,7 @@ Primary KERIpy references:
 - `src/keri/db/dbing.py`
 - `src/keri/db/subing.py`
 - `src/keri/db/koming.py`
+- `src/keri/recording.py`
 - `src/keri/db/basing.py`
 - `src/keri/db/escrowing.py`
 
@@ -120,8 +120,8 @@ Initial D0 artifacts (seeded):
 
 Deliverables:
 
-- Function/class matrix for `dbing.py`, `subing.py`, `koming.py`, `basing.py`,
-  `escrowing.py`.
+- Function/class matrix for `dbing.py`, `subing.py`, `koming.py`,
+  `recording.py`, `basing.py`, and `escrowing.py`.
 - Mapping to target `keri-ts` files/classes.
 - Status columns: `Missing`, `Partial`, `Equivalent`, `Tested`.
 - K/V inventory table seeded from `lmdb-dumper.md`.

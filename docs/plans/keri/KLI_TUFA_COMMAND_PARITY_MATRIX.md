@@ -29,9 +29,10 @@ This closes the remaining P0 requirement from
 | `B`  | `B-AID`                 | `kli aid --alias <a>`             | `tufa aid --alias <a>`                     | Returns same prefix as `incept`                       | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `C`  | `C-KLI-STORE-OPEN`      | `kli init/incept` then `kli list` | `tufa list --compat` / `tufa aid --compat` | Existing KLI store opens and identifiers are visible  | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `D`  | `D-ENCRYPTED-SEMANTICS` | `kli init --passcode`             | `tufa init --passcode`                     | Successful encrypted store open/reopen/decrypt parity | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
-| `E`  | `E-ENDS-ADD`            | `kli ends add ...`                | `tufa ends add ...`                        | Endpoint role auth persists in DB                     | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
-| `E`  | `E-OOBI-GENERATE`       | `kli oobi generate ...`           | `tufa oobi generate ...`                   | Deterministic OOBI output shape                       | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
-| `E`  | `E-OOBI-RESOLVE`        | `kli oobi resolve ...`            | `tufa oobi resolve ...`                    | Resolve success and persisted OOBI records            | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
+| `E`  | `E-LOC-ADD`             | `kli location add ...`            | `tufa loc add ...`                         | Accepted location reply persists in DB                | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
+| `E`  | `E-ENDS-ADD`            | `kli ends add ...`                | `tufa ends add ...`                        | Endpoint role auth persists in DB                     | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
+| `E`  | `E-OOBI-GENERATE`       | `kli oobi generate ...`           | `tufa oobi generate ...`                   | Deterministic mailbox OOBI output shape               | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
+| `E`  | `E-OOBI-RESOLVE`        | `kli oobi resolve ...`            | `tufa oobi resolve ...`                    | Resolve success and persisted bootstrap OOBI records  | `Implemented` | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `F`  | `F-DIRECT-COMMS`        | `kli` direct message flow         | `tufa` direct message flow                 | Message send/receive parity and persisted EXN state   | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `F`  | `F-MAILBOX-COMMS`       | `kli` mailbox flow                | `tufa` mailbox flow                        | Mailbox topic+message parity                          | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
 | `G`  | `G-CHALLENGE-GEN`       | `kli challenge generate`          | `tufa challenge generate`                  | Word list shape parity                                | `Blocked`     | `packages/keri/test/integration/app/interop-gates-harness.test.ts` |
@@ -51,6 +52,10 @@ This closes the remaining P0 requirement from
    libsodium-backed keeper encryption, AEID decrypt/re-encrypt coverage,
    wrong-passcode failure assertions, and encrypted signator reopen tests, with
    corresponding live harness evidence.
-5. Gate F remains `Blocked` because the top-level transport command surface is
+5. Gate E was promoted to `Implemented` on 2026-04-03 after the harness landed
+   live parity evidence for `tufa loc add`, `tufa ends add`, and mailbox OOBI
+   generate/resolve against KERIpy, with additional shared-runtime tests
+   covering controller, witness, agent, and config-preload bootstrap paths.
+6. Gate F remains `Blocked` because the top-level transport command surface is
    still absent from `tufa --help`, even though the gate is already modeled in
    the harness.

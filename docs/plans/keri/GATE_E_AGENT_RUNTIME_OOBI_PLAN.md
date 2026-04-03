@@ -13,15 +13,43 @@
   queue abstraction and KERIpy-style cues are non-negotiable for this pass.
 - Run escrows continuously on every scheduler turn, KERIpy-style, not on a
   timer.
-- Require full BADA-RUN parity in reply handling.
+- Require the BADA-RUN subset needed for bootstrap reply handling in Gate E.
 - Minimum Gate E outcome is:
   - add mailbox endpoint role auth
   - add local `loc add` parity for accepted `LocationScheme` records
-  - generate mailbox OOBIs
-  - resolve mailbox OOBIs
-  - resolve witness and agent OOBIs from the wider KERI ecosystem
-  - route all fetched artifacts through CESR parse -> dispatch -> escrow ->
-    finalization
+  - generate controller, witness, mailbox, and agent OOBIs where local state
+    permits
+  - resolve mailbox, controller, witness, and agent bootstrap OOBIs
+  - resolve config-seeded bootstrap URLs from both `oobis.` and `woobi.`
+  - route all fetched bootstrap artifacts through CESR parse -> dispatch ->
+    escrow -> finalization
+  - prove `tufa agent` stays protocol-only and that the bootstrap command slice
+    has live KERIpy parity evidence
+
+## Status Reconciliation (2026-04-03)
+
+- Verdict: Gate E is complete only as a bootstrap/runtime slice. It was not
+  honestly complete against the earlier wording that implied full reply,
+  receipt, and escrow breadth.
+- Closed evidence in the repo now includes:
+  - shared `AgentRuntime` hosting through both local commands and `tufa agent`
+  - runtime-backed `tufa loc add` and `tufa ends add`
+  - runtime-backed `tufa oobi generate` / `tufa oobi resolve`
+  - config preload feeding bootstrap URLs into `oobis.` and `woobi.` with the
+    shared runtime consuming both queues
+  - local end-to-end coverage for controller, witness, mailbox, and agent OOBI
+    flows
+  - live KERIpy parity evidence for `loc add`, `ends add`, mailbox OOBI
+    generate, and mailbox OOBI resolve
+  - protocol-only host coverage for `tufa agent`
+- Deferred beyond Gate E:
+  - `/ksn`, `/introduce`, and broader reply-routing families
+  - receipt/witness wire materialization from cues
+  - `processEscrowUnverWitness`, `processEscrowUnverNonTrans`, and
+    `processEscrowUnverTrans`
+  - broader `woobi.` continuation, MFA, and retry-convergence semantics
+- Planning rule: those deferred items still matter, but they are no longer Gate
+  E exit criteria. They belong to later runtime/comms/escrow closure work.
 
 ## Interface and Runtime Changes
 
@@ -156,13 +184,10 @@ Maintainer note:
 - Push follow-on work into runtime cues instead of embedding side effects inside
   the parser loop
 
-### Chunk 4: Implement `Revery`, reply routing, reply escrow, and full
+### Chunk 4: Implement bootstrap-scope `Revery`, reply routing, and enough BADA-RUN for endpoint/location/OOBI bootstrap
 
-### BADA-RUN
-
-- Register and handle `/end/role/add`, `/end/role/cut`, `/loc/scheme`, `/ksn`,
-  and later `/introduce`
-- Implement full BADA-RUN parity:
+- Register and handle `/end/role/add`, `/end/role/cut`, and `/loc/scheme`
+- Implement the BADA-RUN subset needed for endpoint/location/OOBI bootstrap:
   - route-base normalization
   - old-said lookup
   - dater ordering
@@ -172,6 +197,8 @@ Maintainer note:
 - Persist reply artifacts through the KERI reply stores
 - Make reply success and follow-on actions visible through cues, not hidden
   direct calls
+- Defer `/ksn`, `/introduce`, and broader reply families to post-Gate-E runtime
+  breadth
 
 ### Chunk 5: Implement endpoint and location state plus cue processing
 
@@ -191,9 +218,7 @@ Maintainer note:
   `mailbox`, and `agent` OOBI discovery where local state permits
 - Keep this listener protocol-only and avoid any local administrative RPC
 
-### Chunk 7: Implement `Kevery` core event processing, first-seen logic,
-
-### seals, and delegated-event handling
+### Chunk 7: Implement `Kevery` core event processing, first-seen logic, seals, and delegated-event handling
 
 - Build remote event acceptance, durable log updates, current-state updates, and
   first-seen persistence
@@ -203,35 +228,42 @@ Maintainer note:
 - Push follow-on work such as receipts, notices, witness actions, queries, and
   replies into `Kevery.cues`
 
-### Chunk 8: Implement continuous KEL escrow processing
+### Chunk 8: Implement continuous KEL escrow processing needed for bootstrap acceptance
 
 - Run KEL escrows every runtime turn with no timer-based polling gap
-- Implement:
+- Implement the escrow passes already required by bootstrap event acceptance:
   - `processEscrowOutOfOrders`
-  - `processEscrowUnverWitness`
-  - `processEscrowUnverNonTrans`
-  - `processEscrowUnverTrans`
   - `processEscrowPartialDels`
   - `processEscrowPartialWigs`
   - `processEscrowPartialSigs`
   - `processEscrowDuplicitous`
+  - `processEscrowMisfits`
   - `processQueryNotFound`
 - Implement `processEscrowDelegables` as an explicit adjacent pass
 - Emit cues where KERIpy emits cues during successful unescrow/finalization
   paths
+- Defer receipt-family unverified escrow passes to later communications/receipt
+  parity work
 
-### Chunk 9: Implement the generic OOBI resolver
+### Chunk 9: Implement the bootstrap OOBI resolver
 
 - Support witness, controller, mailbox, and agent role-path OOBIs generically
 - Support CESR-stream responses first and the reply-based variants needed for
   ecosystem interop
-- Drive `oobis -> coobi/eoobi/moobi -> roobi` through `Oobiery` durable queue
-  state and the shared cue deck
+- Drive `oobis.` / `woobi.` -> `coobi.` / `eoobi.` -> `roobi.` through
+  `Oobiery` durable queue state and the shared cue deck
 - Preserve alias hints and deterministic failure states
 - Do not allow resolver shortcuts that bypass parser, routing, or escrow logic
+- Defer broader `woobi.` continuation and MFA-style convergence semantics
+  beyond config/bootstrap seeding
 
 ### Chunk 10: Add the Gate E CLI surfaces on top of the shared runtime
 
+- `tufa loc add`
+  - create the signed reply
+  - feed it through the local runtime
+  - wait on runtime-visible completion/cue conditions
+  - confirm `loadLocScheme()`
 - `tufa ends add`
   - create the signed reply
   - feed it through the local runtime
@@ -245,6 +277,9 @@ Maintainer note:
   - enqueue the OOBI job
   - wait for `roobi` / completion cues
   - exit cleanly
+- `tufa agent`
+  - host the same shared runtime long-lived
+  - expose only protocol routes needed for OOBI/resource serving
 - None of these commands may depend on a localhost admin endpoint
 
 ### Chunk 11: Extend the same runtime after Gate E
@@ -262,8 +297,8 @@ Maintainer note:
 - Unit tests must prove cue processing is cue-by-cue and order-stable
 - Unit tests must prove the continuous escrow worker runs every scheduler turn
   without timer-based polling
-- Unit tests must cover BADA-RUN acceptance, rejection, idempotence, and reply
-  escrow/unescrow
+- Unit tests must cover bootstrap-scope BADA-RUN acceptance, rejection,
+  idempotence, and reply escrow/unescrow
 - Unit tests must cover `Hab.processCuesIter`-style behavior and cue-to-message
   generation
 - Unit tests must cover first-seen persistence, delegation/seal escrows, and
@@ -273,14 +308,15 @@ Maintainer note:
 - Integration tests must prove command-local runtime hosting and long-lived
   `tufa agent` hosting use the same runtime and produce the same results
 - Integration tests must prove config preload can bootstrap endpoint knowledge
-  needed for Gate E
-- Integration tests must prove `ends add --role mailbox` updates local state
-  through the runtime, not via direct DB mutation
+  through both `oobis.` and `woobi.`
+- Integration tests must prove `loc add` and `ends add --role mailbox` update
+  local state through the runtime, not via direct DB mutation
 - Integration tests must prove mailbox OOBI generation and mailbox OOBI
-  resolution work end-to-end
-- Integration tests must prove witness and agent OOBI resolution work end-to-end
+  resolution work end-to-end against KERIpy
+- Integration tests must prove controller, witness, and agent OOBI flows work
+  end-to-end in the shared runtime
 - Integration tests must prove out-of-order and delegated remote events fetched
-  from OOBIs escrow and later finalize
+  from OOBIs escrow and later finalize within the bootstrap acceptance slice
 - Integration tests must verify that `tufa agent` exposes only protocol surfaces
   and no local admin API
 - Documentation verification must include the new Gate E plan file and its cue
@@ -300,5 +336,9 @@ Maintainer note:
 - Direct-mode TCP hosting belongs to the same abstraction but closes in Gate F
 - Mailbox OOBI generation is part of Gate E minimum evidence
 - Agent OOBI resolution is part of Gate E minimum evidence
+- Gate E completion means honest bootstrap closure, not full receipt/reply
+  parity across every later runtime family
+- Config-seeded witness bootstrap through `woobi.` is part of Gate E; broader
+  `woobi.` continuation semantics are not
 - Data OOBIs and TEL/credential txn-state escrows remain the next major chunk
   after Gate E
