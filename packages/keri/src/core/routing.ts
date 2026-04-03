@@ -1,9 +1,9 @@
-import { Dater, Diger, Prefixer, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { CigarCouple, type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
+import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isEndpointRole } from "./roles.ts";
@@ -12,12 +12,21 @@ import { isEndpointRole } from "./roles.ts";
 function hasValidReplyThreshold(
   serder: SerderKERI,
 ): boolean {
-  return serder.tholder !== null && serder.verfers.length >= serder.tholder.size;
+  return serder.tholder !== null
+    && serder.verfers.length >= serder.tholder.size;
 }
 
 /** Return the hex ordinal text used for DB keys from either Seqner or Number. */
 function encodeOrdinalHex(ordinal: DispatchOrdinal): string {
   return "snh" in ordinal ? ordinal.snh : ordinal.numh;
+}
+
+function requireReplyCigarVerfer(cigar: Cigar) {
+  const verfer = cigar.verfer;
+  if (!verfer) {
+    throw new ValidationError("Reply cigar is missing verifier context.");
+  }
+  return verfer;
 }
 
 /**
@@ -183,7 +192,7 @@ export class Router {
   dispatch(args: {
     serder: SerderKERI;
     diger: Diger;
-    cigars?: CigarCouple[];
+    cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): void {
     const route = args.serder.route;
@@ -294,7 +303,7 @@ export class Revery {
    */
   processReply(args: {
     serder: SerderKERI;
-    cigars?: CigarCouple[];
+    cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): void {
     if (!args.serder.verify()) {
@@ -316,8 +325,8 @@ export class Revery {
    * Apply BADA acceptance rules to one reply and its attached signatures.
    *
    * Acceptance model for this bootstrap slice:
-   * - non-transferable couples must come from the authorizing AID and be newer
-   *   by datetime than the accepted reply they replace
+   * - non-transferable reply cigars must come from the authorizing AID and be
+   *   newer by datetime than the accepted reply they replace
    * - transferable groups must come from the authorizing AID and either use a
    *   later establishment event or, at the same establishment sequence number,
    *   a newer datetime
@@ -333,7 +342,7 @@ export class Revery {
     route: string;
     aid: string;
     osaider?: Diger | null;
-    cigars?: CigarCouple[];
+    cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): boolean {
     const daterText = args.serder.ked?.dt;
@@ -343,14 +352,15 @@ export class Revery {
     const dater = new Dater({ qb64: encodeDateTimeToDater(daterText) });
     const odater = args.osaider ? this.db.sdts.get([args.osaider.qb64]) : null;
 
-    for (const entry of args.cigars ?? []) {
-      if (entry.verfer.qb64 !== args.aid) {
+    for (const cigar of args.cigars ?? []) {
+      const verfer = requireReplyCigarVerfer(cigar);
+      if (verfer.qb64 !== args.aid) {
         continue;
       }
       if (!sameOrNewerReply(dater, odater)) {
         continue;
       }
-      if (!entry.verfer.verify(entry.cigar.raw, args.serder.raw)) {
+      if (!verfer.verify(cigar.raw, args.serder.raw)) {
         continue;
       }
 
@@ -358,7 +368,7 @@ export class Revery {
         serder: args.serder,
         saider: args.saider,
         dater,
-        cigar: entry,
+        cigar,
       });
       this.removeReply(args.osaider ?? null);
       return true;
@@ -487,14 +497,14 @@ export class Revery {
    * Stores touched:
    * - `sdts.` for acceptance datetime
    * - `rpys.` for the reply serder
-   * - `scgs.` for non-transferable couples
+   * - `scgs.` for stored verfer+cigar tuples
    * - `ssgs.` for transferable signature groups
    */
   updateReply(args: {
     serder: SerderKERI;
     saider: Diger;
     dater: Dater;
-    cigar?: CigarCouple;
+    cigar?: Cigar;
     prefixer?: Prefixer;
     seqner?: DispatchOrdinal;
     diger?: Diger;
@@ -504,7 +514,10 @@ export class Revery {
     this.db.sdts.pin([said], args.dater);
     this.db.rpys.pin([said], args.serder);
     if (args.cigar) {
-      this.db.scgs.pin([said], [args.cigar.toTuple()]);
+      this.db.scgs.pin([said], [[
+        requireReplyCigarVerfer(args.cigar),
+        args.cigar,
+      ]]);
     }
     if (
       args.prefixer && args.seqner !== undefined && args.diger && args.sigers
@@ -542,7 +555,7 @@ export class Revery {
    * Persist one partially verifiable transferable reply in route-based escrow.
    *
    * Only transferable signatures are escrowed here. Non-transferable reply
-   * couples either verify immediately or are ignored; they do not participate
+   * cigars either verify immediately or are ignored; they do not participate
    * in Gate E reply escrow.
    */
   escrowReply(args: {
@@ -693,7 +706,7 @@ export class BasicReplyRouteHandler {
     diger: Diger;
     route: string;
     action?: string;
-    cigars?: CigarCouple[];
+    cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): void {
     const allowed = args.route.startsWith("/end/role/add")
@@ -762,7 +775,7 @@ export class BasicReplyRouteHandler {
     serder: SerderKERI;
     diger: Diger;
     route: string;
-    cigars?: CigarCouple[];
+    cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
   }): void {
     if (!args.route.startsWith("/loc/scheme")) {

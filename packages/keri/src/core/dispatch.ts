@@ -11,48 +11,12 @@ import {
   SerderKERI,
   Siger,
   Texter,
-  Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
 
 /** Fixed-width or compact ordinal primitive accepted by runtime dispatch groups. */
 export type DispatchOrdinal = Seqner | NumberPrimitive;
 type Qb64b = Uint8Array;
-
-/** One non-transferable receipt couple carried in parser dispatch state. */
-export class CigarCouple {
-  readonly verfer: Verfer;
-  readonly cigar: Cigar;
-
-  constructor(verfer: Verfer, cigar: Cigar) {
-    this.verfer = verfer;
-    this.cigar = cigar;
-  }
-
-  static fromTuple(tuple: readonly [Verfer, Cigar]): CigarCouple {
-    return new CigarCouple(tuple[0], tuple[1]);
-  }
-
-  /** Hydrate one parser-facing receipt couple directly from qb64b primitives. */
-  static fromQb64bTuple(tuple: readonly [Qb64b, Qb64b]): CigarCouple {
-    return new CigarCouple(
-      new Verfer({ qb64b: tuple[0] }),
-      new Cigar({ qb64b: tuple[1] }),
-    );
-  }
-
-  toTuple(): [Verfer, Cigar] {
-    return [this.verfer, this.cigar];
-  }
-
-  get aid(): string {
-    return this.verfer.qb64;
-  }
-
-  get verferQb64(): string {
-    return this.verfer.qb64;
-  }
-}
 
 /** One transferable receipt quadruple carried in parser dispatch state. */
 export class TransReceiptQuadruple {
@@ -564,7 +528,7 @@ export interface KeriDispatchEnvelopeInit {
   local: boolean;
   sigers?: Siger[];
   wigers?: Siger[];
-  cigars?: CigarCouple[];
+  cigars?: Cigar[];
   trqs?: TransReceiptQuadruple[];
   tsgs?: TransIdxSigGroup[];
   ssgs?: TransLastIdxSigGroup[];
@@ -590,6 +554,10 @@ export interface KeriDispatchEnvelopeInit {
  * - keep KERIpy family names on the envelope for porting familiarity
  * - use named value objects for each family element so maintainers do not have
  *   to mentally decode anonymous tuple-like object literals at every call site
+ *
+ * KERIpy runtime rule:
+ * - non-transferable receipt couples are normalized into `Cigar` instances
+ *   with attached `.verfer` before they reach reply/runtime processors
  */
 export class KeriDispatchEnvelope {
   readonly serder: SerderKERI;
@@ -597,7 +565,7 @@ export class KeriDispatchEnvelope {
   readonly local: boolean;
   readonly sigers: Siger[];
   readonly wigers: Siger[];
-  readonly cigars: CigarCouple[];
+  readonly cigars: Cigar[];
   readonly trqs: TransReceiptQuadruple[];
   readonly tsgs: TransIdxSigGroup[];
   readonly ssgs: TransLastIdxSigGroup[];

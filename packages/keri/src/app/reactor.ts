@@ -2,6 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import {
   type AttachmentGroup,
   type CesrMessage,
+  Cigar,
   createParser,
   type GroupEntry,
   isCounterGroupLike,
@@ -12,13 +13,13 @@ import {
   Siger,
   type Smellage,
   Texter,
+  Verfer,
 } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import {
   BlindedStateQuadruple,
   BoundStateSextuple,
-  CigarCouple,
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
   PathedMaterialGroup,
@@ -222,6 +223,16 @@ function normalizeTupleIndexers(entry: GroupEntry | undefined): Siger[] {
   return out;
 }
 
+function cigarFromQb64bCouple(
+  verferQb64b: Uint8Array,
+  cigarQb64b: Uint8Array,
+): Cigar {
+  return new Cigar(
+    { qb64b: cigarQb64b },
+    new Verfer({ qb64b: verferQb64b }),
+  );
+}
+
 /**
  * Normalize one parser attachment group into `KeriDispatchEnvelope` fields.
  *
@@ -285,7 +296,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.cigars.push(
-          CigarCouple.fromQb64bTuple([verfer.qb64b, cigar.qb64b]),
+          cigarFromQb64bCouple(verfer.qb64b, cigar.qb64b),
         );
       }
       return;

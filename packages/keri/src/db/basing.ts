@@ -45,12 +45,12 @@ import {
   ReceiptCouple,
   SourceSealTriple,
   TopicsRecord,
-  TransferableSignatureCouple,
   TxnMsgCacheRecord,
   TypedDigestSealCouple,
   TypedMediaQuadrupleTuple,
   UnverifiedReceiptTriple,
   ValidatorReceiptQuadruple,
+  VerferCigarCouple,
   WellKnownAuthN,
 } from "../core/records.ts";
 import { dgKey } from "./core/keys.ts";
@@ -150,7 +150,7 @@ export class Baser {
   public names!: Suber; // Habitat name-to-prefix index keyed by namespace and name.
   public sdts!: CesrSuber<Dater>; // SAD datetime stamps keyed by SAID.
   public ssgs!: CesrIoSetSuber<Siger>; // SAD indexed signatures keyed by SAD quadkey.
-  public scgs!: CatCesrIoSetSuber<TransferableSignatureCouple>; // SAD non-indexed signature couples keyed by SAID.
+  public scgs!: CatCesrIoSetSuber<VerferCigarCouple>; // SAD non-indexed signature couples keyed by SAID.
   public rpys!: SerderSuber<SerderKERI>; // Reply messages stored by reply SAID.
   public rpes!: CesrIoSetSuber<Diger>; // Partially signed reply escrow indices keyed by route.
   public eans!: CesrSuber<Diger>; // Controller-to-endpoint AuthN/AuthZ reply references.
@@ -168,7 +168,7 @@ export class Baser {
   public exns!: SerderSuber<SerderKERI>; // Exchange messages keyed by their digest.
   public erpy!: CesrSuber<Saider>; // Forward pointers to provided reply messages.
   public esigs!: CesrIoSetSuber<Siger>; // Exchange-message indexed signatures.
-  public ecigs!: CatCesrIoSetSuber<TransferableSignatureCouple>; // Exchange-message non-indexed signature couples.
+  public ecigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Exchange-message non-indexed signature couples.
   public epath!: IoSetSuber<string>; // Exchange-message pathed attachments.
   public essrs!: CesrIoSetSuber<Texter>; // ESSR payloads keyed by exchange digest.
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
@@ -445,7 +445,7 @@ export class Baser {
       });
 
       // SAD non-indexed signature couples keyed by SAD SAID.
-      this.scgs = new CatCesrIoSetSuber<TransferableSignatureCouple>(
+      this.scgs = new CatCesrIoSetSuber<VerferCigarCouple>(
         this.lmdber,
         {
           subkey: "scgs.",
@@ -542,7 +542,7 @@ export class Baser {
       });
 
       // Exchange-message non-indexed signature couples.
-      this.ecigs = new CatCesrIoSetSuber<TransferableSignatureCouple>(
+      this.ecigs = new CatCesrIoSetSuber<VerferCigarCouple>(
         this.lmdber,
         {
           subkey: "ecigs.",

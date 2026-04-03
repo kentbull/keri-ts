@@ -1221,3 +1221,48 @@ Use this doc for:
   - `Hab.make()` now accepts `icode` / `ncode`, but wider CLI/user-surface
     suite selection still needs deliberate product-facing exposure instead of
     assuming the bootstrap defaults are enough forever.
+
+### 2026-04-02 - Runtime Reply Cigars Now Mirror KERIpy Instead Of Carrying `CigarCouple`
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+- Removed `CigarCouple` from the runtime reply/dispatch surface in
+  `packages/keri/src/core/dispatch.ts`,
+  `packages/keri/src/core/routing.ts`,
+  `packages/keri/src/app/reactor.ts`, and
+  `packages/keri/src/app/habbing.ts`.
+  - Parser normalization of `NonTransReceiptCouples` and reply reload from
+    `scgs.` now hydrate `Cigar` instances with attached `.verfer`, and reply
+    verification/build paths read verifier context directly from the `Cigar`.
+  - Kept LMDB storage tuple-backed by renaming the stored `[Verfer, Cigar]`
+    shape to `VerferCigarCouple` in `packages/keri/src/core/records.ts` and
+    `packages/keri/src/db/basing.ts`, but did not let that storage shape leak
+    into runtime APIs.
+  - Added focused coverage for parser normalization, reply-routing ECDSA cigar
+    acceptance, and reply reload rehydration into runtime `Cigar.verfer`.
+- Why:
+  - KERIpy treats non-transferable receipt couples as a parsing/storage detail,
+    not the object model higher layers route on. The local wrapper had become a
+    misleading public concept that encouraged callers to think the wire couple
+    should leak all the way through the runtime.
+  - Keeping tuple-backed storage while normalizing at runtime preserves DB
+    parity without forcing routing/app code to carry an unnecessary wrapper.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/core/dispatch.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/app/reactor.test.ts packages/keri/test/unit/app/habbing.test.ts`
+  - Result: passed locally (`15 passed, 0 failed`)
+  - Command: `deno task fmt:check`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/core/dispatch.ts`
+  - `packages/keri/src/core/routing.ts`
+  - `packages/keri/src/app/reactor.ts`
+  - `packages/keri/src/app/habbing.ts`
+  - `packages/keri/src/core/records.ts`
+  - `packages/keri/src/db/basing.ts`
+- Risks/TODO:
+  - `scgs.` / `ecigs.` still store `[Verfer, Cigar]` tuples by design, so any
+    new runtime load path must remember to rehydrate them into `Cigar.verfer`
+    before it hands them to routing or message-assembly code.

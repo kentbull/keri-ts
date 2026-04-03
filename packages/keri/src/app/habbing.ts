@@ -18,11 +18,11 @@ import {
 import { b } from "../../../cesr/mod.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { CigarCouple, TransIdxSigGroup } from "../core/dispatch.ts";
+import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import type { HabitatRecord } from "../core/records.ts";
+import type { HabitatRecord, VerferCigarCouple } from "../core/records.ts";
 import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
@@ -101,6 +101,14 @@ function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   return messages.length === 0 ? emptyMessage() : concatBytes(...messages);
 }
 
+/** Require verifier context on runtime non-transferable reply cigars. */
+function requireCigarVerfer(cigar: Cigar): Verfer {
+  if (!cigar.verfer) {
+    throw new ValidationError("Reply cigar is missing verifier context.");
+  }
+  return cigar.verfer;
+}
+
 /**
  * Build one canonical `rpy` serder from route, attributes, and timestamp.
  *
@@ -176,12 +184,17 @@ function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
  *
  * Supported attachment shapes for the current bootstrap slice:
  * - transferable controller signature groups
- * - non-transferable receipt couples when replaying stored replies
+ * - non-transferable reply cigars with attached verifier context
+ *
+ * KERIpy parity rule:
+ * - runtime code handles non-transferable replies as hydrated `Cigar` objects
+ *   with `.verfer`
+ * - wire output still emits the CESR couple shape `verfer + cigar`
  */
 function buildEndorsedMessage(args: {
   serder: SerderKERI;
   tsg?: TransIdxSigGroup;
-  cigars?: readonly CigarCouple[];
+  cigars?: readonly Cigar[];
 }): Uint8Array {
   const attachments: Uint8Array[] = [];
 
@@ -209,9 +222,9 @@ function buildEndorsedMessage(args: {
         count: args.cigars.length,
         version: KERI_V1,
       }).qb64b,
-      ...args.cigars.flatMap((cigarCouple) => [
-        cigarCouple.verfer.qb64b,
-        cigarCouple.cigar.qb64b,
+      ...args.cigars.flatMap((cigar) => [
+        requireCigarVerfer(cigar).qb64b,
+        cigar.qb64b,
       ]),
     );
   }
@@ -264,6 +277,11 @@ function fetchReplyTsgs(
   return [...grouped.values()].sort((a, b) => Number(b.sn - a.sn));
 }
 
+/** Rehydrate one stored verfer+cigar tuple into the KERIpy runtime cigar shape. */
+function hydrateStoredCigar(tuple: VerferCigarCouple): Cigar {
+  return new Cigar(tuple[1], tuple[0]);
+}
+
 /**
  * Reload one persisted reply plus all of its stored attachments by SAID.
  *
@@ -289,7 +307,7 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
   if (cigars.length > 0) {
     return buildEndorsedMessage({
       serder,
-      cigars: cigars.map((entry) => CigarCouple.fromTuple(entry)),
+      cigars: cigars.map((entry) => hydrateStoredCigar(entry)),
     });
   }
 
@@ -429,7 +447,10 @@ export class Hab {
     serder: SerderKERI,
     sigers: readonly Siger[],
   ): Kever {
-    const kvy = new Kevery(this.db, { cues: new Deck<AgentCue>(), local: true });
+    const kvy = new Kevery(this.db, {
+      cues: new Deck<AgentCue>(),
+      local: true,
+    });
     const decision = kvy.processEvent({
       serder,
       sigers: [...sigers],
@@ -447,7 +468,9 @@ export class Hab {
     }
     const kever = this.db.getKever(this.pre);
     if (!kever) {
-      throw new Error(`Local acceptance did not produce a Kever for ${this.pre}.`);
+      throw new Error(
+        `Local acceptance did not produce a Kever for ${this.pre}.`,
+      );
     }
     return kever;
   }
@@ -573,7 +596,8 @@ export class Hab {
    * Current supported endorsement shapes:
    * - transferable indexed signature groups anchored to the latest accepted
    *   establishment event
-   * - non-transferable detached signature couples for local replay/reload flows
+   * - non-transferable detached signature cigars with attached verifier
+   *   context for local replay/reload flows
    *
    * Current `keri-ts` limitation:
    * - the Gate E bootstrap path only actively uses the transferable branch for
@@ -591,9 +615,7 @@ export class Hab {
     if (!kever.transferable) {
       return buildEndorsedMessage({
         serder,
-        cigars: (this.sign(serder.raw, false) as Cigar[]).map((cigar) =>
-          new CigarCouple(cigar.verfer ?? new Verfer({ qb64: this.pre! }), cigar)
-        ),
+        cigars: this.sign(serder.raw, false) as Cigar[],
       });
     }
 
@@ -923,7 +945,9 @@ export class Hab {
           yield {
             cue,
             msgs: [
-              cue.serder ? this.endorse(cue.serder) : this.reply(cue.route, cue.data ?? {}),
+              cue.serder
+                ? this.endorse(cue.serder)
+                : this.reply(cue.route, cue.data ?? {}),
             ],
             kind: "wire",
           };

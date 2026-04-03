@@ -447,6 +447,12 @@ This keeps context focused and avoids long-thread drift.
     `docs/adr/adr-0006-manager-derived-path-signing.md`: treat `Manager.sign({ pre, path })` as keeper-state addressing, preserve KERIpy precedence, do
     not invent deterministic `randy` derivation, and do not add new LMDB state
     just to make the branch work.
+85. Non-transferable receipt couples are now a wire/storage detail, not a
+    runtime API. Parser/reply/app code should normalize them immediately into
+    `Cigar` instances with attached `.verfer`, like KERIpy; LMDB stores such as
+    `scgs.` and `ecigs.` may stay tuple-backed as `[Verfer, Cigar]`, but any
+    runtime load path must rehydrate that tuple before routing or message
+    rebuild sees it.
 
 ## New Thread Kickoff Template
 

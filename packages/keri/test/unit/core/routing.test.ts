@@ -1,8 +1,8 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { Diger, Prefixer, SerderKERI, Verfer } from "../../../../cesr/mod.ts";
+import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { CigarCouple, TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 
@@ -55,7 +55,8 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
       });
       assertEquals(firstAccepted, false);
       assertEquals(
-        hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said]).length,
+        hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said])
+          .length,
         1,
       );
 
@@ -69,7 +70,8 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
       assertEquals(secondAccepted, true);
       assertExists(hby.db.rpys.get([saider.qb64]));
       assertEquals(
-        hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said]).length,
+        hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said])
+          .length,
         2,
       );
     } finally {
@@ -110,7 +112,7 @@ Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via v
         saider,
         route: "/ecdsa/nontrans",
         aid: hab.pre,
-        cigars: [new CigarCouple(new Verfer({ qb64: hab.pre }), cigars[0])],
+        cigars: [cigars[0]],
       });
 
       assertEquals(accepted, true);
@@ -153,7 +155,7 @@ Deno.test("Revery.acceptReply still rejects non-transferable replies whose autho
         saider,
         route: "/ecdsa/mismatch",
         aid: "BAD-AID",
-        cigars: [new CigarCouple(new Verfer({ qb64: hab.pre }), cigars[0])],
+        cigars: [cigars[0]],
       });
 
       assertEquals(accepted, false);

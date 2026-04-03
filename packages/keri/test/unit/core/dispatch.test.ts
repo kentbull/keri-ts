@@ -1,6 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import {
+  Cigar,
   Dater,
   Diger,
   Labeler,
@@ -17,7 +18,6 @@ import { encodeHugeNumber, Manager } from "../../../src/app/keeping.ts";
 import {
   BlindedStateQuadruple,
   BoundStateSextuple,
-  CigarCouple,
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
   PathedMaterialGroup,
@@ -68,11 +68,7 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
       const texter = new Texter({ qb64: "4BABAAAA" });
       const typedDiger = new Diger({ code: diger.code, raw: diger.raw });
 
-      const cigarCouple = CigarCouple.fromTuple([verfers[0], cigars[0]]);
-      const cigarFromQb64b = CigarCouple.fromQb64bTuple([
-        verfers[0].qb64b,
-        cigars[0].qb64b,
-      ]);
+      const normalizedCigar = new Cigar({ qb64b: cigars[0].qb64b }, verfers[0]);
       const trq = TransReceiptQuadruple.fromTuple([
         prefixer,
         seqner,
@@ -158,9 +154,8 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
         texter.qb64b,
       ]);
 
-      assertEquals(cigarCouple.verferQb64, verfers[0].qb64);
-      assertEquals(cigarFromQb64b.verferQb64, verfers[0].qb64);
-      assertEquals(cigarCouple.toTuple()[1].qb64, cigars[0].qb64);
+      assertEquals(normalizedCigar.verfer?.qb64, verfers[0].qb64);
+      assertEquals(normalizedCigar.qb64, cigars[0].qb64);
       assertEquals(trq.pre, prefixer.qb64);
       assertEquals(trq.snh, seqner.snh);
       assertEquals(trq.said, diger.qb64);
@@ -203,7 +198,7 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
         }),
         attachmentGroups: [],
         local: false,
-        cigars: [cigarCouple],
+        cigars: [normalizedCigar],
         trqs: [trq],
         tsgs: [tsg],
         ssgs: [ssg],
@@ -220,6 +215,8 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
       assertInstanceOf(envelope.lastFrc, FirstSeenReplayCouple);
       assertInstanceOf(envelope.lastSsc, SourceSealCouple);
       assertInstanceOf(envelope.lastSst, SourceSealTriple);
+      assertInstanceOf(envelope.cigars[0], Cigar);
+      assertEquals(envelope.cigars[0].verfer?.qb64, verfers[0].qb64);
     } finally {
       yield* keeper.close(true);
     }
