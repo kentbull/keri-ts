@@ -126,10 +126,14 @@ replay/verification semantics.
 30. The DB parity matrix is now audited against current source instead of older
     bootstrap assumptions: `recording.py` is the authoritative source for the
     persisted record contracts, all 30 inventoried `subing.py` rows now map to
-    real `subing.ts` classes, `DupKomer` is the only missing inventoried
-    `koming.py` row, and the true row-level missing surface is concentrated in
-    `RawRecord`, `OobiQueryRecord`, `BaserDoer`, `Broker`, and the still-generic
-    `fetchTsgs` helper shape.
+    real `subing.ts` classes, `koming.ts` now includes `DupKomer`, the earlier
+    five-row missing surface (`RawRecord`, `OobiQueryRecord`, `DupKomer`,
+    `BaserDoer`, `Broker`) is landed, and the real remaining gap is promotion of
+    high-value `Partial` rows plus the still-generic `fetchTsgs` helper shape.
+31. Record-contract parity in TypeScript should use `FooRecord` for the
+    hydrated runtime class and `FooRecordShape` for the persisted plain-object
+    contract. Exported `*Like` aliases are drift because they encode a TS type
+    workaround, not a KERIpy concept.
 
 ## Scope Checklist
 
@@ -150,12 +154,47 @@ Use this doc for:
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
 2. Treat Gates B, C, D, and the honest Gate E bootstrap slice as closed enough
-   to move main attention to Gate F/G communications breadth plus the deferred
-   reply/receipt/escrow work those gates depend on.
+   to move main attention to the Gate E continuation/Gate F bridge:
+   `/ksn`, `/introduce`, fuller cue materialization, receipt/query escrows, and
+   the init/incept runtime-integration work those later gates depend on.
 3. Keep DB parity artifacts concise and execution-oriented; they should remain
    usable worklists, not archival dumps.
 4. Treat missing class docstrings on newly ported KERIpy surfaces as a real
    maintenance regression and guard against them automatically.
+
+### 2026-04-03 - Five Missing DB Rows Closed With Record/Shape Boundary Cleanup
+
+- Topic docs updated:
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `.agents/PROJECT_LEARNINGS.md`
+- What changed:
+  - Landed the previously missing DB rows: `RawRecord`, `OobiQueryRecord`,
+    `DupKomer`, `BaserDoer`, and `Broker`.
+  - Added direct unit coverage for record serialization/hydration,
+    `DupKomer`, `BaserDoer`, and `Broker`.
+  - Updated the parity docs so those rows are no longer `Missing`; the symbol
+    matrix now has `0` row-level `Missing` items and keeps `fetchTsgs` as a
+    separate `Partial`.
+  - Removed exported `*Like` record aliases and standardized the public naming
+    model on `FooRecord` plus `FooRecordShape`.
+- Why:
+  - The old "missing surface" was no longer the real blocker once the code
+    landed. The real next phase is evidence-driven promotion of `Partial` rows,
+    and the record-layer naming needed to reflect the actual KERIpy mental
+    model instead of a TypeScript workaround.
+- Tests:
+  - Command: `deno test -A packages/keri/test/unit/core/records.test.ts packages/keri/test/unit/db/koming.test.ts packages/keri/test/unit/db/basing.test.ts packages/keri/test/unit/db/escrowing.test.ts`
+  - Result: 15 passed, 0 failed
+- Contracts/plans touched:
+  - `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
+  - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
+- Risks/TODO:
+  - Do not over-promote the newly landed rows; they are implemented, but still
+    honestly `Partial` until row-specific parity review is stronger.
+  - The next DB phase should focus on the highest-value `Partial` rows,
+    especially `fetchTsgs`, `Komer`/`IoSetKomer`/`DupKomer`, and the
+    `recording.py` classes that now have real direct tests but not yet full
+    parity sign-off.
 
 ### 2026-03-27 - `PathManager` ADR Locked The `Filer` Comparison Boundary
 
@@ -1495,6 +1534,44 @@ Use this doc for:
     long-lived child-process test should follow the new `withTufaAgent()` model
     instead of cloning ad hoc `try/finally` shutdown glue.
 
+### 2026-04-03 - Gate E Continuation Was Reframed Around Init/Incept Readiness
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
+  - `docs/design-docs/cli/port-kli-init-to-tufa.md`
+- What changed:
+  - Added an explicit implementation-reality section to the Gate E plan that
+    marks Chunks 1-2 as landed, Chunk 3 as effectively complete enough, and
+    Chunks 4-6 as only partially complete.
+  - Reframed the next real work as "Chunks 4-6 plus the enabling slices of
+    Chunks 7-9" instead of pretending reply routing, introductions, and full
+    escrow handling can be closed by touching only one chunk family.
+  - Captured the ownership split that matters for future ports:
+    `Revery` is the generic verifier/BADA/reply-escrow engine, `/ksn` belongs
+    with `Kevery`, and `/introduce` belongs with `Oobiery`.
+  - Updated the init/incept reconciliation plan so `tufa init` now explicitly
+    needs command-local runtime convergence for config-seeded OOBIs and
+    `tufa incept` is no longer allowed to stay permanently runtime-blind when
+    resolved transferable peer state is a real prerequisite.
+- Why:
+  - "Chunks 4-6 next" is directionally right, but taken literally it is still a
+    comforting half-truth. `/ksn`, `/introduce`, and "full escrow handling" all
+    cross the artificial chunk boundaries and require a more honest dependency
+    chain.
+  - `tufa init` and `tufa incept` were at risk of being called "done" while
+    still only handling local creation/bootstrap veneers instead of the remote
+    runtime state those commands actually depend on.
+- Tests:
+  - Command: N/A (planning/doc sequencing update only)
+  - Result: N/A
+- Risks/TODO:
+  - The plan is now more honest, but the code still needs the harder part:
+    `/ksn`, `/introduce`, receipt-family escrows, and init/open runtime
+    convergence all remain implementation work rather than documentation wins.
+
 ### 2026-04-03 - DB Parity Matrix Was Re-Audited Against Current Source
 
 - Topic docs updated:
@@ -1526,7 +1603,7 @@ Use this doc for:
   - `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
 - Risks/TODO:
   - The refreshed matrix is intentionally conservative, so most landed rows are
-    still `Partial` until row-specific parity evidence is stronger. The next
-    work should close the true missing surface (`RawRecord`, `OobiQueryRecord`,
-    `DupKomer`, `BaserDoer`, `Broker`) and then keep promoting rows with real
-    evidence instead of symbol existence alone.
+    still `Partial` until row-specific parity evidence is stronger. The
+    same-day follow-on later closed the previously missing five-row surface, so
+    the real remaining work is now continued `Partial` -> `Equivalent`
+    promotion with real evidence instead of symbol existence alone.

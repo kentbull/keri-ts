@@ -27,7 +27,7 @@ import type {
   KeverTransition,
   RejectKind,
 } from "./kever-decisions.ts";
-import type { KeyStateRecord } from "./records.ts";
+import { KeyStateRecord } from "./records.ts";
 
 /**
  * Convert one integer into the Huge-number CESR family used for durable replay
@@ -536,7 +536,7 @@ export class Kever {
 
   /** Serialize the current accepted state into durable `states.` form. */
   state(): KeyStateRecord {
-    return {
+    return new KeyStateRecord({
       vn: [...this.version],
       i: this.pre,
       s: this.sn.toString(16),
@@ -562,7 +562,7 @@ export class Kever {
         ba: [...this.adds],
       },
       di: this.delpre ?? "",
-    };
+    });
   }
 
   /**
@@ -959,7 +959,7 @@ export class Kever {
       return Kever.fromAttachmentDecision(attachments);
     }
 
-    const state: KeyStateRecord = {
+    const state = new KeyStateRecord({
       vn: [...this.version],
       i: this.pre,
       s: sn.toString(16),
@@ -985,7 +985,7 @@ export class Kever {
         ba: [...derived.adds],
       },
       di: this.delpre ?? "",
-    };
+    });
 
     return {
       kind: "accept",
@@ -1077,7 +1077,7 @@ export class Kever {
         pre: this.pre,
         said: serder.said ?? "",
         sn,
-        state: {
+        state: new KeyStateRecord({
           vn: [...this.version],
           i: this.pre,
           s: sn.toString(16),
@@ -1103,7 +1103,7 @@ export class Kever {
             ba: [...this.adds],
           },
           di: this.delpre ?? "",
-        },
+        }),
         log: {
           serder,
           sigers: attachments.attachments.sigers,
@@ -2019,7 +2019,7 @@ export class Kever {
       frc: FirstSeenReplayCouple | null;
     },
   ): KeyStateRecord {
-    return {
+    return new KeyStateRecord({
       vn: [serder.pvrsn.major, serder.pvrsn.minor],
       i: pre,
       s: "0",
@@ -2045,7 +2045,7 @@ export class Kever {
         ba: [],
       },
       di: serder.delpre ?? "",
-    };
+    });
   }
 
   /**

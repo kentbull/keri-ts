@@ -25,7 +25,7 @@ import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import type { HabitatRecord, VerferCigarCouple } from "../core/records.ts";
+import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
@@ -562,11 +562,11 @@ export class Hab {
     this.pre = pre;
 
     if (!hidden) {
-      const habord: HabitatRecord = {
+      const habord = new HabitatRecord({
         hid: pre,
         name: this.name,
         domain: this.ns,
-      };
+      });
       this.db.pinHab(pre, habord);
       this.db.pinName(this.ns ?? "", this.name, pre);
       this.db.prefixes.add(pre);

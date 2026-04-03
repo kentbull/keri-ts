@@ -47,23 +47,32 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
    - `CryptSignerSuber` is currently the only audited `Equivalent` row in the
      wrapper layer.
 4. `D3` is also materially further along than the earlier bootstrap view:
-   - `koming.ts` now includes `KomerBase`, `Komer`, and `IoSetKomer`,
+   - `koming.ts` now includes `KomerBase`, `Komer`, `IoSetKomer`, and
+     `DupKomer`,
    - JSON/CBOR/MGPK serializer selection is present at the `KomerBase` seam,
-   - the only truly missing inventoried `koming.py` row is `DupKomer`.
+   - there are no longer any inventoried `koming.py` rows in `Missing`, but
+     the family still remains mostly `Partial` pending broader parity review.
 5. `D4` now has a broad databaser/record-contract foundation in place:
    - `Baser` binds the large named-subdb surface used by the current runtime
      arc rather than only a narrow visibility slice,
    - persisted record contracts now live explicitly in
-     `packages/keri/src/core/records.ts`,
+     `packages/keri/src/core/records.ts` as `FooRecord` runtime classes plus
+     `FooRecordShape` stored-shape interfaces,
+   - `RawRecord`, `OobiQueryRecord`, and `BaserDoer` are now landed with
+     targeted unit coverage,
    - KERIpy's `statedict` read-through behavior is approximated by explicit
      `reloadKevers()` / `getKever()` helpers instead of a Python dict subclass,
-   - the true remaining missing D4 rows are `RawRecord`, `OobiQueryRecord`, and
-     `BaserDoer`.
-6. `D5` has not started in earnest:
-   - `Broker` / `escrowing.ts` is still missing,
-   - the main remaining blockers are now concentrated in record-helper closure,
-     `DupKomer`, escrow/process-loop breadth, and the later K/V/Gate H surface
-     rather than in the old Gate C encrypted-secret bootstrap work.
+   - the D4 row surface is no longer blocked on missing symbols, but many rows
+     still remain conservatively `Partial`.
+6. `D5` has now started as a DB substrate port:
+   - `Broker` / `escrowing.ts` is landed and directly tested,
+   - the class remains intentionally unwired to `Reger` / TEL runtime ownership
+     in this phase,
+   - the generic `fetchTsgs` helper row remains `Partial` because the new
+     broker-local reconstruction helper was not promoted to a shared DB API.
+7. The honest next phase is no longer "close the missing surface"; it is to
+   convert the highest-value `Partial` rows to `Equivalent` with row-specific
+   evidence and explicit acceptance of any intentional TS-native differences.
 
 ## Scope Sources (Parity Baseline)
 

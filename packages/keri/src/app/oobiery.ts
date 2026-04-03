@@ -1,7 +1,7 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type { OobiRecord } from "../core/records.ts";
+import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import type { Habery } from "./habbing.ts";
 import type { Reactor } from "./reactor.ts";
@@ -194,7 +194,7 @@ export class Oobiery {
   private pinQueueStore(
     kind: OobiQueueKind,
     url: string,
-    record: OobiRecord,
+    record: OobiRecordShape,
   ): void {
     const store = kind === "woobi" ? this.hby.db.woobi : this.hby.db.oobis;
     store.pin(url, record);

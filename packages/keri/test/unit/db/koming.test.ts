@@ -1,8 +1,9 @@
 import { run } from "effection";
-import { assert, assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { Kinds, t } from "../../../../cesr/mod.ts";
+import { KeyStateRecord, type KeyStateRecordShape, StateEERecord } from "../../../src/core/records.ts";
 import { createLMDBer, type LMDBer } from "../../../src/db/core/lmdber.ts";
-import { Komer, KomerBase, type KomerKind } from "../../../src/db/koming.ts";
+import { DupKomer, Komer, KomerBase, type KomerKind } from "../../../src/db/koming.ts";
 
 interface PersonRecord {
   first: string;
@@ -156,5 +157,118 @@ Deno.test("db/koming - string keys pass through unchanged", async () => {
     assertEquals(store.put("plain.key", person), true);
     assertEquals(store.get("plain.key"), person);
     assertEquals(store.getDict("missing"), null);
+  });
+});
+
+Deno.test("db/koming - record hydrators return record instances while plain-object writes still work", async () => {
+  await withTempDb(({ lmdber }) => {
+    const states = new Komer<KeyStateRecord, KeyStateRecordShape>(lmdber, {
+      subkey: "states.",
+      hydrate: (val) => KeyStateRecord.fromDict(val),
+      normalize: (val) => KeyStateRecord.fromDict(val),
+    });
+
+    assertEquals(
+      states.put("aid", {
+        i: "Eaid",
+        d: "Esaid",
+        s: "0",
+        f: "0",
+        dt: "2026-04-03T00:00:00.000000+00:00",
+        et: "icp",
+        k: ["Dkey"],
+        n: [],
+        ee: {
+          s: "0",
+          d: "Esaid",
+          br: [],
+          ba: [],
+        },
+      }),
+      true,
+    );
+
+    const state = states.get("aid");
+    assertInstanceOf(state, KeyStateRecord);
+    assertInstanceOf(state?.ee, StateEERecord);
+    assertEquals(state?.i, "Eaid");
+    assertEquals(state?.ee?.d, "Esaid");
+    assertEquals(states.getDict("aid"), {
+      i: "Eaid",
+      d: "Esaid",
+      s: "0",
+      f: "0",
+      dt: "2026-04-03T00:00:00.000000+00:00",
+      et: "icp",
+      k: ["Dkey"],
+      n: [],
+      ee: {
+        s: "0",
+        d: "Esaid",
+        br: [],
+        ba: [],
+      },
+    });
+  });
+});
+
+Deno.test("db/koming - DupKomer matches native duplicate-key behavior", async () => {
+  await withTempDb(({ lmdber }) => {
+    const people = new DupKomer<PersonRecord>(lmdber, { subkey: "dups." });
+    const alice = {
+      first: "Alice",
+      last: "Able",
+      address: {
+        street: "1 Alpha Ave",
+        city: "Afton",
+        state: "UT",
+        zip: 84001,
+      },
+    } satisfies PersonRecord;
+    const bob = {
+      first: "Bob",
+      last: "Baker",
+      address: {
+        street: "2 Beta Blvd",
+        city: "Bountiful",
+        state: "UT",
+        zip: 84010,
+      },
+    } satisfies PersonRecord;
+    const cara = {
+      first: "Cara",
+      last: "Clark",
+      address: {
+        street: "3 Gamma Grove",
+        city: "Cedar",
+        state: "UT",
+        zip: 84720,
+      },
+    } satisfies PersonRecord;
+
+    assertEquals(people.put("team", [bob, alice]), true);
+    assertEquals(people.add("team", bob), false);
+    assertEquals(people.add("team", cara), true);
+    assertEquals([...people.getIter("team")], [alice, bob, cara]);
+    assertEquals(people.get("team"), [alice, bob, cara]);
+    assertEquals(people.getLast("team"), cara);
+    assertEquals(people.cnt("team"), 3);
+
+    people.put(["branch", "alpha"], [alice]);
+    people.put(["branch", "beta"], [bob]);
+    assertEquals(
+      [...people.getTopItemIter("branch", { topive: true })],
+      [
+        [["branch", "alpha"], alice],
+        [["branch", "beta"], bob],
+      ],
+    );
+
+    assertEquals(people.rem("team", bob), true);
+    assertEquals(people.get("team"), [alice, cara]);
+    assertEquals(people.pin("team", [cara]), true);
+    assertEquals(people.get("team"), [cara]);
+    assertEquals(people.rem("team"), true);
+    assertEquals(people.get("team"), []);
   });
 });

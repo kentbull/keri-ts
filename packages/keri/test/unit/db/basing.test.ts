@@ -1,6 +1,6 @@
 import { run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
-import { createBaser } from "../../../src/db/basing.ts";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
 Deno.test("db/basing - Baser binds DB-backed state and record stores", async () => {
@@ -56,4 +56,28 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
       yield* baser.close(true);
     }
   });
+});
+
+Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on exit", async () => {
+  let tempPath: string | null = null;
+
+  await run(function*() {
+    const baser = new Baser({
+      name: `baser-doer-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const doer = new BaserDoer(baser);
+
+    assertEquals(baser.opened, false);
+    yield* doer.enter();
+    assertEquals(baser.opened, true);
+    tempPath = baser.path;
+    assertExists(tempPath);
+
+    yield* doer.exit();
+    assertEquals(baser.opened, false);
+    assertEquals(baser.path, null);
+  });
+
+  await assertRejects(() => Deno.stat(tempPath!));
 });

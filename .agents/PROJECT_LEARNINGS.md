@@ -490,12 +490,13 @@ This keeps context focused and avoids long-thread drift.
     interop tests must drain or cancel child stdout/stderr streams or Deno will
     fail the evidence run with leak errors. Broader `/ksn`, receipt-family
     cue/escrow work, and richer `woobi.` continuation remain later-gate work.
-92. The DB parity matrix was re-audited against current source on 2026-04-03:
-    `recording.py` is the real home of the persisted DB record contracts, the
-    earlier matrix had drifted badly on `subing.py` / `koming.py` status, and
-    the true remaining row-level DB gaps are now concentrated in `RawRecord`,
-    `OobiQueryRecord`, `DupKomer`, `BaserDoer`, `Broker`, and the still-generic
-    `fetchTsgs` helper shape.
+92. The DB parity matrix was re-audited and then partially closed on
+    2026-04-03: `recording.py` is the real home of the persisted DB record
+    contracts, the earlier matrix had drifted badly on `subing.py` /
+    `koming.py` status, the previously missing rows (`RawRecord`,
+    `OobiQueryRecord`, `DupKomer`, `BaserDoer`, `Broker`) are now landed, and
+    the honest remaining gap is promotion of high-value `Partial` rows plus the
+    still-generic `fetchTsgs` helper shape.
 93. Effection boundary discipline in interop tests is narrower than "all async
     becomes `Operation`": raw CLI invocation, help scraping, cache discovery,
     and HTTP polling may stay promise-based host glue, but helpers that own
@@ -505,6 +506,22 @@ This keeps context focused and avoids long-thread drift.
     a subprocess needs orderly awaited shutdown, wrap it in a generator-scoped
     owner like `withTufaAgent(...){ ... } finally { yield* stopChild(...) }`
     instead of hiding async stop logic in the cleanup callback.
+94. Honest runtime readiness for `tufa init` / `tufa incept` now depends on a
+    Gate E continuation slice, not just the closed bootstrap slice: treat
+    Chunks 1-2 as landed, Chunk 3 as good-enough, and pull `/ksn`,
+    `/introduce`, fuller cue materialization, unverified receipt/query escrow
+    passes, and reply-driven OOBI continuation into active work. The crucial
+    ownership split is: `Revery` verifies/BADA/escrows replies, `Kevery` owns
+    KEL-derived reply families such as `/ksn`, and `Oobiery` owns
+    introduction-driven OOBI discovery. `tufa init` should therefore run the
+    shared runtime when config preload exists, and `tufa incept` should stop
+    being runtime-blind when resolved transferable peer state is a real
+    prerequisite.
+95. When TypeScript ports KERIpy record dataclasses, the public model should be
+    `FooRecord` plus `FooRecordShape`, not `FooRecordLike`: the class is the
+    hydrated runtime object, the shape is the persisted JSON contract, and any
+    union between them belongs only at mapper boundaries instead of becoming a
+    repo-wide pseudo-entity.
 
 ## New Thread Kickoff Template
 

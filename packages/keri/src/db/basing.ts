@@ -1,6 +1,6 @@
 /** KERI event-log databaser built on `LMDBer` composition. */
 
-import { type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.2";
 import {
   b,
@@ -31,27 +31,40 @@ import {
   BlindedStateQuadrupleTuple,
   BoundStateSextuple,
   CacheTypeRecord,
+  type CacheTypeRecordShape,
   EndpointRecord,
+  type EndpointRecordShape,
   EscrowedValidatorReceiptQuintuple,
   EventSealTuple,
   EventSourceRecord,
+  type EventSourceRecordShape,
   FirstSeenReplayCouple,
   HabitatRecord,
+  type HabitatRecordShape,
   KeyStateRecord,
+  type KeyStateRecordShape,
   LocationRecord,
+  type LocationRecordShape,
   MsgCacheRecord,
+  type MsgCacheRecordShape,
   ObservedRecord,
+  type ObservedRecordShape,
   OobiRecord,
+  type OobiRecordShape,
+  type RawRecord,
   ReceiptCouple,
   SourceSealTriple,
   TopicsRecord,
+  type TopicsRecordShape,
   TxnMsgCacheRecord,
+  type TxnMsgCacheRecordShape,
   TypedDigestSealCouple,
   TypedMediaQuadrupleTuple,
   UnverifiedReceiptTriple,
   ValidatorReceiptQuadruple,
   VerferCigarCouple,
   WellKnownAuthN,
+  type WellKnownAuthNShape,
 } from "../core/records.ts";
 import { dgKey } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
@@ -82,6 +95,19 @@ function encodeHugeOrdinal(num: number): NumberPrimitive {
     value >>= 8n;
   }
   return new NumberPrimitive({ code: NumDex.Huge, raw });
+}
+
+function recordMapperOptions<TCtor extends new(data?: any) => RawRecord>(
+  ctor: TCtor,
+): {
+  hydrate: (val: unknown) => InstanceType<TCtor>;
+  normalize: (val: ConstructorParameters<TCtor>[0]) => InstanceType<TCtor>;
+} {
+  return {
+    hydrate: (val: unknown): InstanceType<TCtor> =>
+      new ctor(val as ConstructorParameters<TCtor>[0]) as InstanceType<TCtor>,
+    normalize: (val: ConstructorParameters<TCtor>[0]): InstanceType<TCtor> => new ctor(val) as InstanceType<TCtor>,
+  };
 }
 
 /** Options for opening a `Baser` LMDB environment and its named subdb surface. */
@@ -141,12 +167,12 @@ export class Baser {
   public fons!: CesrSuber<NumberPrimitive>; // First-seen ordinals for recovery and superseding.
   public migs!: CesrSuber<Dater>; // Database migration datetimes.
   public vers!: Suber; // Database version table.
-  public esrs!: Komer<EventSourceRecord>; // Event source records describing local vs remote provenance.
+  public esrs!: Komer<EventSourceRecord, EventSourceRecordShape>; // Event source records describing local vs remote provenance.
   public misfits!: IoSetSuber<string>; // Misfit escrows for remote events pending authentication.
   public delegables!: IoSetSuber<string>; // Delegable event escrows awaiting local delegator approval.
-  public states!: Komer<KeyStateRecord>; // Latest key-state record for each identifier prefix.
+  public states!: Komer<KeyStateRecord, KeyStateRecordShape>; // Latest key-state record for each identifier prefix.
   public wits!: CesrIoSetSuber<Prefixer>; // Witness lists for one event digest.
-  public habs!: Komer<HabitatRecord>; // Habitat application records for controller databases.
+  public habs!: Komer<HabitatRecord, HabitatRecordShape>; // Habitat application records for controller databases.
   public names!: Suber; // Habitat name-to-prefix index keyed by namespace and name.
   public sdts!: CesrSuber<Dater>; // SAD datetime stamps keyed by SAID.
   public ssgs!: CesrIoSetSuber<Siger>; // SAD indexed signatures keyed by SAD quadkey.
@@ -155,10 +181,10 @@ export class Baser {
   public rpes!: CesrIoSetSuber<Diger>; // Partially signed reply escrow indices keyed by route.
   public eans!: CesrSuber<Diger>; // Controller-to-endpoint AuthN/AuthZ reply references.
   public lans!: CesrSuber<Diger>; // Endpoint-to-location AuthN/AuthZ reply references.
-  public ends!: Komer<EndpointRecord>; // Service endpoint authorization records.
-  public locs!: Komer<LocationRecord>; // Service endpoint locations keyed by endpoint and scheme.
-  public obvs!: Komer<ObservedRecord>; // Observed identifier records keyed by controller, watcher, and observed ID.
-  public tops!: Komer<TopicsRecord>; // Witness mailbox retrieval cursors.
+  public ends!: Komer<EndpointRecord, EndpointRecordShape>; // Service endpoint authorization records.
+  public locs!: Komer<LocationRecord, LocationRecordShape>; // Service endpoint locations keyed by endpoint and scheme.
+  public obvs!: Komer<ObservedRecord, ObservedRecordShape>; // Observed identifier records keyed by controller, watcher, and observed ID.
+  public tops!: Komer<TopicsRecord, TopicsRecordShape>; // Witness mailbox retrieval cursors.
   public gpse!: CatCesrIoSetSuber<EventSealTuple>; // Group partial signature escrows.
   public gdee!: CatCesrIoSetSuber<EventSealTuple>; // Group delegate escrows.
   public gpwe!: CatCesrIoSetSuber<EventSealTuple>; // Group partial witness escrows.
@@ -173,19 +199,19 @@ export class Baser {
   public essrs!: CesrIoSetSuber<Texter>; // ESSR payloads keyed by exchange digest.
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
-  public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
+  public wkas!: IoSetKomer<WellKnownAuthN, WellKnownAuthNShape>; // Authorized well-known OOBI records.
   public kdts!: CesrSuber<Dater>; // Key-state notice datetime stamps.
-  public ksns!: Komer<KeyStateRecord>; // Key-state messages keyed by key-state SAID.
+  public ksns!: Komer<KeyStateRecord, KeyStateRecordShape>; // Key-state messages keyed by key-state SAID.
   public knas!: CesrSuber<Diger>; // Successful key-state notice SAID index.
   public wwas!: CesrSuber<Diger>; // Watcher-to-watched-AID reply SAID index.
-  public oobis!: Komer<OobiRecord>; // Config-loaded OOBIs to process asynchronously.
-  public eoobi!: Komer<OobiRecord>; // Retriable OOBIs that failed to load.
-  public coobi!: Komer<OobiRecord>; // OOBIs with outstanding client requests.
-  public roobi!: Komer<OobiRecord>; // Successfully resolved OOBIs.
-  public woobi!: Komer<OobiRecord>; // Well-known OOBIs used for MFA against resolved OOBIs.
-  public moobi!: Komer<OobiRecord>; // Multi-OOBI associations for one AID.
-  public mfa!: Komer<OobiRecord>; // Multifactor OOBI auth records awaiting processing.
-  public rmfa!: Komer<OobiRecord>; // Resolved multifactor OOBI auth records.
+  public oobis!: Komer<OobiRecord, OobiRecordShape>; // Config-loaded OOBIs to process asynchronously.
+  public eoobi!: Komer<OobiRecord, OobiRecordShape>; // Retriable OOBIs that failed to load.
+  public coobi!: Komer<OobiRecord, OobiRecordShape>; // OOBIs with outstanding client requests.
+  public roobi!: Komer<OobiRecord, OobiRecordShape>; // Successfully resolved OOBIs.
+  public woobi!: Komer<OobiRecord, OobiRecordShape>; // Well-known OOBIs used for MFA against resolved OOBIs.
+  public moobi!: Komer<OobiRecord, OobiRecordShape>; // Multi-OOBI associations for one AID.
+  public mfa!: Komer<OobiRecord, OobiRecordShape>; // Multifactor OOBI auth records awaiting processing.
+  public rmfa!: Komer<OobiRecord, OobiRecordShape>; // Resolved multifactor OOBI auth records.
   public schema!: SchemerSuber<SerderKERI>; // JSON Schema SADs keyed by schema SAID.
   public cfld!: Suber; // Contact field values for remote identifiers.
   public hbys!: Suber; // Habery-global settings.
@@ -202,9 +228,9 @@ export class Baser {
   public cdel!: CesrOnSuber<Diger>; // Completed group delegated AIDs keyed by ordinal.
   public meids!: CesrIoSetSuber<Diger>; // Multisig embed payload SAIDs to containing exchange-message SAIDs.
   public maids!: CesrIoSetSuber<Prefixer>; // Multisig embed payload SAIDs to participant AIDs.
-  public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
-  public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
-  public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
+  public ctyp!: Komer<CacheTypeRecord, CacheTypeRecordShape>; // KRAM cache-type records.
+  public msgc!: Komer<MsgCacheRecord, MsgCacheRecordShape>; // KRAM message-cache records.
+  public tmsc!: Komer<TxnMsgCacheRecord, TxnMsgCacheRecordShape>; // KRAM transactioned message-cache records.
   public pmkm!: SerderSuber<SerderKERI>; // KRAM partially signed multi-key messages.
   public pmks!: CesrIoSetSuber<Siger>; // KRAM partially signed multi-key signatures.
   public pmsk!: CatCesrSuber<EventSealTuple>; // KRAM partially signed multi-key sender key-state seals.
@@ -404,9 +430,13 @@ export class Baser {
 
       // Event source records describing whether an event is local/protected or
       // remote/not protected.
-      this.esrs = new Komer<EventSourceRecord>(this.lmdber, {
-        subkey: "esrs.",
-      });
+      this.esrs = new Komer<EventSourceRecord, EventSourceRecordShape>(
+        this.lmdber,
+        {
+          subkey: "esrs.",
+          ...recordMapperOptions(EventSourceRecord),
+        },
+      );
 
       // Misfit escrows for remote events that should be dropped unless they
       // become authenticated.
@@ -419,7 +449,13 @@ export class Baser {
       });
 
       // Latest key-state record for each identifier prefix.
-      this.states = new Komer<KeyStateRecord>(this.lmdber, { subkey: "stts." });
+      this.states = new Komer<KeyStateRecord, KeyStateRecordShape>(
+        this.lmdber,
+        {
+          subkey: "stts.",
+          ...recordMapperOptions(KeyStateRecord),
+        },
+      );
       // Witness lists for a given event digest.
       this.wits = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "wits.",
@@ -427,7 +463,10 @@ export class Baser {
       });
 
       // Habitat application records keyed by habitat name and namespace.
-      this.habs = new Komer<HabitatRecord>(this.lmdber, { subkey: "habs." });
+      this.habs = new Komer<HabitatRecord, HabitatRecordShape>(this.lmdber, {
+        subkey: "habs.",
+        ...recordMapperOptions(HabitatRecord),
+      });
 
       // Habitat name database mapping `(domain, name)` to identifier prefixes.
       this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
@@ -481,17 +520,29 @@ export class Baser {
 
       // Service endpoint identifier auth records extracted from `/end/role`
       // replies.
-      this.ends = new Komer<EndpointRecord>(this.lmdber, { subkey: "ends." });
+      this.ends = new Komer<EndpointRecord, EndpointRecordShape>(this.lmdber, {
+        subkey: "ends.",
+        ...recordMapperOptions(EndpointRecord),
+      });
 
       // Service endpoint locations keyed by endpoint identifier and URL scheme.
-      this.locs = new Komer<LocationRecord>(this.lmdber, { subkey: "locs." });
+      this.locs = new Komer<LocationRecord, LocationRecordShape>(this.lmdber, {
+        subkey: "locs.",
+        ...recordMapperOptions(LocationRecord),
+      });
 
       // Observed identifier records keyed by controller, watcher, and observed
       // identifier.
-      this.obvs = new Komer<ObservedRecord>(this.lmdber, { subkey: "obvs." });
+      this.obvs = new Komer<ObservedRecord, ObservedRecordShape>(this.lmdber, {
+        subkey: "obvs.",
+        ...recordMapperOptions(ObservedRecord),
+      });
 
       // Index of the last retrieved message from a witness mailbox.
-      this.tops = new Komer<TopicsRecord>(this.lmdber, { subkey: "witm." });
+      this.tops = new Komer<TopicsRecord, TopicsRecordShape>(this.lmdber, {
+        subkey: "witm.",
+        ...recordMapperOptions(TopicsRecord),
+      });
 
       // Group partial signature escrow entries.
       this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
@@ -574,9 +625,13 @@ export class Baser {
       });
 
       // Authorized well-known OOBI records.
-      this.wkas = new IoSetKomer<WellKnownAuthN>(this.lmdber, {
-        subkey: "wkas.",
-      });
+      this.wkas = new IoSetKomer<WellKnownAuthN, WellKnownAuthNShape>(
+        this.lmdber,
+        {
+          subkey: "wkas.",
+          ...recordMapperOptions(WellKnownAuthN),
+        },
+      );
       // Key-state notice datetime stamps keyed by key-state SAID.
       this.kdts = new CesrSuber<Dater>(this.lmdber, {
         subkey: "kdts.",
@@ -585,7 +640,10 @@ export class Baser {
 
       // Key-state messages keyed by key-state SAID.
       // Datetimes and signatures are held in the companion key-state stores.
-      this.ksns = new Komer<KeyStateRecord>(this.lmdber, { subkey: "ksns." });
+      this.ksns = new Komer<KeyStateRecord, KeyStateRecordShape>(this.lmdber, {
+        subkey: "ksns.",
+        ...recordMapperOptions(KeyStateRecord),
+      });
 
       // Successful key-state notice SAID index mapping `(controller, aid)` to
       // saved key-state SAIDs.
@@ -602,54 +660,62 @@ export class Baser {
       });
 
       // Config-loaded OOBIs to be processed asynchronously.
-      this.oobis = new Komer<OobiRecord>(this.lmdber, {
+      this.oobis = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "oobis.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // Retriable OOBIs that failed to load.
-      this.eoobi = new Komer<OobiRecord>(this.lmdber, {
+      this.eoobi = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "eoobi.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // OOBIs with outstanding client requests.
-      this.coobi = new Komer<OobiRecord>(this.lmdber, {
+      this.coobi = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "coobi.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // Successfully resolved OOBIs.
-      this.roobi = new Komer<OobiRecord>(this.lmdber, {
+      this.roobi = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "roobi.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // Well-known OOBIs used for multifactor authentication against resolved
       // OOBIs.
-      this.woobi = new Komer<OobiRecord>(this.lmdber, {
+      this.woobi = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "woobi.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // Multi-OOBI associations where one AID is tied to multiple OOBIs.
-      this.moobi = new Komer<OobiRecord>(this.lmdber, {
+      this.moobi = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "moobi.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // Multifactor well-known OOBI auth records awaiting processing, keyed by
       // controller URL.
-      this.mfa = new Komer<OobiRecord>(this.lmdber, {
+      this.mfa = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "mfa.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // Resolved multifactor well-known OOBI auth records keyed by controller
       // URL.
-      this.rmfa = new Komer<OobiRecord>(this.lmdber, {
+      this.rmfa = new Komer<OobiRecord, OobiRecordShape>(this.lmdber, {
         subkey: "rmfa.",
         sep: ">",
+        ...recordMapperOptions(OobiRecord),
       });
 
       // JSON Schema SADs keyed by schema SAID.
@@ -725,15 +791,28 @@ export class Baser {
         ctor: Prefixer,
       });
       // KRAM cache-type records keyed by expression string.
-      this.ctyp = new Komer<CacheTypeRecord>(this.lmdber, { subkey: "ctyp." });
+      this.ctyp = new Komer<CacheTypeRecord, CacheTypeRecordShape>(
+        this.lmdber,
+        {
+          subkey: "ctyp.",
+          ...recordMapperOptions(CacheTypeRecord),
+        },
+      );
 
       // KRAM message-cache records keyed by `(AID, MID)`.
-      this.msgc = new Komer<MsgCacheRecord>(this.lmdber, { subkey: "msgc." });
+      this.msgc = new Komer<MsgCacheRecord, MsgCacheRecordShape>(this.lmdber, {
+        subkey: "msgc.",
+        ...recordMapperOptions(MsgCacheRecord),
+      });
 
       // KRAM transactioned message-cache records keyed by `(AID, XID, MID)`.
-      this.tmsc = new Komer<TxnMsgCacheRecord>(this.lmdber, {
-        subkey: "tmsc.",
-      });
+      this.tmsc = new Komer<TxnMsgCacheRecord, TxnMsgCacheRecordShape>(
+        this.lmdber,
+        {
+          subkey: "tmsc.",
+          ...recordMapperOptions(TxnMsgCacheRecord),
+        },
+      );
 
       // KRAM partially signed multi-key messages keyed by `(AID, MID)`.
       this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
@@ -941,12 +1020,12 @@ export class Baser {
   }
 
   /** Insert one event-source record in `esrs.` if absent. */
-  putEsr(pre: string, said: string, record: EventSourceRecord): boolean {
+  putEsr(pre: string, said: string, record: EventSourceRecordShape): boolean {
     return this.esrs.put([pre, said], record);
   }
 
   /** Upsert one event-source record in `esrs.`. */
-  pinEsr(pre: string, said: string, record: EventSourceRecord): boolean {
+  pinEsr(pre: string, said: string, record: EventSourceRecordShape): boolean {
     return this.esrs.pin([pre, said], record);
   }
 
@@ -956,12 +1035,12 @@ export class Baser {
   }
 
   /** Insert one current key-state record in `states.` if absent. */
-  putState(pre: string, record: KeyStateRecord): boolean {
+  putState(pre: string, record: KeyStateRecordShape): boolean {
     return this.states.put(pre, record);
   }
 
   /** Upsert one current key-state record in `states.`. */
-  pinState(pre: string, record: KeyStateRecord): boolean {
+  pinState(pre: string, record: KeyStateRecordShape): boolean {
     return this.states.pin(pre, record);
   }
 
@@ -1176,12 +1255,12 @@ export class Baser {
   }
 
   /** Insert one habitat metadata record in `habs.` if absent. */
-  putHab(pre: string, record: HabitatRecord): boolean {
+  putHab(pre: string, record: HabitatRecordShape): boolean {
     return this.habs.put(pre, record);
   }
 
   /** Upsert one habitat metadata record in `habs.`. */
-  pinHab(pre: string, record: HabitatRecord): boolean {
+  pinHab(pre: string, record: HabitatRecordShape): boolean {
     return this.habs.pin(pre, record);
   }
 
@@ -1255,6 +1334,56 @@ export class Baser {
   /** Read one habery-scoped string setting from `hbys.`. */
   getHby(name: string): string | null {
     return this.hbys.get(name);
+  }
+}
+
+/**
+ * Thin Effection-native lifecycle host for one `Baser`.
+ *
+ * KERIpy correspondence:
+ * - mirrors `keri.db.basing.BaserDoer`
+ *
+ * Current `keri-ts` difference:
+ * - exposes explicit generator operations instead of HIO `Doer` callbacks, but
+ *   keeps the same ownership rule: reopen on enter, close on exit
+ */
+export class BaserDoer {
+  readonly baser: Baser;
+
+  constructor(baser: Baser) {
+    this.baser = baser;
+  }
+
+  /** Reopen the bound `Baser` if it is not already opened. */
+  *enter(options: Partial<BaserOptions> = {}): Operation<void> {
+    if (!this.baser.opened) {
+      yield* this.baser.reopen(options);
+    }
+  }
+
+  /** Close the bound `Baser`, clearing temp stores the same way KERIpy does. */
+  *exit(): Operation<void> {
+    yield* this.baser.close(this.baser.temp);
+  }
+
+  /**
+   * Hold the `Baser` open for the surrounding Effection scope.
+   *
+   * This is the direct replacement for the Python doer staying alive between
+   * `enter()` and `exit()` calls.
+   */
+  *run(options: Partial<BaserOptions> = {}): Operation<never> {
+    yield* this.enter(options);
+    try {
+      while (true) {
+        yield* action((resolve) => {
+          const timeoutId = setTimeout(() => resolve(undefined), 0);
+          return () => clearTimeout(timeoutId);
+        });
+      }
+    } finally {
+      yield* this.exit();
+    }
   }
 }
 
