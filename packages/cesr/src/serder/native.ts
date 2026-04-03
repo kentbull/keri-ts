@@ -1,6 +1,7 @@
 import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
+import { Ilks } from "../core/vocabulary.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
@@ -29,7 +30,7 @@ import type { GroupEntry } from "../primitives/primitive.ts";
 import { isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Texter } from "../primitives/texter.ts";
-import { Tholder } from "../primitives/tholder.ts";
+import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
 import { parseTraitor } from "../primitives/traitor.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
@@ -248,16 +249,17 @@ function encodeNumber(value: string | number | bigint): string {
   return new NumberPrimitive({ code: entry.code, raw: padded }).qb64;
 }
 
-/** KERI thresholds are either numeric hex strings or weighted Bexter expressions. */
-function encodeThreshold(value: string | number): string {
-  const text = String(value);
-  if (/^[0-9a-f]+$/i.test(text)) {
-    return encodeNumber(text);
+/** KERI thresholds are either numeric hex strings or weighted clause expressions. */
+function encodeThreshold(value: ThresholdSith | number | bigint): string {
+  try {
+    return new Tholder({ sith: value }).qb64;
+  } catch (error) {
+    throw new SerializeError(
+      `Unsupported CESR threshold=${JSON.stringify(value)}`,
+      undefined,
+      error instanceof Error ? error.message : undefined,
+    );
   }
-  if (/^[A-Za-z0-9_-]+$/.test(text)) {
-    return encodeBext(text);
-  }
-  throw new SerializeError(`Unsupported CESR threshold=${text}`);
 }
 
 /** CESR-native datetimes substitute base64-safe glyphs for RFC3339 punctuation. */
@@ -558,7 +560,7 @@ function parseNumericHexField(
 function parseThresholdSithField(
   raw: Uint8Array,
   offset: number,
-): ParsedNativeField<string> {
+): ParsedNativeField<ThresholdSith> {
   const matter = new Tholder({ qb64b: raw.slice(offset) });
   return {
     value: matter.sith,
@@ -787,7 +789,7 @@ const ACDC_NATIVE_FAMILIES: Record<string, NativeFieldKind> = {
 
 const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "icp"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.icp),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -796,7 +798,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "rot"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.rot),
     withKinds(Protocols.keri, "fixed", [
       "d",
       "i",
@@ -813,7 +815,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "ixn"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.ixn),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -822,7 +824,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "dip"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.dip),
     withKinds(Protocols.keri, "fixed", [
       "d",
       "i",
@@ -839,7 +841,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "drt"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.drt),
     withKinds(Protocols.keri, "fixed", [
       "d",
       "i",
@@ -856,11 +858,11 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "rct"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.rct),
     withKinds(Protocols.keri, "fixed", ["d", "i", "s"], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "qry"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.qry),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -869,7 +871,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "rpy"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.rpy),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -878,7 +880,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "pro"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.pro),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -887,7 +889,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "bar"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.bar),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -896,7 +898,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, "exn"),
+    nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.exn),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -905,7 +907,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "icp"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.icp),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -914,7 +916,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "rot"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.rot),
     withKinds(Protocols.keri, "fixed", [
       "d",
       "i",
@@ -932,7 +934,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "ixn"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.ixn),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -941,7 +943,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "dip"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.dip),
     withKinds(Protocols.keri, "fixed", [
       "d",
       "i",
@@ -958,7 +960,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "drt"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.drt),
     withKinds(Protocols.keri, "fixed", [
       "d",
       "i",
@@ -976,11 +978,11 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "rct"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.rct),
     withKinds(Protocols.keri, "fixed", ["d", "i", "s"], KERI_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "qry"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.qry),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -989,7 +991,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "rpy"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.rpy),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -998,7 +1000,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "pro"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.pro),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -1007,7 +1009,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "bar"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.bar),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -1016,7 +1018,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "xip"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.xip),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -1025,7 +1027,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, "exn"),
+    nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.exn),
     withKinds(
       Protocols.keri,
       "fixed",
@@ -1046,7 +1048,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 1, minor: 0 }, "ace"),
+    nativeLayoutKey(Protocols.acdc, { major: 1, minor: 0 }, Ilks.ace),
     withKinds(
       Protocols.acdc,
       "map",
@@ -1070,7 +1072,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "acm"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.acm),
     withKinds(
       Protocols.acdc,
       "map",
@@ -1082,7 +1084,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "ace"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.ace),
     withKinds(
       Protocols.acdc,
       "map",
@@ -1094,7 +1096,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "act"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.act),
     withKinds(
       Protocols.acdc,
       "fixed",
@@ -1106,7 +1108,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "acg"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.acg),
     withKinds(
       Protocols.acdc,
       "fixed",
@@ -1118,29 +1120,29 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "sch"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.sch),
     withKinds(Protocols.acdc, "fixed", ["d", "s"], ACDC_NATIVE_FAMILIES, {
       s: { strict: false },
     }),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "att"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.att),
     withKinds(Protocols.acdc, "fixed", ["d", "a"], ACDC_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "agg"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.agg),
     withKinds(Protocols.acdc, "fixed", ["d", "A"], ACDC_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "edg"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.edg),
     withKinds(Protocols.acdc, "fixed", ["d", "e"], ACDC_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "rul"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.rul),
     withKinds(Protocols.acdc, "fixed", ["d", "r"], ACDC_NATIVE_FAMILIES),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "rip"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.rip),
     withKinds(
       Protocols.acdc,
       "fixed",
@@ -1149,7 +1151,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "bup"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.bup),
     withKinds(
       Protocols.acdc,
       "fixed",
@@ -1158,7 +1160,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
     ),
   ],
   [
-    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, "upd"),
+    nativeLayoutKey(Protocols.acdc, { major: 2, minor: 0 }, Ilks.upd),
     withKinds(
       Protocols.acdc,
       "fixed",
@@ -1331,12 +1333,17 @@ function encodeNativeFieldValue(
     return encodeNumber(value);
   }
   if (spec.kind === "threshold") {
-    if (typeof value !== "string" && typeof value !== "number") {
+    if (
+      typeof value !== "string"
+      && typeof value !== "number"
+      && typeof value !== "bigint"
+      && !Array.isArray(value)
+    ) {
       throw new SerializeError(
         `Expected threshold value for native field ${label}`,
       );
     }
-    return encodeThreshold(value);
+    return encodeThreshold(value as ThresholdSith | number | bigint);
   }
   if (spec.kind === "primitive-list") {
     if (!Array.isArray(value)) {

@@ -1,6 +1,7 @@
 import type { Counter } from "./counter.ts";
 import type { Indexer } from "./indexer.ts";
 import type { Matter } from "./matter.ts";
+import type { Streamer } from "./streamer.ts";
 import type { UnknownPrimitive } from "./unknown.ts";
 
 /**
@@ -16,6 +17,25 @@ export interface CounterGroupLike extends Counter {
 
 /** Any first-class hydrated CESR primitive returned by parser hydration. */
 export type Primitive = Matter | Indexer | Counter | UnknownPrimitive;
+/**
+ * Rehydratable qualified primitive from one parsed recursive group graph.
+ *
+ * These entries are safe to pass through `new X({ qb64b: entry.qb64b })` style
+ * reconstruction because they are real qualified CESR primitives, not tuple
+ * payloads, nested counted groups, or lossless unknown placeholders.
+ */
+export type QualifiedPrimitive = Matter | Indexer | Counter;
+/**
+ * Primitive family that cipher encryption/decryption can faithfully round-trip.
+ *
+ * This intentionally excludes `UnknownPrimitive`: sealed-box decrypt returns a
+ * fully hydrated constructor-backed value, not a parser fallback placeholder.
+ */
+export type CipherHydratable = QualifiedPrimitive | Streamer;
+/** Constructor contract for cipher plaintext rehydration. */
+export type CipherHydratableCtor<
+  T extends CipherHydratable = CipherHydratable,
+> = new(...args: any[]) => T;
 /** Ordered tuple payload used by grouped attachments (for fixed small tuples). */
 export type PrimitiveTuple = readonly GroupEntry[];
 /** Recursive parser graph entry for attachment/native payloads. */
@@ -32,4 +52,21 @@ export function isCounterGroupLike(
 ): entry is CounterGroupLike {
   return typeof entry === "object" && entry !== null && !Array.isArray(entry)
     && "items" in entry && "count" in entry && "code" in entry;
+}
+
+/**
+ * Runtime guard for one rehydratable qualified primitive in a parsed group graph.
+ *
+ * This intentionally means "real CESR primitive with `qb64b`" rather than
+ * "any parser primitive union member", so tuples, nested counter groups, and
+ * `UnknownPrimitive` placeholders are all excluded.
+ */
+export function isQualifiedPrimitive(
+  entry: unknown,
+): entry is QualifiedPrimitive {
+  return typeof entry === "object"
+    && entry !== null
+    && !Array.isArray(entry)
+    && !isCounterGroupLike(entry as GroupEntry)
+    && "qb64b" in entry;
 }

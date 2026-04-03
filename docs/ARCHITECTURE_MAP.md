@@ -58,7 +58,9 @@ internal-only implementation areas so refactors can preserve stable contracts.
 ### Application Stack
 
 1. CLI/Server composition (`src/app/**`)
-2. Domain services (`src/db/basing.ts` and future event processors)
+2. Domain services (`src/app/keeping.ts`, `src/db/basing.ts`, event processors)
+   - `Manager` orchestrates creators, keeper state, AEID policy, and replay.
+   - concrete signing/verification should stay on CESR primitives.
 3. Infrastructure adapters (`src/db/core/**`)
 
 ### CESR Stack
@@ -66,6 +68,21 @@ internal-only implementation areas so refactors can preserve stable contracts.
 1. Public API (`packages/cesr/src/index.ts`)
 2. Parser orchestration (`core/parser-engine.ts`, parser dispatch)
 3. Primitive parsers + table codex
+   - executable crypto primitives live here as well:
+     `Signer.sign()`, `Verfer.verify()`, and `Salter.signer()` are the public
+     behavior seams.
+   - executable sealed-box primitives live here too:
+     `Cipher.decrypt()`, `Encrypter.encrypt()`, `Encrypter.verifySeed()`,
+     `Decrypter.decrypt()`, and `Streamer` are CESR-owned behavior seams.
+   - Signature-suite dispatch belongs here as well:
+     `packages/cesr/src/primitives/signature-suite.ts` is the only place that
+     should import concrete curve implementations for signer/verifier work.
+   - Variable-family size/code promotion belongs in the shared `Matter`
+     encoding/parsing layer, not in ad hoc subclass-local normalization logic.
+   - Base derivation-code semantics such as `transferable`, `digestive`,
+     `prefixive`, `special`, and `composable` belong on `Matter`; do not hide
+     them in verifier-local helpers. `Signer.transferable` is the intentional
+     exception because seed codes do not encode transferability on their own.
 4. Adapters (`async-iterable`, `effection`) and tooling (`annotate`)
 
 ## Cross-Cutting Concerns
@@ -80,6 +97,20 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - Do not break `deno task kli ...` and `deno task cesr:annotate ...` UX.
 - Keep CESR parser behavior and fixture/test parity stable.
 - Treat `packages/cesr/mod.ts` and app exports as compatibility boundaries.
+- Keep KEL/reply/runtime verification primitive-driven: higher layers should
+  call `Verfer.verify()`, and higher-layer signing should flow through
+  `Signer.sign()` or `Manager` orchestration rather than importing concrete
+  curve code or suite helpers directly.
+- Keep sealed-box encryption primitive-driven too: higher layers should call
+  `Cipher` / `Encrypter` / `Decrypter` rather than reimplementing libsodium/X25519
+  behavior in app or keeper code.
+- Treat `Manager.sign({ pre, path })` as keeper-state addressing, not as a raw
+  derivation-string passthrough. `path` identifies a managed key lot by
+  `(ridx, kidx)`; `salty` managers may reconstruct it from persisted derivation
+  parameters, while `randy` managers can only resolve it back to stored signers.
+- Treat `packages/keri/src/core/keeper-crypto.ts` as a compatibility wrapper,
+  not a true ownership layer. New encryption/decryption behavior belongs in
+  CESR primitives first.
 
 ## Ownership Heuristics
 

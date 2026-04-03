@@ -1,6 +1,7 @@
-import { action, type Operation, run, spawn, type Task } from "effection";
+import { type Operation, run, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { startServer } from "../../../src/app/server.ts";
+import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 
 /**
  * Integration test for startServer function
@@ -37,82 +38,6 @@ import { startServer } from "../../../src/app/server.ts";
  * - serverTask.halt() stops the server task (and all children)
  */
 
-/**
- * Helper function to convert fetch Promise to Effection Operation
- * This allows fetch to participate in the Effection task tree
- */
-function* fetchOp(url: string, init?: RequestInit): Operation<Response> {
-  return yield* action((resolve, reject) => {
-    fetch(url, init).then(resolve, reject);
-    return () => {}; // Cleanup function (can abort fetch if needed)
-  });
-}
-
-/**
- * Helper function to convert Response.text() Promise to Effection Operation
- */
-function* textOp(response: Response): Operation<string> {
-  return yield* action((resolve, reject) => {
-    response.text().then(resolve, reject);
-    return () => {}; // Cleanup function
-  });
-}
-
-/**
- * Helper function to wait for a server to be ready
- * Polls the server until it responds or times out
- */
-function* waitForServer(
-  port: number,
-  maxAttempts: number = 10,
-): Operation<void> {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = yield* fetchOp(`http://localhost:${port}/health`, {
-        signal: AbortSignal.timeout(100), // 100ms timeout per attempt
-      });
-      if (response.ok) {
-        // Consume the response body to avoid leaks
-        yield* textOp(response);
-        return; // Server is ready
-      }
-      // Consume non-ok responses too
-      yield* textOp(response);
-    } catch {
-      // Server not ready yet, wait a bit
-    }
-
-    // Wait 50ms before next attempt
-    yield* action((resolve) => {
-      const timeoutId = setTimeout(() => resolve(undefined), 50);
-      return () => clearTimeout(timeoutId);
-    });
-  }
-
-  throw new Error(
-    `Server on port ${port} did not become ready within ${maxAttempts} attempts`,
-  );
-}
-
-/**
- * Helper function to properly shut down a server task
- * Halts the task (which triggers server.shutdown() via cleanup) and waits for completion
- * The startServer function's finally block ensures shutdown completes before returning
- */
-function* waitForShutdown(serverTask: Task<void>): Operation<void> {
-  // Halt the server task - this triggers the cleanup function in startServer
-  // which calls server.shutdown(), and the finally block waits for server.finished
-  yield* serverTask.halt();
-
-  // The server task's finally block will have waited for shutdown to complete,
-  // so we don't need to wait here. However, we add a small delay to ensure
-  // Deno's leak detector sees the operation complete within the test context.
-  yield* action((resolve) => {
-    const timeoutId = setTimeout(() => resolve(undefined), 100);
-    return () => clearTimeout(timeoutId);
-  });
-}
-
 Deno.test("Integration: Server - startServer with HTTP requests", async () => {
   const testPort = 8001; // Use a different port to avoid conflicts
 
@@ -127,7 +52,7 @@ Deno.test("Integration: Server - startServer with HTTP requests", async () => {
     // Wait for server to be ready
     // This polls the server until it responds, demonstrating how to wait
     // for async operations in Effection
-    yield* waitForServer(testPort);
+    yield* waitForServer(testPort, { host: "localhost", maxAttempts: 10 });
 
     try {
       // Test 1: health endpoint
@@ -142,7 +67,7 @@ Deno.test("Integration: Server - startServer with HTTP requests", async () => {
       yield* textOp(response2);
     } finally {
       // Cleanup: Wait for server shutdown to complete
-      yield* waitForShutdown(serverTask);
+      yield* waitForTaskHalt(serverTask, 100);
     }
   });
   console.log("Integration: startServer with HTTP requests passed");
@@ -159,7 +84,7 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
       yield* startServer(testPort);
     });
 
-    yield* waitForServer(testPort);
+    yield* waitForServer(testPort, { host: "localhost", maxAttempts: 10 });
 
     try {
       // Spawn multiple concurrent fetch operations
@@ -191,7 +116,7 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
       assertEquals(result3, "ok");
     } finally {
       // Cleanup: Wait for server shutdown to complete
-      yield* waitForShutdown(serverTask);
+      yield* waitForTaskHalt(serverTask, 100);
     }
   });
 });
@@ -207,7 +132,7 @@ Deno.test("Integration: Server - startServer error handling", async () => {
       yield* startServer(testPort);
     });
 
-    yield* waitForServer(testPort);
+    yield* waitForServer(testPort, { host: "localhost", maxAttempts: 10 });
 
     try {
       // Test that errors propagate correctly through the task tree
@@ -225,7 +150,7 @@ Deno.test("Integration: Server - startServer error handling", async () => {
       assertEquals(text, "ok");
     } finally {
       // Cleanup: Wait for server shutdown to complete
-      yield* waitForShutdown(serverTask);
+      yield* waitForTaskHalt(serverTask, 100);
     }
   });
 });

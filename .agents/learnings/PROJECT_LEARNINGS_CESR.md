@@ -432,3 +432,99 @@ Persistent CESR parser memory for `keri-ts`.
 - Fixture provenance is now clearer too: the cross-implementation/native
   external vectors used by hardening and parity suites carry explicit
   maintainer-facing origin/intent comments.
+
+### 2026-03-27 - Indexed Signature Roundtrip Needed Mid-Pad Parity
+
+- Topic docs updated:
+  - `packages/cesr/src/primitives/indexer.ts`
+  - `packages/cesr/test/unit/primitives/indexer.test.ts`
+  - `packages/cesr/test/unit/primitives/siger.test.ts`
+- What changed:
+  - Fixed `Indexer` text/binary inhale so it mirrors `Matter`'s mid-pad rules:
+    when reconstructing raw bytes from `qb64`, the parser must restore the
+    text-domain pad sextets before base64 decode and then strip `ps + ls`, not
+    just `ls`.
+  - Added explicit roundtrip regression coverage proving `Indexer` and `Siger`
+    preserve `raw` bytes across `qb64` reconstruction, not merely `qb64`
+    string equality.
+- Why:
+  - Gate E runtime work exposed the lie in the old tests: parsed indexed
+    signatures could look correct as `qb64` strings while carrying different raw
+    signature bytes, which silently breaks Ed25519 verification after CESR
+    parse/replay.
+  - The real maintainer lesson is brutal and simple: for signature material,
+    `qb64` equality is not enough. Raw-byte roundtrip is the actual contract.
+- Tests:
+  - Command: `deno test --config packages/cesr/deno.json packages/cesr/test/unit/primitives/indexer.test.ts packages/cesr/test/unit/primitives/siger.test.ts`
+  - Result: passed locally
+- Risks/TODO:
+  - Any higher-layer code that previously relied on parsed `Indexer.raw` being
+    trustworthy without explicit roundtrip tests should now be treated with more
+    suspicion until the surrounding path has real verification coverage.
+
+### 2026-04-02 - `SerderKERI.bner` Must Normalize Deprecated Intive `bt` Inputs
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
+- What changed:
+  - Extended the internal numeric-wrapper helper used by `SerderKERI` so
+    `bner` now accepts semantic `bt` values supplied as lowercase hex text,
+    deprecated intive JSON numbers, or exact `bigint` inputs.
+  - Added regression coverage proving `bner`/`bn` normalize deprecated intive
+    `bt` inputs both on the constructor SAD path and after reparsing raw JSON.
+- Why:
+  - The real `bt` bug hypothesis was wrong at the field-selection layer:
+    `bner` is just the wrapper projection over `bt`, matching KERIpy. The
+    actual drift was that `keri-ts` only normalized string `bt` values, which
+    broke compatibility with KERIpy's still-supported deprecated intive input
+    surface.
+- Tests:
+  - Command:
+    `deno test --config packages/cesr/deno.json packages/cesr/test/unit/serder-classes.test.ts`
+  - Result: passed locally (`14 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/serder/serder.ts`
+  - `packages/cesr/test/unit/serder-classes.test.ts`
+- Risks/TODO:
+  - `bn` is still a JS `number` convenience accessor, so callers that need
+    exact large integer behavior should continue to prefer `bner.num`/`.numh`
+    rather than treating `bn` as an arbitrary-precision contract.
+
+### 2026-04-02 - Weighted Thresholds Became Real Semantic CESR Primitives
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CESR.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Expanded `packages/cesr/src/primitives/tholder.ts` from a code-family
+    wrapper into a semantic primitive with weighted/numeric normalization,
+    exact threshold-size calculation, `limen`/`sith` projection, and
+    KERIpy-compatible `satisfy(indices)` support for nested weighted groups.
+  - Widened serder/native threshold handling so `kt`/`nt` can round-trip as
+    numeric hex strings or weighted semantic arrays across JSON, CBOR, and
+    CESR-native paths.
+  - Added focused regression coverage for flat weighted thresholds, nested
+    weighted groups, semantic-array `SerderKERI` accessors, and binary-body
+    parser hydration of weighted threshold accessors.
+- Why:
+  - The old `Tholder` port only proved CESR code-family parity. It did not own
+    the meaning of a threshold, which pushed KERI layers toward re-parsing or
+    collapsing weighted material into numeric shortcuts.
+  - The maintainer rule now is simple: if code needs to know whether signatures
+    satisfy a threshold expression, the answer lives in `Tholder`, not in
+    ad hoc string parsing at higher layers.
+- Tests:
+  - Command:
+    `deno test -A --unstable-ffi --config packages/keri/deno.json packages/cesr/test/unit/primitives/tholder.test.ts packages/cesr/test/unit/serder-classes.test.ts packages/cesr/test/unit/parser-binary-serder.test.ts`
+  - Result: passed locally (`25 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/tholder.ts`
+  - `packages/cesr/src/serder/serder.ts`
+  - `packages/cesr/src/serder/native.ts`
+  - `docs/design-docs/keri/WEIGHTED_THRESHOLD_PARITY.md`
+- Risks/TODO:
+  - `ThresholdSith` now permits structured `kt`/`nt` payloads; any future
+    schema narrowing or CLI/config validation work must preserve those weighted
+    forms instead of implicitly stringifying them away.

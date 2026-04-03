@@ -1,6 +1,15 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.2";
-import { Cipher, type Decrypter, type Encrypter, NumberPrimitive, Prefixer, Signer } from "../../../cesr/mod.ts";
+import {
+  Cipher,
+  type Decrypter,
+  type Encrypter,
+  NumberPrimitive,
+  Prefixer,
+  Signer,
+  type Tier,
+  Verfer,
+} from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple } from "../core/records.ts";
@@ -20,9 +29,13 @@ export interface KeeperOptions extends LMDBerOptions {
  * - mirrors the `PubLot` record shape used by keeper state records
  */
 export interface PubLot {
+  /** Ordered fully qualified public keys for one establishment-event key set. */
   pubs: string[];
+  /** Rotation index of the establishment event that uses this key set. */
   ridx: number;
+  /** Zeroth key index of this set in the full managed key sequence. */
   kidx: number;
+  /** ISO8601 datetime when this public-key set was first created. */
   dt: string;
 }
 
@@ -36,8 +49,11 @@ export interface PubLot {
  * replay and stateful key progression.
  */
 export interface PreSit {
+  /** Historical previously current lot retained for replay/erase progression. */
   old: PubLot;
+  /** Current active lot used for present signing state. */
   new: PubLot;
+  /** Next future lot that becomes current on the next rotation/replay advance. */
   nxt: PubLot;
 }
 
@@ -51,15 +67,21 @@ export interface PreSit {
  * key material for a managed identifier prefix.
  */
 export interface PrePrm {
+  /** Prefix index for this managed key sequence within keeper-global policy. */
   pidx: number;
+  /** Creator algorithm used to derive or replay later key lots for this prefix. */
   algo: string;
+  /** Per-prefix derivation salt, plaintext or encrypted according to AEID policy. */
   salt: string;
+  /** Deterministic path stem used by salty creator families. */
   stem: string;
-  tier: string;
+  /** Stretch tier used when recreating deterministic signer material. */
+  tier: Tier;
 }
 
 /** Ordered public-key set stored for one `(prefix, ridx)` replay key. */
 export interface PubSet {
+  /** Ordered public keys for the addressed `(prefix, ridx)` replay slot. */
   pubs: string[];
 }
 
@@ -182,7 +204,7 @@ export class Keeper {
       // identifier set used by GroupSignifyHab flows.
       this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
         subkey: "smids.",
-        klas: [Prefixer, NumberPrimitive],
+        ctor: [Prefixer, NumberPrimitive],
       });
 
       // Group rotating member tuples for one multisig prefix.
@@ -190,7 +212,7 @@ export class Keeper {
       // identifier set used by GroupSignifyHab flows.
       this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
         subkey: "rmids.",
-        klas: [Prefixer, NumberPrimitive],
+        ctor: [Prefixer, NumberPrimitive],
       });
 
       // Prefix index keyed by the first public key in a key sequence.
@@ -198,7 +220,7 @@ export class Keeper {
       // temporary prefixes, matching the KERIpy keeper index contract.
       this.pres = new CesrSuber<Prefixer>(this.lmdber, {
         subkey: "pres.",
-        klas: Prefixer,
+        ctor: Prefixer,
       });
 
       // Root derivation parameters for one managed identifier prefix.
@@ -216,14 +238,14 @@ export class Keeper {
       // KERIpy notes these are not yet broadly exercised outside that path.
       this.prxs = new CesrSuber<Cipher>(this.lmdber, {
         subkey: "prxs.",
-        klas: Cipher,
+        ctor: Cipher,
       });
 
       // Encrypted next-key commitments used by group-signify keeper flows.
       // KERIpy notes these are not yet broadly exercised outside that path.
       this.nxts = new CesrSuber<Cipher>(this.lmdber, {
         subkey: "nxts.",
-        klas: Cipher,
+        ctor: Cipher,
       });
       return true;
     } catch (error) {
@@ -239,12 +261,17 @@ export class Keeper {
     return yield* this.lmdber.close(clear);
   }
 
-  /** Read one keeper-global string value from `gbls.`. */
+  /**
+   * Read one keeper-global string value from `gbls.`.
+   *
+   * Manager-owned keys currently include `aeid`, `pidx`, `algo`, `salt`, and
+   * `tier`.
+   */
   getGbls(key: string): string | null {
     return this.gbls.get(key);
   }
 
-  /** Upsert one keeper-global string value in `gbls.`. */
+  /** Upsert one keeper-global string value in `gbls.` under the same manager-owned key contract. */
   pinGbls(key: string, value: string): boolean {
     return this.gbls.pin(key, value);
   }
@@ -272,12 +299,26 @@ export class Keeper {
    * - sealed-box ciphertext when an encrypter is provided
    */
   putPris(pub: string, secret: string, encrypter?: Encrypter): boolean {
-    return this.pris.put(pub, new Signer({ qb64: secret }), encrypter);
+    return this.pris.put(
+      pub,
+      new Signer({
+        qb64: secret,
+        transferable: new Verfer({ qb64: pub }).transferable,
+      }),
+      encrypter,
+    );
   }
 
   /** Upsert a signer seed in `pris.` under the same plaintext/cipher rules as `putPris()`. */
   pinPris(pub: string, secret: string, encrypter?: Encrypter): boolean {
-    return this.pris.pin(pub, new Signer({ qb64: secret }), encrypter);
+    return this.pris.pin(
+      pub,
+      new Signer({
+        qb64: secret,
+        transferable: new Verfer({ qb64: pub }).transferable,
+      }),
+      encrypter,
+    );
   }
 
   /**

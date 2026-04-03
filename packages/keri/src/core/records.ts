@@ -8,6 +8,7 @@ import type {
   Prefixer,
   Siger,
   Texter,
+  ThresholdSith,
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
@@ -35,8 +36,8 @@ export interface StateEERecord {
  * - mirrors `KeyStateRecord` from `keri.recording`
  *
  * Stored in `Baser.states` / `stts.` and used as the durable source of truth
- * for current local habitat state. `Hab.kever` is reconstructed from this
- * record rather than treated as independently authoritative state.
+ * for accepted current key state. Live `Kever` instances are reloaded from
+ * this record rather than treating in-memory habitat wrappers as authoritative.
  */
 export interface KeyStateRecord {
   vn?: number[];
@@ -47,9 +48,9 @@ export interface KeyStateRecord {
   f?: string;
   dt?: string;
   et?: string;
-  kt?: string;
+  kt?: ThresholdSith;
   k?: string[];
-  nt?: string;
+  nt?: ThresholdSith;
   n?: string[];
   bt?: string;
   b?: string[];
@@ -262,12 +263,12 @@ export type SourceSealTriple = [Prefixer, NumberPrimitive, Diger];
 export type FirstSeenReplayCouple = [NumberPrimitive, Dater];
 /** Typed-digest seal couple stored in `tdcs.`. */
 export type TypedDigestSealCouple = [Verser, Diger];
-/** Transferable/non-indexed signature couple stored in `scgs.` and `ecigs.`. */
-export type TransferableSignatureCouple = [Verfer, Cigar];
-/** Type-media quadruple stored in `tmqs.`. */
-export type TypeMediaQuadruple = [Diger, Noncer, Labeler, Texter];
-/** Blind-state quadruple stored in `bsqs.`. */
-export type BoundStateQuadruple = [Diger, Noncer, Noncer, Labeler];
+/** Verfer+cigar storage couple stored in `scgs.` and `ecigs.`. */
+export type VerferCigarCouple = [Verfer, Cigar];
+/** Typed-media quadruple stored in `tmqs.`. */
+export type TypedMediaQuadrupleTuple = [Diger, Noncer, Labeler, Texter];
+/** Blinded-state quadruple stored in `bsqs.`. */
+export type BlindedStateQuadrupleTuple = [Diger, Noncer, Noncer, Labeler];
 /** Bound-state sextuple stored in `bsss.`. */
 export type BoundStateSextuple = [
   Diger,

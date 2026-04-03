@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
-import { Cigar, SerderKERI, Siger, smell } from "../../../../cesr/mod.ts";
+import { Cigar, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -30,9 +30,12 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(storedHab ? "sigs" in storedHab : false, false);
       const state = hby.db.getState(hab.pre);
       assertEquals(state?.i, hab.pre);
-      assertEquals(state?.k, hab.kever?.verfers);
+      assertEquals(state?.k, hab.kever?.verfers.map((verfer) => verfer.qb64));
       assertEquals(hby.db.getKel(hab.pre, 0), state?.d);
       assertEquals(hby.db.getFel(hab.pre, 0), state?.d);
+      assertEquals(hab.accepted, true);
+      assertEquals(hby.db.getKever(hab.pre)?.pre, hab.pre);
+      assertEquals(hby.prefixes.includes(hab.pre), true);
 
       const evt = state?.d ? hby.db.getEvt(dgKey(hab.pre, state.d)) : null;
       const evtText = evt ? new TextDecoder().decode(evt) : "";
@@ -67,13 +70,16 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(hab?.name, alias);
       assertEquals(hby.habByName(alias)?.pre, hab?.pre);
       assertEquals(hab?.kever?.pre, hab?.pre);
+      assertEquals(hab?.accepted, true);
+      assertEquals(hby.prefixes.includes(hab?.pre ?? ""), true);
       const storedHab = hab ? hby.db.getHab(hab.pre) : null;
       assertEquals(storedHab?.hid, hab?.pre);
       assertEquals(storedHab?.name, alias);
       assertEquals(storedHab ? "sigs" in storedHab : false, false);
       const state = hab ? hby.db.getState(hab.pre) : null;
       assertEquals(state?.i, hab?.pre);
-      assertEquals(state?.k, hab?.kever?.verfers);
+      assertEquals(state?.k, hab?.kever?.verfers.map((verfer) => verfer.qb64));
+      assertEquals(hab ? hby.db.getKever(hab.pre)?.pre : null, hab?.pre ?? null);
     } finally {
       yield* hby.close();
     }
@@ -99,6 +105,35 @@ Deno.test("Habery inception keeps non-transferable prefix equal to the signing k
       const state = hby.db.getState(hab.pre);
       assertEquals(hab.pre, state?.k?.[0]);
       assertEquals(hab.pre.startsWith("B"), true);
+      assertEquals(state?.n ?? [], []);
+      assertEquals(state?.b ?? [], []);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Habery inception keeps non-transferable ECDSA prefixes equal to the signing key", async () => {
+  const name = `habery-nontrans-r1-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("bob-r1", undefined, {
+        transferable: false,
+        icode: "Q",
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const state = hby.db.getState(hab.pre);
+
+      assertEquals(hab.pre, state?.k?.[0]);
+      assertEquals(hab.pre.startsWith("1AAI"), true);
       assertEquals(state?.n ?? [], []);
       assertEquals(state?.b ?? [], []);
     } finally {
@@ -136,6 +171,39 @@ Deno.test("Habery inception honors digestive prefix codex overrides for i", asyn
   });
 });
 
+Deno.test("Habery inception persists weighted and nested threshold state", async () => {
+  const name = `habery-weighted-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  const nested = [{ "1": ["1/2", "1/2"] }];
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("weighted", undefined, {
+        transferable: true,
+        icount: 2,
+        isith: ["1/2", "1/2"],
+        ncount: 2,
+        nsith: nested,
+        toad: 0,
+      });
+      const state = hby.db.getState(hab.pre);
+
+      assertEquals(state?.kt, ["1/2", "1/2"]);
+      assertEquals(state?.nt, nested);
+      assertEquals(hab.kever?.tholder?.sith, ["1/2", "1/2"]);
+      assertEquals(hab.kever?.tholder?.weighted, true);
+      assertEquals(hab.kever?.ntholder?.sith, nested);
+      assertEquals(hab.kever?.ntholder?.weighted, true);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior intact", async () => {
   const name = `habery-sign-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
@@ -165,10 +233,19 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
       assertInstanceOf(indexed[0], Siger);
       assertInstanceOf(unindexed[0], Cigar);
       assertEquals(indexed[0]?.index, 0);
-      assertEquals(typeof signatorSig, "string");
+      assertInstanceOf(signatorSig, Cigar);
+      assertInstanceOf(hby.signator?.verfer, Verfer);
+      assertEquals(hby.signator?.verfer.qb64, hby.signator?.pre);
+      assertEquals(hby.signator?.verfer.qb64, hby.signator?.hab.kever?.verfers[0]?.qb64);
       assertEquals(
         signatorSig ? hby.signator?.verify(ser, signatorSig) : false,
         true,
+      );
+      assertEquals(
+        signatorSig
+          ? hby.signator?.verify(new TextEncoder().encode("wrong-message"), signatorSig)
+          : true,
+        false,
       );
     } finally {
       yield* hby.close();
@@ -201,7 +278,9 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
       const sig = hby.signator?.sign(ser);
 
       signatoryPre = hby.db.getHby(SIGNER) ?? "";
-      assertEquals(typeof sig, "string");
+      assertInstanceOf(sig, Cigar);
+      assertInstanceOf(hby.signator?.verfer, Verfer);
+      assertEquals(hby.signator?.verfer.qb64, signatoryPre);
       assertEquals(
         sig ? hby.signator?.verify(ser, sig) : false,
         true,
@@ -224,7 +303,10 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
 
       assertEquals(hby.signator?.pre, signatoryPre);
       assertEquals(hby.db.getHby(SIGNER), signatoryPre);
-      assertEquals(typeof sig, "string");
+      assertInstanceOf(sig, Cigar);
+      assertInstanceOf(hby.signator?.verfer, Verfer);
+      assertEquals(hby.signator?.verfer.qb64, signatoryPre);
+      assertEquals(hby.signator?.verfer.qb64, hby.signator?.hab.kever?.verfers[0]?.qb64);
       assertEquals(
         sig ? hby.signator?.verify(ser, sig) : false,
         true,

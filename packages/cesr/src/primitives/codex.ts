@@ -82,10 +82,19 @@ export const NUMBER_CODES = codexValues(NumDex);
 export const TAG_CODES = codexValues(TagDex);
 export const LABELER_CODES = codexValues(LabelDex);
 export const PREFIX_CODES = codexValues(PreDex);
-export const NON_TRANSFERABLE_PREFIX_CODES = codexValues(NonTransDex);
+export const NON_TRANSFERABLE_CODES = codexValues(NonTransDex);
 export const NON_DIGEST_PREFIX_CODES = codexValues(PreNonDigDex);
 export const ESCAPE_CODES = codexValues(EscapeDex);
 
+/**
+ * X25519 cipher-family helper sets keyed by plaintext hydration rules.
+ *
+ * KERIpy correspondence:
+ * - stream families preserve whole sniffable CESR streams
+ * - qb64 families preserve fully qualified text material
+ * - qb2 families preserve binary CESR encodings
+ * - fixed qb64 families name the common salt/seed payloads directly
+ */
 export const CIPHER_X25519_VARIABLE_STREAM_CODES = codexValues(CiXVarStrmDex);
 export const CIPHER_X25519_QB64_VARIABLE_CODES = codexValues(CiXVarQB64Dex);
 export const CIPHER_X25519_FIXED_QB64_CODES = codexValues(CiXFixQB64Dex);
@@ -111,6 +120,13 @@ export const THOLDER_CODES = new Set<string>([
   ...THOLDER_WEIGHTED_CODES,
 ]);
 
+/**
+ * Executable primitive suite families.
+ *
+ * These are the small semantic validation sets consumed by `Signer`,
+ * `Salter`, `Encrypter`, `Decrypter`, and detached-signature primitives, not
+ * alternative registries separate from the generated KERIpy parity codices.
+ */
 export const SIGNER_CODES = new Set<string>([
   MtrDex.Ed25519_Seed,
   MtrDex.ECDSA_256k1_Seed,

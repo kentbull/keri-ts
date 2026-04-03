@@ -244,6 +244,111 @@ Deno.test("serder: SerderKERI exposes KERIpy-style numeric, threshold, and backe
   assertEquals(serder.mucodes.FixBodyGroup, CtrDexV2.FixBodyGroup);
 });
 
+Deno.test("serder: SerderKERI hydrates weighted threshold accessors from semantic arrays", () => {
+  const keyA = "DHGF1NUOc-vwViJHL5vQ4pwJK2a41rRonZ4kJlMUZ-xF";
+  const keyB = "DFtTn4J6D8SIe8TXtEX12ce06obMjWaV-jncEV1Goypd";
+  const nxtA = "EGKa8UzUyVkfZmNi3bRwFm0lB8KJwYahjKwcMEbLNcq0";
+  const nxtB = "EJzwX8-rUGej2owHHc9P3-ELUjl-oHkFPQo4bHLLllId";
+  const nested = [{ "1": ["1/2", "1/2"] }];
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "icp",
+      i: "",
+      kt: ["1/2", "1/2"],
+      k: [keyA, keyB],
+      nt: nested,
+      n: [nxtA, nxtB],
+      bt: "0",
+      b: [],
+      c: [],
+      a: [],
+    },
+    makify: true,
+    saids: {
+      d: "E",
+      i: "E",
+    },
+  });
+
+  assertEquals(serder.verify(), true);
+  assertEquals(serder.tholder?.weighted, true);
+  assertEquals(serder.tholder?.sith, ["1/2", "1/2"]);
+  assertEquals(serder.ntholder?.weighted, true);
+  assertEquals(serder.ntholder?.sith, nested);
+});
+
+Deno.test("serder: SerderKERI exposes raw `a` separately from list-only `seals`", () => {
+  const cid = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+
+  const serder = new SerderKERI({
+    sad: {
+      v: versify({
+        proto: "KERI",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "rpy",
+      d: "",
+      i: cid,
+      dt: "2026-03-17T12:34:56.000000+00:00",
+      r: "introduce",
+      a: { cid },
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+
+  assertEquals(serder.a, { cid });
+  assertEquals(serder.seals, []);
+});
+
+Deno.test("serder: SerderKERI normalizes deprecated intive bt inputs for both sad and raw paths", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+  const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";
+  const backer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
+
+  const fromSad = new SerderKERI({
+    sad: {
+      v: versify({
+        proto: "KERI",
+        pvrsn: Vrsn_2_0,
+        gvrsn: Vrsn_2_0,
+        kind: "JSON",
+        size: 0,
+      }),
+      t: "icp",
+      d: "",
+      i: "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN",
+      s: "a",
+      kt: "1",
+      k: [key],
+      nt: "1",
+      n: [nxt],
+      bt: 1,
+      b: [backer],
+      c: [],
+      a: [],
+    },
+    pvrsn: Vrsn_2_0,
+    gvrsn: Vrsn_2_0,
+    kind: "JSON",
+    makify: true,
+  });
+  const fromRaw = new SerderKERI({ raw: fromSad.raw });
+
+  assertEquals(fromSad.ked?.bt, 1);
+  assertEquals(fromSad.bner?.numh, "1");
+  assertEquals(fromSad.bn, 1);
+  assertEquals(fromRaw.ked?.bt, 1);
+  assertEquals(fromRaw.bner?.numh, "1");
+  assertEquals(fromRaw.bn, 1);
+});
+
 Deno.test("serder: SerderKERI rejects invalid non-transferable inception state", () => {
   const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
 

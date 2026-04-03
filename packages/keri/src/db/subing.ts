@@ -13,8 +13,8 @@ import {
   Signer,
   smell,
   t,
+  Verfer,
 } from "../../../cesr/mod.ts";
-import { decryptSigner, encryptSigner } from "../core/keeper-crypto.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -62,16 +62,16 @@ function isBase64UrlSegment(value: string): boolean {
 
 function splitQualified<T extends CesrValue>(
   val: Uint8Array,
-  klases: readonly QualifiedCtor<T>[],
+  ctors: readonly QualifiedCtor<T>[],
 ): T[] {
   const out: T[] = [];
   let offset = 0;
   while (offset < val.length) {
-    for (const klas of klases) {
+    for (const ctor of ctors) {
       if (offset >= val.length) {
         break;
       }
-      const item = new klas({ qb64b: val.slice(offset) });
+      const item = new ctor({ qb64b: val.slice(offset) });
       out.push(item);
       offset += item.fullSize;
     }
@@ -99,7 +99,8 @@ function signerFromStored(
   if (!verkey) {
     return new Signer({ qb64b: val });
   }
-  return new Signer({ qb64b: val });
+  const verfer = new Verfer({ qb64: verkey });
+  return new Signer({ qb64b: val, transferable: verfer.transferable });
 }
 
 /**
@@ -547,7 +548,7 @@ export class B64Suber<T extends string[] = string[]> extends B64SuberBase<T> {}
  * Qualified CESR primitive family (`Cesr*`).
  */
 export class CesrSuberBase<T extends CesrValue = CesrValue> extends Suber<T> {
-  protected readonly klas: QualifiedCtor<T>;
+  protected readonly ctor: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
   constructor(
@@ -556,30 +557,30 @@ export class CesrSuberBase<T extends CesrValue = CesrValue> extends Suber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<T>;
+      ctor: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klas = klas;
+    this.ctor = ctor;
     this.strict = strict;
   }
 
   protected override _ser(val: T): Uint8Array {
-    if (this.strict && !(val instanceof this.klas)) {
-      throw new TypeError(`Expected ${this.klas.name}, got ${typeof val}.`);
+    if (this.strict && !(val instanceof this.ctor)) {
+      throw new TypeError(`Expected ${this.ctor.name}, got ${typeof val}.`);
     }
     return val.qb64b;
   }
 
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null ? null : new this.klas({ qb64b: val });
+    return val === null ? null : new this.ctor({ qb64b: val });
   }
 }
 
@@ -594,7 +595,7 @@ export class CesrSuber<T extends CesrValue = CesrValue> extends CesrSuberBase<T>
  * - one qualified CESR primitive per logical item
  */
 export class CesrOnSuber<T extends CesrValue = CesrValue> extends OnSuberBase<T> {
-  protected readonly klas: QualifiedCtor<T>;
+  protected readonly ctor: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
   constructor(
@@ -603,30 +604,30 @@ export class CesrOnSuber<T extends CesrValue = CesrValue> extends OnSuberBase<T>
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<T>;
+      ctor: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
     super(db, { subkey, dupsort: false, sep, verify });
-    this.klas = klas;
+    this.ctor = ctor;
     this.strict = strict;
   }
 
   protected override _ser(val: T): Uint8Array {
-    if (this.strict && !(val instanceof this.klas)) {
-      throw new TypeError(`Expected ${this.klas.name}, got ${typeof val}.`);
+    if (this.strict && !(val instanceof this.ctor)) {
+      throw new TypeError(`Expected ${this.ctor.name}, got ${typeof val}.`);
     }
     return val.qb64b;
   }
 
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null ? null : new this.klas({ qb64b: val });
+    return val === null ? null : new this.ctor({ qb64b: val });
   }
 }
 
@@ -636,7 +637,7 @@ export class CesrOnSuber<T extends CesrValue = CesrValue> extends OnSuberBase<T>
 export class CatCesrSuberBase<
   T extends readonly CesrValue[] = readonly CesrValue[],
 > extends Suber<T> {
-  protected readonly klases: readonly QualifiedCtor<CesrValue>[];
+  protected readonly ctors: readonly QualifiedCtor<CesrValue>[];
   protected readonly strict: boolean;
 
   constructor(
@@ -645,33 +646,33 @@ export class CatCesrSuberBase<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
+      ctor: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
       strict?: boolean;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klases = Array.isArray(klas) ? klas : [klas];
+    this.ctors = Array.isArray(ctor) ? ctor : [ctor];
     this.strict = strict;
   }
 
   protected override _ser(val: T): Uint8Array {
     const items = isNonStringIterable(val) ? [...val] : [val];
-    if (this.strict && items.length !== this.klases.length) {
+    if (this.strict && items.length !== this.ctors.length) {
       throw new Error(
-        `Expected ${this.klases.length} CESR tuple elements, got ${items.length}.`,
+        `Expected ${this.ctors.length} CESR tuple elements, got ${items.length}.`,
       );
     }
     if (this.strict) {
       items.forEach((item, index) => {
-        const klas = this.klases[index];
-        if (klas && !(item instanceof klas)) {
-          throw new TypeError(`Expected ${klas.name} at slot ${index}.`);
+        const ctor = this.ctors[index];
+        if (ctor && !(item instanceof ctor)) {
+          throw new TypeError(`Expected ${ctor.name} at slot ${index}.`);
         }
       });
     }
@@ -689,7 +690,7 @@ export class CatCesrSuberBase<
     if (val === null) {
       return null;
     }
-    return splitQualified(val, this.klases) as unknown as T;
+    return splitQualified(val, this.ctors) as unknown as T;
   }
 }
 
@@ -955,7 +956,7 @@ export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> 
  * - one qualified CESR primitive per logical member
  */
 export class CesrIoSetSuber<T extends CesrValue = CesrValue> extends IoSetSuber<T> {
-  protected readonly klas: QualifiedCtor<T>;
+  protected readonly ctor: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
   constructor(
@@ -964,30 +965,30 @@ export class CesrIoSetSuber<T extends CesrValue = CesrValue> extends IoSetSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<T>;
+      ctor: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klas = klas;
+    this.ctor = ctor;
     this.strict = strict;
   }
 
   protected override _ser(val: T): Uint8Array {
-    if (this.strict && !(val instanceof this.klas)) {
-      throw new TypeError(`Expected ${this.klas.name}, got ${typeof val}.`);
+    if (this.strict && !(val instanceof this.ctor)) {
+      throw new TypeError(`Expected ${this.ctor.name}, got ${typeof val}.`);
     }
     return val.qb64b;
   }
 
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null ? null : new this.klas({ qb64b: val });
+    return val === null ? null : new this.ctor({ qb64b: val });
   }
 }
 
@@ -1001,7 +1002,7 @@ export class CesrIoSetSuber<T extends CesrValue = CesrValue> extends IoSetSuber<
 export class CatCesrIoSetSuber<
   T extends readonly CesrValue[] = readonly CesrValue[],
 > extends IoSetSuber<T> {
-  protected readonly klases: readonly QualifiedCtor<CesrValue>[];
+  protected readonly ctors: readonly QualifiedCtor<CesrValue>[];
   protected readonly strict: boolean;
 
   constructor(
@@ -1010,18 +1011,18 @@ export class CatCesrIoSetSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
+      ctor: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
       strict?: boolean;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klases = Array.isArray(klas) ? klas : [klas];
+    this.ctors = Array.isArray(ctor) ? ctor : [ctor];
     this.strict = strict;
   }
 
@@ -1033,16 +1034,16 @@ export class CatCesrIoSetSuber<
    */
   protected override _ser(val: T): Uint8Array {
     const items = isNonStringIterable(val) ? [...val] : [val];
-    if (this.strict && items.length !== this.klases.length) {
+    if (this.strict && items.length !== this.ctors.length) {
       throw new Error(
-        `Expected ${this.klases.length} CESR tuple elements, got ${items.length}.`,
+        `Expected ${this.ctors.length} CESR tuple elements, got ${items.length}.`,
       );
     }
     if (this.strict) {
       items.forEach((item, index) => {
-        const klas = this.klases[index];
-        if (klas && !(item instanceof klas)) {
-          throw new TypeError(`Expected ${klas.name} at slot ${index}.`);
+        const ctor = this.ctors[index];
+        if (ctor && !(item instanceof ctor)) {
+          throw new TypeError(`Expected ${ctor.name} at slot ${index}.`);
         }
       });
     }
@@ -1060,16 +1061,18 @@ export class CatCesrIoSetSuber<
   protected override _des(val: Uint8Array | null): T | null {
     return val === null
       ? null
-      : splitQualified(val, this.klases) as unknown as T;
+      : splitQualified(val, this.ctors) as unknown as T;
   }
 }
 
 /**
- * Special signer/cipher stores.
+ * Signer storage family keyed by verifier qb64.
  *
- * Current `keri-ts` difference:
- * - encryption helpers are not implemented in the local CESR primitives yet,
- *   so optional encrypter/decrypter parameters are accepted but rejected.
+ * Maintainer model:
+ * - stored value bytes are always the qualified signer seed payload
+ * - the final keyspace segment is the authoritative verifier qb64
+ * - signer hydration must therefore recover transferability from that verifier
+ *   so `Signer.verfer` and `Signer.transferable` survive round-trips
  */
 export class SignerSuber extends CesrSuberBase<Signer> {
   constructor(
@@ -1084,7 +1087,7 @@ export class SignerSuber extends CesrSuberBase<Signer> {
       verify?: boolean;
     },
   ) {
-    super(db, { subkey, sep, verify, klas: Signer });
+    super(db, { subkey, sep, verify, ctor: Signer });
   }
 
   /** Read one signer without local decryption support. */
@@ -1129,8 +1132,8 @@ export class SignerSuber extends CesrSuberBase<Signer> {
  * - mirrors the role of `CryptSignerSuber` for stores like keeper `pris.`
  *
  * Current `keri-ts` difference:
- * - encrypted signer payloads now use the KERI-local libsodium sealed-box
- *   backend while preserving the KERIpy-facing `Encrypter`/`Decrypter` API
+ * - encrypted signer payloads are now handled directly by CESR
+ *   `Encrypter`/`Decrypter` primitives instead of a keeper-local crypto shim
  *
  * Maintainer model:
  * - callers still interact in terms of logical signer seeds
@@ -1158,13 +1161,13 @@ export class CryptSignerSuber extends SignerSuber {
     encrypter?: Encrypter,
   ): boolean {
     const stored = encrypter && !(val instanceof Cipher)
-      ? encryptSigner(
-        val instanceof Signer || typeof val === "string"
-          || val instanceof Uint8Array
+      ? encrypter.encrypt({
+        prim: val instanceof Signer
           ? val
+          : typeof val === "string" || val instanceof Uint8Array
+          ? new Signer({ qb64b: signerToStored(val) })
           : new Signer({ qb64b: signerToStored(val) }),
-        encrypter,
-      )
+      })
       : val;
     return this.db.putVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
@@ -1181,13 +1184,13 @@ export class CryptSignerSuber extends SignerSuber {
     encrypter?: Encrypter,
   ): boolean {
     const stored = encrypter && !(val instanceof Cipher)
-      ? encryptSigner(
-        val instanceof Signer || typeof val === "string"
-          || val instanceof Uint8Array
+      ? encrypter.encrypt({
+        prim: val instanceof Signer
           ? val
+          : typeof val === "string" || val instanceof Uint8Array
+          ? new Signer({ qb64b: signerToStored(val) })
           : new Signer({ qb64b: signerToStored(val) }),
-        encrypter,
-      )
+      })
       : val;
     return this.db.setVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
@@ -1203,11 +1206,15 @@ export class CryptSignerSuber extends SignerSuber {
     if (!decrypter) {
       return super.get(keys);
     }
-    const val = this.db.getVal(this.sdb, this._tokey(keys));
+    const key = this._tokey(keys);
+    const val = this.db.getVal(this.sdb, key);
     if (val === null) {
       return null;
     }
-    return decryptSigner(val, decrypter);
+    return signerFromStored(
+      this._tokeys(key),
+      decrypter.decrypt({ qb64: val, bare: true }) as Uint8Array,
+    );
   }
 
   /**
@@ -1235,11 +1242,15 @@ export class CryptSignerSuber extends SignerSuber {
         this._tokey(keys, topive),
       )
     ) {
+      const keyParts = this._tokeys(key);
       yield [
-        this._tokeys(key),
+        keyParts,
         decrypter
-          ? decryptSigner(val, decrypter)
-          : signerFromStored(this._tokeys(key), val),
+          ? signerFromStored(
+            keyParts,
+            decrypter.decrypt({ qb64: val, bare: true }) as Uint8Array,
+          )
+          : signerFromStored(keyParts, val),
       ];
     }
   }
@@ -1249,7 +1260,7 @@ export class CryptSignerSuber extends SignerSuber {
  * Serder/Schemer families.
  */
 export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
-  protected readonly klas: SerderCtor<T>;
+  protected readonly ctor: SerderCtor<T>;
 
   constructor(
     db: LMDBer,
@@ -1257,16 +1268,16 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = SerderKERI as unknown as SerderCtor<T>,
+      ctor = SerderKERI as unknown as SerderCtor<T>,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: SerderCtor<T>;
+      ctor?: SerderCtor<T>;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klas = klas;
+    this.ctor = ctor;
   }
 
   protected override _ser(val: T): Uint8Array {
@@ -1280,10 +1291,10 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
     if (
-      (this.klas as unknown) === SerderKERI && !(serder instanceof SerderKERI)
+      (this.ctor as unknown) === SerderKERI && !(serder instanceof SerderKERI)
     ) {
       throw new TypeError(
-        `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
+        `Expected ${this.ctor.name}, got ${serder.constructor.name}.`,
       );
     }
     return serder as T;
@@ -1301,7 +1312,7 @@ export class SerderSuber<T extends Serder = SerderKERI> extends SerderSuberBase<
  * - typed serder hydration through `smell()` + `parseSerder()`
  */
 export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<T> {
-  protected readonly klas: SerderCtor<T>;
+  protected readonly ctor: SerderCtor<T>;
 
   constructor(
     db: LMDBer,
@@ -1309,16 +1320,16 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas = SerderKERI as unknown as SerderCtor<T>,
+      ctor = SerderKERI as unknown as SerderCtor<T>,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas?: SerderCtor<T>;
+      ctor?: SerderCtor<T>;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klas = klas;
+    this.ctor = ctor;
   }
 
   /** Serialize one serder body as its raw bytes. */
@@ -1334,10 +1345,10 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
     if (
-      (this.klas as unknown) === SerderKERI && !(serder instanceof SerderKERI)
+      (this.ctor as unknown) === SerderKERI && !(serder instanceof SerderKERI)
     ) {
       throw new TypeError(
-        `Expected ${this.klas.name}, got ${serder.constructor.name}.`,
+        `Expected ${this.ctor.name}, got ${serder.constructor.name}.`,
       );
     }
     return serder as T;
@@ -1432,7 +1443,7 @@ export class DupSuber<T = string> extends SuberBase<T> {
 
 /** Qualified CESR primitive family over native LMDB dupsort duplicates. */
 export class CesrDupSuber<T extends CesrValue = CesrValue> extends DupSuber<T> {
-  protected readonly klas: QualifiedCtor<T>;
+  protected readonly ctor: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
   constructor(
@@ -1441,30 +1452,30 @@ export class CesrDupSuber<T extends CesrValue = CesrValue> extends DupSuber<T> {
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<T>;
+      ctor: QualifiedCtor<T>;
       strict?: boolean;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klas = klas;
+    this.ctor = ctor;
     this.strict = strict;
   }
 
   protected override _ser(val: T): Uint8Array {
-    if (this.strict && !(val instanceof this.klas)) {
-      throw new TypeError(`Expected ${this.klas.name}, got ${typeof val}.`);
+    if (this.strict && !(val instanceof this.ctor)) {
+      throw new TypeError(`Expected ${this.ctor.name}, got ${typeof val}.`);
     }
     return val.qb64b;
   }
 
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null ? null : new this.klas({ qb64b: val });
+    return val === null ? null : new this.ctor({ qb64b: val });
   }
 }
 
@@ -1472,7 +1483,7 @@ export class CesrDupSuber<T extends CesrValue = CesrValue> extends DupSuber<T> {
 export class CatCesrDupSuber<
   T extends readonly CesrValue[] = readonly CesrValue[],
 > extends DupSuber<T> {
-  protected readonly klases: readonly QualifiedCtor<CesrValue>[];
+  protected readonly ctors: readonly QualifiedCtor<CesrValue>[];
   protected readonly strict: boolean;
 
   constructor(
@@ -1481,26 +1492,26 @@ export class CatCesrDupSuber<
       subkey,
       sep = SuberBase.Sep,
       verify = false,
-      klas,
+      ctor,
       strict = false,
     }: {
       subkey: string;
       sep?: string;
       verify?: boolean;
-      klas: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
+      ctor: QualifiedCtor<CesrValue> | readonly QualifiedCtor<CesrValue>[];
       strict?: boolean;
     },
   ) {
     super(db, { subkey, sep, verify });
-    this.klases = Array.isArray(klas) ? klas : [klas];
+    this.ctors = Array.isArray(ctor) ? ctor : [ctor];
     this.strict = strict;
   }
 
   protected override _ser(val: T): Uint8Array {
     const items = isNonStringIterable(val) ? [...val] : [val];
-    if (this.strict && items.length !== this.klases.length) {
+    if (this.strict && items.length !== this.ctors.length) {
       throw new Error(
-        `Expected ${this.klases.length} CESR tuple elements, got ${items.length}.`,
+        `Expected ${this.ctors.length} CESR tuple elements, got ${items.length}.`,
       );
     }
     const size = items.reduce((sum, item) => sum + item.qb64b.length, 0);
@@ -1516,7 +1527,7 @@ export class CatCesrDupSuber<
   protected override _des(val: Uint8Array | null): T | null {
     return val === null
       ? null
-      : splitQualified(val, this.klases) as unknown as T;
+      : splitQualified(val, this.ctors) as unknown as T;
   }
 }
 

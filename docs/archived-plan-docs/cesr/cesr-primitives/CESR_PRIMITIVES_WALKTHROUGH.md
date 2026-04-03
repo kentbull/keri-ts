@@ -444,7 +444,9 @@ and KEL key-state reasoning.
 **KERIpy comparison:** Direct peer is `keri.core.coring.Verfer`.
 
 **Common gotchas / maintainer notes:** Verification-key material is not the same
-as identifier-prefix material, even when both are derived from keys.
+as identifier-prefix material, even when both are derived from keys. In the
+current port `Verfer` also owns `verify(sig, ser)` and transferability
+inspection, so higher layers should not re-dispatch suites themselves.
 
 ### Saider
 
@@ -714,7 +716,10 @@ generic number semantics; do not flatten them together in docs or code review.
 **KERIpy comparison:** Direct peer is `keri.core.coring.Salter`.
 
 **Common gotchas / maintainer notes:** Salt material is secret-bearing input
-material, not public identifier or verifier material.
+material, not public identifier or verifier material. In the current port
+`Salter` also owns deterministic `stretch(...)`, `signer(...)`, and
+`signers(...)`, so app code should not duplicate derivation logic in manager
+helpers.
 
 ### Signer
 
@@ -728,12 +733,14 @@ material, not public identifier or verifier material.
 **Where it shows up in workflow:** Seed material for deriving signing keys and
 pairing with `Verfer`.
 
-**KERIpy comparison:** Near-parity to KERIpy's signer model, but the TypeScript
-primitive layer here is mainly a typed seed wrapper; full signing behavior is
-not all concentrated in this class.
+**KERIpy comparison:** Direct peer in spirit is the executable signer model in
+`keri.core.signing.Signer`, even though KERIpy's implementation lives outside
+`coring.py`.
 
-**Common gotchas / maintainer notes:** Do not assume `Signer` itself is the
-entire signing API surface just because the name suggests it.
+**Common gotchas / maintainer notes:** `Signer` now owns `.verfer`,
+transferability semantics, `Signer.random(...)`, and suite-driven
+`sign(...)`. `Manager` should orchestrate stored signers, not recreate signer
+suite logic above the primitive.
 
 ### Encrypter
 
@@ -801,6 +808,8 @@ part of the protocol need.
 
 **Common gotchas / maintainer notes:** `Cigar` is not an `Indexer`. If the
 protocol needs attachment position metadata, you want `Siger` instead.
+`Cigar` may also carry an in-memory `verfer` reference in the same way KERIpy
+uses detached signatures during reply/non-transferable flows.
 
 ## Indexed Signature Family
 

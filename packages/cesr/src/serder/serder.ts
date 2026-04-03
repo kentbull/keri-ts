@@ -3,15 +3,14 @@ import { b, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
+import { Ilks } from "../core/vocabulary.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
-import { Bexter } from "../primitives/bexter.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import {
   DigDex,
   DIGEST_CODES,
-  LabelDex,
   NON_DIGEST_PREFIX_CODES,
-  NON_TRANSFERABLE_PREFIX_CODES,
+  NON_TRANSFERABLE_CODES,
   PREFIX_CODES,
 } from "../primitives/codex.ts";
 import { Compactor } from "../primitives/compactor.ts";
@@ -28,7 +27,7 @@ import {
 } from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
-import { Tholder } from "../primitives/tholder.ts";
+import { Tholder, type ThresholdInput } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
 import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
@@ -52,6 +51,36 @@ interface FieldDom {
 type FieldMap = Record<string, FieldDom>;
 type ProtocolFieldMap = Record<string, FieldMap>;
 type FieldRegistry = Record<Protocol, ProtocolFieldMap>;
+
+const ACDC_COMPACT_TOP_LEVEL_ILKS = new Set<string>([
+  Ilks.acm,
+  Ilks.ace,
+  Ilks.act,
+  Ilks.acg,
+]);
+
+const ACDC_PARTIAL_SECTION_ILKS = new Set<string>([
+  Ilks.sch,
+  Ilks.att,
+  Ilks.agg,
+  Ilks.edg,
+  Ilks.rul,
+]);
+
+const KERI_ESTABLISHMENT_ILKS = new Set<string>([
+  Ilks.icp,
+  Ilks.rot,
+  Ilks.dip,
+  Ilks.drt,
+]);
+
+const ACDC_SAIDIVE_TOP_LEVEL_ILKS = new Set<string>([
+  Ilks.acm,
+  Ilks.ace,
+  Ilks.act,
+  Ilks.acg,
+  Ilks.rip,
+]);
 
 /**
  * Shared CESR genus mapping for protocol messages.
@@ -111,11 +140,27 @@ function bigintToBytes(value: bigint): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-function makeNumberPrimitive(value: string | null): NumberPrimitive | null {
-  if (typeof value !== "string") {
+function makeNumberPrimitive(
+  value: string | number | bigint | null | undefined,
+): NumberPrimitive | null {
+  if (value === null || value === undefined) {
     return null;
   }
-  const bigint = BigInt(`0x${value || "0"}`);
+  const bigint = typeof value === "string"
+    ? BigInt(`0x${value || "0"}`)
+    : typeof value === "number"
+    ? (() => {
+      if (!Number.isInteger(value) || value < 0) {
+        throw new SerializeError(`Invalid numeric CESR number=${value}`);
+      }
+      return BigInt(value);
+    })()
+    : (() => {
+      if (value < 0n) {
+        throw new SerializeError(`Negative CESR number=${value}`);
+      }
+      return value;
+    })();
   const raw = bigintToBytes(bigint);
   const entry = NUMBER_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
   if (!entry) {
@@ -126,25 +171,16 @@ function makeNumberPrimitive(value: string | null): NumberPrimitive | null {
   return new NumberPrimitive({ code: entry.code, raw: padded });
 }
 
-/** Convert semantic `sith` text back into a `Tholder` wrapper when possible. */
-function makeThreshold(value: string | null): Tholder | null {
-  if (typeof value !== "string") {
+/** Convert semantic `sith` content back into a `Tholder` wrapper when possible. */
+function makeThreshold(value: unknown): Tholder | null {
+  if (value === null || value === undefined) {
     return null;
   }
-  if (/^[0-9a-f]+$/i.test(value)) {
-    const number = makeNumberPrimitive(value);
-    return number ? new Tholder(number) : null;
+  try {
+    return new Tholder({ sith: value as ThresholdInput });
+  } catch {
+    return null;
   }
-  if (/^[A-Za-z0-9_-]+$/.test(value)) {
-    const rem = value.length % 4;
-    const code = rem === 0
-      ? LabelDex.StrB64_L0
-      : rem === 1
-      ? LabelDex.StrB64_L1
-      : LabelDex.StrB64_L2;
-    return new Tholder({ code, raw: Bexter.rawify(value) });
-  }
-  return null;
 }
 
 function normalizeDecodedMap(
@@ -901,12 +937,12 @@ function shallowCloneSad(sad: SadMap): SadMap {
 
 /** True when the top-level ACDC ilk participates in KERIpy's most-compact SAID rule. */
 function isAcdcCompactiveIlk(ilk: string | null): boolean {
-  return ilk === null || ["acm", "ace", "act", "acg"].includes(ilk);
+  return ilk === null || ACDC_COMPACT_TOP_LEVEL_ILKS.has(ilk);
 }
 
 /** True when the message is an ACDC section-message that must verify embedded section ids. */
 function isAcdcPartialSectionIlk(ilk: string | null): boolean {
-  return ["sch", "att", "agg", "edg", "rul"].includes(ilk ?? "");
+  return ACDC_PARTIAL_SECTION_ILKS.has(ilk ?? "");
 }
 
 /** Map ACDC section labels onto the saidive policy KERIpy applies to that section family. */
@@ -1639,19 +1675,19 @@ export class SerderKERI extends Serder {
     const pre = this.pre;
     if (pre && PREFIX_CODES.has(coerceMatterCode(pre) ?? "")) {
       const code = coerceMatterCode(pre)!;
-      if (this.ilk === "dip" && !DIGEST_CODES.has(code)) {
+      if (this.ilk === Ilks.dip && !DIGEST_CODES.has(code)) {
         throw new DeserializeError(
           `Delegated inception requires digestive prefix code, got ${code}.`,
         );
       }
-      if (this.ilk === "icp" || this.ilk === "dip") {
+      if (this.ilk === Ilks.icp || this.ilk === Ilks.dip) {
         if (NON_DIGEST_PREFIX_CODES.has(code)) {
           if (this.keys.length !== 1) {
             throw new DeserializeError(
               `Non-digestive prefix ${code} requires exactly one key.`,
             );
           }
-          if (this.ked?.kt !== "1") {
+          if (this.tholder?.num !== 1n || this.tholder.weighted) {
             throw new DeserializeError(
               `Non-digestive prefix ${code} requires signing threshold 1.`,
             );
@@ -1663,7 +1699,7 @@ export class SerderKERI extends Serder {
           }
         }
 
-        if (NON_TRANSFERABLE_PREFIX_CODES.has(code)) {
+        if (NON_TRANSFERABLE_CODES.has(code)) {
           if (this.ndigs.length > 0) {
             throw new DeserializeError(
               `Non-transferable prefix ${code} requires empty nxt digests.`,
@@ -1683,7 +1719,7 @@ export class SerderKERI extends Serder {
       }
     }
 
-    if (this.ilk === "dip" && this.delpre) {
+    if (this.ilk === Ilks.dip && this.delpre) {
       const delCode = coerceMatterCode(this.delpre);
       if (
         !delCode || !PREFIX_CODES.has(delCode) || !DIGEST_CODES.has(delCode)
@@ -1696,7 +1732,7 @@ export class SerderKERI extends Serder {
   }
 
   get estive(): boolean {
-    return ["icp", "rot", "dip", "drt"].includes(this.ilk ?? "");
+    return KERI_ESTABLISHMENT_ILKS.has(this.ilk ?? "");
   }
 
   get pre(): string | null {
@@ -1719,6 +1755,10 @@ export class SerderKERI extends Serder {
     return this.ked && typeof this.ked.s === "string" ? this.ked.s : null;
   }
 
+  get a(): unknown {
+    return this.ked?.a;
+  }
+
   get seals(): unknown[] {
     return Array.isArray(this.ked?.a) ? [...this.ked.a] : [];
   }
@@ -1730,7 +1770,7 @@ export class SerderKERI extends Serder {
   }
 
   get tholder(): Tholder | null {
-    return makeThreshold(typeof this.ked?.kt === "string" ? this.ked.kt : null);
+    return makeThreshold(this.ked?.kt ?? null);
   }
 
   get keys(): string[] {
@@ -1750,7 +1790,7 @@ export class SerderKERI extends Serder {
   }
 
   get ntholder(): Tholder | null {
-    return makeThreshold(typeof this.ked?.nt === "string" ? this.ked.nt : null);
+    return makeThreshold(this.ked?.nt ?? null);
   }
 
   get ndigers(): Diger[] {
@@ -1759,7 +1799,11 @@ export class SerderKERI extends Serder {
 
   get bner(): NumberPrimitive | null {
     return makeNumberPrimitive(
-      this.ked && typeof this.ked.bt === "string" ? this.ked.bt : null,
+      this.ked
+        && (typeof this.ked.bt === "string" || typeof this.ked.bt === "number"
+          || typeof this.ked.bt === "bigint")
+        ? this.ked.bt
+        : null,
     );
   }
 
@@ -1814,7 +1858,7 @@ export class SerderKERI extends Serder {
   }
 
   get nonce(): string | null {
-    if (this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === "vcp") {
+    if (this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === Ilks.vcp) {
       return this.ked && typeof this.ked.n === "string" ? this.ked.n : null;
     }
     return this.uuid;
@@ -1856,7 +1900,7 @@ export class SerderACDC extends Serder {
 
     if (
       this.ilk === null
-      || ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)
+      || ACDC_SAIDIVE_TOP_LEVEL_ILKS.has(this.ilk)
     ) {
       const issuer = this.issuer;
       if (!issuer) {

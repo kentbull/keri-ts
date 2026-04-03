@@ -31,7 +31,10 @@ export const KERIPY_MATTER_VECTORS = {
   digerBlake3: "ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
   noncerSalt128: "0AAxyHwW6htOZ_rANOaZb2N2",
   prefixerEd25519N: "BKxy2sgzfplyr-tgwIxS19f2OchFHtLwPWD3v4oYimBx",
+  verferEcdsaK1: "1AABAtuYM4WoDrt8FV3dxkdqJAeafJZfBQ9i3i1HVptUKRZ5",
   verferEcdsaR1: "1AAJA3cK_P2CDlh-_EMFPvyqTPI1POkw-dr14DANx5JEXDCZ",
+  verferEcdsaR1Vector: "1AAJAxaZvKBRj6Zss11rCpL2hJYoe7Zk6OhXaRW46poCBir_",
+  cigarEcdsaK1: "0CBfgMBa5HEyXffL2xvC9BHDBa_0vjt-rD6MFTqfpQo9aXVFkzTIliv-eY3RTpwfbKfIEtZ6bMV0n--NpyWilUfM",
   cigarEcdsaR1: "0ICM-rRAAdKrSrzFlouiZXbNUZ07QMM1IXOaG-gv4TAo4QeQCKZC1z82jJYy_wFkAxgIhbikl3a-nOTXxecF2lEj",
   saiderAcdc: "EMRvS7lGxc1eDleXBkvSHkFs8vUrslRcla6UXOJdcczw",
   numberShort: "MPd_",
@@ -48,8 +51,15 @@ export const KERIPY_MATTER_VECTORS = {
   signerSeedK1: "JJ97qKeoQzmWJvqxmeuqIMQbRxHErlNBUsm9BJ2FKX6T",
   signerSeedR1Vector: "QDWGyaBNM2eF1eRq2mLwVMWl9DI_RsuSIwfg4nm35fUK",
   signerSeedK1Vector: "JH-YCjvkRdeMyXmh7iYgnBdxFqum1vFqAeezzv7ibAYI",
+  signerSeedEd25519Vector: "ABg7MMQPKnZG-uOiRWVlH5ZvzilHheNYhtoE8NzeBsAr",
+  keeperCryptSeedEd25519: "AGgsI3yKcCISxDN0MqbhGBnwZjIsecTCMUD1QBUuohrP",
+  salterCipherPlain: "0AA2CGQNobs5jXCNoMATSody",
   encrypterX25519: "CAF7Wr3XNq5hArcOuBJzaY6Nd23jgtUVI6KDfb3VngkR",
   decrypterX25519Private: "OLCFxqMz1z1UUS0TEJnvZP_zXHcuYdQsSGBWdOZeY5VQ",
+  cipherSeedVector:
+    "PM9jOGWNYfjM_oLXJNaQ8UlFSAV5ACjsUY7J16xfzrlpc9Ve3A5WYrZ4o_NHtP5lhp78Usspl9fyFdnCdItNd5JyqZ6dt8SXOt6TOqOCs-gy0obrwFkPPqBvVkEw",
+  cipherSaltVector:
+    "1AAHjlR2QR9J5Et67Wy-ZaVdTryN6T6ohg44r73GLRPnHw-5S3ABFkhWyIwLOI6TXUB_5CT13S8JvknxLxBaF8ANPK9FSOPD8tYu",
 } as const;
 
 /** Selected Indexer/Siger vectors from KERIpy tests. */

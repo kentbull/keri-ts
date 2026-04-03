@@ -14,6 +14,7 @@ import {
   OnIoSetSuber,
   OnSuber,
   SerderSuber,
+  SignerSuber,
   Suber,
 } from "../../../src/db/subing.ts";
 
@@ -145,7 +146,7 @@ Deno.test("db/subing - CesrSuber hydrates typed CESR primitives", async () => {
       const prefixer = new Prefixer({ qb64: verfer.qb64 });
       const suber = new CesrSuber<Prefixer>(lmdber, {
         subkey: "pres.",
-        klas: Prefixer,
+        ctor: Prefixer,
       });
 
       assertEquals(suber.put("alice", prefixer), true);
@@ -329,7 +330,7 @@ Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async
       });
       const suber = new CesrIoSetSuber<Signer>(lmdber, {
         subkey: "pris.",
-        klas: Signer,
+        ctor: Signer,
       });
 
       assertEquals(suber.put("alice", [signerA, signerB]), true);
@@ -386,6 +387,8 @@ Deno.test("db/subing - CryptSignerSuber encrypts at rest and decrypts on read", 
       assertEquals(new Cipher({ qb64b: stored }).code, "P");
       assertEquals(new Cipher({ qb64b: stored }).qb64 === signer.qb64, false);
       assertEquals(suber.get(verfer.qb64, decrypter)?.qb64, signer.qb64);
+      assertEquals(suber.get(verfer.qb64, decrypter)?.transferable, true);
+      assertEquals(suber.get(verfer.qb64, decrypter)?.verfer.qb64, verfer.qb64);
       assertEquals(
         [...suber.getTopItemIter("", decrypter)].map(([keys, value]) => [
           keys,
@@ -393,6 +396,25 @@ Deno.test("db/subing - CryptSignerSuber encrypts at rest and decrypts on read", 
         ]),
         [[[verfer.qb64], signer.qb64]],
       );
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("db/subing - SignerSuber rehydrates non-transferable signer semantics from keyspace verfers", async () => {
+  await run(function*() {
+    const lmdber = yield* createLMDBer({
+      name: `signersuber-transferability-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const { signer, verfer } = makeSignerMaterial("nontrans-signer", false);
+      const suber = new SignerSuber(lmdber, { subkey: "pris." });
+
+      assertEquals(suber.put(verfer.qb64, signer), true);
+      assertEquals(suber.get(verfer.qb64)?.transferable, false);
+      assertEquals(suber.get(verfer.qb64)?.verfer.qb64, verfer.qb64);
     } finally {
       yield* lmdber.close(true);
     }

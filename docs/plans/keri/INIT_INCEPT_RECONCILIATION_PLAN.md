@@ -140,6 +140,9 @@ Across `cha1`/`cha2`:
 
 - `ends add` persists mailbox role auth usable by OOBI logic.
 - `oobi generate` and `oobi resolve` interoperate with KERIpy.
+- Design and implementation details for this gate are tracked in the dedicated
+  subplan:
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
 
 ### Gate F: Communications Interop (Direct + Mailbox)
 
