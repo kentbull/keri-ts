@@ -31,18 +31,16 @@ signing/verification behavior in `keri-ts`.
    corresponding narrow primitive instead of returning the superclass.
 9. Primitive execution parity is now the intended model for signer material in
    `keri-ts`: `Signer` is no longer a thin seed wrapper, `Salter` is no longer
-   just salt storage, and the public seam should bias toward
-   `Signer.sign()` / `Verfer.verify()` / `Salter.signer()` rather than free
-   helper calls.
+   just salt storage, and the public seam should bias toward `Signer.sign()` /
+   `Verfer.verify()` / `Salter.signer()` rather than free helper calls.
 10. Sealed-box encryption parity is now also primitive-owned: `Cipher`,
     `Encrypter`, `Decrypter`, and `Streamer` form one CESR execution seam, and
-    variable-family code promotion remains a `Matter` responsibility rather
-    than a cipher-local exception.
+    variable-family code promotion remains a `Matter` responsibility rather than
+    a cipher-local exception.
 11. Cipher plaintext hydration now has its own exported semantic union:
     `CipherHydratable = QualifiedPrimitive | Streamer`. This exists because
-    `Primitive` is too broad for decrypt typing; it includes
-    `UnknownPrimitive`, which parser fallback may produce but sealed-box
-    decrypt never should.
+    `Primitive` is too broad for decrypt typing; it includes `UnknownPrimitive`,
+    which parser fallback may produce but sealed-box decrypt never should.
 
 ## Scope Checklist
 
@@ -131,8 +129,8 @@ Use this doc for:
   - Fixed `Indexer` parity for small indexed “both” signature codes: when the
     code family implies `ondex=index`, `keri-ts` now preserves that implicit
     `ondex` on both construction and parse just like KERIpy.
-  - Added KERIpy fixed-vector verification coverage for secp256k1 and
-    secp256r1 plus direct primitive coverage for verifier-owned suite dispatch.
+  - Added KERIpy fixed-vector verification coverage for secp256k1 and secp256r1
+    plus direct primitive coverage for verifier-owned suite dispatch.
 - Why:
   - The earlier design was architecturally backwards: runtime layers were
     bypassing the primitive that actually knows the suite encoded by CESR
@@ -162,8 +160,8 @@ Use this doc for:
   - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
   - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
 - What changed:
-  - Rebuilt `packages/cesr/src/primitives/signer.ts` around KERIpy's
-    executable signer model: `Signer` now owns `transferable`, `.verfer`,
+  - Rebuilt `packages/cesr/src/primitives/signer.ts` around KERIpy's executable
+    signer model: `Signer` now owns `transferable`, `.verfer`,
     `Signer.random(...)`, and suite-driven `sign(...)` returning `Cigar` or
     `Siger` with verifier context attached.
   - Rebuilt `packages/cesr/src/primitives/salter.ts` around deterministic
@@ -221,9 +219,9 @@ Use this doc for:
     variable-family code promotion from raw size now happens in `Matter`
     encoding/parsing logic, matching KERIpy's actual mental model instead of
     treating cipher families as a one-off special case.
-  - Demoted `packages/keri/src/core/keeper-crypto.ts` to a compatibility
-    wrapper over CESR primitives so keeper/app code no longer owns a parallel
-    crypto implementation.
+  - Demoted `packages/keri/src/core/keeper-crypto.ts` to a compatibility wrapper
+    over CESR primitives so keeper/app code no longer owns a parallel crypto
+    implementation.
 - Why:
   - A cipher-local normalization shim would have worked mechanically, but it
     would have encoded the wrong architectural rule. In KERIpy, variable-family
@@ -248,8 +246,8 @@ Use this doc for:
   - `docs/ARCHITECTURE_MAP.md`
 - Risks/TODO:
   - The libsodium-backed sealed-box seam now matches KERIpy behavior in scope,
-    but maintainers should not infer broader HPKE or non-X25519 support from
-    the codex alone.
+    but maintainers should not infer broader HPKE or non-X25519 support from the
+    codex alone.
   - Future primitive work should keep using `Matter` as the shared
     variable-family encoding authority instead of letting individual subclasses
     grow their own size-to-code promotion tables.
@@ -260,9 +258,9 @@ Use this doc for:
   - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
   - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
 - What changed:
-  - Renamed cipher/decrypter constructor-selection options from `klas` to
-    `ctor` and introduced the exported `CipherHydratable` /
-    `CipherHydratableCtor` typing seam for decrypted plaintext hydration.
+  - Renamed cipher/decrypter constructor-selection options from `klas` to `ctor`
+    and introduced the exported `CipherHydratable` / `CipherHydratableCtor`
+    typing seam for decrypted plaintext hydration.
   - Kept `Primitive` and `QualifiedPrimitive` as parser/storage-domain unions
     and avoided overloading them with decrypt semantics they do not actually
     model.
@@ -284,8 +282,7 @@ Use this doc for:
 - Risks/TODO:
   - Constructor parameter typing is still intentionally broad
     (`new (...args: any[])`) so this cleanup should not be mistaken for fully
-    modeled
-    family-specific init signatures.
+    modeled family-specific init signatures.
 
 ### 2026-04-03 - `Matter` Reclaimed KERIpy Semantic Ownership
 
@@ -296,30 +293,29 @@ Use this doc for:
   - `docs/ARCHITECTURE_MAP.md`
 - What changed:
   - Added the missing KERIpy base-material properties to
-    `packages/cesr/src/primitives/matter.ts`:
-    `name`, `hard`, `soft`, `size`, `both`, `transferable`, `digestive`,
-    `prefixive`, `special`, and `composable`.
-  - Renamed the public codex helper export from
-    `NON_TRANSFERABLE_PREFIX_CODES` to `NON_TRANSFERABLE_CODES` so the readable
-    TS surface matches the actual `NonTransDex` semantics instead of implying a
-    narrower prefix-only meaning.
+    `packages/cesr/src/primitives/matter.ts`: `name`, `hard`, `soft`, `size`,
+    `both`, `transferable`, `digestive`, `prefixive`, `special`, and
+    `composable`.
+  - Renamed the public codex helper export from `NON_TRANSFERABLE_PREFIX_CODES`
+    to `NON_TRANSFERABLE_CODES` so the readable TS surface matches the actual
+    `NonTransDex` semantics instead of implying a narrower prefix-only meaning.
   - Removed `transferableForVerferCode(...)` from
     `packages/cesr/src/primitives/signature-suite.ts`; `Verfer` now inherits
     `transferable` from `Matter` instead of carrying a helper-backed override.
   - Kept `Signer.transferable` as an intentional explicit override with its own
     backing field so seed codes do not accidentally inherit generic
     derivation-code semantics they do not actually encode.
-  - Marked `Tholder.size` as an explicit override because the new
-    `Matter.size` parity property surfaced a real subclass naming overlap.
+  - Marked `Tholder.size` as an explicit override because the new `Matter.size`
+    parity property surfaced a real subclass naming overlap.
 - Why:
   - Fixing `Verfer.transferable` in isolation would have preserved the wrong
-    architecture. In KERIpy these semantics live on `Matter`, not on one
-    crypto primitive or helper module.
+    architecture. In KERIpy these semantics live on `Matter`, not on one crypto
+    primitive or helper module.
   - The broader sweep also makes the primitive layer more readable: callers can
-    ask the base primitive the same semantic questions KERIpy exposes instead
-    of re-deriving them from codex tables or remembering local helper names.
-  - `Signer` remaining the exception is not drift; it is the honest model.
-    Seed material needs an explicit transferability choice because the seed code
+    ask the base primitive the same semantic questions KERIpy exposes instead of
+    re-deriving them from codex tables or remembering local helper names.
+  - `Signer` remaining the exception is not drift; it is the honest model. Seed
+    material needs an explicit transferability choice because the seed code
     alone does not say whether the eventual verifier/prefix should be
     transferable.
 - Tests:
@@ -338,5 +334,42 @@ Use this doc for:
   - This is a semantic-surface parity pass, not a full port of Python-only
     constructor quirks such as `soft=` init or `strip=` parsing behavior.
   - Future primitive work should keep the rule straight: derivation-code
-    semantics live on `Matter`; executable crypto behavior lives on the
-    concrete primitive such as `Signer` or `Verfer`.
+    semantics live on `Matter`; executable crypto behavior lives on the concrete
+    primitive such as `Signer` or `Verfer`.
+
+### 2026-04-03 - Primitive Crypto Documentation Parity Reached The Execution Helpers
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Expanded maintainer docs across `Verfer`, `Cigar`, `Cipher`, `Encrypter`,
+    `Decrypter`, `Streamer`, and the remaining `Signer` / `Salter` / `Tholder`
+    seams so constructor defaults, transferability boundaries, qb64/qb2/stream
+    hydration rules, limen terminology, and detached-signature verifier context
+    are now explicit in source.
+  - Added grouped documentation where TypeScript now holds behavior KERIpy kept
+    inline on class methods: X25519 cipher codex families in
+    `packages/cesr/src/primitives/codex.ts`, indexed-signature family dispatch
+    in `packages/cesr/src/primitives/signature-suite.ts`, and raw sealed-box
+    key/plaintext/cipher boundaries in
+    `packages/cesr/src/primitives/sealed-box.ts`.
+- Why:
+  - The primitive behavior had already reached the KERIpy mental model, but the
+    maintainer-facing docs were still uneven exactly where TS refactors had
+    moved the real semantics into helper modules and option interfaces.
+  - In a parity project, “the code works” is not enough if the source still
+    suggests the wrong ownership split between primitives, helper modules, and
+    higher KERI layers.
+- Tests:
+  - Command: `deno task fmt:check`
+  - Result: failed because unrelated pre-existing formatting drift remains in
+    `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md` and
+    `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - Command: `deno check --config packages/cesr/deno.json packages/cesr/mod.ts`
+  - Result: passed locally
+- Risks/TODO:
+  - `Streamer` still intentionally documents a narrower TS scope than KERIpy;
+    the new comments explain that gap, but they do not implement the missing
+    projection helpers or sniffability verification.

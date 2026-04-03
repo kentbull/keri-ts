@@ -9,8 +9,14 @@ import type { Verfer } from "./verfer.ts";
  *
  * KERIpy substance: `Cigar` wraps detached signature material where code
  * determines signature suite and payload holds raw signature bytes.
+ *
+ * Runtime note:
+ * - `.verfer` is contextual verifier metadata attached by signing, dispatch,
+ *   or DB-rehydration code
+ * - it is not encoded inside the cigar bytes themselves
  */
 export class Cigar extends Matter {
+  /** Optional verifier context for the key that created this detached signature. */
   readonly verfer?: Verfer;
 
   constructor(init: Matter | MatterInit, verfer?: Verfer) {
@@ -23,10 +29,12 @@ export class Cigar extends Matter {
     this.verfer = verfer;
   }
 
+  /** Raw detached signature bytes. */
   get sig(): Uint8Array {
     return this.raw;
   }
 
+  /** Human-oriented generated codex member name for diagnostics and tooling. */
   get algorithm(): string {
     return matterCodexName(this.code) ?? "UnknownSig";
   }

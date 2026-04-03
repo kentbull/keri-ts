@@ -288,7 +288,14 @@ export class Kever {
     return this.prefixes.has(current) && !this.groups.has(current);
   }
 
-  /** Return true when the provided delegator prefix is locally controlled. */
+  /**
+   * Return true when the provided delegator prefix is locally controlled.
+   *
+   * Current `keri-ts` scope:
+   * - matches KERIpy's coarse protected-party check
+   * - does not yet model stale local group membership deeply enough to prove
+   *   that a local member is still a current signer of the delegator group
+   */
   locallyDelegated(pre: string | null | undefined): boolean {
     return !!pre && this.prefixes.has(pre);
   }
@@ -299,6 +306,8 @@ export class Kever {
    * Current `keri-ts` scope:
    * - mirrors the KERIpy concept but currently relies on `db.groups`
    * - richer per-member provenance is later multisig work
+   * - stale-member caveats from KERIpy still apply until group membership is
+   *   tracked against current signer state instead of coarse group presence
    */
   locallyMembered(): boolean {
     return this.groups.has(this.pre);
@@ -310,6 +319,9 @@ export class Kever {
    * This follows the KERIpy intent while keeping the derivation logic explicit
    * and local to the `Kever` instead of requiring callers to rebuild witness
    * set state manually.
+   *
+   * This is a protected-party classification helper, not proof that the event
+   * already carries sufficient witness receipts.
    */
   locallyWitnessed(
     opts: { wits?: string[]; serder?: SerderKERI } = {},
@@ -438,7 +450,8 @@ export class Kever {
           wits: attachments.attachments.wits,
           first: !init.check,
           frc,
-          sourceSeal: attachments.attachments.sourceSeal ?? provisionalSourceSeal,
+          sourceSeal: attachments.attachments.sourceSeal
+            ?? provisionalSourceSeal,
           local: init.local ?? false,
         },
       },
@@ -501,10 +514,16 @@ export class Kever {
    *
    * The corresponding accepted event must already exist in `evts.` because the
    * live kever keeps the full current event serder, not only the record fields.
+   * Weighted `kt`/`nt` forms are intentionally rehydrated through semantic
+   * `Tholder` construction instead of being flattened during reload.
    */
   reload(state: KeyStateRecord): void {
-    if (!state.i || !state.d || !state.s || !state.f || !state.dt || !state.et) {
-      throw new ValidationError("Incomplete key-state record for Kever reload.");
+    if (
+      !state.i || !state.d || !state.s || !state.f || !state.dt || !state.et
+    ) {
+      throw new ValidationError(
+        "Incomplete key-state record for Kever reload.",
+      );
     }
     const serder = this.db.getEvtSerder(state.i, state.d);
     if (!serder) {
@@ -573,7 +592,8 @@ export class Kever {
     const first = args.first ?? false;
     const replayDater = args.frc?.dater ?? null;
     const nowIso8601 = replayDater?.iso8601 ?? makeNowIso8601();
-    const nowDater = replayDater ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
+    const nowDater = replayDater
+      ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
 
     this.db.dtss.put([pre, said], nowDater);
     if (args.sigers && args.sigers.length > 0) {
@@ -714,7 +734,11 @@ export class Kever {
     if (original) {
       const stored = this.acceptedSourceSealForEvent(serder);
       if (stored) {
-        const exact = this.lookupAcceptedDelegatingEvent(delpre, stored, serder);
+        const exact = this.lookupAcceptedDelegatingEvent(
+          delpre,
+          stored,
+          serder,
+        );
         if (exact) {
           return exact;
         }
@@ -723,7 +747,9 @@ export class Kever {
       if (!eager) {
         return null;
       }
-      const found = this.searchDelegatingEvent(delpre, serder, { original: true });
+      const found = this.searchDelegatingEvent(delpre, serder, {
+        original: true,
+      });
       if (found) {
         this.repairAcceptedSourceSeal(serder, found);
       }
@@ -731,7 +757,11 @@ export class Kever {
     }
 
     if (sourceSeal) {
-      const hinted = this.lookupAuthoritativeDelegatingEvent(delpre, sourceSeal, serder);
+      const hinted = this.lookupAuthoritativeDelegatingEvent(
+        delpre,
+        sourceSeal,
+        serder,
+      );
       if (hinted) {
         return hinted;
       }
@@ -739,7 +769,11 @@ export class Kever {
 
     const stored = this.acceptedSourceSealForEvent(serder);
     if (stored) {
-      const authoritative = this.lookupAuthoritativeDelegatingEvent(delpre, stored, serder);
+      const authoritative = this.lookupAuthoritativeDelegatingEvent(
+        delpre,
+        stored,
+        serder,
+      );
       if (authoritative) {
         this.repairAcceptedSourceSeal(serder, authoritative);
         return authoritative;
@@ -750,7 +784,9 @@ export class Kever {
       return null;
     }
 
-    const found = this.searchDelegatingEvent(delpre, serder, { original: false });
+    const found = this.searchDelegatingEvent(delpre, serder, {
+      original: false,
+    });
     if (found) {
       this.repairAcceptedSourceSeal(serder, found);
     }
@@ -763,7 +799,9 @@ export class Kever {
    * This is used by both durable reload and accepted-transition application.
    */
   private loadState(state: KeyStateRecord, serder: SerderKERI): void {
-    if (!state.i || !state.d || !state.s || !state.f || !state.dt || !state.et) {
+    if (
+      !state.i || !state.d || !state.s || !state.f || !state.dt || !state.et
+    ) {
       throw new ValidationError("Incomplete key-state record for Kever load.");
     }
 
@@ -776,8 +814,12 @@ export class Kever {
     this.fner = encodeHugeOrdinal(BigInt(`0x${state.f}`));
     this.dater = new Dater({ qb64: encodeDateTimeToDater(state.dt) });
     this.ilk = state.et;
-    this.tholder = state.kt !== undefined ? new Tholder({ sith: state.kt }) : null;
-    this.ntholder = state.nt !== undefined ? new Tholder({ sith: state.nt }) : null;
+    this.tholder = state.kt !== undefined
+      ? new Tholder({ sith: state.kt })
+      : null;
+    this.ntholder = state.nt !== undefined
+      ? new Tholder({ sith: state.nt })
+      : null;
     this.verfers = (state.k ?? []).map((key) => new Verfer({ qb64: key }));
     this.ndigers = (state.n ?? []).map((dig) => new Diger({ qb64: dig }));
     this.toader = numberPrimitiveFromHex(state.bt ?? "0");
@@ -807,7 +849,10 @@ export class Kever {
    * Recovery is intentionally narrow: only a rotation may supersede an `ixn`
    * state at the same sequence number.
    */
-  private evaluateRotation(init: KeverEventInit, local: boolean): KeverDecision {
+  private evaluateRotation(
+    init: KeverEventInit,
+    local: boolean,
+  ): KeverDecision {
     const { serder } = init;
     const ilk = serder.ilk ?? Ilks.rot;
     const sn = serder.sn ?? -1;
@@ -835,7 +880,10 @@ export class Kever {
       // Same-or-earlier sequence numbers are either stale or recovery
       // candidates. A bare `Kever` still enforces those rules even when the
       // normal remote-processing path routes through `Kevery` first.
-      if ((ilk === Ilks.rot && sn <= this.lastEst.s) || (ilk === Ilks.drt && sn < this.lastEst.s)) {
+      if (
+        (ilk === Ilks.rot && sn <= this.lastEst.s)
+        || (ilk === Ilks.drt && sn < this.lastEst.s)
+      ) {
         return Kever.reject(
           "stale",
           `Stale ${ilk} event sn=${sn} for ${this.pre}.`,
@@ -963,8 +1011,17 @@ export class Kever {
     };
   }
 
-  /** Evaluate one non-mutating interaction transition. */
-  private evaluateInteraction(init: KeverEventInit, local: boolean): KeverDecision {
+  /**
+   * Evaluate one non-mutating interaction transition.
+   *
+   * Interaction events reuse the currently accepted signing threshold,
+   * verifiers, witness list, and delegation state rather than carrying new
+   * establishment material of their own.
+   */
+  private evaluateInteraction(
+    init: KeverEventInit,
+    local: boolean,
+  ): KeverDecision {
     const { serder } = init;
     const sn = serder.sn ?? -1;
 
@@ -1119,7 +1176,11 @@ export class Kever {
     }
 
     // get unique, verified sigers and indices lists from sigers list
-    const verified = Kever.verifyIndexedSignatures(input.serder.raw, sigers, verfers);
+    const verified = Kever.verifyIndexedSignatures(
+      input.serder.raw,
+      sigers,
+      verfers,
+    );
     if (verified.sigers.length === 0) {
       return Kever.rejectAttachment(
         "invalidThreshold",
@@ -1133,7 +1194,8 @@ export class Kever {
     // class.
     if (
       !input.local
-      && (this.locallyOwned() || this.locallyWitnessed({ wits: [...input.wits] })
+      && (this.locallyOwned()
+        || this.locallyWitnessed({ wits: [...input.wits] })
         || this.locallyDelegated(delpre))
     ) {
       return this.makeAttachmentEscrowDecision(
@@ -1185,12 +1247,17 @@ export class Kever {
           `Invalid witness threshold ${input.toader.num} without witnesses for ${said}.`,
         );
       }
-    } else if (!(this.locallyOwned() || this.locallyMembered() || this.locallyWitnessed({ wits: [...input.wits] }))) {
+    } else if (
+      !(this.locallyOwned() || this.locallyMembered()
+        || this.locallyWitnessed({ wits: [...input.wits] }))
+    ) {
       // Only non-protected validators require the witness threshold to be
       // satisfied up front. Local controllers, local witnesses, and locally
       // membered groups may accept earlier so they can drive later receipts and
       // follow-on approval work.
-      if (input.toader.num < 1n || input.toader.num > BigInt(input.wits.length)) {
+      if (
+        input.toader.num < 1n || input.toader.num > BigInt(input.wits.length)
+      ) {
         return Kever.rejectAttachment(
           "invalidWitnessThreshold",
           `Invalid witness threshold ${input.toader.num} for event ${said}.`,
@@ -1239,7 +1306,8 @@ export class Kever {
         wigers: verifiedWigs,
         wits: [...input.wits],
         delpre,
-        sourceSeal: delegation.attachments.sourceSeal ?? input.sourceSeal ?? null,
+        sourceSeal: delegation.attachments.sourceSeal ?? input.sourceSeal
+          ?? null,
         cues: [...remoteMemberedCues, ...(delegation.attachments.cues ?? [])],
       },
     };
@@ -1366,7 +1434,9 @@ export class Kever {
           kin: "query",
           q: {
             pre: delpre ?? undefined,
-            sn: input.sourceSeal ? ordinalHex(input.sourceSeal.seqner) : undefined,
+            sn: input.sourceSeal
+              ? ordinalHex(input.sourceSeal.seqner)
+              : undefined,
             dig: input.sourceSeal?.diger.qb64,
           },
           pre: delpre ?? undefined,
@@ -1530,7 +1600,9 @@ export class Kever {
       }
 
       const upstreamDelpre = this.delegatorPreForEvent(candidateBoss.serder);
-      const originalUpstreamDelpre = this.delegatorPreForEvent(originalBoss.serder);
+      const originalUpstreamDelpre = this.delegatorPreForEvent(
+        originalBoss.serder,
+      );
       if (!upstreamDelpre || !originalUpstreamDelpre) {
         return Kever.rejectAttachment(
           "invalidDelegation",
@@ -1552,10 +1624,14 @@ export class Kever {
       candidate = candidateBoss.serder;
       original = originalBoss.serder;
 
-      const nextCandidateBoss = this.fetchDelegatingEvent(currentDelpre, candidate, {
-        original: false,
-        eager: input.eager ?? false,
-      });
+      const nextCandidateBoss = this.fetchDelegatingEvent(
+        currentDelpre,
+        candidate,
+        {
+          original: false,
+          eager: input.eager ?? false,
+        },
+      );
       if (!nextCandidateBoss) {
         return this.makeAttachmentEscrowDecision(
           "partialDels",
@@ -1569,10 +1645,14 @@ export class Kever {
         );
       }
 
-      const nextOriginalBoss = this.fetchDelegatingEvent(currentDelpre, original, {
-        original: true,
-        eager: input.eager ?? false,
-      });
+      const nextOriginalBoss = this.fetchDelegatingEvent(
+        currentDelpre,
+        original,
+        {
+          original: true,
+          eager: input.eager ?? false,
+        },
+      );
       if (!nextOriginalBoss) {
         return this.makeAttachmentEscrowDecision(
           "partialDels",
@@ -1600,7 +1680,9 @@ export class Kever {
   }
 
   /** Read the stored accepted source-seal hint for one already accepted event. */
-  private acceptedSourceSealForEvent(serder: SerderKERI): SourceSealCouple | null {
+  private acceptedSourceSealForEvent(
+    serder: SerderKERI,
+  ): SourceSealCouple | null {
     const pre = serder.pre;
     const said = serder.said;
     if (!pre || !said) {
@@ -1646,7 +1728,10 @@ export class Kever {
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
     const candidate = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
-    if (!candidate || !candidate.said || !this.db.fons.get([delpre, candidate.said])) {
+    if (
+      !candidate || !candidate.said
+      || !this.db.fons.get([delpre, candidate.said])
+    ) {
       return null;
     }
     return this.delegatingLookup(candidate, serder);
@@ -1668,7 +1753,14 @@ export class Kever {
     return this.delegatingLookup(this.db.getEvtSerder(delpre, said), serder);
   }
 
-  /** Search the delegator KEL for the best sealing event for one delegated event. */
+  /**
+   * Search the delegator KEL for the best sealing event for one delegated event.
+   *
+   * Search policy mirrors the KERIpy split:
+   * - `original=true` walks accepted history and chooses the latest accepted
+   *   sealing event by first-seen ordinal
+   * - otherwise the search follows the current authoritative KEL branch only
+   */
   private searchDelegatingEvent(
     delpre: string,
     serder: SerderKERI,
@@ -1682,7 +1774,10 @@ export class Kever {
         if (!fn) {
           continue;
         }
-        const lookup = this.delegatingLookup(this.db.getEvtSerder(delpre, said), serder);
+        const lookup = this.delegatingLookup(
+          this.db.getEvtSerder(delpre, said),
+          serder,
+        );
         if (!lookup) {
           continue;
         }
@@ -1696,7 +1791,10 @@ export class Kever {
 
     let best: DelegatingEventLookup | null = null;
     for (const [, said] of this.db.getKelItemIter(delpre)) {
-      const lookup = this.delegatingLookup(this.db.getEvtSerder(delpre, said), serder);
+      const lookup = this.delegatingLookup(
+        this.db.getEvtSerder(delpre, said),
+        serder,
+      );
       if (lookup) {
         best = lookup;
       }
@@ -1739,7 +1837,10 @@ export class Kever {
   }
 
   /** Return the zero-based index of the matching event seal or `-1`. */
-  private eventAnchorSealIndex(candidate: SerderKERI, serder: SerderKERI): number {
+  private eventAnchorSealIndex(
+    candidate: SerderKERI,
+    serder: SerderKERI,
+  ): number {
     for (const [index, seal] of candidate.seals.entries()) {
       if (
         typeof seal === "object"
@@ -2139,7 +2240,9 @@ function numberPrimitiveFromBigInt(value: bigint): NumberPrimitive {
   })();
   const entry = THOLDER_NUMERIC_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
   if (!entry) {
-    throw new ValidationError(`Unsupported numeric threshold width for value=${value.toString(16)}.`);
+    throw new ValidationError(
+      `Unsupported numeric threshold width for value=${value.toString(16)}.`,
+    );
   }
   const padded = new Uint8Array(entry.rawSize);
   padded.set(raw, entry.rawSize - raw.length);

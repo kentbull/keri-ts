@@ -75,7 +75,12 @@ export type WeightedThreshold = ThresholdClause | ThresholdClause[];
  */
 export type ThresholdSith = string | WeightedThreshold;
 
-/** Constructor-friendly threshold input accepted by `Tholder`. */
+/**
+ * Constructor-friendly threshold input accepted by `Tholder`.
+ *
+ * Numeric thresholds may arrive as numbers/bigints or through the SAD-facing
+ * lowercase-hex string forms inside `ThresholdSith`.
+ */
 export type ThresholdInput = ThresholdSith | number | bigint;
 
 /** Exact rational used internally so weighted arithmetic never depends on floats. */
@@ -277,11 +282,9 @@ function cloneThresholdSith(sith: ThresholdSith): ThresholdSith {
     }
     if (Array.isArray(clauseOrEntry)) {
       return clauseOrEntry.map((entry) =>
-        typeof entry === "string"
-          ? entry
-          : Object.fromEntries(
-            Object.entries(entry).map(([k, values]) => [k, [...values]]),
-          )
+        typeof entry === "string" ? entry : Object.fromEntries(
+          Object.entries(entry).map(([k, values]) => [k, [...values]]),
+        )
       );
     }
     return Object.fromEntries(
@@ -383,12 +386,16 @@ function normalizeWeightedInput(
       }
       const keys = Object.keys(entry);
       if (keys.length !== 1) {
-        throw new Error("Nested weighted threshold groups must have exactly one key.");
+        throw new Error(
+          "Nested weighted threshold groups must have exactly one key.",
+        );
       }
       const groupKey = keys[0];
       const nested = entry[groupKey];
       if (!Array.isArray(nested) || nested.length === 0) {
-        throw new Error("Nested weighted threshold groups must contain member weights.");
+        throw new Error(
+          "Nested weighted threshold groups must contain member weights.",
+        );
       }
       const groupWeight = parseWeight(groupKey);
       const members = nested.map((member) => {
@@ -402,7 +409,9 @@ function normalizeWeightedInput(
         memberSum = addRationals(memberSum, member);
       }
       if (!atLeastOne(memberSum)) {
-        throw new Error("All nested weighted threshold sums must be at least 1.");
+        throw new Error(
+          "All nested weighted threshold sums must be at least 1.",
+        );
       }
       normalizedClause.push({ weight: groupWeight, members });
       topWeight = addRationals(topWeight, groupWeight);
@@ -422,7 +431,9 @@ function normalizeWeightedInput(
   );
   return {
     clauses,
-    semantic: semanticClauses.length === 1 ? semanticClauses[0] : semanticClauses,
+    semantic: semanticClauses.length === 1
+      ? semanticClauses[0]
+      : semanticClauses,
   };
 }
 
@@ -460,7 +471,9 @@ function normalizeThresholdInput(
   }
   if (typeof value === "bigint") {
     const matterInit = makeNumberMatterInit(value);
-    const size = value > MAX_SAFE_BIGINT ? Number.MAX_SAFE_INTEGER : Number(value);
+    const size = value > MAX_SAFE_BIGINT
+      ? Number.MAX_SAFE_INTEGER
+      : Number(value);
     return {
       matterInit,
       weighted: false,
@@ -611,6 +624,8 @@ function normalizeConstructorInput(
  *   expressions encoded as StrB64 payloads
  * - `satisfy(indices)` is the semantic contract upper layers rely on when
  *   validating current and prior-next threshold satisfaction
+ * - `limen` reuses the CESR `Number` family for numeric thresholds and the
+ *   `Bexter` bext encoding for weighted thresholds
  */
 export class Tholder extends Matter {
   private readonly _weighted: boolean;
@@ -668,9 +683,10 @@ export class Tholder extends Matter {
     return this._weighted
       ? (this._thold as NormalizedWeightedThreshold[]).map((clause) =>
         clause.map((entry) =>
-          "numerator" in entry
-            ? { ...entry }
-            : { weight: { ...entry.weight }, members: entry.members.map((member) => ({ ...member })) }
+          "numerator" in entry ? { ...entry } : {
+            weight: { ...entry.weight },
+            members: entry.members.map((member) => ({ ...member })),
+          }
         )
       )
       : this._thold;
@@ -681,7 +697,12 @@ export class Tholder extends Matter {
     return this._num;
   }
 
-  /** Qualified CESR threshold representation used in event bodies and state. */
+  /**
+   * Qualified CESR threshold representation used in event bodies and state.
+   *
+   * Numeric thresholds are encoded through the numeric matter family; weighted
+   * thresholds are encoded through the compact bext/limen form KERIpy uses.
+   */
   get limen(): string {
     return this.qb64;
   }

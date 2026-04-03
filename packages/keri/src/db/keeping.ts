@@ -29,9 +29,13 @@ export interface KeeperOptions extends LMDBerOptions {
  * - mirrors the `PubLot` record shape used by keeper state records
  */
 export interface PubLot {
+  /** Ordered fully qualified public keys for one establishment-event key set. */
   pubs: string[];
+  /** Rotation index of the establishment event that uses this key set. */
   ridx: number;
+  /** Zeroth key index of this set in the full managed key sequence. */
   kidx: number;
+  /** ISO8601 datetime when this public-key set was first created. */
   dt: string;
 }
 
@@ -45,8 +49,11 @@ export interface PubLot {
  * replay and stateful key progression.
  */
 export interface PreSit {
+  /** Historical previously current lot retained for replay/erase progression. */
   old: PubLot;
+  /** Current active lot used for present signing state. */
   new: PubLot;
+  /** Next future lot that becomes current on the next rotation/replay advance. */
   nxt: PubLot;
 }
 
@@ -60,15 +67,21 @@ export interface PreSit {
  * key material for a managed identifier prefix.
  */
 export interface PrePrm {
+  /** Prefix index for this managed key sequence within keeper-global policy. */
   pidx: number;
+  /** Creator algorithm used to derive or replay later key lots for this prefix. */
   algo: string;
+  /** Per-prefix derivation salt, plaintext or encrypted according to AEID policy. */
   salt: string;
+  /** Deterministic path stem used by salty creator families. */
   stem: string;
+  /** Stretch tier used when recreating deterministic signer material. */
   tier: Tier;
 }
 
 /** Ordered public-key set stored for one `(prefix, ridx)` replay key. */
 export interface PubSet {
+  /** Ordered public keys for the addressed `(prefix, ridx)` replay slot. */
   pubs: string[];
 }
 
@@ -248,12 +261,17 @@ export class Keeper {
     return yield* this.lmdber.close(clear);
   }
 
-  /** Read one keeper-global string value from `gbls.`. */
+  /**
+   * Read one keeper-global string value from `gbls.`.
+   *
+   * Manager-owned keys currently include `aeid`, `pidx`, `algo`, `salt`, and
+   * `tier`.
+   */
   getGbls(key: string): string | null {
     return this.gbls.get(key);
   }
 
-  /** Upsert one keeper-global string value in `gbls.`. */
+  /** Upsert one keeper-global string value in `gbls.` under the same manager-owned key contract. */
   pinGbls(key: string, value: string): boolean {
     return this.gbls.pin(key, value);
   }

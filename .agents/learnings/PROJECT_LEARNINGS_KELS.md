@@ -96,8 +96,8 @@ replay/verification semantics.
 24. Cue handling is now a first-class KEL/runtime porting seam. The shared root
     cue deck remains on `AgentRuntime`, but cue semantics are habitat-owned via
     `Hab.processCuesIter()`, runtime delivery happens through
-    `processCuesOnce()` / `cueDo()`, and hosts consume structured
-    `CueEmission`s instead of byte-only yields.
+    `processCuesOnce()` / `cueDo()`, and hosts consume structured `CueEmission`s
+    instead of byte-only yields.
 25. KERIpy cue behavior is the semantic contract, not the Python structure:
     `receipt`, `witness`, `query`, `reply`, `replay`, `notice`,
     `noticeBadCloneFN`, `keyStateSaved`, `invalid`, `psUnescrow`,
@@ -115,10 +115,10 @@ replay/verification semantics.
     routing, escrow persistence, duplicate handling, and post-acceptance side
     effects. This rule should also guide future `Tever`/`Tevery` and similar
     processor ports; see `docs/adr/adr-0005-kel-decision-control-flow.md`.
-28. Local key-management parity now depends on preserving KERIpy's mental
-    model, not just its return types: `Signer`/`Verfer`/`Salter` own executable
-    crypto behavior, while `Manager` owns creator selection, keeper-state
-    progression, AEID policy, and replay over stored public-key lots.
+28. Local key-management parity now depends on preserving KERIpy's mental model,
+    not just its return types: `Signer`/`Verfer`/`Salter` own executable crypto
+    behavior, while `Manager` owns creator selection, keeper-state progression,
+    AEID policy, and replay over stored public-key lots.
 29. Keeper encryption should now be treated the same way: CESR primitives own
     sealed-box behavior (`Cipher`/`Encrypter`/`Decrypter`), while KERI layers
     own keeper-state selection, storage, and AEID orchestration. A keeper-local
@@ -389,27 +389,27 @@ Use this doc for:
   - Added `Creator`, `RandyCreator`, `SaltyCreator`, and `Creatory` in
     `packages/keri/src/app/keeping.ts`, then collapsed `Manager` into
     orchestration over those creators plus keeper persistence.
-  - Expanded `Manager` to cover the real local lifecycle seams:
-    `incept`, `move`, `rotate`, `sign`, `decrypt`, `ingest`, and `replay`.
-  - Moved signing delegation to stored executable `Signer` primitives instead
-    of suite-switching inside manager code.
+  - Expanded `Manager` to cover the real local lifecycle seams: `incept`,
+    `move`, `rotate`, `sign`, `decrypt`, `ingest`, and `replay`.
+  - Moved signing delegation to stored executable `Signer` primitives instead of
+    suite-switching inside manager code.
   - Changed keeper state to store next public keys in `PreSit.nxt.pubs` and
     replayable `pubs.` records, deriving next digests on demand instead of
     persisting digest-backed next state.
   - Updated `SignerSuber` / `CryptSignerSuber` to rehydrate signers from stored
-    seed bytes plus the keyspace verifier, so transferability and `Signer.verfer`
-    survive DB round-trips.
+    seed bytes plus the keyspace verifier, so transferability and
+    `Signer.verfer` survive DB round-trips.
   - Hardened Ed25519 lifecycle coverage across current keys, next keys,
-    rotation, ingest/replay, decrypt, and creator derivation because that is
-    the dominant KERI operating suite.
+    rotation, ingest/replay, decrypt, and creator derivation because that is the
+    dominant KERI operating suite.
 - Why:
-  - Returning narrow primitives was not enough; as long as `Manager` still
-    owned suite dispatch and digest-backed next-state bookkeeping, the local
-    model stayed conceptually wrong and future parity work would keep fighting
-    the same abstraction leak.
+  - Returning narrow primitives was not enough; as long as `Manager` still owned
+    suite dispatch and digest-backed next-state bookkeeping, the local model
+    stayed conceptually wrong and future parity work would keep fighting the
+    same abstraction leak.
   - KERIpy's keeper model is public-key-lot based. Storing next digests as the
-    primary keeper state looked convenient in TS, but it was the wrong
-    substrate for rotation and replay parity.
+    primary keeper state looked convenient in TS, but it was the wrong substrate
+    for rotation and replay parity.
 - Tests:
   - Command:
     `deno test -A --config packages/keri/deno.json packages/keri/test/unit/db/subing.test.ts packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/app/habbing.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
@@ -441,9 +441,9 @@ Use this doc for:
     of rejecting the `pre/path` branch.
   - Preserved KERIpy branch precedence exactly: explicit `pubs` win, then
     explicit `verfers`, then managed `pre/path`.
-  - Implemented `salty` derived signing by reconstructing signers from
-    persisted keeper parameters and validating each derived signer against the
-    stored public key before signing.
+  - Implemented `salty` derived signing by reconstructing signers from persisted
+    keeper parameters and validating each derived signer against the stored
+    public key before signing.
   - Implemented `randy` derived signing as addressed pub-lot resolution plus
     lookup of stored signer secrets from `pris.`; no fake deterministic
     derivation was added where none exists.
@@ -954,9 +954,9 @@ Use this doc for:
   - `packages/keri/src/db/basing.ts`
   - `packages/keri/src/app/habbing.ts`
 - Risks/TODO:
-  - `Kever.update()` currently covers the bootstrap `rot`/`drt`/`ixn` slice,
-    not full KERIpy parity. Witness, delegation, and escrow-heavy acceptance
-    breadth still needs to move deeper into `Kever`/`Kevery`.
+  - `Kever.update()` currently covers the bootstrap `rot`/`drt`/`ixn` slice, not
+    full KERIpy parity. Witness, delegation, and escrow-heavy acceptance breadth
+    still needs to move deeper into `Kever`/`Kevery`.
   - Cue emission is still owned by `Kevery`, which is the right split for now,
     but later clone/duplicitous anomaly handling may justify limited
     state-machine-local cues from `Kever` itself.
@@ -974,16 +974,15 @@ Use this doc for:
   - Switched `bt` state serialization from `Number(...).toString(16)` to exact
     `.numh` emission and reloaded durable `bt` state through the compact
     number-primitive helper instead of the fixed Huge-number path.
-  - Added KEL regressions proving `Kever.evaluateInception()` accepts
-    deprecated intive `bt` inputs and that `Kever.fromState().state()` no
-    longer drifts large `bt` hex values through `bigint -> number -> hex`
-    coercion.
+  - Added KEL regressions proving `Kever.evaluateInception()` accepts deprecated
+    intive `bt` inputs and that `Kever.fromState().state()` no longer drifts
+    large `bt` hex values through `bigint -> number -> hex` coercion.
 - Why:
-  - The original suspicion that `bn` was reading the wrong field was a
-    category error. `bt` is the field; `bn`/`bner` are projections of that same
-    field. The real parity bug was representation loss: once `Kever` dropped
-    `bt` to a JS `number`, large thresholds could no longer round-trip exactly,
-    even though KERIpy keeps wrapper/exact-integer form until serialization.
+  - The original suspicion that `bn` was reading the wrong field was a category
+    error. `bt` is the field; `bn`/`bner` are projections of that same field.
+    The real parity bug was representation loss: once `Kever` dropped `bt` to a
+    JS `number`, large thresholds could no longer round-trip exactly, even
+    though KERIpy keeps wrapper/exact-integer form until serialization.
 - Tests:
   - Command:
     `deno test -A --unstable-ffi --config packages/keri/deno.json packages/keri/test/unit/core/kever.test.ts`
@@ -1084,9 +1083,9 @@ Use this doc for:
     controller and prior-next satisfaction via `tholder.satisfy(indices)`, and
     reloads durable `kt`/`nt` state through semantic `Tholder` construction
     instead of the old hex-only helper.
-  - Widened `KeyStateRecord.kt`/`nt` and local authoring inputs
-    (`MakeHabArgs`, CLI/file incept options) so weighted threshold structures
-    survive build -> accept -> persist -> reload without flattening.
+  - Widened `KeyStateRecord.kt`/`nt` and local authoring inputs (`MakeHabArgs`,
+    CLI/file incept options) so weighted threshold structures survive build ->
+    accept -> persist -> reload without flattening.
   - Updated `Revery.acceptReply()` so transferable reply endorsements now use
     the same threshold semantics as KEL validation instead of a numeric count
     comparison.
@@ -1096,8 +1095,8 @@ Use this doc for:
 - Why:
   - The real parity bug was not “missing one `Tholder` class method”; it was a
     systemic representation leak. `keri-ts` could parse weighted thresholds at
-    the edges but then discarded that meaning before `Kever`, `Hab`, or
-    `Revery` used it.
+    the edges but then discarded that meaning before `Kever`, `Hab`, or `Revery`
+    used it.
   - The durable rule now is brutal and clear: if a path depends on signer
     threshold logic, it must consume `Tholder` directly rather than recreating
     numeric threshold semantics locally.
@@ -1174,8 +1173,8 @@ Use this doc for:
 - Risks/TODO:
   - The focused tests cover the substantive B1/B2 delegated recovery cases, but
     deeper multi-level delegated boss recursion should keep accumulating direct
-    tests as more delegated-delegator scenarios become easy to synthesize in
-    the harness.
+    tests as more delegated-delegator scenarios become easy to synthesize in the
+    harness.
 
 ### 2026-04-02 - KEL And Reply Verification Now Use Primitive-Owned Suite Dispatch
 
@@ -1185,16 +1184,15 @@ Use this doc for:
   - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
 - What changed:
   - Replaced runtime `ed25519.verify(...)` shortcuts in
-    `packages/keri/src/core/kever.ts` and
-    `packages/keri/src/core/routing.ts` with primitive-owned
-    `verfer.verify(...)` dispatch.
+    `packages/keri/src/core/kever.ts` and `packages/keri/src/core/routing.ts`
+    with primitive-owned `verfer.verify(...)` dispatch.
   - Removed the reply-routing `entry.verfer.code === "B"` gate; accepted reply
     cigars now depend on the authorizing AID match plus verifier-driven
     signature validation instead of an Ed25519-only code literal.
   - Updated `Manager.incept()` to honor `icode` / `ncode`, updated
     `Manager.sign()` to sign from typed stored `Signer` material, and emit the
-    correct indexed/detached signature code families for Ed25519, secp256k1,
-    and secp256r1.
+    correct indexed/detached signature code families for Ed25519, secp256k1, and
+    secp256r1.
   - Fixed `Hab.make()` / `Hab.endorse()` so non-transferable behavior is driven
     by actual key-state transferability; non-transferable ECDSA identifiers now
     use the correct non-transferable verifier prefix code instead of the old
@@ -1222,9 +1220,9 @@ Use this doc for:
   - `packages/keri/src/core/routing.ts`
   - `docs/ARCHITECTURE_MAP.md`
 - Risks/TODO:
-  - `Hab.make()` now accepts `icode` / `ncode`, but wider CLI/user-surface
-    suite selection still needs deliberate product-facing exposure instead of
-    assuming the bootstrap defaults are enough forever.
+  - `Hab.make()` now accepts `icode` / `ncode`, but wider CLI/user-surface suite
+    selection still needs deliberate product-facing exposure instead of assuming
+    the bootstrap defaults are enough forever.
 
 ### 2026-04-02 - Runtime Reply Cigars Now Mirror KERIpy Instead Of Carrying `CigarCouple`
 
@@ -1233,10 +1231,8 @@ Use this doc for:
   - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
 - What changed:
 - Removed `CigarCouple` from the runtime reply/dispatch surface in
-  `packages/keri/src/core/dispatch.ts`,
-  `packages/keri/src/core/routing.ts`,
-  `packages/keri/src/app/reactor.ts`, and
-  `packages/keri/src/app/habbing.ts`.
+  `packages/keri/src/core/dispatch.ts`, `packages/keri/src/core/routing.ts`,
+  `packages/keri/src/app/reactor.ts`, and `packages/keri/src/app/habbing.ts`.
   - Parser normalization of `NonTransReceiptCouples` and reply reload from
     `scgs.` now hydrate `Cigar` instances with attached `.verfer`, and reply
     verification/build paths read verifier context directly from the `Cigar`.
@@ -1279,10 +1275,10 @@ Use this doc for:
   - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
   - `docs/ARCHITECTURE_MAP.md`
 - What changed:
-  - `packages/keri/src/app/keeping.ts` and
-    `packages/keri/src/db/subing.ts` now route signer/salt encryption through
-    CESR `Encrypter` / `Decrypter` / `Cipher` primitives instead of a separate
-    keeper-local crypto implementation.
+  - `packages/keri/src/app/keeping.ts` and `packages/keri/src/db/subing.ts` now
+    route signer/salt encryption through CESR `Encrypter` / `Decrypter` /
+    `Cipher` primitives instead of a separate keeper-local crypto
+    implementation.
   - `packages/keri/src/core/keeper-crypto.ts` was reduced to a thin
     compatibility wrapper over CESR primitives for the remaining helper-shaped
     call sites and tests.
@@ -1330,8 +1326,8 @@ Use this doc for:
     use the renamed `NON_TRANSFERABLE_CODES` helper when a hydrated semantic
     primitive does not yet exist.
   - Left keeper/subdb rehydration behavior unchanged in substance, but
-    `verfer.transferable` is now inherited from `Matter` rather than coming
-    from a verifier-local helper seam.
+    `verfer.transferable` is now inherited from `Matter` rather than coming from
+    a verifier-local helper seam.
 - Why:
   - The old split encouraged higher layers to guess protocol semantics from
     codex helpers even when they already had the real semantic primitive in
@@ -1353,3 +1349,39 @@ Use this doc for:
     validation, so maintainers should not misread this cleanup as “all codex
     sets are bad.” The actual rule is narrower: prefer primitive semantics when
     the semantic primitive already exists.
+
+### 2026-04-03 - Crypto/Keeper/Kever Documentation Parity Was Completed Across Helper Seams
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+- What changed:
+  - Extended the documentation pass beyond class headers into the real
+    TypeScript ownership seams: `packages/keri/src/app/keeping.ts` now documents
+    manager getter semantics, decrypt behavior, rooted/zero-`nxt` lifecycle
+    rules, and creator property meaning; `packages/keri/src/db/keeping.ts` now
+    documents keeper record fields and the `gbls.` policy surface.
+  - Performed a selective Kever audit instead of a rewrite: the local
+    ownership/delegation/member/witness helpers and delegator-search helper now
+    call out the remaining KERIpy stale-member caveat and the TS decision-based
+    interpretation of those protected-party checks.
+- Why:
+  - The first doc backfill closed the obvious `Manager` method gaps, but the
+    real parity debt had moved into helper methods and record/type seams where
+    TypeScript now carries meaning KERIpy kept in class docstrings and parameter
+    comments.
+  - Without documenting those seams, reviewers still had to reverse-engineer
+    keeper policy and protected-party Kever logic from implementation details.
+- Tests:
+  - Command: `deno task fmt:check`
+  - Result: failed because unrelated pre-existing formatting drift remains in
+    `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md` and
+    `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+  - Command: `deno check --config packages/keri/deno.json packages/keri/mod.ts`
+  - Result: passed locally
+- Risks/TODO:
+  - The local-delegator/local-member caveat is now documented honestly, but it
+    is still not behaviorally closed multisig freshness tracking. Later group
+    parity work should tighten the model instead of treating the comment as the
+    fix.

@@ -9,6 +9,10 @@ import { verifySignatureByVerferCode } from "./signature-suite.ts";
  *
  * KERIpy substance: `Verfer` wraps public verification key material and
  * constrains accepted derivation codes to verifier key families.
+ *
+ * Responsibility split:
+ * - `Matter` owns derivation-code semantics such as transferability
+ * - `Verfer` owns suite-dispatched signature verification
  */
 export class Verfer extends Matter {
   constructor(init: Matter | MatterInit) {
@@ -20,10 +24,12 @@ export class Verfer extends Matter {
     }
   }
 
+  /** Raw public verification key bytes used by suite-specific verify paths. */
   get key(): Uint8Array {
     return this.raw;
   }
 
+  /** Human-oriented generated codex member name for diagnostics and tooling. */
   get algorithm(): string {
     return matterCodexName(this.code) ?? "UnknownKey";
   }

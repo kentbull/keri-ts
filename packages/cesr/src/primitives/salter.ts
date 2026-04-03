@@ -32,10 +32,17 @@ export interface SalterSignersOptions extends SalterSignerOptions {
   codes?: string[];
 }
 
+/** Encode one KERI salty-derivation path string into bytes for Argon2id input. */
 function pathToBytes(path: string): Uint8Array {
   return new TextEncoder().encode(path);
 }
 
+/**
+ * Map KERI tier/temp policy to Argon2id work factors.
+ *
+ * `temp=true` keeps the KERIpy testing rule: intentionally cheap stretching
+ * for test-only paths, never for normal persisted key derivation.
+ */
 function tierParams(tier: Tier, temp: boolean): { t: number; m: number } {
   if (temp) {
     return { t: 1, m: 8 };
@@ -52,6 +59,10 @@ function tierParams(tier: Tier, temp: boolean): { t: number; m: number } {
  *
  * KERIpy substance: Salter stores random or fixed salt bytes and is used as
  * input to deterministic signer/seed generation paths.
+ *
+ * Maintainer model:
+ * - `tier` is the default stretch policy carried with the salt instance
+ * - individual `stretch()` / `signer()` calls may still override it
  */
 export class Salter extends Matter {
   readonly tier: Tier;
@@ -76,6 +87,11 @@ export class Salter extends Matter {
    *
    * KERIpy correspondence:
    * - mirrors `Salter.stretch(...)` using Argon2id and tier/temp policy
+   *
+   * Path rule:
+   * - callers supply the fully formed KERI salty path string
+   * - `Salter` does not impose `pidx/ridx/kidx` structure itself; that remains
+   *   a higher-layer manager/creator responsibility
    */
   stretch({
     size = 32,
@@ -93,7 +109,12 @@ export class Salter extends Matter {
     });
   }
 
-  /** Derive one deterministic executable signer from this salt and one path. */
+  /**
+   * Derive one deterministic executable signer from this salt and one path.
+   *
+   * The signer suite controls seed width; `Salter` only owns the deterministic
+   * seed derivation.
+   */
   signer({
     code = MtrDex.Ed25519_Seed,
     transferable = true,
@@ -113,7 +134,13 @@ export class Salter extends Matter {
     });
   }
 
-  /** Derive an ordered signer list from one path prefix plus hex suffix range. */
+  /**
+   * Derive an ordered signer list from one path prefix plus hex suffix range.
+   *
+   * KERIpy correspondence:
+   * - successive signers append lowercase-hex offsets to the supplied path
+   *   prefix
+   */
   signers({
     count = 1,
     start = 0,

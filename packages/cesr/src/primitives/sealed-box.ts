@@ -8,6 +8,8 @@ await sodium.ready;
  * Boundary rule:
  * - CESR primitives own sealed-box behavior
  * - higher layers consume `Cipher`/`Encrypter`/`Decrypter`, not sodium calls
+ * - this module returns only raw key/plaintext/cipher bytes; derivation codes
+ *   and primitive hydration stay outside at the CESR primitive layer
  */
 
 /** Derive X25519 public key material from one Ed25519 verifier key. */
@@ -47,11 +49,14 @@ export function boxPublicKeyFromPrivateKey(privateKey: Uint8Array): Uint8Array {
 }
 
 /** Encrypt one plaintext using libsodium's X25519 sealed-box primitive. */
-export function sealBox(plaintext: Uint8Array, publicKey: Uint8Array): Uint8Array {
+export function sealBox(
+  plaintext: Uint8Array,
+  publicKey: Uint8Array,
+): Uint8Array {
   return new Uint8Array(sodium.crypto_box_seal(plaintext, publicKey));
 }
 
-/** Open one libsodium X25519 sealed-box ciphertext. */
+/** Open one libsodium X25519 sealed-box ciphertext back to raw plaintext bytes. */
 export function openSealedBox(
   cipher: Uint8Array,
   publicKey: Uint8Array,

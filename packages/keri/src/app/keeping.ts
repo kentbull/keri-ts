@@ -77,6 +77,7 @@ export interface ManagerInceptArgs {
   temp?: boolean;
 }
 
+/** Controls one managed-prefix rotation using the stored keeper policy for `pre`. */
 export interface ManagerRotateArgs {
   pre: string;
   ncodes?: string[];
@@ -107,6 +108,14 @@ export interface SigningPath {
   kidx: number;
 }
 
+/**
+ * Inputs for `Manager.sign(...)`.
+ *
+ * Resolution precedence matches KERIpy intent:
+ * - explicit `pubs`
+ * - explicit `verfers`
+ * - managed `pre/path`
+ */
 export interface ManagerSignArgs {
   pubs?: string[];
   verfers?: Verfer[];
@@ -117,11 +126,21 @@ export interface ManagerSignArgs {
   path?: SigningPath;
 }
 
+/** Decrypt through managed private keys resolved from explicit publics/verfers. */
 export interface ManagerDecryptArgs {
   pubs?: string[];
   verfers?: Verfer[];
 }
 
+/**
+ * Import externally generated key material into keeper state.
+ *
+ * KERIpy correspondence:
+ * - `secrecies` is an ordered list of ordered secret lists, one establishment
+ *   event at a time
+ * - the manager records those lists as historical/current key lots, then
+ *   creates one fresh `nxt` lot that follows the imported sequence
+ */
 export interface ManagerIngestArgs {
   secrecies: string[][];
   iridx?: number;
@@ -137,6 +156,7 @@ export interface ManagerIngestArgs {
   temp?: boolean;
 }
 
+/** Replay one persisted managed key sequence forward from keeper state. */
 export interface ManagerReplayArgs {
   pre: string;
   dcode?: string;
@@ -144,6 +164,7 @@ export interface ManagerReplayArgs {
   erase?: boolean;
 }
 
+/** Common creator input contract for both random and deterministic key factories. */
 export interface CreatorCreateArgs {
   codes?: string[];
   count?: number;
@@ -155,40 +176,48 @@ export interface CreatorCreateArgs {
   temp?: boolean;
 }
 
+/** Small keeper-facing bundle pairing one signer with its already-derived verifier. */
 interface SignerMaterial {
   signer: Signer;
   verfer: Verfer;
 }
 
+/** Resolved public-key lot addressed by `(pre, ridx, kidx)` manager metadata. */
 interface AddressedSigningLot {
   pubs: string[];
   ridx: number;
   kidx: number;
 }
 
+/** One selected public key plus its offset within the addressed key lot. */
 interface SelectedSigningKey {
   pub: string;
   offset: number;
 }
 
+/** Fully resolved signer list plus emitted signature-index metadata. */
 interface ResolvedSigningRequest {
   signers: Signer[];
   indices?: number[];
 }
 
+/** Parse one qualified CESR primitive just far enough to recover its raw bytes. */
 function parseQb64Raw(qb64: string): Uint8Array {
   return parseMatter(b(qb64), "txt").raw;
 }
 
+/** Create one fresh random 128-bit salt in canonical CESR `Salter` form. */
 function randomSaltQb64(): string {
   const raw = crypto.getRandomValues(new Uint8Array(16));
   return new Salter({ code: MtrDex.Salt_128, raw }).qb64;
 }
 
+/** Runtime guard for non-negative whole-number signing metadata. */
 function isWholeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
+/** Enforce KERIpy-style integer index requirements before signer selection/encoding. */
 function assertSigningIndex(index: unknown): asserts index is number {
   if (!isWholeNumber(index)) {
     throw new Error(`Invalid signing index = ${index}, not whole number.`);
@@ -250,18 +279,22 @@ function saltySignerForCode(
 
 /** Base key-creation strategy seam mirrored from KERIpy's creator hierarchy. */
 export class Creator {
+  /** Create one signer list according to the concrete creator policy. */
   create(_args: CreatorCreateArgs = {}): Signer[] {
     return [];
   }
 
+  /** Deterministic root salt used by salty creators; empty for non-salty families. */
   get salt(): string {
     return "";
   }
 
+  /** Path stem prefix used by salty creators; empty for non-salty families. */
   get stem(): string {
     return "";
   }
 
+  /** Default derivation tier carried by the concrete creator policy. */
   get tier(): Tier {
     return Tiers.low;
   }
@@ -336,6 +369,7 @@ export class SaltyCreator extends Creator {
 export class Creatory {
   constructor(private readonly algo: Algos = Algos.salty) {}
 
+  /** Materialize the configured creator family with its optional salt/stem policy. */
   make(
     { salt, stem, tier }: { salt?: string; stem?: string; tier?: Tier } = {},
   ): Creator {
@@ -349,10 +383,19 @@ export class Creatory {
   }
 }
 
+/** Stable LMDB key projection for one managed prefix and one rotation index. */
 function pubsKey(pre: string, ridx: number): string {
   return `${pre}.${ridx.toString(16).padStart(32, "0")}`;
 }
 
+/**
+ * Compute next-key digests directly from stored/derived public keys.
+ *
+ * KERIpy correspondence:
+ * - KERIpy stores/uses signers when building digers during inception/rotation
+ * - `keri-ts` now stores next public keys in keeper state, so this helper is
+ *   the explicit bridge from persisted pubs to replayable next-key commitments
+ */
 function digersForPubs(pubs: string[], dcode: string): Diger[] {
   return pubs.map((pub) =>
     new Diger({
@@ -362,6 +405,13 @@ function digersForPubs(pubs: string[], dcode: string): Diger[] {
   );
 }
 
+/**
+ * Normalize one suite-selection request into an explicit per-key code list.
+ *
+ * The manager accepts both KERIpy-style homogeneous `count + code` input and
+ * explicit heterogeneous `codes` lists. This helper centralizes the precedence
+ * and count validation so inception/rotation/ingest all follow the same rule.
+ */
 function resolveSuiteCodes(
   codes: string[] | undefined,
   count: number,
@@ -382,6 +432,7 @@ function resolveSuiteCodes(
   return Array.from({ length: count }, () => code);
 }
 
+/** Default empty public-key lot used for vacuous `.old` / `.new` / `.nxt` state. */
 function emptyLot(
   dt = "",
 ): { pubs: string[]; ridx: number; kidx: number; dt: string } {
@@ -442,30 +493,36 @@ export class Manager {
     return this._ks;
   }
 
+  /** Process-local AEID/authentication seed kept only in memory, never persisted in keeper state. */
   get seed(): string {
     return this._seed;
   }
 
+  /** Stored non-transferable auth/encryption identifier prefix from keeper globals. */
   get aeid(): string {
     return this.ks.getGbls("aeid") ?? "";
   }
 
+  /** Next prefix index for a new managed key sequence, stored in hex text in `gbls.`. */
   get pidx(): number | null {
     const val = this.ks.getGbls("pidx");
     if (val === null) return null;
     return parseInt(val, 16);
   }
 
+  /** Persist the next managed-prefix index in keeper-global hex form. */
   set pidx(pidx: number) {
     this.ks.pinGbls("pidx", pidx.toString(16));
   }
 
+  /** Keeper-global default creator algorithm for newly rooted managed sequences. */
   get algo(): Algos | null {
     const val = this.ks.getGbls("algo");
     if (val === null) return null;
     return val as Algos;
   }
 
+  /** Persist the keeper-global default creator algorithm. */
   set algo(algo: Algos) {
     this.ks.pinGbls("algo", algo);
   }
@@ -505,6 +562,7 @@ export class Manager {
     return tier as Tier | null;
   }
 
+  /** Persist the keeper-global default stretch tier for rooted salty derivation. */
   set tier(tier: Tier) {
     this.ks.pinGbls("tier", tier);
   }
@@ -611,9 +669,15 @@ export class Manager {
         }
         data.salt = this.encrypter
           ? this.encrypter.encrypt({
-            prim: this.decrypter.decrypt({ qb64: data.salt, ctor: Salter }) as Salter,
+            prim: this.decrypter.decrypt({
+              qb64: data.salt,
+              ctor: Salter,
+            }) as Salter,
           }).qb64
-          : (this.decrypter.decrypt({ qb64: data.salt, ctor: Salter }) as Salter).qb64;
+          : (this.decrypter.decrypt({
+            qb64: data.salt,
+            ctor: Salter,
+          }) as Salter).qb64;
         this.ks.prms.pin(keys, data);
       }
 
@@ -645,6 +709,7 @@ export class Manager {
     return this.decrypter ?? undefined;
   }
 
+  /** Load one managed signer seed by its public verifier key. */
   private getSignerByPub(pub: string): Signer {
     const signer = this.ks.pris.get(pub, this.signerDecrypter());
     if (!signer) {
@@ -653,6 +718,7 @@ export class Manager {
     return signer;
   }
 
+  /** Resolve signers from either explicit public-key text or hydrated verifiers. */
   private getSigners(
     { pubs, verfers }: Pick<
       ManagerSignArgs | ManagerDecryptArgs,
@@ -668,6 +734,7 @@ export class Manager {
     return [];
   }
 
+  /** Resolve one known current/next/old lot directly from the live `PreSit` projection. */
   private knownSigningLot(ps: PreSit, ridx: number): PubLot | null {
     // Prefer the current lot first so inception-state `old/new` ridx overlap
     // still resolves `pre` defaults to the live signing keys.
@@ -679,6 +746,13 @@ export class Manager {
     return null;
   }
 
+  /**
+   * Resolve manager-level `(ridx, kidx)` addressing into one concrete pub lot.
+   *
+   * Resolution order:
+   * - prefer the live `old/new/nxt` lots already carried in `PreSit`
+   * - otherwise fall back to historical `pubs.` storage for replay-style lots
+   */
   private resolveSigningPath(
     pre: string,
     ps: PreSit,
@@ -722,6 +796,7 @@ export class Manager {
     };
   }
 
+  /** Select and order the addressed public keys according to optional `indices`. */
   private selectSigningKeys(
     pre: string,
     lot: AddressedSigningLot,
@@ -749,6 +824,13 @@ export class Manager {
     });
   }
 
+  /**
+   * Reconstruct signer material for one salty-managed key lot.
+   *
+   * Maintainer rule:
+   * - derive from persisted keeper parameters, not from stored signer secrets
+   * - validate every derived signer against the stored pub before using it
+   */
   private deriveSaltySigningSigners(
     pre: string,
     pp: PrePrm,
@@ -787,6 +869,14 @@ export class Manager {
     });
   }
 
+  /**
+   * Normalize one signing request into the concrete signer list that will emit signatures.
+   *
+   * Branch precedence intentionally follows KERIpy:
+   * - explicit `pubs`
+   * - explicit `verfers`
+   * - managed `pre/path` addressing
+   */
   private resolveSigningRequest(args: ManagerSignArgs): ResolvedSigningRequest {
     // Preserve KERIpy branch precedence exactly: explicit pubs first, then
     // explicit verfers, then managed prefix/path lookup.
@@ -839,6 +929,7 @@ export class Manager {
     }
   }
 
+  /** Decrypt one persisted per-prefix salt through the current keeper policy. */
   private decryptPreSalt(salt: string): string {
     if (!salt) {
       return "";
@@ -855,6 +946,16 @@ export class Manager {
    * Keeper-state parity:
    * - `ps.nxt.pubs` now stores next public keys, not next digests
    * - returned digers are derived from those stored next public keys on demand
+   *
+   * Rooting/default rules:
+   * - rooted inception inherits missing `algo`, `salt`, and `tier` from
+   *   keeper globals
+   * - unrooted inception falls back only to local per-call defaults
+   *
+   * Transferability rule:
+   * - an empty next-key set (`ncount=0` / empty `ncodes`) makes the managed
+   *   sequence effectively non-rotatable even if the current prefix material
+   *   is otherwise transferable
    */
   incept(args: ManagerInceptArgs = {}): [Verfer[], Diger[]] {
     const {
@@ -982,6 +1083,14 @@ export class Manager {
     return [verfers, digers];
   }
 
+  /**
+   * Rebind one temporary/default prefix keyspace to its final derived prefix.
+   *
+   * KERIpy correspondence:
+   * - this is the `Manager.move()` / `repre`-style keeper operation used once
+   *   the real identifier prefix is known and the temporary inception key needs
+   *   to stop being the durable lookup key
+   */
   move(oldPre: string, newPre: string): void {
     if (oldPre === newPre) return;
     if (this.ks.getPres(oldPre) === null) {
@@ -1049,6 +1158,19 @@ export class Manager {
     }
   }
 
+  /**
+   * Advance one managed prefix from its current `nxt` lot to a new future `nxt` lot.
+   *
+   * Returns:
+   * - current verfers for the newly active key set
+   * - digers for the freshly derived next public-key lot
+   *
+   * Edge-case rules:
+   * - an empty current `nxt` lot means the managed prefix is effectively
+   *   non-transferable and may not rotate further
+   * - `erase=true` removes only the stale `old` signer seeds after the durable
+   *   state update succeeds
+   */
   rotate(args: ManagerRotateArgs): [Verfer[], Diger[]] {
     const {
       pre,
@@ -1207,6 +1329,17 @@ export class Manager {
     });
   }
 
+  /**
+   * Decrypt one sealed-box qb64 payload through explicit stored signer seeds.
+   *
+   * KERIpy correspondence:
+   * - this is the explicit `pubs` / `verfers` decrypt path
+   * - unlike signing, there is no derived `pre/path` branch here in the
+   *   current port
+   *
+   * The resolved Ed25519 signer seeds are converted to their matching X25519
+   * private box keys inside `Decrypter`.
+   */
   decrypt(
     qb64: string | Uint8Array,
     args: ManagerDecryptArgs = {},
@@ -1235,6 +1368,26 @@ export class Manager {
     return plain;
   }
 
+  /**
+   * Register externally generated key sequences into keeper state.
+   *
+   * KERIpy correspondence:
+   * - `secrecies` is ordered in establishment-event order
+   * - the imported sequence becomes historical/current lots
+   * - one new future lot is then created from the configured creator policy
+   * - imported secrets are kept; unlike `rotate()`, ingest does not erase
+   *   prior signer material
+   *
+   * Returns:
+   * - `ipre`: the initial prefix lookup key for later replay/move operations
+   * - `verferies`: verifier lists mirroring the ingested secrecy lists
+   *
+   * `iridx` rule:
+   * - records before `iridx` become replay history
+   * - the lot at `iridx` becomes current `.new`
+   * - the next lot becomes `.nxt`, or a freshly derived lot if ingestion ends
+   *   first
+   */
   ingest(args: ManagerIngestArgs): [string, Verfer[][]] {
     const {
       secrecies,
@@ -1396,6 +1549,16 @@ export class Manager {
     return [ipre, verferies];
   }
 
+  /**
+   * Replay one persisted managed key sequence from keeper state.
+   *
+   * Returns the current verfer list and the next digers for the replayed
+   * position, optionally advancing durable `PreSit` state one step.
+   *
+   * End-of-sequence rule:
+   * - `advance=true` raises `RangeError` once replay reaches a point where no
+   *   later `pubs.` lot exists to become the next future set
+   */
   replay(args: ManagerReplayArgs): [Verfer[], Diger[]] {
     const {
       pre,
@@ -1454,7 +1617,12 @@ export class Manager {
   }
 }
 
-/** Normalize caller-provided salt material or synthesize a new random salt. */
+/**
+ * Normalize caller-provided salt material or synthesize a new random salt.
+ *
+ * Provided salts are parsed and re-emitted through `Salter` so the returned
+ * qb64 always uses canonical KERI salt encoding.
+ */
 export function normalizeSaltQb64(salt?: string): string {
   return salt
     ? new Salter({ code: MtrDex.Salt_128, raw: parseQb64Raw(salt) }).qb64

@@ -24,7 +24,19 @@ interface IndexedSignatureFamily {
   readonly bigCurrentOnly: string;
 }
 
-const SIGNER_INDEXED_SIG_CODES = new Map<SupportedSignerCode, IndexedSignatureFamily>([
+/**
+ * Indexed-signature family lookup keyed by signer seed suite.
+ *
+ * Each family carries KERIpy's four emitted code paths:
+ * - small `both`
+ * - big `both`
+ * - small current-only
+ * - big current-only
+ */
+const SIGNER_INDEXED_SIG_CODES = new Map<
+  SupportedSignerCode,
+  IndexedSignatureFamily
+>([
   [
     MtrDex.Ed25519_Seed,
     {
@@ -65,7 +77,9 @@ const SIGNER_INDEXED_SIG_CODES = new Map<SupportedSignerCode, IndexedSignatureFa
  *   management code, or ordinary caller-facing crypto surfaces
  */
 
-function assertSupportedSignerCode(code: string): asserts code is SupportedSignerCode {
+function assertSupportedSignerCode(
+  code: string,
+): asserts code is SupportedSignerCode {
   if (
     code !== MtrDex.Ed25519_Seed
     && code !== MtrDex.ECDSA_256k1_Seed
@@ -75,7 +89,9 @@ function assertSupportedSignerCode(code: string): asserts code is SupportedSigne
   }
 }
 
-function assertSupportedVerferCode(code: string): asserts code is SupportedVerferCode {
+function assertSupportedVerferCode(
+  code: string,
+): asserts code is SupportedVerferCode {
   if (
     code !== MtrDex.Ed25519
     && code !== MtrDex.Ed25519N
@@ -111,7 +127,13 @@ export function verferCodeForSignerCode(
   }
 }
 
-/** Project one verifier code back to the signer seed code for the same suite. */
+/**
+ * Project one verifier code back to the signer seed code for the same suite.
+ *
+ * This inverse mapping exists so higher layers such as keeper-managed derived
+ * signing can reconstruct the correct seed suite from persisted verifier keys
+ * without importing curve-specific logic.
+ */
 export function signerCodeForVerferCode(verferCode: string): string {
   assertSupportedVerferCode(verferCode);
 

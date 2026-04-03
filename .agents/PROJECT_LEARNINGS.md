@@ -278,9 +278,8 @@ This keeps context focused and avoids long-thread drift.
     from current authoritative boss lookups and repair `.aess` when it
     rediscovers accepted delegation chains, and `verifyIndexedSignatures()` must
     carry verified `verfer` material forward so prior-next exposure thresholds
-    still work during delegated recovery validation.
-    open, so maintainers should not treat this milestone as full `serdering.py`
-    closure yet.
+    still work during delegated recovery validation. open, so maintainers should
+    not treat this milestone as full `serdering.py` closure yet.
 56. CESR-native parser hydration is now a stricter KERIpy-parity contract at the
     top-level frame seam: once the parser classifies a native
     `FixBodyGroup`/`MapBodyGroup` as a message body, success means full
@@ -385,31 +384,30 @@ This keeps context focused and avoids long-thread drift.
     EXN/TEL port will be tempted to bypass the seam and re-parse attachments ad
     hoc.
 75. Accepted identifier state in `keri-ts` should now live in one place: the
-    live `Kever` cache on `Baser`. `Hab` may resolve a `Kever`, and `Kevery`
-    may create/update one, but habitat code should not reintroduce thin
-    `states.` projections or hand-written local event logging. Local inception
-    must feed signed events through the same `Kevery`/`Kever` acceptance path
-    used for remote processing, or the codebase will immediately drift back
-    into split-brain state handling.
+    live `Kever` cache on `Baser`. `Hab` may resolve a `Kever`, and `Kevery` may
+    create/update one, but habitat code should not reintroduce thin `states.`
+    projections or hand-written local event logging. Local inception must feed
+    signed events through the same `Kevery`/`Kever` acceptance path used for
+    remote processing, or the codebase will immediately drift back into
+    split-brain state handling.
 76. `bt` is the semantic backer-threshold field; `bner` is the wrapper view of
     that field, and `bn` is only a scalar convenience projection. The real
     parity risk is not choosing `bn` versus `bt`, but collapsing the threshold
-    to a JS `number` too early in `Kever`/state code. Carry `NumberPrimitive`
-    or `bigint`-exact threshold values through validation and state
-    serialization, and normalize deprecated intive numeric `bt` inputs in
-    `SerderKERI.bner` so the KERIpy compatibility surface stays intact.
+    to a JS `number` too early in `Kever`/state code. Carry `NumberPrimitive` or
+    `bigint`-exact threshold values through validation and state serialization,
+    and normalize deprecated intive numeric `bt` inputs in `SerderKERI.bner` so
+    the KERIpy compatibility surface stays intact.
 77. For `Kever` decision helpers, keep the decision boundary explicit: helper
     functions that run below `evaluateInception()`/`evaluateUpdate()` should not
     return anonymous “almost a decision” unions. Either return a named internal
     plan/input type with one clear purpose, or collapse the helper into the
     decision method so only the public decision seam returns `KeverDecision`.
 78. Typed decision families stay readable when both the union variants and their
-    payload nouns are explicitly named. Prefer `KeverAccept` /
-    `KeverDuplicate` / `KeverEscrow` / `KeverReject` and
-    `AttachmentVerified` / `AttachmentEscrow` / `AttachmentReject` over
-    anonymous object-literal union members, and prefer field names like
-    `transition` and `attachments` over vague transport names like `plan` or
-    `atc`.
+    payload nouns are explicitly named. Prefer `KeverAccept` / `KeverDuplicate`
+    / `KeverEscrow` / `KeverReject` and `AttachmentVerified` /
+    `AttachmentEscrow` / `AttachmentReject` over anonymous object-literal union
+    members, and prefer field names like `transition` and `attachments` over
+    vague transport names like `plan` or `atc`.
 79. Weighted threshold parity is now a cross-layer contract, not just a CESR
     primitive nicety: `Tholder` owns semantic threshold normalization and
     `satisfy(indices)`, `SerderKERI` must preserve weighted `kt`/`nt` forms
@@ -444,9 +442,10 @@ This keeps context focused and avoids long-thread drift.
     does not retain `temp=true`, so derived salty signing is only reliable for
     normal persisted sequences.
 84. The architectural rationale for derived-path signing is now captured in
-    `docs/adr/adr-0006-manager-derived-path-signing.md`: treat `Manager.sign({ pre, path })` as keeper-state addressing, preserve KERIpy precedence, do
-    not invent deterministic `randy` derivation, and do not add new LMDB state
-    just to make the branch work.
+    `docs/adr/adr-0006-manager-derived-path-signing.md`: treat
+    `Manager.sign({ pre, path })` as keeper-state addressing, preserve KERIpy
+    precedence, do not invent deterministic `randy` derivation, and do not add
+    new LMDB state just to make the branch work.
 85. Non-transferable receipt couples are now a wire/storage detail, not a
     runtime API. Parser/reply/app code should normalize them immediately into
     `Cigar` instances with attached `.verfer`, like KERIpy; LMDB stores such as
@@ -463,14 +462,24 @@ This keeps context focused and avoids long-thread drift.
     decide which payloads to encrypt/decrypt and where to persist them.
     `packages/keri/src/core/keeper-crypto.ts` is compatibility-only and should
     not become a second crypto authority again.
-88. KERIpy-style derivation-code semantics now belong on `Matter` in
-    `keri-ts`, not in verifier-local helpers: `Matter` owns `name`, `hard`,
-    `soft`, `size`, `both`, `transferable`, `digestive`, `prefixive`,
-    `special`, and `composable`; `Verfer` inherits those semantics while
-    `Signer.transferable` remains the deliberate override because seed codes do
-    not encode transferability. Higher layers should prefer hydrated primitive
-    properties such as `prefixer.transferable` over codex-set checks whenever
-    they already hold the semantic primitive.
+88. KERIpy-style derivation-code semantics now belong on `Matter` in `keri-ts`,
+    not in verifier-local helpers: `Matter` owns `name`, `hard`, `soft`, `size`,
+    `both`, `transferable`, `digestive`, `prefixive`, `special`, and
+    `composable`; `Verfer` inherits those semantics while `Signer.transferable`
+    remains the deliberate override because seed codes do not encode
+    transferability. Higher layers should prefer hydrated primitive properties
+    such as `prefixer.transferable` over codex-set checks whenever they already
+    hold the semantic primitive.
+89. Parity work is not complete until the touched source carries maintainer docs
+    too. Recent `Manager`/creator/derived-signing seams and `Signer` option
+    contracts now need meaning-first source documentation in the same change as
+    the behavior, preferably ported from KERIpy responsibilities and invariants
+    rather than rewritten as TS-only trivia.
+90. Source-doc parity for KERIpy ports now explicitly includes the helper and
+    type seams where TypeScript moved real behavior: cipher-family codex
+    groupings, suite-dispatch helpers, sealed-box adapters, keeper record types,
+    and decision-bearing Kever helper methods all need maintainer docs once they
+    become the actual home of upstream semantics.
 
 ## New Thread Kickoff Template
 

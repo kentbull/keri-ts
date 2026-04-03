@@ -17,6 +17,14 @@ import { Signer } from "./signer.ts";
 import { Streamer } from "./streamer.ts";
 import { Verfer } from "./verfer.ts";
 
+/**
+ * Supported constructor inputs for one public-key encrypter.
+ *
+ * Accepted forms mirror KERIpy's two mental models:
+ * - provide already-qualified X25519 public box material directly
+ * - provide an Ed25519 verifier key through `verkey` and derive the matching
+ *   X25519 public box key during construction
+ */
 export interface EncrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64" | "qb2"> {
   raw?: Uint8Array | ArrayBufferView;
   qb64b?: Uint8Array | ArrayBufferView;
@@ -26,13 +34,25 @@ export interface EncrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64"
   verkey?: ByteLike;
 }
 
+/**
+ * Plaintext inputs accepted by `Encrypter.encrypt(...)`.
+ *
+ * Precedence follows KERIpy:
+ * - explicit raw serialization through `ser`
+ * - otherwise one CESR primitive through `prim`
+ * - optional `code` names the plaintext family the resulting `Cipher` should
+ *   preserve for later decryption/hydration
+ */
 export interface EncrypterEncryptOptions {
   ser?: ByteLike;
   prim?: CipherHydratable;
   code?: string;
 }
 
-function normalizeMatterInit(init: Matter | EncrypterInit): Matter | MatterInit {
+/** Normalize direct X25519 or derived-Ed25519 constructor forms into `Matter` input. */
+function normalizeMatterInit(
+  init: Matter | EncrypterInit,
+): Matter | MatterInit {
   if (init instanceof Matter) {
     return init;
   }
@@ -73,6 +93,11 @@ function normalizeMatterInit(init: Matter | EncrypterInit): Matter | MatterInit 
  * it from Ed25519 verifier keys used by non-transferable/basic AIDs.
  */
 export class Encrypter extends Matter {
+  /**
+   * Construct one X25519 public-key encrypter.
+   *
+   * Default code remains the KERIpy public-box family `MtrDex.X25519`.
+   */
   constructor(init: Matter | EncrypterInit) {
     super(normalizeMatterInit(init));
     if (!ENCRYPTER_CODES.has(this.code)) {
@@ -84,13 +109,21 @@ export class Encrypter extends Matter {
 
   /**
    * Confirm whether the supplied Ed25519 seed maps to this X25519 public key.
+   *
+   * Boundary contract:
+   * - only Ed25519 signer seeds are accepted here
+   * - the check proves that the seed belongs to the AEID/verkey that was used
+   *   to derive this encrypter's public box key
    */
   verifySeed(seed: ByteLike): boolean {
     const signer = new Signer({ qb64b: normalizeByteLike(seed) });
     if (signer.code !== MtrDex.Ed25519_Seed) {
       return false;
     }
-    return bytesEqual(boxKeyPairFromEd25519Seed(signer.raw).publicKey, this.raw);
+    return bytesEqual(
+      boxKeyPairFromEd25519Seed(signer.raw).publicKey,
+      this.raw,
+    );
   }
 
   /**
@@ -100,6 +133,13 @@ export class Encrypter extends Matter {
    * - `ser` wins when supplied
    * - otherwise one primitive is required
    * - omitted `code` defaults to stream-family `L0` only for raw `ser` input
+   *
+   * Plaintext-family rules:
+   * - `Salter` and `Signer` may infer fixed qb64 cipher families when `code`
+   *   is omitted
+   * - other primitives require an explicit family so decrypt-time hydration
+   *   knows whether the plaintext was stored as qb64, qb2, or a sniffable
+   *   stream
    */
   encrypt({ ser, prim, code }: EncrypterEncryptOptions = {}): Cipher {
     let plaintext: Uint8Array | undefined = ser
@@ -157,7 +197,9 @@ export class Encrypter extends Matter {
     }
 
     if (!plaintext) {
-      throw new DeserializeError("Missing plaintext serialization for encryption.");
+      throw new DeserializeError(
+        "Missing plaintext serialization for encryption.",
+      );
     }
 
     return new Cipher({

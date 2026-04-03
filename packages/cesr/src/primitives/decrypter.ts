@@ -16,6 +16,14 @@ import { boxKeyPairFromEd25519Seed, boxPublicKeyFromPrivateKey, openSealedBox } 
 import { Signer } from "./signer.ts";
 import { Streamer } from "./streamer.ts";
 
+/**
+ * Supported constructor inputs for one private-key decrypter.
+ *
+ * Accepted forms mirror KERIpy's two entry points:
+ * - provide already-qualified X25519 private box material directly
+ * - provide an Ed25519 signer seed through `seed` and derive the matching
+ *   X25519 private box key during construction
+ */
 export interface DecrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64" | "qb2"> {
   raw?: Uint8Array | ArrayBufferView;
   qb64b?: Uint8Array | ArrayBufferView;
@@ -25,6 +33,17 @@ export interface DecrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64"
   seed?: ByteLike;
 }
 
+/**
+ * Cipher inputs and hydration controls for `Decrypter.decrypt(...)`.
+ *
+ * Precedence mirrors KERIpy:
+ * - explicit `cipher`
+ * - otherwise parse `qb64`
+ * - otherwise parse `qb2`
+ *
+ * `ctor` controls semantic plaintext rehydration; `bare` bypasses that and
+ * returns plaintext bytes directly.
+ */
 export interface DecrypterDecryptOptions<
   T extends CipherHydratable = CipherHydratable,
 > {
@@ -36,7 +55,10 @@ export interface DecrypterDecryptOptions<
   bare?: boolean;
 }
 
-function normalizeMatterInit(init: Matter | DecrypterInit): Matter | MatterInit {
+/** Normalize direct X25519 or derived-Ed25519 constructor forms into `Matter` input. */
+function normalizeMatterInit(
+  init: Matter | DecrypterInit,
+): Matter | MatterInit {
   if (init instanceof Matter) {
     return init;
   }
@@ -98,6 +120,15 @@ function hydratePlaintext<T extends CipherHydratable>(
   throw new UnknownCodeError(`Unsupported cipher code = ${cipher.code}.`);
 }
 
+/**
+ * Resolve the default plaintext constructor implied by one cipher family.
+ *
+ * KERIpy correspondence:
+ * - fixed salt/seed families default to `Salter` / `Signer`
+ * - whole-stream families default to `Streamer`
+ * - generic qb64/qb2 variable families still require the caller to say what
+ *   semantic primitive should be rehydrated from the plaintext bytes
+ */
 function defaultCtorForCipher(
   cipher: Cipher,
 ): CipherHydratableCtor {
@@ -130,6 +161,12 @@ function defaultCtorForCipher(
  * an Ed25519 signing seed.
  */
 export class Decrypter extends Matter {
+  /**
+   * Construct one X25519 private-key decrypter.
+   *
+   * Default code remains the KERIpy private-box family
+   * `MtrDex.X25519_Private`.
+   */
   constructor(init: Matter | DecrypterInit = {}) {
     super(normalizeMatterInit(init));
     if (!DECRYPTER_CODES.has(this.code)) {
@@ -142,6 +179,17 @@ export class Decrypter extends Matter {
   /**
    * Decrypt one cipher and rehydrate the plaintext with the requested
    * constructor.
+   *
+   * Resolution rules:
+   * - `cipher` wins when supplied
+   * - otherwise `qb64` is parsed before `qb2`
+   * - omitted `ctor` is only inferred for the KERIpy families that already
+   *   name their semantic plaintext shape
+   *
+   * Output rules:
+   * - `bare=true` returns plaintext bytes directly
+   * - otherwise `transferable` is forwarded only to qb64-family primitive
+   *   constructors such as `Signer`, matching the KERIpy init seam
    */
   decrypt<T extends CipherHydratable = CipherHydratable>(
     {

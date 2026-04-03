@@ -13,21 +13,25 @@ import {
 } from "./signature-suite.ts";
 import { Verfer } from "./verfer.ts";
 
+/** Construction options for one executable signer seed. */
 export interface SignerInit extends MatterInit {
   transferable?: boolean;
 }
 
+/** Explicit factory options for `Signer.random(...)`. */
 export interface SignerRandomOptions {
   code?: string;
   transferable?: boolean;
 }
 
+/** Signature-shape options for `Signer.sign(...)`. */
 export interface SignerSignOptions {
   index?: number;
   only?: boolean;
   ondex?: number | null;
 }
 
+/** Resolve the explicit signer transferability choice from the supported init forms. */
 function resolveTransferable(init: Matter | SignerInit): boolean {
   if (init instanceof Signer) {
     return init.transferable;
@@ -43,9 +47,15 @@ function resolveTransferable(init: Matter | SignerInit): boolean {
  *
  * KERIpy substance: Signer wraps private seed material, derives the associated
  * verifier, and owns suite-driven signature creation.
+ *
+ * TypeScript difference:
+ * - seed derivation codes do not themselves encode transferability, so
+ *   `Signer` carries an explicit transferability choice rather than inheriting
+ *   `Matter.transferable`
  */
 export class Signer extends Matter {
   private readonly _transferable: boolean;
+  /** Public verifier derived from this seed and the explicit transferability choice. */
   readonly verfer: Verfer;
 
   constructor(init: Matter | SignerInit) {
@@ -81,7 +91,9 @@ export class Signer extends Matter {
   static random(
     { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions = {},
   ): Signer {
-    const raw = crypto.getRandomValues(new Uint8Array(signerSeedSizeForCode(code)));
+    const raw = crypto.getRandomValues(
+      new Uint8Array(signerSeedSizeForCode(code)),
+    );
     return new Signer({ code, raw, transferable });
   }
 
@@ -91,6 +103,9 @@ export class Signer extends Matter {
    * KERIpy correspondence:
    * - `index === undefined` returns a detached non-indexed signature
    * - otherwise the seed suite decides the emitted indexed signature code family
+   * - `only=true` selects the current-list-only family and suppresses `ondex`
+   * - otherwise `ondex` defaults to `index`, preserving KERIpy's implicit
+   *   same-index rule for ordinary indexed signatures
    */
   sign(
     ser: Uint8Array,
