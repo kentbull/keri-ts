@@ -7,6 +7,7 @@ import {
   NumberPrimitive,
   Prefixer,
   Signer,
+  type Tier,
   Verfer,
 } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
@@ -63,7 +64,7 @@ export interface PrePrm {
   algo: string;
   salt: string;
   stem: string;
-  tier: string;
+  tier: Tier;
 }
 
 /** Ordered public-key set stored for one `(prefix, ridx)` replay key. */

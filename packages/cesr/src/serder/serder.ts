@@ -3,6 +3,7 @@ import { b, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrMessage, Smellage } from "../core/types.ts";
+import { Ilks } from "../core/vocabulary.ts";
 import { Aggor, isAggorCode } from "../primitives/aggor.ts";
 import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import {
@@ -50,6 +51,36 @@ interface FieldDom {
 type FieldMap = Record<string, FieldDom>;
 type ProtocolFieldMap = Record<string, FieldMap>;
 type FieldRegistry = Record<Protocol, ProtocolFieldMap>;
+
+const ACDC_COMPACT_TOP_LEVEL_ILKS = new Set<string>([
+  Ilks.acm,
+  Ilks.ace,
+  Ilks.act,
+  Ilks.acg,
+]);
+
+const ACDC_PARTIAL_SECTION_ILKS = new Set<string>([
+  Ilks.sch,
+  Ilks.att,
+  Ilks.agg,
+  Ilks.edg,
+  Ilks.rul,
+]);
+
+const KERI_ESTABLISHMENT_ILKS = new Set<string>([
+  Ilks.icp,
+  Ilks.rot,
+  Ilks.dip,
+  Ilks.drt,
+]);
+
+const ACDC_SAIDIVE_TOP_LEVEL_ILKS = new Set<string>([
+  Ilks.acm,
+  Ilks.ace,
+  Ilks.act,
+  Ilks.acg,
+  Ilks.rip,
+]);
 
 /**
  * Shared CESR genus mapping for protocol messages.
@@ -906,12 +937,12 @@ function shallowCloneSad(sad: SadMap): SadMap {
 
 /** True when the top-level ACDC ilk participates in KERIpy's most-compact SAID rule. */
 function isAcdcCompactiveIlk(ilk: string | null): boolean {
-  return ilk === null || ["acm", "ace", "act", "acg"].includes(ilk);
+  return ilk === null || ACDC_COMPACT_TOP_LEVEL_ILKS.has(ilk);
 }
 
 /** True when the message is an ACDC section-message that must verify embedded section ids. */
 function isAcdcPartialSectionIlk(ilk: string | null): boolean {
-  return ["sch", "att", "agg", "edg", "rul"].includes(ilk ?? "");
+  return ACDC_PARTIAL_SECTION_ILKS.has(ilk ?? "");
 }
 
 /** Map ACDC section labels onto the saidive policy KERIpy applies to that section family. */
@@ -1644,12 +1675,12 @@ export class SerderKERI extends Serder {
     const pre = this.pre;
     if (pre && PREFIX_CODES.has(coerceMatterCode(pre) ?? "")) {
       const code = coerceMatterCode(pre)!;
-      if (this.ilk === "dip" && !DIGEST_CODES.has(code)) {
+      if (this.ilk === Ilks.dip && !DIGEST_CODES.has(code)) {
         throw new DeserializeError(
           `Delegated inception requires digestive prefix code, got ${code}.`,
         );
       }
-      if (this.ilk === "icp" || this.ilk === "dip") {
+      if (this.ilk === Ilks.icp || this.ilk === Ilks.dip) {
         if (NON_DIGEST_PREFIX_CODES.has(code)) {
           if (this.keys.length !== 1) {
             throw new DeserializeError(
@@ -1688,7 +1719,7 @@ export class SerderKERI extends Serder {
       }
     }
 
-    if (this.ilk === "dip" && this.delpre) {
+    if (this.ilk === Ilks.dip && this.delpre) {
       const delCode = coerceMatterCode(this.delpre);
       if (
         !delCode || !PREFIX_CODES.has(delCode) || !DIGEST_CODES.has(delCode)
@@ -1701,7 +1732,7 @@ export class SerderKERI extends Serder {
   }
 
   get estive(): boolean {
-    return ["icp", "rot", "dip", "drt"].includes(this.ilk ?? "");
+    return KERI_ESTABLISHMENT_ILKS.has(this.ilk ?? "");
   }
 
   get pre(): string | null {
@@ -1827,7 +1858,7 @@ export class SerderKERI extends Serder {
   }
 
   get nonce(): string | null {
-    if (this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === "vcp") {
+    if (this.pvrsn.major < 2 && this.pvrsn.minor < 1 && this.ilk === Ilks.vcp) {
       return this.ked && typeof this.ked.n === "string" ? this.ked.n : null;
     }
     return this.uuid;
@@ -1869,7 +1900,7 @@ export class SerderACDC extends Serder {
 
     if (
       this.ilk === null
-      || ["acm", "ace", "act", "acg", "rip"].includes(this.ilk)
+      || ACDC_SAIDIVE_TOP_LEVEL_ILKS.has(this.ilk)
     ) {
       const issuer = this.issuer;
       if (!issuer) {

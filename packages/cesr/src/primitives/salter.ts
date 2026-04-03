@@ -1,5 +1,6 @@
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import { UnknownCodeError } from "../core/errors.ts";
+import { type Tier, Tiers } from "../core/vocabulary.ts";
 import { MtrDex } from "./codex.ts";
 import { SALTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
@@ -7,13 +8,13 @@ import { signerSeedSizeForCode } from "./signature-suite.ts";
 import { Signer } from "./signer.ts";
 
 export interface SalterInit extends MatterInit {
-  tier?: string;
+  tier?: Tier;
 }
 
 export interface SalterStretchOptions {
   size?: number;
   path?: string;
-  tier?: string;
+  tier?: Tier;
   temp?: boolean;
 }
 
@@ -21,7 +22,7 @@ export interface SalterSignerOptions {
   code?: string;
   transferable?: boolean;
   path?: string;
-  tier?: string;
+  tier?: Tier;
   temp?: boolean;
 }
 
@@ -35,14 +36,14 @@ function pathToBytes(path: string): Uint8Array {
   return new TextEncoder().encode(path);
 }
 
-function tierParams(tier: string, temp: boolean): { t: number; m: number } {
+function tierParams(tier: Tier, temp: boolean): { t: number; m: number } {
   if (temp) {
     return { t: 1, m: 8 };
   }
 
-  if (tier === "low") return { t: 2, m: 65536 };
-  if (tier === "med") return { t: 3, m: 262144 };
-  if (tier === "high") return { t: 4, m: 1048576 };
+  if (tier === Tiers.low) return { t: 2, m: 65536 };
+  if (tier === Tiers.med) return { t: 3, m: 262144 };
+  if (tier === Tiers.high) return { t: 4, m: 1048576 };
   throw new Error(`Unsupported security tier=${tier}`);
 }
 
@@ -53,7 +54,7 @@ function tierParams(tier: string, temp: boolean): { t: number; m: number } {
  * input to deterministic signer/seed generation paths.
  */
 export class Salter extends Matter {
-  readonly tier: string;
+  readonly tier: Tier;
 
   constructor(init: Matter | SalterInit) {
     super(init);
@@ -62,7 +63,7 @@ export class Salter extends Matter {
     }
     this.tier = init instanceof Salter
       ? init.tier
-      : (init as SalterInit).tier ?? "low";
+      : (init as SalterInit).tier ?? Tiers.low;
   }
 
   /** Raw salt bytes used by key-derivation consumers. */

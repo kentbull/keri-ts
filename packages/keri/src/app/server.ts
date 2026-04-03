@@ -1,5 +1,6 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { consoleLogger, type Logger } from "../core/logger.ts";
+import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 
 /** Started HTTP host plus the cleanup handle that owns its shutdown boundary. */
@@ -59,7 +60,7 @@ function openServerHost(
             && parts[2] === "oobi"
           ) {
             aid = parts[3];
-            role = "controller";
+            role = Roles.controller;
           } else if (parts[0] === "oobi") {
             aid = parts[1];
             role = parts[2];

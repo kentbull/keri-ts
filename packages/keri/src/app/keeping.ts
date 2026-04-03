@@ -14,6 +14,8 @@ import {
   Salter,
   Siger,
   Signer,
+  type Tier,
+  Tiers,
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
@@ -47,7 +49,7 @@ export interface ManagerArgs {
   pidx?: number;
   algo?: Algos;
   salt?: string;
-  tier?: string;
+  tier?: Tier;
 }
 
 /**
@@ -69,7 +71,7 @@ export interface ManagerInceptArgs {
   algo?: Algos;
   salt?: string;
   stem?: string;
-  tier?: string;
+  tier?: Tier;
   rooted?: boolean;
   transferable?: boolean;
   temp?: boolean;
@@ -129,7 +131,7 @@ export interface ManagerIngestArgs {
   algo?: Algos;
   salt?: string;
   stem?: string;
-  tier?: string;
+  tier?: Tier;
   rooted?: boolean;
   transferable?: boolean;
   temp?: boolean;
@@ -208,13 +210,13 @@ export function saltySigner(
   saltQb64: string,
   path: string,
   transferable: boolean,
-  tier: string,
+  tier: Tier,
   temp: boolean,
 ): SignerMaterial {
   return saltySignerForCode(
     saltQb64,
     path,
-    "A",
+    MtrDex.Ed25519_Seed,
     transferable,
     tier,
     temp,
@@ -233,7 +235,7 @@ function saltySignerForCode(
   path: string,
   signerCode: string,
   transferable: boolean,
-  tier: string,
+  tier: Tier,
   temp: boolean,
 ): SignerMaterial {
   const signer = new Salter({ qb64: saltQb64, tier }).signer({
@@ -260,8 +262,8 @@ export class Creator {
     return "";
   }
 
-  get tier(): string {
-    return "";
+  get tier(): Tier {
+    return Tiers.low;
   }
 }
 
@@ -284,12 +286,12 @@ export class SaltyCreator extends Creator {
   private readonly _stem: string;
 
   constructor(
-    { salt, stem, tier }: { salt?: string; stem?: string; tier?: string } = {},
+    { salt, stem, tier }: { salt?: string; stem?: string; tier?: Tier } = {},
   ) {
     super();
     this.salter = new Salter({
       qb64: normalizeSaltQb64(salt),
-      tier: tier ?? "low",
+      tier: tier ?? Tiers.low,
     });
     this._stem = stem ?? "";
   }
@@ -302,7 +304,7 @@ export class SaltyCreator extends Creator {
     return this._stem;
   }
 
-  override get tier(): string {
+  override get tier(): Tier {
     return this.salter.tier;
   }
 
@@ -335,7 +337,7 @@ export class Creatory {
   constructor(private readonly algo: Algos = Algos.salty) {}
 
   make(
-    { salt, stem, tier }: { salt?: string; stem?: string; tier?: string } = {},
+    { salt, stem, tier }: { salt?: string; stem?: string; tier?: Tier } = {},
   ): Creator {
     if (this.algo === Algos.randy) {
       return new RandyCreator();
@@ -422,7 +424,7 @@ export class Manager {
       pidx = 0,
       algo = Algos.salty,
       salt = randomSaltQb64(),
-      tier = "low",
+      tier = Tiers.low,
     } = args;
 
     this._ks = ks;
@@ -498,11 +500,12 @@ export class Manager {
     );
   }
 
-  get tier(): string | null {
-    return this.ks.getGbls("tier");
+  get tier(): Tier | null {
+    const tier = this.ks.getGbls("tier");
+    return tier as Tier | null;
   }
 
-  set tier(tier: string) {
+  set tier(tier: Tier) {
     this.ks.pinGbls("tier", tier);
   }
 
@@ -879,7 +882,9 @@ export class Manager {
         ? normalizeSaltQb64(salt ?? this.salt ?? undefined)
         : normalizeSaltQb64(salt)
       : "";
-    const usedTier = rooted ? (tier ?? this.tier ?? "low") : (tier ?? "low");
+    const usedTier = rooted
+      ? (tier ?? this.tier ?? Tiers.low)
+      : (tier ?? Tiers.low);
     const pidx = this.pidx ?? 0;
     const creator = new Creatory(usedAlgo).make({
       salt: usedSalt || undefined,
@@ -1258,7 +1263,9 @@ export class Manager {
         ? normalizeSaltQb64(salt ?? this.salt ?? undefined)
         : normalizeSaltQb64(salt)
       : "";
-    const usedTier = rooted ? (tier ?? this.tier ?? "low") : (tier ?? "low");
+    const usedTier = rooted
+      ? (tier ?? this.tier ?? Tiers.low)
+      : (tier ?? Tiers.low);
     const pidx = this.pidx ?? 0;
     const creator = new Creatory(usedAlgo).make({
       salt: usedSalt || undefined,

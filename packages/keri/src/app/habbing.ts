@@ -7,12 +7,15 @@ import {
   DigDex,
   Diger,
   DIGEST_CODES,
+  Ilks,
   parseMatter,
   PREFIX_CODES,
   Prefixer,
   SerderKERI,
   Siger,
   type ThresholdSith,
+  type Tier,
+  Tiers,
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
@@ -23,7 +26,8 @@ import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
 import type { HabitatRecord, VerferCigarCouple } from "../core/records.ts";
-import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
+import { type Role, Roles } from "../core/roles.ts";
+import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
@@ -49,6 +53,7 @@ export interface HaberyArgs {
   aeid?: string;
   salt?: string;
   algo?: Algos;
+  tier?: Tier;
 }
 
 /** Habitat inception options consumed by the local bootstrap `Hab.make()` flow. */
@@ -70,7 +75,7 @@ export interface MakeHabArgs {
   data?: unknown[];
   algo?: Algos;
   salt?: string;
-  tier?: string;
+  tier?: Tier;
 }
 
 /**
@@ -122,7 +127,7 @@ function makeReplySerder(
 ): SerderKERI {
   return new SerderKERI({
     sad: {
-      t: "rpy",
+      t: Ilks.rpy,
       dt: stamp,
       r: route,
       a: data,
@@ -145,7 +150,7 @@ function makeQuerySerder(
 ): SerderKERI {
   return new SerderKERI({
     sad: {
-      t: "qry",
+      t: Ilks.qry,
       dt: stamp,
       r: route,
       rr: "",
@@ -336,7 +341,7 @@ function makeInceptRaw(
     delpre?: string;
   },
 ): SerderKERI {
-  const ilk = args.delpre ? "dip" : "icp";
+  const ilk = args.delpre ? Ilks.dip : Ilks.icp;
   const kt = args.isith ?? defaultThreshold(keys.length, 1);
   const nt = args.nsith ?? defaultThreshold(ndigs.length, 0);
 
@@ -685,7 +690,7 @@ export class Hab {
    */
   makeEndRole(
     eid: string,
-    role: EndpointRole | string = EndpointRoles.controller,
+    role: Role | string = Roles.controller,
     allow = true,
     stamp = makeNowIso8601(),
   ): Uint8Array {
@@ -705,7 +710,7 @@ export class Hab {
   makeLocScheme(
     url: string,
     eid = this.pre,
-    scheme = "http",
+    scheme: Scheme | string = Schemes.http,
     stamp = makeNowIso8601(),
   ): Uint8Array {
     return this.reply("/loc/scheme", { eid, scheme, url }, stamp);
@@ -774,7 +779,7 @@ export class Hab {
         witnessUrls[eid] = urls;
       }
       if (Object.keys(witnessUrls).length > 0) {
-        ends[EndpointRoles.witness] = witnessUrls;
+        ends[Roles.witness] = witnessUrls;
       }
     }
 
@@ -790,7 +795,7 @@ export class Hab {
   loadEndRole(
     cid: string,
     eid: string,
-    role: EndpointRole | string = EndpointRoles.controller,
+    role: Role | string = Roles.controller,
   ): Uint8Array {
     const end = this.db.ends.get([cid, role, eid]);
     if (!end || !(end.allowed || end.enabled)) {
@@ -847,14 +852,14 @@ export class Hab {
    */
   replyEndRole(
     cid: string,
-    role?: EndpointRole | string,
+    role?: Role | string,
     eids: string[] = [],
     scheme = "",
   ): Uint8Array {
     const messages: Uint8Array[] = [];
     messages.push(...this.db.clonePreIter(cid));
 
-    if (role === EndpointRoles.witness) {
+    if (role === Roles.witness) {
       const kever = this.db.getKever(cid);
       for (const eid of kever?.wits ?? []) {
         if (eids.length > 0 && !eids.includes(eid)) {
@@ -866,7 +871,7 @@ export class Hab {
             : this.loadLocScheme(eid, scheme),
         );
         if (cid === this.pre) {
-          messages.push(this.makeEndRole(eid, EndpointRoles.witness, true));
+          messages.push(this.makeEndRole(eid, Roles.witness, true));
         }
       }
     }
@@ -901,7 +906,7 @@ export class Hab {
    */
   replyToOobi(
     aid: string,
-    role: EndpointRole | string,
+    role: Role | string,
     eids: string[] = [],
   ): Uint8Array {
     return this.replyEndRole(aid, role, eids);
@@ -1223,7 +1228,7 @@ export class Habery {
  */
 export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
   const branSalt = branToSaltQb64(bran);
-  const signer = saltySigner(branSalt, "", false, "low", false);
+  const signer = saltySigner(branSalt, "", false, Tiers.low, false);
   return { seed: signer.signer.qb64, aeid: signer.verfer.qb64 };
 }
 

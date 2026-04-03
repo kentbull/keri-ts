@@ -2,7 +2,7 @@ import { action, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { OobiRecord } from "../core/records.ts";
-import type { EndpointRole } from "../core/roles.ts";
+import { type Role, Roles } from "../core/roles.ts";
 import type { Habery } from "./habbing.ts";
 import type { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -18,7 +18,7 @@ export interface OobiJob {
   url: string;
   alias?: string;
   cid?: string;
-  role?: EndpointRole | string;
+  role?: Role | string;
   eid?: string;
   said?: string;
   state?: string;
@@ -216,7 +216,7 @@ function parseOobiUrl(url: string, alias?: string): OobiJob {
     && parts[2] === "oobi"
   ) {
     job.cid = parts[3];
-    job.role = "controller";
+    job.role = Roles.controller;
     return job;
   }
 

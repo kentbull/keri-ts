@@ -1,6 +1,7 @@
 import {
   Dater,
   Diger,
+  Ilks,
   NON_TRANSFERABLE_PREFIX_CODES,
   NumberPrimitive,
   Prefixer,
@@ -473,10 +474,10 @@ export class Kever {
     }
 
     switch (ilk) {
-      case "rot":
-      case "drt":
+      case Ilks.rot:
+      case Ilks.drt:
         return this.evaluateRotation(init, local);
-      case "ixn":
+      case Ilks.ixn:
         return this.evaluateInteraction(init, local);
       default:
         return Kever.reject(
@@ -591,7 +592,7 @@ export class Kever {
 
     this.db.evts.put([pre, said], args.serder);
 
-    if (args.sourceSeal && this.delegated && args.serder.ilk !== "ixn") {
+    if (args.sourceSeal && this.delegated && args.serder.ilk !== Ilks.ixn) {
       this.db.aess.pin([pre, said], [
         normalizeOrdinal(args.sourceSeal.seqner),
         args.sourceSeal.diger,
@@ -809,16 +810,16 @@ export class Kever {
    */
   private evaluateRotation(init: KeverEventInit, local: boolean): KeverDecision {
     const { serder } = init;
-    const ilk = serder.ilk ?? "rot";
+    const ilk = serder.ilk ?? Ilks.rot;
     const sn = serder.sn ?? -1;
 
-    if (this.delegated && ilk !== "drt") {
+    if (this.delegated && ilk !== Ilks.drt) {
       return Kever.reject(
         "invalidDelegation",
         `Delegated AID ${this.pre} requires drt, not rot.`,
       );
     }
-    if (!this.delegated && ilk === "drt") {
+    if (!this.delegated && ilk === Ilks.drt) {
       return Kever.reject(
         "invalidDelegation",
         `Non-delegated AID ${this.pre} may not accept drt.`,
@@ -835,13 +836,13 @@ export class Kever {
       // Same-or-earlier sequence numbers are either stale or recovery
       // candidates. A bare `Kever` still enforces those rules even when the
       // normal remote-processing path routes through `Kevery` first.
-      if ((ilk === "rot" && sn <= this.lastEst.s) || (ilk === "drt" && sn < this.lastEst.s)) {
+      if ((ilk === Ilks.rot && sn <= this.lastEst.s) || (ilk === Ilks.drt && sn < this.lastEst.s)) {
         return Kever.reject(
           "stale",
           `Stale ${ilk} event sn=${sn} for ${this.pre}.`,
         );
       }
-      if (ilk === "rot" && this.ilk !== "ixn") {
+      if (ilk === Ilks.rot && this.ilk !== Ilks.ixn) {
         return Kever.reject(
           "invalidRecovery",
           `Recovery rotation for ${this.pre} may only supersede an ixn state.`,
@@ -1028,7 +1029,7 @@ export class Kever {
           d: serder.said ?? "",
           f: this.fn.toString(16),
           dt: this.dater.iso8601,
-          et: "ixn",
+          et: Ilks.ixn,
           kt: this.tholder?.sith ?? "0",
           k: this.verfers.map((verfer) => verfer.qb64),
           nt: this.ntholder?.sith ?? "0",
@@ -1158,7 +1159,7 @@ export class Kever {
     if (
       input.isEstablishment
       && this.ntholder
-      && (input.serder.ilk === "rot" || input.serder.ilk === "drt")
+      && (input.serder.ilk === Ilks.rot || input.serder.ilk === Ilks.drt)
     ) {
       const ondices = this.exposeds(verified.sigers);
       if (!this.ntholder.satisfy(ondices)) {
@@ -1337,7 +1338,7 @@ export class Kever {
     // partial-delegation case. It is specifically waiting for local
     // out-of-band approval to be attached and reprocessed.
     if (
-      (input.serder.ilk === "dip" || input.serder.ilk === "drt")
+      (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
       && this.locallyDelegated(delpre)
       && !this.locallyOwned()
       && !input.sourceSeal
@@ -1378,10 +1379,10 @@ export class Kever {
     // problem, an in-order delegated rotation is fine once anchored, and a
     // same-sn `drt` may directly supersede an `ixn` head state.
     if (
-      input.serder.ilk !== "drt"
+      input.serder.ilk !== Ilks.drt
       || input.serder.sn === null
       || input.serder.sn === this.sn + 1
-      || (input.serder.sn === this.sn && this.ilk === "ixn")
+      || (input.serder.sn === this.sn && this.ilk === Ilks.ixn)
     ) {
       return {
         kind: "verified",
@@ -1511,8 +1512,8 @@ export class Kever {
       const originalBossIlk = originalBoss.serder.ilk;
       if (
         candidateBossSn === originalBossSn
-        && (candidateBossIlk === "rot" || candidateBossIlk === "drt")
-        && originalBossIlk === "ixn"
+        && (candidateBossIlk === Ilks.rot || candidateBossIlk === Ilks.drt)
+        && originalBossIlk === Ilks.ixn
       ) {
         return null;
       }
@@ -1732,7 +1733,7 @@ export class Kever {
     if (!pre) {
       return null;
     }
-    if (serder.ilk === "dip" && serder.delpre) {
+    if (serder.ilk === Ilks.dip && serder.delpre) {
       return serder.delpre;
     }
     return this.db.getState(pre)?.di || null;
@@ -1836,7 +1837,7 @@ export class Kever {
         "Inception event must include said and sn.",
       );
     }
-    if (ilk !== "icp" && ilk !== "dip") {
+    if (ilk !== Ilks.icp && ilk !== Ilks.dip) {
       return Kever.reject(
         "invalidIlk",
         `Expected icp or dip for inception, got ${String(ilk)}.`,
@@ -1928,7 +1929,7 @@ export class Kever {
       d: said,
       f: frc ? frc.fnh : "0",
       dt: frc?.dater.iso8601 ?? makeNowIso8601(),
-      et: serder.ilk ?? "icp",
+      et: serder.ilk ?? Ilks.icp,
       kt: serder.tholder?.sith ?? "0",
       k: serder.verfers.map((verfer) => verfer.qb64),
       nt: serder.ntholder?.sith ?? "0",
@@ -1960,7 +1961,7 @@ export class Kever {
    * refer to the correct witness positions across establishment events.
    */
   private deriveBacksDecision(serder: SerderKERI): DerivedBacksResult | null {
-    if (serder.ilk === "icp" || serder.ilk === "dip") {
+    if (serder.ilk === Ilks.icp || serder.ilk === Ilks.dip) {
       return {
         wits: [...serder.backs],
         cuts: [],

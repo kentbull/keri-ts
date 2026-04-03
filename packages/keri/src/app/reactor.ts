@@ -5,6 +5,7 @@ import {
   Cigar,
   createParser,
   type GroupEntry,
+  Ilks,
   isCounterGroupLike,
   isPrimitiveTuple,
   isQualifiedPrimitive,
@@ -163,18 +164,18 @@ export class Reactor {
    */
   private dispatchEnvelope(envelope: KeriDispatchEnvelope): void {
     switch (envelope.serder.ilk) {
-      case "rpy":
+      case Ilks.rpy:
         this.revery.processReply({
           serder: envelope.serder,
           cigars: envelope.cigars,
           tsgs: envelope.tsgs,
         });
         break;
-      case "icp":
-      case "dip":
-      case "rot":
-      case "drt":
-      case "ixn":
+      case Ilks.icp:
+      case Ilks.dip:
+      case Ilks.rot:
+      case Ilks.drt:
+      case Ilks.ixn:
         this.kevery.processEvent(envelope);
         break;
       default:

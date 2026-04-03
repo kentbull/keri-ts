@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
-import { Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
+import { Diger, SerderKERI, Siger, type Tier } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { SourceSealCouple } from "../../../src/core/dispatch.ts";
@@ -37,7 +37,7 @@ function rotationPrm(
           pidx: number;
           stem: string;
           salt: string;
-          tier: string;
+          tier: Tier;
         } | null;
       };
     };

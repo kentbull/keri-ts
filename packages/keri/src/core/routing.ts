@@ -6,7 +6,7 @@ import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
-import { isEndpointRole } from "./roles.ts";
+import { isRole } from "./roles.ts";
 
 /** Return true when a reply signer has usable threshold material for its key set. */
 function hasValidReplyThreshold(
@@ -733,7 +733,7 @@ export class BasicReplyRouteHandler {
         "Missing one of cid/role/eid in /end/role reply.",
       );
     }
-    if (!isEndpointRole(role) && role !== "watcher") {
+    if (!isRole(role)) {
       throw new ValidationError(`Invalid endpoint role ${role}.`);
     }
 

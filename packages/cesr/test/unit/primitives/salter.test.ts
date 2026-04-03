@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
+import { Tiers } from "../../../src/core/vocabulary.ts";
 import { MtrDex } from "../../../src/primitives/codex.ts";
 import { Salter } from "../../../src/primitives/salter.ts";
 import { KERIPY_CODE_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
@@ -29,7 +30,10 @@ Deno.test("salter: rejects non-salt code families", () => {
 });
 
 Deno.test("salter: stretch is deterministic for the same path and distinct for different paths", () => {
-  const salter = new Salter({ qb64: KERIPY_MATTER_VECTORS.salterFixed, tier: "low" });
+  const salter = new Salter({
+    qb64: KERIPY_MATTER_VECTORS.salterFixed,
+    tier: Tiers.low,
+  });
 
   const first = salter.stretch({ path: "a", size: 32, temp: true });
   const second = salter.stretch({ path: "a", size: 32, temp: true });
@@ -43,7 +47,10 @@ Deno.test("salter: stretch is deterministic for the same path and distinct for d
 });
 
 Deno.test("salter: signer derives an executable Ed25519 signer", () => {
-  const salter = new Salter({ qb64: KERIPY_MATTER_VECTORS.salterFixed, tier: "low" });
+  const salter = new Salter({
+    qb64: KERIPY_MATTER_VECTORS.salterFixed,
+    tier: Tiers.low,
+  });
   const signer = salter.signer({
     code: MtrDex.Ed25519_Seed,
     transferable: false,
@@ -59,7 +66,10 @@ Deno.test("salter: signer derives an executable Ed25519 signer", () => {
 });
 
 Deno.test("salter: signers uses hex-suffixed path progression and supports code lists", () => {
-  const salter = new Salter({ qb64: KERIPY_MATTER_VECTORS.salterFixed, tier: "low" });
+  const salter = new Salter({
+    qb64: KERIPY_MATTER_VECTORS.salterFixed,
+    tier: Tiers.low,
+  });
   const same = salter.signers({
     count: 2,
     start: 1,

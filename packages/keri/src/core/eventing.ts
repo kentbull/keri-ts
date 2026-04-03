@@ -1,4 +1,4 @@
-import { Dater, NumberPrimitive, Prefixer, Verfer } from "../../../cesr/mod.ts";
+import { Dater, Ilks, NumberPrimitive, Prefixer, Verfer } from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
@@ -125,7 +125,7 @@ export class Kevery {
     // If prefix does not exist in kevers (was not reloaded from disk) and first event not inception
     // then escrow out of order.
     if (!this.kevers.has(pre)) {
-      if (ilk !== "icp" && ilk !== "dip") {
+      if (ilk !== Ilks.icp && ilk !== Ilks.dip) {
         return this.makeEscrowDecision(
           "ooo",
           init,
@@ -137,7 +137,7 @@ export class Kevery {
 
     const kever = this.kevers.get(pre)!;
 
-    if (ilk === "icp" || ilk === "dip") {
+    if (ilk === Ilks.icp || ilk === Ilks.dip) {
       if (sn !== 0) {
         return {
           kind: "reject",
@@ -379,7 +379,7 @@ export class Kevery {
     const existingWigs = new Set(
       this.db.wigs.get([kever.pre, serder.said ?? ""]).map((wiger) => wiger.qb64),
     );
-    const verfers = serder.ilk === "icp" || serder.ilk === "dip"
+    const verfers = serder.ilk === Ilks.icp || serder.ilk === Ilks.dip
       ? serder.verfers
       : (serder.estive ? serder.verfers : kever.verfers);
     const verifiedSigers = Kever.verifyIndexedSignatures(
