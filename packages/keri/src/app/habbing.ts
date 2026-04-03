@@ -592,7 +592,7 @@ export class Hab {
       return buildEndorsedMessage({
         serder,
         cigars: (this.sign(serder.raw, false) as Cigar[]).map((cigar) =>
-          new CigarCouple(new Verfer({ qb64: this.pre! }), cigar)
+          new CigarCouple(cigar.verfer ?? new Verfer({ qb64: this.pre! }), cigar)
         ),
       });
     }
@@ -1015,15 +1015,12 @@ export class Signator {
     return sig.qb64;
   }
 
-  /**
-   * Verify one detached signature by recomputing the expected local signator output.
-   *
-   * This narrow verification rule is only valid for the current deterministic
-   * local signatory model.
-   */
+  /** Verify one detached signature through the signatory habitat's verifier. */
   verify(ser: Uint8Array, cigar: string): boolean {
-    const expected = this.sign(ser);
-    return expected === cigar;
+    return new Verfer({ qb64: this.pre }).verify(
+      new Cigar({ qb64: cigar }).raw,
+      ser,
+    );
   }
 }
 

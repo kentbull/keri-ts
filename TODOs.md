@@ -57,4 +57,7 @@ Things to come back and do at some point:
   - update
   - logEvent
   - validateSignatures
-  -
+- Manager (all functions)
+- eventing.ts
+- eventing.test.ts
+- kever-decisions.ts

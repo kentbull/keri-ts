@@ -105,7 +105,7 @@ location-scheme update is not a direct DB mutation; it is a signed
 ## Cue Taxonomy
 
 | Cue kind            | Primary producer(s) in KERIpy                           | Primary consumer(s) in KERIpy        | Wire bytes?                            | Host-observable only? | Current `keri-ts` handling                                                    |
-|---------------------|---------------------------------------------------------|--------------------------------------|----------------------------------------|-----------------------|-------------------------------------------------------------------------------|
+| ------------------- | ------------------------------------------------------- | ------------------------------------ | -------------------------------------- | --------------------- | ----------------------------------------------------------------------------- |
 | `receipt`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | typed and preserved; currently surfaced as notify until receipt builders land |
 | `notice`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
 | `witness`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | typed and preserved; currently surfaced as notify until witness builders land |

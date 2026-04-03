@@ -13,8 +13,9 @@ import {
   Signer,
   smell,
   t,
+  Verfer,
 } from "../../../cesr/mod.ts";
-import { decryptSigner, encryptSigner } from "../core/keeper-crypto.ts";
+import { decryptCipherQb64b, encryptSigner } from "../core/keeper-crypto.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -99,7 +100,8 @@ function signerFromStored(
   if (!verkey) {
     return new Signer({ qb64b: val });
   }
-  return new Signer({ qb64b: val });
+  const verfer = new Verfer({ qb64: verkey });
+  return new Signer({ qb64b: val, transferable: verfer.transferable });
 }
 
 /**
@@ -1065,11 +1067,13 @@ export class CatCesrIoSetSuber<
 }
 
 /**
- * Special signer/cipher stores.
+ * Signer storage family keyed by verifier qb64.
  *
- * Current `keri-ts` difference:
- * - encryption helpers are not implemented in the local CESR primitives yet,
- *   so optional encrypter/decrypter parameters are accepted but rejected.
+ * Maintainer model:
+ * - stored value bytes are always the qualified signer seed payload
+ * - the final keyspace segment is the authoritative verifier qb64
+ * - signer hydration must therefore recover transferability from that verifier
+ *   so `Signer.verfer` and `Signer.transferable` survive round-trips
  */
 export class SignerSuber extends CesrSuberBase<Signer> {
   constructor(
@@ -1203,11 +1207,12 @@ export class CryptSignerSuber extends SignerSuber {
     if (!decrypter) {
       return super.get(keys);
     }
-    const val = this.db.getVal(this.sdb, this._tokey(keys));
+    const key = this._tokey(keys);
+    const val = this.db.getVal(this.sdb, key);
     if (val === null) {
       return null;
     }
-    return decryptSigner(val, decrypter);
+    return signerFromStored(this._tokeys(key), decryptCipherQb64b(val, decrypter));
   }
 
   /**
@@ -1235,11 +1240,12 @@ export class CryptSignerSuber extends SignerSuber {
         this._tokey(keys, topive),
       )
     ) {
+      const keyParts = this._tokeys(key);
       yield [
-        this._tokeys(key),
+        keyParts,
         decrypter
-          ? decryptSigner(val, decrypter)
-          : signerFromStored(this._tokeys(key), val),
+          ? signerFromStored(keyParts, decryptCipherQb64b(val, decrypter))
+          : signerFromStored(keyParts, val),
       ];
     }
   }

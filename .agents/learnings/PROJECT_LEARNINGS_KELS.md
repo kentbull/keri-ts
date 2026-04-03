@@ -115,6 +115,10 @@ replay/verification semantics.
     routing, escrow persistence, duplicate handling, and post-acceptance side
     effects. This rule should also guide future `Tever`/`Tevery` and similar
     processor ports; see `docs/adr/adr-0005-kel-decision-control-flow.md`.
+28. Local key-management parity now depends on preserving KERIpy's mental
+    model, not just its return types: `Signer`/`Verfer`/`Salter` own executable
+    crypto behavior, while `Manager` owns creator selection, keeper-state
+    progression, AEID policy, and replay over stored public-key lots.
 
 ## Scope Checklist
 
@@ -370,6 +374,52 @@ Use this doc for:
 - Verdict: the visibility-only compat-store plumbing is no longer the
   bottleneck; the real blocker is Gate D encrypted secret semantics and reopen
   reliability.
+
+### 2026-04-02 - Keeper State And Manager Lifecycle Moved To KERIpy's Model
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Added `Creator`, `RandyCreator`, `SaltyCreator`, and `Creatory` in
+    `packages/keri/src/app/keeping.ts`, then collapsed `Manager` into
+    orchestration over those creators plus keeper persistence.
+  - Expanded `Manager` to cover the real local lifecycle seams:
+    `incept`, `move`, `rotate`, `sign`, `decrypt`, `ingest`, and `replay`.
+  - Moved signing delegation to stored executable `Signer` primitives instead
+    of suite-switching inside manager code.
+  - Changed keeper state to store next public keys in `PreSit.nxt.pubs` and
+    replayable `pubs.` records, deriving next digests on demand instead of
+    persisting digest-backed next state.
+  - Updated `SignerSuber` / `CryptSignerSuber` to rehydrate signers from stored
+    seed bytes plus the keyspace verifier, so transferability and `Signer.verfer`
+    survive DB round-trips.
+  - Hardened Ed25519 lifecycle coverage across current keys, next keys,
+    rotation, ingest/replay, decrypt, and creator derivation because that is
+    the dominant KERI operating suite.
+- Why:
+  - Returning narrow primitives was not enough; as long as `Manager` still
+    owned suite dispatch and digest-backed next-state bookkeeping, the local
+    model stayed conceptually wrong and future parity work would keep fighting
+    the same abstraction leak.
+  - KERIpy's keeper model is public-key-lot based. Storing next digests as the
+    primary keeper state looked convenient in TS, but it was the wrong
+    substrate for rotation and replay parity.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/db/subing.test.ts packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/app/habbing.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
+  - Result: passed locally (`46 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/keri/src/app/keeping.ts`
+  - `packages/keri/src/app/habbing.ts`
+  - `packages/keri/src/db/keeping.ts`
+  - `packages/keri/src/db/subing.ts`
+  - `packages/keri/src/core/keeper-crypto.ts`
+- Risks/TODO:
+  - `Manager.sign({ pre, path })` still rejects derived-path signing for now;
+    the lifecycle model is ported, but that specific KERIpy seam is still
+    intentionally unsupported until there is a real caller and parity test.
 
 ### 2026-03-17 - Inception Construction Moved Onto Shared `SerderKERI` Semantics
 

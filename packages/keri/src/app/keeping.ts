@@ -1,32 +1,29 @@
-import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import {
   Cigar,
   decodeB64,
   Decrypter,
-  detachedSignatureCodeForSignerCode,
   Diger,
   Encrypter,
   hydrateMatter,
-  indexedSignatureCodeForSignerCode,
   intToB64,
+  MtrDex,
   NumberPrimitive,
   NumDex,
   parseMatter,
-  publicKeyForSignerCode,
   Saider,
   Salter,
   Siger,
   Signer,
-  signRawForSignerCode,
   Verfer,
-  verferCodeForSignerCode,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import {
+  decryptCipherQb64b,
   decryptSaltQb64,
   encryptSaltQb64,
   ensureKeeperCryptoReady,
   makeDecrypterFromSeed,
+  makeDecrypterFromSigner,
   makeEncrypterFromAeid,
   seedMatchesAeid,
 } from "../core/keeper-crypto.ts";
@@ -35,7 +32,7 @@ import { Keeper, PrePrm, PreSit } from "../db/keeping.ts";
 /**
  * Root key-creation strategy selectors stored in keeper globals.
  *
- * Only `salty` is currently implemented end-to-end in `keri-ts`; the others are
+ * `randy` and `salty` are implemented in the current TS port. The others are
  * preserved so the app-layer contract stays aligned with KERIpy naming.
  */
 export enum Algos {
@@ -65,12 +62,15 @@ export interface ManagerArgs {
 /**
  * Controls key-material derivation for `Manager.incept()`.
  *
- * This is the TypeScript bootstrap slice of KERIpy's richer incept options:
- * enough for current salty flows across the supported signing suites, but not
- * yet the full keeper algorithm matrix.
+ * This is the TypeScript option-object surface corresponding to KERIpy's
+ * richer incept contract: enough for the implemented `randy`/`salty` creator
+ * paths across the supported signing suites, but not yet the full keeper
+ * algorithm matrix.
  */
 export interface ManagerInceptArgs {
+  icodes?: string[];
   icount?: number;
+  ncodes?: string[];
   ncount?: number;
   icode?: string;
   ncode?: string;
@@ -80,6 +80,65 @@ export interface ManagerInceptArgs {
   stem?: string;
   tier?: string;
   rooted?: boolean;
+  transferable?: boolean;
+  temp?: boolean;
+}
+
+export interface ManagerRotateArgs {
+  pre: string;
+  ncodes?: string[];
+  ncount?: number;
+  ncode?: string;
+  dcode?: string;
+  transferable?: boolean;
+  temp?: boolean;
+  erase?: boolean;
+}
+
+export interface ManagerSignArgs {
+  pubs?: string[];
+  verfers?: Verfer[];
+  indexed?: boolean;
+  indices?: number[];
+  ondices?: Array<number | null | undefined>;
+  pre?: string;
+  path?: string;
+}
+
+export interface ManagerDecryptArgs {
+  pubs?: string[];
+  verfers?: Verfer[];
+}
+
+export interface ManagerIngestArgs {
+  secrecies: string[][];
+  iridx?: number;
+  ncount?: number;
+  ncode?: string;
+  dcode?: string;
+  algo?: Algos;
+  salt?: string;
+  stem?: string;
+  tier?: string;
+  rooted?: boolean;
+  transferable?: boolean;
+  temp?: boolean;
+}
+
+export interface ManagerReplayArgs {
+  pre: string;
+  dcode?: string;
+  advance?: boolean;
+  erase?: boolean;
+}
+
+export interface CreatorCreateArgs {
+  codes?: string[];
+  count?: number;
+  code?: string;
+  pidx?: number;
+  ridx?: number;
+  kidx?: number;
   transferable?: boolean;
   temp?: boolean;
 }
@@ -95,39 +154,7 @@ function parseQb64Raw(qb64: string): Uint8Array {
 
 function randomSaltQb64(): string {
   const raw = crypto.getRandomValues(new Uint8Array(16));
-  return new Salter({ code: "0A", raw }).qb64;
-}
-
-function pathToBytes(path: string): Uint8Array {
-  return b(path);
-}
-
-function tierParams(tier: string, temp: boolean): { t: number; m: number } {
-  if (temp) {
-    return { t: 1, m: 8 };
-  }
-
-  if (tier === "low") return { t: 2, m: 65536 };
-  if (tier === "med") return { t: 3, m: 262144 };
-  if (tier === "high") return { t: 4, m: 1048576 };
-  throw new Error(`Unsupported security tier=${tier}`);
-}
-
-function deriveSeedFromSalt(
-  saltQb64: string,
-  path: string,
-  tier: string,
-  temp: boolean,
-): Uint8Array {
-  const saltRaw = parseQb64Raw(saltQb64);
-  const params = tierParams(tier, temp);
-  return argon2id(pathToBytes(path), saltRaw, {
-    p: 1,
-    t: params.t,
-    m: params.m,
-    dkLen: 32,
-    version: 0x13,
-  });
+  return new Salter({ code: MtrDex.Salt_128, raw }).qb64;
 }
 
 /**
@@ -173,17 +200,150 @@ function saltySignerForCode(
   tier: string,
   temp: boolean,
 ): SignerMaterial {
-  const seedRaw = deriveSeedFromSalt(saltQb64, path, tier, temp);
-  const signer = new Signer({ code: signerCode, raw: seedRaw });
-  const verfer = new Verfer({
-    code: verferCodeForSignerCode(signerCode, transferable),
-    raw: publicKeyForSignerCode(signerCode, seedRaw),
+  const signer = new Salter({ qb64: saltQb64, tier }).signer({
+    code: signerCode,
+    transferable,
+    path,
+    tier,
+    temp,
   });
-  return { signer, verfer };
+  return { signer, verfer: signer.verfer };
+}
+
+/** Base key-creation strategy seam mirrored from KERIpy's creator hierarchy. */
+export class Creator {
+  create(_args: CreatorCreateArgs = {}): Signer[] {
+    return [];
+  }
+
+  get salt(): string {
+    return "";
+  }
+
+  get stem(): string {
+    return "";
+  }
+
+  get tier(): string {
+    return "";
+  }
+}
+
+/** Random signer creator that makes one fresh seed per requested suite. */
+export class RandyCreator extends Creator {
+  override create({
+    codes,
+    count = 1,
+    code = MtrDex.Ed25519_Seed,
+    transferable = true,
+  }: CreatorCreateArgs = {}): Signer[] {
+    const effectiveCodes = codes ?? Array.from({ length: count }, () => code);
+    return effectiveCodes.map((suite) => Signer.random({ code: suite, transferable }));
+  }
+}
+
+/** Deterministic salty creator that derives signers from one salt and path policy. */
+export class SaltyCreator extends Creator {
+  readonly salter: Salter;
+  private readonly _stem: string;
+
+  constructor(
+    { salt, stem, tier }: { salt?: string; stem?: string; tier?: string } = {},
+  ) {
+    super();
+    this.salter = new Salter({
+      qb64: normalizeSaltQb64(salt),
+      tier: tier ?? "low",
+    });
+    this._stem = stem ?? "";
+  }
+
+  override get salt(): string {
+    return this.salter.qb64;
+  }
+
+  override get stem(): string {
+    return this._stem;
+  }
+
+  override get tier(): string {
+    return this.salter.tier;
+  }
+
+  override create({
+    codes,
+    count = 1,
+    code = MtrDex.Ed25519_Seed,
+    pidx = 0,
+    ridx = 0,
+    kidx = 0,
+    transferable = true,
+    temp = false,
+  }: CreatorCreateArgs = {}): Signer[] {
+    const effectiveCodes = codes ?? Array.from({ length: count }, () => code);
+    const stem = this.stem || pidx.toString(16);
+    return effectiveCodes.map((suite, offset) =>
+      this.salter.signer({
+        code: suite,
+        transferable,
+        path: `${stem}${ridx.toString(16)}${(kidx + offset).toString(16)}`,
+        tier: this.tier,
+        temp,
+      })
+    );
+  }
+}
+
+/** Creator factory mirrored from KERIpy's `Creatory`. */
+export class Creatory {
+  constructor(private readonly algo: Algos = Algos.salty) {}
+
+  make(
+    { salt, stem, tier }: { salt?: string; stem?: string; tier?: string } = {},
+  ): Creator {
+    if (this.algo === Algos.randy) {
+      return new RandyCreator();
+    }
+    if (this.algo === Algos.salty) {
+      return new SaltyCreator({ salt, stem, tier });
+    }
+    throw new Error(`Unsupported creation algorithm =${this.algo}.`);
+  }
 }
 
 function pubsKey(pre: string, ridx: number): string {
   return `${pre}.${ridx.toString(16).padStart(32, "0")}`;
+}
+
+function digersForPubs(pubs: string[], dcode: string): Diger[] {
+  return pubs.map((pub) =>
+    new Diger({
+      code: dcode,
+      raw: Diger.digest(b(pub), dcode),
+    })
+  );
+}
+
+function resolveSuiteCodes(
+  codes: string[] | undefined,
+  count: number,
+  code: string,
+  {
+    label,
+    allowZero = false,
+  }: { label: string; allowZero?: boolean },
+): string[] {
+  if (codes && codes.length > 0) {
+    return [...codes];
+  }
+  if ((!allowZero && count <= 0) || (allowZero && count < 0)) {
+    throw new Error(`Invalid ${label}=${count} must be ${allowZero ? ">=" : ">"} 0.`);
+  }
+  return Array.from({ length: count }, () => code);
+}
+
+function emptyLot(dt = ""): { pubs: string[]; ridx: number; kidx: number; dt: string } {
+  return { pubs: [], ridx: 0, kidx: 0, dt };
 }
 
 /**
@@ -198,7 +358,8 @@ function pubsKey(pre: string, ridx: number): string {
  * - mirrors the role of `keri.app.keeping.Manager`
  *
  * Current `keri-ts` differences:
- * - bootstrap-first: the salty path is the only real algorithm today
+ * - `randy` and `salty` creator algorithms are live; `group` and `extern`
+ *   remain explicit unsupported-algorithm seams
  * - AEID handling now includes real sealed-box encryption for keeper-global
  *   salt, per-prefix salts, and signer seeds, while keeping the encrypted
  *   runtime dependency local to the KERI package instead of CESR
@@ -430,101 +591,128 @@ export class Manager {
     this.ks.pinGbls("aeid", aeid);
   }
 
+  private signerDecrypter(): Decrypter | undefined {
+    if (this.aeid && !this.decrypter) {
+      throw new Error(
+        "Unauthorized decryption attempt. Aeid but no decrypter.",
+      );
+    }
+    return this.decrypter ?? undefined;
+  }
+
+  private getSignerByPub(pub: string): Signer {
+    const signer = this.ks.pris.get(pub, this.signerDecrypter());
+    if (!signer) {
+      throw new Error(`Missing prikey in db for pubkey=${pub}`);
+    }
+    return signer;
+  }
+
+  private getSigners(
+    { pubs, verfers }: Pick<ManagerSignArgs | ManagerDecryptArgs, "pubs" | "verfers">,
+  ): Signer[] {
+    if (pubs && pubs.length > 0) {
+      return pubs.map((pub) => this.getSignerByPub(pub));
+    }
+    if (verfers && verfers.length > 0) {
+      return verfers.map((verfer) => this.getSignerByPub(verfer.qb64));
+    }
+    return [];
+  }
+
+  private decryptPreSalt(salt: string): string {
+    if (!salt) {
+      return "";
+    }
+    const decrypter = this.signerDecrypter();
+    return decrypter ? decryptSaltQb64(salt, decrypter) : new Salter({ qb64: salt }).qb64;
+  }
+
   /**
    * Create current and next key material for one new managed prefix.
    *
-   * Gate D note:
-   * - when keeper encryption is active, signer seeds are written into `pris.`
-   *   as sealed-box ciphertext and the persisted prefix parameters store an
-   *   encrypted salt
-   * - returned `Verfer`/`Diger` values remain plaintext semantic objects
-   *   because encryption is only an at-rest concern
+   * Keeper-state parity:
+   * - `ps.nxt.pubs` now stores next public keys, not next digests
+   * - returned digers are derived from those stored next public keys on demand
    */
   incept(args: ManagerInceptArgs = {}): [Verfer[], Diger[]] {
     const {
+      icodes,
       icount = 1,
+      icode = MtrDex.Ed25519_Seed,
+      ncodes,
       ncount = 1,
-      icode = "A",
       ncode = icode,
-      dcode = "E",
-      stem = "",
-      transferable = true,
+      dcode = MtrDex.Blake3_256,
       algo,
       salt,
+      stem,
       tier,
       rooted = true,
+      transferable = true,
       temp = false,
     } = args;
 
     const usedAlgo = rooted
       ? (algo ?? this.algo ?? Algos.salty)
       : (algo ?? Algos.salty);
-    if (usedAlgo !== Algos.salty) {
-      throw new Error(`Unsupported key creation algorithm=${usedAlgo}`);
-    }
-
-    const usedSalt = rooted ? (salt ?? this.salt ?? "") : (salt ?? "");
+    const usedSalt = usedAlgo === Algos.salty
+      ? rooted
+        ? normalizeSaltQb64(salt ?? this.salt ?? undefined)
+        : normalizeSaltQb64(salt)
+      : "";
     const usedTier = rooted ? (tier ?? this.tier ?? "low") : (tier ?? "low");
     const pidx = this.pidx ?? 0;
+    const creator = new Creatory(usedAlgo).make({
+      salt: usedSalt || undefined,
+      stem,
+      tier: usedTier,
+    });
 
-    const verfers: Verfer[] = [];
-    const digers: Diger[] = [];
+    const inceptionCodes = resolveSuiteCodes(icodes, icount, icode, {
+      label: "icount",
+    });
+    const isigners = creator.create({
+      codes: inceptionCodes,
+      pidx,
+      ridx: 0,
+      kidx: 0,
+      transferable,
+      temp,
+    });
+    const verfers = isigners.map((signer) => signer.verfer);
 
-    const rootStem = stem || `${pidx.toString(16)}`;
-
-    for (let i = 0; i < icount; i++) {
-      const path = `${rootStem}${(0).toString(16)}${i.toString(16)}`;
-      const signer = saltySignerForCode(
-        usedSalt,
-        path,
-        icode,
-        transferable,
-        usedTier,
-        temp,
-      );
-      verfers.push(signer.verfer);
-      this.ks.putPris(
-        signer.verfer.qb64,
-        signer.signer.qb64,
-        this.encrypter ?? undefined,
-      );
-    }
-
-    for (let i = 0; i < ncount; i++) {
-      const path = `${rootStem}${(1).toString(16)}${(icount + i).toString(16)}`;
-      const signer = saltySignerForCode(
-        usedSalt,
-        path,
-        ncode,
-        transferable,
-        usedTier,
-        temp,
-      );
-      const dig = new Diger({
-        code: dcode,
-        raw: Diger.digest(b(signer.verfer.qb64), dcode),
-      });
-      digers.push(dig);
-      this.ks.putPris(
-        signer.verfer.qb64,
-        signer.signer.qb64,
-        this.encrypter ?? undefined,
-      );
-    }
+    const nextCodes = resolveSuiteCodes(ncodes, ncount, ncode, {
+      label: "ncount",
+      allowZero: true,
+    });
+    const nsigners = creator.create({
+      codes: nextCodes,
+      count: 0,
+      pidx,
+      ridx: 1,
+      kidx: isigners.length,
+      transferable,
+      temp,
+    });
+    const nextPubs = nsigners.map((signer) => signer.verfer.qb64);
+    const digers = digersForPubs(nextPubs, dcode);
 
     const pp: PrePrm = {
       pidx,
       algo: usedAlgo,
-      salt: this.encrypter
-        ? encryptSaltQb64(usedSalt, this.encrypter).qb64
-        : usedSalt,
-      stem,
-      tier: usedTier,
+      salt: creator.salt
+        ? (this.encrypter
+          ? encryptSaltQb64(creator.salt, this.encrypter).qb64
+          : creator.salt)
+        : "",
+      stem: creator.stem,
+      tier: creator.tier,
     };
 
     const dt = new Date().toISOString();
     const ps: PreSit = {
-      old: { pubs: [], ridx: 0, kidx: 0, dt },
+      old: emptyLot(dt),
       new: {
         pubs: verfers.map((verfer) => verfer.qb64),
         ridx: 0,
@@ -532,14 +720,17 @@ export class Manager {
         dt,
       },
       nxt: {
-        pubs: digers.map((diger) => diger.qb64),
+        pubs: nextPubs,
         ridx: 1,
-        kidx: icount,
+        kidx: isigners.length,
         dt,
       },
     };
 
-    const opre = verfers[0].qb64;
+    const opre = verfers[0]?.qb64;
+    if (!opre) {
+      throw new Error("Invalid incept configuration produced no current verfers.");
+    }
     if (!this.ks.putPres(opre, opre)) {
       throw new Error(`Already incepted pre=${opre}.`);
     }
@@ -549,120 +740,464 @@ export class Manager {
     if (!this.ks.putSits(opre, ps)) {
       throw new Error(`Already incepted sit for pre=${opre}.`);
     }
+
+    for (const signer of [...isigners, ...nsigners]) {
+      this.ks.pris.put(
+        signer.verfer.qb64,
+        signer,
+        this.encrypter ?? undefined,
+      );
+    }
+
     this.ks.putPubs(pubsKey(opre, 0), { pubs: ps.new.pubs });
     this.ks.putPubs(pubsKey(opre, 1), { pubs: ps.nxt.pubs });
-
     this.pidx = pidx + 1;
     return [verfers, digers];
   }
 
   move(oldPre: string, newPre: string): void {
     if (oldPre === newPre) return;
-    if (!this.ks.getPres(oldPre)) {
+    if (this.ks.getPres(oldPre) === null) {
       throw new Error(`Nonexistent old pre=${oldPre}, nothing to assign.`);
     }
-    if (this.ks.getPres(newPre)) {
+    if (this.ks.getPres(newPre) !== null) {
       throw new Error(`Preexistent new pre=${newPre} may not clobber.`);
     }
-    const prm = this.ks.getPrms(oldPre);
-    const sit = this.ks.getSits(oldPre);
-    if (!prm || !sit) {
-      throw new Error(`Missing records to move from old pre=${oldPre}.`);
+
+    const oldPrm = this.ks.getPrms(oldPre);
+    if (!oldPrm) {
+      throw new Error(`Nonexistent old prm for pre=${oldPre}, nothing to move.`);
     }
-    this.ks.putPrms(newPre, prm);
-    this.ks.putSits(newPre, sit);
+    if (this.ks.getPrms(newPre) !== null) {
+      throw new Error(`Preexistent new prm for pre=${newPre} may not clobber.`);
+    }
+
+    const oldSit = this.ks.getSits(oldPre);
+    if (!oldSit) {
+      throw new Error(`Nonexistent old sit for pre=${oldPre}, nothing to move.`);
+    }
+    if (this.ks.getSits(newPre) !== null) {
+      throw new Error(`Preexistent new sit for pre=${newPre} may not clobber.`);
+    }
+
+    if (!this.ks.putPrms(newPre, oldPrm)) {
+      throw new Error(`Failed moving prm from old pre=${oldPre} to new pre=${newPre}.`);
+    }
+    this.ks.prms.rem(oldPre);
+
+    if (!this.ks.putSits(newPre, oldSit)) {
+      throw new Error(`Failed moving sit from old pre=${oldPre} to new pre=${newPre}.`);
+    }
+    this.ks.sits.rem(oldPre);
+
     let ri = 0;
     while (true) {
-      const oldKey = pubsKey(oldPre, ri);
-      const newKey = pubsKey(newPre, ri);
-      const ps = this.ks.getPubs(oldKey);
-      if (ps === null) break;
-      this.ks.putPubs(newKey, ps);
+      const pubset = this.ks.getPubs(pubsKey(oldPre, ri));
+      if (!pubset) {
+        break;
+      }
+      if (!this.ks.putPubs(pubsKey(newPre, ri), pubset)) {
+        throw new Error(`Failed moving pubs at pre=${oldPre} ri=${ri} to new pre=${newPre}.`);
+      }
       ri += 1;
     }
-    this.ks.pinPres(oldPre, newPre);
-    this.ks.putPres(newPre, newPre);
+
+    if (!this.ks.pinPres(oldPre, newPre)) {
+      throw new Error(`Failed assigning new pre=${newPre} to old pre=${oldPre}.`);
+    }
+    if (!this.ks.putPres(newPre, newPre)) {
+      throw new Error(`Failed assigning new pre=${newPre}.`);
+    }
+  }
+
+  rotate(args: ManagerRotateArgs): [Verfer[], Diger[]] {
+    const {
+      pre,
+      ncodes,
+      ncount = 1,
+      ncode = MtrDex.Ed25519_Seed,
+      dcode = MtrDex.Blake3_256,
+      transferable = true,
+      temp = false,
+      erase = true,
+    } = args;
+
+    const pp = this.ks.getPrms(pre);
+    if (!pp) {
+      throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
+    }
+    const ps = this.ks.getSits(pre);
+    if (!ps) {
+      throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
+    }
+    if (!ps.nxt.pubs.length) {
+      throw new Error(`Attempt to rotate nontransferable pre=${pre}.`);
+    }
+
+    const old = ps.old;
+    ps.old = ps.new;
+    ps.new = ps.nxt;
+
+    const verfers = ps.new.pubs.map((pub) => this.getSignerByPub(pub).verfer);
+    const creator = new Creatory(pp.algo as Algos).make({
+      salt: pp.salt ? this.decryptPreSalt(pp.salt) : undefined,
+      stem: pp.stem,
+      tier: pp.tier,
+    });
+
+    const nextCodes = resolveSuiteCodes(ncodes, ncount, ncode, {
+      label: "ncount",
+      allowZero: true,
+    });
+    const ridx = ps.new.ridx + 1;
+    const kidx = ps.nxt.kidx + ps.new.pubs.length;
+    const signers = creator.create({
+      codes: nextCodes,
+      count: 0,
+      pidx: pp.pidx,
+      ridx,
+      kidx,
+      transferable,
+      temp,
+    });
+    const nextPubs = signers.map((signer) => signer.verfer.qb64);
+    const digers = digersForPubs(nextPubs, dcode);
+
+    ps.nxt = {
+      pubs: nextPubs,
+      ridx,
+      kidx,
+      dt: new Date().toISOString(),
+    };
+    if (!this.ks.pinSits(pre, ps)) {
+      throw new Error(`Problem updating pubsit db for pre=${pre}.`);
+    }
+
+    for (const signer of signers) {
+      this.ks.pris.put(
+        signer.verfer.qb64,
+        signer,
+        this.encrypter ?? undefined,
+      );
+    }
+    this.ks.putPubs(pubsKey(pre, ps.nxt.ridx), { pubs: ps.nxt.pubs });
+
+    if (erase) {
+      for (const pub of old.pubs) {
+        this.ks.pris.rem(pub);
+      }
+    }
+
+    return [verfers, digers];
   }
 
   sign(ser: Uint8Array, pubs: string[], indexed: true): Siger[];
   sign(ser: Uint8Array, pubs: string[], indexed?: false): Cigar[];
-  sign(ser: Uint8Array, pubs: string[], indexed = true): Siger[] | Cigar[] {
-    if (indexed) {
-      return this.signIndexed(ser, pubs);
+  sign(ser: Uint8Array, args: ManagerSignArgs & { indexed: true }): Siger[];
+  sign(ser: Uint8Array, args?: ManagerSignArgs): Siger[] | Cigar[];
+  sign(
+    ser: Uint8Array,
+    pubsOrArgs: string[] | ManagerSignArgs = [],
+    indexed = true,
+  ): Siger[] | Cigar[] {
+    const args = Array.isArray(pubsOrArgs)
+      ? { pubs: pubsOrArgs, indexed }
+      : pubsOrArgs;
+    const signers = this.getSigners(args);
+
+    if (!signers.length) {
+      if (args.pre || args.path) {
+        throw new Error("Manager.sign derived-path signing is not implemented yet.");
+      }
+      throw new Error("pubs or verfers or pre required");
     }
-    return this.signUnindexed(ser, pubs);
+
+    if (args.indices && args.indices.length !== signers.length) {
+      throw new Error(
+        `Mismatch indices length=${args.indices.length} and resultant signers length=${signers.length}`,
+      );
+    }
+    if (args.ondices && args.ondices.length !== signers.length) {
+      throw new Error(
+        `Mismatch ondices length=${args.ondices.length} and resultant signers length=${signers.length}`,
+      );
+    }
+
+    if (args.indexed === false) {
+      return signers.map((signer) => signer.sign(ser) as Cigar);
+    }
+
+    return signers.map((signer, idx) => {
+      const index = args.indices ? args.indices[idx] : idx;
+      if (
+        typeof index !== "number" || !Number.isInteger(index) || index < 0
+      ) {
+        throw new Error(`Invalid signing index = ${index}, not whole number.`);
+      }
+
+      if (!args.ondices) {
+        return signer.sign(ser, { index, only: false, ondex: index }) as Siger;
+      }
+
+      const ondex = args.ondices[idx];
+      if (ondex === null) {
+        return signer.sign(ser, { index, only: true }) as Siger;
+      }
+      if (
+        typeof ondex !== "number" || !Number.isInteger(ondex) || ondex < 0
+      ) {
+        throw new Error(
+          `Invalid other signing index = ${ondex}, not None or not whole number.`,
+        );
+      }
+      return signer.sign(ser, { index, only: false, ondex }) as Siger;
+    });
   }
 
-  /**
-   * Build indexed controller signatures in stable key-list order.
-   *
-   * Security invariant:
-   * - when AEID encryption is active, signing is not allowed to silently fall
-   *   through to "missing key" behavior without a decrypter
-   * - this keeps wrong-open / unauthorized-open failures distinct from actual
-   *   DB corruption or missing-key conditions
-   */
-  private signIndexed(ser: Uint8Array, pubs: string[]): Siger[] {
-    if (this.aeid && !this.decrypter) {
-      throw new Error(
-        "Unauthorized decryption attempt. Aeid but no decrypter.",
-      );
+  decrypt(
+    qb64: string | Uint8Array,
+    args: ManagerDecryptArgs = {},
+  ): Uint8Array {
+    const signers = this.getSigners(args);
+    if (!signers.length) {
+      throw new Error("pubs or verfers required");
     }
-    const sigers: Siger[] = [];
-    for (const [idx, pub] of pubs.entries()) {
-      const signer = this.ks.pris.get(pub, this.decrypter ?? undefined);
-      if (!signer) {
-        throw new Error(`Missing prikey in db for pubkey=${pub}`);
+
+    let plain: Uint8Array | null = null;
+    for (const signer of signers) {
+      if (signer.code !== MtrDex.Ed25519_Seed) {
+        throw new Error(
+          `Unsupported decrypt signer code=${signer.code}. Keeper decrypt requires Ed25519 seeds.`,
+        );
       }
-      const sigRaw = signRawForSignerCode(signer.code, signer.raw, ser);
-      sigers.push(
-        new Siger({
-          code: indexedSignatureCodeForSignerCode(signer.code, idx, {
-            ondex: idx,
-          }),
-          raw: sigRaw,
-          index: idx,
-          ondex: idx,
-        }),
-      );
+      plain = decryptCipherQb64b(qb64, makeDecrypterFromSigner(signer));
     }
-    return sigers;
+
+    if (plain === null) {
+      throw new Error("Unable to decrypt.");
+    }
+    return plain;
   }
 
-  /**
-   * Build unindexed detached signatures for ad hoc message signing flows.
-   *
-   * Uses the same auth boundary as indexed signing: encrypted keeper state must
-   * already be unlocked before detached signatures are attempted.
-   */
-  private signUnindexed(ser: Uint8Array, pubs: string[]): Cigar[] {
-    if (this.aeid && !this.decrypter) {
-      throw new Error(
-        "Unauthorized decryption attempt. Aeid but no decrypter.",
-      );
+  ingest(args: ManagerIngestArgs): [string, Verfer[][]] {
+    const {
+      secrecies,
+      iridx = 0,
+      ncount = 1,
+      ncode = MtrDex.Ed25519_Seed,
+      dcode = MtrDex.Blake3_256,
+      algo,
+      salt,
+      stem,
+      tier,
+      rooted = true,
+      transferable = true,
+      temp = false,
+    } = args;
+
+    if (iridx > secrecies.length) {
+      throw new Error(`Initial ridx=${iridx} beyond last secrecy.`);
     }
-    const cigars: Cigar[] = [];
-    for (const pub of pubs) {
-      const signer = this.ks.pris.get(pub, this.decrypter ?? undefined);
-      if (!signer) {
-        throw new Error(`Missing prikey in db for pubkey=${pub}`);
+
+    const usedAlgo = rooted
+      ? (algo ?? this.algo ?? Algos.salty)
+      : (algo ?? Algos.salty);
+    const usedSalt = usedAlgo === Algos.salty
+      ? rooted
+        ? normalizeSaltQb64(salt ?? this.salt ?? undefined)
+        : normalizeSaltQb64(salt)
+      : "";
+    const usedTier = rooted ? (tier ?? this.tier ?? "low") : (tier ?? "low");
+    const pidx = this.pidx ?? 0;
+    const creator = new Creatory(usedAlgo).make({
+      salt: usedSalt || undefined,
+      stem,
+      tier: usedTier,
+    });
+
+    let ipre = "";
+    let pre = "";
+    let ridx = 0;
+    let kidx = 0;
+    const verferies: Verfer[][] = [];
+    let first = true;
+
+    for (const secrecy of secrecies) {
+      const csigners = secrecy.map((secret) => new Signer({ qb64: secret, transferable }));
+      const pubs = csigners.map((signer) => signer.verfer.qb64);
+      const dt = new Date().toISOString();
+      verferies.push(csigners.map((signer) => signer.verfer));
+
+      if (first) {
+        const pp: PrePrm = {
+          pidx,
+          algo: usedAlgo,
+          salt: creator.salt
+            ? (this.encrypter
+              ? encryptSaltQb64(creator.salt, this.encrypter).qb64
+              : creator.salt)
+            : "",
+          stem: creator.stem,
+          tier: creator.tier,
+        };
+        pre = csigners[0]?.verfer.qb64 ?? "";
+        ipre = pre;
+        if (!pre) {
+          throw new Error("Invalid ingest input produced no prefix.");
+        }
+        if (!this.ks.putPres(pre, pre)) {
+          throw new Error(`Already incepted pre=${pre}.`);
+        }
+        if (!this.ks.putPrms(pre, pp)) {
+          throw new Error(`Already incepted prm for pre=${pre}.`);
+        }
+        this.pidx = pidx + 1;
+        first = false;
       }
-      const sigRaw = signRawForSignerCode(signer.code, signer.raw, ser);
-      cigars.push(
-        new Cigar({
-          code: detachedSignatureCodeForSignerCode(signer.code),
-          raw: sigRaw,
-        }),
+
+      for (const signer of csigners) {
+        this.ks.pris.put(
+          signer.verfer.qb64,
+          signer,
+          this.encrypter ?? undefined,
+        );
+      }
+      this.ks.putPubs(pubsKey(pre, ridx), { pubs });
+
+      if (ridx === Math.max(iridx - 1, 0)) {
+        const old = iridx === 0
+          ? emptyLot()
+          : { pubs, ridx, kidx, dt };
+        const ps: PreSit = {
+          old,
+          new: emptyLot(),
+          nxt: emptyLot(),
+        };
+        if (!this.ks.pinSits(pre, ps)) {
+          throw new Error(`Problem updating pubsit db for pre=${pre}.`);
+        }
+      }
+
+      if (ridx === iridx) {
+        const ps = this.ks.getSits(pre);
+        if (!ps) {
+          throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
+        }
+        ps.new = { pubs, ridx, kidx, dt };
+        if (!this.ks.pinSits(pre, ps)) {
+          throw new Error(`Problem updating pubsit db for pre=${pre}.`);
+        }
+      }
+
+      if (ridx === iridx + 1) {
+        const ps = this.ks.getSits(pre);
+        if (!ps) {
+          throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
+        }
+        ps.nxt = { pubs, ridx, kidx, dt };
+        if (!this.ks.pinSits(pre, ps)) {
+          throw new Error(`Problem updating pubsit db for pre=${pre}.`);
+        }
+      }
+
+      ridx += 1;
+      kidx += csigners.length;
+    }
+
+    const nsigners = creator.create({
+      count: ncount,
+      code: ncode,
+      pidx,
+      ridx,
+      kidx,
+      transferable,
+      temp,
+    });
+    const pubs = nsigners.map((signer) => signer.verfer.qb64);
+    for (const signer of nsigners) {
+      this.ks.pris.put(
+        signer.verfer.qb64,
+        signer,
+        this.encrypter ?? undefined,
       );
     }
-    return cigars;
+    this.ks.putPubs(pubsKey(pre, ridx), { pubs });
+
+    if (ridx === iridx + 1) {
+      const ps = this.ks.getSits(pre);
+      if (!ps) {
+        throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
+      }
+      ps.nxt = { pubs, ridx, kidx, dt: new Date().toISOString() };
+      if (!this.ks.pinSits(pre, ps)) {
+        throw new Error(`Problem updating pubsit db for pre=${pre}.`);
+      }
+    }
+
+    void dcode; // digers are derived at replay/rotation time; keeper state stores next pubs.
+    return [ipre, verferies];
+  }
+
+  replay(args: ManagerReplayArgs): [Verfer[], Diger[]] {
+    const {
+      pre,
+      dcode = MtrDex.Blake3_256,
+      advance = true,
+      erase = true,
+    } = args;
+
+    const pp = this.ks.getPrms(pre);
+    if (!pp) {
+      throw new Error(`Attempt to replay nonexistent pre=${pre}.`);
+    }
+    const ps = this.ks.getSits(pre);
+    if (!ps) {
+      throw new Error(`Attempt to replay nonexistent pre=${pre}.`);
+    }
+    void pp;
+
+    let old = ps.old;
+    if (advance) {
+      old = ps.old;
+      ps.old = ps.new;
+      ps.new = ps.nxt;
+      const ridx = ps.new.ridx;
+      const kidx = ps.new.kidx;
+      const csize = ps.new.pubs.length;
+      const pubset = this.ks.getPubs(pubsKey(pre, ridx + 1));
+      if (!pubset) {
+        throw new RangeError(`Invalid replay attempt of pre=${pre} at ridx=${ridx}.`);
+      }
+      ps.nxt = {
+        pubs: pubset.pubs,
+        ridx: ridx + 1,
+        kidx: kidx + csize,
+        dt: new Date().toISOString(),
+      };
+    }
+
+    const verfers = ps.new.pubs.map((pub) => this.getSignerByPub(pub).verfer);
+    const digers = digersForPubs(ps.nxt.pubs, dcode);
+
+    if (advance) {
+      if (!this.ks.pinSits(pre, ps)) {
+        throw new Error(`Problem updating pubsit db for pre=${pre}.`);
+      }
+      if (erase) {
+        for (const pub of old.pubs) {
+          this.ks.pris.rem(pub);
+        }
+      }
+    }
+
+    return [verfers, digers];
   }
 }
 
 /** Normalize caller-provided salt material or synthesize a new random salt. */
 export function normalizeSaltQb64(salt?: string): string {
   return salt
-    ? new Salter({ code: "0A", raw: parseQb64Raw(salt) }).qb64
+    ? new Salter({ code: MtrDex.Salt_128, raw: parseQb64Raw(salt) }).qb64
     : randomSaltQb64();
 }
 

@@ -1,6 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import { parseCigar } from "../../../src/primitives/cigar.ts";
+import { Cigar, parseCigar } from "../../../src/primitives/cigar.ts";
+import { Verfer } from "../../../src/primitives/verfer.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
@@ -24,4 +25,11 @@ Deno.test("cigar: rejects non-signature code families", () => {
     () => parseCigar(txt(KERIPY_MATTER_VECTORS.verferEcdsaR1), "txt"),
     UnknownCodeError,
   );
+});
+
+Deno.test("cigar: optionally carries verifier linkage", () => {
+  const verfer = new Verfer({ qb64: KERIPY_MATTER_VECTORS.verferEcdsaR1 });
+  const cigar = new Cigar({ qb64: KERIPY_MATTER_VECTORS.cigarEcdsaR1 }, verfer);
+
+  assertEquals(cigar.verfer?.qb64, verfer.qb64);
 });

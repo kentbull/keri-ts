@@ -49,32 +49,32 @@ Baseline source for the KERIpy comparisons in this document:
 
 ## Core `Matter` Derivatives
 
-| `keri-ts`         | KERIpy peer                                  | Role/category                 | Initialization shapes                               | Encoded forms exposed                              | Parity note |
-| ----------------- | -------------------------------------------- | ----------------------------- | --------------------------------------------------- | -------------------------------------------------- | ----------- |
-| `Diger`           | `coring.Diger`                               | Digest material               | `qb64`, `qb64b`, `qb2`, `raw+code`                  | `Matter` forms                                     | `direct`    |
-| `Prefixer`        | `coring.Prefixer`                            | Identifier prefix material    | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Verfer`          | `coring.Verfer`                              | Verification-key material     | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Saider`          | `coring.Saider`                              | Self-addressing digest        | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Seqner`          | `coring.Seqner`                              | Sequence-number material      | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `NumberPrimitive` | `coring.Number`                              | Qualified numeric material    | same as `Matter`                                    | `Matter` forms plus numeric projection helpers     | `direct`    |
-| `Tholder`         | `coring.Tholder`                             | Threshold material            | parse/helper-oriented, numeric encodings underneath | `Matter`-family encodings plus threshold semantics | `direct`    |
-| `Verser`          | `coring.Verser`                              | Version/protocol tag          | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Ilker`           | `coring.Ilker`                               | Event-ilk tag                 | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Traitor`         | `coring.Traitor`                             | Trait tag                     | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Tagger`          | `coring.Tagger`                              | Generic tag material          | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Labeler`         | `coring.Labeler`                             | Field-label material          | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Texter`          | `coring.Texter`                              | Text payload material         | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Bexter`          | `coring.Bexter`                              | Base64-text payload material  | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Pather`          | `coring.Pather`                              | SAD/path material             | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Dater`           | `coring.Dater`                               | Datetime material             | same as `Matter`                                    | `Matter` forms plus date projection                | `direct`    |
-| `Noncer`          | `coring.Noncer`                              | Nonce material                | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Decimer`         | `coring.Decimer`                             | Decimal numeric material      | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Salter`          | `coring.Salter`                              | Salt material                 | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
-| `Signer`          | signer/seed model spread across `signing.py` | Seed/signing material wrapper | constructor from qualified forms                    | `Matter` forms plus seed accessor                  | `near`      |
-| `Encrypter`       | encrypter/public-key material model          | Encryption-key wrapper        | constructor from qualified forms                    | `Matter` forms                                     | `near`      |
-| `Decrypter`       | decrypter/private-key material model         | Decryption-key wrapper        | constructor from qualified forms                    | `Matter` forms                                     | `near`      |
-| `Cipher`          | cipher-family material model                 | Ciphertext wrapper            | constructor from qualified forms                    | `Matter` forms                                     | `near`      |
-| `Cigar`           | `coring.Cigar`                               | Unindexed signature material  | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `keri-ts`         | KERIpy peer                          | Role/category                 | Initialization shapes                               | Encoded forms exposed                              | Parity note |
+| ----------------- | ------------------------------------ | ----------------------------- | --------------------------------------------------- | -------------------------------------------------- | ----------- |
+| `Diger`           | `coring.Diger`                       | Digest material               | `qb64`, `qb64b`, `qb2`, `raw+code`                  | `Matter` forms                                     | `direct`    |
+| `Prefixer`        | `coring.Prefixer`                    | Identifier prefix material    | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Verfer`          | `coring.Verfer`                      | Verification-key material     | same as `Matter`                                    | `Matter` forms plus `verify()` / transferability   | `direct`    |
+| `Saider`          | `coring.Saider`                      | Self-addressing digest        | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Seqner`          | `coring.Seqner`                      | Sequence-number material      | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `NumberPrimitive` | `coring.Number`                      | Qualified numeric material    | same as `Matter`                                    | `Matter` forms plus numeric projection helpers     | `direct`    |
+| `Tholder`         | `coring.Tholder`                     | Threshold material            | parse/helper-oriented, numeric encodings underneath | `Matter`-family encodings plus threshold semantics | `direct`    |
+| `Verser`          | `coring.Verser`                      | Version/protocol tag          | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Ilker`           | `coring.Ilker`                       | Event-ilk tag                 | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Traitor`         | `coring.Traitor`                     | Trait tag                     | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Tagger`          | `coring.Tagger`                      | Generic tag material          | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Labeler`         | `coring.Labeler`                     | Field-label material          | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Texter`          | `coring.Texter`                      | Text payload material         | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Bexter`          | `coring.Bexter`                      | Base64-text payload material  | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Pather`          | `coring.Pather`                      | SAD/path material             | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Dater`           | `coring.Dater`                       | Datetime material             | same as `Matter`                                    | `Matter` forms plus date projection                | `direct`    |
+| `Noncer`          | `coring.Noncer`                      | Nonce material                | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Decimer`         | `coring.Decimer`                     | Decimal numeric material      | same as `Matter`                                    | `Matter` forms                                     | `direct`    |
+| `Salter`          | `coring.Salter`                      | Salt material                 | same as `Matter`                                    | `Matter` forms plus `stretch()` / `signer()` flows | `direct`    |
+| `Signer`          | `signing.Signer`                     | Seed/signing material wrapper | constructor from qualified forms                    | `Matter` forms plus `.verfer` and `sign()`         | `direct`    |
+| `Encrypter`       | encrypter/public-key material model  | Encryption-key wrapper        | constructor from qualified forms                    | `Matter` forms                                     | `near`      |
+| `Decrypter`       | decrypter/private-key material model | Decryption-key wrapper        | constructor from qualified forms                    | `Matter` forms                                     | `near`      |
+| `Cipher`          | cipher-family material model         | Ciphertext wrapper            | constructor from qualified forms                    | `Matter` forms                                     | `near`      |
+| `Cigar`           | `coring.Cigar`                       | Unindexed signature material  | same as `Matter`                                    | `Matter` forms plus optional in-memory `verfer`    | `direct`    |
 
 ## Indexed Signature Family
 

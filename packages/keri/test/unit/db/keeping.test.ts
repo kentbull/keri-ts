@@ -2,9 +2,13 @@ import { run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
-import { encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
-import { makeDecrypterFromSeed } from "../../../src/core/keeper-crypto.ts";
+import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
+import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
+
+function keeperPubsKey(pre: string, ridx: number): string {
+  return `${pre}.${ridx.toString(16).padStart(32, "0")}`;
+}
 
 Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () => {
   await run(function*() {
@@ -34,6 +38,49 @@ Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () 
       yield* keeper.close(true);
     }
   });
+});
+
+Deno.test("app/keeping - Creatory builds salty and randy creators with executable signers", () => {
+  const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+  const salty = new Creatory(Algos.salty).make({
+    salt,
+    stem: "ab",
+    tier: "low",
+  });
+  const saltySigners = salty.create({
+    count: 2,
+    pidx: 1,
+    ridx: 2,
+    kidx: 3,
+    transferable: false,
+    temp: true,
+  });
+  const ser = new TextEncoder().encode("creator-signatures");
+  const randy = new Creatory(Algos.randy).make();
+  const randomSigners = randy.create({
+    codes: [MtrDex.Ed25519_Seed, MtrDex.ECDSA_256k1_Seed],
+    transferable: true,
+  });
+
+  assertEquals(
+    saltySigners.map((signer) => signer.qb64),
+    [
+      saltySigner(salt, "ab23", false, "low", true).signer.qb64,
+      saltySigner(salt, "ab24", false, "low", true).signer.qb64,
+    ],
+  );
+  assertEquals(
+    saltySigners.map((signer) => signer.verfer.code),
+    [MtrDex.Ed25519N, MtrDex.Ed25519N],
+  );
+  assertEquals(
+    randomSigners.map((signer) => signer.code),
+    [MtrDex.Ed25519_Seed, MtrDex.ECDSA_256k1_Seed],
+  );
+  for (const signer of randomSigners) {
+    const cigar = signer.sign(ser);
+    assertEquals(signer.verfer.verify(cigar.raw, ser), true);
+  }
 });
 
 Deno.test("app/keeping - Manager returns narrow CESR primitives for inception and signing", async () => {
@@ -138,6 +185,38 @@ Deno.test("app/keeping - Manager.incept honors requested current and next signer
   });
 });
 
+Deno.test("app/keeping - Manager.incept stores next Ed25519 public keys and derives digers from them", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-ed25519-next-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers, digers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        icode: MtrDex.Ed25519_Seed,
+        ncode: MtrDex.Ed25519_Seed,
+        transferable: true,
+        temp: true,
+      });
+      const pre = verfers[0].qb64;
+      const sit = keeper.getSits(pre);
+      const storedNext = sit?.nxt.pubs[0];
+
+      assertExists(storedNext);
+      assertEquals(Diger.compare(b(storedNext), digers[0].code, digers[0].raw), true);
+      assertEquals(keeper.getPubs(keeperPubsKey(pre, 1))?.pubs[0], storedNext);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
 Deno.test("app/keeping - Manager.sign emits suite-correct signatures from stored signer material", async () => {
   await run(function*() {
     const suites = [
@@ -185,6 +264,182 @@ Deno.test("app/keeping - Manager.sign emits suite-correct signatures from stored
       } finally {
         yield* keeper.close(true);
       }
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.rotate advances Ed25519 current and next public key state", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-ed25519-rotate-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        icode: MtrDex.Ed25519_Seed,
+        ncode: MtrDex.Ed25519_Seed,
+        transferable: true,
+        temp: true,
+      });
+      const pre = verfers[0].qb64;
+      const firstSit = keeper.getSits(pre);
+      const nextPub = firstSit?.nxt.pubs[0];
+      const [rotVerfers, rotDigers] = manager.rotate({
+        pre,
+        ncount: 1,
+        ncode: MtrDex.Ed25519_Seed,
+        transferable: true,
+        temp: true,
+      });
+      const rotatedSit = keeper.getSits(pre);
+
+      assertEquals(rotVerfers[0].qb64, nextPub);
+      assertEquals(rotatedSit?.old.pubs[0], pre);
+      assertEquals(rotatedSit?.new.pubs[0], nextPub);
+      assertEquals(
+        Diger.compare(b(rotatedSit?.nxt.pubs[0] ?? ""), rotDigers[0].code, rotDigers[0].raw),
+        true,
+      );
+      assertEquals(
+        keeper.getPubs(keeperPubsKey(pre, rotatedSit?.nxt.ridx ?? 0))?.pubs[0],
+        rotatedSit?.nxt.pubs[0],
+      );
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.ingest and replay preserve Ed25519 current and next public key sequences", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-ed25519-ingest-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const firstSecret = saltySigner(
+        "0AAwMTIzNDU2Nzg5YWJjZGVm",
+        "ingest-a",
+        true,
+        "low",
+        true,
+      ).signer.qb64;
+      const secondSecret = saltySigner(
+        "0AAwMTIzNDU2Nzg5YWJjZGVm",
+        "ingest-b",
+        true,
+        "low",
+        true,
+      ).signer.qb64;
+
+      const [ipre, verferies] = manager.ingest({
+        secrecies: [[firstSecret], [secondSecret]],
+        iridx: 0,
+        ncount: 1,
+        ncode: MtrDex.Ed25519_Seed,
+        dcode: MtrDex.Blake3_256,
+        algo: Algos.salty,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+        transferable: true,
+        temp: true,
+      });
+      const [currentVerfers, currentDigers] = manager.replay({
+        pre: ipre,
+        advance: false,
+      });
+      const [advancedVerfers, advancedDigers] = manager.replay({
+        pre: ipre,
+        advance: true,
+        erase: false,
+      });
+      const sit = keeper.getSits(ipre);
+
+      assertEquals(ipre, verferies[0][0].qb64);
+      assertEquals(currentVerfers[0].qb64, verferies[0][0].qb64);
+      assertEquals(
+        Diger.compare(b(verferies[1][0].qb64), currentDigers[0].code, currentDigers[0].raw),
+        true,
+      );
+      assertEquals(advancedVerfers[0].qb64, verferies[1][0].qb64);
+      assertEquals(
+        Diger.compare(b(sit?.nxt.pubs[0] ?? ""), advancedDigers[0].code, advancedDigers[0].raw),
+        true,
+      );
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.decrypt opens Ed25519 ciphertexts and rejects non-Ed25519 signer suites", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-ed25519-decrypt-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        icode: MtrDex.Ed25519_Seed,
+        ncode: MtrDex.Ed25519_Seed,
+        transferable: true,
+        temp: true,
+      });
+      const pub = verfers[0].qb64;
+      const cipher = encryptSaltQb64(
+        "0AAwMTIzNDU2Nzg5YWJjZGVm",
+        makeEncrypterFromAeid(pub),
+      );
+
+      const plain = manager.decrypt(cipher.qb64, { pubs: [pub] });
+
+      assertEquals(new TextDecoder().decode(plain), "0AAwMTIzNDU2Nzg5YWJjZGVm");
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-ecdsa-decrypt-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        icode: MtrDex.ECDSA_256k1_Seed,
+        ncode: MtrDex.ECDSA_256k1_Seed,
+        transferable: true,
+        temp: true,
+      });
+
+      assertThrows(
+        () => manager.decrypt("1AAHAAAAAAAAAAAAAAAAAAAA", { pubs: [verfers[0].qb64] }),
+        Error,
+        "Unsupported decrypt signer code",
+      );
+    } finally {
+      yield* keeper.close(true);
     }
   });
 });

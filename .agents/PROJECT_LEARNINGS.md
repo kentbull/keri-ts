@@ -430,6 +430,12 @@ This keeps context focused and avoids long-thread drift.
     verification in KEL/reply runtime must flow through `Verfer.verify()`, and
     small indexed “both” signature codes must preserve the implicit
     `ondex=index` rule or prior-next exposure checks will silently fail.
+82. The KERIpy mental model is now the intended key-management boundary in
+    `keri-ts`: `Signer` owns signing and `.verfer`, `Verfer` owns verification,
+    `Salter` owns deterministic signer derivation, and `Manager` should stay an
+    orchestration layer over creators, keeper state, AEID policy, and replay.
+    When those responsibilities blur, suite drift and keeper-state drift follow
+    almost immediately.
 
 ## New Thread Kickoff Template
 

@@ -58,10 +58,11 @@ const SIGNER_INDEXED_SIG_CODES = new Map<SupportedSignerCode, IndexedSignatureFa
  * CESR-local authority for signature suite dispatch.
  *
  * Boundary contract:
- * - higher KERI runtime layers choose primitives (`Signer`, `Verfer`, `Siger`)
+ * - higher KERI runtime layers should choose primitives (`Signer`, `Verfer`,
+ *   `Siger`, `Cigar`)
  * - this module chooses the concrete crypto implementation from CESR codes
- * - curve-specific imports should not leak into `Kever`, reply routing, or app
- *   management code
+ * - curve-specific imports should not leak into `Kever`, reply routing, app
+ *   management code, or ordinary caller-facing crypto surfaces
  */
 
 function assertSupportedSignerCode(code: string): asserts code is SupportedSignerCode {
@@ -87,6 +88,12 @@ function assertSupportedVerferCode(code: string): asserts code is SupportedVerfe
   }
 }
 
+/** All supported signer seed suites currently use 32-byte seeds. */
+export function signerSeedSizeForCode(signerCode: string): number {
+  assertSupportedSignerCode(signerCode);
+  return 32;
+}
+
 /** Project one signer seed code to the verifier derivation code for the same suite. */
 export function verferCodeForSignerCode(
   signerCode: string,
@@ -102,6 +109,14 @@ export function verferCodeForSignerCode(
     case MtrDex.ECDSA_256r1_Seed:
       return transferable ? MtrDex.ECDSA_256r1 : MtrDex.ECDSA_256r1N;
   }
+}
+
+/** Project one verifier code back to transferability semantics. */
+export function transferableForVerferCode(verferCode: string): boolean {
+  assertSupportedVerferCode(verferCode);
+  return verferCode !== MtrDex.Ed25519N
+    && verferCode !== MtrDex.ECDSA_256k1N
+    && verferCode !== MtrDex.ECDSA_256r1N;
 }
 
 /** Derive one raw public verification key from seed bytes and signer-suite code. */

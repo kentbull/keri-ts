@@ -196,6 +196,11 @@ export function makeDecrypterFromSeed(
   });
 }
 
+/** Build the keeper decrypter directly from one already-hydrated signer seed. */
+export function makeDecrypterFromSigner(signer: Signer): Decrypter {
+  return makeDecrypterFromSeed(signer);
+}
+
 /**
  * Verify that a supplied signing seed actually belongs to the given AEID.
  *
@@ -230,6 +235,14 @@ export function decryptSigner(
   decrypter: Decrypter,
 ): Signer {
   return new Signer({ qb64b: decryptPayload(cipher, decrypter) });
+}
+
+/** Decrypt one qualified cipher payload back into its plaintext CESR bytes. */
+export function decryptCipherQb64b(
+  cipher: Cipher | string | Uint8Array,
+  decrypter: Decrypter,
+): Uint8Array {
+  return decryptPayload(cipher, decrypter);
 }
 
 /** Encrypt one root/per-prefix salt for keeper-global or `prms.` storage. */

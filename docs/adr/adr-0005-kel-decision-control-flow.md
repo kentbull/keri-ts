@@ -96,7 +96,7 @@ TypeScript.
 ## KERIpy Branch Mapping
 
 | KERIpy branch                                          | `keri-ts` result                                                    |
-|--------------------------------------------------------|---------------------------------------------------------------------|
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
 | `OutOfOrderError` after `escrowOOEvent()`              | `KeverDecision { kind: "escrow", reason: "ooo" }`                   |
 | `LikelyDuplicitousError` after `escrowLDEvent()`       | `KeverDecision { kind: "escrow", reason: "duplicitous" }`           |
 | `MissingSignatureError` after `escrowPSEvent()`        | `AttachmentDecision { kind: "escrow", reason: "partialSigs" }`      |

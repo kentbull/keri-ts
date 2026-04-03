@@ -29,6 +29,11 @@ signing/verification behavior in `keri-ts`.
    crypto-adjacent code: if a caller knows it is handling a signer seed,
    verifier, digest, indexed signature, or detached signature, it should use the
    corresponding narrow primitive instead of returning the superclass.
+9. Primitive execution parity is now the intended model for signer material in
+   `keri-ts`: `Signer` is no longer a thin seed wrapper, `Salter` is no longer
+   just salt storage, and the public seam should bias toward
+   `Signer.sign()` / `Verfer.verify()` / `Salter.signer()` rather than free
+   helper calls.
 
 ## Scope Checklist
 
@@ -138,3 +143,46 @@ Use this doc for:
     scope, but AEID/signator/X25519-adjacent flows remain Ed25519-specific and
     should stay isolated until that separate crypto boundary is deliberately
     widened.
+
+### 2026-04-02 - Full Signer/Salter Mental-Model Port Landed
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Rebuilt `packages/cesr/src/primitives/signer.ts` around KERIpy's
+    executable signer model: `Signer` now owns `transferable`, `.verfer`,
+    `Signer.random(...)`, and suite-driven `sign(...)` returning `Cigar` or
+    `Siger` with verifier context attached.
+  - Rebuilt `packages/cesr/src/primitives/salter.ts` around deterministic
+    derivation behavior: `Salter` now owns `stretch(...)`, `signer(...)`, and
+    `signers(...)` across Ed25519, secp256k1, and secp256r1 seed suites.
+  - Added in-memory `Cigar.verfer` parity and demoted
+    `packages/cesr/src/primitives/signature-suite.ts` to an internal support
+    seam instead of part of the CESR public barrel.
+  - Deepened Ed25519 coverage across seed -> verifier derivation,
+    transferable/non-transferable code selection, detached/indexed signing, and
+    deterministic salty derivation paths, while keeping fixed-suite coverage for
+    secp256k1 and secp256r1.
+- Why:
+  - Leaving signing behavior as free helpers while verification lived on
+    `Verfer` would preserve the same architectural split-brain that caused the
+    original suite-dispatch bug.
+  - Ed25519 is the ecosystem's reference-depth suite, so parity here must be
+    richer than generic round-trip smoke tests or future suite work will erode
+    the most important path first.
+- Tests:
+  - Command:
+    `deno test -A --config packages/cesr/deno.json packages/cesr/test/unit/primitives/signer.test.ts packages/cesr/test/unit/primitives/salter.test.ts packages/cesr/test/unit/primitives/cigar.test.ts packages/cesr/test/unit/primitives/verfer.test.ts`
+  - Result: passed locally (`21 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/signer.ts`
+  - `packages/cesr/src/primitives/salter.ts`
+  - `packages/cesr/src/primitives/cigar.ts`
+  - `packages/cesr/src/primitives/verfer.ts`
+  - `packages/cesr/src/index.ts`
+- Risks/TODO:
+  - `Encrypter` / `Decrypter` / `Cipher` remain separate from the signer-model
+    cleanup; do not overread this milestone as "all crypto primitives now own
+    their whole workflow."

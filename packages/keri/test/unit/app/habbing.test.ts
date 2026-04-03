@@ -238,6 +238,12 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
         signatorSig ? hby.signator?.verify(ser, signatorSig) : false,
         true,
       );
+      assertEquals(
+        signatorSig
+          ? hby.signator?.verify(new TextEncoder().encode("wrong-message"), signatorSig)
+          : true,
+        false,
+      );
     } finally {
       yield* hby.close();
     }
