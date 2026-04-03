@@ -1,4 +1,12 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
+import {
+  type CesrMessage,
+  createParser,
+  Ilks,
+  parseSerder,
+  type SerderKERI,
+  type Smellage,
+} from "../../../cesr/mod.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
@@ -31,13 +39,14 @@ function openServerHost(
       port,
       hostname: "127.0.0.1",
       signal,
-      onListen: ({ port }) => logger.info(`Server running on http://localhost:${port}`),
+      onListen: ({ port }) =>
+        logger.info(`Server running on http://localhost:${port}`),
       onError: (error) => {
         logger.error("Server error:", error);
         return new Response("Internal Server Error", { status: 500 });
       },
     },
-    (req: Request) => {
+    async (req: Request) => {
       try {
         const url = new URL(req.url);
         if (url.pathname === "/health") {
@@ -48,16 +57,18 @@ function openServerHost(
         }
 
         if (runtime) {
-          const parts = url.pathname.split("/").filter((part) => part.length > 0);
+          const parts = url.pathname.split("/").filter((part) =>
+            part.length > 0
+          );
           let aid: string | undefined;
           let role: string | undefined;
           let eid: string | undefined;
 
           if (
-            parts.length >= 4
-            && parts[0] === ".well-known"
-            && parts[1] === "keri"
-            && parts[2] === "oobi"
+            parts.length >= 4 &&
+            parts[0] === ".well-known" &&
+            parts[1] === "keri" &&
+            parts[2] === "oobi"
           ) {
             aid = parts[3];
             role = Roles.controller;
@@ -91,6 +102,53 @@ function openServerHost(
               },
             });
           }
+        }
+
+        if (runtime && (req.method === "POST" || req.method === "PUT")) {
+          const bytes = new Uint8Array(await req.arrayBuffer());
+          const serder = inspectCesrRequest(bytes);
+          if (!serder) {
+            return new Response("Invalid CESR request", {
+              status: 400,
+              headers: { "Content-Type": "text/plain" },
+            });
+          }
+
+          runtime.reactor.ingest(bytes);
+          runtime.reactor.processOnce();
+          runtime.reactor.processEscrowsOnce();
+          drainRuntimeCues(runtime);
+
+          if (serder.ilk === Ilks.qry && serder.route === "mbx") {
+            const query = serder.ked?.q as Record<string, unknown> | undefined;
+            const pre = typeof query?.i === "string" ? query.i : null;
+            if (!pre) {
+              return new Response("Mailbox query is missing i", {
+                status: 400,
+                headers: { "Content-Type": "text/plain" },
+              });
+            }
+
+            return new Response(
+              runtime.mailboxDirector.streamMailbox(
+                pre,
+                normalizeMailboxTopics(query?.topics),
+              ),
+              {
+                status: 200,
+                headers: {
+                  "Content-Type": "text/event-stream",
+                  "Cache-Control": "no-cache",
+                  "Connection": "close",
+                },
+              },
+            );
+          }
+
+          return new Response(null, {
+            status: 204,
+            headers: { "Content-Type": "application/json" },
+          });
         }
 
         return new Response("Not Found", {
@@ -156,4 +214,68 @@ export function* startServer(
   } finally {
     host.close();
   }
+}
+
+function drainRuntimeCues(runtime: AgentRuntime): void {
+  const habitats = [...runtime.hby.habs.values()];
+  const hab = habitats.length === 1 ? habitats[0] : null;
+  if (!hab) {
+    return;
+  }
+
+  for (const emission of hab.processCuesIter(runtime.cues)) {
+    runtime.mailboxDirector.handleEmission(emission);
+  }
+}
+
+function inspectCesrRequest(bytes: Uint8Array): SerderKERI | null {
+  const parser = createParser({
+    framed: false,
+    attachmentDispatchMode: "compat",
+  });
+  const frames = parser.feed(bytes);
+  for (const frame of frames) {
+    if (frame.type === "error") {
+      throw frame.error;
+    }
+    return parseSerder(
+      frame.frame.body.raw,
+      smellageFromMessage(frame.frame),
+    ) as SerderKERI;
+  }
+  return null;
+}
+
+function smellageFromMessage(
+  message: CesrMessage,
+): Smellage {
+  return {
+    proto: message.body.proto,
+    pvrsn: message.body.pvrsn,
+    kind: message.body.kind,
+    size: message.body.size,
+    gvrsn: message.body.gvrsn,
+  };
+}
+
+function normalizeMailboxTopics(
+  value: unknown,
+): Record<string, number> {
+  if (Array.isArray(value)) {
+    return Object.fromEntries(
+      value
+        .filter((topic): topic is string => typeof topic === "string")
+        .map((topic) => [topic, 0]),
+    );
+  }
+  if (typeof value !== "object" || value === null) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([topic]) => typeof topic === "string")
+      .map((
+        [topic, idx],
+      ) => [topic, typeof idx === "number" ? idx : Number(idx) || 0]),
+  );
 }

@@ -73,7 +73,8 @@ export class Reactor {
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
     this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    this.kevery = new Kevery(hby.db, { cues: this.cues });
+    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery });
+    this.kevery.registerReplyRoutes(this.router);
     this.parser = createParser({
       framed: false,
       attachmentDispatchMode: "compat",
@@ -170,6 +171,9 @@ export class Reactor {
           cigars: envelope.cigars,
           tsgs: envelope.tsgs,
         });
+        break;
+      case Ilks.qry:
+        this.kevery.processQuery(envelope);
         break;
       case Ilks.icp:
       case Ilks.dip:
@@ -309,10 +313,10 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, siger] = item;
         if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(siger)
+          !isQualifiedPrimitive(prefixer) ||
+          !isQualifiedPrimitive(seqner) ||
+          !isQualifiedPrimitive(diger) ||
+          !isQualifiedPrimitive(siger)
         ) {
           continue;
         }
@@ -334,9 +338,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, sigers] = item;
         if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer) ||
+          !isQualifiedPrimitive(seqner) ||
+          !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -404,9 +408,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger] = item;
         if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer) ||
+          !isQualifiedPrimitive(seqner) ||
+          !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -455,10 +459,10 @@ function normalizeAttachmentGroup(
         }
         const [diger, noncer, acdcer, stater] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(acdcer)
-          || !isQualifiedPrimitive(stater)
+          !isQualifiedPrimitive(diger) ||
+          !isQualifiedPrimitive(noncer) ||
+          !isQualifiedPrimitive(acdcer) ||
+          !isQualifiedPrimitive(stater)
         ) {
           continue;
         }
@@ -480,12 +484,12 @@ function normalizeAttachmentGroup(
         }
         const [diger, noncer, acdcer, stater, number, eventer] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(acdcer)
-          || !isQualifiedPrimitive(stater)
-          || !isQualifiedPrimitive(number)
-          || !isQualifiedPrimitive(eventer)
+          !isQualifiedPrimitive(diger) ||
+          !isQualifiedPrimitive(noncer) ||
+          !isQualifiedPrimitive(acdcer) ||
+          !isQualifiedPrimitive(stater) ||
+          !isQualifiedPrimitive(number) ||
+          !isQualifiedPrimitive(eventer)
         ) {
           continue;
         }
@@ -509,10 +513,10 @@ function normalizeAttachmentGroup(
         }
         const [diger, noncer, labeler, texter] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(labeler)
-          || !isQualifiedPrimitive(texter)
+          !isQualifiedPrimitive(diger) ||
+          !isQualifiedPrimitive(noncer) ||
+          !isQualifiedPrimitive(labeler) ||
+          !isQualifiedPrimitive(texter)
         ) {
           continue;
         }

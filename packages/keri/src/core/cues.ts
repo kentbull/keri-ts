@@ -72,7 +72,7 @@ export interface StreamCue extends CueBase {
   serder: SerderKERI;
   pre: string;
   src: string;
-  topics: string[];
+  topics: Record<string, number>;
 }
 
 /** Cue emitted when bootstrap `Kevery` persists a new key-state record. */

@@ -1,8 +1,11 @@
 import {
+  Cigar,
   Dater,
+  Diger,
   Ilks,
   NumberPrimitive,
   Prefixer,
+  SerderKERI,
   Verfer,
 } from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
@@ -13,8 +16,9 @@ import {
   type DispatchOrdinal,
   type KeriDispatchEnvelope,
   SourceSealCouple,
+  type TransIdxSigGroup,
 } from "./dispatch.ts";
-import { ValidationError } from "./errors.ts";
+import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import {
   type EscrowInstruction,
   type EscrowKind,
@@ -24,6 +28,7 @@ import {
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
 import { KeyStateRecord } from "./records.ts";
+import { Revery, Router } from "./routing.ts";
 
 /** Normalize one dispatch ordinal into the number primitive expected by DB seal tuples. */
 function normalizeSealOrdinal(
@@ -50,6 +55,12 @@ export type KeverEventEnvelope = Pick<
   "serder" | "sigers" | "wigers" | "frcs" | "sscs" | "ssts" | "local"
 >;
 
+/** Query envelope subset consumed by `Kevery.processQuery()`. */
+export type QueryEnvelope = Pick<
+  KeriDispatchEnvelope,
+  "serder" | "cigars" | "tsgs"
+>;
+
 /**
  * Minimal but real KEL event processor backed by live `Kever` instances.
  *
@@ -61,14 +72,24 @@ export class Kevery {
   readonly db: Baser;
   readonly cues: Deck<AgentCue>;
   readonly local: boolean;
+  readonly rvy?: Revery;
 
   constructor(
     db: Baser,
-    { cues, local = false }: { cues?: Deck<AgentCue>; local?: boolean } = {},
+    {
+      cues,
+      local = false,
+      rvy,
+    }: {
+      cues?: Deck<AgentCue>;
+      local?: boolean;
+      rvy?: Revery;
+    } = {},
   ) {
     this.db = db;
     this.cues = cues ?? new Deck();
     this.local = local;
+    this.rvy = rvy;
   }
 
   /** Live accepted-state cache delegated from the backing `Baser`. */
@@ -81,6 +102,11 @@ export class Kevery {
     return this.db.prefixes;
   }
 
+  /** Register the reply routes owned by `Kevery` itself. */
+  registerReplyRoutes(router: Router): void {
+    router.addRoute("/ksn/{aid}", this, "KeyStateNotice");
+  }
+
   /**
    * Process one normalized KEL event envelope.
    *
@@ -91,6 +117,98 @@ export class Kevery {
     const decision = this.decideEvent(envelope);
     this.applyDecision(decision);
     return decision;
+  }
+
+  /**
+   * Process one query message through the KEL-owned query/reply path.
+   *
+   * Current route support:
+   * - `logs`
+   * - `ksn`
+   * - `mbx`
+   */
+  processQuery(envelope: QueryEnvelope): void {
+    const route = envelope.serder.route;
+    const query = envelope.serder.ked?.q as Record<string, unknown> | undefined;
+    const pre = typeof query?.i === "string" ? query.i : null;
+    const src = typeof query?.src === "string"
+      ? query.src
+      : inferQuerySource(envelope);
+
+    if (!route || !query || !pre || !src) {
+      this.cues.push({
+        kin: "invalid",
+        serder: envelope.serder,
+        reason: "Query message is missing route, i, or src.",
+      });
+      return;
+    }
+
+    switch (route) {
+      case "logs": {
+        const msgs = [...this.db.clonePreIter(pre)];
+        if (msgs.length === 0) {
+          this.cues.push({
+            kin: "invalid",
+            serder: envelope.serder,
+            reason: `No replay material available for ${pre}.`,
+          });
+          return;
+        }
+        this.cues.push({
+          kin: "replay",
+          pre,
+          src,
+          dest: inferQuerySource(envelope) ?? undefined,
+          msgs: concatMessages(msgs),
+        });
+        return;
+      }
+      case "ksn": {
+        const kever = this.kevers.get(pre);
+        if (!kever) {
+          this.cues.push({
+            kin: "invalid",
+            serder: envelope.serder,
+            reason: `No accepted key state available for ${pre}.`,
+          });
+          return;
+        }
+        this.cues.push({
+          kin: "reply",
+          route: `/ksn/${src}`,
+          data: kever.state().asDict(),
+          src,
+          dest: inferQuerySource(envelope) ?? undefined,
+        });
+        return;
+      }
+      case "mbx": {
+        const topics = normalizeMailboxTopics(query.topics);
+        if (!this.kevers.has(pre)) {
+          this.cues.push({
+            kin: "invalid",
+            serder: envelope.serder,
+            reason: `No mailbox topic authority available for ${pre}.`,
+          });
+          return;
+        }
+        this.cues.push({
+          kin: "stream",
+          serder: envelope.serder,
+          pre,
+          src,
+          topics,
+        });
+        return;
+      }
+      default:
+        this.cues.push({
+          kin: "invalid",
+          serder: envelope.serder,
+          reason: `Unsupported query route ${route}.`,
+        });
+    }
   }
 
   /**
@@ -300,6 +418,77 @@ export class Kevery {
     this.processEscrowDelegables();
     this.processEscrowMisfits();
     this.processQueryNotFound();
+  }
+
+  /**
+   * Process one `/ksn/{aid}` reply and persist the accepted key-state notice.
+   */
+  processReplyKeyStateNotice(args: {
+    serder: SerderKERI;
+    diger: Diger;
+    route: string;
+    aid: string;
+    cigars?: Cigar[];
+    tsgs?: TransIdxSigGroup[];
+  }): void {
+    if (!this.rvy) {
+      throw new ValidationError(
+        "Kevery is not configured with a reply verifier.",
+      );
+    }
+    if (!args.route.startsWith("/ksn")) {
+      throw new ValidationError(
+        `Unsupported route=${args.route} in ${Ilks.rpy} reply.`,
+      );
+    }
+
+    const ksn = KeyStateRecord.fromDict(args.serder.ked?.a);
+    const pre = typeof ksn.i === "string" ? ksn.i : null;
+    const sn = typeof ksn.s === "string" ? parseInt(ksn.s, 16) : null;
+    const said = typeof ksn.d === "string" ? ksn.d : null;
+    const dt = typeof ksn.dt === "string" ? ksn.dt : null;
+    if (!pre || sn === null || Number.isNaN(sn) || !said || !dt) {
+      throw new ValidationError("Malformed key state notice reply body.");
+    }
+
+    const existing = this.kevers.get(pre);
+    if (existing && sn < existing.sn) {
+      throw new ValidationError(
+        `Skipped stale key state at sn=${sn} for ${pre}.`,
+      );
+    }
+
+    const keys: [string, string] = [pre, args.aid];
+    let osaider = this.db.knas.get(keys);
+    if (osaider?.qb64 === args.diger.qb64) {
+      osaider = null;
+    }
+    const accepted = this.rvy.acceptReply({
+      serder: args.serder,
+      saider: args.diger,
+      route: args.route,
+      aid: args.aid,
+      osaider,
+      cigars: args.cigars,
+      tsgs: args.tsgs,
+    });
+    if (!accepted) {
+      throw new UnverifiedReplyError(
+        `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
+    const ldig = this.db.getKel(pre, sn);
+    if (ldig && ldig !== said) {
+      throw new ValidationError(
+        `Mismatch key state at sn=${sn} with accepted event log for ${pre}.`,
+      );
+    }
+
+    const saider = new Diger({ qb64: said });
+    const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
+    this.updateKeyState(args.aid, ksn, saider, dater);
+    this.cues.push({ kin: "keyStateSaved", ksn });
   }
 
   /**
@@ -672,4 +861,67 @@ export class Kevery {
         break;
     }
   }
+
+  /** Persist accepted key-state notice projections into their dedicated stores. */
+  private updateKeyState(
+    aid: string,
+    ksn: KeyStateRecord,
+    saider: Diger,
+    dater: Dater,
+  ): void {
+    this.db.kdts.pin([saider.qb64], dater);
+    this.db.ksns.pin([saider.qb64], ksn);
+    if (ksn.i) {
+      this.db.knas.pin([ksn.i, aid], saider);
+    }
+  }
+}
+
+function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
+  if (messages.length === 0) {
+    return new Uint8Array();
+  }
+  let total = 0;
+  for (const msg of messages) {
+    total += msg.length;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const msg of messages) {
+    out.set(msg, offset);
+    offset += msg.length;
+  }
+  return out;
+}
+
+function inferQuerySource(envelope: QueryEnvelope): string | null {
+  const cigar = envelope.cigars[0];
+  if (cigar?.verfer) {
+    return cigar.verfer.qb64;
+  }
+  return envelope.tsgs[0]?.pre ?? null;
+}
+
+function normalizeMailboxTopics(
+  value: unknown,
+): Record<string, number> {
+  if (Array.isArray(value)) {
+    return Object.fromEntries(
+      value
+        .filter((topic): topic is string => typeof topic === "string")
+        .map((topic) => [topic, 0]),
+    );
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([topic]) => typeof topic === "string")
+      .map((
+        [topic, idx],
+      ) => [topic, typeof idx === "number" ? idx : Number(idx) || 0]),
+  );
 }

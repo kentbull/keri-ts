@@ -3,7 +3,12 @@ import { ValidationError } from "../../core/errors.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { EndpointRoles } from "../../core/roles.ts";
 import { Schemes } from "../../core/schemes.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn, runAgentRuntime } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  runAgentRuntime,
+} from "../agent-runtime.ts";
 import { startServer } from "../server.ts";
 import { setupHby } from "./common/existing.ts";
 
@@ -71,17 +76,32 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     const publicUrl = `http://127.0.0.1:${port}`;
     for (const hab of hby.habs.values()) {
       // add local CESR stream bytes for the loc scheme and endroles for the local controller config
-      ingestKeriBytes(runtime, hab.makeLocScheme(publicUrl, hab.pre, Schemes.http));
-      ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.controller, true));
-      ingestKeriBytes(runtime, hab.makeEndRole(hab.pre, EndpointRoles.agent, true));
-      yield* processRuntimeTurn(runtime, { hab });
+      ingestKeriBytes(
+        runtime,
+        hab.makeLocScheme(publicUrl, hab.pre, Schemes.http),
+      );
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+      );
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.agent, true),
+      );
+      yield* processRuntimeTurn(runtime, {
+        hab,
+        sink: runtime.mailboxDirector,
+      });
     }
 
     console.log(`Starting server on port ${port}`);
     const cueHab = hby.habs.values().next().value;
     // spawn here creates a child Effection frame and immediately starts it. Lifetime is this lexical scope.
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: cueHab });
+    const runtimeTask = yield* spawn(function* () {
+      yield* runAgentRuntime(runtime, {
+        hab: cueHab,
+        sink: runtime.mailboxDirector,
+      });
     });
     try {
       yield* startServer(port, consoleLogger, runtime);

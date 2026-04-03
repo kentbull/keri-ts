@@ -47,6 +47,11 @@ function asUniqueVals(vals: Iterable<Uint8Array>): Uint8Array[] {
   return out;
 }
 
+/** Clone native LMDB bytes so callers never retain addon-owned buffer views. */
+function copyDbBytes(value: unknown): Uint8Array {
+  return new Uint8Array(toBytes(value));
+}
+
 /** Build IoDup ordering proem bytes (`000...00a.` for index `10`). */
 function iDupProem(index: number): Uint8Array {
   return b(`${index.toString(16).padStart(IODUP_PROEM_HEX_SIZE, "0")}.`);
@@ -503,7 +508,7 @@ export class LMDBer {
       if (val === null || val === undefined) {
         return null;
       } else {
-        return val instanceof Uint8Array ? val : new Uint8Array(val);
+        return copyDbBytes(val);
       }
     } catch (error) {
       throw this.formatDbKeyError(key, error);
@@ -589,7 +594,7 @@ export class LMDBer {
       let count = 0;
       const startKey = top.length > 0 ? top : undefined;
       for (const entry of db.getRange({ start: startKey })) {
-        const keyBytes = entry.key as Uint8Array;
+        const keyBytes = copyDbBytes(entry.key);
         if (top.length > 0 && !startsWith(keyBytes, top)) {
           break;
         }
@@ -631,7 +636,7 @@ export class LMDBer {
       const keys: Uint8Array[] = [];
       const startKey = top.length > 0 ? top : undefined;
       for (const entry of db.getRange({ start: startKey })) {
-        const keyBytes = entry.key as Uint8Array;
+        const keyBytes = copyDbBytes(entry.key);
         if (top.length > 0 && !startsWith(keyBytes, top)) {
           break;
         }
@@ -678,8 +683,8 @@ export class LMDBer {
       const startKey = top.length > 0 ? top : undefined;
 
       for (const entry of db.getRange({ start: startKey })) {
-        const keyBytes = entry.key as Uint8Array;
-        const valBytes = entry.value as Uint8Array;
+        const keyBytes = copyDbBytes(entry.key);
+        const valBytes = copyDbBytes(entry.value);
 
         // Check if key starts with top prefix
         // If top is empty, match all keys (empty prefix matches everything)
@@ -775,7 +780,7 @@ export class LMDBer {
 
     let nextOn = 0;
     for (const entry of db.getRange({ start, reverse: true, limit: 1 })) {
-      const tailOnKey = toBytes(entry.key);
+      const tailOnKey = copyDbBytes(entry.key);
       const [ckey, cn] = splitOnKey(tailOnKey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -867,7 +872,7 @@ export class LMDBer {
     const start = onKey(key, on, sep);
     const keys: Uint8Array[] = [];
     for (const entry of db.getRange({ start })) {
-      const ckey = toBytes(entry.key);
+      const ckey = copyDbBytes(entry.key);
       const [top] = splitOnKey(ckey, sep);
       if (!bytesEqual(top, key)) {
         break;
@@ -903,7 +908,7 @@ export class LMDBer {
     const start = key.length ? onKey(key, on, sep) : new Uint8Array(0);
     let count = 0;
     for (const entry of db.getRange({ start })) {
-      const ckey = toBytes(entry.key);
+      const ckey = copyDbBytes(entry.key);
       const [top] = splitOnKey(ckey, sep);
       if (key.length && !bytesEqual(top, key)) {
         break;
@@ -945,8 +950,8 @@ export class LMDBer {
     this.requireEnv();
     const start = key.length ? onKey(key, on, sep) : new Uint8Array(0);
     for (const entry of db.getRange({ start })) {
-      const ckey = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const ckey = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [top, cn] = splitOnKey(ckey, sep);
       if (key.length && !bytesEqual(top, key)) {
         break;
@@ -990,8 +995,8 @@ export class LMDBer {
     let ion = 0;
     const start = suffix(key, 0, sep);
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const iokey = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [ckey, cion] = unsuffix(iokey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1066,8 +1071,8 @@ export class LMDBer {
     const valHex = bytesHex(val);
     const start = suffix(key, 0, sep);
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const iokey = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [ckey, cion] = unsuffix(iokey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1100,8 +1105,8 @@ export class LMDBer {
     }
     const start = suffix(key, ion, sep);
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const iokey = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [ckey] = unsuffix(iokey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1148,7 +1153,7 @@ export class LMDBer {
     const keys: Uint8Array[] = [];
     const start = suffix(key, 0, sep);
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
+      const iokey = copyDbBytes(entry.key);
       const [ckey] = unsuffix(iokey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1194,8 +1199,8 @@ export class LMDBer {
     let removeKey: Uint8Array | null = null;
     const start = suffix(key, 0, sep);
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const iokey = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [ckey] = unsuffix(iokey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1272,8 +1277,8 @@ export class LMDBer {
     let last: [Uint8Array, Uint8Array] | null = null;
     let lkey: Uint8Array | null = null;
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const iokey = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [ckey] = unsuffix(iokey, sep);
       if (lkey === null) {
         lkey = ckey;
@@ -1376,7 +1381,7 @@ export class LMDBer {
     let on = 0;
     const start = suffix(onKey(key, 0, sep), 0, sep);
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
+      const iokey = copyDbBytes(entry.key);
       const [onkey] = unsuffix(iokey, sep);
       const [ckey, con] = splitOnKey(onkey, sep);
       if (!bytesEqual(ckey, key)) {
@@ -1485,7 +1490,7 @@ export class LMDBer {
     const start = suffix(onKey(key, on, sep), 0, sep);
     const keys: Uint8Array[] = [];
     for (const entry of db.getRange({ start })) {
-      const iokey = toBytes(entry.key);
+      const iokey = copyDbBytes(entry.key);
       const [onkey] = unsuffix(iokey, sep);
       const [ckey] = splitOnKey(onkey, sep);
       if (!bytesEqual(ckey, key)) {
@@ -1535,7 +1540,7 @@ export class LMDBer {
     let count = 0;
     const start = suffix(onKey(key, on, sep), 0, sep);
     for (const entry of db.getRange({ start })) {
-      const [onkey] = unsuffix(toBytes(entry.key), sep);
+      const [onkey] = unsuffix(copyDbBytes(entry.key), sep);
       const [ckey] = splitOnKey(onkey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1580,8 +1585,8 @@ export class LMDBer {
     }
     const start = suffix(onKey(key, on, sep), 0, sep);
     for (const entry of db.getRange({ start })) {
-      const [onkey] = unsuffix(toBytes(entry.key), sep);
-      const cval = toBytes(entry.value);
+      const [onkey] = unsuffix(copyDbBytes(entry.key), sep);
+      const cval = copyDbBytes(entry.value);
       const [ckey, con] = splitOnKey(onkey, sep);
       if (!bytesEqual(ckey, key)) {
         break;
@@ -1736,7 +1741,7 @@ export class LMDBer {
    */
   getVals(db: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array[] {
     this.requireEnv();
-    return [...db.getValues(key)].map((val) => toBytes(val));
+    return [...db.getValues(key)].map((val) => copyDbBytes(val));
   }
 
   /**
@@ -1761,7 +1766,7 @@ export class LMDBer {
   ): Generator<Uint8Array> {
     this.requireEnv();
     for (const val of db.getValues(key)) {
-      yield toBytes(val);
+      yield copyDbBytes(val);
     }
   }
 
@@ -2046,8 +2051,8 @@ export class LMDBer {
     let last: Uint8Array | null = null;
 
     for (const entry of db.getRange({ start })) {
-      const onkeyBytes = toBytes(entry.key);
-      const cval = toBytes(entry.value);
+      const onkeyBytes = copyDbBytes(entry.key);
+      const cval = copyDbBytes(entry.value);
       const [ckey, con] = splitOnKey(onkeyBytes, sep);
       if (key.length && !bytesEqual(ckey, key)) {
         break;

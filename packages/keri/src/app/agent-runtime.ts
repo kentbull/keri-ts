@@ -1,9 +1,13 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import type {
+  KeriDispatchEnvelope,
+  TransIdxSigGroup,
+} from "../core/dispatch.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { MailboxDirector } from "./mailbox-director.ts";
 import { Oobiery, type OobiJob } from "./oobiery.ts";
 import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -40,6 +44,7 @@ export interface AgentRuntime {
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
+  mailboxDirector: MailboxDirector;
 }
 
 /**
@@ -50,6 +55,15 @@ export interface AgentRuntime {
  */
 export interface AgentRuntimeOptions {
   mode?: AgentMode;
+}
+
+/** Summary of pending runtime-backed durable work for bounded command hosts. */
+export interface RuntimePendingState {
+  ingress: boolean;
+  cues: boolean;
+  replyEscrow: boolean;
+  oobiQueued: boolean;
+  oobiInFlight: boolean;
 }
 
 /**
@@ -68,12 +82,15 @@ export function createAgentRuntime(
   const cues = new Deck<AgentCue>();
   const reactor = new Reactor(hby, { cues });
   const oobiery = new Oobiery(hby, reactor, { cues });
+  oobiery.registerReplyRoutes(reactor.router);
+  const mailboxDirector = new MailboxDirector(hby.db);
   return {
     hby,
     mode: options.mode ?? "local",
     cues,
     reactor,
     oobiery,
+    mailboxDirector,
   };
 }
 
@@ -127,6 +144,59 @@ export function* processRuntimeTurn(
   yield* processCuesOnce(runtime, options);
 }
 
+/** Return the current pending-work summary for bounded command-local hosts. */
+export function runtimePendingState(
+  runtime: AgentRuntime,
+): RuntimePendingState {
+  return {
+    ingress: !runtime.reactor.ingress.empty,
+    cues: !runtime.cues.empty,
+    replyEscrow: runtime.hby.db.rpes.cnt() > 0,
+    oobiQueued: runtime.hby.db.oobis.cnt() > 0 ||
+      runtime.hby.db.woobi.cnt() > 0,
+    oobiInFlight: runtime.hby.db.coobi.cnt() > 0,
+  };
+}
+
+/** Return true when any command-local runtime work remains in flight. */
+export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
+  const state = runtimePendingState(runtime);
+  return state.ingress || state.cues || state.replyEscrow ||
+    state.oobiQueued || state.oobiInFlight;
+}
+
+/**
+ * Drive the shared runtime until the caller-provided completion predicate
+ * succeeds or the bounded turn budget is exhausted.
+ */
+export function* processRuntimeUntil(
+  runtime: AgentRuntime,
+  done: () => boolean,
+  options: {
+    hab?: Hab;
+    sink?: CueSink;
+    maxTurns?: number;
+  } = {},
+): Operation<void> {
+  const maxTurns = options.maxTurns ?? 64;
+  for (let turn = 0; turn < maxTurns; turn++) {
+    if (done()) {
+      return;
+    }
+    yield* processRuntimeTurn(runtime, options);
+    if (done()) {
+      return;
+    }
+    if (!runtimeHasPendingWork(runtime)) {
+      yield* runtimeTurn();
+    }
+  }
+
+  throw new Error(
+    `Runtime did not converge within ${maxTurns} turns.`,
+  );
+}
+
 /**
  * Yield cooperatively back to the host scheduler between runtime turns.
  *
@@ -155,16 +225,16 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<never> {
   const tasks = [
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* cueDo(runtime, options);
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.oobiery.oobiDo();
     }),
   ];

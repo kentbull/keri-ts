@@ -1576,6 +1576,54 @@ Use this doc for:
     `/ksn`, `/introduce`, receipt-family escrows, and init/open runtime
     convergence all remain implementation work rather than documentation wins.
 
+### 2026-04-03 - Runtime Closure Landed `/ksn`, `/introduce`, Mailbox Streaming, And CLI Convergence
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- What changed:
+  - Added `MailboxDirector` as a real runtime component and routed `tufa agent`
+    cue delivery through it so reply/replay material now persists into mailbox
+    topic storage instead of disappearing into an ignore sink.
+  - Broadened `Reactor` dispatch to `qry`, added `Kevery.registerReplyRoutes()`
+    for `/ksn/{aid}`, and added `Kevery.processQuery()` for `logs`, `ksn`, and
+    `mbx` so KEL-owned query/reply behavior is no longer outside the runtime.
+  - Added `/introduce` reply ownership to `Oobiery`, with accepted
+    introductions queueing normal `oobis.` work instead of bypassing the
+    resolver.
+  - Extended `startServer()` from protocol-only OOBI GET serving into a minimal
+    indirect host that accepts CESR `POST` / `PUT` requests at the root and
+    answers mailbox queries as `text/event-stream`.
+  - Upgraded `tufa init`, `tufa incept`, and `tufa oobi resolve` to drive
+    bounded runtime convergence instead of assuming one turn is enough.
+- Why:
+  - The previous Gate E runtime was honest only for static bootstrap OOBIs. It
+    could not process `qry`/`rpy` continuation the way init/incept and mailbox
+    interop actually need, so the command surface was still runtime-blind in
+    the exact places the plan claimed were next.
+- Tests:
+  - Command:
+    `deno test -A packages/keri/test/unit/core/kevery-query.test.ts`
+  - Result: 2 passed, 0 failed
+  - Command:
+    `deno test -A packages/keri/test/unit/app/gate-e-runtime.test.ts`
+  - Result: 9 passed, 0 failed
+  - Command:
+    `deno test -A packages/keri/test/unit/app/cli.test.ts packages/keri/test/unit/app/incept.test.ts`
+  - Result: 15 passed, 0 failed
+- Contracts/plans touched:
+  - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+- Risks/TODO:
+  - `processEscrowUnverWitness`, `processEscrowUnverNonTrans`, and
+    `processEscrowUnverTrans` are still stubs, so receipt-family parity is not
+    honestly closed.
+  - Mailbox hosting now persists reply/replay topics and serves `mbx`, but
+    forwarding/exchange/direct transport still need their own closure work.
+  - Query-not-found continuation is still weaker than KERIpy because the
+    current runtime does not yet persist and re-drive mailbox/query escrows with
+    the same completeness as event and reply escrows.
+
 ### 2026-04-03 - DB Parity Matrix Was Re-Audited Against Current Source
 
 - Topic docs updated:

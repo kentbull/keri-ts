@@ -527,6 +527,14 @@ This keeps context focused and avoids long-thread drift.
     writes, but that convenience should be derived from the record class rather
     than surfaced as public `hydrate` / `normalize` hooks or dual generic
     `T`/`TInput` API design.
+97. The next honest Gate E closure tranche is no longer hypothetical: the
+    shared runtime now owns a real mailbox component, `Reactor` dispatches
+    `qry`, `Kevery` owns `/ksn` query/reply handling, `Oobiery` owns
+    `/introduce`, and `tufa init` / `tufa incept` / `tufa oobi resolve` now
+    drive bounded runtime convergence instead of stopping after one bootstrap
+    step. The remaining gap is narrower and more specific: receipt-family wire
+    materialization, the three unverified receipt escrows, broader forwarding /
+    exchange / direct transport, and stronger query-not-found continuation.
 
 ## New Thread Kickoff Template
 

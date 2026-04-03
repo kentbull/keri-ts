@@ -1,6 +1,15 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
+import {
+  type Cigar,
+  Diger,
+  Ilks,
+  Prefixer,
+  SerderKERI,
+} from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
+import { type TransIdxSigGroup } from "../core/dispatch.ts";
+import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import type { Habery } from "./habbing.ts";
@@ -52,6 +61,11 @@ export class Oobiery {
     this.hby = hby;
     this.reactor = reactor;
     this.cues = cues ?? new Deck();
+  }
+
+  /** Register `/introduce` on the shared reply router. */
+  registerReplyRoutes(router = this.reactor.router): void {
+    router.addRoute("/introduce", this);
   }
 
   /**
@@ -222,6 +236,65 @@ export class Oobiery {
       said: meta.said ?? null,
     });
   }
+
+  /**
+   * Process one `/introduce` reply and enqueue the introduced OOBI into the
+   * ordinary durable resolver path.
+   */
+  processReply(args: {
+    serder: SerderKERI;
+    diger: Diger;
+    route: string;
+    cigars?: Cigar[];
+    tsgs?: TransIdxSigGroup[];
+  }): void {
+    if (args.route !== "/introduce") {
+      throw new ValidationError(
+        `Unsupported route=${args.route} in ${Ilks.rpy} reply.`,
+      );
+    }
+
+    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
+    const cid = typeof data?.cid === "string"
+      ? new Prefixer({ qb64: data.cid }).qb64
+      : null;
+    const oobi = typeof data?.oobi === "string" ? data.oobi : null;
+    const dt = typeof args.serder.ked?.dt === "string"
+      ? args.serder.ked.dt
+      : new Date().toISOString();
+    if (!cid || !oobi) {
+      throw new ValidationError("Missing cid/oobi in /introduce reply.");
+    }
+
+    const parsed = new URL(oobi);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new ValidationError(
+        `Invalid introduced OOBI scheme ${parsed.protocol}.`,
+      );
+    }
+
+    const accepted = this.reactor.revery.acceptReply({
+      serder: args.serder,
+      saider: args.diger,
+      route: args.route,
+      aid: cid,
+      osaider: null,
+      cigars: args.cigars,
+      tsgs: args.tsgs,
+    });
+    if (!accepted) {
+      throw new UnverifiedReplyError(
+        `Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
+    this.hby.db.oobis.pin(oobi, {
+      date: dt,
+      state: "queued",
+      cid,
+    });
+    this.cues.push({ kin: "oobiQueued", url: oobi });
+  }
 }
 
 /**
@@ -244,10 +317,10 @@ function parseOobiUrl(url: string, alias?: string): OobiJob {
   };
 
   if (
-    parts.length >= 4
-    && parts[0] === ".well-known"
-    && parts[1] === "keri"
-    && parts[2] === "oobi"
+    parts.length >= 4 &&
+    parts[0] === ".well-known" &&
+    parts[1] === "keri" &&
+    parts[2] === "oobi"
   ) {
     job.cid = parts[3];
     job.role = Roles.controller;

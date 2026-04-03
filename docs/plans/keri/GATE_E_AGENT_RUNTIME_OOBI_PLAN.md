@@ -61,22 +61,27 @@
   seam to stop blocking on it. The envelope exists, normalized attachment
   families exist, and current `ilk` dispatch is sufficient to move active work
   forward.
-- Chunk 4 is only partially complete: `/end/role/*` and `/loc/scheme` are
-  landed, but `/ksn`, `/introduce`, and the broader route-owner split are not.
-- Chunk 5 is only partially complete: endpoint/location projections and a real
-  cue runtime exist, but receipt/witness wire materialization and fuller
-  query/stream semantics are still missing.
-- Chunk 6 is only partially complete: protocol-only HTTP OOBI serving exists,
-  but richer reply-based bootstrap discovery and continuation breadth do not.
+- Chunk 4 is materially complete for the init/incept-critical reply families:
+  `/end/role/*`, `/loc/scheme`, `/ksn/{aid}`, and `/introduce` are now routed
+  through their intended owners, but broader reply families still remain.
+- Chunk 5 is partially complete with a narrower remaining gap: `Hab`-owned cue
+  semantics, mailbox `stream` capture, and `logs` / `ksn` / `mbx` query routing
+  are landed, but receipt/witness wire materialization and receipt-family
+  parity are still missing.
+- Chunk 6 is materially complete for the first indirect-host slice: the server
+  now accepts CESR `POST` / `PUT`, serves mailbox SSE for `mbx`, and continues
+  OOBI discovery through `/introduce`, but fuller forwarding / exchange breadth
+  is still later work.
 - Chunk 7 is good enough for the current local/remote inception base, but it
   still needs more query/reply side effects and broader KERIpy correspondence.
 - Chunk 8 is not honestly complete while `processEscrowUnverWitness`,
   `processEscrowUnverNonTrans`, and `processEscrowUnverTrans` remain stubs.
 - Chunk 9 works for direct role-path bootstrap OOBIs, but not for the wider
   reply-driven introduction/bootstrap behavior KERIpy uses.
-- Chunk 10 landed the bootstrap CLI surfaces, but `tufa init` and `tufa incept`
-  do not yet consume the fuller runtime breadth that transferable OOBI
-  resolution requires.
+- Chunk 10 no longer stops at bootstrap-only behavior: `tufa init`,
+  `tufa incept`, and `tufa oobi resolve` now drive bounded runtime convergence,
+  though they still depend on later forwarding / receipt parity for complete
+  communications closure.
 
 ## Active Continuation Slice For Reasonably Done `init` / `incept`
 

@@ -1,7 +1,12 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { PathError, ValidationError } from "../../core/errors.ts";
+import {
+  createAgentRuntime,
+  processRuntimeUntil,
+  runtimeHasPendingWork,
+} from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
-import { createHabery } from "../habbing.ts";
+import { createHabery, type Habery } from "../habbing.ts";
 
 /**
  * Arguments for `tufa init`.
@@ -83,7 +88,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const cf: Configer | undefined = initArgs.configFile
       ? (yield* createConfiger({
         name: initArgs.configFile,
@@ -132,6 +137,20 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     }
 
     try {
+      if (runtimeBootstrapNeeded(hby)) {
+        const runtime = createAgentRuntime(hby, { mode: "local" });
+        yield* processRuntimeUntil(
+          runtime,
+          () => !runtimeHasPendingWork(runtime),
+          { maxTurns: 128 },
+        );
+        if (hby.db.eoobi.cnt() > 0) {
+          throw new ValidationError(
+            "Bootstrap OOBI resolution failed during init.",
+          );
+        }
+      }
+
       console.log("KERI Keystore created at:", hby.ks.path);
       console.log("KERI Database created at:", hby.db.path);
       console.log("KERI Credential Store created at:", hby.db.path);
@@ -147,4 +166,10 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   yield* doer;
   const cue = yield* cues.next();
   if (cue.done) return;
+}
+
+function runtimeBootstrapNeeded(
+  hby: Habery,
+): boolean {
+  return hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0;
 }
