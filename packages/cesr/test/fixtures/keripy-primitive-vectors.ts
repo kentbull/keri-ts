@@ -51,8 +51,15 @@ export const KERIPY_MATTER_VECTORS = {
   signerSeedK1: "JJ97qKeoQzmWJvqxmeuqIMQbRxHErlNBUsm9BJ2FKX6T",
   signerSeedR1Vector: "QDWGyaBNM2eF1eRq2mLwVMWl9DI_RsuSIwfg4nm35fUK",
   signerSeedK1Vector: "JH-YCjvkRdeMyXmh7iYgnBdxFqum1vFqAeezzv7ibAYI",
+  signerSeedEd25519Vector: "ABg7MMQPKnZG-uOiRWVlH5ZvzilHheNYhtoE8NzeBsAr",
+  keeperCryptSeedEd25519: "AGgsI3yKcCISxDN0MqbhGBnwZjIsecTCMUD1QBUuohrP",
+  salterCipherPlain: "0AA2CGQNobs5jXCNoMATSody",
   encrypterX25519: "CAF7Wr3XNq5hArcOuBJzaY6Nd23jgtUVI6KDfb3VngkR",
   decrypterX25519Private: "OLCFxqMz1z1UUS0TEJnvZP_zXHcuYdQsSGBWdOZeY5VQ",
+  cipherSeedVector:
+    "PM9jOGWNYfjM_oLXJNaQ8UlFSAV5ACjsUY7J16xfzrlpc9Ve3A5WYrZ4o_NHtP5lhp78Usspl9fyFdnCdItNd5JyqZ6dt8SXOt6TOqOCs-gy0obrwFkPPqBvVkEw",
+  cipherSaltVector:
+    "1AAHjlR2QR9J5Et67Wy-ZaVdTryN6T6ohg44r73GLRPnHw-5S3ABFkhWyIwLOI6TXUB_5CT13S8JvknxLxBaF8ANPK9FSOPD8tYu",
 } as const;
 
 /** Selected Indexer/Siger vectors from KERIpy tests. */

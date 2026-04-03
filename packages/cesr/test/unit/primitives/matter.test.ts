@@ -1,6 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { codeB64ToB2, decodeB64 } from "../../../src/core/bytes.ts";
 import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
+import { MtrDex } from "../../../src/primitives/codex.ts";
 import { Matter, parseMatter, parseMatterFromBinary, parseMatterFromText } from "../../../src/primitives/matter.ts";
 import { token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
@@ -36,6 +37,17 @@ Deno.test("matter: constructor roundtrip from qb64 to raw+code", () => {
   const src = new Matter({ qb64: KERIPY_MATTER_VECTORS.verferEcdsaR1 });
   const rebuilt = new Matter({ raw: src.raw, code: src.code });
   assertEquals(rebuilt.qb64, src.qb64);
+});
+
+Deno.test("matter: normalizes variable-family codes from raw size like KERIpy", () => {
+  assertEquals(
+    new Matter({ raw: new Uint8Array(5), code: MtrDex.Bytes_L0 }).code,
+    MtrDex.Bytes_L1,
+  );
+  assertEquals(
+    new Matter({ raw: new Uint8Array(12696), code: MtrDex.StrB64_L0 }).code,
+    MtrDex.StrB64_Big_L0,
+  );
 });
 
 Deno.test("matter: parses fixed-size token and trims trailing bytes", () => {

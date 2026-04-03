@@ -18,16 +18,6 @@ import {
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import { signerCodeForVerferCode } from "../../../cesr/src/primitives/signature-suite.ts";
-import {
-  decryptCipherQb64b,
-  decryptSaltQb64,
-  encryptSaltQb64,
-  ensureKeeperCryptoReady,
-  makeDecrypterFromSeed,
-  makeDecrypterFromSigner,
-  makeEncrypterFromAeid,
-  seedMatchesAeid,
-} from "../core/keeper-crypto.ts";
 import { Keeper, type PrePrm, type PreSit, type PubLot } from "../db/keeping.ts";
 
 /**
@@ -494,13 +484,17 @@ export class Manager {
     if (salt === null) {
       return null;
     }
-    return this.decrypter ? decryptSaltQb64(salt, this.decrypter) : salt;
+    return this.decrypter
+      ? (this.decrypter.decrypt({ qb64: salt, klas: Salter }) as Salter).qb64
+      : salt;
   }
 
   set salt(salt: string) {
     this.ks.pinGbls(
       "salt",
-      this.encrypter ? encryptSaltQb64(salt, this.encrypter).qb64 : salt,
+      this.encrypter
+        ? this.encrypter.encrypt({ prim: new Salter({ qb64: salt }) }).qb64
+        : salt,
     );
   }
 
@@ -529,7 +523,6 @@ export class Manager {
    * concepts or readonly visibility commands will start mutating stores again.
    */
   setup(aeid = "", seed = ""): void {
-    ensureKeeperCryptoReady();
     const storedAeid = this.aeid;
 
     if (!storedAeid) {
@@ -539,15 +532,15 @@ export class Manager {
       return;
     }
 
-    this.encrypter = makeEncrypterFromAeid(storedAeid);
-    if (!seed || !seedMatchesAeid(seed, storedAeid)) {
+    this.encrypter = new Encrypter({ verkey: storedAeid });
+    if (!seed || !this.encrypter.verifySeed(seed)) {
       throw new Error(
         `Last seed missing or provided last seed not associated with last aeid=${storedAeid}.`,
       );
     }
 
     this._seed = seed;
-    this.decrypter = makeDecrypterFromSeed(seed);
+    this.decrypter = new Decrypter({ seed });
 
     if (!this.ks.readonly && aeid && aeid !== storedAeid) {
       this.updateAeid(aeid, seed);
@@ -576,13 +569,12 @@ export class Manager {
    *   attempted
    */
   updateAeid(aeid: string, seed: string): void {
-    ensureKeeperCryptoReady();
     const currentAeid = this.aeid;
 
     if (currentAeid) {
       if (
         !this.seed || !this.encrypter
-        || !seedMatchesAeid(this.seed, currentAeid)
+        || !this.encrypter.verifySeed(this.seed)
       ) {
         throw new Error(
           `Last seed missing or provided last seed not associated with last aeid=${currentAeid}.`,
@@ -591,12 +583,13 @@ export class Manager {
     }
 
     if (aeid) {
-      if (!seed || !seedMatchesAeid(seed, aeid)) {
+      const nextEncrypter = new Encrypter({ verkey: aeid });
+      if (!seed || !nextEncrypter.verifySeed(seed)) {
         throw new Error(
           `Seed missing or provided seed not associated with aeid=${aeid}.`,
         );
       }
-      this.encrypter = makeEncrypterFromAeid(aeid);
+      this.encrypter = nextEncrypter;
     } else {
       this.encrypter = null;
     }
@@ -614,11 +607,10 @@ export class Manager {
           continue;
         }
         data.salt = this.encrypter
-          ? encryptSaltQb64(
-            decryptSaltQb64(data.salt, this.decrypter),
-            this.encrypter,
-          ).qb64
-          : decryptSaltQb64(data.salt, this.decrypter);
+          ? this.encrypter.encrypt({
+            prim: this.decrypter.decrypt({ qb64: data.salt, klas: Salter }) as Salter,
+          }).qb64
+          : (this.decrypter.decrypt({ qb64: data.salt, klas: Salter }) as Salter).qb64;
         this.ks.prms.pin(keys, data);
       }
 
@@ -633,7 +625,7 @@ export class Manager {
     }
 
     this._seed = seed;
-    this.decrypter = seed ? makeDecrypterFromSeed(seed) : null;
+    this.decrypter = seed ? new Decrypter({ seed }) : null;
 
     if (this.ks.readonly) {
       return;
@@ -850,7 +842,7 @@ export class Manager {
     }
     const decrypter = this.signerDecrypter();
     return decrypter
-      ? decryptSaltQb64(salt, decrypter)
+      ? (decrypter.decrypt({ qb64: salt, klas: Salter }) as Salter).qb64
       : new Salter({ qb64: salt }).qb64;
   }
 
@@ -929,7 +921,9 @@ export class Manager {
       algo: usedAlgo,
       salt: creator.salt
         ? (this.encrypter
-          ? encryptSaltQb64(creator.salt, this.encrypter).qb64
+          ? this.encrypter.encrypt({
+            prim: new Salter({ qb64: creator.salt }),
+          }).qb64
           : creator.salt)
         : "",
       stem: creator.stem,
@@ -1224,7 +1218,10 @@ export class Manager {
           `Unsupported decrypt signer code=${signer.code}. Keeper decrypt requires Ed25519 seeds.`,
         );
       }
-      plain = decryptCipherQb64b(qb64, makeDecrypterFromSigner(signer));
+      plain = new Decrypter({ seed: signer.qb64b }).decrypt({
+        qb64,
+        bare: true,
+      }) as Uint8Array;
     }
 
     if (plain === null) {
@@ -1288,7 +1285,9 @@ export class Manager {
           algo: usedAlgo,
           salt: creator.salt
             ? (this.encrypter
-              ? encryptSaltQb64(creator.salt, this.encrypter).qb64
+              ? this.encrypter.encrypt({
+                prim: new Salter({ qb64: creator.salt }),
+              }).qb64
               : creator.salt)
             : "",
           stem: creator.stem,
@@ -1494,4 +1493,13 @@ export function b64DecodeUrl(text: string): Uint8Array {
   return decodeB64(text);
 }
 
-export { ensureKeeperCryptoReady };
+/**
+ * Backward-compatibility no-op for older app-layer startup seams.
+ *
+ * CESR primitives now own libsodium readiness through their own module
+ * initialization, so higher layers no longer need an explicit keeper-crypto
+ * readiness step.
+ */
+export function ensureKeeperCryptoReady(): void {
+  // no-op
+}

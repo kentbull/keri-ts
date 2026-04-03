@@ -34,6 +34,10 @@ signing/verification behavior in `keri-ts`.
    just salt storage, and the public seam should bias toward
    `Signer.sign()` / `Verfer.verify()` / `Salter.signer()` rather than free
    helper calls.
+10. Sealed-box encryption parity is now also primitive-owned: `Cipher`,
+    `Encrypter`, `Decrypter`, and `Streamer` form one CESR execution seam, and
+    variable-family code promotion remains a `Matter` responsibility rather
+    than a cipher-local exception.
 
 ## Scope Checklist
 
@@ -51,6 +55,8 @@ Use this doc for:
    TS contracts intentionally stay narrower.
 3. Keep parser-layer follow-ups separate from primitive memory unless the
    primitive contract itself changes.
+4. Keep variable-family size/code normalization centralized in `Matter`; do not
+   reintroduce one-off code-promotion logic in individual primitive subclasses.
 
 ## Milestone Rollup
 
@@ -189,3 +195,56 @@ Use this doc for:
   - The internal suite seam now also needs the inverse verifier->signer mapping
     used by `Manager.sign({ pre, path })`; keep that table private to CESR so
     app code never reintroduces hard-coded suite branching.
+
+### 2026-04-02 - Sealed-Box Crypto And Variable-Family Promotion Moved To The Right Layer
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/ARCHITECTURE_MAP.md`
+- What changed:
+  - Added executable CESR primitives for KERIpy-style X25519 sealed-box
+    behavior: `Cipher.decrypt(...)`, `Encrypter.encrypt(...)`,
+    `Encrypter.verifySeed(...)`, `Decrypter.decrypt(...)`, and the new
+    `Streamer` primitive.
+  - Added internal CESR seams `primitives/sealed-box.ts` and
+    `primitives/byte-like.ts` so libsodium-backed box conversion, sealed-box
+    open/seal, and TS byte-like normalization live below the public primitive
+    API.
+  - Widened the earlier cipher-normalization idea into a `Matter` refactor:
+    variable-family code promotion from raw size now happens in `Matter`
+    encoding/parsing logic, matching KERIpy's actual mental model instead of
+    treating cipher families as a one-off special case.
+  - Demoted `packages/keri/src/core/keeper-crypto.ts` to a compatibility
+    wrapper over CESR primitives so keeper/app code no longer owns a parallel
+    crypto implementation.
+- Why:
+  - A cipher-local normalization shim would have worked mechanically, but it
+    would have encoded the wrong architectural rule. In KERIpy, variable-family
+    promotion is a `Matter` concern because it is about qualified-material
+    encoding, not about one encryption subclass.
+  - Once CESR primitives became executable, keeping a second keeper-local
+    sealed-box engine in `keri-ts` would have been drift, not safety.
+- Tests:
+  - Command:
+    `deno test -A --config packages/cesr/deno.json packages/cesr/test/unit/primitives/matter.test.ts packages/cesr/test/unit/primitives/cipher.test.ts packages/cesr/test/unit/primitives/encrypter.test.ts packages/cesr/test/unit/primitives/decrypter.test.ts packages/cesr/test/unit/primitives/streamer.test.ts`
+  - Result: passed locally (`23 passed, 0 failed`)
+  - Command: `deno task cesr:build:npm`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/matter.ts`
+  - `packages/cesr/src/primitives/cipher.ts`
+  - `packages/cesr/src/primitives/encrypter.ts`
+  - `packages/cesr/src/primitives/decrypter.ts`
+  - `packages/cesr/src/primitives/streamer.ts`
+  - `packages/cesr/src/primitives/sealed-box.ts`
+  - `packages/cesr/scripts/build_npm.ts`
+  - `docs/ARCHITECTURE_MAP.md`
+- Risks/TODO:
+  - The libsodium-backed sealed-box seam now matches KERIpy behavior in scope,
+    but maintainers should not infer broader HPKE or non-X25519 support from
+    the codex alone.
+  - Future primitive work should keep using `Matter` as the shared
+    variable-family encoding authority instead of letting individual subclasses
+    grow their own size-to-code promotion tables.

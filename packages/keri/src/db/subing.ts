@@ -15,7 +15,6 @@ import {
   t,
   Verfer,
 } from "../../../cesr/mod.ts";
-import { decryptCipherQb64b, encryptSigner } from "../core/keeper-crypto.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -1133,8 +1132,8 @@ export class SignerSuber extends CesrSuberBase<Signer> {
  * - mirrors the role of `CryptSignerSuber` for stores like keeper `pris.`
  *
  * Current `keri-ts` difference:
- * - encrypted signer payloads now use the KERI-local libsodium sealed-box
- *   backend while preserving the KERIpy-facing `Encrypter`/`Decrypter` API
+ * - encrypted signer payloads are now handled directly by CESR
+ *   `Encrypter`/`Decrypter` primitives instead of a keeper-local crypto shim
  *
  * Maintainer model:
  * - callers still interact in terms of logical signer seeds
@@ -1162,13 +1161,13 @@ export class CryptSignerSuber extends SignerSuber {
     encrypter?: Encrypter,
   ): boolean {
     const stored = encrypter && !(val instanceof Cipher)
-      ? encryptSigner(
-        val instanceof Signer || typeof val === "string"
-          || val instanceof Uint8Array
+      ? encrypter.encrypt({
+        prim: val instanceof Signer
           ? val
+          : typeof val === "string" || val instanceof Uint8Array
+          ? new Signer({ qb64b: signerToStored(val) })
           : new Signer({ qb64b: signerToStored(val) }),
-        encrypter,
-      )
+      })
       : val;
     return this.db.putVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
@@ -1185,13 +1184,13 @@ export class CryptSignerSuber extends SignerSuber {
     encrypter?: Encrypter,
   ): boolean {
     const stored = encrypter && !(val instanceof Cipher)
-      ? encryptSigner(
-        val instanceof Signer || typeof val === "string"
-          || val instanceof Uint8Array
+      ? encrypter.encrypt({
+        prim: val instanceof Signer
           ? val
+          : typeof val === "string" || val instanceof Uint8Array
+          ? new Signer({ qb64b: signerToStored(val) })
           : new Signer({ qb64b: signerToStored(val) }),
-        encrypter,
-      )
+      })
       : val;
     return this.db.setVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
@@ -1212,7 +1211,10 @@ export class CryptSignerSuber extends SignerSuber {
     if (val === null) {
       return null;
     }
-    return signerFromStored(this._tokeys(key), decryptCipherQb64b(val, decrypter));
+    return signerFromStored(
+      this._tokeys(key),
+      decrypter.decrypt({ qb64: val, bare: true }) as Uint8Array,
+    );
   }
 
   /**
@@ -1244,7 +1246,10 @@ export class CryptSignerSuber extends SignerSuber {
       yield [
         keyParts,
         decrypter
-          ? signerFromStored(keyParts, decryptCipherQb64b(val, decrypter))
+          ? signerFromStored(
+            keyParts,
+            decrypter.decrypt({ qb64: val, bare: true }) as Uint8Array,
+          )
           : signerFromStored(keyParts, val),
       ];
     }

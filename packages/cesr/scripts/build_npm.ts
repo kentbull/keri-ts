@@ -65,6 +65,9 @@ await build({
       "cesr-annotate": "./esm/src/annotate/cli-node.js",
     },
     files: ["esm", "types", "README.md", "LICENSE"],
+    dependencies: {
+      "libsodium-wrappers": "^0.8.2",
+    },
     engines: {
       node: ">=18",
     },

@@ -61,3 +61,4 @@ Things to come back and do at some point:
 - eventing.ts
 - eventing.test.ts
 - kever-decisions.ts
+- Encrypter/Decrypter, CryptSignerSuber, and Manager integration

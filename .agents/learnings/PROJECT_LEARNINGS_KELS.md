@@ -119,6 +119,10 @@ replay/verification semantics.
     model, not just its return types: `Signer`/`Verfer`/`Salter` own executable
     crypto behavior, while `Manager` owns creator selection, keeper-state
     progression, AEID policy, and replay over stored public-key lots.
+29. Keeper encryption should now be treated the same way: CESR primitives own
+    sealed-box behavior (`Cipher`/`Encrypter`/`Decrypter`), while KERI layers
+    own keeper-state selection, storage, and AEID orchestration. A keeper-local
+    crypto engine is drift, not an architectural seam.
 
 ## Scope Checklist
 
@@ -1266,3 +1270,47 @@ Use this doc for:
   - `scgs.` / `ecigs.` still store `[Verfer, Cigar]` tuples by design, so any
     new runtime load path must remember to rehydrate them into `Cigar.verfer`
     before it hands them to routing or message-assembly code.
+
+### 2026-04-02 - Keeper Encryption Became Primitive-Driven Instead Of Keeper-Local
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/ARCHITECTURE_MAP.md`
+- What changed:
+  - `packages/keri/src/app/keeping.ts` and
+    `packages/keri/src/db/subing.ts` now route signer/salt encryption through
+    CESR `Encrypter` / `Decrypter` / `Cipher` primitives instead of a separate
+    keeper-local crypto implementation.
+  - `packages/keri/src/core/keeper-crypto.ts` was reduced to a thin
+    compatibility wrapper over CESR primitives for the remaining helper-shaped
+    call sites and tests.
+  - `ensureKeeperCryptoReady()` is now a compatibility no-op because sodium
+    readiness is owned by CESR's sealed-box seam rather than by app startup
+    code.
+  - `Manager.decrypt()` and encrypted `CryptSignerSuber` reopen flows now use
+    primitive-owned decrypt logic directly.
+- Why:
+  - KERI should orchestrate keeper state, not own crypto algorithms. Once
+    `Cipher` / `Encrypter` / `Decrypter` became real executable primitives, the
+    old keeper-local crypto layer stopped being a safety seam and became a
+    second source of truth.
+  - This boundary also better matches KERIpy's mental model: higher layers
+    select the right protected payloads, while primitives perform the qualified
+    encryption/decryption behavior.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/db/subing.test.ts packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/app/habbing.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/dispatch.test.ts packages/keri/test/unit/app/reactor.test.ts`
+  - Result: passed locally (`46 passed, 0 failed`)
+  - Command: `deno task fmt:check`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/keri/src/app/keeping.ts`
+  - `packages/keri/src/db/subing.ts`
+  - `packages/keri/src/core/keeper-crypto.ts`
+  - `docs/ARCHITECTURE_MAP.md`
+- Risks/TODO:
+  - `keeper-crypto.ts` still exists as a compatibility wrapper, so maintainers
+    should not add new real crypto behavior there. If a future change needs new
+    sealed-box behavior, it belongs in CESR primitives first.

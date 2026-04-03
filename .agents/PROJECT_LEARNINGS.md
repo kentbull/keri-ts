@@ -453,6 +453,16 @@ This keeps context focused and avoids long-thread drift.
     `scgs.` and `ecigs.` may stay tuple-backed as `[Verfer, Cigar]`, but any
     runtime load path must rehydrate that tuple before routing or message
     rebuild sees it.
+86. Variable-family code promotion is now a cross-topic CESR rule owned by
+    `Matter`, not a one-off quirk to solve separately in `Cipher` or other
+    subclasses. If qualified-material encoding needs to choose the right family
+    member from raw size, that logic belongs in the shared base primitive.
+87. Sealed-box encryption is now primitive-driven across the stack:
+    `Cipher`/`Encrypter`/`Decrypter`/`Streamer` in CESR own the executable
+    behavior, while `Manager`, `CryptSignerSuber`, and related KERI code only
+    decide which payloads to encrypt/decrypt and where to persist them.
+    `packages/keri/src/core/keeper-crypto.ts` is compatibility-only and should
+    not become a second crypto authority again.
 
 ## New Thread Kickoff Template
 

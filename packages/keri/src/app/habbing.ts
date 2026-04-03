@@ -1289,10 +1289,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     if (!usedAeid) usedAeid = derived.aeid;
   }
 
-  // Encrypted keeper opens are sync at the `Manager` surface, so habery
-  // creation explicitly establishes the sodium readiness boundary here before
-  // manager construction. That keeps reopen/init paths honest without pushing
-  // libsodium concerns into CESR imports.
+  // Keep the old startup seam for callers that were explicit about encrypted
+  // keeper readiness, even though CESR primitives now own sodium readiness.
   ensureKeeperCryptoReady();
   const mgr = new Manager({
     ks,

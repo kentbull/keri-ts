@@ -36,6 +36,9 @@ interface MatterData {
   fullSizeB2: number;
 }
 
+const SMALL_VAR_SELECTORS = ["4", "5", "6"] as const;
+const LARGE_VAR_SELECTORS = ["7", "8", "9"] as const;
+
 const MATTER_BARDS = new Map<string, number>(
   [...MATTER_HARDS.entries()].map(([code, hs]) => [
     String.fromCharCode(codeB64ToB2(code)[0]),
@@ -51,6 +54,49 @@ function isMatterData(value: unknown): value is MatterData {
     && "qb64" in value
     && "fullSize" in value
     && "fullSizeB2" in value;
+}
+
+function rawSizeForCode(code: string): number {
+  const sizage = MATTER_SIZES.get(code);
+  if (!sizage || sizage.fs === null) {
+    throw new DeserializeError(`Non-fixed raw size for code ${code}.`);
+  }
+  const cs = sizage.hs + sizage.ss;
+  return Math.floor(((sizage.fs - cs) * 3) / 4) - sizage.ls;
+}
+
+function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
+  const sizage = MATTER_SIZES.get(code);
+  if (!sizage || sizage.fs !== null) {
+    return code;
+  }
+
+  const selector = code[0];
+  const leadSize = (3 - (raw.length % 3)) % 3;
+  const size = (raw.length + leadSize) / 3;
+
+  if (SMALL_VAR_SELECTORS.includes(selector as (typeof SMALL_VAR_SELECTORS)[number])) {
+    if (size <= (64 ** 2) - 1) {
+      return `${SMALL_VAR_SELECTORS[leadSize]}${code.slice(1, 2)}`;
+    }
+    if (size <= (64 ** 4) - 1) {
+      return `${LARGE_VAR_SELECTORS[leadSize]}AA${code.slice(1, 2)}`;
+    }
+    throw new DeserializeError(
+      `Unsupported variable raw size for ${code}: ${raw.length}.`,
+    );
+  }
+
+  if (LARGE_VAR_SELECTORS.includes(selector as (typeof LARGE_VAR_SELECTORS)[number])) {
+    if (size <= (64 ** 4) - 1) {
+      return `${LARGE_VAR_SELECTORS[leadSize]}${code.slice(1, 4)}`;
+    }
+    throw new DeserializeError(
+      `Unsupported variable raw size for large ${code}: ${raw.length}.`,
+    );
+  }
+
+  throw new DeserializeError(`Unsupported variable raw-size family for ${code}.`);
 }
 
 /** Resolve the effective matter code from the text-domain hard-selector prefix. */
@@ -178,6 +224,7 @@ function parseMatterFromBinaryData(input: Uint8Array): MatterData {
 
 /** Exhale raw bytes plus code into fully qualified CESR matter encodings. */
 function encodeMatterFromRaw(code: string, raw: Uint8Array): MatterData {
+  code = normalizeVariableMatterCode(code, raw);
   const sizage = MATTER_SIZES.get(code);
   if (!sizage) {
     throw new UnknownCodeError(`Unknown matter code ${code}`);
@@ -309,6 +356,29 @@ export class Matter {
 
   toString(): string {
     return this._qb64;
+  }
+
+  /** KERIpy parity helper: fixed raw size for one code. */
+  static rawSizeForCode(code: string): number {
+    return rawSizeForCode(code);
+  }
+
+  /** KERIpy parity helper: fixed full qb64 size for one code. */
+  static fullSizeForCode(code: string): number {
+    const sizage = MATTER_SIZES.get(code);
+    if (!sizage || sizage.fs === null) {
+      throw new DeserializeError(`Non-fixed full size for code ${code}.`);
+    }
+    return sizage.fs;
+  }
+
+  /** KERIpy parity helper: lead-byte size for one code. */
+  static leadSizeForCode(code: string): number {
+    const sizage = MATTER_SIZES.get(code);
+    if (!sizage) {
+      throw new UnknownCodeError(`Unknown matter code ${code}`);
+    }
+    return sizage.ls;
   }
 }
 
