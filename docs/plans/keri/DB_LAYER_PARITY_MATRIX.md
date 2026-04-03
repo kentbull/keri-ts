@@ -48,7 +48,7 @@ references, and per-row status values against the code actually present on
 ## Module Symbol Summary
 
 | Module         | Classes | Top-Level Functions | Total Symbols |
-|----------------|--------:|--------------------:|--------------:|
+| -------------- | ------: | ------------------: | ------------: |
 | `dbing.py`     |       1 |                  13 |            14 |
 | `subing.py`    |      30 |                   0 |            30 |
 | `koming.py`    |       4 |                   0 |             4 |
@@ -59,7 +59,7 @@ references, and per-row status values against the code actually present on
 ## Module Symbol Parity Matrix
 
 | Module         | Symbol Type | Symbol              | KERIpy Line | Owner       | KERIpy Path                       | Proposed `keri-ts` File                         | Proposed `keri-ts` Symbol | Phase | Status       | Notes                                                                                                                                                                                           |
-|----------------|-------------|---------------------|------------:|-------------|-----------------------------------|-------------------------------------------------|---------------------------|-------|--------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| -------------- | ----------- | ------------------- | ----------: | ----------- | --------------------------------- | ----------------------------------------------- | ------------------------- | ----- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dbing.py`     | `def`       | `fetchTsgs`         |          70 | `DB-BASER`  | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/core/routing.ts`             | `fetchReplyTsgs`          | `D4`  | `Partial`    | Reply-specific equivalents exist in `routing.ts` and `habbing.ts`, but there is no shared generic DB helper yet.                                                                                |
 | `dbing.py`     | `def`       | `onKey`             |         110 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/keys.ts`             | `onKey`                   | `D1`  | `Partial`    | Implemented in `keys.ts`; return-type parity still differs from KERIpy's str/bytes passthrough model.                                                                                           |
 | `dbing.py`     | `def`       | `snKey`             |         127 | `DB-CORE`   | `keripy/src/keri/db/dbing.py`     | `packages/keri/src/db/core/keys.ts`             | `snKey`                   | `D1`  | `Partial`    | Implemented as an alias to `onKey`; shares the same return-type caveat.                                                                                                                         |
