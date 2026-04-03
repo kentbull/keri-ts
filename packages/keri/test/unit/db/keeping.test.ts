@@ -1,6 +1,6 @@
 import { run } from "effection";
-import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { Cigar, Diger, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertInstanceOf, assertThrows } from "jsr:@std/assert";
+import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
 import { encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
 import { makeDecrypterFromSeed } from "../../../src/core/keeper-crypto.ts";
@@ -96,6 +96,95 @@ Deno.test("app/keeping - Manager.sign preserves overload behavior for indexed an
       assertEquals(indexed[0]?.index, 0);
     } finally {
       yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.incept honors requested current and next signer suites", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({
+      name: `manager-suite-incept-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const manager = new Manager({
+        ks: keeper,
+        salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      });
+      const [verfers, digers] = manager.incept({
+        icount: 1,
+        ncount: 1,
+        icode: MtrDex.ECDSA_256k1_Seed,
+        ncode: MtrDex.ECDSA_256r1_Seed,
+        transferable: true,
+        temp: true,
+      });
+      const currentPub = verfers[0].qb64;
+      const nextPub = [...keeper.pris.getTopItemIter()]
+        .map(([keys]) => keys[0])
+        .find((pub): pub is string =>
+          !!pub && pub !== currentPub
+          && Diger.compare(b(pub), digers[0].code, digers[0].raw)
+        );
+
+      assertEquals(verfers[0].code, MtrDex.ECDSA_256k1);
+      assertEquals(keeper.pris.get(currentPub)?.code, MtrDex.ECDSA_256k1_Seed);
+      assertExists(nextPub);
+      assertEquals(keeper.pris.get(nextPub)?.code, MtrDex.ECDSA_256r1_Seed);
+      assertEquals(digers.length, 1);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - Manager.sign emits suite-correct signatures from stored signer material", async () => {
+  await run(function*() {
+    const suites = [
+      {
+        icode: MtrDex.ECDSA_256k1_Seed,
+        verferCode: MtrDex.ECDSA_256k1,
+        sigerCode: "C",
+        cigarCode: MtrDex.ECDSA_256k1_Sig,
+      },
+      {
+        icode: MtrDex.ECDSA_256r1_Seed,
+        verferCode: MtrDex.ECDSA_256r1,
+        sigerCode: "E",
+        cigarCode: MtrDex.ECDSA_256r1_Sig,
+      },
+    ] as const;
+
+    for (const suite of suites) {
+      const keeper = yield* createKeeper({
+        name: `manager-suite-sign-${suite.icode}-${crypto.randomUUID()}`,
+        temp: true,
+      });
+      try {
+        const manager = new Manager({
+          ks: keeper,
+          salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+        });
+        const [verfers] = manager.incept({
+          icount: 1,
+          ncount: 1,
+          icode: suite.icode,
+          ncode: suite.icode,
+          transferable: true,
+          temp: true,
+        });
+        const ser = new TextEncoder().encode(`suite-sign-${suite.icode}`);
+        const sigers = manager.sign(ser, [verfers[0].qb64], true);
+        const cigars = manager.sign(ser, [verfers[0].qb64], false);
+
+        assertEquals(verfers[0].code, suite.verferCode);
+        assertEquals(sigers[0].code, suite.sigerCode);
+        assertEquals(cigars[0].code, suite.cigarCode);
+        assertEquals(verfers[0].verify(sigers[0].raw, ser), true);
+        assertEquals(verfers[0].verify(cigars[0].raw, ser), true);
+      } finally {
+        yield* keeper.close(true);
+      }
     }
   });
 });

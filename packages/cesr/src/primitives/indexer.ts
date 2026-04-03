@@ -13,6 +13,7 @@ import {
 import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { INDEXER_HARDS, INDEXER_SIZES } from "../tables/indexer.tables.generated.ts";
+import { INDEXED_BOTH_SIG_CODES } from "./codex.ts";
 
 /**
  * Supported initialization forms for Indexer-derived primitives.
@@ -82,7 +83,9 @@ function parseIndexFields(
   const soft = qb64.slice(sizage.hs, cs);
   const ms = sizage.ss - sizage.os;
   const index = ms > 0 ? b64ToInt(soft.slice(0, ms)) : 0;
-  const ondex = sizage.os > 0 ? b64ToInt(soft.slice(ms, sizage.ss)) : undefined;
+  const ondex = sizage.os > 0
+    ? b64ToInt(soft.slice(ms, sizage.ss))
+    : (INDEXED_BOTH_SIG_CODES.has(code) ? index : undefined);
   return { index, ondex };
 }
 
@@ -196,9 +199,19 @@ function encodeIndexerFromRaw(
     throw new DeserializeError(`Invalid index ${index} for ${code}`);
   }
 
-  const ondexValue = sizage.os > 0 ? (ondex ?? index) : undefined;
+  const ondexValue = sizage.os > 0
+    ? (ondex ?? index)
+    : (INDEXED_BOTH_SIG_CODES.has(code) ? index : undefined);
   if (sizage.os > 0 && (ondexValue === undefined || ondexValue < 0)) {
     throw new DeserializeError(`Invalid ondex ${ondexValue} for ${code}`);
+  }
+  if (
+    sizage.os === 0 && INDEXED_BOTH_SIG_CODES.has(code)
+    && typeof ondex === "number" && ondex !== index
+  ) {
+    throw new DeserializeError(
+      `Invalid ondex ${ondex} for both-signature code ${code} with index ${index}`,
+    );
   }
 
   const cs = sizage.hs + sizage.ss;

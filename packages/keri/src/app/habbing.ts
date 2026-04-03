@@ -16,26 +16,19 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
-import type { HabitatRecord } from "../core/records.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { CigarCouple, TransIdxSigGroup } from "../core/dispatch.ts";
+import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import { ValidationError } from "../core/errors.ts";
+import type { HabitatRecord } from "../core/records.ts";
 import { type EndpointRole, EndpointRoles } from "../core/roles.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { Configer, createConfiger } from "./configing.ts";
-import {
-  Algos,
-  branToSaltQb64,
-  ensureKeeperCryptoReady,
-  Manager,
-  normalizeSaltQb64,
-  saltySigner,
-} from "./keeping.ts";
+import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -64,8 +57,10 @@ export interface MakeHabArgs {
   transferable?: boolean;
   isith?: ThresholdSith;
   icount?: number;
+  icode?: string;
   nsith?: ThresholdSith;
   ncount?: number;
+  ncode?: string;
   toad?: number;
   wits?: string[];
   delpre?: string;
@@ -471,8 +466,10 @@ export class Hab {
       transferable = true,
       isith = undefined,
       icount = 1,
+      icode = undefined,
       nsith = undefined,
       ncount = undefined,
+      ncode = undefined,
       toad = 0,
       wits = [],
       delpre = undefined,
@@ -491,18 +488,23 @@ export class Hab {
     if (!transferable) {
       nextCount = 0;
       nextSith = "0";
-      prefixCode = "B";
     }
 
     const [verfers, digers] = this.mgr.incept({
       icount,
       ncount: nextCount,
+      icode,
+      ncode,
       stem: this.ns ? `${this.ns}${this.name}` : this.name,
       transferable,
       algo,
       salt,
       tier,
     });
+
+    if (!transferable && verfers.length === 1) {
+      prefixCode = verfers[0].code;
+    }
 
     const keys = verfers.map((v) => v.qb64);
     const ndigs = digers.map((d) => d.qb64);
@@ -586,7 +588,7 @@ export class Hab {
       throw new Error(`Missing accepted key state for ${this.pre}.`);
     }
     const prefixer = kever.prefixer;
-    if (prefixer.code === "B") {
+    if (!kever.transferable) {
       return buildEndorsedMessage({
         serder,
         cigars: (this.sign(serder.raw, false) as Cigar[]).map((cigar) =>
@@ -619,11 +621,11 @@ export class Hab {
 
   /**
    * Create and sign one reply event with this habitat's current establishment keys.
- *
- * The returned bytes are a complete wire message. Transferable reply
- * attachments are anchored to the habitat's latest accepted establishment
- * event, matching the KERI reply-endorsement model.
- */
+   *
+   * The returned bytes are a complete wire message. Transferable reply
+   * attachments are anchored to the habitat's latest accepted establishment
+   * event, matching the KERI reply-endorsement model.
+   */
   reply(
     route: string,
     data: Record<string, unknown>,
@@ -1239,8 +1241,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     readonly,
   });
 
-  const cf = providedCf ??
-    (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf
+    ?? (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,

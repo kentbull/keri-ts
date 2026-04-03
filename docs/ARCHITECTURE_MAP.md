@@ -66,6 +66,9 @@ internal-only implementation areas so refactors can preserve stable contracts.
 1. Public API (`packages/cesr/src/index.ts`)
 2. Parser orchestration (`core/parser-engine.ts`, parser dispatch)
 3. Primitive parsers + table codex
+   - Signature-suite dispatch belongs here as well:
+     `packages/cesr/src/primitives/signature-suite.ts` is the only place that
+     should import concrete curve implementations for signer/verifier work.
 4. Adapters (`async-iterable`, `effection`) and tooling (`annotate`)
 
 ## Cross-Cutting Concerns
@@ -80,6 +83,9 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - Do not break `deno task kli ...` and `deno task cesr:annotate ...` UX.
 - Keep CESR parser behavior and fixture/test parity stable.
 - Treat `packages/cesr/mod.ts` and app exports as compatibility boundaries.
+- Keep KEL/reply/runtime verification primitive-driven: higher layers should
+  call `Verfer.verify()` or CESR suite helpers, not import `ed25519`,
+  `secp256k1`, or `p256` directly.
 
 ## Ownership Heuristics
 

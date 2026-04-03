@@ -1774,7 +1774,7 @@ export class Kever {
       if (!verfer || verified.has(siger.index)) {
         continue;
       }
-      if (!ed25519.verify(siger.raw, raw, verfer.raw)) {
+      if (!verfer.verify(siger.raw, raw)) {
         continue;
       }
       verified.set(

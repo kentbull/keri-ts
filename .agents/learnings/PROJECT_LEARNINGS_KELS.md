@@ -1066,3 +1066,52 @@ Use this doc for:
     deeper multi-level delegated boss recursion should keep accumulating direct
     tests as more delegated-delegator scenarios become easy to synthesize in
     the harness.
+
+### 2026-04-02 - KEL And Reply Verification Now Use Primitive-Owned Suite Dispatch
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Replaced runtime `ed25519.verify(...)` shortcuts in
+    `packages/keri/src/core/kever.ts` and
+    `packages/keri/src/core/routing.ts` with primitive-owned
+    `verfer.verify(...)` dispatch.
+  - Removed the reply-routing `entry.verfer.code === "B"` gate; accepted reply
+    cigars now depend on the authorizing AID match plus verifier-driven
+    signature validation instead of an Ed25519-only code literal.
+  - Updated `Manager.incept()` to honor `icode` / `ncode`, updated
+    `Manager.sign()` to sign from typed stored `Signer` material, and emit the
+    correct indexed/detached signature code families for Ed25519, secp256k1,
+    and secp256r1.
+  - Fixed `Hab.make()` / `Hab.endorse()` so non-transferable behavior is driven
+    by actual key-state transferability; non-transferable ECDSA identifiers now
+    use the correct non-transferable verifier prefix code instead of the old
+    Ed25519-specific `"B"` assumption.
+  - Added focused KEL/runtime regressions for verifier-attached ECDSA
+    `verifyIndexedSignatures()`, ECDSA prior-next exposure, ECDSA reply cigar
+    acceptance, transferable ECDSA reply signature-group acceptance, mismatched
+    AID rejection, suite-aware manager inception/signing, and non-transferable
+    ECDSA habitat inception.
+- Why:
+  - The old behavior was not merely narrow; it was the wrong abstraction. KEL
+    and reply layers were guessing the crypto suite from local code paths
+    instead of asking the hydrated primitive that actually encoded the suite.
+  - The hidden boundary bug was broader than verification alone: once
+    non-transferable and ECDSA flows become real, hard-coded Ed25519 prefix and
+    signature-code assumptions break local inception and reply endorsement too.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/core/routing.test.ts packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/app/habbing.test.ts`
+  - Result: passed locally (`25 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/keri/src/app/keeping.ts`
+  - `packages/keri/src/app/habbing.ts`
+  - `packages/keri/src/core/kever.ts`
+  - `packages/keri/src/core/routing.ts`
+  - `docs/ARCHITECTURE_MAP.md`
+- Risks/TODO:
+  - `Hab.make()` now accepts `icode` / `ncode`, but wider CLI/user-surface
+    suite selection still needs deliberate product-facing exposure instead of
+    assuming the bootstrap defaults are enough forever.

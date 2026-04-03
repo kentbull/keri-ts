@@ -46,6 +46,7 @@ export * from "./primitives/salter.ts";
 export * from "./primitives/sealer.ts";
 export * from "./primitives/seqner.ts";
 export * from "./primitives/siger.ts";
+export * from "./primitives/signature-suite.ts";
 export * from "./primitives/signer.ts";
 export * from "./primitives/structor.ts";
 export * from "./primitives/tagger.ts";

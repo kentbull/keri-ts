@@ -81,7 +81,7 @@ Maintainer note:
 - this matrix remains the Gate E work-planning summary view
 
 | Producer       | `kin`           | Payload Shape                                 | Consumer                    | Expected Side Effect                     |
-|----------------|-----------------|-----------------------------------------------|-----------------------------|------------------------------------------|
+| -------------- | --------------- | --------------------------------------------- | --------------------------- | ---------------------------------------- |
 | `Kevery`       | `receipt`       | `serder`                                      | `Hab.processCuesIter`       | emits receipt message bytes              |
 | `Kevery`       | `notice`        | `serder`                                      | `Hab.processCuesIter`       | controller-local notice/log side effects |
 | `Kevery`       | `witness`       | `serder`                                      | `Hab.processCuesIter`       | emits witness receipt request bytes      |

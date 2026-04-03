@@ -60,6 +60,15 @@ Deno.test("indexer: raw bytes roundtrip through qb64 constructor", () => {
   assertEquals(rebuilt.raw, src.raw);
 });
 
+Deno.test("indexer: small both-signature codes preserve implicit ondex parity", () => {
+  const parsed = new Indexer({ qb64: KERIPY_INDEXER_VECTORS.ed25519SigIdx5 });
+  const rebuilt = new Indexer({ code: "A", raw: parsed.raw, index: 5 });
+
+  assertEquals(parsed.index, 5);
+  assertEquals(parsed.ondex, 5);
+  assertEquals(rebuilt.ondex, 5);
+});
+
 Deno.test("indexer: rejects invalid inputs", () => {
   assertThrows(
     () => parseIndexerFromText(txt("?AAA")),

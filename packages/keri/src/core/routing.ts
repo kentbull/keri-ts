@@ -1,23 +1,12 @@
-import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
-import {
-  Dater,
-  Diger,
-  Prefixer,
-  SerderKERI,
-  Siger,
-} from "../../../cesr/mod.ts";
+import { Dater, Diger, Prefixer, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
+import { encodeDateTimeToDater } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import {
-  CigarCouple,
-  type DispatchOrdinal,
-  TransIdxSigGroup,
-} from "./dispatch.ts";
+import { CigarCouple, type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isEndpointRole } from "./roles.ts";
-import { encodeDateTimeToDater } from "../time/mod.ts";
 
 /** Return true when a reply signer has usable threshold material for its key set. */
 function hasValidReplyThreshold(
@@ -46,8 +35,8 @@ function sameOrNewerReply(
   if (!oldDater) {
     return true;
   }
-  return new Date(nextDater.iso8601).getTime() >
-    new Date(oldDater.iso8601).getTime();
+  return new Date(nextDater.iso8601).getTime()
+    > new Date(oldDater.iso8601).getTime();
 }
 
 /**
@@ -355,16 +344,13 @@ export class Revery {
     const odater = args.osaider ? this.db.sdts.get([args.osaider.qb64]) : null;
 
     for (const entry of args.cigars ?? []) {
-      if (entry.verfer.code !== "B") {
-        continue;
-      }
       if (entry.verfer.qb64 !== args.aid) {
         continue;
       }
       if (!sameOrNewerReply(dater, odater)) {
         continue;
       }
-      if (!ed25519.verify(entry.cigar.raw, args.serder.raw, entry.verfer.raw)) {
+      if (!entry.verfer.verify(entry.cigar.raw, args.serder.raw)) {
         continue;
       }
 
@@ -387,9 +373,9 @@ export class Revery {
         continue;
       }
       if (
-        oldLead &&
-        (tsg.sn < oldLead.sn ||
-          (tsg.sn === oldLead.sn && !sameOrNewerReply(dater, odater)))
+        oldLead
+        && (tsg.sn < oldLead.sn
+          || (tsg.sn === oldLead.sn && !sameOrNewerReply(dater, odater)))
       ) {
         continue;
       }
@@ -449,10 +435,20 @@ export class Revery {
         if (!verfer || seen.has(siger.index)) {
           continue;
         }
-        if (!ed25519.verify(siger.raw, args.serder.raw, verfer.raw)) {
+        if (!verfer.verify(siger.raw, args.serder.raw)) {
           continue;
         }
-        verified.push(siger);
+        verified.push(
+          new Siger(
+            {
+              code: siger.code,
+              raw: siger.raw,
+              index: siger.index,
+              ondex: siger.ondex,
+            },
+            verfer,
+          ),
+        );
         seen.add(siger.index);
       }
 

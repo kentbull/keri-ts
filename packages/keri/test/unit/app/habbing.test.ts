@@ -113,6 +113,35 @@ Deno.test("Habery inception keeps non-transferable prefix equal to the signing k
   });
 });
 
+Deno.test("Habery inception keeps non-transferable ECDSA prefixes equal to the signing key", async () => {
+  const name = `habery-nontrans-r1-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const hab = hby.makeHab("bob-r1", undefined, {
+        transferable: false,
+        icode: "Q",
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const state = hby.db.getState(hab.pre);
+
+      assertEquals(hab.pre, state?.k?.[0]);
+      assertEquals(hab.pre.startsWith("1AAI"), true);
+      assertEquals(state?.n ?? [], []);
+      assertEquals(state?.b ?? [], []);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("Habery inception honors digestive prefix codex overrides for i", async () => {
   const name = `habery-sha2-prefix-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;

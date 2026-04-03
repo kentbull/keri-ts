@@ -99,3 +99,42 @@ Use this doc for:
   in `primitives/codex.ts` remain documented as semantic blocks instead of
   dozens of redundant one-line comments, while callable/type seams now carry
   direct JSDoc.
+
+### 2026-04-02 - Primitive-Owned Signature Suite Dispatch Landed
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Added `packages/cesr/src/primitives/signature-suite.ts` as the single CESR
+    authority for signer/verifier suite dispatch across Ed25519, secp256k1, and
+    secp256r1.
+  - Added `Verfer.verify(sig, ser)` so higher layers no longer need to inspect
+    verifier codes and import concrete curve implementations themselves.
+  - Fixed `Indexer` parity for small indexed “both” signature codes: when the
+    code family implies `ondex=index`, `keri-ts` now preserves that implicit
+    `ondex` on both construction and parse just like KERIpy.
+  - Added KERIpy fixed-vector verification coverage for secp256k1 and
+    secp256r1 plus direct primitive coverage for verifier-owned suite dispatch.
+- Why:
+  - The earlier design was architecturally backwards: runtime layers were
+    bypassing the primitive that actually knows the suite encoded by CESR
+    material.
+  - The `ondex` fix matters just as much as the new verifier seam, because
+    prior-next exposure depends on that implicit index relationship and fails
+    silently if the primitive drops it.
+- Tests:
+  - Command:
+    `deno test -A --config packages/cesr/deno.json packages/cesr/test/unit/primitives/indexer.test.ts packages/cesr/test/unit/primitives/verfer.test.ts`
+  - Result: passed locally (`11 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/signature-suite.ts`
+  - `packages/cesr/src/primitives/verfer.ts`
+  - `packages/cesr/src/primitives/indexer.ts`
+  - `docs/ARCHITECTURE_MAP.md`
+- Risks/TODO:
+  - The primitive dispatch seam now covers the KERIpy verifier families in
+    scope, but AEID/signator/X25519-adjacent flows remain Ed25519-specific and
+    should stay isolated until that separate crypto boundary is deliberately
+    widened.

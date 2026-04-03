@@ -2,6 +2,7 @@ import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { matterCodexName, VERFER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
+import { verifySignatureByVerferCode } from "./signature-suite.ts";
 
 /**
  * Verification-key primitive.
@@ -25,6 +26,11 @@ export class Verfer extends Matter {
 
   get algorithm(): string {
     return matterCodexName(this.code) ?? "UnknownKey";
+  }
+
+  /** Verify one raw signature against one serialized message via this verifier's suite code. */
+  verify(sig: Uint8Array, ser: Uint8Array): boolean {
+    return verifySignatureByVerferCode(this.code, this.raw, sig, ser);
   }
 }
 

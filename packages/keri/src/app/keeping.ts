@@ -1,21 +1,25 @@
-import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import {
   Cigar,
   decodeB64,
   Decrypter,
+  detachedSignatureCodeForSignerCode,
   Diger,
   Encrypter,
   hydrateMatter,
+  indexedSignatureCodeForSignerCode,
   intToB64,
   NumberPrimitive,
   NumDex,
   parseMatter,
+  publicKeyForSignerCode,
   Saider,
   Salter,
   Siger,
   Signer,
+  signRawForSignerCode,
   Verfer,
+  verferCodeForSignerCode,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
 import {
@@ -62,8 +66,8 @@ export interface ManagerArgs {
  * Controls key-material derivation for `Manager.incept()`.
  *
  * This is the TypeScript bootstrap slice of KERIpy's richer incept options:
- * enough for current salty/non-transferable flows, but not yet the full keeper
- * algorithm matrix.
+ * enough for current salty flows across the supported signing suites, but not
+ * yet the full keeper algorithm matrix.
  */
 export interface ManagerInceptArgs {
   icount?: number;
@@ -144,12 +148,36 @@ export function saltySigner(
   tier: string,
   temp: boolean,
 ): SignerMaterial {
+  return saltySignerForCode(
+    saltQb64,
+    path,
+    "A",
+    transferable,
+    tier,
+    temp,
+  );
+}
+
+/**
+ * Derive a deterministic signer pair for the requested CESR seed-suite code.
+ *
+ * This is the keeper-facing multi-suite salty seam used by managed identifier
+ * inception. The public `saltySigner()` export remains the Ed25519 convenience
+ * for signator and AEID-local flows.
+ */
+function saltySignerForCode(
+  saltQb64: string,
+  path: string,
+  signerCode: string,
+  transferable: boolean,
+  tier: string,
+  temp: boolean,
+): SignerMaterial {
   const seedRaw = deriveSeedFromSalt(saltQb64, path, tier, temp);
-  const signer = new Signer({ code: "A", raw: seedRaw });
-  const pubRaw = ed25519.getPublicKey(seedRaw);
+  const signer = new Signer({ code: signerCode, raw: seedRaw });
   const verfer = new Verfer({
-    code: transferable ? "D" : "B",
-    raw: pubRaw,
+    code: verferCodeForSignerCode(signerCode, transferable),
+    raw: publicKeyForSignerCode(signerCode, seedRaw),
   });
   return { signer, verfer };
 }
@@ -416,6 +444,8 @@ export class Manager {
     const {
       icount = 1,
       ncount = 1,
+      icode = "A",
+      ncode = icode,
       dcode = "E",
       stem = "",
       transferable = true,
@@ -444,9 +474,10 @@ export class Manager {
 
     for (let i = 0; i < icount; i++) {
       const path = `${rootStem}${(0).toString(16)}${i.toString(16)}`;
-      const signer = saltySigner(
+      const signer = saltySignerForCode(
         usedSalt,
         path,
+        icode,
         transferable,
         usedTier,
         temp,
@@ -461,9 +492,10 @@ export class Manager {
 
     for (let i = 0; i < ncount; i++) {
       const path = `${rootStem}${(1).toString(16)}${(icount + i).toString(16)}`;
-      const signer = saltySigner(
+      const signer = saltySignerForCode(
         usedSalt,
         path,
+        ncode,
         transferable,
         usedTier,
         temp,
@@ -578,13 +610,21 @@ export class Manager {
     }
     const sigers: Siger[] = [];
     for (const [idx, pub] of pubs.entries()) {
-      const seedQb64 = this.ks.getPris(pub, this.decrypter ?? undefined);
-      if (!seedQb64) {
+      const signer = this.ks.pris.get(pub, this.decrypter ?? undefined);
+      if (!signer) {
         throw new Error(`Missing prikey in db for pubkey=${pub}`);
       }
-      const seedRaw = parseQb64Raw(seedQb64);
-      const sigRaw = ed25519.sign(ser, seedRaw);
-      sigers.push(new Siger({ code: "A", raw: sigRaw, index: idx }));
+      const sigRaw = signRawForSignerCode(signer.code, signer.raw, ser);
+      sigers.push(
+        new Siger({
+          code: indexedSignatureCodeForSignerCode(signer.code, idx, {
+            ondex: idx,
+          }),
+          raw: sigRaw,
+          index: idx,
+          ondex: idx,
+        }),
+      );
     }
     return sigers;
   }
@@ -603,13 +643,17 @@ export class Manager {
     }
     const cigars: Cigar[] = [];
     for (const pub of pubs) {
-      const seedQb64 = this.ks.getPris(pub, this.decrypter ?? undefined);
-      if (!seedQb64) {
+      const signer = this.ks.pris.get(pub, this.decrypter ?? undefined);
+      if (!signer) {
         throw new Error(`Missing prikey in db for pubkey=${pub}`);
       }
-      const seedRaw = parseQb64Raw(seedQb64);
-      const sigRaw = ed25519.sign(ser, seedRaw);
-      cigars.push(new Cigar({ code: "0B", raw: sigRaw }));
+      const sigRaw = signRawForSignerCode(signer.code, signer.raw, ser);
+      cigars.push(
+        new Cigar({
+          code: detachedSignatureCodeForSignerCode(signer.code),
+          raw: sigRaw,
+        }),
+      );
     }
     return cigars;
   }

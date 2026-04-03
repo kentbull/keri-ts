@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { DigDex, SerderKERI } from "../../../../cesr/mod.ts";
+import { b, DigDex, Diger, SerderKERI, Verfer } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Kever } from "../../../src/core/kever.ts";
 import { createBaser } from "../../../src/db/basing.ts";
@@ -236,6 +236,53 @@ Deno.test("Baser reopen reloads accepted local kevers and prefixes", async () =>
       assertEquals(baser.prefixes.has(pre), true);
     } finally {
       yield* baser.close(true);
+    }
+  });
+});
+
+Deno.test("Kever.verifyIndexedSignatures preserves verifier context for ECDSA prior-next exposures", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kever-ecdsa-exposed-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icode: "J",
+        icount: 1,
+        isith: "1",
+        ncode: "J",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const nextDiger = kever.ndigers[0];
+      assertExists(nextDiger);
+      const nextPub = [...hby.ks.pris.getTopItemIter()]
+        .map(([keys]) => keys[0])
+        .find((pub): pub is string =>
+          !!pub && pub !== kever.verfers[0].qb64
+          && Diger.compare(b(pub), nextDiger.code, nextDiger.raw)
+        );
+      assertExists(nextPub);
+
+      const ser = new TextEncoder().encode("prior-next-exposure");
+      const sigers = hby.mgr.sign(ser, [nextPub], true);
+      const verified = Kever.verifyIndexedSignatures(
+        ser,
+        sigers,
+        [new Verfer({ qb64: nextPub })],
+      );
+
+      assertEquals(verified.sigers.length, 1);
+      assertEquals(verified.sigers[0].verfer?.qb64, nextPub);
+      assertEquals(kever.exposeds(verified.sigers), [0]);
+    } finally {
+      yield* hby.close(true);
     }
   });
 });
