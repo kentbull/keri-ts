@@ -128,14 +128,6 @@ export function signerCodeForVerferCode(verferCode: string): string {
   }
 }
 
-/** Project one verifier code back to transferability semantics. */
-export function transferableForVerferCode(verferCode: string): boolean {
-  assertSupportedVerferCode(verferCode);
-  return verferCode !== MtrDex.Ed25519N
-    && verferCode !== MtrDex.ECDSA_256k1N
-    && verferCode !== MtrDex.ECDSA_256r1N;
-}
-
 /** Derive one raw public verification key from seed bytes and signer-suite code. */
 export function publicKeyForSignerCode(
   signerCode: string,

@@ -2,7 +2,6 @@ import {
   Dater,
   Diger,
   Ilks,
-  NON_TRANSFERABLE_PREFIX_CODES,
   NumberPrimitive,
   Prefixer,
   SerderKERI,
@@ -277,7 +276,7 @@ export class Kever {
 
   /** Whether the current identifier is transferable. */
   get transferable(): boolean {
-    return !NON_TRANSFERABLE_PREFIX_CODES.has(this.prefixer.code);
+    return this.prefixer.transferable;
   }
 
   /**
@@ -1852,9 +1851,7 @@ export class Kever {
 
     const backers = serder.backs.length;
     const nextKeyDigs = serder.ndigs.length;
-    const transferable = !NON_TRANSFERABLE_PREFIX_CODES.has(
-      new Prefixer({ qb64: pre }).code,
-    );
+    const transferable = new Prefixer({ qb64: pre }).transferable;
     if (!hasValidThresholdMaterial(serder.tholder, serder.verfers.length)) {
       return Kever.reject(
         "invalidThreshold",

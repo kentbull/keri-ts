@@ -286,3 +286,57 @@ Use this doc for:
     (`new (...args: any[])`) so this cleanup should not be mistaken for fully
     modeled
     family-specific init signatures.
+
+### 2026-04-03 - `Matter` Reclaimed KERIpy Semantic Ownership
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/ARCHITECTURE_MAP.md`
+- What changed:
+  - Added the missing KERIpy base-material properties to
+    `packages/cesr/src/primitives/matter.ts`:
+    `name`, `hard`, `soft`, `size`, `both`, `transferable`, `digestive`,
+    `prefixive`, `special`, and `composable`.
+  - Renamed the public codex helper export from
+    `NON_TRANSFERABLE_PREFIX_CODES` to `NON_TRANSFERABLE_CODES` so the readable
+    TS surface matches the actual `NonTransDex` semantics instead of implying a
+    narrower prefix-only meaning.
+  - Removed `transferableForVerferCode(...)` from
+    `packages/cesr/src/primitives/signature-suite.ts`; `Verfer` now inherits
+    `transferable` from `Matter` instead of carrying a helper-backed override.
+  - Kept `Signer.transferable` as an intentional explicit override with its own
+    backing field so seed codes do not accidentally inherit generic
+    derivation-code semantics they do not actually encode.
+  - Marked `Tholder.size` as an explicit override because the new
+    `Matter.size` parity property surfaced a real subclass naming overlap.
+- Why:
+  - Fixing `Verfer.transferable` in isolation would have preserved the wrong
+    architecture. In KERIpy these semantics live on `Matter`, not on one
+    crypto primitive or helper module.
+  - The broader sweep also makes the primitive layer more readable: callers can
+    ask the base primitive the same semantic questions KERIpy exposes instead
+    of re-deriving them from codex tables or remembering local helper names.
+  - `Signer` remaining the exception is not drift; it is the honest model.
+    Seed material needs an explicit transferability choice because the seed code
+    alone does not say whether the eventual verifier/prefix should be
+    transferable.
+- Tests:
+  - Command:
+    `deno test -A --config packages/cesr/deno.json packages/cesr/test/unit/primitives/matter.test.ts packages/cesr/test/unit/primitives/codex.test.ts packages/cesr/test/unit/primitives/verfer.test.ts packages/cesr/test/unit/primitives/signer.test.ts`
+  - Result: passed locally (`23 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/matter.ts`
+  - `packages/cesr/src/primitives/codex.ts`
+  - `packages/cesr/src/primitives/verfer.ts`
+  - `packages/cesr/src/primitives/signer.ts`
+  - `packages/cesr/src/primitives/signature-suite.ts`
+  - `packages/cesr/src/primitives/tholder.ts`
+  - `docs/ARCHITECTURE_MAP.md`
+- Risks/TODO:
+  - This is a semantic-surface parity pass, not a full port of Python-only
+    constructor quirks such as `soft=` init or `strip=` parsing behavior.
+  - Future primitive work should keep the rule straight: derivation-code
+    semantics live on `Matter`; executable crypto behavior lives on the
+    concrete primitive such as `Signer` or `Verfer`.

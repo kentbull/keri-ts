@@ -463,6 +463,14 @@ This keeps context focused and avoids long-thread drift.
     decide which payloads to encrypt/decrypt and where to persist them.
     `packages/keri/src/core/keeper-crypto.ts` is compatibility-only and should
     not become a second crypto authority again.
+88. KERIpy-style derivation-code semantics now belong on `Matter` in
+    `keri-ts`, not in verifier-local helpers: `Matter` owns `name`, `hard`,
+    `soft`, `size`, `both`, `transferable`, `digestive`, `prefixive`,
+    `special`, and `composable`; `Verfer` inherits those semantics while
+    `Signer.transferable` remains the deliberate override because seed codes do
+    not encode transferability. Higher layers should prefer hydrated primitive
+    properties such as `prefixer.transferable` over codex-set checks whenever
+    they already hold the semantic primitive.
 
 ## New Thread Kickoff Template
 

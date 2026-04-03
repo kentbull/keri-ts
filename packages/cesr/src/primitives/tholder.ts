@@ -659,7 +659,7 @@ export class Tholder extends Matter {
    * For nested groups this counts nested members, because those are the real
    * contiguous signer slots upper layers index into.
    */
-  get size(): number {
+  override get size(): number {
     return this._size;
   }
 

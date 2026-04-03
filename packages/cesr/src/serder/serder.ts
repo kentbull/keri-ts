@@ -10,7 +10,7 @@ import {
   DigDex,
   DIGEST_CODES,
   NON_DIGEST_PREFIX_CODES,
-  NON_TRANSFERABLE_PREFIX_CODES,
+  NON_TRANSFERABLE_CODES,
   PREFIX_CODES,
 } from "../primitives/codex.ts";
 import { Compactor } from "../primitives/compactor.ts";
@@ -1699,7 +1699,7 @@ export class SerderKERI extends Serder {
           }
         }
 
-        if (NON_TRANSFERABLE_PREFIX_CODES.has(code)) {
+        if (NON_TRANSFERABLE_CODES.has(code)) {
           if (this.ndigs.length > 0) {
             throw new DeserializeError(
               `Non-transferable prefix ${code} requires empty nxt digests.`,

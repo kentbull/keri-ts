@@ -1314,3 +1314,42 @@ Use this doc for:
   - `keeper-crypto.ts` still exists as a compatibility wrapper, so maintainers
     should not add new real crypto behavior there. If a future change needs new
     sealed-box behavior, it belongs in CESR primitives first.
+
+### 2026-04-03 - KEL Transferability Checks Now Follow `Matter` Semantics
+
+- Topic docs updated:
+  - `.agents/PROJECT_LEARNINGS.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+  - `docs/ARCHITECTURE_MAP.md`
+- What changed:
+  - Updated `packages/keri/src/core/kever.ts` so live transferability checks use
+    hydrated primitive semantics via `prefixer.transferable` instead of
+    repeating codex membership logic locally.
+  - Updated `packages/cesr/src/serder/serder.ts` so code-only validation paths
+    use the renamed `NON_TRANSFERABLE_CODES` helper when a hydrated semantic
+    primitive does not yet exist.
+  - Left keeper/subdb rehydration behavior unchanged in substance, but
+    `verfer.transferable` is now inherited from `Matter` rather than coming
+    from a verifier-local helper seam.
+- Why:
+  - The old split encouraged higher layers to guess protocol semantics from
+    codex helpers even when they already had the real semantic primitive in
+    hand. That was readable enough for bootstrap work, but it is the wrong
+    long-term parity model.
+  - KEL code should only fall back to codex-set checks when it truly only has a
+    raw derivation code. Once the code is hydrated into a `Prefixer` or
+    `Verfer`, the primitive should answer the semantic question directly.
+- Tests:
+  - Command:
+    `deno test -A --config packages/keri/deno.json packages/keri/test/unit/db/subing.test.ts packages/keri/test/unit/db/keeping.test.ts packages/keri/test/unit/core/kever.test.ts packages/keri/test/unit/core/eventing.test.ts`
+  - Result: passed locally (`45 passed, 0 failed`)
+- Contracts/plans touched:
+  - `packages/keri/src/core/kever.ts`
+  - `packages/cesr/src/serder/serder.ts`
+  - `packages/keri/src/db/subing.ts`
+- Risks/TODO:
+  - The code-only `NON_TRANSFERABLE_CODES` helper is still needed for parse-time
+    validation, so maintainers should not misread this cleanup as “all codex
+    sets are bad.” The actual rule is narrower: prefer primitive semantics when
+    the semantic primitive already exists.

@@ -40,6 +40,8 @@ Deno.test("signer: derives transferable and non-transferable verfers from the sa
     transferable: false,
   });
 
+  assertEquals(transferable.transferable, true);
+  assertEquals(nonTransferable.transferable, false);
   assertEquals(transferable.verfer.code, MtrDex.Ed25519);
   assertEquals(nonTransferable.verfer.code, MtrDex.Ed25519N);
   assertEquals(transferable.verfer.qb64 === nonTransferable.verfer.qb64, false);

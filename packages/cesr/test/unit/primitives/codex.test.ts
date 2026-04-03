@@ -35,7 +35,7 @@ import {
   isAttLabel,
   LABELER_CODES,
   NON_DIGEST_PREFIX_CODES,
-  NON_TRANSFERABLE_PREFIX_CODES,
+  NON_TRANSFERABLE_CODES,
   NONCE_CODES,
   NUMBER_CODES,
   PREFIX_CODES,
@@ -87,7 +87,7 @@ Deno.test("codex: derived readability sets match canonical codex membership", ()
   assertEquals([...TAG_CODES].sort(), codesOf(TagDex));
   assertEquals([...LABELER_CODES].sort(), codesOf(LabelDex));
   assertEquals([...PREFIX_CODES].sort(), codesOf(PreDex));
-  assertEquals([...NON_TRANSFERABLE_PREFIX_CODES].sort(), codesOf(NonTransDex));
+  assertEquals([...NON_TRANSFERABLE_CODES].sort(), codesOf(NonTransDex));
   assertEquals([...NON_DIGEST_PREFIX_CODES].sort(), codesOf(PreNonDigDex));
   assertEquals([...INDEXER_CODES].sort(), codesOf(IdrDex));
   assertEquals([...INDEXED_SIG_CODES].sort(), codesOf(IdxSigDex));

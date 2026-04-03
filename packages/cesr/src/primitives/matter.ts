@@ -1,6 +1,7 @@
 import {
   b,
   b64ToInt,
+  bytesEqual,
   codeB2ToB64,
   codeB64ToB2,
   concatBytes,
@@ -12,7 +13,8 @@ import {
 } from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_HARDS, MATTER_SIZES } from "../tables/matter.tables.generated.ts";
+import { MATTER_CODE_NAMES, MATTER_HARDS, MATTER_SIZES } from "../tables/matter.tables.generated.ts";
+import { DIGEST_CODES, NON_TRANSFERABLE_CODES, PREFIX_CODES } from "./codex.ts";
 
 /**
  * Supported initialization forms for Matter-derived primitives.
@@ -38,6 +40,8 @@ interface MatterData {
 
 const SMALL_VAR_SELECTORS = ["4", "5", "6"] as const;
 const LARGE_VAR_SELECTORS = ["7", "8", "9"] as const;
+const MATTER_PAD = "_";
+const MATTER_CODE_NAMES_BY_CODE = MATTER_CODE_NAMES as Record<string, string>;
 
 const MATTER_BARDS = new Map<string, number>(
   [...MATTER_HARDS.entries()].map(([code, hs]) => [
@@ -57,12 +61,28 @@ function isMatterData(value: unknown): value is MatterData {
 }
 
 function rawSizeForCode(code: string): number {
-  const sizage = MATTER_SIZES.get(code);
-  if (!sizage || sizage.fs === null) {
+  const sizage = sizageForCode(code);
+  if (sizage.fs === null) {
     throw new DeserializeError(`Non-fixed raw size for code ${code}.`);
   }
   const cs = sizage.hs + sizage.ss;
   return Math.floor(((sizage.fs - cs) * 3) / 4) - sizage.ls;
+}
+
+function sizageForCode(code: string) {
+  const sizage = MATTER_SIZES.get(code);
+  if (!sizage) {
+    throw new UnknownCodeError(`Unknown matter code ${code}`);
+  }
+  return sizage;
+}
+
+function matterNameForCode(code: string): string {
+  const name = MATTER_CODE_NAMES_BY_CODE[code];
+  if (!name) {
+    throw new UnknownCodeError(`Unknown matter code ${code}`);
+  }
+  return name;
 }
 
 function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
@@ -289,7 +309,8 @@ function parseMatterInit(init: MatterInit): MatterData {
  * Base CESR primitive carrying qualified matter material.
  *
  * KERIpy substance: `Matter` is the foundational primitive abstraction that
- * handles exfil/infil between raw bytes and qualified CESR encodings.
+ * handles exfil/infil between raw bytes and qualified CESR encodings and owns
+ * the base derivation-code semantic projections shared by semantic subclasses.
  */
 export class Matter {
   protected readonly _code: string;
@@ -326,6 +347,41 @@ export class Matter {
     return this._code;
   }
 
+  /** KERIpy parity alias: codex member name for this derivation code. */
+  get name(): string {
+    return matterNameForCode(this._code);
+  }
+
+  /** KERIpy parity alias: hard code portion of the qualified text code. */
+  get hard(): string {
+    return this._code;
+  }
+
+  /** Soft code portion exclusive of any prepad xtra characters. */
+  get soft(): string {
+    const sizage = sizageForCode(this._code);
+    if (sizage.ss === 0) {
+      return "";
+    }
+    return this._qb64.slice(sizage.hs + sizage.xs, sizage.hs + sizage.ss);
+  }
+
+  /**
+   * KERIpy parity size projection.
+   *
+   * This follows KERIpy's generic `Matter.size` rule: decode the soft sextets
+   * when present, otherwise return `null`.
+   */
+  get size(): number | null {
+    return this.soft ? b64ToInt(this.soft) : null;
+  }
+
+  /** Hard + padded-soft view of the full text code. */
+  get both(): string {
+    const sizage = sizageForCode(this._code);
+    return `${this._code}${MATTER_PAD.repeat(sizage.xs)}${this.soft}`;
+  }
+
   get raw(): Uint8Array {
     return this._raw;
   }
@@ -350,6 +406,36 @@ export class Matter {
     return this._fullSizeB2;
   }
 
+  /** Generic KERIpy derivation-code transferability rule. */
+  get transferable(): boolean {
+    return !NON_TRANSFERABLE_CODES.has(this._code);
+  }
+
+  /** Generic KERIpy digest-family semantic projection. */
+  get digestive(): boolean {
+    return DIGEST_CODES.has(this._code);
+  }
+
+  /** Generic KERIpy identifier-prefix semantic projection. */
+  get prefixive(): boolean {
+    return PREFIX_CODES.has(this._code);
+  }
+
+  /** True when the code family carries fixed-size soft text metadata. */
+  get special(): boolean {
+    const sizage = sizageForCode(this._code);
+    return sizage.fs !== null && sizage.ss > 0;
+  }
+
+  /** True when both qb64 and qb2 are 24-bit aligned and round-trip exactly. */
+  get composable(): boolean {
+    const qb2 = this.qb2;
+    return this.qb64b.length % 4 === 0
+      && qb2.length % 3 === 0
+      && encodeB64(qb2) === this.qb64
+      && bytesEqual(decodeB64(this.qb64), qb2);
+  }
+
   equals(other: { qb64: string }): boolean {
     return this._qb64 === other.qb64;
   }
@@ -365,8 +451,8 @@ export class Matter {
 
   /** KERIpy parity helper: fixed full qb64 size for one code. */
   static fullSizeForCode(code: string): number {
-    const sizage = MATTER_SIZES.get(code);
-    if (!sizage || sizage.fs === null) {
+    const sizage = sizageForCode(code);
+    if (sizage.fs === null) {
       throw new DeserializeError(`Non-fixed full size for code ${code}.`);
     }
     return sizage.fs;
@@ -374,11 +460,7 @@ export class Matter {
 
   /** KERIpy parity helper: lead-byte size for one code. */
   static leadSizeForCode(code: string): number {
-    const sizage = MATTER_SIZES.get(code);
-    if (!sizage) {
-      throw new UnknownCodeError(`Unknown matter code ${code}`);
-    }
-    return sizage.ls;
+    return sizageForCode(code).ls;
   }
 }
 

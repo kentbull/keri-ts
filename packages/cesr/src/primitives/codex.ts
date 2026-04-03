@@ -82,7 +82,7 @@ export const NUMBER_CODES = codexValues(NumDex);
 export const TAG_CODES = codexValues(TagDex);
 export const LABELER_CODES = codexValues(LabelDex);
 export const PREFIX_CODES = codexValues(PreDex);
-export const NON_TRANSFERABLE_PREFIX_CODES = codexValues(NonTransDex);
+export const NON_TRANSFERABLE_CODES = codexValues(NonTransDex);
 export const NON_DIGEST_PREFIX_CODES = codexValues(PreNonDigDex);
 export const ESCAPE_CODES = codexValues(EscapeDex);
 

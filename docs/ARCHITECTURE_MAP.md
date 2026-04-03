@@ -79,6 +79,10 @@ internal-only implementation areas so refactors can preserve stable contracts.
      should import concrete curve implementations for signer/verifier work.
    - Variable-family size/code promotion belongs in the shared `Matter`
      encoding/parsing layer, not in ad hoc subclass-local normalization logic.
+   - Base derivation-code semantics such as `transferable`, `digestive`,
+     `prefixive`, `special`, and `composable` belong on `Matter`; do not hide
+     them in verifier-local helpers. `Signer.transferable` is the intentional
+     exception because seed codes do not encode transferability on their own.
 4. Adapters (`async-iterable`, `effection`) and tooling (`annotate`)
 
 ## Cross-Cutting Concerns

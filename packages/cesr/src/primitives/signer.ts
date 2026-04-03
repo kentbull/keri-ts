@@ -32,9 +32,10 @@ function resolveTransferable(init: Matter | SignerInit): boolean {
   if (init instanceof Signer) {
     return init.transferable;
   }
-  return "transferable" in init && typeof init.transferable === "boolean"
-    ? init.transferable
-    : true;
+  if (init instanceof Matter) {
+    return true;
+  }
+  return typeof init.transferable === "boolean" ? init.transferable : true;
 }
 
 /**
@@ -44,7 +45,7 @@ function resolveTransferable(init: Matter | SignerInit): boolean {
  * verifier, and owns suite-driven signature creation.
  */
 export class Signer extends Matter {
-  readonly transferable: boolean;
+  private readonly _transferable: boolean;
   readonly verfer: Verfer;
 
   constructor(init: Matter | SignerInit) {
@@ -54,11 +55,21 @@ export class Signer extends Matter {
         `Expected signer seed code, got ${this.code}`,
       );
     }
-    this.transferable = resolveTransferable(init);
+    this._transferable = resolveTransferable(init);
     this.verfer = new Verfer({
       code: verferCodeForSignerCode(this.code, this.transferable),
       raw: publicKeyForSignerCode(this.code, this.raw),
     });
+  }
+
+  /**
+   * Explicit signer transferability override.
+   *
+   * Seed codes do not encode transferability, so `Signer` intentionally does
+   * not inherit the generic `Matter.transferable` rule.
+   */
+  override get transferable(): boolean {
+    return this._transferable;
   }
 
   /** Raw seed bytes for signer key-derivation/instantiation. */

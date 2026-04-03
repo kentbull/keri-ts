@@ -1,8 +1,10 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { codeB64ToB2, decodeB64 } from "../../../src/core/bytes.ts";
+import { b64ToInt, codeB64ToB2, decodeB64 } from "../../../src/core/bytes.ts";
 import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { MtrDex } from "../../../src/primitives/codex.ts";
 import { Matter, parseMatter, parseMatterFromBinary, parseMatterFromText } from "../../../src/primitives/matter.ts";
+import { Prefixer } from "../../../src/primitives/prefixer.ts";
+import { Verfer } from "../../../src/primitives/verfer.ts";
 import { token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { assertQb64Qb2Parity, assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
@@ -48,6 +50,34 @@ Deno.test("matter: normalizes variable-family codes from raw size like KERIpy", 
     new Matter({ raw: new Uint8Array(12696), code: MtrDex.StrB64_L0 }).code,
     MtrDex.StrB64_Big_L0,
   );
+});
+
+Deno.test("matter: exposes KERIpy semantic/readability projections", () => {
+  const special = new Matter({ qb64: KERIPY_MATTER_VECTORS.labelerI });
+  const digest = new Matter({ qb64: KERIPY_MATTER_VECTORS.digerBlake3 });
+  const variable = new Matter({ qb64: KERIPY_MATTER_VECTORS.texterSimple });
+  const prefixer = new Prefixer({ qb64: KERIPY_MATTER_VECTORS.prefixerEd25519N });
+  const verfer = new Verfer({ qb64: KERIPY_MATTER_VECTORS.verferEcdsaR1 });
+
+  assertEquals(special.name, "Tag1");
+  assertEquals(special.hard, "0J");
+  assertEquals(special.soft, "i");
+  assertEquals(special.size, b64ToInt("i"));
+  assertEquals(special.both, "0J_i");
+  assertEquals(special.special, true);
+  assertEquals(special.composable, true);
+
+  assertEquals(variable.soft, "AB");
+  assertEquals(variable.size, 1);
+  assertEquals(variable.both, "4BAB");
+  assertEquals(variable.special, false);
+
+  assertEquals(digest.digestive, true);
+  assertEquals(digest.prefixive, true);
+  assertEquals(digest.transferable, true);
+  assertEquals(prefixer.prefixive, true);
+  assertEquals(prefixer.transferable, false);
+  assertEquals(verfer.transferable, true);
 });
 
 Deno.test("matter: parses fixed-size token and trims trailing bytes", () => {
