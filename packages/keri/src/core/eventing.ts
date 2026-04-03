@@ -3,17 +3,13 @@ import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import {
-  type DispatchOrdinal,
-  SourceSealCouple,
-  type KeriDispatchEnvelope,
-} from "./dispatch.ts";
+import { type DispatchOrdinal, type KeriDispatchEnvelope, SourceSealCouple } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import {
-  type EscrowKind,
   type EscrowInstruction,
-  type KeverDecision,
+  type EscrowKind,
   type KELEventState,
+  type KeverDecision,
   type KeverTransition,
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";

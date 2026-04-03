@@ -1,26 +1,18 @@
 import { run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { EndpointRoles } from "../../../src/core/roles.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
-import { startServer } from "../../../src/app/server.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
-import {
-  oobiGenerateCommand,
-  oobiResolveCommand,
-} from "../../../src/app/cli/oobi.ts";
-import {
-  fetchOp,
-  textOp,
-  waitForServer,
-  waitForTaskHalt,
-} from "../../effection-http.ts";
+import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
+import { startServer } from "../../../src/app/server.ts";
+import { EndpointRoles } from "../../../src/core/roles.ts";
+import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 Deno.test("Gate E - ends add command persists mailbox role through runtime path", async () => {

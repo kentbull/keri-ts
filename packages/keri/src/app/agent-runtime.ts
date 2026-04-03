@@ -1,14 +1,11 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
-import { Deck } from "../core/deck.ts";
 import type { AgentCue } from "../core/cues.ts";
-import type {
-  KeriDispatchEnvelope,
-  TransIdxSigGroup,
-} from "../core/dispatch.ts";
-import type { Hab, Habery } from "./habbing.ts";
+import { Deck } from "../core/deck.ts";
+import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
-import { Reactor } from "./reactor.ts";
+import type { Hab, Habery } from "./habbing.ts";
 import { Oobiery, type OobiJob } from "./oobiery.ts";
+import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 /**
@@ -158,16 +155,16 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<never> {
   const tasks = [
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* cueDo(runtime, options);
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();
     }),
   ];

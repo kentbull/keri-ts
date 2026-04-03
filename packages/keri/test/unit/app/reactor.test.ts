@@ -1,12 +1,12 @@
 import { run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { EndpointRoles } from "../../../src/core/roles.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { EndpointRoles } from "../../../src/core/roles.ts";
 
 Deno.test("app/reactor - reply parsing normalizes transferable groups into dispatch value objects", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-${crypto.randomUUID()}`,
       temp: true,

@@ -1,4 +1,4 @@
-import type { Dater, Siger, SerderKERI } from "../../../cesr/mod.ts";
+import type { Dater, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
 import type { KeyStateRecord } from "./records.ts";
 

@@ -29,10 +29,7 @@ import type { GroupEntry } from "../primitives/primitive.ts";
 import { isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Texter } from "../primitives/texter.ts";
-import {
-  type ThresholdSith,
-  Tholder,
-} from "../primitives/tholder.ts";
+import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
 import { parseTraitor } from "../primitives/traitor.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";

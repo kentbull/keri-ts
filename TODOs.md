@@ -35,10 +35,11 @@ Things to come back and do at some point:
   need to mimic there, if at all.
 
 ## Missing
+
 - mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow
 
-
 ## Review Queue
+
 - endpoint add
 - endpoint generate
 - reply message generate
@@ -56,4 +57,4 @@ Things to come back and do at some point:
   - update
   - logEvent
   - validateSignatures
-  - 
+  -

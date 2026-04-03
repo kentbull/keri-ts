@@ -7,8 +7,8 @@ import type {
   NumberPrimitive,
   Prefixer,
   Siger,
-  ThresholdSith,
   Texter,
+  ThresholdSith,
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";

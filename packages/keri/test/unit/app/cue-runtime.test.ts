@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { processCuesOnce, type CueSink } from "../../../src/app/cue-runtime.ts";
+import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 
 Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and transport cues", async () => {

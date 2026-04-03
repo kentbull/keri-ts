@@ -1,15 +1,10 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { EndpointRoles } from "../../core/roles.ts";
 import { consoleLogger } from "../../core/logger.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-  runAgentRuntime,
-} from "../agent-runtime.ts";
-import { setupHby } from "./common/existing.ts";
+import { EndpointRoles } from "../../core/roles.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn, runAgentRuntime } from "../agent-runtime.ts";
 import { startServer } from "../server.ts";
+import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for the long-lived `tufa agent` host command. */
 interface AgentArgs {

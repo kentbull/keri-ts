@@ -3,8 +3,8 @@
  *
  * This module provides application-level functionality including CLI and server.
  */
-export * from "./cli/index.ts";
 export * from "./agent-runtime.ts";
+export * from "./cli/index.ts";
 export * from "./configing.ts";
 export * from "./cue-runtime.ts";
 export * from "./habbing.ts";

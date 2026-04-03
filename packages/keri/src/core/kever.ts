@@ -1,4 +1,3 @@
-import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import {
   Dater,
   Diger,
@@ -14,22 +13,17 @@ import type { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import {
-  DispatchOrdinal,
-  FirstSeenReplayCouple,
-  SourceSealCouple,
-  SourceSealTriple,
-} from "./dispatch.ts";
+import { DispatchOrdinal, FirstSeenReplayCouple, SourceSealCouple, SourceSealTriple } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import type {
-  AttachmentEscrow,
   AttachmentDecision,
+  AttachmentEscrow,
   AttachmentReject,
   EscrowKind,
+  KELEventState,
   KeverDecision,
   KeverEscrow,
   KeverReject,
-  KELEventState,
   KeverTransition,
   RejectKind,
 } from "./kever-decisions.ts";
@@ -1138,9 +1132,9 @@ export class Kever {
     // leak into a more permissive partial-signature or partial-delegation
     // class.
     if (
-      !input.local &&
-      (this.locallyOwned() || this.locallyWitnessed({ wits: [...input.wits] }) ||
-        this.locallyDelegated(delpre))
+      !input.local
+      && (this.locallyOwned() || this.locallyWitnessed({ wits: [...input.wits] })
+        || this.locallyDelegated(delpre))
     ) {
       return this.makeAttachmentEscrowDecision(
         "misfit",
@@ -1162,9 +1156,9 @@ export class Kever {
     // Establishment rotations must also satisfy the prior-next threshold
     // exposed by the newly current signatures against the prior digest list.
     if (
-      input.isEstablishment &&
-      this.ntholder &&
-      (input.serder.ilk === "rot" || input.serder.ilk === "drt")
+      input.isEstablishment
+      && this.ntholder
+      && (input.serder.ilk === "rot" || input.serder.ilk === "drt")
     ) {
       const ondices = this.exposeds(verified.sigers);
       if (!this.ntholder.satisfy(ondices)) {
@@ -1273,7 +1267,7 @@ export class Kever {
    *   delegating event wins, a delegating rotation may supersede a delegating
    *   `ixn` at the same sequence number, and otherwise the comparison climbs
    *   recursively through the delegator's own delegation chain
-    */
+   */
   private validateDelegation(
     input: AttachmentValidationInput & {
       delpre: string | null;
@@ -1300,9 +1294,9 @@ export class Kever {
     // delegation proof because their local acceptance is what drives later
     // witness and approval processing.
     if (
-      this.locallyOwned() ||
-      this.locallyMembered() ||
-      this.locallyWitnessed({ wits: [...input.wits] })
+      this.locallyOwned()
+      || this.locallyMembered()
+      || this.locallyWitnessed({ wits: [...input.wits] })
     ) {
       return {
         kind: "verified",
@@ -1343,10 +1337,10 @@ export class Kever {
     // partial-delegation case. It is specifically waiting for local
     // out-of-band approval to be attached and reprocessed.
     if (
-      (input.serder.ilk === "dip" || input.serder.ilk === "drt") &&
-      this.locallyDelegated(delpre) &&
-      !this.locallyOwned() &&
-      !input.sourceSeal
+      (input.serder.ilk === "dip" || input.serder.ilk === "drt")
+      && this.locallyDelegated(delpre)
+      && !this.locallyOwned()
+      && !input.sourceSeal
     ) {
       return this.makeAttachmentEscrowDecision(
         "delegables",
@@ -1384,10 +1378,10 @@ export class Kever {
     // problem, an in-order delegated rotation is fine once anchored, and a
     // same-sn `drt` may directly supersede an `ixn` head state.
     if (
-      input.serder.ilk !== "drt" ||
-      input.serder.sn === null ||
-      input.serder.sn === this.sn + 1 ||
-      (input.serder.sn === this.sn && this.ilk === "ixn")
+      input.serder.ilk !== "drt"
+      || input.serder.sn === null
+      || input.serder.sn === this.sn + 1
+      || (input.serder.sn === this.sn && this.ilk === "ixn")
     ) {
       return {
         kind: "verified",
@@ -1516,9 +1510,9 @@ export class Kever {
       const candidateBossIlk = candidateBoss.serder.ilk;
       const originalBossIlk = originalBoss.serder.ilk;
       if (
-        candidateBossSn === originalBossSn &&
-        (candidateBossIlk === "rot" || candidateBossIlk === "drt") &&
-        originalBossIlk === "ixn"
+        candidateBossSn === originalBossSn
+        && (candidateBossIlk === "rot" || candidateBossIlk === "drt")
+        && originalBossIlk === "ixn"
       ) {
         return null;
       }
@@ -1529,7 +1523,9 @@ export class Kever {
         }
         return Kever.rejectAttachment(
           "invalidDelegation",
-          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} does not supersede accepted event ${originalEvent.said ?? "<unknown>"}.`,
+          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} does not supersede accepted event ${
+            originalEvent.said ?? "<unknown>"
+          }.`,
         );
       }
 
@@ -1538,13 +1534,17 @@ export class Kever {
       if (!upstreamDelpre || !originalUpstreamDelpre) {
         return Kever.rejectAttachment(
           "invalidDelegation",
-          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} is not later than the accepted delegation chain rooted at ${currentDelpre}.`,
+          `Delegated recovery ${
+            candidateEvent.said ?? "<unknown>"
+          } is not later than the accepted delegation chain rooted at ${currentDelpre}.`,
         );
       }
       if (upstreamDelpre !== originalUpstreamDelpre) {
         return Kever.rejectAttachment(
           "invalidDelegation",
-          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} diverges across delegator chains ${upstreamDelpre} and ${originalUpstreamDelpre}.`,
+          `Delegated recovery ${
+            candidateEvent.said ?? "<unknown>"
+          } diverges across delegator chains ${upstreamDelpre} and ${originalUpstreamDelpre}.`,
         );
       }
 
@@ -1742,14 +1742,14 @@ export class Kever {
   private eventAnchorSealIndex(candidate: SerderKERI, serder: SerderKERI): number {
     for (const [index, seal] of candidate.seals.entries()) {
       if (
-        typeof seal === "object" &&
-        seal !== null &&
-        "i" in seal &&
-        "s" in seal &&
-        "d" in seal &&
-        seal.i === serder.pre &&
-        seal.s === serder.snh &&
-        seal.d === serder.said
+        typeof seal === "object"
+        && seal !== null
+        && "i" in seal
+        && "s" in seal
+        && "d" in seal
+        && seal.i === serder.pre
+        && seal.s === serder.snh
+        && seal.d === serder.said
       ) {
         return index;
       }
@@ -2139,9 +2139,7 @@ function numberPrimitiveFromBigInt(value: bigint): NumberPrimitive {
     bytes.reverse();
     return new Uint8Array(bytes);
   })();
-  const entry = THOLDER_NUMERIC_CAPACITIES.find(({ rawSize }) =>
-    raw.length <= rawSize
-  );
+  const entry = THOLDER_NUMERIC_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
   if (!entry) {
     throw new ValidationError(`Unsupported numeric threshold width for value=${value.toString(16)}.`);
   }

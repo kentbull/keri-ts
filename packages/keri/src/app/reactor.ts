@@ -297,10 +297,10 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, siger] = item;
         if (
-          !isQualifiedPrimitive(prefixer) ||
-          !isQualifiedPrimitive(seqner) ||
-          !isQualifiedPrimitive(diger) ||
-          !isQualifiedPrimitive(siger)
+          !isQualifiedPrimitive(prefixer)
+          || !isQualifiedPrimitive(seqner)
+          || !isQualifiedPrimitive(diger)
+          || !isQualifiedPrimitive(siger)
         ) {
           continue;
         }
@@ -322,9 +322,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, sigers] = item;
         if (
-          !isQualifiedPrimitive(prefixer) ||
-          !isQualifiedPrimitive(seqner) ||
-          !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer)
+          || !isQualifiedPrimitive(seqner)
+          || !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -392,9 +392,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger] = item;
         if (
-          !isQualifiedPrimitive(prefixer) ||
-          !isQualifiedPrimitive(seqner) ||
-          !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer)
+          || !isQualifiedPrimitive(seqner)
+          || !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -443,10 +443,10 @@ function normalizeAttachmentGroup(
         }
         const [diger, noncer, acdcer, stater] = item;
         if (
-          !isQualifiedPrimitive(diger) ||
-          !isQualifiedPrimitive(noncer) ||
-          !isQualifiedPrimitive(acdcer) ||
-          !isQualifiedPrimitive(stater)
+          !isQualifiedPrimitive(diger)
+          || !isQualifiedPrimitive(noncer)
+          || !isQualifiedPrimitive(acdcer)
+          || !isQualifiedPrimitive(stater)
         ) {
           continue;
         }
@@ -468,12 +468,12 @@ function normalizeAttachmentGroup(
         }
         const [diger, noncer, acdcer, stater, number, eventer] = item;
         if (
-          !isQualifiedPrimitive(diger) ||
-          !isQualifiedPrimitive(noncer) ||
-          !isQualifiedPrimitive(acdcer) ||
-          !isQualifiedPrimitive(stater) ||
-          !isQualifiedPrimitive(number) ||
-          !isQualifiedPrimitive(eventer)
+          !isQualifiedPrimitive(diger)
+          || !isQualifiedPrimitive(noncer)
+          || !isQualifiedPrimitive(acdcer)
+          || !isQualifiedPrimitive(stater)
+          || !isQualifiedPrimitive(number)
+          || !isQualifiedPrimitive(eventer)
         ) {
           continue;
         }
@@ -497,10 +497,10 @@ function normalizeAttachmentGroup(
         }
         const [diger, noncer, labeler, texter] = item;
         if (
-          !isQualifiedPrimitive(diger) ||
-          !isQualifiedPrimitive(noncer) ||
-          !isQualifiedPrimitive(labeler) ||
-          !isQualifiedPrimitive(texter)
+          !isQualifiedPrimitive(diger)
+          || !isQualifiedPrimitive(noncer)
+          || !isQualifiedPrimitive(labeler)
+          || !isQualifiedPrimitive(texter)
         ) {
           continue;
         }

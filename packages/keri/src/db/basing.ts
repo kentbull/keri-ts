@@ -23,10 +23,7 @@ import {
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
-import {
-  DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
@@ -1214,9 +1211,7 @@ export class Baser {
   ): boolean {
     return this.sigs.put(
       [pre, said],
-      sigs.map((sig) =>
-        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
-      ),
+      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 
@@ -1228,9 +1223,7 @@ export class Baser {
   ): boolean {
     return this.sigs.pin(
       [pre, said],
-      sigs.map((sig) =>
-        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
-      ),
+      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 

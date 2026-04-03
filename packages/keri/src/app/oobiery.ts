@@ -210,10 +210,10 @@ function parseOobiUrl(url: string, alias?: string): OobiJob {
   };
 
   if (
-    parts.length >= 4 &&
-    parts[0] === ".well-known" &&
-    parts[1] === "keri" &&
-    parts[2] === "oobi"
+    parts.length >= 4
+    && parts[0] === ".well-known"
+    && parts[1] === "keri"
+    && parts[2] === "oobi"
   ) {
     job.cid = parts[3];
     job.role = "controller";

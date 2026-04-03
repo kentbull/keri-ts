@@ -1,10 +1,6 @@
-import type { Dater, Diger, Siger, SerderKERI } from "../../../cesr/mod.ts";
+import type { Dater, Diger, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { AgentCue } from "./cues.ts";
-import type {
-  FirstSeenReplayCouple,
-  SourceSealCouple,
-  SourceSealTriple,
-} from "./dispatch.ts";
+import type { FirstSeenReplayCouple, SourceSealCouple, SourceSealTriple } from "./dispatch.ts";
 import type { KeyStateRecord } from "./records.ts";
 
 /** Escrow bucket names used by typed KEL validation decisions. */

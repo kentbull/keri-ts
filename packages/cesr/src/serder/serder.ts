@@ -26,10 +26,7 @@ import {
 } from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
-import {
-  type ThresholdInput,
-  Tholder,
-} from "../primitives/tholder.ts";
+import { Tholder, type ThresholdInput } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
 import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
@@ -1771,9 +1768,9 @@ export class SerderKERI extends Serder {
 
   get bner(): NumberPrimitive | null {
     return makeNumberPrimitive(
-      this.ked &&
-          (typeof this.ked.bt === "string" || typeof this.ked.bt === "number" ||
-            typeof this.ked.bt === "bigint")
+      this.ked
+        && (typeof this.ked.bt === "string" || typeof this.ked.bt === "number"
+          || typeof this.ked.bt === "bigint")
         ? this.ked.bt
         : null,
     );

@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import { Siger, parseSiger } from "../../../src/primitives/siger.ts";
+import { parseSiger, Siger } from "../../../src/primitives/siger.ts";
 import { KERIPY_INDEXER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 

@@ -104,23 +104,23 @@ location-scheme update is not a direct DB mutation; it is a signed
 
 ## Cue Taxonomy
 
-| Cue kind | Primary producer(s) in KERIpy | Primary consumer(s) in KERIpy | Wire bytes? | Host-observable only? | Current `keri-ts` handling |
-| --- | --- | --- | --- | --- | --- |
-| `receipt` | `core/eventing.py` | `BaseHab.processCuesIter()` | Yes | No | typed and preserved; currently surfaced as notify until receipt builders land |
-| `notice` | `core/eventing.py` | `BaseHab.processCuesIter()` | No | Yes | notify emission |
-| `witness` | `core/eventing.py` | `BaseHab.processCuesIter()` | Yes | No | typed and preserved; currently surfaced as notify until witness builders land |
-| `query` | `core/routing.py`, `core/eventing.py`, other subsystems | `BaseHab.processCuesIter()` | Yes | No | complete query cues emit wire bytes; incomplete query cues stay notify |
-| `replay` | `core/eventing.py` | `BaseHab.processCuesIter()` | Yes | No | wire emission with preserved cue |
-| `reply` | `core/eventing.py`, later reply/status flows | `BaseHab.processCuesIter()` | Yes | No | wire emission from route/data or prebuilt serder |
-| `stream` | `core/eventing.py` | indirect/mailbox host layers | Sometimes, but host/transport-specific | Yes | transport emission, not flattened into ordinary wire bytes |
-| `noticeBadCloneFN` | `core/eventing.py` | `BaseHab.processCuesIter()` | No | Yes | notify emission |
-| `keyStateSaved` | `core/eventing.py` | `querying.py`, local noticers | No | Yes | notify emission |
-| `invalid` | `core/eventing.py` | `BaseHab.processCuesIter()` | No | Yes | notify emission |
-| `psUnescrow` | `core/eventing.py` | higher-level recovery/notifier logic | No by default | Yes | notify emission |
-| `remoteMemberedSig` | `core/eventing.py` | diagnostic/security observers | No | Yes | typed reserved parity cue; notify emission |
-| `oobiQueued` | `oobiing.py` analogue | host/runtime waiters | No | Yes | notify emission |
-| `oobiResolved` | `oobiing.py` analogue | host/runtime waiters | No | Yes | notify emission |
-| `oobiFailed` | `oobiing.py` analogue | host/runtime waiters | No | Yes | notify emission |
+| Cue kind            | Primary producer(s) in KERIpy                           | Primary consumer(s) in KERIpy        | Wire bytes?                            | Host-observable only? | Current `keri-ts` handling                                                    |
+|---------------------|---------------------------------------------------------|--------------------------------------|----------------------------------------|-----------------------|-------------------------------------------------------------------------------|
+| `receipt`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | typed and preserved; currently surfaced as notify until receipt builders land |
+| `notice`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
+| `witness`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | typed and preserved; currently surfaced as notify until witness builders land |
+| `query`             | `core/routing.py`, `core/eventing.py`, other subsystems | `BaseHab.processCuesIter()`          | Yes                                    | No                    | complete query cues emit wire bytes; incomplete query cues stay notify        |
+| `replay`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission with preserved cue                                              |
+| `reply`             | `core/eventing.py`, later reply/status flows            | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission from route/data or prebuilt serder                              |
+| `stream`            | `core/eventing.py`                                      | indirect/mailbox host layers         | Sometimes, but host/transport-specific | Yes                   | transport emission, not flattened into ordinary wire bytes                    |
+| `noticeBadCloneFN`  | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
+| `keyStateSaved`     | `core/eventing.py`                                      | `querying.py`, local noticers        | No                                     | Yes                   | notify emission                                                               |
+| `invalid`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
+| `psUnescrow`        | `core/eventing.py`                                      | higher-level recovery/notifier logic | No by default                          | Yes                   | notify emission                                                               |
+| `remoteMemberedSig` | `core/eventing.py`                                      | diagnostic/security observers        | No                                     | Yes                   | typed reserved parity cue; notify emission                                    |
+| `oobiQueued`        | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                               |
+| `oobiResolved`      | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                               |
+| `oobiFailed`        | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                               |
 
 ## Runtime Ordering
 

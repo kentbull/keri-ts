@@ -6,8 +6,8 @@ import { Matter } from "../../../src/primitives/matter.ts";
 import {
   type GroupEntry,
   isCounterGroupLike,
-  isQualifiedPrimitive,
   isPrimitiveTuple,
+  isQualifiedPrimitive,
 } from "../../../src/primitives/primitive.ts";
 import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
 import {

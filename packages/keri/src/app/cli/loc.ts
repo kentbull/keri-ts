@@ -89,9 +89,9 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
     for (let i = 0; i < 4; i += 1) {
       yield* processRuntimeTurn(runtime, { hab });
       if (
-        hby.db.locs.get([eid, scheme])?.url === commandArgs.url &&
-        !!hby.db.lans.get([eid, scheme]) &&
-        hab.loadLocScheme(eid, scheme).length > 0
+        hby.db.locs.get([eid, scheme])?.url === commandArgs.url
+        && !!hby.db.lans.get([eid, scheme])
+        && hab.loadLocScheme(eid, scheme).length > 0
       ) {
         console.log(
           `Location ${commandArgs.url} added for aid ${eid} with scheme ${scheme}`,
