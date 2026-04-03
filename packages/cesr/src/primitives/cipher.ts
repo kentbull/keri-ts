@@ -4,11 +4,14 @@ import { CiXDex } from "./codex.ts";
 import { CIPHER_X25519_ALL_CODES, MtrDex } from "./codex.ts";
 import { Decrypter } from "./decrypter.ts";
 import { Matter, type MatterInit } from "./matter.ts";
+import type { CipherHydratable, CipherHydratableCtor } from "./primitive.ts";
 
-export interface CipherDecryptOptions<T = unknown> {
+export interface CipherDecryptOptions<
+  T extends CipherHydratable = CipherHydratable,
+> {
   prikey?: string | Uint8Array | ArrayBufferView;
   seed?: string | Uint8Array | ArrayBufferView;
-  klas?: new(...args: any[]) => T;
+  ctor?: CipherHydratableCtor<T>;
   transferable?: boolean;
   bare?: boolean;
 }
@@ -71,13 +74,14 @@ export class Cipher extends Matter {
    *
    * KERIpy parity:
    * - `prikey` or `seed` instantiates a `Decrypter`
-   * - default plaintext class is inferred from the cipher family when possible
+   * - default plaintext constructor is inferred from the cipher family when
+   *   possible
    */
-  decrypt<T = unknown>(
+  decrypt<T extends CipherHydratable = CipherHydratable>(
     {
       prikey,
       seed,
-      klas,
+      ctor,
       transferable = false,
       bare = false,
     }: CipherDecryptOptions<T> = {},
@@ -90,7 +94,7 @@ export class Cipher extends Matter {
       seed,
     }).decrypt({
       cipher: this,
-      klas,
+      ctor,
       transferable,
       bare,
     });

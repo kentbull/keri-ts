@@ -146,7 +146,7 @@ Deno.test("db/subing - CesrSuber hydrates typed CESR primitives", async () => {
       const prefixer = new Prefixer({ qb64: verfer.qb64 });
       const suber = new CesrSuber<Prefixer>(lmdber, {
         subkey: "pres.",
-        klas: Prefixer,
+        ctor: Prefixer,
       });
 
       assertEquals(suber.put("alice", prefixer), true);
@@ -330,7 +330,7 @@ Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async
       });
       const suber = new CesrIoSetSuber<Signer>(lmdber, {
         subkey: "pris.",
-        klas: Signer,
+        ctor: Signer,
       });
 
       assertEquals(suber.put("alice", [signerA, signerB]), true);

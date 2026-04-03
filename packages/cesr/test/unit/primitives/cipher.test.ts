@@ -117,7 +117,7 @@ Deno.test("cipher: decrypts KERIpy stable seed and salt vectors via prikey and s
   );
 });
 
-Deno.test("cipher: requires klas for variable qb64 and qb2 ciphers but defaults stream ciphers to Streamer", () => {
+Deno.test("cipher: requires ctor for variable qb64 and qb2 ciphers but defaults stream ciphers to Streamer", () => {
   const encrypter = makeParityEncrypter();
   const decrypter = makeParityDecrypter();
 
@@ -148,19 +148,19 @@ Deno.test("cipher: requires klas for variable qb64 and qb2 ciphers but defaults 
     UnknownCodeError,
   );
 
-  const qb64Out = decrypter.decrypt({ cipher: qb64Cipher, klas: Texter });
+  const qb64Out = decrypter.decrypt({ cipher: qb64Cipher, ctor: Texter });
   assertInstanceOf(qb64Out, Texter);
   assertEquals(qb64Out.text, texter.text);
   assertEquals(
-    decrypter.decrypt({ cipher: qb64Cipher, klas: Texter, bare: true }),
+    decrypter.decrypt({ cipher: qb64Cipher, ctor: Texter, bare: true }),
     texter.qb64b,
   );
 
-  const qb2Out = decrypter.decrypt({ cipher: qb2Cipher, klas: Texter });
+  const qb2Out = decrypter.decrypt({ cipher: qb2Cipher, ctor: Texter });
   assertInstanceOf(qb2Out, Texter);
   assertEquals(qb2Out.text, texter.text);
   assertEquals(
-    decrypter.decrypt({ cipher: qb2Cipher, klas: Texter, bare: true }),
+    decrypter.decrypt({ cipher: qb2Cipher, ctor: Texter, bare: true }),
     texter.qb2,
   );
 

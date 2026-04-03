@@ -73,7 +73,7 @@ Deno.test("decrypter: preserves requested signer transferability on fixed seed c
   assertEquals(nonTransferable.verfer.code, MtrDex.Ed25519N);
 });
 
-Deno.test("decrypter: requires klas for variable qb64 and qb2 but defaults stream family to Streamer", () => {
+Deno.test("decrypter: requires ctor for variable qb64 and qb2 but defaults stream family to Streamer", () => {
   const encrypter = makeParityEncrypter();
   const decrypter = new Decrypter({
     qb64: KERIPY_MATTER_VECTORS.decrypterX25519Private,

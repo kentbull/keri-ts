@@ -190,7 +190,7 @@ export class Keeper {
       // identifier set used by GroupSignifyHab flows.
       this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
         subkey: "smids.",
-        klas: [Prefixer, NumberPrimitive],
+        ctor: [Prefixer, NumberPrimitive],
       });
 
       // Group rotating member tuples for one multisig prefix.
@@ -198,7 +198,7 @@ export class Keeper {
       // identifier set used by GroupSignifyHab flows.
       this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
         subkey: "rmids.",
-        klas: [Prefixer, NumberPrimitive],
+        ctor: [Prefixer, NumberPrimitive],
       });
 
       // Prefix index keyed by the first public key in a key sequence.
@@ -206,7 +206,7 @@ export class Keeper {
       // temporary prefixes, matching the KERIpy keeper index contract.
       this.pres = new CesrSuber<Prefixer>(this.lmdber, {
         subkey: "pres.",
-        klas: Prefixer,
+        ctor: Prefixer,
       });
 
       // Root derivation parameters for one managed identifier prefix.
@@ -224,14 +224,14 @@ export class Keeper {
       // KERIpy notes these are not yet broadly exercised outside that path.
       this.prxs = new CesrSuber<Cipher>(this.lmdber, {
         subkey: "prxs.",
-        klas: Cipher,
+        ctor: Cipher,
       });
 
       // Encrypted next-key commitments used by group-signify keeper flows.
       // KERIpy notes these are not yet broadly exercised outside that path.
       this.nxts = new CesrSuber<Cipher>(this.lmdber, {
         subkey: "nxts.",
-        klas: Cipher,
+        ctor: Cipher,
       });
       return true;
     } catch (error) {

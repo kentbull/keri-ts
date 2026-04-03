@@ -365,7 +365,7 @@ Use this doc for:
   the narrow signature primitives directly and `Baser.pinSigs()` / `putSigs()`
   accept already-hydrated `Siger` values.
 - Tightened the CESR-backed DB wrapper constructors so new stores must pass an
-  explicit `klas` instead of silently defaulting to `Matter`, which closes one
+  explicit `ctor` instead of silently defaulting to `Matter`, which closes one
   of the easier ways for semantic type erasure to creep back in.
 
 ### 2026-03-17 - Gate C Visibility Moved From Tentative To Live Interop Evidence

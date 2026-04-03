@@ -299,38 +299,38 @@ export class Baser {
       // needs the first-seen datetime.
       this.dtss = new CesrSuber<Dater>(this.lmdber, {
         subkey: "dtss.",
-        klas: Dater,
+        ctor: Dater,
       });
 
       // Authorizing event source seal couples keyed by event digest.
       this.aess = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "aess.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Fully qualified indexed controller signatures for one event digest.
       this.sigs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "sigs.",
-        klas: Siger,
+        ctor: Siger,
       });
 
       // Indexed witness signatures for one event digest.
       this.wigs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "wigs.",
-        klas: Siger,
+        ctor: Siger,
       });
 
       // Event receipt couples from non-transferable signers that are not
       // witnesses, such as watchers or jurors.
       this.rcts = new CatCesrIoSetSuber<ReceiptCouple>(this.lmdber, {
         subkey: "rcts.",
-        klas: [Prefixer, Cigar],
+        ctor: [Prefixer, Cigar],
       });
 
       // Unverified event receipt escrow triples from non-transferable signers.
       this.ures = new CatCesrIoSetSuber<UnverifiedReceiptTriple>(this.lmdber, {
         subkey: "ures.",
-        klas: [Diger, Prefixer, Cigar],
+        ctor: [Diger, Prefixer, Cigar],
       });
 
       // Event validator receipt quadruples from transferable signers.
@@ -338,7 +338,7 @@ export class Baser {
         this.lmdber,
         {
           subkey: "vrcs.",
-          klas: [Prefixer, NumberPrimitive, Diger, Siger],
+          ctor: [Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
 
@@ -348,7 +348,7 @@ export class Baser {
         this.lmdber,
         {
           subkey: "vres.",
-          klas: [Diger, Prefixer, NumberPrimitive, Diger, Siger],
+          ctor: [Diger, Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
 
@@ -367,7 +367,7 @@ export class Baser {
       // digest.
       this.udes = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "udes.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Unverified witness escrow couples from witness signers.
@@ -389,13 +389,13 @@ export class Baser {
       // rotation logic.
       this.fons = new CesrSuber<NumberPrimitive>(this.lmdber, {
         subkey: "fons.",
-        klas: NumberPrimitive,
+        ctor: NumberPrimitive,
       });
 
       // Database migration datetimes keyed by migration name.
       this.migs = new CesrSuber<Dater>(this.lmdber, {
         subkey: "migs.",
-        klas: Dater,
+        ctor: Dater,
       });
 
       // Database version table retained for parity even though it is currently
@@ -423,7 +423,7 @@ export class Baser {
       // Witness lists for a given event digest.
       this.wits = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "wits.",
-        klas: Prefixer,
+        ctor: Prefixer,
       });
 
       // Habitat application records keyed by habitat name and namespace.
@@ -435,13 +435,13 @@ export class Baser {
       // SAD datetime stamps keyed by SAID.
       this.sdts = new CesrSuber<Dater>(this.lmdber, {
         subkey: "sdts.",
-        klas: Dater,
+        ctor: Dater,
       });
 
       // SAD indexed signatures keyed by the reply/event quadkey.
       this.ssgs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "ssgs.",
-        klas: Siger,
+        ctor: Siger,
       });
 
       // SAD non-indexed signature couples keyed by SAD SAID.
@@ -449,7 +449,7 @@ export class Baser {
         this.lmdber,
         {
           subkey: "scgs.",
-          klas: [Verfer, Cigar],
+          ctor: [Verfer, Cigar],
         },
       );
 
@@ -462,21 +462,21 @@ export class Baser {
       // routes such as `/end/role` or `/loc/schema` to reply SAIDs.
       this.rpes = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "rpes.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // AuthN/AuthZ by local controller at `cid` of endpoint provider at `eid`.
       // Maps `cid.role.eid` to the SAID of the relevant `/end/role` reply.
       this.eans = new CesrSuber<Diger>(this.lmdber, {
         subkey: "eans.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // AuthN/AuthZ by endpoint provider at `eid` of a location at URL scheme.
       // Maps `cid.role.eid` to the SAID of the relevant `/loc` reply.
       this.lans = new CesrSuber<Diger>(this.lmdber, {
         subkey: "lans.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Service endpoint identifier auth records extracted from `/end/role`
@@ -496,25 +496,25 @@ export class Baser {
       // Group partial signature escrow entries.
       this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "gpse.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Group delegate escrow entries.
       this.gdee = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "gdee.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Group partial witness escrow entries.
       this.gpwe = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "gdwe.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Completed group multisig references.
       this.cgms = new CesrSuber<Diger>(this.lmdber, {
         subkey: "cgms.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Exchange-message partial signature escrow messages.
@@ -523,7 +523,7 @@ export class Baser {
       // Exchange-message partial signature escrow datetimes.
       this.epsd = new CesrSuber<Dater>(this.lmdber, {
         subkey: "epsd.",
-        klas: Dater,
+        ctor: Dater,
       });
 
       // Exchange messages keyed by digest.
@@ -532,13 +532,13 @@ export class Baser {
       // Forward pointers to provided reply messages.
       this.erpy = new CesrSuber<Saider>(this.lmdber, {
         subkey: "erpy.",
-        klas: Saider,
+        ctor: Saider,
       });
 
       // Exchange-message indexed signatures.
       this.esigs = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "esigs.",
-        klas: Siger,
+        ctor: Siger,
       });
 
       // Exchange-message non-indexed signature couples.
@@ -546,7 +546,7 @@ export class Baser {
         this.lmdber,
         {
           subkey: "ecigs.",
-          klas: [Verfer, Cigar],
+          ctor: [Verfer, Cigar],
         },
       );
 
@@ -556,21 +556,21 @@ export class Baser {
       // Encrypt-Sender-Sign-Receiver payloads keyed by exchange digest.
       this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, {
         subkey: ".essrs",
-        klas: Texter,
+        ctor: Texter,
       });
 
       // Accepted signed challenge-response exchange-message SAIDs keyed by the
       // signer prefix.
       this.chas = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "chas.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Successful signed challenge-response exchange-message SAIDs keyed by
       // the signer prefix.
       this.reps = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "reps.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Authorized well-known OOBI records.
@@ -580,7 +580,7 @@ export class Baser {
       // Key-state notice datetime stamps keyed by key-state SAID.
       this.kdts = new CesrSuber<Dater>(this.lmdber, {
         subkey: "kdts.",
-        klas: Dater,
+        ctor: Dater,
       });
 
       // Key-state messages keyed by key-state SAID.
@@ -591,14 +591,14 @@ export class Baser {
       // saved key-state SAIDs.
       this.knas = new CesrSuber<Diger>(this.lmdber, {
         subkey: "knas.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Watcher watched-SAID index mapping `(cid, aid, oid)` to the saved reply
       // message SAID for a watched identifier.
       this.wwas = new CesrSuber<Diger>(this.lmdber, {
         subkey: "wwas.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Config-loaded OOBIs to be processed asynchronously.
@@ -669,13 +669,13 @@ export class Baser {
       // Signature cigars for signed contact data.
       this.ccigs = new CesrSuber<Cigar>(this.lmdber, {
         subkey: "ccigs.",
-        klas: Cigar,
+        ctor: Cigar,
       });
 
       // Blinded media tuples for remote contact information.
       this.imgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
         subkey: "imgs.",
-        klas: [Noncer, Noncer, Labeler, Texter],
+        ctor: [Noncer, Noncer, Labeler, Texter],
       });
 
       // Field values for local identifier information.
@@ -687,13 +687,13 @@ export class Baser {
       // Signature cigars for signed local identifier data.
       this.icigs = new CesrSuber<Cigar>(this.lmdber, {
         subkey: "icigs.",
-        klas: Cigar,
+        ctor: Cigar,
       });
 
       // Blinded media tuples for local identifier information.
       this.iimgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
         subkey: "iimgs.",
-        klas: [Noncer, Noncer, Labeler, Texter],
+        ctor: [Noncer, Noncer, Labeler, Texter],
       });
 
       // Delegated partial-witness escrow messages.
@@ -709,20 +709,20 @@ export class Baser {
       // Completed group delegated AIDs keyed by ordinal.
       this.cdel = new CesrOnSuber<Diger>(this.lmdber, {
         subkey: "cdel.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Multisig embed payload SAIDs mapped to containing exchange-message
       // SAIDs across group multisig participants.
       this.meids = new CesrIoSetSuber<Diger>(this.lmdber, {
         subkey: "meids.",
-        klas: Diger,
+        ctor: Diger,
       });
 
       // Multisig embed payload SAIDs mapped to group multisig participant AIDs.
       this.maids = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "maids.",
-        klas: Prefixer,
+        ctor: Prefixer,
       });
       // KRAM cache-type records keyed by expression string.
       this.ctyp = new Komer<CacheTypeRecord>(this.lmdber, { subkey: "ctyp." });
@@ -741,14 +741,14 @@ export class Baser {
       // KRAM partially signed multi-key signatures keyed by `(AID, MID)`.
       this.pmks = new CesrIoSetSuber<Siger>(this.lmdber, {
         subkey: "pmks.",
-        klas: Siger,
+        ctor: Siger,
       });
 
       // KRAM partially signed multi-key sender key-state seals keyed by
       // `(AID, MID)`.
       this.pmsk = new CatCesrSuber<EventSealTuple>(this.lmdber, {
         subkey: "pmsk.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Transferable receipt quadruples used by the KRAM attachment path.
@@ -756,7 +756,7 @@ export class Baser {
         this.lmdber,
         {
           subkey: "trqs.",
-          klas: [Prefixer, NumberPrimitive, Diger, Siger],
+          ctor: [Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
 
@@ -765,32 +765,32 @@ export class Baser {
         this.lmdber,
         {
           subkey: "tsgs.",
-          klas: [Prefixer, NumberPrimitive, Diger, Siger],
+          ctor: [Prefixer, NumberPrimitive, Diger, Siger],
         },
       );
 
       // First-seen seal couples for issuing or delegating events.
       this.sscs = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
         subkey: "sscs.",
-        klas: [NumberPrimitive, Diger],
+        ctor: [NumberPrimitive, Diger],
       });
 
       // Source seal triples for issued or delegated events.
       this.ssts = new CatCesrIoSetSuber<SourceSealTriple>(this.lmdber, {
         subkey: "ssts.",
-        klas: [Prefixer, NumberPrimitive, Diger],
+        ctor: [Prefixer, NumberPrimitive, Diger],
       });
 
       // First-seen replay couples storing ordinal and datetime pairs.
       this.frcs = new CatCesrIoSetSuber<FirstSeenReplayCouple>(this.lmdber, {
         subkey: "frcs.",
-        klas: [NumberPrimitive, Dater],
+        ctor: [NumberPrimitive, Dater],
       });
 
       // Typed digest seal couples.
       this.tdcs = new CatCesrIoSetSuber<TypedDigestSealCouple>(this.lmdber, {
         subkey: "tdcs.",
-        klas: [Verser, Diger],
+        ctor: [Verser, Diger],
       });
 
       // Pathed streams stored as raw bytes.
@@ -801,20 +801,20 @@ export class Baser {
         this.lmdber,
         {
           subkey: "bsqs.",
-          klas: [Diger, Noncer, Noncer, Labeler],
+          ctor: [Diger, Noncer, Noncer, Labeler],
         },
       );
 
       // Bound state sextuples.
       this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.lmdber, {
         subkey: "bsss.",
-        klas: [Diger, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
+        ctor: [Diger, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
       });
 
       // Type-media quadruples.
       this.tmqs = new CatCesrIoSetSuber<TypedMediaQuadrupleTuple>(this.lmdber, {
         subkey: "tmqs.",
-        klas: [Diger, Noncer, Labeler, Texter],
+        ctor: [Diger, Noncer, Labeler, Texter],
       });
 
       this.reloadKevers();

@@ -107,6 +107,6 @@ export function decryptSaltQb64(
 ): string {
   return (decrypter.decrypt({
     cipher: asCipher(cipher),
-    klas: Salter,
+    ctor: Salter,
   }) as Salter).qb64;
 }

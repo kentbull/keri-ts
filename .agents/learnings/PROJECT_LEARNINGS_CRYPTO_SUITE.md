@@ -38,6 +38,11 @@ signing/verification behavior in `keri-ts`.
     `Encrypter`, `Decrypter`, and `Streamer` form one CESR execution seam, and
     variable-family code promotion remains a `Matter` responsibility rather
     than a cipher-local exception.
+11. Cipher plaintext hydration now has its own exported semantic union:
+    `CipherHydratable = QualifiedPrimitive | Streamer`. This exists because
+    `Primitive` is too broad for decrypt typing; it includes
+    `UnknownPrimitive`, which parser fallback may produce but sealed-box
+    decrypt never should.
 
 ## Scope Checklist
 
@@ -248,3 +253,36 @@ Use this doc for:
   - Future primitive work should keep using `Matter` as the shared
     variable-family encoding authority instead of letting individual subclasses
     grow their own size-to-code promotion tables.
+
+### 2026-04-02 - Constructor Vocabulary Was Normalized To `ctor`
+
+- Topic docs updated:
+  - `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`
+  - `.agents/learnings/PROJECT_LEARNINGS_KELS.md`
+- What changed:
+  - Renamed cipher/decrypter constructor-selection options from `klas` to
+    `ctor` and introduced the exported `CipherHydratable` /
+    `CipherHydratableCtor` typing seam for decrypted plaintext hydration.
+  - Kept `Primitive` and `QualifiedPrimitive` as parser/storage-domain unions
+    and avoided overloading them with decrypt semantics they do not actually
+    model.
+- Why:
+  - `klas` was a direct Pythonism. The behavior was right, but the name taught
+    the wrong TypeScript mental model.
+  - Reusing `Primitive` would have lied about decrypt outputs by allowing
+    `UnknownPrimitive`, which is a parser fallback, not a sealed-box decrypt
+    result.
+- Tests:
+  - Command:
+    `deno test -A --config packages/cesr/deno.json packages/cesr/test/unit/primitives/cipher.test.ts packages/cesr/test/unit/primitives/decrypter.test.ts packages/cesr/test/unit/primitives/encrypter.test.ts`
+  - Result: passed locally
+- Contracts/plans touched:
+  - `packages/cesr/src/primitives/primitive.ts`
+  - `packages/cesr/src/primitives/cipher.ts`
+  - `packages/cesr/src/primitives/decrypter.ts`
+  - `packages/cesr/src/primitives/encrypter.ts`
+- Risks/TODO:
+  - Constructor parameter typing is still intentionally broad
+    (`new (...args: any[])`) so this cleanup should not be mistaken for fully
+    modeled
+    family-specific init signatures.

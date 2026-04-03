@@ -1,6 +1,7 @@
 import type { Counter } from "./counter.ts";
 import type { Indexer } from "./indexer.ts";
 import type { Matter } from "./matter.ts";
+import type { Streamer } from "./streamer.ts";
 import type { UnknownPrimitive } from "./unknown.ts";
 
 /**
@@ -24,6 +25,17 @@ export type Primitive = Matter | Indexer | Counter | UnknownPrimitive;
  * payloads, nested counted groups, or lossless unknown placeholders.
  */
 export type QualifiedPrimitive = Matter | Indexer | Counter;
+/**
+ * Primitive family that cipher encryption/decryption can faithfully round-trip.
+ *
+ * This intentionally excludes `UnknownPrimitive`: sealed-box decrypt returns a
+ * fully hydrated constructor-backed value, not a parser fallback placeholder.
+ */
+export type CipherHydratable = QualifiedPrimitive | Streamer;
+/** Constructor contract for cipher plaintext rehydration. */
+export type CipherHydratableCtor<
+  T extends CipherHydratable = CipherHydratable,
+> = new(...args: any[]) => T;
 /** Ordered tuple payload used by grouped attachments (for fixed small tuples). */
 export type PrimitiveTuple = readonly GroupEntry[];
 /** Recursive parser graph entry for attachment/native payloads. */

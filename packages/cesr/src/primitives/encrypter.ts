@@ -10,6 +10,7 @@ import {
   MtrDex,
 } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
+import { type CipherHydratable, isQualifiedPrimitive } from "./primitive.ts";
 import { Salter } from "./salter.ts";
 import { boxKeyPairFromEd25519Seed, boxPublicKeyFromEd25519Verfer, sealBox } from "./sealed-box.ts";
 import { Signer } from "./signer.ts";
@@ -27,7 +28,7 @@ export interface EncrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64"
 
 export interface EncrypterEncryptOptions {
   ser?: ByteLike;
-  prim?: Matter | Streamer;
+  prim?: CipherHydratable;
   code?: string;
 }
 
@@ -128,14 +129,14 @@ export class Encrypter extends Matter {
       }
 
       if (CIPHER_X25519_ALL_QB64_CODES.has(cipherCode)) {
-        if (!(prim instanceof Matter)) {
+        if (!isQualifiedPrimitive(prim)) {
           throw new DeserializeError(
             `Invalid primitive cipher code = ${cipherCode} for stream primitive.`,
           );
         }
         plaintext = prim.qb64b;
       } else if (CIPHER_X25519_QB2_VARIABLE_CODES.has(cipherCode)) {
-        if (!(prim instanceof Matter)) {
+        if (!isQualifiedPrimitive(prim)) {
           throw new DeserializeError(
             `Invalid primitive cipher code = ${cipherCode} for stream primitive.`,
           );

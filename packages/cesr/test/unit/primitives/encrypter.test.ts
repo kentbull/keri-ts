@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertFalse, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { CIPHER_X25519_VARIABLE_STREAM_CODES, MtrDex } from "../../../src/primitives/codex.ts";
+import { Counter } from "../../../src/primitives/counter.ts";
 import { Decrypter } from "../../../src/primitives/decrypter.ts";
 import { Encrypter } from "../../../src/primitives/encrypter.ts";
 import { Prefixer } from "../../../src/primitives/prefixer.ts";
@@ -93,7 +94,7 @@ Deno.test("encrypter: encrypts raw plaintext, infers signer and salt codes, and 
     code: MtrDex.X25519_Cipher_QB64_L0,
   });
   assertEquals(
-    (decrypter.decrypt({ cipher: qb64Cipher, klas: Texter }) as Texter).text,
+    (decrypter.decrypt({ cipher: qb64Cipher, ctor: Texter }) as Texter).text,
     texter.text,
   );
 
@@ -102,9 +103,22 @@ Deno.test("encrypter: encrypts raw plaintext, infers signer and salt codes, and 
     code: MtrDex.X25519_Cipher_QB2_L0,
   });
   assertEquals(
-    (decrypter.decrypt({ cipher: qb2Cipher, klas: Texter }) as Texter).text,
+    (decrypter.decrypt({ cipher: qb2Cipher, ctor: Texter }) as Texter).text,
     texter.text,
   );
+
+  const counter = new Counter({
+    code: "-K",
+    count: 5,
+    version: { major: 2, minor: 0 },
+  });
+  const counterCipher = encrypter.encrypt({
+    prim: counter,
+    code: MtrDex.X25519_Cipher_QB64_L0,
+  });
+  const counterOut = decrypter.decrypt({ cipher: counterCipher, ctor: Counter });
+  assertInstanceOf(counterOut, Counter);
+  assertEquals(counterOut.qb64, counter.qb64);
 
   const stream = new Streamer({ stream: new Uint8Array([0x01, 0x02, 0x03, 0x04]) });
   const streamCipher = encrypter.encrypt({

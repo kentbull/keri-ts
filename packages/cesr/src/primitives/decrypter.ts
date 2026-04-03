@@ -10,6 +10,7 @@ import {
   MtrDex,
 } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
+import type { CipherHydratable, CipherHydratableCtor } from "./primitive.ts";
 import { Salter } from "./salter.ts";
 import { boxKeyPairFromEd25519Seed, boxPublicKeyFromPrivateKey, openSealedBox } from "./sealed-box.ts";
 import { Signer } from "./signer.ts";
@@ -24,11 +25,13 @@ export interface DecrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64"
   seed?: ByteLike;
 }
 
-export interface DecrypterDecryptOptions<T = unknown> {
+export interface DecrypterDecryptOptions<
+  T extends CipherHydratable = CipherHydratable,
+> {
   cipher?: Cipher;
   qb64?: ByteLike;
   qb2?: Uint8Array | ArrayBufferView;
-  klas?: new(...args: any[]) => T;
+  ctor?: CipherHydratableCtor<T>;
   transferable?: boolean;
   bare?: boolean;
 }
@@ -77,27 +80,27 @@ function normalizeMatterInit(init: Matter | DecrypterInit): Matter | MatterInit 
   return normalized;
 }
 
-function hydratePlaintext<T>(
+function hydratePlaintext<T extends CipherHydratable>(
   cipher: Cipher,
   plain: Uint8Array,
-  klas: new(...args: any[]) => unknown,
+  ctor: CipherHydratableCtor<T>,
   transferable: boolean,
-): unknown {
+): T {
   if (CIPHER_X25519_ALL_QB64_CODES.has(cipher.code)) {
-    return new klas({ qb64b: plain, transferable });
+    return new ctor({ qb64b: plain, transferable });
   }
   if (CIPHER_X25519_QB2_VARIABLE_CODES.has(cipher.code)) {
-    return new klas({ qb2: plain });
+    return new ctor({ qb2: plain });
   }
   if (CIPHER_X25519_VARIABLE_STREAM_CODES.has(cipher.code)) {
-    return new klas({ stream: plain });
+    return new ctor({ stream: plain });
   }
   throw new UnknownCodeError(`Unsupported cipher code = ${cipher.code}.`);
 }
 
-function defaultKlasForCipher(
+function defaultCtorForCipher(
   cipher: Cipher,
-): new(...args: any[]) => unknown {
+): CipherHydratableCtor {
   if (cipher.code === MtrDex.X25519_Cipher_Salt) {
     return Salter;
   }
@@ -113,7 +116,7 @@ function defaultKlasForCipher(
     || CIPHER_X25519_ALL_QB64_CODES.has(cipher.code)
   ) {
     throw new UnknownCodeError(
-      `Unsupported cipher code = ${cipher.code} when klas is missing.`,
+      `Unsupported cipher code = ${cipher.code} when ctor is missing.`,
     );
   }
   throw new UnknownCodeError(`Unsupported cipher code = ${cipher.code}.`);
@@ -137,14 +140,15 @@ export class Decrypter extends Matter {
   }
 
   /**
-   * Decrypt one cipher and rehydrate the plaintext into the requested class.
+   * Decrypt one cipher and rehydrate the plaintext with the requested
+   * constructor.
    */
-  decrypt<T = unknown>(
+  decrypt<T extends CipherHydratable = CipherHydratable>(
     {
       cipher,
       qb64,
       qb2,
-      klas,
+      ctor,
       transferable = false,
       bare = false,
     }: DecrypterDecryptOptions<T> = {},
@@ -170,12 +174,12 @@ export class Decrypter extends Matter {
       return plain;
     }
 
-    const effectiveKlas = klas ?? defaultKlasForCipher(hydrated);
+    const effectiveCtor = (ctor ?? defaultCtorForCipher(hydrated)) as CipherHydratableCtor<T>;
     return hydratePlaintext(
       hydrated,
       plain,
-      effectiveKlas,
+      effectiveCtor,
       transferable,
-    ) as T;
+    );
   }
 }

@@ -485,7 +485,7 @@ export class Manager {
       return null;
     }
     return this.decrypter
-      ? (this.decrypter.decrypt({ qb64: salt, klas: Salter }) as Salter).qb64
+      ? (this.decrypter.decrypt({ qb64: salt, ctor: Salter }) as Salter).qb64
       : salt;
   }
 
@@ -608,9 +608,9 @@ export class Manager {
         }
         data.salt = this.encrypter
           ? this.encrypter.encrypt({
-            prim: this.decrypter.decrypt({ qb64: data.salt, klas: Salter }) as Salter,
+            prim: this.decrypter.decrypt({ qb64: data.salt, ctor: Salter }) as Salter,
           }).qb64
-          : (this.decrypter.decrypt({ qb64: data.salt, klas: Salter }) as Salter).qb64;
+          : (this.decrypter.decrypt({ qb64: data.salt, ctor: Salter }) as Salter).qb64;
         this.ks.prms.pin(keys, data);
       }
 
@@ -842,7 +842,7 @@ export class Manager {
     }
     const decrypter = this.signerDecrypter();
     return decrypter
-      ? (decrypter.decrypt({ qb64: salt, klas: Salter }) as Salter).qb64
+      ? (decrypter.decrypt({ qb64: salt, ctor: Salter }) as Salter).qb64
       : new Salter({ qb64: salt }).qb64;
   }
 
