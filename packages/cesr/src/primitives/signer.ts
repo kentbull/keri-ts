@@ -1,11 +1,9 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import { Cigar } from "./cigar.ts";
-import { MtrDex, SIGNER_CODES } from "./codex.ts";
+import { IdrDex, MtrDex, SIGNER_CODES } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
 import { Siger } from "./siger.ts";
 import {
-  detachedSignatureCodeForSignerCode,
-  indexedSignatureCodeForSignerCode,
   publicKeyForSignerCode,
   signerSeedSizeForCode,
   signRawForSignerCode,
@@ -29,6 +27,13 @@ export interface SignerSignOptions {
   index?: number;
   only?: boolean;
   ondex?: number | null;
+}
+
+interface IndexedSignatureFamily {
+  readonly both: string;
+  readonly bigBoth: string;
+  readonly currentOnly: string;
+  readonly bigCurrentOnly: string;
 }
 
 /** Resolve the explicit signer transferability choice from the supported init forms. */
@@ -89,12 +94,83 @@ export class Signer extends Matter {
 
   /** Create one explicit random signer seed for creator-style flows. */
   static random(
-    { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions = {},
+    { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions =
+      {},
   ): Signer {
     const raw = crypto.getRandomValues(
       new Uint8Array(signerSeedSizeForCode(code)),
     );
     return new Signer({ code, raw, transferable });
+  }
+
+  /** Resolve the detached-signature code emitted by this signer suite. */
+  private detachedSignatureCode(): string {
+    switch (this.code) {
+      case MtrDex.Ed25519_Seed:
+        return MtrDex.Ed25519_Sig;
+      case MtrDex.ECDSA_256k1_Seed:
+        return MtrDex.ECDSA_256k1_Sig;
+      case MtrDex.ECDSA_256r1_Seed:
+        return MtrDex.ECDSA_256r1_Sig;
+      default:
+        throw new UnknownCodeError(`Unsupported signer seed code ${this.code}`);
+    }
+  }
+
+  /** Resolve the indexed-signature family emitted by this signer suite. */
+  private indexedSignatureFamily(): IndexedSignatureFamily {
+    switch (this.code) {
+      case MtrDex.Ed25519_Seed:
+        return {
+          both: IdrDex.Ed25519_Sig,
+          bigBoth: IdrDex.Ed25519_Big_Sig,
+          currentOnly: IdrDex.Ed25519_Crt_Sig,
+          bigCurrentOnly: IdrDex.Ed25519_Big_Crt_Sig,
+        };
+      case MtrDex.ECDSA_256k1_Seed:
+        return {
+          both: IdrDex.ECDSA_256k1_Sig,
+          bigBoth: IdrDex.ECDSA_256k1_Big_Sig,
+          currentOnly: IdrDex.ECDSA_256k1_Crt_Sig,
+          bigCurrentOnly: IdrDex.ECDSA_256k1_Big_Crt_Sig,
+        };
+      case MtrDex.ECDSA_256r1_Seed:
+        return {
+          both: IdrDex.ECDSA_256r1_Sig,
+          bigBoth: IdrDex.ECDSA_256r1_Big_Sig,
+          currentOnly: IdrDex.ECDSA_256r1_Crt_Sig,
+          bigCurrentOnly: IdrDex.ECDSA_256r1_Big_Crt_Sig,
+        };
+      default:
+        throw new UnknownCodeError(`Unsupported signer seed code ${this.code}`);
+    }
+  }
+
+  /**
+   * Resolve the indexed-signature code emitted by this signer and signature shape.
+   *
+   * KERIpy correspondence:
+   * - `only=true` selects the current-list-only family
+   * - otherwise `ondex` defaults to `index`
+   * - the small `both` family is valid only when `index === ondex <= 63`
+   */
+  private indexedSignatureCode(
+    index: number,
+    {
+      ondex,
+      only = false,
+    }: {
+      ondex?: number;
+      only?: boolean;
+    } = {},
+  ): string {
+    const family = this.indexedSignatureFamily();
+    if (only) {
+      return index <= 63 ? family.currentOnly : family.bigCurrentOnly;
+    }
+
+    const ondexValue = ondex ?? index;
+    return ondexValue === index && index <= 63 ? family.both : family.bigBoth;
   }
 
   /**
@@ -103,7 +179,8 @@ export class Signer extends Matter {
    * KERIpy correspondence:
    * - `index === undefined` returns a detached non-indexed signature
    * - otherwise the seed suite decides the emitted indexed signature code family
-   * - `only=true` selects the current-list-only family and suppresses `ondex`
+   * - `only=true` selects the current-list-only family and ignores any caller
+   *   `ondex` override
    * - otherwise `ondex` defaults to `index`, preserving KERIpy's implicit
    *   same-index rule for ordinary indexed signatures
    */
@@ -114,14 +191,14 @@ export class Signer extends Matter {
     const sig = signRawForSignerCode(this.code, this.raw, ser);
     if (index === undefined) {
       return new Cigar({
-        code: detachedSignatureCodeForSignerCode(this.code),
+        code: this.detachedSignatureCode(),
         raw: sig,
       }, this.verfer);
     }
 
     const normalizedOndex = only ? undefined : ondex ?? index;
     return new Siger({
-      code: indexedSignatureCodeForSignerCode(this.code, index, {
+      code: this.indexedSignatureCode(index, {
         only,
         ondex: normalizedOndex ?? undefined,
       }),

@@ -2,7 +2,7 @@ import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { p256 } from "npm:@noble/curves@1.9.7/nist";
 import { secp256k1 } from "npm:@noble/curves@1.9.7/secp256k1";
 import { UnknownCodeError } from "../core/errors.ts";
-import { IdrDex, MtrDex } from "./codex.ts";
+import { MtrDex } from "./codex.ts";
 
 type SupportedSignerCode =
   | typeof MtrDex.Ed25519_Seed
@@ -16,55 +16,6 @@ type SupportedVerferCode =
   | typeof MtrDex.ECDSA_256k1N
   | typeof MtrDex.ECDSA_256r1
   | typeof MtrDex.ECDSA_256r1N;
-
-interface IndexedSignatureFamily {
-  readonly both: string;
-  readonly bigBoth: string;
-  readonly currentOnly: string;
-  readonly bigCurrentOnly: string;
-}
-
-/**
- * Indexed-signature family lookup keyed by signer seed suite.
- *
- * Each family carries KERIpy's four emitted code paths:
- * - small `both`
- * - big `both`
- * - small current-only
- * - big current-only
- */
-const SIGNER_INDEXED_SIG_CODES = new Map<
-  SupportedSignerCode,
-  IndexedSignatureFamily
->([
-  [
-    MtrDex.Ed25519_Seed,
-    {
-      both: IdrDex.Ed25519_Sig,
-      bigBoth: IdrDex.Ed25519_Big_Sig,
-      currentOnly: IdrDex.Ed25519_Crt_Sig,
-      bigCurrentOnly: IdrDex.Ed25519_Big_Crt_Sig,
-    },
-  ],
-  [
-    MtrDex.ECDSA_256k1_Seed,
-    {
-      both: IdrDex.ECDSA_256k1_Sig,
-      bigBoth: IdrDex.ECDSA_256k1_Big_Sig,
-      currentOnly: IdrDex.ECDSA_256k1_Crt_Sig,
-      bigCurrentOnly: IdrDex.ECDSA_256k1_Big_Crt_Sig,
-    },
-  ],
-  [
-    MtrDex.ECDSA_256r1_Seed,
-    {
-      both: IdrDex.ECDSA_256r1_Sig,
-      bigBoth: IdrDex.ECDSA_256r1_Big_Sig,
-      currentOnly: IdrDex.ECDSA_256r1_Crt_Sig,
-      bigCurrentOnly: IdrDex.ECDSA_256r1_Big_Crt_Sig,
-    },
-  ],
-]);
 
 /**
  * CESR-local authority for signature suite dispatch.
@@ -81,9 +32,9 @@ function assertSupportedSignerCode(
   code: string,
 ): asserts code is SupportedSignerCode {
   if (
-    code !== MtrDex.Ed25519_Seed
-    && code !== MtrDex.ECDSA_256k1_Seed
-    && code !== MtrDex.ECDSA_256r1_Seed
+    code !== MtrDex.Ed25519_Seed &&
+    code !== MtrDex.ECDSA_256k1_Seed &&
+    code !== MtrDex.ECDSA_256r1_Seed
   ) {
     throw new UnknownCodeError(`Unsupported signer seed code ${code}`);
   }
@@ -93,12 +44,12 @@ function assertSupportedVerferCode(
   code: string,
 ): asserts code is SupportedVerferCode {
   if (
-    code !== MtrDex.Ed25519
-    && code !== MtrDex.Ed25519N
-    && code !== MtrDex.ECDSA_256k1
-    && code !== MtrDex.ECDSA_256k1N
-    && code !== MtrDex.ECDSA_256r1
-    && code !== MtrDex.ECDSA_256r1N
+    code !== MtrDex.Ed25519 &&
+    code !== MtrDex.Ed25519N &&
+    code !== MtrDex.ECDSA_256k1 &&
+    code !== MtrDex.ECDSA_256k1N &&
+    code !== MtrDex.ECDSA_256r1 &&
+    code !== MtrDex.ECDSA_256r1N
   ) {
     throw new UnknownCodeError(`Unsupported verifier code ${code}`);
   }
@@ -165,54 +116,6 @@ export function publicKeyForSignerCode(
     case MtrDex.ECDSA_256r1_Seed:
       return p256.getPublicKey(seed);
   }
-}
-
-/** Resolve the detached-signature derivation code emitted by one signer suite. */
-export function detachedSignatureCodeForSignerCode(signerCode: string): string {
-  assertSupportedSignerCode(signerCode);
-
-  switch (signerCode) {
-    case MtrDex.Ed25519_Seed:
-      return MtrDex.Ed25519_Sig;
-    case MtrDex.ECDSA_256k1_Seed:
-      return MtrDex.ECDSA_256k1_Sig;
-    case MtrDex.ECDSA_256r1_Seed:
-      return MtrDex.ECDSA_256r1_Sig;
-  }
-}
-
-/**
- * Resolve the indexed-signature code family implied by one signer seed code.
- *
- * This mirrors KERIpy's `Signer.sign()` selection rule:
- * - `only=true` uses the current-list-only signature family
- * - otherwise stable-order indexed signing defaults `ondex` to `index`
- * - small codes are used only when `index === ondex` and the index fits in one
- *   sextet
- */
-export function indexedSignatureCodeForSignerCode(
-  signerCode: string,
-  index: number,
-  {
-    ondex,
-    only = false,
-  }: {
-    ondex?: number;
-    only?: boolean;
-  } = {},
-): string {
-  assertSupportedSignerCode(signerCode);
-  const families = SIGNER_INDEXED_SIG_CODES.get(signerCode);
-  if (!families) {
-    throw new UnknownCodeError(`Unsupported signer seed code ${signerCode}`);
-  }
-
-  if (only) {
-    return index <= 63 ? families.currentOnly : families.bigCurrentOnly;
-  }
-
-  const ondexValue = ondex ?? index;
-  return ondexValue === index && index <= 63 ? families.both : families.bigBoth;
 }
 
 /** Create one raw detached signature from seed bytes and the suite implied by `signerCode`. */
