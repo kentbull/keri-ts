@@ -54,6 +54,31 @@ Split guideline:
 - Avoid duplication: keep deep detail in topic docs and concise rollups in the
   top-level index.
 
+## Learnings Update Contract
+
+When updating learnings:
+
+- Treat learnings as fast rehydration memory, not audit history.
+- Prefer rewrite-in-place over append-only updates.
+- Update `Current State` and `Current Follow-Ups` first; most tasks should
+  refine those sections instead of adding a new milestone.
+- Add a milestone only when a durable mental model changed: ownership,
+  invariants, parity rules, architecture boundaries, or the shape of the
+  remaining work.
+- Summarize substance, not implementation trivia. Prioritize what future work
+  must remember to avoid wrong design choices or repeated debugging.
+- If a topic doc starts growing noisy again, compact it before considering a
+  split.
+
+Do not put these in learnings updates unless they are themselves durable
+operational knowledge:
+
+- touched-file inventories
+- exhaustive test command transcripts
+- micro-step chronology
+- "contracts/plans touched" inventories
+- implementation trivia that git history or PR discussion already preserves
+
 ## Parser Contract Rule
 
 For parser lifecycle changes:

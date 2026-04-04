@@ -17,7 +17,7 @@ function hasValidReplyThreshold(
 }
 
 /** Return the hex ordinal text used for DB keys from either Seqner or Number. */
-function encodeOrdinalHex(ordinal: DispatchOrdinal): string {
+export function encodeOrdinalHex(ordinal: DispatchOrdinal): string {
   return "snh" in ordinal ? ordinal.snh : ordinal.numh;
 }
 
@@ -49,13 +49,14 @@ function sameOrNewerReply(
 }
 
 /**
- * Rebuild transferable signature groups for one stored reply SAID from `ssgs.`.
+ * Rebuild transferable signature groups for one stored message SAID from
+ * `ssgs.`.
  *
- * The `rpes.` reply escrow only stores a route -> SAID reference. When we retry
- * verification we must reconstruct the authoritative transferable signature
- * groups from the persisted `ssgs.` rows for that reply.
+ * This is used both by reply escrow reprocessing and by query-not-found
+ * continuation, because both flows persist transferable attachment groups under
+ * the same `(said, pre, snh, dig)` key shape.
  */
-function fetchReplyTsgs(
+export function fetchStoredTsgs(
   db: Baser,
   said: string,
 ): TransIdxSigGroup[] {
@@ -375,7 +376,7 @@ export class Revery {
     }
 
     const oldTsgs = args.osaider
-      ? fetchReplyTsgs(this.db, args.osaider.qb64)
+      ? fetchStoredTsgs(this.db, args.osaider.qb64)
       : [];
     const oldLead = oldTsgs[0];
     for (const tsg of args.tsgs ?? []) {
@@ -604,7 +605,7 @@ export class Revery {
       }
       const dater = this.db.sdts.get([diger.qb64]);
       const serder = this.db.rpys.get([diger.qb64]);
-      const tsgs = fetchReplyTsgs(this.db, diger.qb64);
+      const tsgs = fetchStoredTsgs(this.db, diger.qb64);
       if (!dater || !serder || tsgs.length === 0) {
         this.db.rpes.rem([route], diger);
         this.removeReply(diger);
