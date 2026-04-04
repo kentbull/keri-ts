@@ -5,10 +5,7 @@ import { IdrDex, MtrDex } from "../../../src/primitives/codex.ts";
 import { parseSiger, Siger } from "../../../src/primitives/siger.ts";
 import { Signer } from "../../../src/primitives/signer.ts";
 import { KERIPY_INDEXER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("siger: parses KERIpy siger vector", () => {
   const siger = parseSiger(txt(KERIPY_INDEXER_VECTORS.sigerSample), "txt");

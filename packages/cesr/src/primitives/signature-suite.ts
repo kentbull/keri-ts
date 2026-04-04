@@ -32,9 +32,9 @@ function assertSupportedSignerCode(
   code: string,
 ): asserts code is SupportedSignerCode {
   if (
-    code !== MtrDex.Ed25519_Seed &&
-    code !== MtrDex.ECDSA_256k1_Seed &&
-    code !== MtrDex.ECDSA_256r1_Seed
+    code !== MtrDex.Ed25519_Seed
+    && code !== MtrDex.ECDSA_256k1_Seed
+    && code !== MtrDex.ECDSA_256r1_Seed
   ) {
     throw new UnknownCodeError(`Unsupported signer seed code ${code}`);
   }
@@ -44,12 +44,12 @@ function assertSupportedVerferCode(
   code: string,
 ): asserts code is SupportedVerferCode {
   if (
-    code !== MtrDex.Ed25519 &&
-    code !== MtrDex.Ed25519N &&
-    code !== MtrDex.ECDSA_256k1 &&
-    code !== MtrDex.ECDSA_256k1N &&
-    code !== MtrDex.ECDSA_256r1 &&
-    code !== MtrDex.ECDSA_256r1N
+    code !== MtrDex.Ed25519
+    && code !== MtrDex.Ed25519N
+    && code !== MtrDex.ECDSA_256k1
+    && code !== MtrDex.ECDSA_256k1N
+    && code !== MtrDex.ECDSA_256r1
+    && code !== MtrDex.ECDSA_256r1N
   ) {
     throw new UnknownCodeError(`Unsupported verifier code ${code}`);
   }

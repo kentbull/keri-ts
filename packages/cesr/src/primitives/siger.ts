@@ -1,7 +1,7 @@
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { IdrDex, MtrDex, SIGER_CODES } from "./codex.ts";
 import { Cigar } from "./cigar.ts";
+import { IdrDex, MtrDex, SIGER_CODES } from "./codex.ts";
 import { Indexer, type IndexerInit, parseIndexer } from "./indexer.ts";
 import type { Verfer } from "./verfer.ts";
 
@@ -42,8 +42,7 @@ export class Siger extends Indexer {
   /** Rebuild indexed signature material from detached signature bytes plus verifier context. */
   static fromCigar(
     cigar: Cigar,
-    { index, ondex, only = false, verfer = cigar.verfer }:
-      SigerFromCigarOptions,
+    { index, ondex, only = false, verfer = cigar.verfer }: SigerFromCigarOptions,
   ): Siger {
     if (!verfer) {
       throw new Error(

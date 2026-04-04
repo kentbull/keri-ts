@@ -94,8 +94,7 @@ export class Signer extends Matter {
 
   /** Create one explicit random signer seed for creator-style flows. */
   static random(
-    { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions =
-      {},
+    { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions = {},
   ): Signer {
     const raw = crypto.getRandomValues(
       new Uint8Array(signerSeedSizeForCode(code)),
