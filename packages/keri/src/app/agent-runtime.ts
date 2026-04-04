@@ -1,10 +1,7 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type {
-  KeriDispatchEnvelope,
-  TransIdxSigGroup,
-} from "../core/dispatch.ts";
+import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
@@ -152,8 +149,8 @@ export function runtimePendingState(
     ingress: !runtime.reactor.ingress.empty,
     cues: !runtime.cues.empty,
     replyEscrow: runtime.hby.db.rpes.cnt() > 0,
-    oobiQueued: runtime.hby.db.oobis.cnt() > 0 ||
-      runtime.hby.db.woobi.cnt() > 0,
+    oobiQueued: runtime.hby.db.oobis.cnt() > 0
+      || runtime.hby.db.woobi.cnt() > 0,
     oobiInFlight: runtime.hby.db.coobi.cnt() > 0,
   };
 }
@@ -161,8 +158,8 @@ export function runtimePendingState(
 /** Return true when any command-local runtime work remains in flight. */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
-  return state.ingress || state.cues || state.replyEscrow ||
-    state.oobiQueued || state.oobiInFlight;
+  return state.ingress || state.cues || state.replyEscrow
+    || state.oobiQueued || state.oobiInFlight;
 }
 
 /**
@@ -225,16 +222,16 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<never> {
   const tasks = [
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* cueDo(runtime, options);
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();
     }),
   ];

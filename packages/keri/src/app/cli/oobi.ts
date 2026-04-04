@@ -1,11 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
-import {
-  createAgentRuntime,
-  enqueueOobi,
-  processRuntimeUntil,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, enqueueOobi, processRuntimeUntil } from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -117,9 +113,7 @@ export function* oobiGenerateCommand(
           const url = preferredUrl(surls);
           if (url) {
             urls.push(
-              `${
-                url.replace(/\/$/, "")
-              }/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
+              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
             );
           }
         }
@@ -207,12 +201,12 @@ export function* oobiResolveCommand(
     yield* processRuntimeUntil(
       runtime,
       () =>
-        (!!hby.db.roobi.get(commandArgs.url!) ||
-          !!hby.db.eoobi.get(commandArgs.url!)) &&
-        hby.db.oobis.cnt() === 0 &&
-        hby.db.woobi.cnt() === 0 &&
-        hby.db.coobi.cnt() === 0 &&
-        hby.db.rpes.cnt() === 0,
+        (!!hby.db.roobi.get(commandArgs.url!)
+          || !!hby.db.eoobi.get(commandArgs.url!))
+        && hby.db.oobis.cnt() === 0
+        && hby.db.woobi.cnt() === 0
+        && hby.db.coobi.cnt() === 0
+        && hby.db.rpes.cnt() === 0,
       { maxTurns: 128 },
     );
 

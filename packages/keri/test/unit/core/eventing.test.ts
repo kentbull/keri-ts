@@ -138,7 +138,7 @@ function makeDelegatedRotation(
 }
 
 Deno.test("Kevery.processEvent returns accept for an in-order local ixn", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-accept-${crypto.randomUUID()}`,
       temp: true,
@@ -187,7 +187,7 @@ Deno.test("Kevery.processEvent returns accept for an in-order local ixn", async 
 });
 
 Deno.test("Kevery.decideEvent returns duplicate for the same accepted inception SAID", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-dup-${crypto.randomUUID()}`,
       temp: true,
@@ -229,7 +229,7 @@ Deno.test("Kevery.decideEvent returns duplicate for the same accepted inception 
 });
 
 Deno.test("Kevery.decideEvent returns ooo escrow for out-of-order ixn", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ooo-${crypto.randomUUID()}`,
       temp: true,
@@ -280,7 +280,7 @@ Deno.test("Kevery.decideEvent returns ooo escrow for out-of-order ixn", async ()
 });
 
 Deno.test("Kevery.processEvent rejects invalid local ixn without throwing normal control exceptions", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-reject-${crypto.randomUUID()}`,
       temp: true,
@@ -331,7 +331,7 @@ Deno.test("Kevery.processEvent rejects invalid local ixn without throwing normal
 });
 
 Deno.test("Kevery applies weighted threshold satisfaction to local ixn signatures", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-weighted-${crypto.randomUUID()}`,
       temp: true,
@@ -395,7 +395,7 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
 });
 
 Deno.test("Kevery accepts superseding delegated recovery when the newer delegating event is later", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-delegated-b1-source-${crypto.randomUUID()}`,
       temp: true,
@@ -579,7 +579,7 @@ Deno.test("Kevery accepts superseding delegated recovery when the newer delegati
 });
 
 Deno.test("Kevery accepts superseding delegated recovery when the later seal is in the same delegating event", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-delegated-b2-source-${crypto.randomUUID()}`,
       temp: true,

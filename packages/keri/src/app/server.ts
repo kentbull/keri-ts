@@ -39,8 +39,7 @@ function openServerHost(
       port,
       hostname: "127.0.0.1",
       signal,
-      onListen: ({ port }) =>
-        logger.info(`Server running on http://localhost:${port}`),
+      onListen: ({ port }) => logger.info(`Server running on http://localhost:${port}`),
       onError: (error) => {
         logger.error("Server error:", error);
         return new Response("Internal Server Error", { status: 500 });
@@ -57,18 +56,16 @@ function openServerHost(
         }
 
         if (runtime) {
-          const parts = url.pathname.split("/").filter((part) =>
-            part.length > 0
-          );
+          const parts = url.pathname.split("/").filter((part) => part.length > 0);
           let aid: string | undefined;
           let role: string | undefined;
           let eid: string | undefined;
 
           if (
-            parts.length >= 4 &&
-            parts[0] === ".well-known" &&
-            parts[1] === "keri" &&
-            parts[2] === "oobi"
+            parts.length >= 4
+            && parts[0] === ".well-known"
+            && parts[1] === "keri"
+            && parts[2] === "oobi"
           ) {
             aid = parts[3];
             role = Roles.controller;

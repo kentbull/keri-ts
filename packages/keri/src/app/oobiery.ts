@@ -1,11 +1,5 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
-import {
-  type Cigar,
-  Diger,
-  Ilks,
-  Prefixer,
-  SerderKERI,
-} from "../../../cesr/mod.ts";
+import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -317,10 +311,10 @@ function parseOobiUrl(url: string, alias?: string): OobiJob {
   };
 
   if (
-    parts.length >= 4 &&
-    parts[0] === ".well-known" &&
-    parts[1] === "keri" &&
-    parts[2] === "oobi"
+    parts.length >= 4
+    && parts[0] === ".well-known"
+    && parts[1] === "keri"
+    && parts[2] === "oobi"
   ) {
     job.cid = parts[3];
     job.role = Roles.controller;

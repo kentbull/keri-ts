@@ -1,10 +1,6 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { PathError, ValidationError } from "../../core/errors.ts";
-import {
-  createAgentRuntime,
-  processRuntimeUntil,
-  runtimeHasPendingWork,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, processRuntimeUntil, runtimeHasPendingWork } from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import { createHabery, type Habery } from "../habbing.ts";
 
@@ -88,7 +84,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const cf: Configer | undefined = initArgs.configFile
       ? (yield* createConfiger({
         name: initArgs.configFile,

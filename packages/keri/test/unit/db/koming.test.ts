@@ -1,19 +1,9 @@
 import { run } from "effection";
 import { assert, assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { Kinds, t } from "../../../../cesr/mod.ts";
-import {
-  KeyStateRecord,
-  type KeyStateRecordShape,
-  RawRecord,
-  StateEERecord,
-} from "../../../src/core/records.ts";
+import { KeyStateRecord, type KeyStateRecordShape, RawRecord, StateEERecord } from "../../../src/core/records.ts";
 import { createLMDBer, type LMDBer } from "../../../src/db/core/lmdber.ts";
-import {
-  DupKomer,
-  Komer,
-  KomerBase,
-  type KomerKind,
-} from "../../../src/db/koming.ts";
+import { DupKomer, Komer, KomerBase, type KomerKind } from "../../../src/db/koming.ts";
 
 interface PersonRecordShape {
   first: string;
@@ -26,8 +16,7 @@ interface PersonRecordShape {
   };
 }
 
-class PersonRecord extends RawRecord<PersonRecordShape>
-  implements PersonRecordShape {
+class PersonRecord extends RawRecord<PersonRecordShape> implements PersonRecordShape {
   declare first: string;
   declare last: string;
   declare address: {
@@ -57,7 +46,7 @@ class PersonRecord extends RawRecord<PersonRecordShape>
 async function withTempDb(
   fn: (ctx: { lmdber: LMDBer }) => void,
 ): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `komer-${crypto.randomUUID()}`,
       temp: true,

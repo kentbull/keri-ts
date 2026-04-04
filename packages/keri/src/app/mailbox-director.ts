@@ -1,10 +1,5 @@
 import type { Operation } from "npm:effection@^3.6.0";
-import type {
-  AgentCue,
-  CueEmission,
-  ReplyCue,
-  StreamCue,
-} from "./../core/cues.ts";
+import type { AgentCue, CueEmission, ReplyCue, StreamCue } from "./../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TopicsRecord } from "../core/records.ts";
 import type { Baser } from "../db/basing.ts";
@@ -244,14 +239,14 @@ export class MailboxDirector implements CueSink {
 
   /** Load or initialize the durable topic-index record used for local mailbox publication. */
   private cursorRecord(pre: string): TopicsRecord {
-    return this.db.tops.get([pre, MAILBOX_CURSOR]) ??
-      new TopicsRecord({ topics: {} });
+    return this.db.tops.get([pre, MAILBOX_CURSOR])
+      ?? new TopicsRecord({ topics: {} });
   }
 }
 
 function replyMailboxPre(cue: ReplyCue): string | null {
-  const data = cue.data ??
-    (cue.serder?.ked?.a as Record<string, unknown> | undefined);
+  const data = cue.data
+    ?? (cue.serder?.ked?.a as Record<string, unknown> | undefined);
   const pre = data?.i;
   return typeof pre === "string" ? pre : null;
 }
