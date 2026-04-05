@@ -83,8 +83,9 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
    implemented, and `tufa list` / `tufa aid` now have live interop evidence
    against KLI-created encrypted `.keri` stores.
 2. Gate B bootstrap CLI parity is now live-evidenced for
-   `init`/`incept`/`export`/`list`/`aid`; endpoint/OOBI/comms/challenge breadth
-   remains absent or blocked by missing command surfaces.
+   `init`/`incept`/`export`/`list`/`aid`, and `init` / `incept` now host
+   bounded command-local runtime convergence when queued bootstrap OOBIs exist
+   instead of stopping at config preload.
 3. Gate D is now live-evidenced: keeper-global salt, per-prefix salts, and
    `pris.` signer seeds use real sealed-box encryption with AEID
    decrypt/re-encrypt behavior and wrong-passcode failure coverage.
@@ -92,8 +93,10 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
    `Hab.make()` builds inception events through `SerderKERI`, and encrypted
    signator reopen behavior is covered by focused reopen tests.
 5. The DB layer bootstrap path now runs through typed `Suber` / `Komer` wrappers
-   with broad `Baser` / `Keeper` named-subdb binding, but escrow infrastructure
-   and row-by-row parity closure are still open.
+   with broad `Baser` / `Keeper` named-subdb binding, and the escrow/runtime
+   infrastructure is now strong enough for honest bootstrap/runtime work. The
+   remaining DB parity problem is narrower row-by-row closure, especially the
+   highest-value `Partial` rows and fuller `Komer` evidence.
 6. Browser/mobile storage remains deferred until after 1.0, but the codebase
    should keep storage-facing semantics isolated now so later IndexedDB support
    does not become a hidden rewrite.
@@ -147,23 +150,30 @@ Across `cha1`/`cha2`:
 - Design and implementation details for this gate are tracked in the dedicated
   subplan:
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
-- Current status: Gate E is now considered complete only for the honest
-  bootstrap/runtime slice. Broader reply families, receipt-family escrow work,
-  and richer communications/runtime breadth remain later-gate work.
+- Current status: Gate E is now materially complete for the honest
+  bootstrap/runtime slice, including bounded `init` / `incept` convergence.
+  What remains is no longer bootstrap reply/query/receipt plumbing. It is the
+  Gate F bridge around richer communications/transport breadth plus the broader
+  stale/timeout continuation tail.
 
-#### Gate E Continuation Needed For `init` / `incept`
+#### Gate E Follow-On After `init` / `incept` Closure
 
-- Treat Chunks 1 and 2 as closed and Chunk 3 as effectively complete enough to
-  stop blocking on parser perfection.
-- The active continuation is Chunks 4, 5, and 6 plus the enabling slices of
-  Chunks 7, 8, and 9:
-  - `/ksn`
-  - `/introduce`
-  - fuller cue materialization
-  - receipt-family and query escrows
-  - broader reply-based OOBI continuation
-- This is the work that turns "OOBI fetch succeeded" into "accepted remote
-  transferable state exists and later commands can rely on it honestly."
+- Treat the old Gate E continuation story as substantially closed:
+  - Chunks 1 through 10 now cover the honest bootstrap/runtime/query/receipt
+    slice
+  - `/ksn`, `/introduce`, fuller cue materialization, receipt/query escrows,
+    and reply-based OOBI continuation are no longer the active blocker for
+    `init` / `incept`
+- `tufa init` now hosts the shared runtime when queued `oobis.` / `woobi.` work
+  exists, waits for bounded convergence, and fails if bootstrap OOBIs end in
+  `eoobi.`
+- `tufa incept` now performs the same bounded convergence before local
+  identifier creation. It is no longer "runtime blind".
+- The active follow-on is:
+  - Gate F transport/comms breadth across direct, mailbox, forwarding, and
+    exchange paths
+  - the broader stale/timeout continuation tail
+  - packaged npm/tarball confidence for `tufa agent`
 
 ### Gate F: Communications Interop (Direct + Mailbox)
 
@@ -192,6 +202,13 @@ Across `cha1`/`cha2`:
 - Add matrix for KERIpy command parity and expected output shape.
 - Seed DB parity matrix from `lmdb-dumper.md` and KERIpy module APIs.
 
+Current state:
+
+- The parity/planning artifacts exist and have been useful enough to stop
+  treating Phase 2 as a purely exploratory effort.
+- The next harness value is honest packaged-boundary coverage for `tufa agent`,
+  not more bootstrap-only source-path optimism.
+
 P0 tracking artifacts:
 
 - `docs/plans/keri/KLI_TUFA_COMMAND_PARITY_MATRIX.md`
@@ -205,6 +222,12 @@ P0 tracking artifacts:
 
 - LMDB environment lifecycle, DB open/close/reopen, iterators, dup behavior,
   version/migration scaffolding, required key helpers.
+
+Current state:
+
+- Strong enough for the active Phase 2 runtime and interoperability work.
+- The main remaining DB problem is not missing basic lifecycle primitives. It
+  is row-level parity closure and evidence.
 
 ## P2 - `subing.py` + `koming.py` Parity Slice
 
@@ -220,9 +243,23 @@ P0 tracking artifacts:
 - Build out `Baser/Keeper/Reger/Noter/Mailboxer` infrastructure for current
   feature gates (not every K/V pair yet, but enough to stop structural churn).
 
+Current state:
+
+- Broad named-subdb binding is landed across `Baser` / `Keeper`, and the active
+  runtime/bootstrap work no longer depends on ad hoc storage shortcuts.
+- The remaining work is completeness and evidence, not structural viability.
+
 ## P4 - Escrowing Infrastructure (`escrowing.py`) Parity Slice
 
 - Implement escrow framework/process loops needed by OOBI/comms/challenge paths.
+
+Current state:
+
+- Strong enough for honest Gate E behavior: continuous runtime escrow loops,
+  reply escrow/replay, receipt-family escrows, and query-not-found replay are
+  all real.
+- Remaining escrow work is the broader stale/timeout policy tail plus later
+  feature families, not missing Phase 2 bootstrap plumbing.
 
 ## P5 - Path Modes + Bootstrap Commands
 
@@ -230,9 +267,10 @@ P0 tracking artifacts:
 - Land/finish `init`, `incept`, `list`, `aid` parity flow (Gate B/C).
 - Current state: Gate B is implemented with live interop evidence, and Gate C
   visibility now passes live against encrypted KLI stores; Gate D encrypted
-  secret semantics are also closed, and Gate E bootstrap parity is now closed
-  with live harness evidence, so the next blocker is communications/runtime
-  breadth rather than keeper unlock or bootstrap endpoint work.
+  secret semantics are also closed; and Gate E bootstrap/runtime parity now
+  includes bounded `init` / `incept` convergence. The next blocker is
+  communications/runtime breadth rather than keeper unlock or bootstrap
+  endpoint work.
 
 ## P6 - AEID + Manager + Signator Reliability
 
@@ -247,42 +285,70 @@ P0 tracking artifacts:
 - Implement endpoint role authorization path and persistence.
 - Ensure mailbox role data supports OOBI/mailbox flow.
 - Current state: closed for the Gate E bootstrap slice, with live parity
-  evidence for `tufa ends add` and runtime-backed persistence.
+  evidence for `tufa ends add`, runtime-backed persistence, and OOBI/resource
+  serving from stored endpoint/auth material.
 
 ## P8 - OOBI Generate/Resolve
 
 - Implement OOBI command parity needed for two-controller bootstrap.
 - Current state: closed for the Gate E bootstrap slice, with live mailbox
-  generate/resolve parity against KERIpy and local shared-runtime coverage for
-  controller, witness, and agent OOBIs.
+  generate/resolve parity against KERIpy, local shared-runtime coverage for
+  controller, witness, mailbox, and agent OOBIs, and `/introduce`-driven
+  continuation staying on the same durable runtime path.
 
 ## P8.5 - Gate E Continuation For `init` / `incept`
 
-- `tufa init` should mirror KERIpy init by hosting the command-local shared
-  runtime when config preload exists and waiting for `roobi.` plus `woobi.`
-  authentication convergence, not merely seeding DB rows.
-- `tufa incept` should stop assuming "skip config and stay purely local" is the
-  honest long-term behavior. It should consume accepted remote state produced by
-  the shared runtime whenever that state is a real prerequisite surface.
-- Finish the reply/runtime breadth that makes those commands real:
-  - `/ksn` reply handling
-  - `/introduce` reply handling
-  - fuller cue materialization
-  - unverified receipt-family/query escrows
-  - broader reply-based OOBI continuation
+- Current status:
+  - materially complete for the honest bootstrap/runtime slice
+  - `tufa init` now mirrors KERIpy's bootstrap intent closely enough to be
+    honest: it hosts the command-local runtime when queued bootstrap work
+    exists, waits for bounded convergence, and fails on unresolved bootstrap
+    OOBIs
+  - `tufa incept` now performs the same bounded bootstrap convergence before
+    local identifier creation instead of assuming that "local" means
+    "runtime-blind"
+  - the old continuation blockers are landed for this slice:
+    - `/ksn` reply handling
+    - `/introduce` reply handling
+    - fuller cue materialization
+    - unverified receipt-family/query escrows
+    - broader reply-based OOBI continuation
+  - the remaining work is no longer init/incept honesty. It is Gate F transport
+    breadth and the broader stale/timeout continuation tail
 
 ## P9 - Direct + Mailbox Communications
 
 - Implement both transport tracks for interop with KERIpy
   participants/mailboxes.
 
+Current state:
+
+- This is now the main active blocker after Gate E.
+- The indirect/shared-runtime host, mailbox stream slice, and protocol-only
+  server are real, but fuller direct-mode, forwarding, exchange, and richer
+  mailbox communications breadth are not yet closed.
+- `tufa agent` also has a packaged-runtime confidence seam here: source-path
+  evidence is not enough unless the packed npm artifact starts cleanly too.
+
 ## P10 - Challenge Commands
 
 - Implement challenge command set parity and verify with interop tests.
 
+Current state:
+
+- Still a later gate.
+- The important planning constraint is that challenge work should build on the
+  landed shared runtime and communications seams instead of inventing a bypass.
+
 ## P11 - `db dump` Expansion
 
 - Expand dump/readability/decode tooling for encrypted and comms-critical state.
+
+Current state:
+
+- Still useful and still later than the runtime/comms blocker.
+- It remains a verification/evidence amplifier, not the next architectural
+  blocker.
 
 ## P12 - LMDB Full-Parity Closure (Gate H)
 
@@ -291,24 +357,35 @@ P0 tracking artifacts:
 - Confirm feature-by-feature parity completion against KERIpy reference modules
   and `docs/design-docs/db/lmdb-dumper.md` inventory.
 
+Current state:
+
+- Still active as the Phase 2 tail.
+- The remaining work is narrower than before: promote the highest-value
+  `Partial` rows, strengthen `Komer` row-level evidence, and finish the
+  remaining K/V coverage without reopening already-stable DB foundations.
+
 ## P13 - Provider Abstraction Implementation (Post-LMDB Parity)
 
 - Implement DB provider abstraction layer for pluggable K/V backends.
 - First provider remains LMDB; add adapters for IndexedDB/SQLite in follow-on
   increments.
 
-## Recommended Next Focus (2026-04-03)
+Current state:
 
-1. Gate E continuation for real `init` / `incept`: treat Chunks 1-2 as closed,
-   Chunk 3 as good enough, and actively close Chunks 4-6 with the necessary
-   `/ksn` / `/introduce` / escrow support from Chunks 7-9.
-2. `tufa init` parity: run the shared runtime during config-seeded bootstrap
-   and wait for OOBI/auth convergence instead of stopping at DB preload.
-3. `tufa incept` parity: keep local creation simple, but let it rely on
-   accepted remote transferable state when that state already exists or is
-   explicitly resolved as part of setup.
+- Unchanged. Still post-LMDB-parity work, not a present implementation target.
+
+## Recommended Next Focus (2026-04-05)
+
+1. Gate F bridge: build on the now-landed shared runtime and close direct,
+   mailbox, forwarding, and exchange transport breadth instead of reopening
+   bootstrap/runtime foundations.
+2. Runtime hardening: finish the broader stale/timeout continuation tail and
+   cleanup policy now that the core query/reply and receipt/query slices are
+   landed.
+3. `tufa agent` release confidence: keep smoke coverage honest at the packed
+   npm/tarball boundary so source-path success does not hide Node/runtime drift.
 4. Gate H tail: keep DB parity closure moving so the wider runtime work does
-   not accrete new storage shortcuts.
+   not accrete new storage shortcuts or row-level drift.
 
 ## Milestones
 
@@ -340,6 +417,8 @@ Complete P13 after M2.
 9. Challenge round-trip between controllers.
 10. Encrypted-store unlock + behavior checks.
 11. DB evidence via `tufa db dump` (raw and decoded where applicable).
+12. Packed npm/tarball smoke for `tufa agent` proves `init -> incept -> agent ->
+    /health` on the artifact users actually install.
 
 ## Completion Condition for This Phase
 
