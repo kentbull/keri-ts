@@ -69,6 +69,16 @@ function sameOrNewerReply(
  * This is used both by reply escrow reprocessing and by query-not-found
  * continuation, because both flows persist transferable attachment groups under
  * the same `(said, pre, snh, dig)` key shape.
+ *
+ * Reconstruction steps:
+ * - walk the stored signature rows under one message SAID
+ * - regroup rows by `(pre, snh, dig)` back into transferable signature groups
+ * - drop incomplete groups when the signer establishment event can no longer be
+ *   resolved
+ *
+ * Ordering rule:
+ * - groups are returned newest-first by establishment sequence number so reply
+ *   verification sees the same lead-group precedence KERIpy expects
  */
 export function fetchStoredTsgs(
   db: Baser,
@@ -611,6 +621,15 @@ export class Revery {
    * - keep escrow only when verification is still blocked by an
    *   `UnverifiedReplyError`
    */
+  /**
+   * Process escrowed reply messages.
+   *
+   * Pass outline:
+   * - walk `rpes.` rows keyed by reply route
+   * - rebuild stored attachments and reply artifacts
+   * - replay the reply through normal verification
+   * - remove the escrow row on `accept` and `drop`, keep it on `keep`
+   */
   processEscrowReply(): void {
     for (const [keys, diger] of this.db.rpes.getTopItemIter()) {
       const route = keys[0];
@@ -640,6 +659,17 @@ export class Revery {
    * - `keep` mirrors recoverable `UnverifiedReplyError`
    * - `drop` mirrors stale/corrupt escrow rows that should be removed
    * - `accept` mirrors successful reply verification on replay
+   *
+   * Stored-artifact model:
+   * - `sdts.` holds the local escrow timestamp
+   * - `rpys.` holds the escrowed reply serder
+   * - `ssgs.` holds the transferable endorsement groups
+   *
+   * Steps:
+   * - load and validate the escrow artifacts
+   * - reject stale or malformed rows
+   * - replay through `processReply()` exactly as if the reply re-arrived
+   * - map recoverable reply verification failures into `keep`
    */
   public reprocessEscrowedReply(
     diger: Diger,

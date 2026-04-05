@@ -74,6 +74,14 @@ export interface BrokerOptions {
  * Current `keri-ts` difference:
  * - this is a DB substrate only in the current phase; it is exported and
  *   tested, but not yet wired into a TEL runtime or `Reger` owner
+ *
+ * Escrow model:
+ * - `escrowStateNotice()` stores one reply body plus its detached endorsement
+ *   artifacts
+ * - `processEscrowState()` walks one escrow family and maps replay into
+ *   `accept/keep/drop`
+ * - successful replay updates the accepted-state pointer, while terminal drop
+ *   removes the escrow row and may remove the stored artifacts as well
  */
 export class Broker {
   readonly db: LMDBer;
@@ -130,6 +138,12 @@ export class Broker {
    * - `keep` mirrors recoverable retry errors of `extype`
    * - `drop` mirrors stale/corrupt escrow rows that should be unindexed
    * - `accept` mirrors successful processing through the callback
+   *
+   * Pass outline:
+   * - walk escrow rows for one broker type
+   * - load and rebuild the stored reply artifacts
+   * - hand the reconstructed message to the caller-supplied reply processor
+   * - remove, keep, or purge based on the explicit escrow decision
    */
   processEscrowState(
     typ: string,
@@ -188,6 +202,13 @@ export class Broker {
    *
    * This stores the escrow artifacts idempotently before indexing the escrow
    * route bucket.
+   *
+   * Stored artifacts:
+   * - `daterdb` for timeout handling
+   * - `serderdb` for the escrowed reply body
+   * - `tigerdb` for transferable endorsement groups
+   * - `cigardb` for non-transferable endorsement couples
+   * - `escrowdb` for the broker-specific `(typ, pre, aid)` index
    */
   escrowStateNotice(
     {
@@ -277,6 +298,11 @@ export class Broker {
    *
    * This intentionally stays private to `Broker` for now so the generic
    * `fetchTsgs` parity row can remain tracked separately.
+   *
+   * Reconstruction steps:
+   * - walk the stored signer rows grouped under one reply SAID
+   * - regroup them by `(pre, snh, dig)`
+   * - rebuild `TransIdxSigGroup` values in insertion order per group
    */
   private fetchTsgs(diger: Diger, snh?: string): TransIdxSigGroup[] {
     const groups: TransIdxSigGroup[] = [];
@@ -324,7 +350,21 @@ export class Broker {
     return groups;
   }
 
-  /** Process one escrowed transaction-state notice through the supplied callback. */
+  /**
+   * Process one escrowed transaction-state notice through the supplied callback.
+   *
+   * KERIpy translation:
+   * - recoverable callback failures stay in escrow via `keep`
+   * - malformed/stale artifact failures drop the escrow row
+   * - outer corruption while rebuilding signer groups drops the row and tells
+   *   the caller to purge the stored artifacts
+   *
+   * Steps:
+   * - rebuild transferable groups first
+   * - load the reply body, timestamp, and non-transferable couples
+   * - reject stale or malformed escrow rows
+   * - replay the reconstructed reply through the supplied processor
+   */
   public processEscrowedStateNotice(args: {
     aid: string;
     diger: Diger;

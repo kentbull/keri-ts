@@ -15,7 +15,11 @@ import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { type DispatchOrdinal, type KeriDispatchEnvelope, type TransIdxSigGroup } from "./dispatch.ts";
+import {
+  type DispatchOrdinal,
+  type KeriDispatchEnvelope,
+  type TransIdxSigGroup,
+} from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import {
   acceptEscrow,
@@ -228,6 +232,18 @@ export class Kevery {
    *   flow exception
    * - unsupported routes would raise `ValidationError` and emit `invalid`
    * - `keri-ts` models those as explicit live-query decisions instead
+   *
+   * Route outline:
+   * - `logs` replays KEL messages from first-seen ordinal `fn`
+   * - `ksn` returns the current fully witnessed key-state notice
+   * - `mbx` schedules mailbox streaming for the requested topic cursors
+   *
+   * Decision rule:
+   * - `accept` means the route has enough local state to emit cues now
+   * - `escrow` means the query is well-formed but still waiting on local KEL
+   *   state or route criteria
+   * - `drop` means the query is malformed or unsupported and should not become
+   *   query-not-found escrow
    */
   private decideQuery(envelope: QueryEnvelope): QueryProcessDecision {
     const route = envelope.serder.route;
@@ -257,6 +273,8 @@ export class Kevery {
           return escrowQuery("missingKever");
         }
 
+        // Query anchors stay raw SAD here. `Baser.fetchAllSealingEventByEventSeal`
+        // owns the semantic `SealEvent` projection boundary.
         if (query.a !== undefined) {
           if (!this.db.fetchAllSealingEventByEventSeal(pre, query.a)) {
             return escrowQuery("missingAnchor");
@@ -272,6 +290,8 @@ export class Kevery {
           msgs.push(...this.db.cloneDelegation(kever));
         }
         if (msgs.length === 0) {
+          // KERIpy treats an empty replay slice as a successful no-op rather
+          // than a query-not-found condition.
           return acceptQuery();
         }
         return acceptQuery([{
@@ -325,6 +345,11 @@ export class Kevery {
    * - `escrow` persists query-not-found retry material
    * - `drop` suppresses malformed queries, while unsupported routes still
    *   emit the legacy `invalid` cue for the host/runtime
+   *
+   * KERIpy translation:
+   * - live query `escrow` is the TS replacement for `QueryNotFoundError`
+   * - live query `drop` is the TS replacement for parser-caught query
+   *   validation failures
    */
   private applyLiveQueryDecision(
     envelope: QueryEnvelope,
@@ -370,6 +395,12 @@ export class Kevery {
    * - if the receipted event is missing, escrow by receipt family
    * - if the receiptor establishment event is missing for a transferable
    *   receipt group, escrow that group in `vres.`
+   *
+   * Pass outline:
+   * - decide whether the receipted event is accepted, missing, or stale
+   * - verify/store detached non-transferable and witness receipt material
+   * - verify each transferable receipt group in order
+   * - keep walking grouped receipts until one must escrow or drop
    */
   processReceipt(envelope: ReceiptEnvelope): void {
     const serder = envelope.serder;
@@ -464,6 +495,12 @@ export class Kevery {
    * KERIpy correspondence:
    * - mirrors the family-specific escrow writes that precede
    *   `UnverifiedReceiptError` in `processReceipt()`
+   *
+   * Why this split exists:
+   * - detached non-transferable receipts, witness receipts, and transferable
+   *   groups all need different durable escrow shapes
+   * - without the receipted event there is no authoritative event digest key to
+   *   promote the receipt material into its final store
    */
   private escrowMissingReceiptedEvent(
     envelope: ReceiptEnvelope,
@@ -541,7 +578,8 @@ export class Kevery {
         return {
           kind: "reject",
           code: "invalidSn",
-          message: `Duplicate inception event ${said} for ${pre} must keep sn=0.`,
+          message:
+            `Duplicate inception event ${said} for ${pre} must keep sn=0.`,
         };
       }
       if (kever.said === said) {
@@ -628,7 +666,15 @@ export class Kevery {
     this.processOrdinalEscrow("ooo");
   }
 
-  /** Reprocess one pass of unverified witness receipt escrows. */
+  /**
+   * Reprocess one pass of unverified witness receipt escrows.
+   *
+   * Pass outline:
+   * - walk `uwes.` rows keyed by receipted `(pre, sn)`
+   * - rebuild detached witness signatures from escrow material
+   * - validate expiry and partial-witness state
+   * - accept/drop/remove or keep for a later pass
+   */
   processEscrowUnverWitness(): void {
     const entries = [...this.db.uwes.getTopItemIter()] as Array<
       [string[], number, string[]]
@@ -660,7 +706,17 @@ export class Kevery {
     }
   }
 
-  /** Reprocess one pass of unverified non-transferable receipt escrows. */
+  /**
+   * Reprocess one pass of unverified non-transferable receipt escrows.
+   *
+   * Pass outline:
+   * - walk `ures.` rows keyed by receipted `(pre, sn)`
+   * - rehydrate the durable `(Prefixer, Cigar)` shape back into runtime
+   *   verifier-carrying cigars
+   * - first try partial-witness promotion, then fall back to accepted-event
+   *   receipt handling
+   * - accept/drop/remove or keep for a later pass
+   */
   processEscrowUnverNonTrans(): void {
     const entries = [...this.db.ures.getTopItemIter()];
     for (const [keys, triple] of entries) {
@@ -690,7 +746,19 @@ export class Kevery {
     }
   }
 
-  /** Reprocess one pass of unverified transferable receipt escrows. */
+  /**
+   * Reprocess one pass of unverified transferable receipt escrows.
+   *
+   * Why this escrow exists:
+   * - without the receipted event or the receiptor establishment event there is
+   *   no authoritative target for the verified receipt quadruple
+   *
+   * Pass outline:
+   * - walk `vres.` quintuples keyed by receipted `(pre, sn)`
+   * - validate expiry and the accepted receipted event
+   * - validate the receiptor seal and establishment key state
+   * - accept/drop/remove or keep for a later pass
+   */
   processEscrowUnverTrans(): void {
     const entries = [...this.db.vres.getTopItemIter()];
     for (const [keys, quintuple] of entries) {
@@ -742,7 +810,15 @@ export class Kevery {
     this.processSetEscrow("delegables");
   }
 
-  /** Reprocess query-not-found escrows through the same query path. */
+  /**
+   * Reprocess query-not-found escrows through the same query path.
+   *
+   * Pass outline:
+   * - walk requester-oriented `qnfs.` rows
+   * - reload the escrowed query body and endorsements
+   * - replay the query through the same live decision logic
+   * - clear escrow material on `accept` and `drop`, keep it on `keep`
+   */
   processQueryNotFound(): void {
     const entries = [...this.db.qnfs.getTopItemIter()];
     for (const [keys, escrowedSaid] of entries) {
@@ -969,6 +1045,17 @@ export class Kevery {
    * - live query `escrow` becomes replay `keep`
    * - live query `drop` becomes replay `drop`
    * - live query `accept` becomes replay `accept`
+   *
+   * Escrow artifacts used here:
+   * - `evts.` stores the query serder
+   * - `sigs.` and `rcts.` store requester endorsement material
+   * - `dtss.` stores local escrow insertion time for timeout handling
+   *
+   * Steps:
+   * - validate replay timeout state
+   * - rebuild the escrowed query envelope from persisted artifacts
+   * - run the same live query decision logic used for on-wire queries
+   * - map the live result into `accept/keep/drop` for the escrow row
    */
   public reprocessEscrowedQuery(
     requester: string,
@@ -1020,7 +1107,8 @@ export class Kevery {
         source = new Prefixer({ qb64: requester });
       } catch (error) {
         return dropEscrow("malformedEscrowedQuery", {
-          message: `QNF Failed to reconstruct escrowed query requester at dig = ${qsaid}`,
+          message:
+            `QNF Failed to reconstruct escrowed query requester at dig = ${qsaid}`,
           context: {
             requester,
             qsaid,
@@ -1042,12 +1130,14 @@ export class Kevery {
         return acceptEscrow();
       case "escrow":
         return keepEscrow("queryNotFound", {
-          message: `QNF Query still waiting on continuation state at dig = ${qsaid}`,
+          message:
+            `QNF Query still waiting on continuation state at dig = ${qsaid}`,
           context: { requester, qsaid, queryReason: decision.reason },
         });
       case "drop":
         return dropEscrow("malformedEscrowedQuery", {
-          message: `QNF Dropping escrowed query at dig = ${qsaid} after live query validation failed.`,
+          message:
+            `QNF Dropping escrowed query at dig = ${qsaid} after live query validation failed.`,
           context: { requester, qsaid, liveReason: decision.reason },
         });
     }
@@ -1069,6 +1159,11 @@ export class Kevery {
    * - receipt digests may not match the database digest algorithm exactly, so
    *   later replay must recover the receipted event by last event at sequence
    *   number, not by trusting the digest alone
+   *
+   * Promotion target:
+   * - successful replay only promotes into `wigs.`
+   * - witness verifier assignment is deferred until the receipted event's
+   *   authoritative witness list is available
    */
   private escrowUWReceipt(
     serder: SerderKERI,
@@ -1106,6 +1201,10 @@ export class Kevery {
    * Why key by `(pre, sn)`:
    * - receipt digests may vary by digest algorithm, so unescrow must find the
    *   latest accepted event at the sequence number first and then compare digs
+   *
+   * Promotion target:
+   * - replay may land in `wigs.` when the receiptor turns out to be a witness
+   * - otherwise it lands in `rcts.` once the accepted receipted event exists
    */
   private escrowUReceipt(
     serder: SerderKERI,
@@ -1153,6 +1252,11 @@ export class Kevery {
    * - live `rct` processing uses grouped `tsgs`
    * - escrow/storage flattens those groups into quintuple rows in `vres.`
    *   exactly the way KERIpy does
+   *
+   * Why flatten here:
+   * - later replay can validate and promote each indexed signature
+   *   independently even when multiple signatures share the same establishment
+   *   seal
    */
   private escrowTRGroups(
     serder: SerderKERI,
@@ -1197,6 +1301,11 @@ export class Kevery {
    * - `escrowTRGroups()` is used when the receipted event itself is missing
    * - `escrowTReceipts()` is used when the receipted event exists but the
    *   receiptor establishment event is not yet in the receiptor's KEL
+   *
+   * Same durable shape, different reason:
+   * - both escrow families use the same quintuple row in `vres.`
+   * - the distinction is semantic: whether the missing prerequisite is the
+   *   receipted event or the receiptor seal/key state
    */
   private escrowTReceipts(
     serder: SerderKERI,
@@ -1435,14 +1544,16 @@ export class Kevery {
     const serder = this.db.getEvtSerder(pre, said);
     if (!serder) {
       return dropEscrow("invalidReceiptedEventReference", {
-        message: `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
+        message:
+          `${scope} Invalid receipted evt reference at pre=${pre} sn=${snh}`,
         context: { pre, sn, said, acceptedSaid, scope },
       });
     }
     const wits = this.resolveAcceptedEventWitnesses(pre, said, serder);
     if (!wits) {
       return keepEscrow("missingReceiptedEvent", {
-        message: `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`,
+        message:
+          `${scope} Kever not ready for receipted evt at pre=${pre} sn=${snh}`,
         context: { pre, sn, said, scope },
       });
     }
@@ -1465,6 +1576,11 @@ export class Kevery {
    *   `_processEscrowFindUnver()`
    * - partial-witness replay deliberately recomputes the witness list from the
    *   escrowed event and current state instead of trusting this projection
+   *
+   * Translation note:
+   * - this helper is intentionally about accepted-event receipt handling only
+   * - if a maintainer is looking for the partial-witness replay logic, the
+   *   right seam is `resolvePartialWitnessEscrowWitnesses()`
    */
   private resolveAcceptedEventWitnesses(
     pre: string,
@@ -1487,6 +1603,16 @@ export class Kevery {
    *
    * KERIpy correspondence:
    * - mirrors the witness-list reconstruction inside `_processEscrowFindUnver()`
+   *
+   * Event-kind split:
+   * - inception/delegated inception events carry their own witness list
+   * - rotations derive the next witness list from current state plus cuts/adds
+   * - non-establishment events reuse the current kever witness list
+   *
+   * Result meanings:
+   * - `accept` returns the authoritative witness list for signature assignment
+   * - `continue` means replay should keep waiting on current key state
+   * - `drop` means the escrowed event or witness math is invalid
    */
   public resolvePartialWitnessEscrowWitnesses(
     serder: SerderKERI,
@@ -1496,7 +1622,9 @@ export class Kevery {
       return hasUniqueWitnesses(wits)
         ? { kind: "accept", wits }
         : dropEscrow("duplicateWitnesses", {
-          message: `PWE Invalid wits = ${JSON.stringify(wits)} has duplicates for evt = ${JSON.stringify(serder.ked)}.`,
+          message: `PWE Invalid wits = ${
+            JSON.stringify(wits)
+          } has duplicates for evt = ${JSON.stringify(serder.ked)}.`,
           context: { pre: serder.pre, said: serder.said, wits },
         });
     }
@@ -1517,7 +1645,9 @@ export class Kevery {
         return { kind: "accept", wits: derived.value.wits };
       }
       return dropEscrow(derived.reason, {
-        message: `PWE Invalid witness cuts/adds for evt = ${JSON.stringify(serder.ked)}.`,
+        message: `PWE Invalid witness cuts/adds for evt = ${
+          JSON.stringify(serder.ked)
+        }.`,
         context: {
           pre: serder.pre,
           said: serder.said,
@@ -1533,7 +1663,9 @@ export class Kevery {
     // state to be available already; otherwise the escrowed state is corrupt.
     if (!kever) {
       return dropEscrow("processingError", {
-        message: `PWE Missing current key state for receipted evt at pre=${serder.pre ?? ""}.`,
+        message: `PWE Missing current key state for receipted evt at pre=${
+          serder.pre ?? ""
+        }.`,
         context: { pre: serder.pre, said: serder.said, ilk: serder.ilk },
       });
     }
@@ -1550,6 +1682,13 @@ export class Kevery {
    * Important rule:
    * - this helper only promotes receipts into `wigs.`
    * - it never writes `rcts.` while the receipted event is still in `pwes.`
+   *
+   * Search outline:
+   * - walk `pwes.` rows at the receipted `(pre, sn)`
+   * - find the escrowed event whose digest matches the receipt digest
+   * - reconstruct the witness list for that escrowed event
+   * - if the receiptor is a witness and the signature verifies, promote to
+   *   `wigs.`
    */
   private processEscrowFindUnver(
     pre: string,
@@ -1583,7 +1722,10 @@ export class Kevery {
         const receiptorPre = verfer?.qb64;
         if (!verfer || !receiptorPre) {
           return dropEscrow("missingEscrowArtifact", {
-            message: `PWE Missing verifier context for escrowed receipt at pre=${pre} sn=${sn.toString(16)}.`,
+            message:
+              `PWE Missing verifier context for escrowed receipt at pre=${pre} sn=${
+                sn.toString(16)
+              }.`,
             context: { pre, sn, said },
           });
         }
@@ -1593,7 +1735,9 @@ export class Kevery {
         }
         if (!verfer.verify(cigar.raw, serder.raw)) {
           return dropEscrow("invalidReceiptSignature", {
-            message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
+            message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${
+              sn.toString(16)
+            }.`,
             context: { pre, sn, said, receiptor: receiptorPre },
           });
         }
@@ -1606,14 +1750,20 @@ export class Kevery {
 
       if (!wiger) {
         return dropEscrow("missingEscrowArtifact", {
-          message: `PWE Missing escrowed witness signature material at pre=${pre} sn=${sn.toString(16)}.`,
+          message:
+            `PWE Missing escrowed witness signature material at pre=${pre} sn=${
+              sn.toString(16)
+            }.`,
           context: { pre, sn, said },
         });
       }
       const verferQb64 = witnessState.wits[wiger.index];
       if (!verferQb64) {
         return dropEscrow("invalidWitnessIndex", {
-          message: `PWE Bad escrowed witness receipt index=${wiger.index} at pre=${pre} sn=${sn.toString(16)}`,
+          message:
+            `PWE Bad escrowed witness receipt index=${wiger.index} at pre=${pre} sn=${
+              sn.toString(16)
+            }`,
           context: {
             pre,
             sn,
@@ -1626,7 +1776,9 @@ export class Kevery {
       const verfer = new Verfer({ qb64: verferQb64 });
       if (!verfer.verify(wiger.raw, serder.raw)) {
         return dropEscrow("invalidReceiptSignature", {
-          message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${sn.toString(16)}.`,
+          message: `PWE Bad escrowed witness receipt wig at pre=${pre} sn=${
+            sn.toString(16)
+          }.`,
           context: {
             pre,
             sn,
@@ -1660,6 +1812,11 @@ export class Kevery {
    * KERIpy rule:
    * - UWE replay only retries against `pwes.` through `_processEscrowFindUnver`
    * - if the partial-witness event is still not ready, keep the receipt escrowed
+   *
+   * Unlike non-transferable receipts:
+   * - there is no accepted-event fallback here
+   * - witness receipts in this escrow family only resolve by finding the
+   *   matching partially witnessed event and promoting into `wigs.`
    */
   public reprocessEscrowedWitnessReceipt(
     pre: string,
@@ -1674,7 +1831,9 @@ export class Kevery {
     const decision = this.processEscrowFindUnver(pre, sn, said, { wiger });
     return decision.kind === "continue"
       ? keepEscrow("missingReceiptedEvent", {
-        message: `UWE Missing witness receipted evt at pre=${pre} sn=${sn.toString(16)}`,
+        message: `UWE Missing witness receipted evt at pre=${pre} sn=${
+          sn.toString(16)
+        }`,
         context: { pre, sn, said },
       })
       : decision;
@@ -1685,6 +1844,12 @@ export class Kevery {
    *
    * Escrow replay may promote the receipt into `wigs.` if the receiptor turns
    * out to be a current witness, otherwise it lands in `rcts.`.
+   *
+   * Steps:
+   * - validate timeout state
+   * - first try partial-witness replay against `pwes.`
+   * - if that does not apply, resolve the accepted receipted event from the KEL
+   * - verify the detached signature and store the receipt in `wigs.` or `rcts.`
    */
   private reprocessEscrowedNonTransReceipt(
     pre: string,
@@ -1700,7 +1865,9 @@ export class Kevery {
     const verfer = cigar.verfer;
     if (!verfer) {
       return dropEscrow("missingEscrowArtifact", {
-        message: `URE Missing escrowed receipt verifier at pre=${pre} sn=${sn.toString(16)}.`,
+        message: `URE Missing escrowed receipt verifier at pre=${pre} sn=${
+          sn.toString(16)
+        }.`,
         context: { pre, sn, said },
       });
     }
@@ -1719,7 +1886,9 @@ export class Kevery {
     const { event } = lookup;
     if (!verfer.verify(cigar.raw, event.serder.raw)) {
       return dropEscrow("invalidReceiptSignature", {
-        message: `URE Bad escrowed receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${verfer.qb64}`,
+        message: `URE Bad escrowed receipt sig at pre=${pre} sn=${
+          sn.toString(16)
+        } receipter=${verfer.qb64}`,
         context: { pre, sn, said, receiptor: verfer.qb64 },
       });
     }
@@ -1746,6 +1915,13 @@ export class Kevery {
    *
    * Escrowed transferable receipts are stored as quintuples, but successful
    * replay writes only the verified quadruple into `vrcs.`.
+   *
+   * Steps:
+   * - validate timeout state
+   * - resolve the accepted receipted event at `(pre, sn)`
+   * - resolve the receiptor establishment event at the seal `(spre, ssn, sdig)`
+   * - verify the indexed signature against the receipted event bytes
+   * - promote the verified quadruple into `vrcs.`
    */
   public reprocessEscrowedTransferableReceipt(
     pre: string,
@@ -1767,7 +1943,10 @@ export class Kevery {
     const estSaid = this.db.kels.getLast(prefixer.qb64, Number(snumber.num));
     if (!estSaid) {
       return keepEscrow("missingReceiptorEstablishment", {
-        message: `VRE Missing receiptor establishment evt at pre=${prefixer.qb64} sn=${snumber.num.toString(16)}`,
+        message:
+          `VRE Missing receiptor establishment evt at pre=${prefixer.qb64} sn=${
+            snumber.num.toString(16)
+          }`,
         context: {
           pre,
           sn,
@@ -1779,7 +1958,9 @@ export class Kevery {
     }
     if (estSaid !== ssaider.qb64) {
       return dropEscrow("invalidReceiptorSeal", {
-        message: `VRE Bad chit seal at sn = ${snumber.num.toString(16)} for receipt from pre = ${prefixer.qb64}`,
+        message: `VRE Bad chit seal at sn = ${
+          snumber.num.toString(16)
+        } for receipt from pre = ${prefixer.qb64}`,
         context: {
           pre,
           sn,
@@ -1793,13 +1974,15 @@ export class Kevery {
     const estEvent = this.db.getEvtSerder(prefixer.qb64, estSaid);
     if (!estEvent) {
       return dropEscrow("invalidReceiptorEstablishment", {
-        message: `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64}`,
+        message:
+          `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64}`,
         context: { pre, sn, said, receiptor: prefixer.qb64, estSaid },
       });
     }
     if (estEvent.verfers.length === 0) {
       return dropEscrow("missingReceiptorKeys", {
-        message: `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64} no keys`,
+        message:
+          `VRE Invalid seal est. event dig = ${ssaider.qb64} for receipt from pre = ${prefixer.qb64} no keys`,
         context: { pre, sn, said, receiptor: prefixer.qb64, estSaid },
       });
     }
@@ -1820,7 +2003,9 @@ export class Kevery {
     const verfer = estEvent.verfers[siger.index];
     if (!verfer.verify(siger.raw, event.serder.raw)) {
       return dropEscrow("invalidReceiptSignature", {
-        message: `VRE Bad escrowed trans receipt sig at pre=${pre} sn=${sn.toString(16)} receipter=${prefixer.qb64}`,
+        message: `VRE Bad escrowed trans receipt sig at pre=${pre} sn=${
+          sn.toString(16)
+        } receipter=${prefixer.qb64}`,
         context: {
           pre,
           sn,
@@ -1983,7 +2168,13 @@ export class Kevery {
     return { ...transition, state };
   }
 
-  /** Persist non-accepted event material plus its escrow bucket membership. */
+  /**
+   * Persist non-accepted event material plus its escrow bucket membership.
+   *
+   * This is the generic event-escrow path, not the receipt/query/reply replay
+   * path. It stores the event and attachments once, then indexes that material
+   * into the specific event escrow family selected by the typed decision.
+   */
   private persistEscrowInstruction(instruction: EscrowInstruction): void {
     this.persistEscrowEventMaterial(instruction.log);
     switch (instruction.escrow) {
@@ -2014,7 +2205,16 @@ export class Kevery {
     }
   }
 
-  /** Persist event material required for later escrow reprocessing. */
+  /**
+   * Persist event material required for later event-escrow reprocessing.
+   *
+   * Stored artifacts mirror the KERIpy event escrow model:
+   * - `dtss.` for local escrow insertion time
+   * - `sigs.` / `wigs.` / `wits.` for verified attachment state
+   * - `evts.` for the escrowed event body
+   * - `udes.` for delegation or source-seal context when present
+   * - `esrs.` for local/remote source provenance
+   */
   private persistEscrowEventMaterial(log: KELEventState): void {
     const pre = log.serder.pre;
     const said = log.serder.said;
@@ -2026,8 +2226,8 @@ export class Kevery {
     if (!this.db.dtss.get(dgkey)) {
       this.db.dtss.put(
         dgkey,
-        log.frc?.dater
-          ?? new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+        log.frc?.dater ??
+          new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
       );
     }
     if (log.sigers.length > 0) {
@@ -2082,7 +2282,13 @@ export class Kevery {
     };
   }
 
-  /** Reprocess one ordinal-keyed escrow family. */
+  /**
+   * Reprocess one ordinal-keyed event escrow family.
+   *
+   * These families are keyed by `(pre, sn)` because replay is driven by event
+   * sequence position first, with duplicate rows distinguishing alternative
+   * event digests at that position.
+   */
   private processOrdinalEscrow(kind: EscrowKind): void {
     const entries = (() => {
       switch (kind) {
@@ -2120,7 +2326,12 @@ export class Kevery {
     }
   }
 
-  /** Reprocess one set-keyed escrow family. */
+  /**
+   * Reprocess one set-keyed event escrow family.
+   *
+   * These families are keyed by identifier only because they represent
+   * non-ordinal follow-up work such as delegation approval or misfit replay.
+   */
   private processSetEscrow(kind: EscrowKind): void {
     const entries = (() => {
       switch (kind) {
@@ -2144,7 +2355,14 @@ export class Kevery {
     }
   }
 
-  /** Re-evaluate one escrow entry through the same decide/apply path. */
+  /**
+   * Re-evaluate one escrow entry through the same decide/apply path.
+   *
+   * Event-escrow replay differs from receipt/query/reply replay:
+   * - the escrowed event is reconstructed back into a normal event envelope
+   * - the same `decideEvent()` and `applyDecision()` path is reused
+   * - escrow movement happens by changing buckets, not by custom replay logic
+   */
   private replayEscrowEntry(
     currentEscrow: EscrowKind,
     pre: string,

@@ -2006,6 +2006,9 @@ export class Kever {
       );
     }
 
+    // Boundary rule: this is intentionally the raw structural `a`-list check,
+    // not the typed `sealRecords` projection. Non-transferable inception forbids
+    // any seal payloads at all, even malformed ones.
     if (!transferable && serder.seals.length > 0) {
       return Kever.reject(
         "nontransferableViolation",

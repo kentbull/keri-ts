@@ -32,6 +32,12 @@ export type DerivedWitnessSetDecision =
  * - mirrors the ordered witness-set math used by `deriveBacks()` and
  *   `_processEscrowFindUnver()`
  *
+ * Shared-callsite rule:
+ * - `Kever` uses this during normal rotation validation
+ * - `Kevery` reuses the same math during partial-witness receipt replay
+ * - keeping both paths on one helper prevents witness ordering drift between
+ *   accepted-state validation and escrow replay
+ *
  * Validation rules:
  * - cuts must be unique and all present in the current witness list
  * - adds must be unique and disjoint from both cuts and existing witnesses

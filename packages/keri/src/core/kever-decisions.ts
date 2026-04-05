@@ -1,4 +1,11 @@
-import type { Dater, Diger, SealEvent, SealSource, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import type {
+  Dater,
+  Diger,
+  SealEvent,
+  SealSource,
+  SerderKERI,
+  Siger,
+} from "../../../cesr/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import type { FirstSeenReplayCouple } from "./dispatch.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
@@ -151,7 +158,13 @@ export type KeverDecision =
   | KeverEscrow
   | KeverReject;
 
-/** Recoverable escrow-processing reasons that keep one escrow row in place for a later pass. */
+/**
+ * Recoverable escrow-processing reasons that keep one escrow row in place for a
+ * later pass.
+ *
+ * These typed reasons are the TS replacement for the KERIpy exception families
+ * that mean "not ready yet, try again later."
+ */
 export type EscrowKeepReason =
   | "missingReceiptedEvent"
   | "missingReceiptorEstablishment"
@@ -159,7 +172,12 @@ export type EscrowKeepReason =
   | "unverifiedReply"
   | "recoverableError";
 
-/** Terminal escrow-processing reasons that drop one escrow row on this pass. */
+/**
+ * Terminal escrow-processing reasons that drop one escrow row on this pass.
+ *
+ * These typed reasons replace KERIpy replay paths that would log and remove an
+ * escrow row after a non-recoverable validation or artifact failure.
+ */
 export type EscrowDropReason =
   | "missingDater"
   | "stale"
@@ -212,7 +230,14 @@ export interface EscrowDrop {
   context?: Record<string, unknown>;
 }
 
-/** Typed result of processing one escrow row on one pass. */
+/**
+ * Typed result of processing one escrow row on one pass.
+ *
+ * Mental model:
+ * - `accept` means replay succeeded and the row can be removed
+ * - `keep` means replay is still blocked on recoverable missing state
+ * - `drop` means replay found a terminal problem and the row should be removed
+ */
 export type EscrowProcessDecision =
   | EscrowAccept
   | EscrowKeep
@@ -239,7 +264,12 @@ export function dropEscrow(
   return { kind: "drop", reason, ...meta };
 }
 
-/** Emit one consistent log line for escrow keep/drop outcomes. */
+/**
+ * Emit one consistent log line for escrow keep/drop outcomes.
+ *
+ * This preserves the diagnostic role KERIpy gets from exception logging while
+ * keeping the runtime on explicit decisions instead of exception control flow.
+ */
 export function logEscrowDecision(
   scope: string,
   decision: EscrowProcessDecision,
@@ -295,7 +325,13 @@ export interface ReceiptDrop {
   reason: ReceiptDropReason;
 }
 
-/** Typed result of processing one live receipt branch or attachment group. */
+/**
+ * Typed result of processing one live receipt branch or attachment group.
+ *
+ * This is the live-message analogue of the escrow decision family above:
+ * explicit `accept/ignore/escrow/drop` replaces KERIpy's receipt-time mix of
+ * skip, escrow, and terminal validation exceptions.
+ */
 export type ReceiptProcessDecision =
   | ReceiptAccept
   | ReceiptIgnore
@@ -358,7 +394,13 @@ export interface QueryDrop {
   reason: QueryDropReason;
 }
 
-/** Typed result of processing one live query message. */
+/**
+ * Typed result of processing one live query message.
+ *
+ * Live query processing uses `accept/escrow/drop` because queries do not create
+ * durable event rows directly. Query-not-found replay later maps this family
+ * back into escrow `accept/keep/drop`.
+ */
 export type QueryProcessDecision =
   | QueryAccept
   | QueryEscrow
