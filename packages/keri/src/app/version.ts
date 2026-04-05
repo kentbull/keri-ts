@@ -3,7 +3,7 @@
  * Do not edit by hand.
  */
 /** Package semantic version copied from the owning package manifest. */
-export const PACKAGE_VERSION = "0.4.0";
+export const PACKAGE_VERSION = "0.5.0";
 /** Optional build metadata stamp injected by release/CI workflows. */
 export const BUILD_METADATA = "";
 /** User-facing version string with build metadata appended when present. */

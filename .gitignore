@@ -13,3 +13,4 @@ packages/keri/npm
 .awcache
 .rpt2_cache
 data.mdb*
+.home/

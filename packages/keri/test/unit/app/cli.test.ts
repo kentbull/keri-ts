@@ -26,11 +26,11 @@ async function runTufa(args: string[]): Promise<CmdResult> {
   };
 }
 
-async function runTufaInit(args: string[]): Promise<CmdResult> {
+function runTufaInit(args: string[]): Promise<CmdResult> {
   return runTufa(["init", ...args]);
 }
 
-async function runTufaIncept(args: string[]): Promise<CmdResult> {
+function runTufaIncept(args: string[]): Promise<CmdResult> {
   return runTufa(["incept", ...args]);
 }
 
