@@ -452,8 +452,8 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .option("--port <port>", "Port number for the server (default: 8000)", "8000")
+    .option("-P, --passcode <passcode>", "Encryption passcode for keystore")
+    .option("-p, --port <port>", "Port number for the server (default: 8000)", "8000")
     .action(function(this: Command) {
       const options = this.opts();
       dispatch({

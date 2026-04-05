@@ -7,8 +7,8 @@ signing/verification behavior in `keri-ts`.
 
 ## Current State
 
-1. Primitive semantic parity is tracked against current KERIpy `main`, not
-   older bootstrap-era assumptions.
+1. Primitive semantic parity is tracked against current KERIpy `main`, not older
+   bootstrap-era assumptions.
 2. Shared primitive codex subsets exist to avoid lossy aliasing when one CESR
    code participates in multiple semantic domains.
 3. Primitive-first documentation is in good shape: touched modules carry
@@ -20,14 +20,15 @@ signing/verification behavior in `keri-ts`.
 5. A maintainers-first primitive walkthrough and parity matrix exist and are
    intentionally organized from `Matter` / `Indexer` / `Counter` outward.
 6. `Matter` and `Indexer` should be treated as infrastructure bases in
-   crypto-adjacent code. If the semantic type is known, use the narrow
-   primitive instead of the superclass.
-7. Executable signer behavior is primitive-owned: `Signer.sign()`,
-   `Verfer.verify()`, and `Salter.signer()` are the preferred public seams,
-   not free helper calls in higher layers.
-8. Signature-suite dispatch now lives in one CESR-owned support seam, so higher
-   layers no longer need to inspect verifier codes and import curve-specific
-   implementations themselves.
+   crypto-adjacent code. If the semantic type is known, use the narrow primitive
+   instead of the superclass.
+7. Executable signer behavior and suite dispatch are primitive-owned:
+   `Signer.sign()`, `Verfer.verify()`, and `Salter.signer()` are the preferred
+   public seams, and concrete curve imports belong inside `Signer` / `Verfer`,
+   not in higher layers or sidecar helpers.
+8. Compatibility helpers that other layers still need, such as signer-seed
+   sizing and verifier-to-seed-suite projection, should hang off `Signer` rather
+   than reopening a free helper seam.
 9. Indexed-signature parity includes the small indexed "both" code families
    whose implicit `ondex=index` relationship matters for prior-next handling.
 10. Sealed-box behavior is also primitive-owned: `Cipher`, `Encrypter`,
@@ -68,9 +69,9 @@ signing/verification behavior in `keri-ts`.
 
 ### 2026-03-03 to 2026-03-04 - Primitive Hierarchy, Docs, And Test Hardening
 
-- Refreshed codex/primitive hierarchy behavior against current KERIpy,
-  including `Tagger`, `Decimer`, `Verser`, `Ilker`, `Traitor`, `Noncer`,
-  `Labeler`, and related families.
+- Refreshed codex/primitive hierarchy behavior against current KERIpy, including
+  `Tagger`, `Decimer`, `Verser`, `Ilker`, `Traitor`, `Noncer`, `Labeler`, and
+  related families.
 - Added maintainer-grade docstrings across the primitive stack and deepened
   per-primitive test coverage with stronger KERIpy-derived vectors.
 
@@ -87,6 +88,14 @@ signing/verification behavior in `keri-ts`.
 - Moved verification onto `Verfer.verify(...)` and rebuilt `Signer` / `Salter`
   around KERIpy's executable signer model, including real verifier context on
   `Cigar` and deterministic salty derivation behavior.
+
+### 2026-04-05 - Signer And Verfer Absorbed The Remaining Suite Dispatch
+
+- Removed the separate `signature-suite` helper module and moved the remaining
+  signer/verifier suite dispatch directly into `Signer` and `Verfer`.
+- Kept the needed cross-layer compatibility seams as `Signer` statics for seed
+  sizing and verifier-to-seed-suite projection, so keeper code stays
+  primitive-driven without recreating a free helper boundary.
 
 ### 2026-04-02 - Sealed-Box And Variable-Family Ownership Moved To The Right Layer
 

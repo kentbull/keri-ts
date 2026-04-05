@@ -107,6 +107,11 @@ runtime ownership semantics.
     and the broader escrow-control philosophy now lives in
     `docs/adr/adr-0008-escrow-decision-architecture.md`. Treat those as the
     durable sources before relying on thread history.
+30. `tufa agent` has two independent compatibility seams: CLI flag semantics
+    and the packaged Node host runtime. Deno-source tests can prove runtime
+    behavior, but release confidence also needs tarball smoke coverage because
+    the npm build can drift into stale command definitions or Node-incompatible
+    server code.
 
 ## Use This Doc For
 
@@ -138,6 +143,8 @@ runtime ownership semantics.
    behavior changes; docs drift here is a real regression.
 5. Keep DB/runtime worklists concise and execution-oriented; when the docs start
    reading like archives again, compact them.
+6. Keep `tufa agent` smoke coverage honest at the packaged boundary. Help text
+   alone is not enough; the tarball path should prove real host startup.
 
 ## Milestone Rollup
 
@@ -242,6 +249,17 @@ runtime ownership semantics.
 - Runtime convergence must treat active query continuations as pending work.
   Otherwise `init` / `incept` can terminate while the correspondence layer still
   owes a follow-on `logs` query or local catch-up wait.
+
+### 2026-04-05 - `tufa agent` Must Stay Aligned Across Source And npm
+
+- `tufa agent` now treats `-p` as port and `-P` as passcode so the command
+  matches operator expectation while preserving long `--passcode`.
+- The HTTP host boundary now has a small runtime adapter: Deno source still
+  uses `Deno.serve`, while npm/Node builds fall back to `node:http` instead of
+  crashing on `dntShim.Deno.serve`.
+- The durable lesson is release-process, not just code-path: the packed npm
+  tarball needs smoke coverage through `init -> incept -> agent -> /health` or
+  source/package drift will recur silently.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 

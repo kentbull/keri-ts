@@ -68,15 +68,14 @@ internal-only implementation areas so refactors can preserve stable contracts.
 1. Public API (`packages/cesr/src/index.ts`)
 2. Parser orchestration (`core/parser-engine.ts`, parser dispatch)
 3. Primitive parsers + table codex
-   - executable crypto primitives live here as well:
-     `Signer.sign()`, `Verfer.verify()`, and `Salter.signer()` are the public
-     behavior seams.
-   - executable sealed-box primitives live here too:
-     `Cipher.decrypt()`, `Encrypter.encrypt()`, `Encrypter.verifySeed()`,
-     `Decrypter.decrypt()`, and `Streamer` are CESR-owned behavior seams.
-   - Signature-suite dispatch belongs here as well:
-     `packages/cesr/src/primitives/signature-suite.ts` is the only place that
-     should import concrete curve implementations for signer/verifier work.
+   - executable crypto primitives live here as well: `Signer.sign()`,
+     `Verfer.verify()`, and `Salter.signer()` are the public behavior seams.
+   - executable sealed-box primitives live here too: `Cipher.decrypt()`,
+     `Encrypter.encrypt()`, `Encrypter.verifySeed()`, `Decrypter.decrypt()`, and
+     `Streamer` are CESR-owned behavior seams.
+   - Signer/verifier suite dispatch belongs on the primitives themselves:
+     `Signer` and `Verfer` are the only places that should import concrete curve
+     implementations for signer/verifier work.
    - Variable-family size/code promotion belongs in the shared `Matter`
      encoding/parsing layer, not in ad hoc subclass-local normalization logic.
    - Base derivation-code semantics such as `transferable`, `digestive`,
@@ -102,15 +101,15 @@ internal-only implementation areas so refactors can preserve stable contracts.
   `Signer.sign()` or `Manager` orchestration rather than importing concrete
   curve code or suite helpers directly.
 - Keep sealed-box encryption primitive-driven too: higher layers should call
-  `Cipher` / `Encrypter` / `Decrypter` rather than reimplementing libsodium/X25519
-  behavior in app or keeper code.
+  `Cipher` / `Encrypter` / `Decrypter` rather than reimplementing
+  libsodium/X25519 behavior in app or keeper code.
 - Treat `Manager.sign({ pre, path })` as keeper-state addressing, not as a raw
   derivation-string passthrough. `path` identifies a managed key lot by
   `(ridx, kidx)`; `salty` managers may reconstruct it from persisted derivation
   parameters, while `randy` managers can only resolve it back to stored signers.
 - Treat `packages/keri/src/core/keeper-crypto.ts` as a compatibility wrapper,
-  not a true ownership layer. New encryption/decryption behavior belongs in
-  CESR primitives first.
+  not a true ownership layer. New encryption/decryption behavior belongs in CESR
+  primitives first.
 
 ## Ownership Heuristics
 

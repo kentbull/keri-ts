@@ -66,33 +66,36 @@ Use this file to:
 5. When the code already knows the semantic type, it should construct and return
    the narrow primitive. `Matter` and `Indexer` are low-level parser/storage
    bases, not the default public API result.
-6. Fixed-field seal/blind/media structing values belong to CESR through
+6. Concrete crypto primitives own their suite dispatch too: `Signer` and
+   `Verfer` are the signer/verifier behavior seams, and sidecar helper modules
+   should not become a second home for curve-selection logic.
+7. Fixed-field seal/blind/media structing values belong to CESR through
    `packages/cesr/src/primitives/structing.ts`; the stable design there is plain
    frozen records plus companion helpers/registries, with raw-SAD-first
    boundaries and explicit typed projections. `packages/keri` runtime dispatch
    now uses those CESR records directly, while LMDB tuple aliases remain a
    derived storage boundary instead of a second semantic home.
-7. CESR-native and ACDC-native behavior should extend the shared support matrix
+8. CESR-native and ACDC-native behavior should extend the shared support matrix
    in `packages/cesr/src/serder/native.ts`; do not reintroduce sidecar native
    branching.
-8. ACDC parity depends on explicit compactification rules: top-level compactive
+9. ACDC parity depends on explicit compactification rules: top-level compactive
    verification uses the most compact section form, while section identifiers
    stay label-aware (`$id`, `d`, `agid`).
-9. Weighted thresholds are semantic through `Tholder`; KEL and reply logic
-   should use `tholder.satisfy(...)` rather than collapsing threshold material
-   into ad hoc numeric parsing.
-10. `docs/design-docs/db/db-architecture.md` is the shared DB invariants
+10. Weighted thresholds are semantic through `Tholder`; KEL and reply logic
+    should use `tholder.satisfy(...)` rather than collapsing threshold material
+    into ad hoc numeric parsing.
+11. `docs/design-docs/db/db-architecture.md` is the shared DB invariants
     contract. DB work remains parity-first rather than abstraction-first.
-11. Durable local state is DB-backed: `states.` is the authoritative local key
+12. Durable local state is DB-backed: `states.` is the authoritative local key
     state, `kels.` / `fels.` / `dtss.` support reopenable event state, and
     `Habery.habs` is only an in-memory reconstruction cache.
-12. The mapper/record mental model is `FooRecord` plus `FooRecordShape`, with
+13. The mapper/record mental model is `FooRecord` plus `FooRecordShape`, with
     `recordClass` as the durable public seam. Public `*Like` aliases and
     mapper-facing `hydrate` / `normalize` APIs are drift.
-13. KEL control flow should stay on typed decisions (`accept`, `duplicate`,
+14. KEL control flow should stay on typed decisions (`accept`, `duplicate`,
     `escrow`, `reject`): `Kever` decides validity, `Kevery` routes/applies, and
     `docs/adr/adr-0005-kel-decision-control-flow.md` is normative.
-14. Cue/runtime ownership is dual-scope and explicit: `AgentRuntime` owns the
+15. Cue/runtime ownership is dual-scope and explicit: `AgentRuntime` owns the
     shared runtime cue deck for `Reactor` / `Revery` / runtime `Kevery` /
     `Oobiery`, `Habery.kevery` owns a separate local cue deck for `Hab` local
     processing, `Hab.processCuesIter()` owns cue semantics, `Revery` owns reply
@@ -100,35 +103,38 @@ Use this file to:
     families, `Oobiery` owns introduction-driven OOBI work, and
     `QueryCoordinator` owns incomplete `query` cue correspondence so
     `Hab.processCuesIter()` stays an interpreter for already-complete cues.
-15. Receipt-family mental models should stay KERIpy-shaped: live `rct`
+16. Receipt-family mental models should stay KERIpy-shaped: live `rct`
     transferable receipts use grouped `tsgs`, while replay/clone attached
     transferable receipt material uses `trqs`. Escrow/storage may flatten those
     groups into quintuple/quadruple records, but the live API boundary should
     not blur the two families, and the receipt escrow seams should keep KERIpy
     names (`escrowUReceipt`, `escrowUWReceipt`, `escrowTRGroups`,
     `escrowTReceipts`) instead of one combined local helper.
-16. Local location updates must enter through signed `/loc/scheme` replies that
+17. Local location updates must enter through signed `/loc/scheme` replies that
     flow through the normal parser -> `Revery` path, not by direct writes to
     `locs.` / `lans.`.
-17. Interop contracts are exact, not approximate: keep `lmdb` pinned to `3.4.4`,
+18. Interop contracts are exact, not approximate: keep `lmdb` pinned to `3.4.4`,
     preserve `LMDB_DATA_V1=true` for KERIpy interop workflows, and route
     protocol/storage CBOR through the shared CESR codec for byte parity.
-18. Deno config ownership is graph-wide for local-source workflows, and CLI
+19. Deno config ownership is graph-wide for local-source workflows, and CLI
     startup should stay lazy so `--help` / `--version` do not pull CESR/LMDB
     startup work.
-19. CI policy is `dprint` plus stage-gated quality checks, a pinned KERIpy CLI,
+20. CI policy is `dprint` plus stage-gated quality checks, a pinned KERIpy CLI,
     explicit environment/version pins, and cache topology that respects LMDB v1
     rebuild requirements.
-20. Test parallelization should follow isolation boundaries, not folder names.
+21. Test parallelization should follow isolation boundaries, not folder names.
     DB-core suites can parallelize more freely; CLI/app/interop suites that
     mutate globals or persisted stores need stronger isolation.
-21. Gates B, C, and D are closed enough to treat local visibility, compat-store
+22. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
-22. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
+23. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
     broader Chunk 7 query/reply correspondence closure, and bounded init/incept
     convergence. The remaining runtime gaps are now primarily
     forwarding/exchange/direct transport breadth and stricter stale/timeout
     continuation behavior.
+24. `tufa agent` release confidence must come from the packed npm artifact, not
+    just the Deno source path. CLI flag semantics and Node host/runtime
+    compatibility can drift unless smoke coverage exercises `init -> incept -> agent -> /health` against the tarball users actually install.
 
 ## Current Follow-Ups
 
@@ -147,6 +153,9 @@ Use this file to:
    runtime code.
 6. Keep this memory layer compact. If a future update cannot be summarized
    cleanly, the real problem is probably unresolved design, not missing prose.
+7. Treat `tufa agent` source-vs-npm drift as a release blocker. If CLI flags or
+   Node hosting change, the tarball smoke path must prove the published entry
+   point still starts cleanly.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 
