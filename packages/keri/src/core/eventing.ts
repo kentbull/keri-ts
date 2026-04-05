@@ -190,7 +190,14 @@ export class Kevery {
     return this.db.prefixes;
   }
 
-  /** Register the reply routes owned by `Kevery` itself. */
+  /**
+   * Register the reply routes owned semantically by `Kevery`.
+   *
+   * Ownership rule:
+   * - `Revery` verifies the reply envelope and applies BADA
+   * - `Kevery` owns reply families whose meaning depends on KEL or
+   *   watcher-observed state rather than generic reply semantics
+   */
   registerReplyRoutes(router: Router): void {
     router.addRoute("/ksn/{aid}", this, "KeyStateNotice");
     router.addRoute("/watcher/{aid}/{action}", this, "AddWatched");
@@ -866,6 +873,12 @@ export class Kevery {
 
   /**
    * Process one `/ksn/{aid}` reply and persist the accepted key-state notice.
+   *
+   * Why `Kevery` owns this route:
+   * - trust-source policy depends on KEL state and configured watchers
+   * - accepted replies must stay consistent with the accepted event log at `sn`
+   * - successful acceptance emits `keyStateSaved`, which drives follow-on query
+   *   continuation work
    */
   processReplyKeyStateNotice(args: {
     serder: SerderKERI;
@@ -898,6 +911,8 @@ export class Kevery {
     if (!this.lax) {
       const watchers = this.configuredWatchers();
       const backers = ksn.b ?? [];
+      // In non-lax mode, only the controller, a reported KSN backer, or a
+      // locally configured watcher may advance saved key state.
       const trusted = args.aid === pre
         || backers.includes(args.aid)
         || watchers.has(args.aid);
@@ -950,6 +965,11 @@ export class Kevery {
 
   /**
    * Process one `/watcher/{aid}/add` or `/watcher/{aid}/cut` reply.
+   *
+   * Why `Kevery` owns this route:
+   * - the reply meaning is watcher-observed identifier state, not generic reply
+   *   verification
+   * - accepted replies update watcher-specific stores and may enqueue OOBIs
    *
    * Side effects:
    * - accepted reply SAIDs persist in `wwas.`
@@ -1009,6 +1029,9 @@ export class Kevery {
     const accepted = this.rvy.acceptReply({
       serder: args.serder,
       saider: args.diger,
+      // BADA state is keyed on the semantic base route, not the specific add/cut
+      // action path, so newer watcher replies supersede earlier ones on the
+      // same watcher/controller/observed tuple.
       route: `/watcher/${args.aid}`,
       aid: cid,
       osaider,
@@ -2481,7 +2504,14 @@ export class Kevery {
     }
   }
 
-  /** Persist accepted key-state notice projections into their dedicated stores. */
+  /**
+   * Persist accepted key-state notice projections into their dedicated stores.
+   *
+   * Stores:
+   * - `kdts.` for accepted reply datetime
+   * - `ksns.` for the key-state notice body
+   * - `knas.` for lookup by `(ksn.i, source aid)`
+   */
   private updateKeyState(
     aid: string,
     ksn: KeyStateRecord,
@@ -2495,7 +2525,12 @@ export class Kevery {
     }
   }
 
-  /** Persist accepted watcher-observed projections into `wwas.` and `obvs.`. */
+  /**
+   * Persist accepted watcher-observed projections into `wwas.` and `obvs.`.
+   *
+   * `wwas.` stores the accepted reply SAID used for BADA/idempotence.
+   * `obvs.` stores the current enabled/disabled watcher observation state.
+   */
   private updateWatched(
     keys: [string, string, string],
     saider: Diger,
@@ -2508,7 +2543,12 @@ export class Kevery {
     this.db.obvs.pin(keys, observed);
   }
 
-  /** Collect the locally configured watcher identifiers across all habitats. */
+  /**
+   * Collect the locally configured watcher identifiers across all habitats.
+   *
+   * This gives `/ksn` trust-source checks the same local watcher knowledge that
+   * KERIpy derives from habitat records.
+   */
   private configuredWatchers(): Set<string> {
     const watchers = new Set<string>();
     for (const [, habord] of this.db.getHabItemIter()) {

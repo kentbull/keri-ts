@@ -63,6 +63,7 @@ export interface RuntimePendingState {
   replyEscrow: boolean;
   oobiQueued: boolean;
   oobiInFlight: boolean;
+  /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
 }
 
@@ -125,9 +126,13 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  * Turn order:
  * 1. `Reactor.processOnce()` drains queued ingress
  * 2. `Oobiery.processOnce()` resolves at most one durable OOBI record
- * 3. `processCuesOnce()` emits cues from fresh ingress/OOBI work
- * 4. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
- * 5. `processCuesOnce()` emits cues created during escrow progress
+ * 3. `processCuesOnce()` emits cues from fresh ingress/OOBI work into
+ *    `QueryCoordinator`
+ * 4. `QueryCoordinator.processPending()` resolves any newly correspondence-ready
+ *    query work
+ * 5. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
+ * 6. `processCuesOnce()` emits cues created during escrow progress
+ * 7. `QueryCoordinator.processPending()` resolves any follow-on query work
  *
  * This helper remains because command-local CLI flows and focused tests need a
  * single deterministic step without having to spawn the long-lived doers.
@@ -149,7 +154,13 @@ export function* processRuntimeTurn(
   yield* runtime.querying.processPending();
 }
 
-/** Return the current pending-work summary for bounded command-local hosts. */
+/**
+ * Return the current pending-work summary for bounded command-local hosts.
+ *
+ * `queriesPending` is part of convergence because query continuations may still
+ * owe a follow-on `logs` query or local catch-up wait after normal cue decks
+ * and ingress have drained.
+ */
 export function runtimePendingState(
   runtime: AgentRuntime,
 ): RuntimePendingState {
@@ -219,6 +230,7 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * - `Reactor.msgDo()` owns continuous ingress draining
  * - `Reactor.escrowDo()` owns continuous escrow reprocessing
  * - `Oobiery.oobiDo()` owns durable OOBI resolution
+ * - `QueryCoordinator.queryDo()` owns deferred query correspondence work
  *
  * The root itself now acts as a composition host: it starts the component
  * doers and stays alive until the surrounding Effection scope halts.

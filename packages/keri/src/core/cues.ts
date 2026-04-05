@@ -29,8 +29,16 @@ export interface WitnessCue extends CueBase {
 /**
  * Cue requesting one key-state or route-specific query.
  *
- * Gate E uses this primarily from `Revery` when reply verification is blocked
- * on missing signer establishment state.
+ * Gate E uses this in two different states:
+ * - incomplete portable cues from `Revery` / `Kevery` that still need runtime
+ *   correspondence work
+ * - complete cues that already know `pre` and `src` and can be materialized by
+ *   `Hab.processCuesIter()`
+ *
+ * Field rules:
+ * - `query` and legacy `q` carry the raw KERI `qry.q` body
+ * - `wits` overrides endpoint-role lookup and tells runtime to query one of
+ *   those watcher/witness identifiers directly
  */
 export interface QueryCue extends CueBase {
   kin: "query";
@@ -77,7 +85,12 @@ export interface StreamCue extends CueBase {
   topics: MbxTopicCursor;
 }
 
-/** Cue emitted when bootstrap `Kevery` persists a new key-state record. */
+/**
+ * Cue emitted when runtime `Kevery` persists a new key-state record.
+ *
+ * This is primarily a continuation signal for `QueryCoordinator`, not a direct
+ * wire cue.
+ */
 export interface KeyStateSavedCue extends CueBase {
   kin: "keyStateSaved";
   ksn: KeyStateRecord;

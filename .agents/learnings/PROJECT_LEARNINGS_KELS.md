@@ -102,6 +102,11 @@ runtime ownership semantics.
     rows, finish forwarding/exchange/direct transport breadth, and harden
     stale/timeout continuation behavior rather than reopening the old
     query/reply side-effect graph.
+29. The maintainer contract for the Chunk 7 query/watcher slice now lives in
+    `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`,
+    and the broader escrow-control philosophy now lives in
+    `docs/adr/adr-0008-escrow-decision-architecture.md`. Treat those as the
+    durable sources before relying on thread history.
 
 ## Use This Doc For
 
@@ -117,6 +122,8 @@ runtime ownership semantics.
 4. `docs/plans/keri/DB_LAYER_PARITY_MATRIX.md`
 5. `docs/plans/keri/DB_LAYER_RECONCILIATION_PLAN.md`
 6. `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
+7. `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`
+8. `docs/adr/adr-0008-escrow-decision-architecture.md`
 
 ## Current Follow-Ups
 
@@ -127,8 +134,8 @@ runtime ownership semantics.
    behavior now that the broader query/reply correspondence slice is landed.
 3. Promote high-value DB `Partial` rows with real row-level evidence instead of
    symbol-existence optimism.
-4. Treat missing maintainer docs on newly ported KERIpy surfaces as a real
-   regression.
+4. Keep the new maintainer docs current when query/watcher or escrow-decision
+   behavior changes; docs drift here is a real regression.
 5. Keep DB/runtime worklists concise and execution-oriented; when the docs start
    reading like archives again, compact them.
 

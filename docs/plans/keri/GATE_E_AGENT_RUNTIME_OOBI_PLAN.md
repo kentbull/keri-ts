@@ -52,6 +52,14 @@
 
 ## Current Implementation Reality (2026-04-03)
 
+Maintainer note:
+
+- the durable maintainer docs for the Chunk 7 query/watcher slice now live in
+  `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md` and
+  `docs/adr/adr-0008-escrow-decision-architecture.md`
+- this plan remains the execution history and work-tracking view, not the
+  primary long-term architecture reference
+
 - Chunk 1 is materially complete: the shared `AgentRuntime` composition root,
   `Reactor`, `Oobiery`, and the long-lived/local host split all exist.
 - Chunk 2 is materially complete: config preload seeds `oobis.` / `woobi.` and

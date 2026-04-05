@@ -6,6 +6,34 @@ import type { CueSink } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
+/**
+ * Query/reply correspondence helpers for the Gate E runtime.
+ *
+ * KERIpy correspondence:
+ * - `keri.app.querying` hosts the `KeyStateNoticer`, `LogQuerier`,
+ *   `SeqNoQuerier`, and `AnchorQuerier` doers
+ * - `keri.app.agenting.WitnessInquisitor` chooses an honest remote attester
+ *   when a query is finally emitted
+ *
+ * `keri-ts` keeps the same behavioral split but makes the ownership seam more
+ * explicit:
+ * - `QueryCoordinator` owns runtime correspondence for incomplete `query` cues
+ * - `Hab.processCuesIter()` remains the cue-to-wire interpreter for already
+ *   complete cues
+ *
+ * Non-goals:
+ * - this module does not own transport
+ * - this module does not guess across multiple local habitats
+ * - this module does not turn watcher/query selection into generic cue logic
+ */
+
+/**
+ * Preferred remote-attester role order for runtime-generated queries.
+ *
+ * `keri-ts` intentionally chooses a deterministic first-available endpoint
+ * instead of KERIpy's random witness/controller/agent selection. That keeps
+ * tests and maintainer reasoning stable at the correspondence layer.
+ */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
 
 const ignoreSink: CueSink = {
@@ -23,27 +51,45 @@ interface QueryRequest {
   wits?: string[];
 }
 
+/**
+ * Runtime continuation contract for query-driven follow-on work.
+ *
+ * Each continuation:
+ * - observes emitted cues for relevant state transitions
+ * - can enqueue additional queries when local or remote state requires it
+ * - exposes `done` so the runtime can include it in convergence checks
+ */
 interface QueryContinuation {
   readonly done: boolean;
   observe(cue: AgentCue, coordinator: QueryCoordinator): void;
   tick(coordinator: QueryCoordinator): void;
 }
 
+/** Copy one portable query body before runtime adds or removes helper fields. */
 function cloneQueryBody(
   query: Record<string, unknown>,
 ): Record<string, unknown> {
   return { ...query };
 }
 
+/**
+ * Return the sole local habitat when exactly one exists.
+ *
+ * Honesty rule:
+ * - one habitat means runtime may safely use it as an implicit signer
+ * - more than one habitat means runtime must not guess
+ */
 function soleHab(hby: Habery): Hab | null {
   const habitats = [...hby.habs.values()];
   return habitats.length === 1 ? habitats[0] ?? null : null;
 }
 
+/** Extract the raw portable query body from either `query` or legacy `q`. */
 function queryBodyFromCue(cue: QueryCue): Record<string, unknown> {
   return cloneQueryBody(cue.query ?? cue.q ?? {});
 }
 
+/** Resolve the queried AID from cue-level or body-level portability hints. */
 function extractQueriedPrefix(cue: QueryCue): string | null {
   const body = cue.query ?? cue.q ?? {};
   const pre = cue.pre
@@ -86,6 +132,7 @@ function encodeHexOrdinal(num: number): string {
   return Math.max(0, num).toString(16);
 }
 
+/** Pick the deterministic first sorted candidate from a role endpoint set. */
 function firstSorted(values: Iterable<string>): string | null {
   const sorted = [...values].sort();
   return sorted[0] ?? null;
@@ -94,6 +141,16 @@ function firstSorted(values: Iterable<string>): string | null {
 /**
  * KERIpy-style noticer that starts with a `ksn` query and upgrades to a
  * `logs` query when the remote key state is ahead of local accepted state.
+ *
+ * Start condition:
+ * - caller wants authoritative remote key state for one AID
+ *
+ * Completion condition:
+ * - accepted local key state is at or beyond the remote `ksn.s`
+ *
+ * Emitted query shape:
+ * - first `ksn` with `{ fn: "0", s: "0" }`
+ * - later `logs` through `LogQuerier` if remote state is ahead
  */
 export class KeyStateNoticer implements QueryContinuation {
   readonly pre: string;
@@ -161,6 +218,15 @@ export class KeyStateNoticer implements QueryContinuation {
 /**
  * KERIpy-style log querier that waits until local accepted key state reaches a
  * target sequence number.
+ *
+ * Start condition:
+ * - caller already knows the remote target sequence number
+ *
+ * Completion condition:
+ * - local accepted key state reaches `targetSn`
+ *
+ * Emitted query shape:
+ * - `logs` with `{ fn: "0", s: "0" }`
  */
 export class LogQuerier implements QueryContinuation {
   readonly pre: string;
@@ -210,6 +276,15 @@ export class LogQuerier implements QueryContinuation {
 /**
  * Query helper that waits until local accepted key state reaches one sequence
  * number threshold.
+ *
+ * Start condition:
+ * - caller wants logs replayed until local state reaches `targetSn`
+ *
+ * Completion condition:
+ * - local accepted key state reaches `targetSn`
+ *
+ * Emitted query shape:
+ * - `logs` with explicit `fn` and `s`
  */
 export class SeqNoQuerier implements QueryContinuation {
   readonly pre: string;
@@ -271,6 +346,15 @@ export class SeqNoQuerier implements QueryContinuation {
 
 /**
  * Query helper that waits until local state contains an anchored event seal.
+ *
+ * Start condition:
+ * - caller needs proof of one anchored seal in the queried prefix's KEL
+ *
+ * Completion condition:
+ * - local DB can resolve a sealing event for the requested anchor
+ *
+ * Emitted query shape:
+ * - `logs` from `{ fn: "0", s: "0", a: anchor }`
  */
 export class AnchorQuerier implements QueryContinuation {
   readonly pre: string;
@@ -440,6 +524,7 @@ export class QueryCoordinator implements CueSink {
       if (emission) {
         yield* this.sink.send(emission);
       } else {
+        // Keep unresolved work instead of guessing the habitat or attester.
         kept.push(request);
       }
     }
@@ -455,6 +540,14 @@ export class QueryCoordinator implements CueSink {
     }
   }
 
+  /**
+   * Resolve the habitat that is allowed to sign the outbound query.
+   *
+   * Resolution order:
+   * - request-specific habitat
+   * - runtime-configured habitat
+   * - sole local habitat
+   */
   private configuredHab(requestHab?: Hab): Hab | null {
     return requestHab ?? this.hab ?? soleHab(this.hby);
   }
@@ -477,6 +570,10 @@ export class QueryCoordinator implements CueSink {
     this.continuations = this.continuations.filter((continuation) => !continuation.done);
   }
 
+  /**
+   * Convert one incomplete portable query cue into a wire-ready request when
+   * runtime can honestly resolve its queried prefix.
+   */
   private transientQueryEmission(cue: QueryCue): CueEmission | null {
     const pre = extractQueriedPrefix(cue);
     if (!pre) {
@@ -491,6 +588,12 @@ export class QueryCoordinator implements CueSink {
     });
   }
 
+  /**
+   * Build one outbound wire emission after habitat and attester resolution.
+   *
+   * Returned `null` means runtime still lacks honest information and should
+   * defer the request rather than manufacture a query from guesswork.
+   */
   private wireEmissionForRequest(request: QueryRequest): CueEmission | null {
     const hab = this.configuredHab(request.hab);
     if (!hab) {
@@ -524,6 +627,7 @@ export class QueryCoordinator implements CueSink {
     wits?: string[],
   ): string | null {
     if (wits && wits.length > 0) {
+      // Explicit watcher/witness overrides outrank endpoint-role lookup.
       return wits[0] ?? null;
     }
 
@@ -533,6 +637,7 @@ export class QueryCoordinator implements CueSink {
       if (!roleEnds) {
         continue;
       }
+      // Pick the first sorted endpoint deterministically instead of randomly.
       const eid = firstSorted(Object.keys(roleEnds));
       if (eid) {
         return eid;
