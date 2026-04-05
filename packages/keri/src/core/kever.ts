@@ -2077,13 +2077,14 @@ export class Kever {
     // Ordered witness math matters here: duplicate or intersecting cut/add
     // sets would make the next witness list ambiguous for indexed receipts.
     const derived = deriveRotatedWitnessSet(this.wits, cuts, adds);
-    if (!derived) {
+    if (derived.kind !== "accept") {
       return null;
     }
+    const nextWitnesses = derived.value;
 
     const toader = serder.bner ?? numberPrimitiveFromBigInt(0n);
-    if (derived.wits.length > 0) {
-      if (toader.num < 1n || toader.num > BigInt(derived.wits.length)) {
+    if (nextWitnesses.wits.length > 0) {
+      if (toader.num < 1n || toader.num > BigInt(nextWitnesses.wits.length)) {
         return null;
       }
     } else if (toader.num !== 0n) {
@@ -2091,9 +2092,9 @@ export class Kever {
     }
 
     return {
-      wits: derived.wits,
-      cuts: derived.cuts,
-      adds: derived.adds,
+      wits: nextWitnesses.wits,
+      cuts: nextWitnesses.cuts,
+      adds: nextWitnesses.adds,
       toader,
     };
   }

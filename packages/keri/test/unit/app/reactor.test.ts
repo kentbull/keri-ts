@@ -9,7 +9,7 @@ import { makeQuerySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
 Deno.test("app/reactor - query parsing normalizes transferable endorsements into source plus sigers", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-qry-tsg-${crypto.randomUUID()}`,
       temp: true,
@@ -49,7 +49,7 @@ Deno.test("app/reactor - query parsing normalizes transferable endorsements into
 });
 
 Deno.test("app/reactor - query parsing keeps non-transferable endorsements as runtime cigars", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-qry-cigar-${crypto.randomUUID()}`,
       temp: true,
@@ -87,7 +87,7 @@ Deno.test("app/reactor - query parsing keeps non-transferable endorsements as ru
 });
 
 Deno.test("app/reactor - reply parsing normalizes transferable groups into dispatch value objects", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-${crypto.randomUUID()}`,
       temp: true,
@@ -127,7 +127,7 @@ Deno.test("app/reactor - reply parsing normalizes transferable groups into dispa
 });
 
 Deno.test("app/reactor - reply parsing normalizes non-transferable receipt couples into runtime cigars with verfer", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-nontrans-${crypto.randomUUID()}`,
       temp: true,
@@ -163,7 +163,7 @@ Deno.test("app/reactor - reply parsing normalizes non-transferable receipt coupl
 });
 
 Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier context before runtime dispatch", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-reload-${crypto.randomUUID()}`,
       temp: true,
@@ -206,7 +206,7 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
 });
 
 Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-rct-${crypto.randomUUID()}`,
       temp: true,
@@ -258,7 +258,7 @@ Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", 
 });
 
 Deno.test("app/reactor - malformed and unsupported queries do not throw, and unsupported routes emit invalid cues", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-qry-invalid-${crypto.randomUUID()}`,
       temp: true,

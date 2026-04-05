@@ -1,7 +1,13 @@
 import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from "../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
-import { acceptEscrow, dropEscrow, type EscrowProcessDecision, keepEscrow } from "../core/kever-decisions.ts";
+import {
+  acceptEscrow,
+  dropEscrow,
+  type EscrowProcessDecision,
+  keepEscrow,
+  logEscrowDecision,
+} from "../core/kever-decisions.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { LMDBer } from "./core/lmdber.ts";
@@ -129,6 +135,7 @@ export class Broker {
         processReply,
         extype,
       });
+      logEscrowDecision(`Broker ${typ}`, decision, this.logger);
       switch (decision.kind) {
         case "accept": {
           this.escrowdb.rem([typ, pre, aid], diger);
@@ -302,7 +309,7 @@ export class Broker {
   }
 
   /** Process one escrowed transaction-state notice through the supplied callback. */
-  private processEscrowedStateNotice(args: {
+  public processEscrowedStateNotice(args: {
     aid: string;
     diger: Diger;
     processReply: (args: BrokerProcessReplyArgs) => void;
@@ -312,7 +319,10 @@ export class Broker {
     try {
       tsgs = this.fetchTsgs(args.diger);
     } catch {
-      return dropEscrow("outerCorruption");
+      return dropEscrow("outerCorruption", {
+        message: `Failed to load escrowed transferable signatures at said=${args.diger.qb64}.`,
+        context: { said: args.diger.qb64, aid: args.aid },
+      });
     }
 
     const escrowKeys = [args.diger.qb64] as const;
@@ -320,18 +330,34 @@ export class Broker {
     const serder = this.serderdb.get(escrowKeys);
     const vcigars = this.cigardb.get(escrowKeys);
     if (!dater || !serder || (tsgs.length === 0 && vcigars.length === 0)) {
-      return dropEscrow("missingEscrowArtifact");
+      return dropEscrow("missingEscrowArtifact", {
+        message: `Missing escrow artifacts at said=${args.diger.qb64} for pre=${args.aid}.`,
+        context: {
+          said: args.diger.qb64,
+          aid: args.aid,
+          hasDater: !!dater,
+          hasSerder: !!serder,
+          tsgCount: tsgs.length,
+          cigarCount: vcigars.length,
+        },
+      });
     }
 
     if (
       (Date.now() - new Date(dater.iso8601).getTime()) > (this.timeout * 1000)
     ) {
-      return dropEscrow("stale");
+      return dropEscrow("stale", {
+        message: `Escrow unescrow error: Stale txn state escrow at pre = ${args.aid}`,
+        context: { said: args.diger.qb64, aid: args.aid, route: serder.route },
+      });
     }
 
     const route = serder.route;
     if (!route) {
-      return dropEscrow("malformedEscrowedReply");
+      return dropEscrow("malformedEscrowedReply", {
+        message: `Escrowed state notice at said=${args.diger.qb64} is missing route.`,
+        context: { said: args.diger.qb64, aid: args.aid },
+      });
     }
 
     const cigars = vcigars.map(([verfer, cigar]) => new Cigar(cigar, verfer));
@@ -347,9 +373,15 @@ export class Broker {
       return acceptEscrow();
     } catch (error) {
       if (error instanceof args.extype) {
-        return keepEscrow("recoverableError");
+        return keepEscrow("recoverableError", {
+          message: error.message,
+          context: { said: args.diger.qb64, aid: args.aid, route },
+        });
       }
-      return dropEscrow("processingError");
+      return dropEscrow("processingError", {
+        message: error instanceof Error ? error.message : String(error),
+        context: { said: args.diger.qb64, aid: args.aid, route },
+      });
     }
   }
 }

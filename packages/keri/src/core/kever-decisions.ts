@@ -1,10 +1,7 @@
 import type { Dater, Diger, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { AgentCue } from "./cues.ts";
-import type {
-  FirstSeenReplayCouple,
-  SourceSealCouple,
-  SourceSealTriple,
-} from "./dispatch.ts";
+import type { FirstSeenReplayCouple, SourceSealCouple, SourceSealTriple } from "./dispatch.ts";
+import { consoleLogger, type Logger } from "./logger.ts";
 import type { KeyStateRecord } from "./records.ts";
 
 /** Escrow bucket names used by typed KEL validation decisions. */
@@ -167,12 +164,23 @@ export type EscrowDropReason =
   | "missingDater"
   | "stale"
   | "invalidWitnessSet"
+  | "duplicateWitnesses"
+  | "duplicateCuts"
+  | "cutsNotSubsetOfWitnesses"
+  | "duplicateAdds"
+  | "intersectingCutsAndAdds"
+  | "intersectingWitnessesAndAdds"
   | "invalidWitnessIndex"
   | "invalidReceiptSignature"
   | "invalidReceiptDigest"
+  | "invalidReceiptedEventReference"
   | "invalidReceiptorSeal"
+  | "missingReceiptorKeys"
+  | "receiptorIndexOutOfRange"
   | "invalidReceiptorEstablishment"
   | "missingEscrowArtifact"
+  | "missingEscrowedEvent"
+  | "missingEscrowedEndorsements"
   | "malformedEscrowedQuery"
   | "malformedEscrowedReply"
   | "processingError"
@@ -183,16 +191,25 @@ export interface EscrowAccept {
   kind: "accept";
 }
 
+export interface EscrowDecisionMeta {
+  message?: string;
+  context?: Record<string, unknown>;
+}
+
 /** Escrow-processing variant for one escrow row that should remain in escrow. */
 export interface EscrowKeep {
   kind: "keep";
   reason: EscrowKeepReason;
+  message?: string;
+  context?: Record<string, unknown>;
 }
 
 /** Escrow-processing variant for one escrow row that should be removed. */
 export interface EscrowDrop {
   kind: "drop";
   reason: EscrowDropReason;
+  message?: string;
+  context?: Record<string, unknown>;
 }
 
 /** Typed result of processing one escrow row on one pass. */
@@ -209,15 +226,38 @@ export function acceptEscrow(): EscrowAccept {
 /** Builder for one recoverable miss that should remain escrowed. */
 export function keepEscrow(
   reason: EscrowKeepReason,
+  meta: EscrowDecisionMeta = {},
 ): EscrowKeep {
-  return { kind: "keep", reason };
+  return { kind: "keep", reason, ...meta };
 }
 
 /** Builder for one terminal outcome that should remove the escrow row. */
 export function dropEscrow(
   reason: EscrowDropReason,
+  meta: EscrowDecisionMeta = {},
 ): EscrowDrop {
-  return { kind: "drop", reason };
+  return { kind: "drop", reason, ...meta };
+}
+
+/** Emit one consistent log line for escrow keep/drop outcomes. */
+export function logEscrowDecision(
+  scope: string,
+  decision: EscrowProcessDecision,
+  logger: Logger = consoleLogger,
+): void {
+  if (decision.kind === "accept") {
+    return;
+  }
+
+  const detail = decision.message
+    ? `${scope}: ${decision.message}`
+    : `${scope}: escrow ${decision.kind} (${decision.reason})`;
+  const meta = decision.context ? [decision.context] : [];
+  if (decision.kind === "keep") {
+    logger.info(detail, ...meta);
+    return;
+  }
+  logger.info(detail, ...meta);
 }
 
 /** Recoverable live-receipt outcomes that require escrowing attached material. */

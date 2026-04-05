@@ -9,9 +9,12 @@ Deno.test("core/witnesses - deriveRotatedWitnessSet preserves ordered cuts and a
   );
 
   assertEquals(derived, {
-    wits: ["wit-b", "wit-c"],
-    cuts: ["wit-a"],
-    adds: ["wit-c"],
+    kind: "accept",
+    value: {
+      wits: ["wit-b", "wit-c"],
+      cuts: ["wit-a"],
+      adds: ["wit-c"],
+    },
   });
 });
 
@@ -20,22 +23,22 @@ Deno.test("core/witnesses - deriveRotatedWitnessSet rejects duplicate and inters
   assertEquals(hasUniqueWitnesses(["wit-a", "wit-a"]), false);
   assertEquals(
     deriveRotatedWitnessSet(["wit-a"], ["wit-a", "wit-a"], []),
-    null,
+    { kind: "reject", reason: "duplicateCuts" },
   );
   assertEquals(
     deriveRotatedWitnessSet(["wit-a"], [], ["wit-b", "wit-b"]),
-    null,
+    { kind: "reject", reason: "duplicateAdds" },
   );
   assertEquals(
     deriveRotatedWitnessSet(["wit-a"], ["wit-a"], ["wit-a"]),
-    null,
+    { kind: "reject", reason: "intersectingCutsAndAdds" },
   );
   assertEquals(
     deriveRotatedWitnessSet(["wit-a"], [], ["wit-a"]),
-    null,
+    { kind: "reject", reason: "intersectingWitnessesAndAdds" },
   );
   assertEquals(
     deriveRotatedWitnessSet(["wit-a"], ["wit-b"], []),
-    null,
+    { kind: "reject", reason: "cutsNotSubsetOfWitnesses" },
   );
 });

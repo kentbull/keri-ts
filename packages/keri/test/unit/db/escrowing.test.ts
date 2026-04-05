@@ -176,7 +176,12 @@ Deno.test("db/escrowing - Broker escrow helper exposes typed keep/drop/accept de
             diger: Diger;
             processReply: (args: unknown) => void;
             extype: new(...args: any[]) => Error;
-          }): { kind: "accept" | "keep" | "drop"; reason?: string };
+          }): {
+            kind: "accept" | "keep" | "drop";
+            reason?: string;
+            message?: string;
+            context?: Record<string, unknown>;
+          };
         }
       ).processEscrowedStateNotice({
         aid: "Eaid",
@@ -189,6 +194,62 @@ Deno.test("db/escrowing - Broker escrow helper exposes typed keep/drop/accept de
 
       assertEquals(decision.kind, "keep");
       assertEquals(decision.reason, "recoverableError");
+      assertEquals(decision.message, "retry later");
+      assertEquals(decision.context?.aid, "Eaid");
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("db/escrowing - Broker preserves processing error detail on drop decisions", async () => {
+  await run(function*() {
+    const lmdber = yield* createLMDBer({
+      name: `broker-processing-detail-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const broker = new Broker(lmdber, "txn");
+      const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
+      const diger = new Diger({ qb64: serder.said ?? "" });
+
+      broker.escrowStateNotice({
+        typ: "txn",
+        pre: "Eregistry",
+        aid: "Eaid",
+        serder,
+        diger,
+        dater: makeFreshDater(),
+        tsgs: [makeTsg(serder.raw)],
+      });
+
+      const decision = (
+        broker as unknown as {
+          processEscrowedStateNotice(args: {
+            aid: string;
+            diger: Diger;
+            processReply: (args: unknown) => void;
+            extype: new(...args: any[]) => Error;
+          }): {
+            kind: "accept" | "keep" | "drop";
+            reason?: string;
+            message?: string;
+            context?: Record<string, unknown>;
+          };
+        }
+      ).processEscrowedStateNotice({
+        aid: "Eaid",
+        diger,
+        processReply: () => {
+          throw new Error("boom");
+        },
+        extype: RecoverableEscrowError,
+      });
+
+      assertEquals(decision.kind, "drop");
+      assertEquals(decision.reason, "processingError");
+      assertEquals(decision.message, "boom");
+      assertEquals(decision.context?.said, diger.qb64);
     } finally {
       yield* lmdber.close(true);
     }

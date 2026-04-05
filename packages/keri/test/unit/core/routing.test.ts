@@ -343,3 +343,85 @@ Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and remove
     }
   });
 });
+
+Deno.test("Revery escrow replay preserves processing error detail on drop decisions", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `revery-escrow-processing-detail-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("reply-detail", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const serder = new SerderKERI({
+        sad: {
+          t: "rpy",
+          dt: makeNowIso8601(),
+          r: "/escrow/reply/detail",
+          a: { aid: hab.pre },
+        },
+        makify: true,
+      });
+      const saider = new Diger({ qb64: serder.said ?? "" });
+      const replyVerifier = new Revery(hby.db);
+      replyVerifier.escrowReply({
+        serder,
+        saider,
+        dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+        route: "/escrow/reply/detail",
+        prefixer: new Prefixer({ qb64: hab.pre }),
+        seqner: kever.sner,
+        diger: new Diger({ qb64: kever.said }),
+        sigers: hab.sign(serder.raw, true),
+      });
+
+      const original = replyVerifier.processReply.bind(replyVerifier);
+      (
+        replyVerifier as unknown as {
+          processReply(
+            args: { serder: SerderKERI; tsgs: TransIdxSigGroup[] },
+          ): void;
+        }
+      ).processReply = () => {
+        throw new Error("boom");
+      };
+
+      try {
+        const decision = (
+          replyVerifier as unknown as {
+            reprocessEscrowedReply(
+              diger: Diger,
+            ): {
+              kind: "accept" | "keep" | "drop";
+              reason?: string;
+              message?: string;
+              context?: Record<string, unknown>;
+            };
+          }
+        ).reprocessEscrowedReply(saider);
+
+        assertEquals(decision.kind, "drop");
+        assertEquals(decision.reason, "processingError");
+        assertEquals(decision.message, "boom");
+        assertEquals(decision.context?.said, saider.qb64);
+      } finally {
+        (
+          replyVerifier as unknown as {
+            processReply: typeof original;
+          }
+        ).processReply = original;
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

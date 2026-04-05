@@ -5,7 +5,13 @@ import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
-import { acceptEscrow, dropEscrow, type EscrowProcessDecision, keepEscrow } from "./kever-decisions.ts";
+import {
+  acceptEscrow,
+  dropEscrow,
+  type EscrowProcessDecision,
+  keepEscrow,
+  logEscrowDecision,
+} from "./kever-decisions.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 
@@ -605,6 +611,7 @@ export class Revery {
         continue;
       }
       const decision = this.reprocessEscrowedReply(diger);
+      logEscrowDecision("Revery RPE", decision);
       switch (decision.kind) {
         case "accept":
           this.db.rpes.rem([route], diger);
@@ -627,26 +634,43 @@ export class Revery {
    * - `drop` mirrors stale/corrupt escrow rows that should be removed
    * - `accept` mirrors successful reply verification on replay
    */
-  private reprocessEscrowedReply(
+  public reprocessEscrowedReply(
     diger: Diger,
   ): EscrowProcessDecision {
     const dater = this.db.sdts.get([diger.qb64]);
     const serder = this.db.rpys.get([diger.qb64]);
     const tsgs = fetchStoredTsgs(this.db, diger.qb64);
     if (!dater || !serder || tsgs.length === 0) {
-      return dropEscrow("missingEscrowArtifact");
+      return dropEscrow("missingEscrowArtifact", {
+        message: `Missing escrow artifacts at said=${diger.qb64} for reply replay.`,
+        context: {
+          said: diger.qb64,
+          hasDater: !!dater,
+          hasSerder: !!serder,
+          tsgCount: tsgs.length,
+        },
+      });
     }
     if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
-      return dropEscrow("stale");
+      return dropEscrow("stale", {
+        message: `Stale reply escrow at route = ${serder.route ?? "<unknown>"}.`,
+        context: { said: diger.qb64, route: serder.route },
+      });
     }
     try {
       this.processReply({ serder, tsgs });
       return acceptEscrow();
     } catch (error) {
       if (error instanceof UnverifiedReplyError) {
-        return keepEscrow("unverifiedReply");
+        return keepEscrow("unverifiedReply", {
+          message: error.message,
+          context: { said: diger.qb64, route: serder.route },
+        });
       }
-      return dropEscrow("processingError");
+      return dropEscrow("processingError", {
+        message: error instanceof Error ? error.message : String(error),
+        context: { said: diger.qb64, route: serder.route },
+      });
     }
   }
 }

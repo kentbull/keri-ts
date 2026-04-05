@@ -13,6 +13,18 @@ export interface DerivedWitnessSet {
   adds: string[];
 }
 
+export type WitnessSetValidationReason =
+  | "duplicateCuts"
+  | "cutsNotSubsetOfWitnesses"
+  | "duplicateAdds"
+  | "intersectingCutsAndAdds"
+  | "intersectingWitnessesAndAdds"
+  | "invalidWitnessSet";
+
+export type DerivedWitnessSetDecision =
+  | { kind: "accept"; value: DerivedWitnessSet }
+  | { kind: "reject"; reason: WitnessSetValidationReason };
+
 /**
  * Derive the next ordered witness list from one rotation's cuts and adds.
  *
@@ -30,41 +42,47 @@ export function deriveRotatedWitnessSet(
   currentWits: readonly string[],
   cuts: readonly string[],
   adds: readonly string[],
-): DerivedWitnessSet | null {
-  if (!hasUniqueEntries(cuts) || !hasUniqueEntries(adds)) {
-    return null;
+): DerivedWitnessSetDecision {
+  if (!hasUniqueEntries(cuts)) {
+    return { kind: "reject", reason: "duplicateCuts" };
+  }
+  if (!hasUniqueEntries(adds)) {
+    return { kind: "reject", reason: "duplicateAdds" };
   }
 
   const cutset = new Set(cuts);
   const witset = new Set(currentWits);
   for (const cut of cuts) {
     if (!witset.has(cut)) {
-      return null;
+      return { kind: "reject", reason: "cutsNotSubsetOfWitnesses" };
     }
   }
 
   const addset = new Set(adds);
   for (const cut of cuts) {
     if (addset.has(cut)) {
-      return null;
+      return { kind: "reject", reason: "intersectingCutsAndAdds" };
     }
   }
 
   for (const add of adds) {
     if (witset.has(add)) {
-      return null;
+      return { kind: "reject", reason: "intersectingWitnessesAndAdds" };
     }
   }
 
   const next = currentWits.filter((wit) => !cutset.has(wit));
   next.push(...adds);
   if (!hasUniqueEntries(next)) {
-    return null;
+    return { kind: "reject", reason: "invalidWitnessSet" };
   }
 
   return {
-    wits: next,
-    cuts: [...cuts],
-    adds: [...adds],
+    kind: "accept",
+    value: {
+      wits: next,
+      cuts: [...cuts],
+      adds: [...adds],
+    },
   };
 }
