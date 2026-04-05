@@ -1,11 +1,13 @@
 import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { Dater, Diger, Prefixer, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
 import { makeQuerySerder, makeReplySerder } from "../../../src/core/messages.ts";
+import { Roles } from "../../../src/core/roles.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -259,6 +261,319 @@ Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.
       assertExists(hby.db.kdts.get([ksnSaid]));
       assertEquals(hby.db.ksns.get([ksnSaid])?.i, hab.pre);
       assertEquals(hby.db.knas.get([hab.pre, hab.pre])?.qb64, ksnSaid);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery reply routing accepts `/ksn` from self, backer, and configured watcher sources in non-lax mode", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-ksn-trust-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const backer = hby.makeHab("backer", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const watcher = hby.makeHab("watcher", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const subject = hby.makeHab("subject", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 1,
+        wits: [backer.pre],
+      });
+      const habord = hby.db.getHab(subject.pre);
+      assertExists(habord);
+      hby.db.pinHab(subject.pre, {
+        ...habord,
+        watchers: [watcher.pre],
+      });
+
+      const rvy = new Revery(hby.db, { lax: false });
+      const kvy = new Kevery(hby.db, { rvy, lax: false });
+      kvy.registerReplyRoutes(rvy.rtr);
+
+      const selfReply = makeReplySerder(
+        `/ksn/${subject.pre}`,
+        subject.kever!.state().asDict(),
+      );
+      rvy.processReply({
+        serder: selfReply,
+        tsgs: [replySigGroup({
+          pre: subject.pre,
+          kever: subject.kever!,
+          sign: (ser) => subject.sign(ser, true),
+        }, selfReply)],
+      });
+
+      const backerReply = makeReplySerder(
+        `/ksn/${backer.pre}`,
+        subject.kever!.state().asDict(),
+      );
+      rvy.processReply({
+        serder: backerReply,
+        cigars: [backer.sign(backerReply.raw, false)[0]],
+      });
+
+      const watcherReply = makeReplySerder(
+        `/ksn/${watcher.pre}`,
+        subject.kever!.state().asDict(),
+      );
+      rvy.processReply({
+        serder: watcherReply,
+        tsgs: [replySigGroup({
+          pre: watcher.pre,
+          kever: watcher.kever!,
+          sign: (ser) => watcher.sign(ser, true),
+        }, watcherReply)],
+      });
+
+      assertEquals(
+        hby.db.knas.get([subject.pre, subject.pre])?.qb64,
+        subject.kever!.state().d,
+      );
+      assertEquals(
+        hby.db.knas.get([subject.pre, backer.pre])?.qb64,
+        subject.kever!.state().d,
+      );
+      assertEquals(
+        hby.db.knas.get([subject.pre, watcher.pre])?.qb64,
+        subject.kever!.state().d,
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery reply routing rejects `/ksn` from unrelated sources in non-lax mode", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-ksn-untrusted-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const stranger = hby.makeHab("stranger", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const subject = hby.makeHab("subject", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const rvy = new Revery(hby.db, { lax: false });
+      const kvy = new Kevery(hby.db, { rvy, lax: false });
+      kvy.registerReplyRoutes(rvy.rtr);
+
+      const serder = makeReplySerder(
+        `/ksn/${stranger.pre}`,
+        subject.kever!.state().asDict(),
+      );
+
+      assertThrows(
+        () =>
+          rvy.processReply({
+            serder,
+            tsgs: [replySigGroup({
+              pre: stranger.pre,
+              kever: stranger.kever!,
+              sign: (ser) => stranger.sign(ser, true),
+            }, serder)],
+          }),
+        ValidationError,
+        `Untrusted key state source ${stranger.pre} for ${subject.pre}.`,
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery reply routing rejects stale and mismatched `/ksn` replies", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-ksn-stale-mismatch-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const subject = hby.makeHab("subject", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const priorState = subject.kever!.state().asDict();
+      const ixn = makeInteraction(subject.pre, 1, subject.kever!.said);
+      const kvy = hby.kevery;
+      kvy.processEvent({
+        ...eventEnvelope({
+          serder: ixn,
+          sigers: subject.sign(ixn.raw, true),
+        }),
+        local: true,
+      });
+
+      const rvy = new Revery(hby.db, { lax: false });
+      const replyKvy = new Kevery(hby.db, { rvy, lax: false });
+      replyKvy.registerReplyRoutes(rvy.rtr);
+
+      const staleReply = makeReplySerder(`/ksn/${subject.pre}`, priorState);
+      assertThrows(
+        () =>
+          rvy.processReply({
+            serder: staleReply,
+            tsgs: [replySigGroup({
+              pre: subject.pre,
+              kever: subject.kever!,
+              sign: (ser) => subject.sign(ser, true),
+            }, staleReply)],
+          }),
+        ValidationError,
+        `Skipped stale key state at sn=0 for ${subject.pre}.`,
+      );
+
+      const mismatchReply = makeReplySerder(`/ksn/${subject.pre}`, {
+        ...subject.kever!.state().asDict(),
+        d: priorState.d,
+      });
+      const estEvent = hby.db.getEvtSerder(
+        subject.pre,
+        subject.kever!.lastEst.d,
+      );
+      assertExists(estEvent);
+      const estSner = estEvent.sner;
+      assertExists(estSner);
+      assertThrows(
+        () =>
+          rvy.processReply({
+            serder: mismatchReply,
+            tsgs: [
+              new TransIdxSigGroup(
+                new Prefixer({ qb64: subject.pre }),
+                estSner,
+                new Diger({ qb64: subject.kever!.lastEst.d }),
+                subject.sign(mismatchReply.raw, true),
+              ),
+            ],
+          }),
+        ValidationError,
+        `Mismatch key state at sn=1 with accepted event log for ${subject.pre}.`,
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery reply routing persists `/watcher/{aid}` replies into `wwas.` and `obvs.` and queues watcher OOBIs idempotently", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-watcher-rpy-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const controller = hby.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const watcher = hby.makeHab("watcher", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const observed = hby.makeHab("observed", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const rvy = new Revery(hby.db);
+      const kvy = new Kevery(hby.db, { rvy });
+      kvy.registerReplyRoutes(rvy.rtr);
+
+      const oobi = `http://127.0.0.1:7723/oobi/${observed.pre}/controller`;
+      const addReply = makeReplySerder(`/watcher/${watcher.pre}/add`, {
+        cid: controller.pre,
+        oid: observed.pre,
+        oobi,
+      });
+
+      const tsg = replySigGroup({
+        pre: controller.pre,
+        kever: controller.kever!,
+        sign: (ser) => controller.sign(ser, true),
+      }, addReply);
+      rvy.processReply({ serder: addReply, tsgs: [tsg] });
+      rvy.processReply({ serder: addReply, tsgs: [tsg] });
+
+      assertEquals(
+        hby.db.wwas.get([controller.pre, watcher.pre, observed.pre])?.qb64,
+        addReply.said,
+      );
+      assertEquals(
+        hby.db.obvs.get([controller.pre, watcher.pre, observed.pre])?.enabled,
+        true,
+      );
+      assertEquals(hby.db.oobis.get(oobi)?.state, "queued");
+
+      const cutReply = makeReplySerder(`/watcher/${watcher.pre}/cut`, {
+        cid: controller.pre,
+        oid: observed.pre,
+      });
+      rvy.processReply({
+        serder: cutReply,
+        tsgs: [replySigGroup({
+          pre: controller.pre,
+          kever: controller.kever!,
+          sign: (ser) => controller.sign(ser, true),
+        }, cutReply)],
+      });
+
+      assertEquals(
+        hby.db.wwas.get([controller.pre, watcher.pre, observed.pre])?.qb64,
+        cutReply.said,
+      );
+      assertEquals(
+        hby.db.obvs.get([controller.pre, watcher.pre, observed.pre])?.enabled,
+        false,
+      );
     } finally {
       yield* hby.close(true);
     }

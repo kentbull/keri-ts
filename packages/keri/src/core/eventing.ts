@@ -48,7 +48,7 @@ import {
 import { Kever, type KeverEventInit } from "./kever.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
 import { makeReplySerder } from "./messages.ts";
-import { KeyStateRecord } from "./records.ts";
+import { KeyStateRecord, ObservedRecord } from "./records.ts";
 import { Revery, Router } from "./routing.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
 
@@ -193,6 +193,7 @@ export class Kevery {
   /** Register the reply routes owned by `Kevery` itself. */
   registerReplyRoutes(router: Router): void {
     router.addRoute("/ksn/{aid}", this, "KeyStateNotice");
+    router.addRoute("/watcher/{aid}/{action}", this, "AddWatched");
   }
 
   /**
@@ -894,6 +895,19 @@ export class Kevery {
       throw new ValidationError("Malformed key state notice reply body.");
     }
 
+    if (!this.lax) {
+      const watchers = this.configuredWatchers();
+      const backers = ksn.b ?? [];
+      const trusted = args.aid === pre
+        || backers.includes(args.aid)
+        || watchers.has(args.aid);
+      if (!trusted) {
+        throw new ValidationError(
+          `Untrusted key state source ${args.aid} for ${pre}.`,
+        );
+      }
+    }
+
     const existing = this.kevers.get(pre);
     if (existing && sn < existing.sn) {
       throw new ValidationError(
@@ -932,6 +946,88 @@ export class Kevery {
     const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
     this.updateKeyState(args.aid, ksn, saider, dater);
     this.cues.push({ kin: "keyStateSaved", ksn });
+  }
+
+  /**
+   * Process one `/watcher/{aid}/add` or `/watcher/{aid}/cut` reply.
+   *
+   * Side effects:
+   * - accepted reply SAIDs persist in `wwas.`
+   * - watched-identifier projections persist in `obvs.`
+   * - optional watcher-advertised OOBIs are queued into `oobis.`
+   */
+  processReplyAddWatched(args: {
+    serder: SerderKERI;
+    diger: Diger;
+    route: string;
+    aid: string;
+    action?: string;
+    cigars?: Cigar[];
+    tsgs?: TransIdxSigGroup[];
+  }): void {
+    if (!this.rvy) {
+      throw new ValidationError(
+        "Kevery is not configured with a reply verifier.",
+      );
+    }
+    if (!args.route.startsWith("/watcher")) {
+      throw new ValidationError(
+        `Unsupported route=${args.route} in ${Ilks.rpy} reply.`,
+      );
+    }
+
+    const enabled = args.action === "add"
+      ? true
+      : args.action === "cut"
+      ? false
+      : null;
+    if (enabled === null) {
+      throw new ValidationError(
+        `Unsupported route=${args.route} in ${Ilks.rpy} reply.`,
+      );
+    }
+
+    const data = args.serder.ked?.a as Record<string, unknown> | undefined;
+    const cid = typeof data?.cid === "string"
+      ? new Prefixer({ qb64: data.cid }).qb64
+      : null;
+    const oid = typeof data?.oid === "string"
+      ? new Prefixer({ qb64: data.oid }).qb64
+      : null;
+    const oobi = typeof data?.oobi === "string" ? data.oobi : null;
+    if (!cid || !oid) {
+      throw new ValidationError(
+        "Missing one of cid/oid in /watcher reply.",
+      );
+    }
+
+    const keys: [string, string, string] = [cid, args.aid, oid];
+    let osaider = this.db.wwas.get(keys);
+    if (osaider?.qb64 === args.diger.qb64) {
+      osaider = null;
+    }
+    const accepted = this.rvy.acceptReply({
+      serder: args.serder,
+      saider: args.diger,
+      route: `/watcher/${args.aid}`,
+      aid: cid,
+      osaider,
+      cigars: args.cigars,
+      tsgs: args.tsgs,
+    });
+    if (!accepted) {
+      throw new UnverifiedReplyError(
+        `Unverified watcher reply ${args.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
+    if (oobi) {
+      this.db.oobis.pin(oobi, {
+        date: makeNowIso8601(),
+        state: "queued",
+      });
+    }
+    this.updateWatched(keys, args.diger, enabled);
   }
 
   /**
@@ -2397,6 +2493,30 @@ export class Kevery {
     if (ksn.i) {
       this.db.knas.pin([ksn.i, aid], saider);
     }
+  }
+
+  /** Persist accepted watcher-observed projections into `wwas.` and `obvs.`. */
+  private updateWatched(
+    keys: [string, string, string],
+    saider: Diger,
+    enabled: boolean,
+  ): void {
+    this.db.wwas.pin(keys, saider);
+    const observed = this.db.obvs.get(keys)
+      ?? new ObservedRecord({ datetime: makeNowIso8601() });
+    observed.enabled = enabled;
+    this.db.obvs.pin(keys, observed);
+  }
+
+  /** Collect the locally configured watcher identifiers across all habitats. */
+  private configuredWatchers(): Set<string> {
+    const watchers = new Set<string>();
+    for (const [, habord] of this.db.getHabItemIter()) {
+      for (const watcher of habord.watchers ?? []) {
+        watchers.add(watcher);
+      }
+    }
+    return watchers;
   }
 }
 

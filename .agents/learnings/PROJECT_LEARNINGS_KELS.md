@@ -52,8 +52,8 @@ runtime ownership semantics.
     records directly.
 14. KEL/runtime code that cares about anchor semantics should project through
     CESR structing helpers (`SealEvent.fromSad`, `SerderKERI.eventSeals`, and
-    related record helpers) instead of repeating raw `{ i, s, d }` shape
-    checks in each subsystem.
+    related record helpers) instead of repeating raw `{ i, s, d }` shape checks
+    in each subsystem.
 15. Ordinal-bearing dispatch material currently needs
     `DispatchOrdinal = Seqner | NumberPrimitive`; forcing everything into
     `Seqner` is false parity because it ignores what the current parser actually
@@ -90,13 +90,18 @@ runtime ownership semantics.
 25. Gates B, C, and D are established enough to stop debating bootstrap
     viability: local visibility, compat-store visibility, and encrypted keeper
     semantics are real foundations now.
-26. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice, and
-    bounded init/incept convergence, but it is still an honest bootstrap slice
-    rather than full KERIpy runtime closure.
-27. The remaining gaps are narrower and clearer now: promote key DB `Partial`
-    rows, finish forwarding/exchange/direct transport breadth, harden
-    stale/timeout continuation behavior, and keep receipt/query/escrow parity
-    honest.
+26. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
+    bounded init/incept convergence, and the broader Chunk 7 query/reply
+    correspondence closure: `/watcher/{aid}/{action}`, stricter `/ksn`
+    trust-source parity, runtime `QueryCoordinator`, and query-continuation
+    pending-state tracking are all landed.
+27. Incomplete `query` cues are not near-wire messages. They are runtime
+    correspondence requests that must resolve a local habitat and an honest
+    remote attester before emitting a follow-on `qry`.
+28. The remaining gaps are narrower and clearer now: promote key DB `Partial`
+    rows, finish forwarding/exchange/direct transport breadth, and harden
+    stale/timeout continuation behavior rather than reopening the old
+    query/reply side-effect graph.
 
 ## Use This Doc For
 
@@ -118,8 +123,8 @@ runtime ownership semantics.
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
 2. Continue the Gate E continuation / Gate F bridge with focus on
-   forwarding/exchange/direct transport breadth, stale/timeout behavior, and
-   remaining query/receipt edge cases.
+   forwarding/exchange/direct transport breadth and stale/timeout continuation
+   behavior now that the broader query/reply correspondence slice is landed.
 3. Promote high-value DB `Partial` rows with real row-level evidence instead of
    symbol-existence optimism.
 4. Treat missing maintainer docs on newly ported KERIpy surfaces as a real
@@ -217,6 +222,19 @@ runtime ownership semantics.
 - `Baser` storage tuple aliases remain tuple-shaped for LMDB parity, but they
   are now derived from CESR structing descriptors so the semantic source of
   truth lives in one place.
+
+### 2026-04-05 - Query/Reply Correspondence Moved To A Runtime Coordinator
+
+- `QueryCoordinator` now owns the KERIpy-style correspondence step between
+  incomplete `query` cues and honest outbound `qry` messages.
+  `Hab.processCuesIter()` stays a cue-to-wire interpreter for already-complete
+  cues instead of growing endpoint-selection policy.
+- `Kevery` reply parity widened to cover `/watcher/{aid}/{action}` plus tighter
+  non-lax `/ksn` trust-source rules: only self, one of the reported KSN backers,
+  or a locally configured watcher can authoritatively advance saved key state.
+- Runtime convergence must treat active query continuations as pending work.
+  Otherwise `init` / `incept` can terminate while the correspondence layer still
+  owes a follow-on `logs` query or local catch-up wait.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 

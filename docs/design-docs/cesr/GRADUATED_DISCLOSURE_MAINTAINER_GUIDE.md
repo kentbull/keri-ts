@@ -728,9 +728,9 @@ compactor.expand();
 
 const staged = Object.values(compactor.partials ?? {});
 const revealRole = staged.find((partial) =>
-  typeof partial.getTail(".role") === "object" &&
-  typeof partial.getTail(".name") === "string" &&
-  typeof partial.getTail(".region") === "string"
+  typeof partial.getTail(".role") === "object"
+  && typeof partial.getTail(".name") === "string"
+  && typeof partial.getTail(".region") === "string"
 );
 
 const revealRoleMad = revealRole?.mad;
@@ -774,9 +774,9 @@ Practical `keri-ts` callout:
 
 ```ts
 const revealNameAndRole = staged.find((partial) =>
-  typeof partial.getTail(".name") === "object" &&
-  typeof partial.getTail(".role") === "object" &&
-  typeof partial.getTail(".region") === "string"
+  typeof partial.getTail(".name") === "object"
+  && typeof partial.getTail(".role") === "object"
+  && typeof partial.getTail(".region") === "string"
 );
 
 const revealNameAndRoleMad = revealNameAndRole?.mad;
@@ -811,9 +811,9 @@ Practical `keri-ts` callout:
 
 ```ts
 const fullyExpanded = staged.find((partial) =>
-  typeof partial.getTail(".name") === "object" &&
-  typeof partial.getTail(".role") === "object" &&
-  typeof partial.getTail(".region") === "object"
+  typeof partial.getTail(".name") === "object"
+  && typeof partial.getTail(".role") === "object"
+  && typeof partial.getTail(".region") === "object"
 );
 
 const fullyExpandedMad = fullyExpanded?.mad;

@@ -6,6 +6,7 @@ import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { Oobiery, type OobiJob } from "./oobiery.ts";
+import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -42,6 +43,7 @@ export interface AgentRuntime {
   reactor: Reactor;
   oobiery: Oobiery;
   mailboxDirector: MailboxDirector;
+  querying: QueryCoordinator;
 }
 
 /**
@@ -61,6 +63,7 @@ export interface RuntimePendingState {
   replyEscrow: boolean;
   oobiQueued: boolean;
   oobiInFlight: boolean;
+  queriesPending: boolean;
 }
 
 /**
@@ -81,6 +84,7 @@ export function createAgentRuntime(
   const oobiery = new Oobiery(hby, reactor, { cues });
   oobiery.registerReplyRoutes(reactor.router);
   const mailboxDirector = new MailboxDirector(hby.db);
+  const querying = new QueryCoordinator(hby);
   return {
     hby,
     mode: options.mode ?? "local",
@@ -88,6 +92,7 @@ export function createAgentRuntime(
     reactor,
     oobiery,
     mailboxDirector,
+    querying,
   };
 }
 
@@ -134,11 +139,14 @@ export function* processRuntimeTurn(
     sink?: CueSink;
   } = {},
 ): Operation<void> {
+  runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
-  yield* processCuesOnce(runtime, options);
+  yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
+  yield* runtime.querying.processPending();
   runtime.reactor.processEscrowsOnce();
-  yield* processCuesOnce(runtime, options);
+  yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
+  yield* runtime.querying.processPending();
 }
 
 /** Return the current pending-work summary for bounded command-local hosts. */
@@ -152,6 +160,7 @@ export function runtimePendingState(
     oobiQueued: runtime.hby.db.oobis.cnt() > 0
       || runtime.hby.db.woobi.cnt() > 0,
     oobiInFlight: runtime.hby.db.coobi.cnt() > 0,
+    queriesPending: runtime.querying.hasPendingWork(),
   };
 }
 
@@ -159,7 +168,7 @@ export function runtimePendingState(
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
   return state.ingress || state.cues || state.replyEscrow
-    || state.oobiQueued || state.oobiInFlight;
+    || state.oobiQueued || state.oobiInFlight || state.queriesPending;
 }
 
 /**
@@ -221,18 +230,22 @@ export function* runAgentRuntime(
     sink?: CueSink;
   } = {},
 ): Operation<never> {
+  runtime.querying.configure({ hab: options.hab, sink: options.sink });
   const tasks = [
     yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),
     yield* spawn(function*() {
-      yield* cueDo(runtime, options);
+      yield* cueDo(runtime, { ...options, sink: runtime.querying });
     }),
     yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
     }),
     yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();
+    }),
+    yield* spawn(function*() {
+      yield* runtime.querying.queryDo();
     }),
   ];
   try {

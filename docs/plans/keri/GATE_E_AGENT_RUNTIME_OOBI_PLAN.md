@@ -43,8 +43,10 @@
     generate, and mailbox OOBI resolve
   - protocol-only host coverage for `tufa agent`
 - Deferred beyond Gate E:
-  - `/ksn`, `/introduce`, and broader reply-routing families
-  - broader `woobi.` continuation, MFA, and retry-convergence semantics
+  - broader direct/mailbox/forwarding/exchange transport breadth
+  - stricter stale/timeout continuation, MFA, and retry-convergence semantics
+  - wider reply/query correspondence beyond the current bootstrap-critical
+    KERIpy slice
 - Planning rule: those deferred items still matter, but they are no longer Gate
   E exit criteria. They belong to later runtime/comms/escrow closure work.
 
@@ -70,8 +72,10 @@
   now accepts CESR `POST` / `PUT`, serves mailbox SSE for `mbx`, and continues
   OOBI discovery through `/introduce`, but fuller forwarding / exchange breadth
   is still later work.
-- Chunk 7 is good enough for the current local/remote inception base, but it
-  still needs more query/reply side effects and broader KERIpy correspondence.
+- Chunk 7 is now materially complete for the broader query/reply correspondence
+  slice: incomplete `query` cues flow through a runtime `QueryCoordinator`,
+  `/watcher/{aid}/{action}` is KEL-owned, `/ksn` trust-source parity is tighter,
+  and runtime pending-state convergence includes active query continuations.
 - Chunk 8 is now partially complete: the unverified witness / non-transferable /
   transferable receipt escrows and a durable `query-not-found` retry path are
   landed, but the wider stale-policy and non-receipt escrow families still need
@@ -85,9 +89,10 @@
 
 ## Active Continuation Slice For Reasonably Done `init` / `incept`
 
-- Planning verdict: treat Chunks 1 and 2 as closed and Chunk 3 as effectively
-  complete enough; the active work is Chunks 4, 5, and 6 plus the enabling
-  slices of Chunks 7, 8, and 9 that make those chunks real.
+- Planning verdict: treat Chunks 1 through 7 as materially complete for the
+  honest bootstrap/runtime/query-correspondence slice. The active work is now
+  the remaining escrow-policy tail in Chunks 8 and 9 plus the Gate F comms
+  bridge around direct/mailbox/forwarding/exchange breadth.
 - `/ksn` is not just another generic reply route. In KERIpy it is KEL-owned
   reply handling and depends on accepted key state plus query-not-found escrow.
 - `/introduce` is not generic endpoint reply routing either. It belongs with
@@ -98,6 +103,10 @@
 - "Full escrow handling" for this continuation means more than reply escrow: it
   includes the unverified receipt-family escrows and the query/continuation
   paths that a transferable OOBI-resolved identifier can trigger.
+- Incomplete `query` cues are not near-wire messages. They are runtime requests
+  for a higher-level correspondent to choose a local habitat, resolve an honest
+  attester, and emit a follow-on query only when that correspondence can be
+  justified.
 - `tufa init` should mirror KERIpy init when config preload exists: host the
   command-local runtime, wait for `roobi.` outcomes, and authenticate the
   `woobi.` path instead of just preloading DB rows.
@@ -123,9 +132,9 @@
   - `AgentRuntime` is a composition root with only truly shared state: `hby`,
     `mode`, and the shared `cues` deck
   - topic-local state and long-running flows live behind component-owned classes
-    such as `Reactor` and `Oobiery`
-  - runtime children should mirror KERIpy mental model: `msgDo`, `escrowDo`, and
-    `oobiDo`
+    such as `Reactor`, `Oobiery`, and `QueryCoordinator`
+  - runtime children should mirror KERIpy mental model: `msgDo`, `escrowDo`,
+    `oobiDo`, and `queryDo`
 - Add `EndpointRole` constants covering at least `controller`, `agent`,
   `mailbox`, and `witness`
 - Add a KERI dispatch envelope after CESR parsing:
@@ -162,20 +171,20 @@ Maintainer note:
   host-sink rationale now live in `docs/adr/adr-0004-cue-runtime-portability.md`
 - this matrix remains the Gate E work-planning summary view
 
-| Producer       | `kin`           | Payload Shape                                 | Consumer                    | Expected Side Effect                     |
-| -------------- | --------------- | --------------------------------------------- | --------------------------- | ---------------------------------------- |
-| `Kevery`       | `receipt`       | `serder`                                      | `Hab.processCuesIter`       | emits receipt message bytes              |
-| `Kevery`       | `notice`        | `serder`                                      | `Hab.processCuesIter`       | controller-local notice/log side effects |
-| `Kevery`       | `witness`       | `serder`                                      | `Hab.processCuesIter`       | emits witness receipt request bytes      |
-| `Kevery`       | `query`         | `pre`, `src`, optional `route`, optional `q`  | `Hab.processCuesIter`       | emits query message bytes                |
-| `Kevery`       | `replay`        | `msgs`                                        | `Hab.processCuesIter`       | emits replay stream bytes                |
-| `Revery`       | `reply`         | `route`, `data`                               | `Hab.processCuesIter`       | emits reply message bytes                |
-| `Kevery`       | `stream`        | `serder`, `pre`, `src`, `topics`              | `Hab.processCuesIter`       | mailbox/witness stream follow-up         |
-| `Kevery`       | `keyStateSaved` | `ksn`                                         | runtime completion watchers | state convergence signal                 |
-| `Kevery`       | `psUnescrow`    | `serder`, optional context                    | runtime completion watchers | partial-signature unescrow signal        |
-| `OobiResolver` | `oobiQueued`    | `url`, optional alias                         | CLI waiters / runtime logs  | resolve accepted into runtime queue      |
-| `OobiResolver` | `oobiResolved`  | `url`, `cid`, optional `role`, optional `eid` | CLI waiters / runtime logs  | OOBI moved to `roobi`                    |
-| `OobiResolver` | `oobiFailed`    | `url`, `reason`                               | CLI waiters / runtime logs  | OOBI moved to retry/failure state        |
+| Producer       | `kin`           | Payload Shape                                                                | Consumer                                         | Expected Side Effect                                                           |
+| -------------- | --------------- | ---------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `Kevery`       | `receipt`       | `serder`                                                                     | `Hab.processCuesIter`                            | emits receipt message bytes                                                    |
+| `Kevery`       | `notice`        | `serder`                                                                     | `Hab.processCuesIter`                            | controller-local notice/log side effects                                       |
+| `Kevery`       | `witness`       | `serder`                                                                     | `Hab.processCuesIter`                            | emits witness receipt request bytes                                            |
+| `Kevery`       | `query`         | `pre`, optional `src`, optional `route`, optional `q/query`, optional `wits` | `QueryCoordinator -> Hab.processCuesIter`        | complete cues emit query bytes; incomplete cues drive correspondent resolution |
+| `Kevery`       | `replay`        | `msgs`                                                                       | `Hab.processCuesIter`                            | emits replay stream bytes                                                      |
+| `Revery`       | `reply`         | `route`, `data`                                                              | `Hab.processCuesIter`                            | emits reply message bytes                                                      |
+| `Kevery`       | `stream`        | `serder`, `pre`, `src`, `topics`                                             | `Hab.processCuesIter`                            | mailbox/witness stream follow-up                                               |
+| `Kevery`       | `keyStateSaved` | `ksn`                                                                        | `QueryCoordinator` / runtime completion watchers | state convergence and follow-on log queries                                    |
+| `Kevery`       | `psUnescrow`    | `serder`, optional context                                                   | runtime completion watchers                      | partial-signature unescrow signal                                              |
+| `OobiResolver` | `oobiQueued`    | `url`, optional alias                                                        | CLI waiters / runtime logs                       | resolve accepted into runtime queue                                            |
+| `OobiResolver` | `oobiResolved`  | `url`, `cid`, optional `role`, optional `eid`                                | CLI waiters / runtime logs                       | OOBI moved to `roobi`                                                          |
+| `OobiResolver` | `oobiFailed`    | `url`, `reason`                                                              | CLI waiters / runtime logs                       | OOBI moved to retry/failure state                                              |
 
 ## Chunks
 
@@ -305,6 +314,15 @@ Maintainer note:
 - Treat missing delegator anchors and related dependencies as escrow cases
 - Push follow-on work such as receipts, notices, witness actions, queries, and
   replies into `Kevery.cues`
+- Status reconciliation (2026-04-05):
+  - materially complete for the broader query/reply correspondence slice
+  - landed evidence includes `/watcher/{aid}/{action}` reply routing, stricter
+    non-lax `/ksn` source acceptance (self, KSN backer, or configured watcher),
+    runtime `QueryCoordinator` handling for incomplete `query` cues, and
+    continuation tracking through runtime pending-state convergence
+  - remaining work has moved to stale/timeout continuation parity and broader
+    transport/exchange/direct communications closure, not more Chunk 7 side
+    effects
 
 ### Chunk 8: Implement continuous KEL escrow processing needed for transferable/bootstrap acceptance
 

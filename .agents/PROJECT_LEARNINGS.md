@@ -97,7 +97,9 @@ Use this file to:
     `Oobiery`, `Habery.kevery` owns a separate local cue deck for `Hab` local
     processing, `Hab.processCuesIter()` owns cue semantics, `Revery` owns reply
     verification/BADA/escrows, `Kevery` owns KEL and `/ksn`-style reply
-    families, and `Oobiery` owns introduction-driven OOBI work.
+    families, `Oobiery` owns introduction-driven OOBI work, and
+    `QueryCoordinator` owns incomplete `query` cue correspondence so
+    `Hab.processCuesIter()` stays an interpreter for already-complete cues.
 15. Receipt-family mental models should stay KERIpy-shaped: live `rct`
     transferable receipts use grouped `tsgs`, while replay/clone attached
     transferable receipt material uses `trqs`. Escrow/storage may flatten those
@@ -122,8 +124,9 @@ Use this file to:
     mutate globals or persisted stores need stronger isolation.
 21. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
-22. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice, and
-    bounded init/incept convergence, but remaining gaps still include
+22. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
+    broader Chunk 7 query/reply correspondence closure, and bounded init/incept
+    convergence. The remaining runtime gaps are now primarily
     forwarding/exchange/direct transport breadth and stricter stale/timeout
     continuation behavior.
 
@@ -133,9 +136,10 @@ Use this file to:
    `fetchTsgs` and the `Komer` family.
 2. Preserve CESR parser/serder/primitive parity without reopening settled
    architecture unless KERIpy or regression evidence forces it.
-3. Continue honest runtime closure around `/ksn`, `/introduce`, receipt/query
-   escrows, bounded init/incept convergence, mailbox/direct/forwarding breadth,
-   and richer cue consumers.
+3. Continue honest runtime closure around receipt/query escrows, bounded
+   init/incept convergence, mailbox/direct/forwarding/exchange breadth, and
+   stale/timeout continuation behavior now that the broader query/reply
+   correspondence slice is landed.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
    changes in the same change set.
 5. Keep KERI storage tuple aliases derived from CESR structing descriptors and

@@ -76,3 +76,8 @@ Things to come back and do at some point:
 - kever-decisions.ts
 - Encrypter/Decrypter, CryptSignerSuber, and Manager integration
 - all the graduated disclosure stuff in structor.ts
+- querying.ts
+  - eventing.ts
+    - processReplyAddWatched
+    - updateWatched
+- router.addRoute("/watcher/{aid}/{action}", this, "AddWatched");

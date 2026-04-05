@@ -40,6 +40,7 @@ export interface QueryCue extends CueBase {
   query?: Record<string, unknown>;
   q?: Record<string, unknown>;
   dest?: string;
+  wits?: string[];
 }
 
 /** Cue carrying a prebuilt replay byte stream back to the host or transport layer. */
