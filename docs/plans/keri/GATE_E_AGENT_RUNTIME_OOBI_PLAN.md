@@ -111,8 +111,10 @@ Maintainer note:
 - Planning verdict: do not reopen Chunks 4 through 10 as if bootstrap-critical
   reply/query/receipt behavior were still missing. That slice is landed.
 - The active continuation is now:
-  - Gate F transport/comms breadth across direct, mailbox, forwarding, and
-    exchange paths
+  - Gate F/G continuation on top of the now-landed first exchange slice:
+    direct and mailbox-authorized controller delivery, `Exchanger`, and
+    challenge CLI are real, but fuller forwarding/mailbox polling semantics and
+    KERIpy interop evidence are still open
   - the broader stale/timeout continuation tail and richer cleanup policy
   - packaged npm/tarball smoke confidence for `tufa agent`
 - `/ksn` is not just another generic reply route. In KERIpy it is KEL-owned

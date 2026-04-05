@@ -27,6 +27,8 @@ SALT="${GATE_E_SALT:-0ADHFiisJ7FnfWkPl4YfX6AK}"
 KEEP_TMP="${KEEP_TMP:-0}"
 PORT="${GATE_E_PORT:-$((8800 + RANDOM % 400))}"
 BASE_URL="http://127.0.0.1:${PORT}"
+TARGET_PORT="${GATE_E_TARGET_PORT:-$((PORT + 1))}"
+TARGET_BASE_URL="http://127.0.0.1:${TARGET_PORT}"
 
 TEMP_ROOT="${GATE_E_TMPDIR:-$(mktemp -d "${TMPDIR:-/tmp}/keri-ts-gate-e.XXXXXX")}"
 LOG_DIR="${TEMP_ROOT}/logs"
@@ -50,8 +52,10 @@ CFG_INCEPT_NAME="gate-e-config-incept"
 CFG_INCEPT_ALIAS="config-incept"
 CFG_FILE_NAME="gate-e-bootstrap"
 
-AGENT_LOG="${LOG_DIR}/source-agent.log"
-AGENT_PID=""
+SOURCE_AGENT_LOG="${LOG_DIR}/source-agent.log"
+SOURCE_AGENT_PID=""
+TARGET_AGENT_LOG="${LOG_DIR}/target-agent.log"
+TARGET_AGENT_PID=""
 
 TUFA=(deno run --allow-all --unstable-ffi packages/keri/mod.ts)
 
@@ -65,10 +69,8 @@ fail() {
 }
 
 cleanup() {
-  if [[ -n "${AGENT_PID}" ]]; then
-    kill "${AGENT_PID}" >/dev/null 2>&1 || true
-    wait "${AGENT_PID}" 2>/dev/null || true
-  fi
+  stop_source_host
+  stop_target_host
 
   if [[ "${KEEP_TMP}" == "1" ]]; then
     echo "Keeping temp files at ${TEMP_ROOT}"
@@ -108,7 +110,9 @@ assert_status() {
 }
 
 wait_for_health() {
-  local url="${BASE_URL}/health"
+  local base_url="$1"
+  local log_file="$2"
+  local url="${base_url}/health"
   local body=""
 
   for _ in $(seq 1 100); do
@@ -120,7 +124,7 @@ wait_for_health() {
   done
 
   echo "Agent log:" >&2
-  cat "${AGENT_LOG}" >&2 || true
+  cat "${log_file}" >&2 || true
   fail "agent never became healthy at ${url}"
 }
 
@@ -146,6 +150,52 @@ assert_line_equals() {
   local actual="$1"
   local expected="$2"
   [[ "${actual}" == "${expected}" ]] || fail "expected '${expected}', got '${actual}'"
+}
+
+assert_line_contains() {
+  local actual="$1"
+  local expected="$2"
+  [[ "${actual}" == *"${expected}"* ]] || fail "expected '${actual}' to contain '${expected}'"
+}
+
+start_source_host() {
+  if [[ -n "${SOURCE_AGENT_PID}" ]]; then
+    return
+  fi
+
+  run_tufa agent --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --port "${PORT}" >"${SOURCE_AGENT_LOG}" 2>&1 &
+  SOURCE_AGENT_PID="$!"
+  wait_for_health "${BASE_URL}" "${SOURCE_AGENT_LOG}"
+}
+
+stop_source_host() {
+  if [[ -z "${SOURCE_AGENT_PID}" ]]; then
+    return
+  fi
+
+  kill "${SOURCE_AGENT_PID}" >/dev/null 2>&1 || true
+  wait "${SOURCE_AGENT_PID}" 2>/dev/null || true
+  SOURCE_AGENT_PID=""
+}
+
+start_target_host() {
+  if [[ -n "${TARGET_AGENT_PID}" ]]; then
+    return
+  fi
+
+  run_tufa agent --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --port "${TARGET_PORT}" >"${TARGET_AGENT_LOG}" 2>&1 &
+  TARGET_AGENT_PID="$!"
+  wait_for_health "${TARGET_BASE_URL}" "${TARGET_AGENT_LOG}"
+}
+
+stop_target_host() {
+  if [[ -z "${TARGET_AGENT_PID}" ]]; then
+    return
+  fi
+
+  kill "${TARGET_AGENT_PID}" >/dev/null 2>&1 || true
+  wait "${TARGET_AGENT_PID}" 2>/dev/null || true
+  TARGET_AGENT_PID=""
 }
 
 log "Using temp root ${TEMP_ROOT}"
@@ -174,9 +224,7 @@ assert_line_equals "$(last_non_empty_line "${MAILBOX_ENDS_OUTPUT}")" "mailbox ${
 assert_line_equals "$(last_non_empty_line "${AGENT_ENDS_OUTPUT}")" "agent ${SOURCE_PRE}"
 
 log "Start long-lived tufa agent host"
-run_tufa agent --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --port "${PORT}" >"${AGENT_LOG}" 2>&1 &
-AGENT_PID="$!"
-wait_for_health
+start_source_host
 
 log "Verify protocol-only host surface"
 assert_status 200 "${BASE_URL}/health"
@@ -212,7 +260,56 @@ TARGET_INCEPT_OUTPUT="$(capture_tufa incept --name "${TARGET_NAME}" --head-dir "
 TARGET_PRE="$(extract_prefix "${TARGET_INCEPT_OUTPUT}")"
 assert_line_equals "$(last_non_empty_line "$(capture_tufa aid --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}")")" "${TARGET_PRE}"
 
+log "Drive runtime-backed loc add and ends add for the target controller"
+TARGET_LOC_OUTPUT="$(capture_tufa loc add --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --url "${TARGET_BASE_URL}")"
+TARGET_MAILBOX_ENDS_OUTPUT="$(capture_tufa ends add --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --role mailbox --eid "${TARGET_PRE}")"
+TARGET_AGENT_ENDS_OUTPUT="$(capture_tufa ends add --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --role agent --eid "${TARGET_PRE}")"
+assert_line_equals "$(last_non_empty_line "${TARGET_LOC_OUTPUT}")" "Location ${TARGET_BASE_URL} added for aid ${TARGET_PRE} with scheme http"
+assert_line_equals "$(last_non_empty_line "${TARGET_MAILBOX_ENDS_OUTPUT}")" "mailbox ${TARGET_PRE}"
+assert_line_equals "$(last_non_empty_line "${TARGET_AGENT_ENDS_OUTPUT}")" "agent ${TARGET_PRE}"
+
+log "Start long-lived target agent host"
+start_target_host
+
+log "Verify target protocol-only host surface"
+assert_status 200 "${TARGET_BASE_URL}/health"
+assert_status 200 "${TARGET_BASE_URL}/oobi/${TARGET_PRE}/controller"
+assert_status 200 "${TARGET_BASE_URL}/oobi/${TARGET_PRE}/mailbox/${TARGET_PRE}"
+assert_status 200 "${TARGET_BASE_URL}/oobi/${TARGET_PRE}/agent/${TARGET_PRE}"
+assert_status 404 "${TARGET_BASE_URL}/admin"
+assert_status 404 "${TARGET_BASE_URL}/admin/queue"
+assert_status 404 "${TARGET_BASE_URL}/rpc"
+assert_status 404 "${TARGET_BASE_URL}/control"
+
+log "Resolve target controller OOBI into the source store for challenge verification"
+stop_source_host
+TARGET_CONTROLLER_OOBI_OUTPUT="$(capture_tufa oobi generate --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --role controller)"
+TARGET_CONTROLLER_OOBI="$(last_non_empty_line "${TARGET_CONTROLLER_OOBI_OUTPUT}")"
+[[ "${TARGET_CONTROLLER_OOBI}" == "${TARGET_BASE_URL}/oobi/${TARGET_PRE}/controller" ]] || fail "unexpected target controller OOBI ${TARGET_CONTROLLER_OOBI}"
+SOURCE_TARGET_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --url "${TARGET_CONTROLLER_OOBI}" --oobi-alias "${TARGET_ALIAS}-controller")"
+assert_line_equals "$(last_non_empty_line "${SOURCE_TARGET_RESOLVE_OUTPUT}")" "${TARGET_CONTROLLER_OOBI}"
+
+log "Exercise challenge generate/respond/verify over direct delivery"
+DIRECT_CHALLENGE_WORDS="$(last_non_empty_line "$(capture_tufa challenge generate --strength 128 --out string)")"
+[[ -n "${DIRECT_CHALLENGE_WORDS}" ]] || fail "challenge generate returned no direct words"
+DIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --alias "${SOURCE_ALIAS}" --recipient "${TARGET_PRE}" --words "${DIRECT_CHALLENGE_WORDS}" --transport direct)"
+assert_line_contains "$(last_non_empty_line "${DIRECT_RESPOND_OUTPUT}")" "${TARGET_BASE_URL}"
+stop_target_host
+DIRECT_VERIFY_OUTPUT="$(capture_tufa challenge verify --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --signer "${SOURCE_PRE}" --words "${DIRECT_CHALLENGE_WORDS}" --timeout 5)"
+assert_line_contains "$(last_non_empty_line "${DIRECT_VERIFY_OUTPUT}")" "${SOURCE_PRE}"
+
+log "Exercise challenge generate/respond/verify over mailbox-authorized delivery"
+start_source_host
+INDIRECT_CHALLENGE_WORDS="$(last_non_empty_line "$(capture_tufa challenge generate --strength 128 --out string)")"
+[[ -n "${INDIRECT_CHALLENGE_WORDS}" ]] || fail "challenge generate returned no indirect words"
+INDIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --recipient "${SOURCE_PRE}" --words "${INDIRECT_CHALLENGE_WORDS}" --transport indirect)"
+assert_line_contains "$(last_non_empty_line "${INDIRECT_RESPOND_OUTPUT}")" "${BASE_URL}"
+stop_source_host
+INDIRECT_VERIFY_OUTPUT="$(capture_tufa challenge verify --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --signer "${TARGET_PRE}" --words "${INDIRECT_CHALLENGE_WORDS}" --timeout 5)"
+assert_line_contains "$(last_non_empty_line "${INDIRECT_VERIFY_OUTPUT}")" "${TARGET_PRE}"
+
 log "Verify config-seeded init bootstrap convergence through oobis and woobi"
+start_source_host
 BOOT_INIT_URL="${BASE_URL}/oobi/${BOOT_INIT_PRE}/controller"
 BOOT_DELEGATE_URL="${BASE_URL}/oobi/${BOOT_DELEGATE_PRE}/controller"
 BOOT_WELLKNOWN_URL="${BASE_URL}/.well-known/keri/oobi/${BOOT_WELLKNOWN_PRE}?name=Root"
@@ -238,3 +335,4 @@ echo "Source AID: ${SOURCE_PRE}"
 echo "Target AID: ${TARGET_PRE}"
 echo "Config-incept AID: ${CFG_INCEPT_PRE}"
 echo "Agent URL: ${BASE_URL}"
+echo "Target Agent URL: ${TARGET_BASE_URL}"

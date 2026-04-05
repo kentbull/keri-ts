@@ -1,7 +1,13 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
-import { createAgentRuntime, enqueueOobi, processRuntimeUntil } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  enqueueOobi,
+  processRuntimeUntil,
+  runtimeOobiConverged,
+  runtimeOobiTerminalState,
+} from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -113,7 +119,9 @@ export function* oobiGenerateCommand(
           const url = preferredUrl(surls);
           if (url) {
             urls.push(
-              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
+              `${
+                url.replace(/\/$/, "")
+              }/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
             );
           }
         }
@@ -200,24 +208,17 @@ export function* oobiResolveCommand(
     });
     yield* processRuntimeUntil(
       runtime,
-      () =>
-        (!!hby.db.roobi.get(commandArgs.url!)
-          || !!hby.db.eoobi.get(commandArgs.url!))
-        && hby.db.oobis.cnt() === 0
-        && hby.db.woobi.cnt() === 0
-        && hby.db.coobi.cnt() === 0
-        && hby.db.rpes.cnt() === 0,
+      () => runtimeOobiConverged(runtime, commandArgs.url!),
       { maxTurns: 128 },
     );
 
-    const failed = hby.db.eoobi.get(commandArgs.url);
-    if (failed) {
+    const terminal = runtimeOobiTerminalState(runtime, commandArgs.url);
+    if (terminal.status === "failed") {
       throw new ValidationError(
-        `OOBI ${commandArgs.url} failed: ${failed.state}`,
+        `OOBI ${commandArgs.url} failed: ${terminal.record?.state ?? "failed"}`,
       );
     }
-    const resolved = hby.db.roobi.get(commandArgs.url);
-    if (!resolved) {
+    if (terminal.status !== "resolved") {
       throw new ValidationError(`OOBI ${commandArgs.url} did not resolve.`);
     }
     console.log(commandArgs.url);

@@ -1,6 +1,12 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { PathError, ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime, processRuntimeUntil, runtimeHasPendingWork } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  processRuntimeUntil,
+  runtimeHasPendingWork,
+  runtimeHasWellKnownAuth,
+  runtimeOobiTerminalState,
+} from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import { createHabery, type Habery } from "../habbing.ts";
 
@@ -84,7 +90,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const cf: Configer | undefined = initArgs.configFile
       ? (yield* createConfiger({
         name: initArgs.configFile,
@@ -145,6 +151,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
             "Bootstrap OOBI resolution failed during init.",
           );
         }
+        assertConfiguredWellKnownAuth(runtime, hby, "init");
       }
 
       console.log("KERI Keystore created at:", hby.ks.path);
@@ -168,4 +175,33 @@ function runtimeBootstrapNeeded(
   hby: Habery,
 ): boolean {
   return hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0;
+}
+
+function configuredWellKnownUrls(hby: Habery): string[] {
+  return Array.isArray(hby.config.wurls)
+    ? hby.config.wurls.filter((entry): entry is string =>
+      typeof entry === "string"
+    )
+    : [];
+}
+
+function assertConfiguredWellKnownAuth(
+  runtime: ReturnType<typeof createAgentRuntime>,
+  hby: Habery,
+  context: string,
+): void {
+  const failed = configuredWellKnownUrls(hby).filter((url) =>
+    !runtimeHasWellKnownAuth(runtime, url)
+  );
+  if (failed.length === 0) {
+    return;
+  }
+
+  const details = failed.map((url) => {
+    const terminal = runtimeOobiTerminalState(runtime, url);
+    return `${url} (${terminal.record?.state ?? terminal.status})`;
+  }).join(", ");
+  throw new ValidationError(
+    `Bootstrap well-known auth failed during ${context}: ${details}`,
+  );
 }

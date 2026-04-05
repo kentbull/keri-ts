@@ -1,11 +1,22 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
+import type { OobiRecord } from "../core/records.ts";
 import { Deck } from "../core/deck.ts";
-import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import type {
+  KeriDispatchEnvelope,
+  TransIdxSigGroup,
+} from "../core/dispatch.ts";
+import { Authenticator } from "./authenticating.ts";
+import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
-import { Oobiery, type OobiJob } from "./oobiery.ts";
+import {
+  isWellKnownOobiUrl,
+  Oobiery,
+  type OobiJob,
+  parseOobiUrl,
+} from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -31,6 +42,7 @@ export type { CueSink };
  * - topic-local state belongs to the component that owns that flow
  * - `Reactor` owns parser ingress/routing/escrow work
  * - `Oobiery` owns durable OOBI queue processing
+ * - `Authenticator` owns well-known auth convergence
  *
  * KERIpy mental model:
  * - this is the closest local analogue to a composition root that assembles
@@ -42,6 +54,7 @@ export interface AgentRuntime {
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
+  authenticator: Authenticator;
   mailboxDirector: MailboxDirector;
   querying: QueryCoordinator;
 }
@@ -63,8 +76,17 @@ export interface RuntimePendingState {
   replyEscrow: boolean;
   oobiQueued: boolean;
   oobiInFlight: boolean;
+  multiPending: boolean;
+  authQueued: boolean;
+  authInFlight: boolean;
   /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
+}
+
+export interface RuntimeOobiTerminalState {
+  status: "pending" | "resolved" | "failed";
+  via: "none" | "roobi" | "eoobi" | "rmfa";
+  record: OobiRecord | null;
 }
 
 /**
@@ -82,8 +104,10 @@ export function createAgentRuntime(
 ): AgentRuntime {
   const cues = new Deck<AgentCue>();
   const reactor = new Reactor(hby, { cues });
+  loadChallengeHandlers(hby.db, reactor.exchanger);
   const oobiery = new Oobiery(hby, reactor, { cues });
   oobiery.registerReplyRoutes(reactor.router);
+  const authenticator = new Authenticator(hby);
   const mailboxDirector = new MailboxDirector(hby.db);
   const querying = new QueryCoordinator(hby);
   return {
@@ -92,6 +116,7 @@ export function createAgentRuntime(
     cues,
     reactor,
     oobiery,
+    authenticator,
     mailboxDirector,
     querying,
   };
@@ -126,13 +151,14 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  * Turn order:
  * 1. `Reactor.processOnce()` drains queued ingress
  * 2. `Oobiery.processOnce()` resolves at most one durable OOBI record
- * 3. `processCuesOnce()` emits cues from fresh ingress/OOBI work into
+ * 3. `Authenticator.processOnce()` advances one well-known auth step
+ * 4. `processCuesOnce()` emits cues from fresh ingress/OOBI work into
  *    `QueryCoordinator`
- * 4. `QueryCoordinator.processPending()` resolves any newly correspondence-ready
+ * 5. `QueryCoordinator.processPending()` resolves any newly correspondence-ready
  *    query work
- * 5. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
- * 6. `processCuesOnce()` emits cues created during escrow progress
- * 7. `QueryCoordinator.processPending()` resolves any follow-on query work
+ * 6. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
+ * 7. `processCuesOnce()` emits cues created during escrow progress
+ * 8. `QueryCoordinator.processPending()` resolves any follow-on query work
  *
  * This helper remains because command-local CLI flows and focused tests need a
  * single deterministic step without having to spawn the long-lived doers.
@@ -147,6 +173,7 @@ export function* processRuntimeTurn(
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
+  yield* runtime.authenticator.processOnce();
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
   runtime.reactor.processEscrowsOnce();
@@ -168,9 +195,11 @@ export function runtimePendingState(
     ingress: !runtime.reactor.ingress.empty,
     cues: !runtime.cues.empty,
     replyEscrow: runtime.hby.db.rpes.cnt() > 0,
-    oobiQueued: runtime.hby.db.oobis.cnt() > 0
-      || runtime.hby.db.woobi.cnt() > 0,
+    oobiQueued: runtime.hby.db.oobis.cnt() > 0,
     oobiInFlight: runtime.hby.db.coobi.cnt() > 0,
+    multiPending: runtime.hby.db.moobi.cnt() > 0,
+    authQueued: runtime.hby.db.woobi.cnt() > 0,
+    authInFlight: runtime.hby.db.mfa.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
   };
 }
@@ -178,8 +207,63 @@ export function runtimePendingState(
 /** Return true when any command-local runtime work remains in flight. */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
-  return state.ingress || state.cues || state.replyEscrow
-    || state.oobiQueued || state.oobiInFlight || state.queriesPending;
+  return state.ingress || state.cues || state.replyEscrow ||
+    state.oobiQueued || state.oobiInFlight || state.multiPending ||
+    state.authQueued || state.authInFlight || state.queriesPending;
+}
+
+/** Return true when a well-known URL has been authorized into `wkas.`. */
+export function runtimeHasWellKnownAuth(
+  runtime: AgentRuntime,
+  url: string,
+): boolean {
+  const cid = parseOobiUrl(url).cid;
+  if (!cid) {
+    return false;
+  }
+  return runtime.hby.db.wkas.get(cid).some((record) => record.url === url);
+}
+
+/** Return the current terminal state projection for one requested OOBI URL. */
+export function runtimeOobiTerminalState(
+  runtime: AgentRuntime,
+  url: string,
+): RuntimeOobiTerminalState {
+  if (isWellKnownOobiUrl(url)) {
+    const record = runtime.hby.db.rmfa.get(url);
+    if (!record) {
+      return { status: "pending", via: "none", record: null };
+    }
+    return {
+      status: record.state === "resolved" ? "resolved" : "failed",
+      via: "rmfa",
+      record,
+    };
+  }
+
+  const failed = runtime.hby.db.eoobi.get(url);
+  if (failed) {
+    return { status: "failed", via: "eoobi", record: failed };
+  }
+
+  const resolved = runtime.hby.db.roobi.get(url);
+  if (resolved) {
+    return { status: "resolved", via: "roobi", record: resolved };
+  }
+
+  return { status: "pending", via: "none", record: null };
+}
+
+/**
+ * Return true once one requested OOBI has reached a terminal state and all
+ * related runtime work has drained.
+ */
+export function runtimeOobiConverged(
+  runtime: AgentRuntime,
+  url: string,
+): boolean {
+  return runtimeOobiTerminalState(runtime, url).status !== "pending" &&
+    !runtimeHasPendingWork(runtime);
 }
 
 /**
@@ -230,6 +314,7 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * - `Reactor.msgDo()` owns continuous ingress draining
  * - `Reactor.escrowDo()` owns continuous escrow reprocessing
  * - `Oobiery.oobiDo()` owns durable OOBI resolution
+ * - `Authenticator.authDo()` owns well-known auth convergence
  * - `QueryCoordinator.queryDo()` owns deferred query correspondence work
  *
  * The root itself now acts as a composition host: it starts the component
@@ -244,19 +329,22 @@ export function* runAgentRuntime(
 ): Operation<never> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   const tasks = [
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* cueDo(runtime, { ...options, sink: runtime.querying });
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.oobiery.oobiDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
+      yield* runtime.authenticator.authDo();
+    }),
+    yield* spawn(function* () {
       yield* runtime.querying.queryDo();
     }),
   ];

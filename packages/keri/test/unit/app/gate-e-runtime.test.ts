@@ -1,25 +1,77 @@
 import { run, spawn } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertStringIncludes,
+} from "jsr:@std/assert";
 import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
+  enqueueOobi,
   ingestKeriBytes,
   processRuntimeTurn,
   runAgentRuntime,
+  runtimeHasWellKnownAuth,
+  runtimeOobiConverged,
+  runtimeOobiTerminalState,
+  runtimePendingState,
 } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
+import { inceptCommand } from "../../../src/app/cli/incept.ts";
+import { initCommand } from "../../../src/app/cli/init.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
-import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
+import {
+  oobiGenerateCommand,
+  oobiResolveCommand,
+} from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { startServer } from "../../../src/app/server.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { makeReplySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
-import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
+import {
+  fetchOp,
+  textOp,
+  waitForServer,
+  waitForTaskHalt,
+} from "../../effection-http.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 const textDecoder = new TextDecoder();
+
+function startStaticOobiHost(
+  port: number,
+  handler: (request: Request, url: URL) => Response | Promise<Response>,
+): { close: () => Promise<void> } {
+  const controller = new AbortController();
+  const server = Deno.serve({
+    hostname: "127.0.0.1",
+    port,
+    signal: controller.signal,
+  }, async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/health") {
+      return new Response("ok", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    return await handler(request, url);
+  });
+
+  return {
+    async close() {
+      controller.abort();
+      try {
+        await server.finished;
+      } catch {
+        // Abort-driven shutdown is expected here.
+      }
+    },
+  };
+}
 
 function replySigGroupFor(
   hab: {
@@ -43,7 +95,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   const alias = "alice";
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -76,7 +128,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   );
   assertEquals(result.output.at(-1), `${EndpointRoles.mailbox} ${pre}`);
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -108,7 +160,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
   let mailboxUrl = "";
   let agentUrl = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -171,7 +223,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
   agentUrl = agentGenerated.output.at(-1) ?? "";
   assertStringIncludes(agentUrl, `/oobi/${pre}/agent/${pre}`);
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -184,7 +236,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -192,10 +244,10 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -226,7 +278,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -255,11 +307,140 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
   });
 });
 
+Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest pending state", async () => {
+  const sourceName = `gate-e-auth-source-${crypto.randomUUID()}`;
+  const targetName = `gate-e-auth-target-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-auth-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-auth-dst-${crypto.randomUUID()}`;
+  const port = 8914;
+  const hostUrl = `http://127.0.0.1:${port}`;
+  let pre = "";
+  let controllerUrl = "";
+  let wellKnownUrl = "";
+  let failingWellKnownUrl = "";
+  let controllerBytes = new Uint8Array();
+
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("source", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      pre = hab.pre;
+      controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
+      wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
+      failingWellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?mode=fail`;
+
+      const runtime = createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab });
+
+      controllerBytes = new Uint8Array(
+        hab.replyToOobi(pre, EndpointRoles.controller),
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const host = startStaticOobiHost(port, (_request, url) => {
+    if (url.pathname === `/oobi/${pre}/controller`) {
+      return new Response(controllerBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/cesr",
+          "Oobi-Aid": pre,
+        },
+      });
+    }
+    if (url.pathname === `/.well-known/keri/oobi/${pre}`) {
+      if (url.searchParams.get("mode") === "fail") {
+        return new Response("missing", {
+          status: 404,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      return new Response(controllerBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/cesr",
+          "Oobi-Aid": pre,
+        },
+      });
+    }
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain" },
+    });
+  });
+
+  try {
+    await run(() => waitForServer(port));
+
+    await run(function* () {
+      const hby = yield* createHabery({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        skipConfig: true,
+      });
+      try {
+        const runtime = createAgentRuntime(hby, { mode: "local" });
+        enqueueOobi(runtime, { url: controllerUrl });
+        enqueueOobi(runtime, { url: wellKnownUrl });
+
+        yield* processRuntimeTurn(runtime);
+        assertEquals(hby.db.roobi.get(controllerUrl)?.state, "resolved");
+        assertEquals(runtimePendingState(runtime).authQueued, false);
+        assertEquals(runtimePendingState(runtime).authInFlight, true);
+        assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), false);
+
+        yield* processRuntimeTurn(runtime);
+        assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
+        assertEquals(runtimeHasWellKnownAuth(runtime, wellKnownUrl), true);
+        assertEquals(
+          runtimeOobiTerminalState(runtime, wellKnownUrl).status,
+          "resolved",
+        );
+        assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), true);
+
+        enqueueOobi(runtime, { url: failingWellKnownUrl });
+        yield* processRuntimeTurn(runtime);
+        assertEquals(runtimePendingState(runtime).authInFlight, true);
+        yield* processRuntimeTurn(runtime);
+        assertEquals(hby.db.rmfa.get(failingWellKnownUrl)?.state, "http-404");
+        assertEquals(
+          runtimeOobiTerminalState(runtime, failingWellKnownUrl).status,
+          "failed",
+        );
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
 Deno.test("Gate E - controller and witness OOBIs generate and resolve through shared runtime", async () => {
   const sourceName = `gate-e-controller-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-controller-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-gate-e-controller-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath = `/tmp/tufa-gate-e-controller-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath =
+    `/tmp/tufa-gate-e-controller-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath =
+    `/tmp/tufa-gate-e-controller-dst-${crypto.randomUUID()}`;
   const alias = "controller";
   const witnessAlias = "witness";
   const port = 8912;
@@ -268,8 +449,9 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
   let witnessPre = "";
   let controllerUrl = "";
   let witnessUrl = "";
+  let wellKnownUrl = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -332,6 +514,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
   );
   controllerUrl = controllerGenerated.output.at(-1) ?? "";
   assertStringIncludes(controllerUrl, `/oobi/${pre}/controller`);
+  wellKnownUrl = `${url}/.well-known/keri/oobi/${pre}?name=Root`;
 
   const witnessGenerated = await run(() =>
     testCLICommand(
@@ -346,7 +529,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
   witnessUrl = witnessGenerated.output.at(-1) ?? "";
   assertStringIncludes(witnessUrl, `/oobi/${pre}/witness/${witnessPre}`);
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -359,7 +542,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -367,10 +550,10 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -394,6 +577,15 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
         }),
       );
       assertEquals(witnessResolved.output.at(-1), witnessUrl);
+
+      const wellKnownResolved = yield* testCLICommand(
+        oobiResolveCommand({
+          name: targetName,
+          headDirPath: targetHeadDirPath,
+          url: wellKnownUrl,
+        }),
+      );
+      assertEquals(wellKnownResolved.output.at(-1), wellKnownUrl);
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
@@ -401,7 +593,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -418,6 +610,11 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
       );
       assertEquals(hby.db.roobi.get(controllerUrl)?.state, "resolved");
       assertEquals(hby.db.roobi.get(witnessUrl)?.state, "resolved");
+      assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
+      assertEquals(
+        hby.db.wkas.get(pre).some((record) => record.url === wellKnownUrl),
+        true,
+      );
     } finally {
       yield* hby.close();
     }
@@ -427,18 +624,19 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
 Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime queues", async () => {
   const sourceName = `gate-e-config-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-config-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-gate-e-config-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath = `/tmp/tufa-gate-e-config-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath =
+    `/tmp/tufa-gate-e-config-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath =
+    `/tmp/tufa-gate-e-config-dst-${crypto.randomUUID()}`;
   const port = 8913;
   const url = `http://127.0.0.1:${port}`;
   let iPre = "";
   let dPre = "";
-  let wPre = "";
   let iurl = "";
   let durl = "";
   let wurl = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -461,23 +659,14 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
         nsith: "1",
         toad: 0,
       });
-      const wHab = hby.makeHab("bootstrap-well-known", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
       iPre = iHab.pre;
       dPre = dHab.pre;
-      wPre = wHab.pre;
       iurl = `${url}/oobi/${iPre}/controller`;
       durl = `${url}/oobi/${dPre}/controller`;
-      wurl = `${url}/.well-known/keri/oobi/${wPre}?name=Root`;
+      wurl = `${url}/.well-known/keri/oobi/${iPre}?name=Root`;
 
       const runtime = createAgentRuntime(hby, { mode: "local" });
-      for (const hab of [iHab, dHab, wHab]) {
+      for (const hab of [iHab, dHab]) {
         ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
         ingestKeriBytes(
           runtime,
@@ -490,7 +679,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -508,7 +697,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -516,10 +705,10 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     });
     const hab = hby.habByName("bootstrap-init");
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -539,13 +728,15 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
 
         assertEquals(target.db.roobi.get(iurl)?.state, "resolved");
         assertEquals(target.db.roobi.get(durl)?.state, "resolved");
-        assertEquals(target.db.roobi.get(wurl)?.state, "resolved");
+        assertEquals(target.db.rmfa.get(wurl)?.state, "resolved");
         assertEquals(target.db.getState(iPre)?.i, iPre);
         assertEquals(target.db.getState(dPre)?.i, dPre);
-        assertEquals(target.db.getState(wPre)?.i, wPre);
         assertEquals(target.db.locs.get([iPre, "http"])?.url, url);
         assertEquals(target.db.locs.get([dPre, "http"])?.url, url);
-        assertEquals(target.db.locs.get([wPre, "http"])?.url, url);
+        assertEquals(
+          target.db.wkas.get(iPre).some((record) => record.url === wurl),
+          true,
+        );
       } finally {
         yield* target.close();
       }
@@ -557,6 +748,536 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
   });
 });
 
+Deno.test("Gate E - init command waits for configured well-known auth before exit", async () => {
+  const sourceName = `gate-e-init-source-${crypto.randomUUID()}`;
+  const targetName = `gate-e-init-target-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-init-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-init-dst-${crypto.randomUUID()}`;
+  const port = 8917;
+  const hostUrl = `http://127.0.0.1:${port}`;
+  let pre = "";
+  let controllerUrl = "";
+  let wellKnownUrl = "";
+  let controllerBytes = new Uint8Array();
+
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("source", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      pre = hab.pre;
+      controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
+      wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
+
+      const runtime = createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab });
+
+      controllerBytes = new Uint8Array(
+        hab.replyToOobi(pre, EndpointRoles.controller),
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const host = startStaticOobiHost(port, (_request, url) => {
+    if (
+      url.pathname === `/oobi/${pre}/controller` ||
+      url.pathname === `/.well-known/keri/oobi/${pre}`
+    ) {
+      return new Response(controllerBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/cesr",
+          "Oobi-Aid": pre,
+        },
+      });
+    }
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain" },
+    });
+  });
+
+  try {
+    await run(() => waitForServer(port));
+
+    await run(function* () {
+      const cf = yield* createConfiger({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        reopen: true,
+      });
+      try {
+        cf.put({
+          dt: new Date().toISOString(),
+          iurls: [controllerUrl],
+          wurls: [wellKnownUrl],
+        });
+      } finally {
+        yield* cf.close();
+      }
+    });
+
+    await run(() =>
+      testCLICommand(
+        initCommand({
+          name: targetName,
+          headDirPath: targetHeadDirPath,
+          configDir: targetHeadDirPath,
+          configFile: targetName,
+          nopasscode: true,
+        }),
+      )
+    );
+
+    await run(function* () {
+      const hby = yield* createHabery({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      try {
+        assertEquals(hby.db.roobi.get(controllerUrl)?.state, "resolved");
+        assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
+        assertEquals(
+          hby.db.wkas.get(pre).some((record) => record.url === wellKnownUrl),
+          true,
+        );
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+Deno.test("Gate E - incept command waits for configured well-known auth before inception", async () => {
+  const sourceName = `gate-e-incept-source-${crypto.randomUUID()}`;
+  const targetName = `gate-e-incept-target-${crypto.randomUUID()}`;
+  const sourceHeadDirPath =
+    `/tmp/tufa-gate-e-incept-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath =
+    `/tmp/tufa-gate-e-incept-dst-${crypto.randomUUID()}`;
+  const port = 8918;
+  const hostUrl = `http://127.0.0.1:${port}`;
+  let pre = "";
+  let controllerUrl = "";
+  let wellKnownUrl = "";
+  let controllerBytes = new Uint8Array();
+
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("source", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      pre = hab.pre;
+      controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
+      wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
+
+      const runtime = createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab });
+
+      controllerBytes = new Uint8Array(
+        hab.replyToOobi(pre, EndpointRoles.controller),
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const host = startStaticOobiHost(port, (_request, url) => {
+    if (
+      url.pathname === `/oobi/${pre}/controller` ||
+      url.pathname === `/.well-known/keri/oobi/${pre}`
+    ) {
+      return new Response(controllerBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/cesr",
+          "Oobi-Aid": pre,
+        },
+      });
+    }
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain" },
+    });
+  });
+
+  try {
+    await run(() => waitForServer(port));
+
+    await run(() =>
+      testCLICommand(
+        initCommand({
+          name: targetName,
+          headDirPath: targetHeadDirPath,
+          nopasscode: true,
+        }),
+      )
+    );
+
+    await run(function* () {
+      const cf = yield* createConfiger({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        reopen: true,
+      });
+      try {
+        cf.put({
+          dt: new Date().toISOString(),
+          iurls: [controllerUrl],
+          wurls: [wellKnownUrl],
+        });
+      } finally {
+        yield* cf.close();
+      }
+    });
+
+    await run(() =>
+      testCLICommand(
+        inceptCommand({
+          name: targetName,
+          headDirPath: targetHeadDirPath,
+          configDir: targetHeadDirPath,
+          configFile: targetName,
+          alias: "target",
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+        }),
+      )
+    );
+
+    await run(function* () {
+      const hby = yield* createHabery({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      try {
+        assertExists(hby.habByName("target"));
+        assertEquals(hby.db.roobi.get(controllerUrl)?.state, "resolved");
+        assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
+        assertEquals(
+          hby.db.wkas.get(pre).some((record) => record.url === wellKnownUrl),
+          true,
+        );
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs through moobi", async () => {
+  const sourceName = `gate-e-multi-controller-source-${crypto.randomUUID()}`;
+  const targetName = `gate-e-multi-controller-target-${crypto.randomUUID()}`;
+  const sourceHeadDirPath =
+    `/tmp/tufa-gate-e-multi-controller-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath =
+    `/tmp/tufa-gate-e-multi-controller-dst-${crypto.randomUUID()}`;
+  const port = 8915;
+  const hostUrl = `http://127.0.0.1:${port}`;
+  let pre = "";
+  let parentUrl = "";
+  let childUrls: string[] = [];
+  let controllerBytes = new Uint8Array();
+
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("source", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      pre = hab.pre;
+      parentUrl = `${hostUrl}/oobi/${pre}/controller?mode=multi`;
+      childUrls = [
+        `${hostUrl}/oobi/${pre}/controller?slot=1`,
+        `${hostUrl}/oobi/${pre}/controller?slot=2`,
+      ];
+
+      const runtime = createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab });
+
+      controllerBytes = new Uint8Array(
+        hab.replyToOobi(pre, EndpointRoles.controller),
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const parentReply = makeReplySerder("/oobi/controller", {
+    aid: pre,
+    urls: childUrls,
+  });
+  const host = startStaticOobiHost(port, (_request, url) => {
+    if (url.pathname === `/oobi/${pre}/controller`) {
+      if (url.searchParams.get("mode") === "multi") {
+        return new Response(new Blob([new Uint8Array(parentReply.raw)]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(controllerBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/cesr",
+          "Oobi-Aid": pre,
+        },
+      });
+    }
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain" },
+    });
+  });
+
+  try {
+    await run(() => waitForServer(port));
+
+    await run(function* () {
+      const hby = yield* createHabery({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        skipConfig: true,
+      });
+      try {
+        const runtime = createAgentRuntime(hby, { mode: "local" });
+        enqueueOobi(runtime, { url: parentUrl });
+
+        yield* processRuntimeTurn(runtime);
+        assertEquals(hby.db.moobi.get(parentUrl)?.state, "pending-multi-oobi");
+        assertEquals(runtimePendingState(runtime).multiPending, true);
+        assertEquals(runtimePendingState(runtime).oobiQueued, true);
+        assertEquals(runtimeOobiConverged(runtime, parentUrl), false);
+
+        yield* processRuntimeTurn(runtime);
+        yield* processRuntimeTurn(runtime);
+        assertEquals(runtimePendingState(runtime).multiPending, true);
+        assertEquals(runtimeOobiConverged(runtime, parentUrl), false);
+
+        yield* processRuntimeTurn(runtime);
+        assertEquals(hby.db.moobi.get(parentUrl), null);
+        assertEquals(hby.db.roobi.get(parentUrl)?.state, "resolved");
+        for (const childUrl of childUrls) {
+          assertEquals(hby.db.roobi.get(childUrl)?.state, "resolved");
+        }
+        assertEquals(
+          runtimeOobiTerminalState(runtime, parentUrl).status,
+          "resolved",
+        );
+        assertEquals(runtimeOobiConverged(runtime, parentUrl), true);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs through moobi", async () => {
+  const sourceName = `gate-e-multi-witness-source-${crypto.randomUUID()}`;
+  const targetName = `gate-e-multi-witness-target-${crypto.randomUUID()}`;
+  const sourceHeadDirPath =
+    `/tmp/tufa-gate-e-multi-witness-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath =
+    `/tmp/tufa-gate-e-multi-witness-dst-${crypto.randomUUID()}`;
+  const port = 8916;
+  const hostUrl = `http://127.0.0.1:${port}`;
+  let pre = "";
+  let witnessPre = "";
+  let parentUrl = "";
+  let childUrls: string[] = [];
+  let witnessBytes = new Uint8Array();
+
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const witnessHab = hby.makeHab("witness", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      witnessPre = witnessHab.pre;
+
+      const hab = hby.makeHab("source", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      pre = hab.pre;
+      parentUrl = `${hostUrl}/oobi/${pre}/witness/${witnessPre}?mode=multi`;
+      childUrls = [
+        `${hostUrl}/oobi/${pre}/witness/${witnessPre}?slot=1`,
+        `${hostUrl}/oobi/${pre}/witness/${witnessPre}?slot=2`,
+      ];
+
+      hby.db.pinState(pre, {
+        ...hby.db.getState(pre),
+        b: [witnessPre],
+        bt: "1",
+      });
+      if (hab.kever) {
+        hab.kever.wits = [witnessPre];
+      }
+
+      const runtime = createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
+      ingestKeriBytes(
+        runtime,
+        witnessHab.makeLocScheme(hostUrl, witnessHab.pre, "http"),
+      );
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab });
+
+      witnessBytes = new Uint8Array(
+        hab.replyToOobi(pre, EndpointRoles.witness, [witnessPre]),
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  const parentReply = makeReplySerder("/oobi/witness", {
+    aid: pre,
+    urls: childUrls,
+  });
+  const host = startStaticOobiHost(port, (_request, url) => {
+    if (url.pathname === `/oobi/${pre}/witness/${witnessPre}`) {
+      if (url.searchParams.get("mode") === "multi") {
+        return new Response(new Blob([new Uint8Array(parentReply.raw)]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(witnessBytes, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/cesr",
+          "Oobi-Aid": pre,
+        },
+      });
+    }
+    return new Response("Not Found", {
+      status: 404,
+      headers: { "Content-Type": "text/plain" },
+    });
+  });
+
+  try {
+    await run(() => waitForServer(port));
+
+    await run(function* () {
+      const hby = yield* createHabery({
+        name: targetName,
+        headDirPath: targetHeadDirPath,
+        skipConfig: true,
+      });
+      try {
+        const runtime = createAgentRuntime(hby, { mode: "local" });
+        enqueueOobi(runtime, { url: parentUrl });
+
+        yield* processRuntimeTurn(runtime);
+        assertEquals(hby.db.moobi.get(parentUrl)?.state, "pending-multi-oobi");
+        assertEquals(runtimePendingState(runtime).multiPending, true);
+        assertEquals(runtimePendingState(runtime).oobiQueued, true);
+        assertEquals(runtimeOobiConverged(runtime, parentUrl), false);
+
+        yield* processRuntimeTurn(runtime);
+        yield* processRuntimeTurn(runtime);
+        yield* processRuntimeTurn(runtime);
+
+        assertEquals(hby.db.roobi.get(parentUrl)?.state, "resolved");
+        assertEquals(
+          hby.db.ends.get([pre, EndpointRoles.witness, witnessPre])?.allowed,
+          true,
+        );
+        for (const childUrl of childUrls) {
+          assertEquals(hby.db.roobi.get(childUrl)?.state, "resolved");
+        }
+        assertEquals(
+          runtimeOobiTerminalState(runtime, parentUrl).status,
+          "resolved",
+        );
+        assertEquals(runtimeOobiConverged(runtime, parentUrl), true);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
 Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   const name = `gate-e-protocol-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-gate-e-protocol-${crypto.randomUUID()}`;
@@ -565,7 +1286,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   const url = `http://127.0.0.1:${port}`;
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -593,7 +1314,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -601,10 +1322,10 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -641,7 +1362,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
   let pre = "";
   const url = "http://127.0.0.1:5642";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -676,7 +1397,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
     `Location ${url} added for aid ${pre} with scheme http`,
   );
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -706,7 +1427,7 @@ Deno.test("Gate E - loc add command rejects malformed URLs deterministically", a
 });
 
 Deno.test("Gate E - `/introduce` replies enqueue discovered OOBIs through Oobiery route ownership", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `gate-e-introduce-${crypto.randomUUID()}`,
       temp: true,
@@ -757,7 +1478,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
   const port = 8915;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -791,7 +1512,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -799,13 +1520,13 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
         sink: runtime.mailboxDirector,
       });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 

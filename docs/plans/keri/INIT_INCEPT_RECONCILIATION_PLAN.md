@@ -170,20 +170,27 @@ Across `cha1`/`cha2`:
 - `tufa incept` now performs the same bounded convergence before local
   identifier creation. It is no longer "runtime blind".
 - The active follow-on is:
-  - Gate F transport/comms breadth across direct, mailbox, forwarding, and
-    exchange paths
+  - Gate F/G continuation around fuller mailbox forwarding/polling semantics,
+    broader exchange/forwarding routes, and KERIpy interop evidence now that
+    the first direct and mailbox-authorized `exn` slice is landed
   - the broader stale/timeout continuation tail
   - packaged npm/tarball confidence for `tufa agent`
 
 ### Gate F: Communications Interop (Direct + Mailbox)
 
-- Basic controller-to-controller messaging works in direct mode.
-- Messaging works via KERIpy mailbox infrastructure.
+- Current `keri-ts` status:
+  - landed for local evidence: controller-to-controller `exn` delivery works in
+    direct mode and via resolved mailbox-authorized endpoints
+  - remaining exit criterion: KERIpy interop evidence plus fuller
+    witness-forwarded mailbox semantics
 
 ### Gate G: Challenge Interop
 
-- `challenge generate/respond/verify` succeeds across two controllers with
-  resolved peer state and selected transport path.
+- Current `keri-ts` status:
+  - landed for local evidence: `challenge generate/respond/verify` works across
+    two controllers with resolved peer state and selected direct or
+    mailbox-authorized transport
+  - remaining exit criterion: KERIpy challenge-script parity evidence
 
 ### Gate H: LMDB Layer Full-Parity Closure (Phase 2 tail)
 

@@ -34,6 +34,7 @@ import {
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
+import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -59,6 +60,7 @@ export class Reactor {
   readonly revery: Revery;
   readonly replyRoutes: BasicReplyRouteHandler;
   readonly kevery: Kevery;
+  readonly exchanger: Exchanger;
   readonly parser: ReturnType<typeof createParser>;
   readonly local: boolean;
 
@@ -75,6 +77,7 @@ export class Reactor {
     this.replyRoutes.registerReplyRoutes(this.router);
     this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery });
     this.kevery.registerReplyRoutes(this.router);
+    this.exchanger = new Exchanger(hby, { cues: this.cues });
     this.parser = createParser({
       framed: false,
       attachmentDispatchMode: "compat",
@@ -124,6 +127,7 @@ export class Reactor {
   processEscrowsOnce(): void {
     this.kevery.processEscrows();
     this.revery.processEscrowReply();
+    this.exchanger.processEscrows();
   }
 
   /**
@@ -159,6 +163,7 @@ export class Reactor {
    * Current dispatch matrix:
    * - `rpy` -> `Revery`
    * - `rct` -> `Kevery`
+   * - `exn` -> `Exchanger`
    * - KEL event ilks -> `Kevery`, followed by replay-attached receipt handling
    *
    * All other ilks are intentionally ignored for now so the runtime can ingest
@@ -178,6 +183,15 @@ export class Reactor {
         break;
       case Ilks.rct:
         this.kevery.processReceipt(envelope);
+        break;
+      case Ilks.exn:
+        this.exchanger.processEvent({
+          serder: envelope.serder,
+          tsgs: envelope.tsgs,
+          cigars: envelope.cigars,
+          ptds: envelope.ptds,
+          essrs: envelope.essrs,
+        });
         break;
       case Ilks.icp:
       case Ilks.dip:
@@ -333,10 +347,10 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, siger] = item;
         if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(siger)
+          !isQualifiedPrimitive(prefixer) ||
+          !isQualifiedPrimitive(seqner) ||
+          !isQualifiedPrimitive(diger) ||
+          !isQualifiedPrimitive(siger)
         ) {
           continue;
         }
@@ -358,9 +372,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, sigers] = item;
         if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer) ||
+          !isQualifiedPrimitive(seqner) ||
+          !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -428,9 +442,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger] = item;
         if (
-          !isQualifiedPrimitive(prefixer)
-          || !isQualifiedPrimitive(seqner)
-          || !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer) ||
+          !isQualifiedPrimitive(seqner) ||
+          !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -479,10 +493,10 @@ function normalizeAttachmentGroup(
         }
         const [blid, uuid, acdc, state] = item;
         if (
-          !isQualifiedPrimitive(blid)
-          || !isQualifiedPrimitive(uuid)
-          || !isQualifiedPrimitive(acdc)
-          || !isQualifiedPrimitive(state)
+          !isQualifiedPrimitive(blid) ||
+          !isQualifiedPrimitive(uuid) ||
+          !isQualifiedPrimitive(acdc) ||
+          !isQualifiedPrimitive(state)
         ) {
           continue;
         }
@@ -504,12 +518,12 @@ function normalizeAttachmentGroup(
         }
         const [blid, uuid, acdc, state, number, bound] = item;
         if (
-          !isQualifiedPrimitive(blid)
-          || !isQualifiedPrimitive(uuid)
-          || !isQualifiedPrimitive(acdc)
-          || !isQualifiedPrimitive(state)
-          || !isQualifiedPrimitive(number)
-          || !isQualifiedPrimitive(bound)
+          !isQualifiedPrimitive(blid) ||
+          !isQualifiedPrimitive(uuid) ||
+          !isQualifiedPrimitive(acdc) ||
+          !isQualifiedPrimitive(state) ||
+          !isQualifiedPrimitive(number) ||
+          !isQualifiedPrimitive(bound)
         ) {
           continue;
         }
@@ -533,10 +547,10 @@ function normalizeAttachmentGroup(
         }
         const [blid, uuid, mediaType, mediaValue] = item;
         if (
-          !isQualifiedPrimitive(blid)
-          || !isQualifiedPrimitive(uuid)
-          || !isQualifiedPrimitive(mediaType)
-          || !isQualifiedPrimitive(mediaValue)
+          !isQualifiedPrimitive(blid) ||
+          !isQualifiedPrimitive(uuid) ||
+          !isQualifiedPrimitive(mediaType) ||
+          !isQualifiedPrimitive(mediaValue)
         ) {
           continue;
         }
