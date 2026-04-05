@@ -2,6 +2,17 @@
 
 Things to come back and do at some point:
 
+## Architecture
+
+- The current `Habery.kevery -> Hab.kevery` raw injection is an intentional
+  first-pass cleanup that keeps local habitat processing close to the KERIpy
+  mental model. Revisit a narrower habery-owned local-processing facade once
+  local/runtime ownership and cue consumers settle further.
+- Keep the dual cue-scope model honest: `Habery.kevery` owns local habitat cues
+  while runtime hosts wire shared cues into `Reactor`, `Revery`, and the
+  runtime-owned `Kevery`. Do not collapse those scopes without a stronger
+  KERIpy-driven reason.
+
 - Ensure all docs talking about bootstrap-only seams or partial impls are
   refactored once we have the full functionality implemented for a given
   feature.

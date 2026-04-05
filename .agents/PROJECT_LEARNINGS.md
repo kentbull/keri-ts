@@ -48,8 +48,8 @@ Use this file to:
 3. When history gets noisy, roll it into milestone summaries instead of adding
    more micro-handoffs.
 4. Prefer "what matters now" over "everything that happened."
-5. Most tasks should update `Current State` and `Current Follow-Ups` rather
-   than append a new milestone entry.
+5. Most tasks should update `Current State` and `Current Follow-Ups` rather than
+   append a new milestone entry.
 
 ## Cross-Topic Snapshot
 
@@ -66,48 +66,61 @@ Use this file to:
 5. When the code already knows the semantic type, it should construct and return
    the narrow primitive. `Matter` and `Indexer` are low-level parser/storage
    bases, not the default public API result.
-6. CESR-native and ACDC-native behavior should extend the shared support matrix
+6. Fixed-field seal/blind/media structing values now belong to CESR through
+   `packages/cesr/src/primitives/structing.ts`; `packages/keri` still has some
+   duplicated runtime/storage value objects that should be collapsed onto that
+   layer in follow-up work.
+7. CESR-native and ACDC-native behavior should extend the shared support matrix
    in `packages/cesr/src/serder/native.ts`; do not reintroduce sidecar native
    branching.
-7. ACDC parity depends on explicit compactification rules: top-level compactive
+8. ACDC parity depends on explicit compactification rules: top-level compactive
    verification uses the most compact section form, while section identifiers
    stay label-aware (`$id`, `d`, `agid`).
-8. Weighted thresholds are semantic through `Tholder`; KEL and reply logic
+9. Weighted thresholds are semantic through `Tholder`; KEL and reply logic
    should use `tholder.satisfy(...)` rather than collapsing threshold material
    into ad hoc numeric parsing.
-9. `docs/design-docs/db/db-architecture.md` is the shared DB invariants
-   contract. DB work remains parity-first rather than abstraction-first.
-10. Durable local state is DB-backed: `states.` is the authoritative local key
+10. `docs/design-docs/db/db-architecture.md` is the shared DB invariants
+    contract. DB work remains parity-first rather than abstraction-first.
+11. Durable local state is DB-backed: `states.` is the authoritative local key
     state, `kels.` / `fels.` / `dtss.` support reopenable event state, and
     `Habery.habs` is only an in-memory reconstruction cache.
-11. The mapper/record mental model is `FooRecord` plus `FooRecordShape`, with
+12. The mapper/record mental model is `FooRecord` plus `FooRecordShape`, with
     `recordClass` as the durable public seam. Public `*Like` aliases and
     mapper-facing `hydrate` / `normalize` APIs are drift.
-12. KEL control flow should stay on typed decisions (`accept`, `duplicate`,
+13. KEL control flow should stay on typed decisions (`accept`, `duplicate`,
     `escrow`, `reject`): `Kever` decides validity, `Kevery` routes/applies, and
     `docs/adr/adr-0005-kel-decision-control-flow.md` is normative.
-13. Runtime ownership is explicit: `AgentRuntime` owns the root cue deck,
-    `Hab.processCuesIter()` owns cue semantics, `Revery` owns reply
+14. Cue/runtime ownership is dual-scope and explicit: `AgentRuntime` owns the
+    shared runtime cue deck for `Reactor` / `Revery` / runtime `Kevery` /
+    `Oobiery`, `Habery.kevery` owns a separate local cue deck for `Hab` local
+    processing, `Hab.processCuesIter()` owns cue semantics, `Revery` owns reply
     verification/BADA/escrows, `Kevery` owns KEL and `/ksn`-style reply
     families, and `Oobiery` owns introduction-driven OOBI work.
-14. Local location updates must enter through signed `/loc/scheme` replies that
+15. Receipt-family mental models should stay KERIpy-shaped: live `rct`
+    transferable receipts use grouped `tsgs`, while replay/clone attached
+    transferable receipt material uses `trqs`. Escrow/storage may flatten those
+    groups into quintuple/quadruple records, but the live API boundary should
+    not blur the two families, and the receipt escrow seams should keep KERIpy
+    names (`escrowUReceipt`, `escrowUWReceipt`, `escrowTRGroups`,
+    `escrowTReceipts`) instead of one combined local helper.
+16. Local location updates must enter through signed `/loc/scheme` replies that
     flow through the normal parser -> `Revery` path, not by direct writes to
     `locs.` / `lans.`.
-15. Interop contracts are exact, not approximate: keep `lmdb` pinned to
-    `3.4.4`, preserve `LMDB_DATA_V1=true` for KERIpy interop workflows, and
-    route protocol/storage CBOR through the shared CESR codec for byte parity.
-16. Deno config ownership is graph-wide for local-source workflows, and CLI
+17. Interop contracts are exact, not approximate: keep `lmdb` pinned to `3.4.4`,
+    preserve `LMDB_DATA_V1=true` for KERIpy interop workflows, and route
+    protocol/storage CBOR through the shared CESR codec for byte parity.
+18. Deno config ownership is graph-wide for local-source workflows, and CLI
     startup should stay lazy so `--help` / `--version` do not pull CESR/LMDB
     startup work.
-17. CI policy is `dprint` plus stage-gated quality checks, a pinned KERIpy CLI,
+19. CI policy is `dprint` plus stage-gated quality checks, a pinned KERIpy CLI,
     explicit environment/version pins, and cache topology that respects LMDB v1
     rebuild requirements.
-18. Test parallelization should follow isolation boundaries, not folder names.
+20. Test parallelization should follow isolation boundaries, not folder names.
     DB-core suites can parallelize more freely; CLI/app/interop suites that
     mutate globals or persisted stores need stronger isolation.
-19. Gates B, C, and D are closed enough to treat local visibility, compat-store
+21. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
-20. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice, and
+22. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice, and
     bounded init/incept convergence, but remaining gaps still include
     forwarding/exchange/direct transport breadth and stricter stale/timeout
     continuation behavior.
@@ -123,8 +136,23 @@ Use this file to:
    and richer cue consumers.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
    changes in the same change set.
-5. Keep this memory layer compact. If a future update cannot be summarized
+5. Collapse remaining `packages/keri` source-seal / typed-digest / blind-state /
+   typed-media duplicate value objects onto CESR structing primitives instead of
+   preserving two semantic homes long term.
+6. Keep this memory layer compact. If a future update cannot be summarized
    cleanly, the real problem is probably unresolved design, not missing prose.
+
+## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
+
+- `Kevery` receipt/query replay, `Revery` reply replay, and DB `Broker` retry
+  flows should all use the same typed `accept` / `keep` / `drop` replay
+  vocabulary instead of ad hoc string unions or exception-only branching.
+- `keep` is the typed mirror of KERIpy's recoverable unverified/query-not-found
+  control paths, while `drop` is for stale/corrupt rows that must be removed and
+  `accept` is successful unescrow.
+- Reprocess loops should switch on the typed decision and decide side effects
+  there. Do not collapse all non-keep cases into one boolean test, because
+  different drop reasons can require different cleanup behavior.
 
 ## Templates
 

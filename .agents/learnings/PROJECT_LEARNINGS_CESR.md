@@ -61,6 +61,15 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 19. Weighted thresholds are now semantic CESR primitives through `Tholder`,
     including weighted/nested normalization, `limen`/`sith` projection, exact
     threshold sizing, and `satisfy(indices)` behavior.
+20. Fixed-field `structing.py` values now belong to CESR through
+    `packages/cesr/src/primitives/structing.ts`: named seal/blind/media value
+    classes plus clan/cast/counter registries live there, while the current
+    `packages/keri` dispatch/storage duplicates are still a follow-up adoption
+    task.
+21. `Verser` parity is slightly broader than the top-level message-protocol
+    model: auxiliary four-char tags such as `OCSR` must remain accepted because
+    KERIpy uses them in typed-digest seal families even though native message
+    bodies still only speak `KERI|ACDC`.
 
 ## Use This Doc For
 
@@ -89,6 +98,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    CESR-native semantic primitive layer.
 5. Preserve maintainer-oriented docs and keep local-source Deno config handling
    aligned whenever CESR source is loaded across package boundaries.
+6. Collapse the remaining `packages/keri` duplication around source-seal,
+   typed-digest, blind-state, and typed-media value objects onto
+   `primitives/structing.ts` instead of growing parallel family definitions.
 
 ## Milestone Rollup
 
@@ -130,3 +142,13 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
   `bt` normalization in `SerderKERI.bner`.
 - Turned `Tholder` into the real semantic threshold primitive and widened
   serder/native handling so weighted `kt` / `nt` forms survive round-trip.
+
+### 2026-04-04 - Fixed-Field Structing Values Moved Into CESR
+
+- Added CESR-owned fixed-field structing classes for seal, blind-state, bound-state,
+  and typed-media values, plus KERIpy-style clan/cast/coden registries.
+- Preserved the existing counted-group wrapper ownership split:
+  `Structor`/`Sealer`/`Blinder`/`Mediar` still own grouped serialization, while
+  `structing.ts` now owns the named value layer inside those groups.
+- Broadened `Verser` parity enough to accept KERIpy's auxiliary `OCSR` tag so
+  typed-digest seal vectors no longer need a fake protocol workaround.

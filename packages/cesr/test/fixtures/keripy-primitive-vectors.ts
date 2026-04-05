@@ -115,3 +115,58 @@ export const KERIPY_STRUCTOR_VECTORS = {
   mediarTypedMediaPayload:
     "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
 } as const;
+
+/** Selected fixed-field structing vectors from `tests/core/test_structing.py`. */
+export const KERIPY_STRUCTING_DATA_VECTORS = {
+  sealEvent: {
+    i: "BN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zR",
+    s: "e",
+    sQb64: "MAAO",
+    d: "ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
+    qb64: "BN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zRMAAOELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
+    enclosed: "-TAXBN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zRMAAOELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
+  },
+  sealKind: {
+    t: "YOCSRCAA",
+    d: "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+    qb64: "YOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+    enclosed: "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  },
+  blindState: {
+    d: "EBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769",
+    u: "aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPd",
+    td: "EBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ",
+    ts: "issued",
+    tsQb64: "0Missued",
+    qb64:
+      "EBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0Missued",
+    enclosed:
+      "-aAjEBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0Missued",
+  },
+  boundState: {
+    d: "EKmyRBn1mDRwPOB4TPimWJG_vqr-Kz1U2HyukGXzV7-1",
+    u: "aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPd",
+    td: "EBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ",
+    ts: "issued",
+    tsQb64: "0Missued",
+    bn: "2",
+    bnQb64: "MAAC",
+    bd: "EJOnAKXGaSyJ_43kit0V806NNeGWS07lfjybB1UcfWsv",
+    qb64:
+      "EKmyRBn1mDRwPOB4TPimWJG_vqr-Kz1U2HyukGXzV7-1aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0MissuedMAACEJOnAKXGaSyJ_43kit0V806NNeGWS07lfjybB1UcfWsv",
+    enclosed:
+      "-bAvEKmyRBn1mDRwPOB4TPimWJG_vqr-Kz1U2HyukGXzV7-1aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0MissuedMAACEJOnAKXGaSyJ_43kit0V806NNeGWS07lfjybB1UcfWsv",
+  },
+  typeMedia: {
+    d: "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+    u: "0ABtZWRpYXJyYXdub25jZV8w",
+    mt: "application/json",
+    mtQb64: "6BAGAABhcHBsaWNhdGlvbi9qc29u",
+    mv: "{\"name\":\"Sue\",\"food\":\"Pizza\"}",
+    mvQb64: "5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
+    qb64:
+      "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
+    enclosed:
+      "-cAjEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
+  },
+} as const;

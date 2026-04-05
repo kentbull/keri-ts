@@ -82,6 +82,12 @@ Baseline source for the KERIpy comparisons in this document:
 | --------- | ---------------- | -------------------------- | --------------------- | ---------------------------------------- | ----------- |
 | `Siger`   | `indexing.Siger` | Indexed signature material | `Indexer` shapes      | `Indexer` forms plus signature semantics | `direct`    |
 
+## Fixed-Field Structing Values
+
+| `keri-ts`      | KERIpy peer                    | Role/category                     | Initialization shapes                   | Encoded forms exposed       | Parity note |
+| -------------- | ------------------------------ | --------------------------------- | --------------------------------------- | --------------------------- | ----------- |
+| `structing.ts` | named values in `structing.py` | Fixed-field seal/blind/media data | `fromTuple(...)`, `fromQb64bTuple(...)` | crew/as-dict, `qb64`, `qb2` | `direct`    |
+
 ## Counted-Group Structor Family
 
 | `keri-ts` | KERIpy peer                      | Role/category                | Initialization shapes                  | Encoded forms exposed                  | Parity note |
@@ -93,13 +99,14 @@ Baseline source for the KERIpy comparisons in this document:
 
 ## Support Surface
 
-| `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes | Encoded forms exposed        | Parity note |
-| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | --------------------- | ---------------------------- | ----------- |
-| `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants      | none; support constants only | `TS-local`  |
-| `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced       | typed unions/interfaces      | `TS-local`  |
-| `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers         | typed field projection       | `TS-local`  |
-| `Compactor`                                     | no exact public peer                                     | Narrow map-group parser helper        | parse helper          | typed map projection         | `TS-local`  |
-| `registry.ts` helpers                           | codex/constructor knowledge spread across Python modules | Inspection/listing helpers            | helper functions      | lightweight `PrimitiveToken` | `TS-local`  |
+| `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes   | Encoded forms exposed            | Parity note |
+| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | ----------------------- | -------------------------------- | ----------- |
+| `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants        | none; support constants only     | `TS-local`  |
+| `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced         | typed unions/interfaces          | `TS-local`  |
+| `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers           | typed field projection           | `TS-local`  |
+| `Compactor`                                     | no exact public peer                                     | Narrow map-group parser helper        | parse helper            | typed map projection             | `TS-local`  |
+| `registry.ts` helpers                           | codex/constructor knowledge spread across Python modules | Inspection/listing helpers            | helper functions        | lightweight `PrimitiveToken`     | `TS-local`  |
+| `primitives/structing.ts`                       | fixed-field registries in `structing.py`                 | Named value + clan/cast/coden layer   | class ctors + constants | typed values + registry metadata | `direct`    |
 
 ## Fast Takeaways
 

@@ -21,6 +21,14 @@ Deno.test("verser: txt/qb2 parity", () => {
   assertEquals(txtValue.proto, bnyValue.proto);
 });
 
+Deno.test("verser: accepts KERIpy structing OCSR tag", () => {
+  const verser = parseVerser(txt("YOCSRCAA"), "txt");
+  assertEquals(verser.qb64, "YOCSRCAA");
+  assertEquals(verser.proto, "OCSR");
+  assertEquals(verser.pvrsn.major, 2);
+  assertEquals(verser.pvrsn.minor, 0);
+});
+
 Deno.test("verser: rejects malformed protocol tags", () => {
   assertThrows(
     () => parseVerser(txt("YXXXXCAA"), "txt"),

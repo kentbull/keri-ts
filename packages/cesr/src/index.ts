@@ -49,6 +49,7 @@ export * from "./primitives/seqner.ts";
 export * from "./primitives/siger.ts";
 export * from "./primitives/signer.ts";
 export * from "./primitives/streamer.ts";
+export * from "./primitives/structing.ts";
 export * from "./primitives/structor.ts";
 export * from "./primitives/tagger.ts";
 export * from "./primitives/texter.ts";

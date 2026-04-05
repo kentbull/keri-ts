@@ -26,8 +26,9 @@ function parseVersion(text: string): Versionage {
  * Compact version primitive for protocol/genus version metadata.
  *
  * KERIpy semantics: payload tag is `proto + pvrsn (+ gvrsn optional)` where
- * proto is `KERI|ACDC`, `pvrsn` is always present, and `gvrsn` is present only
- * for 10-char tags.
+ * proto is usually `KERI|ACDC`, but KERIpy also permits auxiliary four-char
+ * tags such as `OCSR` used by typed-digest seal families. `pvrsn` is always
+ * present, and `gvrsn` is present only for 10-char tags.
  */
 export class Verser extends Tagger {
   constructor(init: Matter | MatterInit) {
@@ -50,7 +51,17 @@ export class Verser extends Tagger {
     if (body.length === 10) parseVersion(body.slice(7, 10));
   }
 
-  /** Protocol namespace extracted from verser tag payload. */
+  /**
+   * Four-character verser namespace extracted from tag payload.
+   *
+   * Maintainer note:
+   * - native message bodies still only use the protocol literals from
+   *   `tables/versions.ts`
+   * - KERIpy also permits auxiliary four-char tags such as `OCSR` for
+   *   typed-digest seals, so this accessor may carry a value outside the
+   *   nominal protocol union even though the broader codebase still treats
+   *   top-level message bodies as `KERI|ACDC`
+   */
   get proto(): Protocol {
     return this.tag.slice(0, 4) as Protocol;
   }

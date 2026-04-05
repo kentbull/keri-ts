@@ -834,6 +834,13 @@ following `Siger`s.
 
 ## Counted-Group Structor Family
 
+Before the counted-group wrappers, `keri-ts` now also has the fixed-field
+named-value layer from `keri.core.structing` in
+`packages/cesr/src/primitives/structing.ts`. That module owns `SealDigest`,
+`SealEvent`, `BlindState`, `BoundState`, `TypeMedia`, and the KERIpy-style
+clan/cast/coden registries. The counted-group classes below still own the
+enclosed counter-group framing on top of those fixed-field values.
+
 ### Sealer
 
 **What it is:** Typed seal-group wrapper.
