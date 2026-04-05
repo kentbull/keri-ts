@@ -28,6 +28,7 @@ export * from "./primitives/dater.ts";
 export * from "./primitives/decimer.ts";
 export * from "./primitives/decrypter.ts";
 export * from "./primitives/diger.ts";
+export * from "./primitives/disclosure.ts";
 export * from "./primitives/encrypter.ts";
 export * from "./primitives/hydrate.ts";
 export * from "./primitives/ilker.ts";

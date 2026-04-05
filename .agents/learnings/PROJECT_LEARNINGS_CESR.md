@@ -100,8 +100,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    CESR-native semantic primitive layer.
 5. Preserve maintainer-oriented docs and keep local-source Deno config handling
    aligned whenever CESR source is loaded across package boundaries.
-6. Keep KERI tuple-storage aliases derived from `primitives/structing.ts` and
-   do not recreate wrapper families or ad hoc raw-SAD seal parsing above that
+6. Keep KERI tuple-storage aliases derived from `primitives/structing.ts` and do
+   not recreate wrapper families or ad hoc raw-SAD seal parsing above that
    boundary.
 
 ## Milestone Rollup
@@ -167,14 +167,17 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 - The durable KERIpy `Blinder` / `Mediar` substance is deterministic UUID
   derivation plus saidive commitment recomputation, not the wrapper classes.
-- In `keri-ts`, keep that behavior as pure helpers over plain structing records:
-  `makeBlindUuid`, `commitBlindState`, `makeBlindState`, `unblindBlindState`,
-  `commitBoundState`, `makeBoundState`, `unblindBoundState`, and
-  `commitTypeMedia` / `makeTypeMedia`.
+- In `keri-ts`, keep that behavior as pure helpers over plain structing records,
+  but house those verbs in `primitives/disclosure.ts`, not in
+  `primitives/structing.ts`: `makeBlindUuid`, `commitBlindState`,
+  `makeBlindState`, `unblindBlindState`, `commitBoundState`, `makeBoundState`,
+  `unblindBoundState`, and `commitTypeMedia` / `makeTypeMedia`.
 - Commitment recomputation must use the real primitive `qb64` tuple body with a
-  dummied `d` field. Using crew/SAD strings changes the bytes for empty
-  noncers, `Labeler.text`, and `Texter.text`, and therefore breaks KERIpy
-  parity.
+  dummied `d` field. Using crew/SAD strings changes the bytes for empty noncers,
+  `Labeler.text`, and `Texter.text`, and therefore breaks KERIpy parity.
 - Keep raw structural checks raw. `SerderKERI` should reject non-transferable
   inception seal payloads based on the raw `a` list being non-empty, even when
   the entries are malformed and would later fail typed seal projection.
+- `blinder.ts` and `mediar.ts` stay transport-only counted-group wrappers. Do
+  not hang semantic disclosure verbs on them just because KERIpy's richer
+  `Blinder` class bundled both roles together.

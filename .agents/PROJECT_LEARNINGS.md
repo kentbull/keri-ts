@@ -166,8 +166,11 @@ Use this file to:
   rather than semantic. Example: non-transferable inception rejects any raw seal
   payload before typed projection is relevant.
 - The useful KERIpy `Blinder` behavior ports cleanly as pure CESR helper
-  functions (`makeBlindUuid`, `makeBlindState`, `unblindBlindState`, etc.).
-  Do not reintroduce wrapper-object inheritance just to preserve those names.
+  functions (`makeBlindUuid`, `makeBlindState`, `unblindBlindState`, etc.), but
+  those verbs belong in a dedicated disclosure module, not in `structing.ts`.
+- Keep `structing.ts` as the fixed-field schema/conversion layer, keep
+  `blinder.ts` / `mediar.ts` as counted-group transport wrappers, and put the
+  blind/unblind/commit workflow in `primitives/disclosure.ts`.
 
 ## Templates
 
