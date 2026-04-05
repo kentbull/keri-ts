@@ -1,6 +1,8 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import {
   type AttachmentGroup,
+  BlindState,
+  BoundState,
   type CesrMessage,
   Cigar,
   createParser,
@@ -10,29 +12,27 @@ import {
   isPrimitiveTuple,
   isQualifiedPrimitive,
   parseSerder,
+  SealEvent,
+  SealKind,
+  SealSource,
   SerderKERI,
   Siger,
   type Smellage,
   Texter,
+  TypeMedia,
   Verfer,
 } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import {
-  BlindedStateQuadruple,
-  BoundStateSextuple,
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
   PathedMaterialGroup,
-  SourceSealCouple,
-  SourceSealTriple,
   TransIdxSigGroup,
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
-  TypedDigestSealCouple,
-  TypedMediaQuadruple,
 } from "../core/dispatch.ts";
-import { Kevery } from "../core/eventing.ts";
+import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import type { Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -73,7 +73,8 @@ export class Reactor {
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
     this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    this.kevery = new Kevery(hby.db, { cues: this.cues });
+    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery });
+    this.kevery.registerReplyRoutes(this.router);
     this.parser = createParser({
       framed: false,
       attachmentDispatchMode: "compat",
@@ -157,7 +158,8 @@ export class Reactor {
    *
    * Current dispatch matrix:
    * - `rpy` -> `Revery`
-   * - `icp` / `dip` -> bootstrap `Kevery`
+   * - `rct` -> `Kevery`
+   * - KEL event ilks -> `Kevery`, followed by replay-attached receipt handling
    *
    * All other ilks are intentionally ignored for now so the runtime can ingest
    * the minimum bootstrap OOBI material without pretending wider parity.
@@ -171,12 +173,34 @@ export class Reactor {
           tsgs: envelope.tsgs,
         });
         break;
+      case Ilks.qry:
+        this.kevery.processQuery(queryEnvelopeFromDispatch(envelope));
+        break;
+      case Ilks.rct:
+        this.kevery.processReceipt(envelope);
+        break;
       case Ilks.icp:
       case Ilks.dip:
       case Ilks.rot:
       case Ilks.drt:
       case Ilks.ixn:
-        this.kevery.processEvent(envelope);
+        {
+          const decision = this.kevery.processEvent(envelope);
+          if (decision.kind === "accept" || decision.kind === "duplicate") {
+            this.kevery.processAttachedReceiptCouples({
+              serder: envelope.serder,
+              cigars: envelope.cigars,
+              firner: envelope.lastFrc?.firner,
+              local: envelope.local,
+            });
+            this.kevery.processAttachedReceiptQuadruples({
+              serder: envelope.serder,
+              trqs: envelope.trqs,
+              firner: envelope.lastFrc?.firner,
+              local: envelope.local,
+            });
+          }
+        }
         break;
       default:
         break;
@@ -392,7 +416,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.sscs.push(
-          SourceSealCouple.fromQb64bTuple([seqner.qb64b, diger.qb64b]),
+          SealSource.fromQb64bTuple([seqner.qb64b, diger.qb64b]),
         );
       }
       return;
@@ -411,7 +435,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.ssts.push(
-          SourceSealTriple.fromQb64bTuple([
+          SealEvent.fromQb64bTuple([
             prefixer.qb64b,
             seqner.qb64b,
             diger.qb64b,
@@ -430,7 +454,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.tdcs.push(
-          TypedDigestSealCouple.fromQb64bTuple([verser.qb64b, diger.qb64b]),
+          SealKind.fromQb64bTuple([verser.qb64b, diger.qb64b]),
         );
       }
       return;
@@ -453,21 +477,21 @@ function normalizeAttachmentGroup(
         if (!isPrimitiveTuple(item) || item.length < 4) {
           continue;
         }
-        const [diger, noncer, acdcer, stater] = item;
+        const [blid, uuid, acdc, state] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(acdcer)
-          || !isQualifiedPrimitive(stater)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(acdc)
+          || !isQualifiedPrimitive(state)
         ) {
           continue;
         }
         envelope.bsqs.push(
-          BlindedStateQuadruple.fromQb64bTuple([
-            diger.qb64b,
-            noncer.qb64b,
-            acdcer.qb64b,
-            stater.qb64b,
+          BlindState.fromQb64bTuple([
+            blid.qb64b,
+            uuid.qb64b,
+            acdc.qb64b,
+            state.qb64b,
           ]),
         );
       }
@@ -478,25 +502,25 @@ function normalizeAttachmentGroup(
         if (!isPrimitiveTuple(item) || item.length < 6) {
           continue;
         }
-        const [diger, noncer, acdcer, stater, number, eventer] = item;
+        const [blid, uuid, acdc, state, number, bound] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(acdcer)
-          || !isQualifiedPrimitive(stater)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(acdc)
+          || !isQualifiedPrimitive(state)
           || !isQualifiedPrimitive(number)
-          || !isQualifiedPrimitive(eventer)
+          || !isQualifiedPrimitive(bound)
         ) {
           continue;
         }
         envelope.bsss.push(
-          BoundStateSextuple.fromQb64bTuple([
-            diger.qb64b,
-            noncer.qb64b,
-            acdcer.qb64b,
-            stater.qb64b,
+          BoundState.fromQb64bTuple([
+            blid.qb64b,
+            uuid.qb64b,
+            acdc.qb64b,
+            state.qb64b,
             number.qb64b,
-            eventer.qb64b,
+            bound.qb64b,
           ]),
         );
       }
@@ -507,21 +531,21 @@ function normalizeAttachmentGroup(
         if (!isPrimitiveTuple(item) || item.length < 4) {
           continue;
         }
-        const [diger, noncer, labeler, texter] = item;
+        const [blid, uuid, mediaType, mediaValue] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(labeler)
-          || !isQualifiedPrimitive(texter)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(mediaType)
+          || !isQualifiedPrimitive(mediaValue)
         ) {
           continue;
         }
         envelope.tmqs.push(
-          TypedMediaQuadruple.fromQb64bTuple([
-            diger.qb64b,
-            noncer.qb64b,
-            labeler.qb64b,
-            texter.qb64b,
+          TypeMedia.fromQb64bTuple([
+            blid.qb64b,
+            uuid.qb64b,
+            mediaType.qb64b,
+            mediaValue.qb64b,
           ]),
         );
       }
@@ -555,4 +579,24 @@ function envelopeFromMessage(
     normalizeAttachmentGroup(group, envelope);
   }
   return envelope;
+}
+
+/**
+ * Normalize one generic dispatch envelope into the KERIpy-shaped query input.
+ *
+ * KERIpy correspondence:
+ * - parser ingress hands `Kevery.processQuery(...)` requester identity from the
+ *   last `ssgs` group as `source + sigers` for transferable endorsements
+ * - non-transferable query endorsements remain detached `cigars`
+ */
+function queryEnvelopeFromDispatch(
+  envelope: KeriDispatchEnvelope,
+): QueryEnvelope {
+  const lastSsg = envelope.ssgs.at(-1);
+  return {
+    serder: envelope.serder,
+    source: lastSsg?.prefixer,
+    sigers: lastSsg ? [...lastSsg.sigers] : [],
+    cigars: [...envelope.cigars],
+  };
 }

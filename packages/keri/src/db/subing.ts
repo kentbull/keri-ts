@@ -1,4 +1,4 @@
-import { type Database } from "npm:lmdb@3.5.2";
+import { type Database } from "npm:lmdb@3.4.4";
 import {
   b,
   Cipher,
@@ -1720,6 +1720,11 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     );
   }
 
+  /** Normalized alias for `addOn()` matching KERIpy ordinal-suber call sites. */
+  add(keys: Keys, on = 0, val: T): boolean {
+    return this.addOn(keys, on, val);
+  }
+
   /** Append one value at the next exposed ordinal bucket. */
   appendOn(keys: Keys, val: T): number {
     return this.db.appendOnIoDupVal(
@@ -1765,6 +1770,11 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
     return this._des(
       this.db.getOnIoDupLast(this.sdb, this._tokey(keys), on, b(this.sep)),
     );
+  }
+
+  /** Normalized alias for `getOnLast()` matching KERIpy ordinal-suber call sites. */
+  getLast(keys: Keys, on = 0): T | null {
+    return this.getOnLast(keys, on);
   }
 
   /** Remove one logical member, or the whole exposed-ordinal duplicate bucket. */

@@ -1,5 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.5.2";
+import type { Database } from "npm:lmdb@3.4.4";
 import {
   Cipher,
   type Decrypter,
@@ -12,7 +12,7 @@ import {
 } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
-import { GroupMemberTuple } from "../core/records.ts";
+import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
 import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
@@ -28,7 +28,7 @@ export interface KeeperOptions extends LMDBerOptions {
  * KERIpy correspondence:
  * - mirrors the `PubLot` record shape used by keeper state records
  */
-export interface PubLot {
+export interface PubLotShape {
   /** Ordered fully qualified public keys for one establishment-event key set. */
   pubs: string[];
   /** Rotation index of the establishment event that uses this key set. */
@@ -40,6 +40,33 @@ export interface PubLot {
 }
 
 /**
+ * Concrete keeper record for one establishment-event public-key lot.
+ *
+ * Responsibility:
+ * - normalize one old/current/next key-set snapshot into the durable
+ *   `RawRecord` shape used by keeper situation records
+ *
+ * Defaulting rule:
+ * - constructors must tolerate partial replay rows so reopen/hydration paths
+ *   can materialize an empty lot before the manager fills real key metadata
+ */
+export class PubLot extends RawRecord<PubLotShape> implements PubLotShape {
+  declare pubs: string[];
+  declare ridx: number;
+  declare kidx: number;
+  declare dt: string;
+
+  constructor(data: Partial<PubLotShape> = {}) {
+    super({
+      pubs: data.pubs ? [...data.pubs] : [],
+      ridx: data.ridx ?? 0,
+      kidx: data.kidx ?? 0,
+      dt: data.dt ?? "",
+    });
+  }
+}
+
+/**
  * Keeper situation record for one prefix.
  *
  * KERIpy correspondence:
@@ -48,13 +75,41 @@ export interface PubLot {
  * Captures the old/current/next public-key lots used by the manager for local
  * replay and stateful key progression.
  */
-export interface PreSit {
+export interface PreSitShape {
   /** Historical previously current lot retained for replay/erase progression. */
-  old: PubLot;
+  old: PubLotShape;
   /** Current active lot used for present signing state. */
-  new: PubLot;
+  new: PubLotShape;
   /** Next future lot that becomes current on the next rotation/replay advance. */
-  nxt: PubLot;
+  nxt: PubLotShape;
+}
+
+/**
+ * Concrete keeper situation record for one managed prefix.
+ *
+ * Responsibility:
+ * - keep the old/current/next `PubLot` progression together as one typed
+ *   durable value so replay and rotation code can reason about slot ownership
+ *   without re-wrapping nested records manually
+ */
+export class PreSit extends RawRecord<PreSitShape> implements PreSitShape {
+  declare old: PubLot;
+  declare new: PubLot;
+  declare nxt: PubLot;
+
+  constructor(data: Partial<{
+    old: PubLot | Partial<PubLotShape>;
+    new: PubLot | Partial<PubLotShape>;
+    nxt: PubLot | Partial<PubLotShape>;
+  }> = {}) {
+    super(
+      {
+        old: new PubLot(data.old ?? {}),
+        new: new PubLot(data.new ?? {}),
+        nxt: new PubLot(data.nxt ?? {}),
+      } satisfies PreSitShape,
+    );
+  }
 }
 
 /**
@@ -66,7 +121,7 @@ export interface PreSit {
  * Stores the deterministic key-derivation parameters needed to rehydrate local
  * key material for a managed identifier prefix.
  */
-export interface PrePrm {
+export interface PrePrmShape {
   /** Prefix index for this managed key sequence within keeper-global policy. */
   pidx: number;
   /** Creator algorithm used to derive or replay later key lots for this prefix. */
@@ -76,13 +131,64 @@ export interface PrePrm {
   /** Deterministic path stem used by salty creator families. */
   stem: string;
   /** Stretch tier used when recreating deterministic signer material. */
-  tier: Tier;
+  tier: Tier | "";
+}
+
+/**
+ * Concrete keeper root-parameter record for one managed prefix.
+ *
+ * Responsibility:
+ * - persist the deterministic derivation policy that lets `Manager` recreate
+ *   signer material for an identifier prefix across reopen cycles
+ *
+ * Maintainer warning:
+ * - `salt` here is policy/state, not a transient constructor input; it may be
+ *   plaintext or encrypted depending on keeper AEID policy
+ */
+export class PrePrm extends RawRecord<PrePrmShape> implements PrePrmShape {
+  declare pidx: number;
+  declare algo: string;
+  declare salt: string;
+  declare stem: string;
+  declare tier: Tier | "";
+
+  constructor(data: Partial<PrePrmShape> = {}) {
+    super(
+      {
+        pidx: data.pidx ?? 0,
+        algo: data.algo ?? "salty",
+        salt: data.salt ?? "",
+        stem: data.stem ?? "",
+        tier: data.tier ?? "",
+      } satisfies PrePrmShape,
+    );
+  }
 }
 
 /** Ordered public-key set stored for one `(prefix, ridx)` replay key. */
-export interface PubSet {
+export interface PubSetShape {
   /** Ordered public keys for the addressed `(prefix, ridx)` replay slot. */
   pubs: string[];
+}
+
+/**
+ * Concrete replay record for one `(prefix, ridx)` public-key set.
+ *
+ * Responsibility:
+ * - store the exact ordered public keys associated with a replay lookup slot
+ *   without carrying the broader `PubLot` metadata used by current-state
+ *   progression records
+ */
+export class PubSet extends RawRecord<PubSetShape> implements PubSetShape {
+  declare pubs: string[];
+
+  constructor(data: Partial<PubSetShape> = {}) {
+    super(
+      {
+        pubs: data.pubs ? [...data.pubs] : [],
+      } satisfies PubSetShape,
+    );
+  }
 }
 
 /**
@@ -224,15 +330,24 @@ export class Keeper {
       });
 
       // Root derivation parameters for one managed identifier prefix.
-      this.prms = new Komer<PrePrm>(this.lmdber, { subkey: "prms." });
+      this.prms = new Komer<PrePrm>(this.lmdber, {
+        subkey: "prms.",
+        recordClass: PrePrm,
+      });
 
       // Old/current/next key situation for one managed identifier prefix.
-      this.sits = new Komer<PreSit>(this.lmdber, { subkey: "sits." });
+      this.sits = new Komer<PreSit>(this.lmdber, {
+        subkey: "sits.",
+        recordClass: PreSit,
+      });
 
       // Replayable public-key sets keyed by `(prefix, ridx)`.
       // This enables lookup of the current signing keys after each rotation so
       // establishment events can be replayed in order.
-      this.pubs = new Komer<PubSet>(this.lmdber, { subkey: "pubs." });
+      this.pubs = new Komer<PubSet>(this.lmdber, {
+        subkey: "pubs.",
+        recordClass: PubSet,
+      });
 
       // Encrypted next private keys used by group-signify keeper flows.
       // KERIpy notes these are not yet broadly exercised outside that path.
@@ -333,12 +448,12 @@ export class Keeper {
   }
 
   /** Insert one prefix-parameter record in `prms.` if absent. */
-  putPrms(pre: string, val: PrePrm): boolean {
+  putPrms(pre: string, val: PrePrmShape | PrePrm): boolean {
     return this.prms.put(pre, val);
   }
 
   /** Upsert one prefix-parameter record in `prms.`. */
-  pinPrms(pre: string, val: PrePrm): boolean {
+  pinPrms(pre: string, val: PrePrmShape | PrePrm): boolean {
     return this.prms.pin(pre, val);
   }
 
@@ -348,12 +463,12 @@ export class Keeper {
   }
 
   /** Insert one prefix-situation record in `sits.` if absent. */
-  putSits(pre: string, val: PreSit): boolean {
+  putSits(pre: string, val: PreSitShape | PreSit): boolean {
     return this.sits.put(pre, val);
   }
 
   /** Upsert one prefix-situation record in `sits.`. */
-  pinSits(pre: string, val: PreSit): boolean {
+  pinSits(pre: string, val: PreSitShape | PreSit): boolean {
     return this.sits.pin(pre, val);
   }
 
@@ -363,12 +478,12 @@ export class Keeper {
   }
 
   /** Insert one replayable public-key set in `pubs.` if absent. */
-  putPubs(key: string, val: PubSet): boolean {
+  putPubs(key: string, val: PubSetShape | PubSet): boolean {
     return this.pubs.put(key, val);
   }
 
   /** Upsert one replayable public-key set in `pubs.`. */
-  pinPubs(key: string, val: PubSet): boolean {
+  pinPubs(key: string, val: PubSetShape | PubSet): boolean {
     return this.pubs.pin(key, val);
   }
 

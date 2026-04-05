@@ -9,6 +9,7 @@ import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { Vrsn_2_0 } from "../../src/tables/versions.ts";
 import { counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_STRUCTING_DATA_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function v1ifyAcdc(raw: string): string {
@@ -305,6 +306,81 @@ Deno.test("serder: SerderKERI exposes raw `a` separately from list-only `seals`"
 
   assertEquals(serder.a, { cid });
   assertEquals(serder.seals, []);
+});
+
+Deno.test("serder: SerderKERI keeps raw seals but offers typed seal projections", () => {
+  const pre = KERIPY_STRUCTING_DATA_VECTORS.sealEvent.i;
+  const said = "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN";
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "ixn",
+      d: "",
+      i: pre,
+      s: "1",
+      p: said,
+      a: [
+        { i: pre, s: "0", d: said },
+        { s: "0", d: said },
+      ],
+    },
+    makify: true,
+  });
+
+  assertEquals(serder.seals, [
+    { i: pre, s: "0", d: said },
+    { s: "0", d: said },
+  ]);
+  assertEquals(serder.sealRecords.length, 2);
+  assertEquals(serder.eventSeals.length, 1);
+  assertEquals(serder.eventSeals[0].i.qb64, pre);
+  assertEquals(serder.eventSeals[0].s.numh, "0");
+  assertEquals(serder.eventSeals[0].d.qb64, said);
+});
+
+Deno.test("serder: SerderKERI typed seal projections reject malformed seal entries", () => {
+  const pre = KERIPY_STRUCTING_DATA_VECTORS.sealEvent.i;
+  const said = "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN";
+  const serder = new SerderKERI({
+    sad: {
+      t: "ixn",
+      d: "",
+      i: pre,
+      s: "1",
+      p: said,
+      a: [{ nope: true }],
+    },
+    makify: true,
+  });
+
+  assertThrows(() => serder.sealRecords, DeserializeError);
+  assertThrows(() => serder.eventSeals, DeserializeError);
+});
+
+Deno.test("serder: SerderKERI rejects raw seal payloads on non-transferable inception before typed projection", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+
+  assertThrows(
+    () =>
+      new SerderKERI({
+        sad: {
+          t: "icp",
+          i: key,
+          kt: "1",
+          k: [key],
+          nt: "0",
+          n: [],
+          bt: "0",
+          b: [],
+          c: [],
+          // Boundary rule: this is rejected structurally because the raw `a`
+          // list is non-empty, even though the entry is not a valid seal dict.
+          a: [{ malformed: "seal" }],
+        },
+        makify: true,
+      }),
+    DeserializeError,
+  );
 });
 
 Deno.test("serder: SerderKERI normalizes deprecated intive bt inputs for both sad and raw paths", () => {

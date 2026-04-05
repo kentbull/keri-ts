@@ -29,6 +29,10 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
       const event = hby.db.getEvtSerder(hab.pre, said)!;
       const runtime = createAgentRuntime(hby, { mode: "local" });
       runtime.cues.push({
+        kin: "receipt",
+        serder: event,
+      });
+      runtime.cues.push({
         kin: "reply",
         route: "/loc/scheme",
         data: { eid: hab.pre, scheme: "http", url: "http://127.0.0.1:7723" },
@@ -45,7 +49,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
         serder: event,
         pre: hab.pre,
         src: hab.pre,
-        topics: ["logs"],
+        topics: { logs: 0 },
       });
       runtime.cues.push({
         kin: "keyStateSaved",
@@ -69,6 +73,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
   });
 
   assertEquals(emissions, [
+    { kind: "wire", msgs: 1, kin: "receipt" },
     { kind: "wire", msgs: 1, kin: "reply" },
     { kind: "wire", msgs: 1, kin: "query" },
     { kind: "transport", msgs: 0, kin: "stream" },
@@ -114,7 +119,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
         serder: event,
         pre: hab.pre,
         src: hab.pre,
-        topics: ["logs"],
+        topics: { logs: 0 },
       });
       runtime.cues.push({
         kin: "oobiFailed",

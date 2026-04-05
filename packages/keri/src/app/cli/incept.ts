@@ -1,5 +1,6 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { createAgentRuntime, processRuntimeUntil, runtimeHasPendingWork } from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
 
@@ -108,11 +109,25 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
       inceptArgs.headDirPath,
       {
         readonly: false,
-        skipConfig: true,
+        skipConfig: false,
         skipSignator: true,
       },
     );
     try {
+      if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
+        const runtime = createAgentRuntime(hby, { mode: "local" });
+        yield* processRuntimeUntil(
+          runtime,
+          () => !runtimeHasPendingWork(runtime),
+          { maxTurns: 128 },
+        );
+        if (hby.db.eoobi.cnt() > 0) {
+          throw new ValidationError(
+            "Bootstrap OOBI resolution failed before inception.",
+          );
+        }
+      }
+
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {
         transferable: opts.transferable ?? false,
         wits: opts.wits ?? [],

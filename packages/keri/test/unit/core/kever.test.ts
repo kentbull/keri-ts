@@ -3,6 +3,7 @@ import { assertEquals, assertExists } from "jsr:@std/assert";
 import { b, DigDex, Diger, SerderKERI, Verfer } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Kever } from "../../../src/core/kever.ts";
+import { KeyStateRecord } from "../../../src/core/records.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 
 Deno.test("Kever reloads durable state and serializes back to the same key-state record", async () => {
@@ -185,10 +186,10 @@ Deno.test("Kever reload preserves large bt hex values without bigint-to-number d
       const state = hby.db.getState(hab.pre);
       assertExists(state);
 
-      const hugeState = {
-        ...state,
+      const hugeState = KeyStateRecord.fromDict({
+        ...state.asDict(),
         bt: "20000000000001",
-      };
+      });
       const reloaded = Kever.fromState({ state: hugeState, db: hby.db });
 
       assertEquals(reloaded.toader.numh, hugeState.bt);

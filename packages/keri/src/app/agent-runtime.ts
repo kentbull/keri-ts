@@ -4,7 +4,9 @@ import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { MailboxDirector } from "./mailbox-director.ts";
 import { Oobiery, type OobiJob } from "./oobiery.ts";
+import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -40,6 +42,8 @@ export interface AgentRuntime {
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
+  mailboxDirector: MailboxDirector;
+  querying: QueryCoordinator;
 }
 
 /**
@@ -50,6 +54,17 @@ export interface AgentRuntime {
  */
 export interface AgentRuntimeOptions {
   mode?: AgentMode;
+}
+
+/** Summary of pending runtime-backed durable work for bounded command hosts. */
+export interface RuntimePendingState {
+  ingress: boolean;
+  cues: boolean;
+  replyEscrow: boolean;
+  oobiQueued: boolean;
+  oobiInFlight: boolean;
+  /** True when query continuations or deferred correspondence requests remain. */
+  queriesPending: boolean;
 }
 
 /**
@@ -68,12 +83,17 @@ export function createAgentRuntime(
   const cues = new Deck<AgentCue>();
   const reactor = new Reactor(hby, { cues });
   const oobiery = new Oobiery(hby, reactor, { cues });
+  oobiery.registerReplyRoutes(reactor.router);
+  const mailboxDirector = new MailboxDirector(hby.db);
+  const querying = new QueryCoordinator(hby);
   return {
     hby,
     mode: options.mode ?? "local",
     cues,
     reactor,
     oobiery,
+    mailboxDirector,
+    querying,
   };
 }
 
@@ -106,9 +126,13 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  * Turn order:
  * 1. `Reactor.processOnce()` drains queued ingress
  * 2. `Oobiery.processOnce()` resolves at most one durable OOBI record
- * 3. `processCuesOnce()` emits cues from fresh ingress/OOBI work
- * 4. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
- * 5. `processCuesOnce()` emits cues created during escrow progress
+ * 3. `processCuesOnce()` emits cues from fresh ingress/OOBI work into
+ *    `QueryCoordinator`
+ * 4. `QueryCoordinator.processPending()` resolves any newly correspondence-ready
+ *    query work
+ * 5. `Reactor.processEscrowsOnce()` runs KEL and reply escrow passes
+ * 6. `processCuesOnce()` emits cues created during escrow progress
+ * 7. `QueryCoordinator.processPending()` resolves any follow-on query work
  *
  * This helper remains because command-local CLI flows and focused tests need a
  * single deterministic step without having to spawn the long-lived doers.
@@ -120,11 +144,74 @@ export function* processRuntimeTurn(
     sink?: CueSink;
   } = {},
 ): Operation<void> {
+  runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
-  yield* processCuesOnce(runtime, options);
+  yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
+  yield* runtime.querying.processPending();
   runtime.reactor.processEscrowsOnce();
-  yield* processCuesOnce(runtime, options);
+  yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
+  yield* runtime.querying.processPending();
+}
+
+/**
+ * Return the current pending-work summary for bounded command-local hosts.
+ *
+ * `queriesPending` is part of convergence because query continuations may still
+ * owe a follow-on `logs` query or local catch-up wait after normal cue decks
+ * and ingress have drained.
+ */
+export function runtimePendingState(
+  runtime: AgentRuntime,
+): RuntimePendingState {
+  return {
+    ingress: !runtime.reactor.ingress.empty,
+    cues: !runtime.cues.empty,
+    replyEscrow: runtime.hby.db.rpes.cnt() > 0,
+    oobiQueued: runtime.hby.db.oobis.cnt() > 0
+      || runtime.hby.db.woobi.cnt() > 0,
+    oobiInFlight: runtime.hby.db.coobi.cnt() > 0,
+    queriesPending: runtime.querying.hasPendingWork(),
+  };
+}
+
+/** Return true when any command-local runtime work remains in flight. */
+export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
+  const state = runtimePendingState(runtime);
+  return state.ingress || state.cues || state.replyEscrow
+    || state.oobiQueued || state.oobiInFlight || state.queriesPending;
+}
+
+/**
+ * Drive the shared runtime until the caller-provided completion predicate
+ * succeeds or the bounded turn budget is exhausted.
+ */
+export function* processRuntimeUntil(
+  runtime: AgentRuntime,
+  done: () => boolean,
+  options: {
+    hab?: Hab;
+    sink?: CueSink;
+    maxTurns?: number;
+  } = {},
+): Operation<void> {
+  const maxTurns = options.maxTurns ?? 64;
+  for (let turn = 0; turn < maxTurns; turn++) {
+    if (done()) {
+      return;
+    }
+    yield* processRuntimeTurn(runtime, options);
+    if (done()) {
+      return;
+    }
+    if (!runtimeHasPendingWork(runtime)) {
+      yield* runtimeTurn();
+    }
+  }
+
+  throw new Error(
+    `Runtime did not converge within ${maxTurns} turns.`,
+  );
 }
 
 /**
@@ -143,6 +230,7 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * - `Reactor.msgDo()` owns continuous ingress draining
  * - `Reactor.escrowDo()` owns continuous escrow reprocessing
  * - `Oobiery.oobiDo()` owns durable OOBI resolution
+ * - `QueryCoordinator.queryDo()` owns deferred query correspondence work
  *
  * The root itself now acts as a composition host: it starts the component
  * doers and stays alive until the surrounding Effection scope halts.
@@ -154,18 +242,22 @@ export function* runAgentRuntime(
     sink?: CueSink;
   } = {},
 ): Operation<never> {
+  runtime.querying.configure({ hab: options.hab, sink: options.sink });
   const tasks = [
     yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),
     yield* spawn(function*() {
-      yield* cueDo(runtime, options);
+      yield* cueDo(runtime, { ...options, sink: runtime.querying });
     }),
     yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
     }),
     yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();
+    }),
+    yield* spawn(function*() {
+      yield* runtime.querying.queryDo();
     }),
   ];
   try {

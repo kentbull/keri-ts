@@ -148,7 +148,10 @@ export const TRAIT_TAGS = new Set<string>([
 ]);
 
 export const VERSER_CODES = new Set<string>([MtrDex.Tag7, MtrDex.Tag10]);
-export const VERSER_PROTOCOLS = new Set<string>(Object.values(Protocols));
+export const VERSER_PROTOCOLS = new Set<string>([
+  ...Object.values(Protocols),
+  "OCSR",
+]);
 
 const MATTER_CODEX_NAMES = invertCodex(MtrDex);
 

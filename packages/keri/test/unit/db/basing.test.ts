@@ -1,6 +1,6 @@
 import { run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
-import { createBaser } from "../../../src/db/basing.ts";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
 Deno.test("db/basing - Baser binds DB-backed state and record stores", async () => {
@@ -11,8 +11,8 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
     });
     try {
       const dater = encodeDateTimeToDater("2026-03-16T12:34:56.000000+00:00");
-      assertEquals(baser.putKel("Epre", 0, "Esaid"), true);
-      assertEquals(baser.putKel("Epre", 1, "Esaid1"), true);
+      assertEquals(baser.kels.add("Epre", 0, "Esaid"), true);
+      assertEquals(baser.kels.add("Epre", 1, "Esaid1"), true);
       assertEquals(baser.appendFel("Epre", "Esaid"), 0);
       assertEquals(baser.putDts("Epre", "Esaid", dater), true);
       assertEquals(
@@ -36,7 +36,7 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
         true,
       );
 
-      assertEquals(baser.getKel("Epre", 0), "Esaid");
+      assertEquals(baser.kels.getLast("Epre", 0), "Esaid");
       assertEquals([...baser.getKelItemIter("Epre")], [
         [0, "Esaid"],
         [1, "Esaid1"],
@@ -56,4 +56,28 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
       yield* baser.close(true);
     }
   });
+});
+
+Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on exit", async () => {
+  let tempPath: string | null = null;
+
+  await run(function*() {
+    const baser = new Baser({
+      name: `baser-doer-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const doer = new BaserDoer(baser);
+
+    assertEquals(baser.opened, false);
+    yield* doer.enter();
+    assertEquals(baser.opened, true);
+    tempPath = baser.path;
+    assertExists(tempPath);
+
+    yield* doer.exit();
+    assertEquals(baser.opened, false);
+    assertEquals(baser.path, null);
+  });
+
+  await assertRejects(() => Deno.stat(tempPath!));
 });

@@ -1,5 +1,5 @@
 {
-  "transferable": false,
+  "transferable": true,
   "wits": [],
   "toad": 0,
   "icount": 1,

@@ -151,6 +151,20 @@ Across `cha1`/`cha2`:
   bootstrap/runtime slice. Broader reply families, receipt-family escrow work,
   and richer communications/runtime breadth remain later-gate work.
 
+#### Gate E Continuation Needed For `init` / `incept`
+
+- Treat Chunks 1 and 2 as closed and Chunk 3 as effectively complete enough to
+  stop blocking on parser perfection.
+- The active continuation is Chunks 4, 5, and 6 plus the enabling slices of
+  Chunks 7, 8, and 9:
+  - `/ksn`
+  - `/introduce`
+  - fuller cue materialization
+  - receipt-family and query escrows
+  - broader reply-based OOBI continuation
+- This is the work that turns "OOBI fetch succeeded" into "accepted remote
+  transferable state exists and later commands can rely on it honestly."
+
 ### Gate F: Communications Interop (Direct + Mailbox)
 
 - Basic controller-to-controller messaging works in direct mode.
@@ -242,6 +256,21 @@ P0 tracking artifacts:
   generate/resolve parity against KERIpy and local shared-runtime coverage for
   controller, witness, and agent OOBIs.
 
+## P8.5 - Gate E Continuation For `init` / `incept`
+
+- `tufa init` should mirror KERIpy init by hosting the command-local shared
+  runtime when config preload exists and waiting for `roobi.` plus `woobi.`
+  authentication convergence, not merely seeding DB rows.
+- `tufa incept` should stop assuming "skip config and stay purely local" is the
+  honest long-term behavior. It should consume accepted remote state produced by
+  the shared runtime whenever that state is a real prerequisite surface.
+- Finish the reply/runtime breadth that makes those commands real:
+  - `/ksn` reply handling
+  - `/introduce` reply handling
+  - fuller cue materialization
+  - unverified receipt-family/query escrows
+  - broader reply-based OOBI continuation
+
 ## P9 - Direct + Mailbox Communications
 
 - Implement both transport tracks for interop with KERIpy
@@ -268,14 +297,17 @@ P0 tracking artifacts:
 - First provider remains LMDB; add adapters for IndexedDB/SQLite in follow-on
   increments.
 
-## Recommended Next Focus (2026-03-17)
+## Recommended Next Focus (2026-04-03)
 
-1. Gate F/G readiness: deepen the shared runtime for communications, challenge,
-   and deferred receipt/reply breadth without reopening the now-closed Gate E
-   bootstrap slice.
-2. Gate A/H bookkeeping: refresh the DB-layer symbol and K/V matrices so the
-   plans stop understating landed `Suber` / `Komer` / `Baser` work.
-3. Gate H tail: keep DB parity closure moving so later app/runtime work does
+1. Gate E continuation for real `init` / `incept`: treat Chunks 1-2 as closed,
+   Chunk 3 as good enough, and actively close Chunks 4-6 with the necessary
+   `/ksn` / `/introduce` / escrow support from Chunks 7-9.
+2. `tufa init` parity: run the shared runtime during config-seeded bootstrap
+   and wait for OOBI/auth convergence instead of stopping at DB preload.
+3. `tufa incept` parity: keep local creation simple, but let it rely on
+   accepted remote transferable state when that state already exists or is
+   explicitly resolved as part of setup.
+4. Gate H tail: keep DB parity closure moving so the wider runtime work does
    not accrete new storage shortcuts.
 
 ## Milestones
@@ -297,12 +329,17 @@ Complete P13 after M2.
 1. `init -> list(empty) -> incept -> list(alias+pre) -> aid(pre)`
 2. Same sequence in compatibility mode against KLI-created stores.
 3. `ends add` mailbox role auth flow.
-4. `oobi generate/resolve` between `cha1` and `cha2`.
-5. Direct-mode comms baseline.
-6. Mailbox-mode comms baseline with KERIpy mailbox infra.
-7. Challenge round-trip between controllers.
-8. Encrypted-store unlock + behavior checks.
-9. DB evidence via `tufa db dump` (raw and decoded where applicable).
+4. `init` with config-seeded `iurls` / `durls` / `wurls` drives runtime
+   resolution/auth convergence instead of only preloading DB state.
+5. `oobi generate/resolve` between `cha1` and `cha2`, including reply-driven
+   continuation where needed.
+6. `incept` can rely honestly on accepted remote transferable prerequisites
+   when those are part of the requested flow.
+7. Direct-mode comms baseline.
+8. Mailbox-mode comms baseline with KERIpy mailbox infra.
+9. Challenge round-trip between controllers.
+10. Encrypted-store unlock + behavior checks.
+11. DB evidence via `tufa db dump` (raw and decoded where applicable).
 
 ## Completion Condition for This Phase
 

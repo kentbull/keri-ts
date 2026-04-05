@@ -21,14 +21,16 @@ import {
 import { b } from "../../../cesr/mod.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { TransIdxSigGroup } from "../core/dispatch.ts";
+import { TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import type { HabitatRecord, VerferCigarCouple } from "../core/records.ts";
+import { makeQuerySerder, makeReceiptSerder, makeReplySerder } from "../core/messages.ts";
+import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
+import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { Configer, createConfiger } from "./configing.ts";
@@ -115,52 +117,6 @@ function requireCigarVerfer(cigar: Cigar): Verfer {
 }
 
 /**
- * Build one canonical `rpy` serder from route, attributes, and timestamp.
- *
- * Keeping reply creation centralized prevents the local endpoint/OOBI helpers
- * from drifting in field ordering or reply-body structure.
- */
-function makeReplySerder(
-  route: string,
-  data: Record<string, unknown>,
-  stamp = makeNowIso8601(),
-): SerderKERI {
-  return new SerderKERI({
-    sad: {
-      t: Ilks.rpy,
-      dt: stamp,
-      r: route,
-      a: data,
-    },
-    makify: true,
-  });
-}
-
-/**
- * Build one canonical `qry` serder from route, query body, and timestamp.
- *
- * Current `keri-ts` scope:
- * - follows the KERIpy version-1 message shape used by `BaseHab.query()`
- * - keeps `src` inside `q` rather than relying on a version-2 outer `i` field
- */
-function makeQuerySerder(
-  route: string,
-  query: Record<string, unknown>,
-  stamp = makeNowIso8601(),
-): SerderKERI {
-  return new SerderKERI({
-    sad: {
-      t: Ilks.qry,
-      dt: stamp,
-      r: route,
-      rr: "",
-      q: query,
-    },
-    makify: true,
-  });
-}
-
-/**
  * Wrap one reply attachment payload in the outer `AttachmentGroup`.
  *
  * The group count is expressed in quadlets, matching the same wire rule used
@@ -188,7 +144,8 @@ function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
  * Build one fully attached endorsed message from an arbitrary KERI body serder.
  *
  * Supported attachment shapes for the current bootstrap slice:
- * - transferable controller signature groups
+ * - transferable controller signature groups for reply-like messages
+ * - transferable last-establishment signature groups for queries
  * - non-transferable reply cigars with attached verifier context
  *
  * KERIpy parity rule:
@@ -199,6 +156,7 @@ function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
 function buildEndorsedMessage(args: {
   serder: SerderKERI;
   tsg?: TransIdxSigGroup;
+  ssg?: TransLastIdxSigGroup;
   cigars?: readonly Cigar[];
 }): Uint8Array {
   const attachments: Uint8Array[] = [];
@@ -220,7 +178,90 @@ function buildEndorsedMessage(args: {
       }).qb64b,
       ...args.tsg.sigers.map((siger) => siger.qb64b),
     );
+  } else if (args.ssg && args.ssg.sigers.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.TransLastIdxSigGroups,
+        count: 1,
+        version: KERI_V1,
+      }).qb64b,
+      args.ssg.prefixer.qb64b,
+      new Counter({
+        code: CtrDexV1.ControllerIdxSigs,
+        count: args.ssg.sigers.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.ssg.sigers.map((siger) => siger.qb64b),
+    );
   } else if (args.cigars && args.cigars.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.NonTransReceiptCouples,
+        count: args.cigars.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.cigars.flatMap((cigar) => [
+        requireCigarVerfer(cigar).qb64b,
+        cigar.qb64b,
+      ]),
+    );
+  }
+
+  return concatBytes(
+    args.serder.raw,
+    makeReplyAttachmentGroup(attachments),
+  );
+}
+
+/**
+ * Build one fully attached `rct` wire message.
+ *
+ * Supported receipt attachment shapes:
+ * - `tsgs` for transferable validator receipt groups
+ * - `wigers` for witness indexed signatures
+ * - `cigars` for non-transferable non-witness receipts
+ */
+function buildReceiptMessage(args: {
+  serder: SerderKERI;
+  cigars?: readonly Cigar[];
+  wigers?: readonly Siger[];
+  tsgs?: readonly TransIdxSigGroup[];
+}): Uint8Array {
+  const attachments: Uint8Array[] = [];
+
+  if (args.tsgs && args.tsgs.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.TransIdxSigGroups,
+        count: args.tsgs.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.tsgs.flatMap((tsg) => [
+        tsg.prefixer.qb64b,
+        tsg.seqner.qb64b,
+        tsg.diger.qb64b,
+        new Counter({
+          code: CtrDexV1.ControllerIdxSigs,
+          count: tsg.sigers.length,
+          version: KERI_V1,
+        }).qb64b,
+        ...tsg.sigers.map((siger) => siger.qb64b),
+      ]),
+    );
+  }
+
+  if (args.wigers && args.wigers.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.WitnessIdxSigs,
+        count: args.wigers.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.wigers.map((wiger) => wiger.qb64b),
+    );
+  }
+
+  if (args.cigars && args.cigars.length > 0) {
     attachments.push(
       new Counter({
         code: CtrDexV1.NonTransReceiptCouples,
@@ -411,6 +452,7 @@ export class Hab {
   readonly db: Baser;
   readonly ks: Keeper;
   readonly mgr: Manager;
+  readonly kevery: Kevery;
   pre = "";
 
   /** Create one habitat wrapper over shared DB/keeper/manager infrastructure. */
@@ -419,6 +461,7 @@ export class Hab {
     db: Baser,
     ks: Keeper,
     mgr: Manager,
+    kevery: Kevery,
     ns?: string,
     pre = "",
   ) {
@@ -426,6 +469,7 @@ export class Hab {
     this.db = db;
     this.ks = ks;
     this.mgr = mgr;
+    this.kevery = kevery;
     this.ns = ns;
     this.pre = pre;
   }
@@ -452,11 +496,7 @@ export class Hab {
     serder: SerderKERI,
     sigers: readonly Siger[],
   ): Kever {
-    const kvy = new Kevery(this.db, {
-      cues: new Deck<AgentCue>(),
-      local: true,
-    });
-    const decision = kvy.processEvent({
+    const decision = this.kevery.processEvent({
       serder,
       sigers: [...sigers],
       wigers: [],
@@ -562,11 +602,11 @@ export class Hab {
     this.pre = pre;
 
     if (!hidden) {
-      const habord: HabitatRecord = {
+      const habord = new HabitatRecord({
         hid: pre,
         name: this.name,
         domain: this.ns,
-      };
+      });
       this.db.pinHab(pre, habord);
       this.db.pinName(this.ns ?? "", this.name, pre);
       this.db.prefixes.add(pre);
@@ -625,6 +665,13 @@ export class Hab {
     }
 
     const sigers = this.sign(serder.raw, true) as Siger[];
+    if (serder.ilk === Ilks.qry) {
+      return buildEndorsedMessage({
+        serder,
+        ssg: new TransLastIdxSigGroup(prefixer, sigers),
+      });
+    }
+
     const estSaid = kever.lastEst.d || kever.said;
     if (!estSaid) {
       throw new Error(`Missing establishment event for ${this.pre}.`);
@@ -634,7 +681,6 @@ export class Hab {
     if (!seqner) {
       throw new Error(`Missing establishment sequence number for ${this.pre}.`);
     }
-
     return buildEndorsedMessage({
       serder,
       tsg: new TransIdxSigGroup(
@@ -680,6 +726,117 @@ export class Hab {
     return this.endorse(
       makeQuerySerder(route, { ...query, i: pre, src }, stamp),
     );
+  }
+
+  /**
+   * Create and locally accept one controller receipt for `serder`.
+   *
+   * KERI semantics:
+   * - receipt signatures cover the receipted event bytes, not the `rct`
+   *   message body
+   * - transferable receiptors emit transferable indexed-signature groups
+   * - non-transferable receiptors emit receipt couples
+   */
+  receipt(serder: SerderKERI): Uint8Array {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    const said = serder.said;
+    const kever = this.kever;
+    if (!pre || sn === null || !said) {
+      throw new ValidationError(
+        "Receipted event must expose pre, sn, and said.",
+      );
+    }
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+
+    const reserder = makeReceiptSerder(pre, sn, said);
+
+    if (!kever.transferable) {
+      const cigars = this.sign(serder.raw, false) as Cigar[];
+      this.kevery.processReceipt({
+        serder: reserder,
+        cigars,
+        wigers: [],
+        tsgs: [],
+        local: true,
+      });
+      return buildReceiptMessage({ serder: reserder, cigars });
+    }
+
+    const estSaid = kever.lastEst.d || kever.said;
+    const estEvent = estSaid ? this.db.getEvtSerder(this.pre, estSaid) : null;
+    const seqner = estEvent?.sner;
+    if (!estSaid || !seqner) {
+      throw new ValidationError(
+        `Missing establishment event material for transferable receiptor ${this.pre}.`,
+      );
+    }
+    const sigers = this.sign(serder.raw, true) as Siger[];
+    const tsg = new TransIdxSigGroup(
+      kever.prefixer,
+      seqner,
+      new Diger({ qb64: estSaid }),
+      sigers,
+    );
+    this.kevery.processReceipt({
+      serder: reserder,
+      cigars: [],
+      wigers: [],
+      tsgs: [tsg],
+      local: true,
+    });
+    return buildReceiptMessage({ serder: reserder, tsgs: [tsg] });
+  }
+
+  /**
+   * Create and locally accept one witness receipt for `serder`.
+   *
+   * The current habitat must be a non-transferable witness listed on the
+   * receipted event's witness state.
+   */
+  witness(serder: SerderKERI): Uint8Array {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    const said = serder.said;
+    const kever = this.kever;
+    if (!pre || sn === null || !said) {
+      throw new ValidationError(
+        "Receipted event must expose pre, sn, and said.",
+      );
+    }
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+    if (kever.transferable) {
+      throw new ValidationError(
+        `Witness receipts require a non-transferable witness habitat, got ${this.pre}.`,
+      );
+    }
+
+    const wits = this.receiptedWitnesses(serder);
+    const index = wits.indexOf(this.pre);
+    if (index < 0) {
+      throw new ValidationError(
+        `${this.pre} is not an authorized witness for ${pre}:${said}.`,
+      );
+    }
+
+    const reserder = makeReceiptSerder(pre, sn, said);
+    const wigers = this.mgr.sign(serder.raw, {
+      pubs: [this.pre],
+      indexed: true,
+      indices: [index],
+    }) as Siger[];
+    this.kevery.processReceipt({
+      serder: reserder,
+      cigars: [],
+      wigers,
+      tsgs: [],
+      local: true,
+    });
+    return buildReceiptMessage({ serder: reserder, wigers });
   }
 
   /**
@@ -923,6 +1080,33 @@ export class Hab {
   }
 
   /**
+   * Resolve the witness list that governs receipts for one event.
+   *
+   * Preference order:
+   * - the durable event-level `wits.` projection when present
+   * - the event body's own backer list for inception events
+   * - the current accepted kever witness list as a last resort
+   */
+  private receiptedWitnesses(serder: SerderKERI): string[] {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) {
+      return [];
+    }
+
+    const stored = this.db.wits.get(dgKey(pre, said)).map((wit) => wit.qb64);
+    if (stored.length > 0) {
+      return stored;
+    }
+
+    if (serder.ilk === Ilks.icp || serder.ilk === Ilks.dip) {
+      return [...serder.backs];
+    }
+
+    return [...(this.db.getKever(pre)?.wits ?? [])];
+  }
+
+  /**
    * Process KERI-style cues and yield structured runtime cue emissions.
    *
    * KERIpy correspondence:
@@ -933,11 +1117,10 @@ export class Hab {
    *   collapsing everything immediately to raw bytes
    *
    * Current support:
-   * - `replay`, `reply`, and complete `query` cues emit wire messages
+   * - `receipt`, `witness`, `replay`, `reply`, and complete `query` cues emit
+   *   wire messages
    * - `stream` emits transport requests without flattening them into bytes
    * - observer/runtime cues remain visible as notify emissions
-   * - `receipt` and `witness` are surfaced as notify emissions until the
-   *   receipt/witness message builders land in the broader KEL port
    */
   *processCuesIter(
     cues: Deck<AgentCue> | Iterable<AgentCue>,
@@ -950,8 +1133,10 @@ export class Hab {
       }
       switch (cue.kin) {
         case "receipt":
+          yield { cue, msgs: [this.receipt(cue.serder)], kind: "wire" };
+          break;
         case "witness":
-          yield { cue, msgs: [], kind: "notify" };
+          yield { cue, msgs: [this.witness(cue.serder)], kind: "wire" };
           break;
         case "replay":
           yield { cue, msgs: [cue.msgs], kind: "wire" };
@@ -1024,7 +1209,13 @@ export class Signator {
     this.db = db;
     const spre = this.db.getHby(SIGNER);
     if (!spre) {
-      const hab = new Hab(SIGNER, habery.db, habery.ks, habery.mgr);
+      const hab = new Hab(
+        SIGNER,
+        habery.db,
+        habery.ks,
+        habery.mgr,
+        habery.kevery,
+      );
       hab.make({ transferable: false, hidden: true });
       this.hab = hab;
       this.pre = hab.pre;
@@ -1035,6 +1226,7 @@ export class Signator {
         habery.db,
         habery.ks,
         habery.mgr,
+        habery.kevery,
         undefined,
         spre,
       );
@@ -1077,6 +1269,8 @@ export class Signator {
  *
  * Responsibilities:
  * - compose `Baser`, `Keeper`, `Manager`, optional config, and loaded habitats
+ * - own the habery-local `Kevery` used by `Hab` for local KEL/receipt
+ *   acceptance outside the runtime host
  * - eagerly reconstruct persisted habitat visibility on open
  * - provide app-layer alias lookup and habitat creation boundaries
  *
@@ -1089,6 +1283,8 @@ export class Signator {
  *   `Baser.kevers`
  * - `Hab.kever` resolves that accepted-state cache instead of reconstructing a
  *   thin projection ad hoc
+ * - `Habery.kevery` owns a separate local cue deck from the runtime-owned cue
+ *   deck created by `createAgentRuntime()`
  *
  * Current `keri-ts` differences:
  * - readonly compatibility opens may intentionally skip config processing and
@@ -1106,6 +1302,7 @@ export class Habery {
   readonly cf?: Configer;
   readonly config: Record<string, unknown>;
   readonly habs = new Map<string, Hab>();
+  readonly kevery: Kevery;
   readonly signator: Signator | null;
 
   /** Compose one habery from already-opened storage, manager, and config surfaces. */
@@ -1128,6 +1325,11 @@ export class Habery {
     this.mgr = mgr;
     this.cf = cf;
     this.config = config;
+    this.kevery = new Kevery(this.db, {
+      cues: new Deck<AgentCue>(),
+      lax: false,
+      local: true,
+    });
     this.signator = skipSignator ? null : new Signator(this.db, this);
     this.loadHabs();
     this.reconfigure();
@@ -1150,6 +1352,7 @@ export class Habery {
         this.db,
         this.ks,
         this.mgr,
+        this.kevery,
         habord.domain,
         hid,
       );
@@ -1194,7 +1397,7 @@ export class Habery {
 
   /** Creates and caches a new habitat under this habery. */
   makeHab(name: string, ns?: string, args: MakeHabArgs = {}): Hab {
-    const hab = new Hab(name, this.db, this.ks, this.mgr, ns);
+    const hab = new Hab(name, this.db, this.ks, this.mgr, this.kevery, ns);
     hab.make(args);
     if (!hab.pre) throw new Error("Hab creation failed");
     this.habs.set(hab.pre, hab);
@@ -1214,7 +1417,7 @@ export class Habery {
     if (this.habs.has(pre)) return this.habs.get(pre)!;
     const rec = this.db.getHab(pre);
     if (!rec || !this.db.getKever(pre)) return null;
-    const hab = new Hab(name, this.db, this.ks, this.mgr, ns, pre);
+    const hab = new Hab(name, this.db, this.ks, this.mgr, this.kevery, ns, pre);
     this.habs.set(pre, hab);
     return hab;
   }

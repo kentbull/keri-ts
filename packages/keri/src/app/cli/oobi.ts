@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
-import { createAgentRuntime, enqueueOobi, processRuntimeTurn } from "../agent-runtime.ts";
+import { createAgentRuntime, enqueueOobi, processRuntimeUntil } from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -47,7 +47,9 @@ function preferredUrl(urls: Record<string, string>): string | null {
  * The command is intentionally readonly; it does not attempt to heal or fetch
  * missing state.
  */
-export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<void> {
+export function* oobiGenerateCommand(
+  args: Record<string, unknown>,
+): Operation<void> {
   const commandArgs: OobiGenerateArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -65,7 +67,9 @@ export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<v
     throw new ValidationError("Alias is required and cannot be empty");
   }
   if (!commandArgs.role || !isEndpointRole(commandArgs.role)) {
-    throw new ValidationError(`Unsupported OOBI role ${String(commandArgs.role)}`);
+    throw new ValidationError(
+      `Unsupported OOBI role ${String(commandArgs.role)}`,
+    );
   }
 
   const hby = yield* setupHby(
@@ -85,7 +89,9 @@ export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<v
   try {
     const hab = hby.habByName(commandArgs.alias);
     if (!hab) {
-      throw new ValidationError(`No local AID found for alias ${commandArgs.alias}`);
+      throw new ValidationError(
+        `No local AID found for alias ${commandArgs.alias}`,
+      );
     }
 
     const urls: string[] = [];
@@ -93,7 +99,9 @@ export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<v
       case EndpointRoles.controller: {
         const url = preferredUrl(hab.fetchUrls(hab.pre));
         if (!url) {
-          throw new ValidationError(`No controller endpoint URL is stored for ${hab.pre}`);
+          throw new ValidationError(
+            `No controller endpoint URL is stored for ${hab.pre}`,
+          );
         }
         urls.push(`${url.replace(/\/$/, "")}/oobi/${hab.pre}/controller`);
         break;
@@ -104,7 +112,9 @@ export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<v
         for (const [eid, surls] of Object.entries(ends)) {
           const url = preferredUrl(surls);
           if (url) {
-            urls.push(`${url.replace(/\/$/, "")}/oobi/${hab.pre}/${commandArgs.role}/${eid}`);
+            urls.push(
+              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
+            );
           }
         }
         if (urls.length === 0) {
@@ -119,11 +129,15 @@ export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<v
         for (const witness of state?.b ?? []) {
           const url = preferredUrl(hab.fetchUrls(witness));
           if (url) {
-            urls.push(`${url.replace(/\/$/, "")}/oobi/${hab.pre}/witness/${witness}`);
+            urls.push(
+              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/witness/${witness}`,
+            );
           }
         }
         if (urls.length === 0) {
-          throw new ValidationError(`No witness endpoint URLs are stored for ${hab.pre}`);
+          throw new ValidationError(
+            `No witness endpoint URLs are stored for ${hab.pre}`,
+          );
         }
         break;
       }
@@ -144,7 +158,9 @@ export function* oobiGenerateCommand(args: Record<string, unknown>): Operation<v
  * the URL lands in `roobi.`. Any reply/event material fetched from the OOBI is
  * forced through the same parser/routing path used by the long-lived host.
  */
-export function* oobiResolveCommand(args: Record<string, unknown>): Operation<void> {
+export function* oobiResolveCommand(
+  args: Record<string, unknown>,
+): Operation<void> {
   const commandArgs: OobiResolveArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -182,8 +198,24 @@ export function* oobiResolveCommand(args: Record<string, unknown>): Operation<vo
       url: commandArgs.url,
       alias: commandArgs.oobiAlias,
     });
-    yield* processRuntimeTurn(runtime);
+    yield* processRuntimeUntil(
+      runtime,
+      () =>
+        (!!hby.db.roobi.get(commandArgs.url!)
+          || !!hby.db.eoobi.get(commandArgs.url!))
+        && hby.db.oobis.cnt() === 0
+        && hby.db.woobi.cnt() === 0
+        && hby.db.coobi.cnt() === 0
+        && hby.db.rpes.cnt() === 0,
+      { maxTurns: 128 },
+    );
 
+    const failed = hby.db.eoobi.get(commandArgs.url);
+    if (failed) {
+      throw new ValidationError(
+        `OOBI ${commandArgs.url} failed: ${failed.state}`,
+      );
+    }
     const resolved = hby.db.roobi.get(commandArgs.url);
     if (!resolved) {
       throw new ValidationError(`OOBI ${commandArgs.url} did not resolve.`);

@@ -19,8 +19,7 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
-import { signerCodeForVerferCode } from "../../../cesr/src/primitives/signature-suite.ts";
-import { Keeper, type PrePrm, type PreSit, type PubLot } from "../db/keeping.ts";
+import { Keeper, type PrePrm, type PrePrmShape, type PreSit, type PreSitShape, PubLot } from "../db/keeping.ts";
 
 /**
  * Root key-creation strategy selectors stored in keeper globals.
@@ -435,8 +434,8 @@ function resolveSuiteCodes(
 /** Default empty public-key lot used for vacuous `.old` / `.new` / `.nxt` state. */
 function emptyLot(
   dt = "",
-): { pubs: string[]; ridx: number; kidx: number; dt: string } {
-  return { pubs: [], ridx: 0, kidx: 0, dt };
+): PubLot {
+  return new PubLot({ pubs: [], ridx: 0, kidx: 0, dt });
 }
 
 /**
@@ -844,13 +843,13 @@ export class Manager {
     const creator = new Creatory(Algos.salty).make({
       salt: this.decryptPreSalt(pp.salt),
       stem: pp.stem,
-      tier: pp.tier,
+      tier: pp.tier || undefined,
     });
 
     return keys.map(({ pub, offset }) => {
       const verfer = new Verfer({ qb64: pub });
       const signer = creator.create({
-        codes: [signerCodeForVerferCode(verfer.code)],
+        codes: [Signer.seedCodeForVerferCode(verfer.code)],
         pidx: pp.pidx,
         ridx: lot.ridx,
         kidx: lot.kidx + offset,
@@ -1022,7 +1021,7 @@ export class Manager {
     const nextPubs = nsigners.map((signer) => signer.verfer.qb64);
     const digers = digersForPubs(nextPubs, dcode);
 
-    const pp: PrePrm = {
+    const pp: PrePrmShape = {
       pidx,
       algo: usedAlgo,
       salt: creator.salt
@@ -1037,7 +1036,7 @@ export class Manager {
     };
 
     const dt = new Date().toISOString();
-    const ps: PreSit = {
+    const ps: PreSitShape = {
       old: emptyLot(dt),
       new: {
         pubs: verfers.map((verfer) => verfer.qb64),
@@ -1203,7 +1202,7 @@ export class Manager {
     const creator = new Creatory(pp.algo as Algos).make({
       salt: pp.salt ? this.decryptPreSalt(pp.salt) : undefined,
       stem: pp.stem,
-      tier: pp.tier,
+      tier: pp.tier || undefined,
     });
 
     const nextCodes = resolveSuiteCodes(ncodes, ncount, ncode, {
@@ -1224,12 +1223,12 @@ export class Manager {
     const nextPubs = signers.map((signer) => signer.verfer.qb64);
     const digers = digersForPubs(nextPubs, dcode);
 
-    ps.nxt = {
+    ps.nxt = new PubLot({
       pubs: nextPubs,
       ridx,
       kidx,
       dt: new Date().toISOString(),
-    };
+    });
     if (!this.ks.pinSits(pre, ps)) {
       throw new Error(`Problem updating pubsit db for pre=${pre}.`);
     }
@@ -1440,7 +1439,7 @@ export class Manager {
       verferies.push(csigners.map((signer) => signer.verfer));
 
       if (first) {
-        const pp: PrePrm = {
+        const pp: PrePrmShape = {
           pidx,
           algo: usedAlgo,
           salt: creator.salt
@@ -1478,8 +1477,10 @@ export class Manager {
       this.ks.putPubs(pubsKey(pre, ridx), { pubs });
 
       if (ridx === Math.max(iridx - 1, 0)) {
-        const old = iridx === 0 ? emptyLot() : { pubs, ridx, kidx, dt };
-        const ps: PreSit = {
+        const old = iridx === 0
+          ? emptyLot()
+          : new PubLot({ pubs, ridx, kidx, dt });
+        const ps: PreSitShape = {
           old,
           new: emptyLot(),
           nxt: emptyLot(),
@@ -1494,7 +1495,7 @@ export class Manager {
         if (!ps) {
           throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
         }
-        ps.new = { pubs, ridx, kidx, dt };
+        ps.new = new PubLot({ pubs, ridx, kidx, dt });
         if (!this.ks.pinSits(pre, ps)) {
           throw new Error(`Problem updating pubsit db for pre=${pre}.`);
         }
@@ -1505,7 +1506,7 @@ export class Manager {
         if (!ps) {
           throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
         }
-        ps.nxt = { pubs, ridx, kidx, dt };
+        ps.nxt = new PubLot({ pubs, ridx, kidx, dt });
         if (!this.ks.pinSits(pre, ps)) {
           throw new Error(`Problem updating pubsit db for pre=${pre}.`);
         }
@@ -1539,7 +1540,12 @@ export class Manager {
       if (!ps) {
         throw new Error(`Attempt to rotate nonexistent pre=${pre}.`);
       }
-      ps.nxt = { pubs, ridx, kidx, dt: new Date().toISOString() };
+      ps.nxt = new PubLot({
+        pubs,
+        ridx,
+        kidx,
+        dt: new Date().toISOString(),
+      });
       if (!this.ks.pinSits(pre, ps)) {
         throw new Error(`Problem updating pubsit db for pre=${pre}.`);
       }
@@ -1591,12 +1597,12 @@ export class Manager {
           `Invalid replay attempt of pre=${pre} at ridx=${ridx}.`,
         );
       }
-      ps.nxt = {
+      ps.nxt = new PubLot({
         pubs: pubset.pubs,
         ridx: ridx + 1,
         kidx: kidx + csize,
         dt: new Date().toISOString(),
-      };
+      });
     }
 
     const verfers = ps.new.pubs.map((pub) => this.getSignerByPub(pub).verfer);

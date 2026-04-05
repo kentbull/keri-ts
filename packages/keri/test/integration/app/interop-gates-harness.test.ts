@@ -3,6 +3,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { ensureCompatLmdbBuild } from "../../../test/utils.ts";
 
 interface CmdResult {
   code: number;
@@ -935,6 +936,8 @@ async function runListAidVisibilityParity(
 async function runKliCompatStoreOpen(
   ctx: ScenarioContext,
 ): Promise<void> {
+  await ensureCompatLmdbBuild(ctx.packageRoot);
+
   const alias = "interop-aid";
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
@@ -1604,7 +1607,8 @@ async function runGateEBootstrapParity(
             assertEquals(hby.db.getState(tufaPre)?.i, tufaPre);
             assertEquals(hby.db.locs.get([tufaPre, "http"])?.url, url);
             assertEquals(
-              hby.db.ends.get([tufaPre, EndpointRoles.mailbox, tufaPre])?.allowed,
+              hby.db.ends.get([tufaPre, EndpointRoles.mailbox, tufaPre])
+                ?.allowed,
               true,
             );
             assertEquals(hby.db.roobi.get(tufaMailboxUrl)?.state, "resolved");

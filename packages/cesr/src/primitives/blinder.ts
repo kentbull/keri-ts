@@ -15,6 +15,12 @@ export function isBlinderCode(code: string): boolean {
  *
  * KERIpy substance: `Blinder` materializes blinded/bound state tuple groups
  * used for blindable ACDC/TEL state disclosures.
+ *
+ * Maintainer note:
+ * - this class owns counted-group transport framing only
+ * - semantic blind/unblind/commit helpers live in `disclosure.ts`
+ * - the semantic fixed-field records carried by these groups are
+ *   `BlindState` and `BoundState` from `structing.ts`
  */
 export class Blinder extends Structor {
   constructor(init: Structor | ConstructorParameters<typeof Structor>[0]) {

@@ -1,23 +1,31 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
-import { type Database } from "npm:lmdb@3.5.2";
+import { type Database } from "npm:lmdb@3.4.4";
 import { b, decodeKeriCbor, encodeKeriCbor, type Kind, Kinds, t } from "../../../cesr/mod.ts";
+import { RawRecord, type RawRecordClass, type RecordInputOf, type RecordShapeOf } from "../core/records.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
 type Keys = KeyPart | Iterable<KeyPart>;
+
 /** Serialization kinds supported by `Komer` record payloads. */
 export type KomerKind = Extract<Kind, "JSON" | "CBOR" | "MGPK">;
 
+/** Plain stored-object projection returned by `getDict()`. */
+export type KomerDictValue<TRecord extends RawRecord<any>> = RecordShapeOf<
+  TRecord
+>;
+
 /** Shared constructor options for `KomerBase` variants. */
-export interface KomerBaseOptions {
+export interface KomerBaseOptions<TRecord extends RawRecord<any>> {
   subkey: string;
   sep?: string;
   kind?: KomerKind;
   dupsort?: boolean;
+  recordClass: RawRecordClass<TRecord>;
 }
 
 /** Constructor options for non-duplicate `Komer` variants. */
-export interface KomerOptions extends Omit<KomerBaseOptions, "dupsort"> {}
+export interface KomerOptions<TRecord extends RawRecord<any>> extends Omit<KomerBaseOptions<TRecord>, "dupsort"> {}
 
 function assertKomerKind(kind: KomerKind): KomerKind {
   if (
@@ -39,32 +47,48 @@ function toUint8Array(bytes: Uint8Array): Uint8Array {
     : new Uint8Array(bytes);
 }
 
+function asIterable<T>(value: T | Iterable<T> | null | undefined): T[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+  if (
+    Symbol.iterator in Object(value)
+    && typeof value !== "string"
+    && !(value instanceof Uint8Array)
+  ) {
+    return [...(value as Iterable<T>)];
+  }
+  return [value as T];
+}
+
 /**
- * Shared keyspace/object-mapper substrate for single-value `Komer` variants.
+ * Shared keyspace/object-mapper substrate for `Komer` variants.
  *
  * Responsibilities:
  * - open one named LMDB subdb and manage its key separator policy
  * - convert tuple-like keyspace paths to/from stored LMDB keys
  * - select JSON/CBOR/MGPK serializer functions for one record payload shape
+ * - hydrate stored payloads through one record class and serialize them back
  * - expose KERIpy-style branch iteration and trim helpers used by subclasses
  *
  * KERIpy correspondence:
  * - mirrors `keri.db.koming.KomerBase`
  *
  * Current `keri-ts` differences:
- * - `Komer` is intentionally narrowed to one persisted value shape `T`
- * - only the single-record `Komer` subclass has been ported so far; the other
- *   KERIpy `KomerBase` subclasses still remain future work
+ * - callers may still write either a record instance or constructor-input
+ *   shape, but the public model is the record class rather than arbitrary
+ *   hydrator/normalizer hooks
  */
-export class KomerBase<T> {
+export class KomerBase<TRecord extends RawRecord<any>> {
   static readonly Sep = ".";
 
   readonly db: LMDBer;
   readonly sdb: Database<BinVal, BinKey>;
   readonly sep: string;
   readonly kind: KomerKind;
-  protected readonly _ser: (val: T) => Uint8Array;
-  protected readonly _des: (val: Uint8Array | null) => T | null;
+  readonly recordClass: RawRecordClass<TRecord>;
+  protected readonly _ser: (val: RecordInputOf<TRecord>) => Uint8Array;
+  protected readonly _des: (val: Uint8Array | null) => TRecord | null;
 
   constructor(
     db: LMDBer,
@@ -73,12 +97,14 @@ export class KomerBase<T> {
       sep = KomerBase.Sep,
       kind = Kinds.json,
       dupsort = false,
-    }: KomerBaseOptions,
+      recordClass,
+    }: KomerBaseOptions<TRecord>,
   ) {
     this.db = db;
     this.sdb = this.db.openDB(subkey, dupsort);
     this.sep = sep;
     this.kind = assertKomerKind(kind);
+    this.recordClass = recordClass;
     this._ser = this._serializer(this.kind);
     this._des = this._deserializer(this.kind);
   }
@@ -107,8 +133,25 @@ export class KomerBase<T> {
     return t(key).split(this.sep);
   }
 
+  /** Materialize one caller-supplied value into the canonical record class. */
+  protected coerceRecord(val: RecordInputOf<TRecord>): TRecord {
+    return val instanceof this.recordClass
+      ? val
+      : this.recordClass.fromDict(val);
+  }
+
+  /** Project one normalized record into its persisted object representation. */
+  protected toStoredValue(val: RecordInputOf<TRecord>): RecordShapeOf<TRecord> {
+    return this.coerceRecord(val).asDict() as RecordShapeOf<TRecord>;
+  }
+
+  /** Rebuild one caller-facing record from a decoded stored object. */
+  protected fromStoredValue(val: unknown): TRecord {
+    return this.recordClass.fromDict(val);
+  }
+
   /** Returns the serializer function for the requested storage encoding kind. */
-  _serializer(kind: KomerKind): (val: T) => Uint8Array {
+  _serializer(kind: KomerKind): (val: RecordInputOf<TRecord>) => Uint8Array {
     switch (assertKomerKind(kind)) {
       case Kinds.mgpk:
         return this.serializeMGPK.bind(this);
@@ -120,7 +163,7 @@ export class KomerBase<T> {
   }
 
   /** Returns the deserializer function for the requested storage encoding kind. */
-  _deserializer(kind: KomerKind): (val: Uint8Array | null) => T | null {
+  _deserializer(kind: KomerKind): (val: Uint8Array | null) => TRecord | null {
     switch (assertKomerKind(kind)) {
       case Kinds.mgpk:
         return this.deserializeMGPK.bind(this);
@@ -132,42 +175,42 @@ export class KomerBase<T> {
   }
 
   /** Encode one logical record as UTF-8 JSON bytes. */
-  protected serializeJSON(val: T): Uint8Array {
-    return b(JSON.stringify(val));
+  protected serializeJSON(val: RecordInputOf<TRecord>): Uint8Array {
+    return b(JSON.stringify(this.toStoredValue(val)));
   }
 
   /** Encode one logical record as MGPK/MessagePack bytes. */
-  protected serializeMGPK(val: T): Uint8Array {
-    return toUint8Array(encodeMsgpack(val));
+  protected serializeMGPK(val: RecordInputOf<TRecord>): Uint8Array {
+    return toUint8Array(encodeMsgpack(this.toStoredValue(val)));
   }
 
   /** Encode one logical record as KERI-compatible CBOR bytes. */
-  protected serializeCBOR(val: T): Uint8Array {
-    return encodeKeriCbor(val);
+  protected serializeCBOR(val: RecordInputOf<TRecord>): Uint8Array {
+    return encodeKeriCbor(this.toStoredValue(val));
   }
 
   /** Decode one JSON byte payload into the logical record type. */
-  protected deserializeJSON(val: Uint8Array | null): T | null {
+  protected deserializeJSON(val: Uint8Array | null): TRecord | null {
     if (val === null) {
       return null;
     }
-    return JSON.parse(t(val)) as T;
+    return this.fromStoredValue(JSON.parse(t(val)));
   }
 
   /** Decode one MGPK/MessagePack payload into the logical record type. */
-  protected deserializeMGPK(val: Uint8Array | null): T | null {
+  protected deserializeMGPK(val: Uint8Array | null): TRecord | null {
     if (val === null) {
       return null;
     }
-    return decodeMsgpack(val) as T;
+    return this.fromStoredValue(decodeMsgpack(val));
   }
 
   /** Decode one KERI-compatible CBOR payload into the logical record type. */
-  protected deserializeCBOR(val: Uint8Array | null): T | null {
+  protected deserializeCBOR(val: Uint8Array | null): TRecord | null {
     if (val === null) {
       return null;
     }
-    return decodeKeriCbor(val) as T;
+    return this.fromStoredValue(decodeKeriCbor(val));
   }
 
   /**
@@ -200,7 +243,7 @@ export class KomerBase<T> {
   *getTopItemIter(
     keys: Keys = "",
     { topive = false }: { topive?: boolean } = {},
-  ): Generator<[string[], T]> {
+  ): Generator<[string[], TRecord]> {
     for (
       const [key, val] of this.db.getTopItemIter(
         this.sdb,
@@ -224,7 +267,7 @@ export class KomerBase<T> {
   *getFullItemIter(
     keys: Keys = "",
     { topive = false }: { topive?: boolean } = {},
-  ): Generator<[string[], T]> {
+  ): Generator<[string[], TRecord]> {
     yield* this.getTopItemIter(keys, { topive });
   }
 }
@@ -242,39 +285,44 @@ export class KomerBase<T> {
  *
  * Current `keri-ts` differences:
  * - JSON remains the live-store default even though CBOR and MGPK are available
- * - callers are responsible for any domain-object adaptation above persisted
- *   value shape `T`
+ * - callers may write constructor-input shapes directly, but reads always
+ *   return hydrated record instances
  */
-export class Komer<T> extends KomerBase<T> {
+export class Komer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
   constructor(
     db: LMDBer,
-    { subkey, sep = KomerBase.Sep, kind = Kinds.json }: KomerOptions,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
   ) {
-    super(db, { subkey, sep, kind, dupsort: false });
+    super(db, { subkey, sep, kind, dupsort: false, ...options });
   }
 
   /** Insert one record value at its effective key if absent. */
-  put(keys: Keys, val: T): boolean {
+  put(keys: Keys, val: RecordInputOf<TRecord>): boolean {
     return this.db.putVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
   /** Upsert one record value at its effective key. */
-  pin(keys: Keys, val: T): boolean {
+  pin(keys: Keys, val: RecordInputOf<TRecord>): boolean {
     return this.db.setVal(this.sdb, this._tokey(keys), this._ser(val));
   }
 
   /** Read one record value by its effective key. */
-  get(keys: Keys): T | null {
+  get(keys: Keys): TRecord | null {
     return this._des(this.db.getVal(this.sdb, this._tokey(keys)));
   }
 
   /**
-   * Returns the plain stored-object shape for one record.
+   * Return the plain stored-object shape for one record.
    *
-   * This mirrors KERIpy `getDict` for plain persisted record shapes.
+   * This mirrors KERIpy `getDict` for persisted record shapes even when reads
+   * normally hydrate into richer record instances.
    */
-  getDict(keys: Keys): T | null {
-    return this.get(keys);
+  getDict(keys: Keys): KomerDictValue<TRecord> | null {
+    const val = this.get(keys);
+    if (val === null) {
+      return null;
+    }
+    return val.asDict() as KomerDictValue<TRecord>;
   }
 
   /** Remove one record value by its effective key. */
@@ -299,12 +347,12 @@ export class Komer<T> extends KomerBase<T> {
  * KERIpy correspondence:
  * - mirrors `keri.db.koming.IoSetKomer`
  */
-export class IoSetKomer<T> extends KomerBase<T> {
+export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
   constructor(
     db: LMDBer,
-    { subkey, sep = KomerBase.Sep, kind = Kinds.json }: KomerOptions,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
   ) {
-    super(db, { subkey, sep, kind, dupsort: false });
+    super(db, { subkey, sep, kind, dupsort: false, ...options });
   }
 
   /**
@@ -314,39 +362,33 @@ export class IoSetKomer<T> extends KomerBase<T> {
    * storage model; duplicate values are deduplicated by the underlying LMDB
    * helper family.
    */
-  put(keys: Keys, vals: T | Iterable<T> | null = null): boolean {
-    const items = vals === null || vals === undefined
-      ? []
-      : Symbol.iterator in Object(vals) && typeof vals !== "string"
-          && !(vals instanceof Uint8Array)
-      ? [...(vals as Iterable<T>)]
-      : [vals as T];
+  put(
+    keys: Keys,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+  ): boolean {
     return this.db.putIoSetVals(
       this.sdb,
       this._tokey(keys),
-      items.map((val) => this._ser(val)),
+      asIterable(vals).map((val) => this._ser(val)),
       b(this.sep),
     );
   }
 
   /** Upsert an insertion-ordered set of records for one effective key. */
-  pin(keys: Keys, vals: T | Iterable<T> | null = null): boolean {
-    const items = vals === null || vals === undefined
-      ? []
-      : Symbol.iterator in Object(vals) && typeof vals !== "string"
-          && !(vals instanceof Uint8Array)
-      ? [...(vals as Iterable<T>)]
-      : [vals as T];
+  pin(
+    keys: Keys,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+  ): boolean {
     return this.db.pinIoSetVals(
       this.sdb,
       this._tokey(keys),
-      items.map((val) => this._ser(val)),
+      asIterable(vals).map((val) => this._ser(val)),
       b(this.sep),
     );
   }
 
   /** Append one record member to the insertion-ordered set for an effective key. */
-  add(keys: Keys, val: T): boolean {
+  add(keys: Keys, val: RecordInputOf<TRecord>): boolean {
     return this.db.addIoSetVal(
       this.sdb,
       this._tokey(keys),
@@ -356,8 +398,8 @@ export class IoSetKomer<T> extends KomerBase<T> {
   }
 
   /** Read all logical members for one effective key in insertion order. */
-  get(keys: Keys, { ion = 0 }: { ion?: number } = {}): T[] {
-    const out: T[] = [];
+  get(keys: Keys, { ion = 0 }: { ion?: number } = {}): TRecord[] {
+    const out: TRecord[] = [];
     for (
       const [, val] of this.db.getIoSetItemIter(
         this.sdb,
@@ -375,7 +417,7 @@ export class IoSetKomer<T> extends KomerBase<T> {
   }
 
   /** Read the last logical member for one effective key. */
-  getLast(keys: Keys): T | null {
+  getLast(keys: Keys): TRecord | null {
     const item = this.db.getIoSetLastItem(
       this.sdb,
       this._tokey(keys),
@@ -387,8 +429,25 @@ export class IoSetKomer<T> extends KomerBase<T> {
     return this._des(item[1]);
   }
 
+  /** Iterate logical members for one effective key in insertion order. */
+  *getIter(keys: Keys): Generator<TRecord> {
+    for (
+      const [, val] of this.db.getIoSetItemIter(
+        this.sdb,
+        this._tokey(keys),
+        0,
+        b(this.sep),
+      )
+    ) {
+      const record = this._des(val);
+      if (record !== null) {
+        yield record;
+      }
+    }
+  }
+
   /** Remove one member, or all members when `val` is `null`, for an effective key. */
-  rem(keys: Keys, val: T | null = null): boolean {
+  rem(keys: Keys, val: RecordInputOf<TRecord> | null = null): boolean {
     return this.db.remIoSetVal(
       this.sdb,
       this._tokey(keys),
@@ -412,7 +471,7 @@ export class IoSetKomer<T> extends KomerBase<T> {
   override *getTopItemIter(
     keys: Keys = "",
     { topive = false }: { topive?: boolean } = {},
-  ): Generator<[string[], T]> {
+  ): Generator<[string[], TRecord]> {
     for (
       const [key, val] of this.db.getTopIoSetItemIter(
         this.sdb,
@@ -425,5 +484,102 @@ export class IoSetKomer<T> extends KomerBase<T> {
         yield [this._tokeys(key), record];
       }
     }
+  }
+}
+
+/**
+ * Native duplicate-key object mapper (`DupKomer`).
+ *
+ * KERIpy correspondence:
+ * - mirrors `keri.db.koming.DupKomer`
+ *
+ * Ordering rule:
+ * - duplicates are kept in LMDB duplicate-sort order, not insertion order
+ * - values must remain under LMDB's dupsort value-size limits
+ */
+export class DupKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
+  constructor(
+    db: LMDBer,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
+  ) {
+    super(db, { subkey, sep, kind, dupsort: true, ...options });
+  }
+
+  /** Insert duplicate members at one effective key without overwriting existing values. */
+  put(
+    keys: Keys,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+  ): boolean {
+    return this.db.putVals(
+      this.sdb,
+      this._tokey(keys),
+      asIterable(vals).map((val) => this._ser(val)),
+    );
+  }
+
+  /** Add one duplicate member if that exact stored value is absent. */
+  add(keys: Keys, val: RecordInputOf<TRecord>): boolean {
+    return this.db.addVal(this.sdb, this._tokey(keys), this._ser(val));
+  }
+
+  /** Replace the full duplicate set for one effective key. */
+  pin(
+    keys: Keys,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+  ): boolean {
+    const key = this._tokey(keys);
+    this.db.delVals(this.sdb, key);
+    return this.db.putVals(
+      this.sdb,
+      key,
+      asIterable(vals).map((val) => this._ser(val)),
+    );
+  }
+
+  /** Read all duplicate members for one effective key. */
+  get(keys: Keys): TRecord[] {
+    const out: TRecord[] = [];
+    for (const val of this.db.getValsIter(this.sdb, this._tokey(keys))) {
+      const record = this._des(val);
+      if (record !== null) {
+        out.push(record);
+      }
+    }
+    return out;
+  }
+
+  /** Read the lexicographically last duplicate member for one effective key. */
+  getLast(keys: Keys): TRecord | null {
+    return this._des(this.db.getValLast(this.sdb, this._tokey(keys)));
+  }
+
+  /** Iterate duplicate members at one effective key in LMDB duplicate order. */
+  *getIter(keys: Keys): Generator<TRecord> {
+    for (const val of this.db.getValsIter(this.sdb, this._tokey(keys))) {
+      const record = this._des(val);
+      if (record !== null) {
+        yield record;
+      }
+    }
+  }
+
+  /** Count duplicate members at one effective key or across the whole subdb. */
+  cnt(keys: Keys = ""): number {
+    if (
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
+    ) {
+      return this.db.cntAll(this.sdb);
+    }
+    return this.db.cntVals(this.sdb, this._tokey(keys));
+  }
+
+  /** Remove one duplicate member, or the entire duplicate set when `val` is `null`. */
+  rem(keys: Keys, val: RecordInputOf<TRecord> | null = null): boolean {
+    const key = this._tokey(keys);
+    if (val === null) {
+      return this.db.delVals(this.sdb, key);
+    }
+    return this.db.delVal(this.sdb, key, this._ser(val));
   }
 }

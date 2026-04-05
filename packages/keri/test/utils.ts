@@ -1,6 +1,88 @@
 import { type Operation, run, spawn } from "effection";
 import { assertRejects, assertStringIncludes } from "jsr:@std/assert";
 
+let compatSetupPromise: Promise<void> | undefined;
+
+function packageRoot(): string {
+  return new URL("../", import.meta.url).pathname;
+}
+
+async function resolveCompatBinaryPath(
+  cwd: string,
+): Promise<string> {
+  const out = await new Deno.Command("node", {
+    args: [
+      "-p",
+      "const path=require('path'); path.join(path.dirname(path.dirname(require.resolve('lmdb'))), 'build', 'Release', 'lmdb.node')",
+    ],
+    cwd,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (out.code !== 0) {
+    throw new Error(
+      `Unable to resolve lmdb build path: ${new TextDecoder().decode(out.stderr).trim()}`,
+    );
+  }
+  return new TextDecoder().decode(out.stdout).trim();
+}
+
+async function compatBinaryExists(cwd: string): Promise<boolean> {
+  const binaryPath = await resolveCompatBinaryPath(cwd);
+  try {
+    const stat = await Deno.stat(binaryPath);
+    return stat.isFile;
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Ensure compat tests run against a rebuilt lmdb-js binary that can open
+ * KERIpy's LMDB v1 stores instead of the stock prebuilt module.
+ */
+export async function ensureCompatLmdbBuild(
+  cwd = packageRoot(),
+): Promise<void> {
+  if (await compatBinaryExists(cwd)) {
+    return;
+  }
+
+  if (!compatSetupPromise) {
+    compatSetupPromise = (async () => {
+      const out = await new Deno.Command("deno", {
+        args: ["task", "setup"],
+        cwd,
+        env: Deno.env.toObject(),
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      if (out.code !== 0) {
+        const stdout = new TextDecoder().decode(out.stdout).trim();
+        const stderr = new TextDecoder().decode(out.stderr).trim();
+        throw new Error(
+          `Compat LMDB setup failed: ${stderr}\n${stdout}`,
+        );
+      }
+      if (!(await compatBinaryExists(cwd))) {
+        throw new Error(
+          "Compat LMDB setup completed but build/Release/lmdb.node is still missing.",
+        );
+      }
+    })();
+  }
+
+  try {
+    await compatSetupPromise;
+  } catch (error) {
+    compatSetupPromise = undefined;
+    throw error;
+  }
+}
+
 /**
  * Test utilities for CLI testing with Effection
  */

@@ -5,6 +5,13 @@ import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
+import {
+  acceptEscrow,
+  dropEscrow,
+  type EscrowProcessDecision,
+  keepEscrow,
+  logEscrowDecision,
+} from "./kever-decisions.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 
@@ -17,7 +24,7 @@ function hasValidReplyThreshold(
 }
 
 /** Return the hex ordinal text used for DB keys from either Seqner or Number. */
-function encodeOrdinalHex(ordinal: DispatchOrdinal): string {
+export function encodeOrdinalHex(ordinal: DispatchOrdinal): string {
   return "snh" in ordinal ? ordinal.snh : ordinal.numh;
 }
 
@@ -49,13 +56,24 @@ function sameOrNewerReply(
 }
 
 /**
- * Rebuild transferable signature groups for one stored reply SAID from `ssgs.`.
+ * Rebuild transferable signature groups for one stored message SAID from
+ * `ssgs.`.
  *
- * The `rpes.` reply escrow only stores a route -> SAID reference. When we retry
- * verification we must reconstruct the authoritative transferable signature
- * groups from the persisted `ssgs.` rows for that reply.
+ * This is used both by reply escrow reprocessing and by query-not-found
+ * continuation, because both flows persist transferable attachment groups under
+ * the same `(said, pre, snh, dig)` key shape.
+ *
+ * Reconstruction steps:
+ * - walk the stored signature rows under one message SAID
+ * - regroup rows by `(pre, snh, dig)` back into transferable signature groups
+ * - drop incomplete groups when the signer establishment event can no longer be
+ *   resolved
+ *
+ * Ordering rule:
+ * - groups are returned newest-first by establishment sequence number so reply
+ *   verification sees the same lead-group precedence KERIpy expects
  */
-function fetchReplyTsgs(
+export function fetchStoredTsgs(
   db: Baser,
   said: string,
 ): TransIdxSigGroup[] {
@@ -375,7 +393,7 @@ export class Revery {
     }
 
     const oldTsgs = args.osaider
-      ? fetchReplyTsgs(this.db, args.osaider.qb64)
+      ? fetchStoredTsgs(this.db, args.osaider.qb64)
       : [];
     const oldLead = oldTsgs[0];
     for (const tsg of args.tsgs ?? []) {
@@ -390,7 +408,7 @@ export class Revery {
         continue;
       }
 
-      const estSaid = this.db.getKel(tsg.pre, Number(tsg.sn));
+      const estSaid = this.db.kels.getLast(tsg.pre, Number(tsg.sn));
       if (!estSaid || estSaid !== tsg.said) {
         this.escrowReply({
           serder: args.serder,
@@ -596,34 +614,93 @@ export class Revery {
    * - keep escrow only when verification is still blocked by an
    *   `UnverifiedReplyError`
    */
+  /**
+   * Process escrowed reply messages.
+   *
+   * Pass outline:
+   * - walk `rpes.` rows keyed by reply route
+   * - rebuild stored attachments and reply artifacts
+   * - replay the reply through normal verification
+   * - remove the escrow row on `accept` and `drop`, keep it on `keep`
+   */
   processEscrowReply(): void {
     for (const [keys, diger] of this.db.rpes.getTopItemIter()) {
       const route = keys[0];
       if (!route) {
         continue;
       }
-      const dater = this.db.sdts.get([diger.qb64]);
-      const serder = this.db.rpys.get([diger.qb64]);
-      const tsgs = fetchReplyTsgs(this.db, diger.qb64);
-      if (!dater || !serder || tsgs.length === 0) {
-        this.db.rpes.rem([route], diger);
-        this.removeReply(diger);
-        continue;
-      }
-      if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
-        this.db.rpes.rem([route], diger);
-        this.removeReply(diger);
-        continue;
-      }
-      try {
-        this.processReply({ serder, tsgs });
-        this.db.rpes.rem([route], diger);
-      } catch (error) {
-        if (!(error instanceof UnverifiedReplyError)) {
+      const decision = this.reprocessEscrowedReply(diger);
+      logEscrowDecision("Revery RPE", decision);
+      switch (decision.kind) {
+        case "accept":
+          this.db.rpes.rem([route], diger);
+          break;
+        case "drop":
           this.db.rpes.rem([route], diger);
           this.removeReply(diger);
-        }
+          break;
+        case "keep":
+          break;
       }
+    }
+  }
+
+  /**
+   * Replay one escrowed transferable reply through the normal verification path.
+   *
+   * Typed replay decisions make the Gate E control flow explicit:
+   * - `keep` mirrors recoverable `UnverifiedReplyError`
+   * - `drop` mirrors stale/corrupt escrow rows that should be removed
+   * - `accept` mirrors successful reply verification on replay
+   *
+   * Stored-artifact model:
+   * - `sdts.` holds the local escrow timestamp
+   * - `rpys.` holds the escrowed reply serder
+   * - `ssgs.` holds the transferable endorsement groups
+   *
+   * Steps:
+   * - load and validate the escrow artifacts
+   * - reject stale or malformed rows
+   * - replay through `processReply()` exactly as if the reply re-arrived
+   * - map recoverable reply verification failures into `keep`
+   */
+  public reprocessEscrowedReply(
+    diger: Diger,
+  ): EscrowProcessDecision {
+    const dater = this.db.sdts.get([diger.qb64]);
+    const serder = this.db.rpys.get([diger.qb64]);
+    const tsgs = fetchStoredTsgs(this.db, diger.qb64);
+    if (!dater || !serder || tsgs.length === 0) {
+      return dropEscrow("missingEscrowArtifact", {
+        message: `Missing escrow artifacts at said=${diger.qb64} for reply replay.`,
+        context: {
+          said: diger.qb64,
+          hasDater: !!dater,
+          hasSerder: !!serder,
+          tsgCount: tsgs.length,
+        },
+      });
+    }
+    if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
+      return dropEscrow("stale", {
+        message: `Stale reply escrow at route = ${serder.route ?? "<unknown>"}.`,
+        context: { said: diger.qb64, route: serder.route },
+      });
+    }
+    try {
+      this.processReply({ serder, tsgs });
+      return acceptEscrow();
+    } catch (error) {
+      if (error instanceof UnverifiedReplyError) {
+        return keepEscrow("unverifiedReply", {
+          message: error.message,
+          context: { said: diger.qb64, route: serder.route },
+        });
+      }
+      return dropEscrow("processingError", {
+        message: error instanceof Error ? error.message : String(error),
+        context: { said: diger.qb64, route: serder.route },
+      });
     }
   }
 }

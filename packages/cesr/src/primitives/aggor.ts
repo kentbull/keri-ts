@@ -26,6 +26,11 @@ export type AggorList = AggorElement[];
  * Where `Compactor` contracts nested map branches to SAIDs, `Aggor` contracts a
  * list of aggregate elements down to one commitment in slot zero (`agid`) while
  * still supporting later selective disclosure of map elements.
+ *
+ * Boundary rule:
+ * - `Aggor` owns selective disclosure for aggregate lists
+ * - `Compactor` owns hierarchical map disclosure
+ * - `disclosure.ts` owns fixed-field blind/bound/media disclosure
  */
 
 /** True when counter code belongs to aggregate-list group families. */
@@ -73,6 +78,10 @@ export interface AggorInit {
  * - map-form `Aggor` is preserved here only as a compatibility bridge for
  *   parser-group projections that still classify generic map groups as aggor
  *   families in the TS codebase
+ *
+ * The important tradeoff is intentional:
+ * - the list lane is the real graduated-disclosure story here
+ * - the map lane mainly keeps parser projections lossless and readable
  */
 export class Aggor extends Structor {
   readonly kind: "list" | "map";

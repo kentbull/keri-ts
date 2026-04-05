@@ -1,7 +1,7 @@
 /** KERI event-log databaser built on `LMDBer` composition. */
 
-import { type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.5.2";
+import { action, type Operation } from "npm:effection@^3.6.0";
+import type { Database } from "npm:lmdb@3.4.4";
 import {
   b,
   Cigar,
@@ -16,6 +16,7 @@ import {
   NumDex,
   Prefixer,
   Saider,
+  SealEvent,
   SerderKERI,
   Siger,
   t,
@@ -31,27 +32,39 @@ import {
   BlindedStateQuadrupleTuple,
   BoundStateSextuple,
   CacheTypeRecord,
+  type CacheTypeRecordShape,
   EndpointRecord,
+  type EndpointRecordShape,
   EscrowedValidatorReceiptQuintuple,
   EventSealTuple,
   EventSourceRecord,
+  type EventSourceRecordShape,
   FirstSeenReplayCouple,
   HabitatRecord,
+  type HabitatRecordShape,
   KeyStateRecord,
+  type KeyStateRecordShape,
   LocationRecord,
+  type LocationRecordShape,
   MsgCacheRecord,
+  type MsgCacheRecordShape,
   ObservedRecord,
+  type ObservedRecordShape,
   OobiRecord,
+  type OobiRecordShape,
   ReceiptCouple,
   SourceSealTriple,
   TopicsRecord,
+  type TopicsRecordShape,
   TxnMsgCacheRecord,
+  type TxnMsgCacheRecordShape,
   TypedDigestSealCouple,
   TypedMediaQuadrupleTuple,
   UnverifiedReceiptTriple,
   ValidatorReceiptQuadruple,
   VerferCigarCouple,
   WellKnownAuthN,
+  type WellKnownAuthNShape,
 } from "../core/records.ts";
 import { dgKey } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
@@ -72,6 +85,40 @@ import {
 } from "./subing.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
+
+type EventSealRecord = ReturnType<typeof SealEvent.fromSad>;
+
+function isEventSealRecord(value: unknown): value is EventSealRecord {
+  return typeof value === "object"
+    && value !== null
+    && !Array.isArray(value)
+    && "i" in value
+    && "s" in value
+    && "d" in value
+    && (value as { i: unknown }).i instanceof Prefixer
+    && (value as { s: unknown }).s instanceof NumberPrimitive
+    && (value as { d: unknown }).d instanceof Diger;
+}
+
+function normalizeEventSeal(value: unknown): EventSealRecord | null {
+  if (isEventSealRecord(value)) {
+    return value;
+  }
+  if (!SealEvent.isSad(value)) {
+    return null;
+  }
+  try {
+    return SealEvent.fromSad(value);
+  } catch {
+    return null;
+  }
+}
+
+function eventSealsEqual(left: EventSealRecord, right: EventSealRecord): boolean {
+  return left.i.qb64 === right.i.qb64
+    && left.s.numh === right.s.numh
+    && left.d.qb64 === right.d.qb64;
+}
 
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
 function encodeHugeOrdinal(num: number): NumberPrimitive {
@@ -137,7 +184,7 @@ export class Baser {
   public ooes!: OnIoDupSuber<string>; // Out-of-order escrowed event digests.
   public dels!: OnIoDupSuber<string>; // Duplicitous event-log digests.
   public ldes!: OnIoDupSuber<string>; // Likely-duplicitous escrowed event digests.
-  public qnfs!: IoSetSuber<string>; // Query-not-found escrows keyed by queried event digest.
+  public qnfs!: IoSetSuber<string>; // Query-not-found escrows keyed by requester + query SAID.
   public fons!: CesrSuber<NumberPrimitive>; // First-seen ordinals for recovery and superseding.
   public migs!: CesrSuber<Dater>; // Database migration datetimes.
   public vers!: Suber; // Database version table.
@@ -404,9 +451,13 @@ export class Baser {
 
       // Event source records describing whether an event is local/protected or
       // remote/not protected.
-      this.esrs = new Komer<EventSourceRecord>(this.lmdber, {
-        subkey: "esrs.",
-      });
+      this.esrs = new Komer<EventSourceRecord>(
+        this.lmdber,
+        {
+          subkey: "esrs.",
+          recordClass: EventSourceRecord,
+        },
+      );
 
       // Misfit escrows for remote events that should be dropped unless they
       // become authenticated.
@@ -419,7 +470,13 @@ export class Baser {
       });
 
       // Latest key-state record for each identifier prefix.
-      this.states = new Komer<KeyStateRecord>(this.lmdber, { subkey: "stts." });
+      this.states = new Komer<KeyStateRecord>(
+        this.lmdber,
+        {
+          subkey: "stts.",
+          recordClass: KeyStateRecord,
+        },
+      );
       // Witness lists for a given event digest.
       this.wits = new CesrIoSetSuber<Prefixer>(this.lmdber, {
         subkey: "wits.",
@@ -427,7 +484,10 @@ export class Baser {
       });
 
       // Habitat application records keyed by habitat name and namespace.
-      this.habs = new Komer<HabitatRecord>(this.lmdber, { subkey: "habs." });
+      this.habs = new Komer<HabitatRecord>(this.lmdber, {
+        subkey: "habs.",
+        recordClass: HabitatRecord,
+      });
 
       // Habitat name database mapping `(domain, name)` to identifier prefixes.
       this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
@@ -481,17 +541,29 @@ export class Baser {
 
       // Service endpoint identifier auth records extracted from `/end/role`
       // replies.
-      this.ends = new Komer<EndpointRecord>(this.lmdber, { subkey: "ends." });
+      this.ends = new Komer<EndpointRecord>(this.lmdber, {
+        subkey: "ends.",
+        recordClass: EndpointRecord,
+      });
 
       // Service endpoint locations keyed by endpoint identifier and URL scheme.
-      this.locs = new Komer<LocationRecord>(this.lmdber, { subkey: "locs." });
+      this.locs = new Komer<LocationRecord>(this.lmdber, {
+        subkey: "locs.",
+        recordClass: LocationRecord,
+      });
 
       // Observed identifier records keyed by controller, watcher, and observed
       // identifier.
-      this.obvs = new Komer<ObservedRecord>(this.lmdber, { subkey: "obvs." });
+      this.obvs = new Komer<ObservedRecord>(this.lmdber, {
+        subkey: "obvs.",
+        recordClass: ObservedRecord,
+      });
 
       // Index of the last retrieved message from a witness mailbox.
-      this.tops = new Komer<TopicsRecord>(this.lmdber, { subkey: "witm." });
+      this.tops = new Komer<TopicsRecord>(this.lmdber, {
+        subkey: "witm.",
+        recordClass: TopicsRecord,
+      });
 
       // Group partial signature escrow entries.
       this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
@@ -574,9 +646,13 @@ export class Baser {
       });
 
       // Authorized well-known OOBI records.
-      this.wkas = new IoSetKomer<WellKnownAuthN>(this.lmdber, {
-        subkey: "wkas.",
-      });
+      this.wkas = new IoSetKomer<WellKnownAuthN>(
+        this.lmdber,
+        {
+          subkey: "wkas.",
+          recordClass: WellKnownAuthN,
+        },
+      );
       // Key-state notice datetime stamps keyed by key-state SAID.
       this.kdts = new CesrSuber<Dater>(this.lmdber, {
         subkey: "kdts.",
@@ -585,7 +661,10 @@ export class Baser {
 
       // Key-state messages keyed by key-state SAID.
       // Datetimes and signatures are held in the companion key-state stores.
-      this.ksns = new Komer<KeyStateRecord>(this.lmdber, { subkey: "ksns." });
+      this.ksns = new Komer<KeyStateRecord>(this.lmdber, {
+        subkey: "ksns.",
+        recordClass: KeyStateRecord,
+      });
 
       // Successful key-state notice SAID index mapping `(controller, aid)` to
       // saved key-state SAIDs.
@@ -605,24 +684,28 @@ export class Baser {
       this.oobis = new Komer<OobiRecord>(this.lmdber, {
         subkey: "oobis.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // Retriable OOBIs that failed to load.
       this.eoobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "eoobi.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // OOBIs with outstanding client requests.
       this.coobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "coobi.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // Successfully resolved OOBIs.
       this.roobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "roobi.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // Well-known OOBIs used for multifactor authentication against resolved
@@ -630,12 +713,14 @@ export class Baser {
       this.woobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "woobi.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // Multi-OOBI associations where one AID is tied to multiple OOBIs.
       this.moobi = new Komer<OobiRecord>(this.lmdber, {
         subkey: "moobi.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // Multifactor well-known OOBI auth records awaiting processing, keyed by
@@ -643,6 +728,7 @@ export class Baser {
       this.mfa = new Komer<OobiRecord>(this.lmdber, {
         subkey: "mfa.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // Resolved multifactor well-known OOBI auth records keyed by controller
@@ -650,6 +736,7 @@ export class Baser {
       this.rmfa = new Komer<OobiRecord>(this.lmdber, {
         subkey: "rmfa.",
         sep: ">",
+        recordClass: OobiRecord,
       });
 
       // JSON Schema SADs keyed by schema SAID.
@@ -725,15 +812,28 @@ export class Baser {
         ctor: Prefixer,
       });
       // KRAM cache-type records keyed by expression string.
-      this.ctyp = new Komer<CacheTypeRecord>(this.lmdber, { subkey: "ctyp." });
+      this.ctyp = new Komer<CacheTypeRecord>(
+        this.lmdber,
+        {
+          subkey: "ctyp.",
+          recordClass: CacheTypeRecord,
+        },
+      );
 
       // KRAM message-cache records keyed by `(AID, MID)`.
-      this.msgc = new Komer<MsgCacheRecord>(this.lmdber, { subkey: "msgc." });
+      this.msgc = new Komer<MsgCacheRecord>(this.lmdber, {
+        subkey: "msgc.",
+        recordClass: MsgCacheRecord,
+      });
 
       // KRAM transactioned message-cache records keyed by `(AID, XID, MID)`.
-      this.tmsc = new Komer<TxnMsgCacheRecord>(this.lmdber, {
-        subkey: "tmsc.",
-      });
+      this.tmsc = new Komer<TxnMsgCacheRecord>(
+        this.lmdber,
+        {
+          subkey: "tmsc.",
+          recordClass: TxnMsgCacheRecord,
+        },
+      );
 
       // KRAM partially signed multi-key messages keyed by `(AID, MID)`.
       this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
@@ -890,17 +990,7 @@ export class Baser {
 
   /** Read one serialized event from `evts.` through the typed serder wrapper. */
   getEvtSerder(pre: string, said: string): SerderKERI | null {
-    return this.evts.get([pre, said]);
-  }
-
-  /** Append one event digest to the key-event log bucket for `(pre, sn)`. */
-  putKel(pre: string, sn: number, said: string): boolean {
-    return this.kels.addOn(pre, sn, said);
-  }
-
-  /** Read the latest stored event digest for `(pre, sn)` from `kels.`. */
-  getKel(pre: string, sn: number): string | null {
-    return this.kels.getOnLast(pre, sn);
+    return this.evts.get(dgKey(pre, said));
   }
 
   /** Iterate the latest digest per sequence number for one identifier's KEL. */
@@ -908,6 +998,69 @@ export class Baser {
     for (const [, sn, said] of this.kels.getOnLastItemIter(pre)) {
       yield [sn, said];
     }
+  }
+
+  /**
+   * Iterate every stored KEL event for `pre` from sequence `sn` onward.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.getEvtPreIter(...)`
+   *
+   * Unlike `getKelItemIter()`, this includes disputed or superseded events
+   * still present in `kels.` buckets.
+   */
+  *getEvtPreIter(pre: string, sn = 0): Generator<SerderKERI> {
+    for (const [, , said] of this.kels.getAllItemIter(pre, sn)) {
+      const serder = this.getEvtSerder(pre, said);
+      if (serder) {
+        yield serder;
+      }
+    }
+  }
+
+  /**
+   * Return true when `serder` currently satisfies the stored witness threshold.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.fullyWitnessed(...)`
+   */
+  fullyWitnessed(serder: SerderKERI): boolean {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) {
+      return false;
+    }
+    const kever = this.getKever(pre);
+    if (!kever) {
+      return false;
+    }
+    return BigInt(this.wigs.get(dgKey(pre, said)).length) >= kever.toader.num;
+  }
+
+  /**
+   * Find the first fully witnessed event in `pre`'s KEL that carries `seal`.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.fetchAllSealingEventByEventSeal(...)`
+   */
+  fetchAllSealingEventByEventSeal(
+    pre: string,
+    seal: unknown,
+    sn = 0,
+  ): SerderKERI | null {
+    const target = normalizeEventSeal(seal);
+    if (!target) {
+      return null;
+    }
+
+    for (const serder of this.getEvtPreIter(pre, sn)) {
+      for (const current of serder.eventSeals) {
+        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
+          return serder;
+        }
+      }
+    }
+    return null;
   }
 
   /** Append one digest to the first-seen event log for a prefix and return the assigned ordinal. */
@@ -932,36 +1085,36 @@ export class Baser {
 
   /** Upsert the datetime stamp for one event digest in `dtss.`. */
   putDts(pre: string, said: string, qb64: string): boolean {
-    return this.dtss.pin([pre, said], new Dater({ qb64 }));
+    return this.dtss.pin(dgKey(pre, said), new Dater({ qb64 }));
   }
 
   /** Read the stored datetime stamp for one event digest from `dtss.`. */
   getDts(pre: string, said: string): string | null {
-    return this.dtss.get([pre, said])?.qb64 ?? null;
+    return this.dtss.get(dgKey(pre, said))?.qb64 ?? null;
   }
 
   /** Insert one event-source record in `esrs.` if absent. */
-  putEsr(pre: string, said: string, record: EventSourceRecord): boolean {
-    return this.esrs.put([pre, said], record);
+  putEsr(pre: string, said: string, record: EventSourceRecordShape): boolean {
+    return this.esrs.put(dgKey(pre, said), record);
   }
 
   /** Upsert one event-source record in `esrs.`. */
-  pinEsr(pre: string, said: string, record: EventSourceRecord): boolean {
-    return this.esrs.pin([pre, said], record);
+  pinEsr(pre: string, said: string, record: EventSourceRecordShape): boolean {
+    return this.esrs.pin(dgKey(pre, said), record);
   }
 
   /** Read one event-source record from `esrs.`. */
   getEsr(pre: string, said: string): EventSourceRecord | null {
-    return this.esrs.get([pre, said]);
+    return this.esrs.get(dgKey(pre, said));
   }
 
   /** Insert one current key-state record in `states.` if absent. */
-  putState(pre: string, record: KeyStateRecord): boolean {
+  putState(pre: string, record: KeyStateRecordShape): boolean {
     return this.states.put(pre, record);
   }
 
   /** Upsert one current key-state record in `states.`. */
-  pinState(pre: string, record: KeyStateRecord): boolean {
+  pinState(pre: string, record: KeyStateRecordShape): boolean {
     return this.states.pin(pre, record);
   }
 
@@ -1044,14 +1197,15 @@ export class Baser {
    * signatures, source seals, receipts, and first-seen replay metadata.
    */
   cloneEvtMsg(pre: string, fn: number, said: string): Uint8Array {
-    const serder = this.getEvtSerder(pre, said);
+    const dgkey = dgKey(pre, said);
+    const serder = this.evts.get(dgkey);
     if (serder === null) {
       throw new DatabaseOperationError(
         `Missing event body for ${pre}:${said}`,
       );
     }
 
-    const sigers = this.sigs.get([pre, said]);
+    const sigers = this.sigs.get(dgkey);
     if (sigers.length === 0) {
       throw new DatabaseOperationError(
         `Missing indexed signatures for ${pre}:${said}`,
@@ -1067,7 +1221,7 @@ export class Baser {
       ...sigers.map((siger) => siger.qb64b),
     ];
 
-    const wigers = this.wigs.get([pre, said]);
+    const wigers = this.wigs.get(dgkey);
     if (wigers.length > 0) {
       attachments.push(
         new Counter({
@@ -1079,7 +1233,7 @@ export class Baser {
       );
     }
 
-    const seal = this.aess.get([pre, said]);
+    const seal = this.aess.get(dgkey);
     if (seal !== null) {
       const [number, diger] = seal;
       attachments.push(
@@ -1093,7 +1247,7 @@ export class Baser {
       );
     }
 
-    const vrcs = this.vrcs.get([pre, said]);
+    const vrcs = this.vrcs.get(dgkey);
     if (vrcs.length > 0) {
       attachments.push(
         new Counter({
@@ -1110,7 +1264,7 @@ export class Baser {
       );
     }
 
-    const rcts = this.rcts.get([pre, said]);
+    const rcts = this.rcts.get(dgkey);
     if (rcts.length > 0) {
       attachments.push(
         new Counter({
@@ -1125,7 +1279,7 @@ export class Baser {
       );
     }
 
-    const dater = this.dtss.get([pre, said]);
+    const dater = this.dtss.get(dgkey);
     if (dater === null) {
       throw new DatabaseOperationError(
         `Missing datetime stamp for ${pre}:${said}`,
@@ -1175,13 +1329,31 @@ export class Baser {
     }
   }
 
+  /**
+   * Recursively replay the delegator chain for one delegated `Kever`.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.cloneDelegation(...)`
+   */
+  *cloneDelegation(kever: Kever): Generator<Uint8Array> {
+    if (!kever.delegated || !kever.delpre) {
+      return;
+    }
+    const delegator = this.getKever(kever.delpre);
+    if (!delegator) {
+      return;
+    }
+    yield* this.cloneDelegation(delegator);
+    yield* this.clonePreIter(kever.delpre, 0);
+  }
+
   /** Insert one habitat metadata record in `habs.` if absent. */
-  putHab(pre: string, record: HabitatRecord): boolean {
+  putHab(pre: string, record: HabitatRecordShape): boolean {
     return this.habs.put(pre, record);
   }
 
   /** Upsert one habitat metadata record in `habs.`. */
-  pinHab(pre: string, record: HabitatRecord): boolean {
+  pinHab(pre: string, record: HabitatRecordShape): boolean {
     return this.habs.pin(pre, record);
   }
 
@@ -1209,8 +1381,9 @@ export class Baser {
     said: string,
     sigs: readonly (Siger | string)[],
   ): boolean {
+    const dgkey = dgKey(pre, said);
     return this.sigs.put(
-      [pre, said],
+      dgkey,
       sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
@@ -1221,15 +1394,16 @@ export class Baser {
     said: string,
     sigs: readonly (Siger | string)[],
   ): boolean {
+    const dgkey = dgKey(pre, said);
     return this.sigs.pin(
-      [pre, said],
+      dgkey,
       sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 
   /** Read indexed signatures for one event from `sigs.` as qb64 text. */
   getSigs(pre: string, said: string): string[] {
-    return this.sigs.get([pre, said]).map((sig) => sig.qb64);
+    return this.sigs.get(dgKey(pre, said)).map((sig) => sig.qb64);
   }
 
   /** Insert one namespace/name to prefix mapping in `names.` if absent. */
@@ -1255,6 +1429,56 @@ export class Baser {
   /** Read one habery-scoped string setting from `hbys.`. */
   getHby(name: string): string | null {
     return this.hbys.get(name);
+  }
+}
+
+/**
+ * Thin Effection-native lifecycle host for one `Baser`.
+ *
+ * KERIpy correspondence:
+ * - mirrors `keri.db.basing.BaserDoer`
+ *
+ * Current `keri-ts` difference:
+ * - exposes explicit generator operations instead of HIO `Doer` callbacks, but
+ *   keeps the same ownership rule: reopen on enter, close on exit
+ */
+export class BaserDoer {
+  readonly baser: Baser;
+
+  constructor(baser: Baser) {
+    this.baser = baser;
+  }
+
+  /** Reopen the bound `Baser` if it is not already opened. */
+  *enter(options: Partial<BaserOptions> = {}): Operation<void> {
+    if (!this.baser.opened) {
+      yield* this.baser.reopen(options);
+    }
+  }
+
+  /** Close the bound `Baser`, clearing temp stores the same way KERIpy does. */
+  *exit(): Operation<void> {
+    yield* this.baser.close(this.baser.temp);
+  }
+
+  /**
+   * Hold the `Baser` open for the surrounding Effection scope.
+   *
+   * This is the direct replacement for the Python doer staying alive between
+   * `enter()` and `exit()` calls.
+   */
+  *run(options: Partial<BaserOptions> = {}): Operation<never> {
+    yield* this.enter(options);
+    try {
+      while (true) {
+        yield* action((resolve) => {
+          const timeoutId = setTimeout(() => resolve(undefined), 0);
+          return () => clearTimeout(timeoutId);
+        });
+      }
+    } finally {
+      yield* this.exit();
+    }
   }
 }
 

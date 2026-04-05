@@ -2,6 +2,17 @@
 
 Things to come back and do at some point:
 
+## Architecture
+
+- The current `Habery.kevery -> Hab.kevery` raw injection is an intentional
+  first-pass cleanup that keeps local habitat processing close to the KERIpy
+  mental model. Revisit a narrower habery-owned local-processing facade once
+  local/runtime ownership and cue consumers settle further.
+- Keep the dual cue-scope model honest: `Habery.kevery` owns local habitat cues
+  while runtime hosts wire shared cues into `Reactor`, `Revery`, and the
+  runtime-owned `Kevery`. Do not collapse those scopes without a stronger
+  KERIpy-driven reason.
+
 - Ensure all docs talking about bootstrap-only seams or partial impls are
   refactored once we have the full functionality implemented for a given
   feature.
@@ -33,6 +44,8 @@ Things to come back and do at some point:
 - Reconsider the records.ts and dispatch.ts class and type names. Maybe they should be renamed or tweaked.
 - Look at why cues are filtered in KERIpy and determine why they are filtered and what we
   need to mimic there, if at all.
+- Make Komer type system simple as possible with as few generics as possible.
+- Look at collapsing the types like PreSitShape and PreSit
 
 ## Missing
 
@@ -62,3 +75,9 @@ Things to come back and do at some point:
 - eventing.test.ts
 - kever-decisions.ts
 - Encrypter/Decrypter, CryptSignerSuber, and Manager integration
+- all the graduated disclosure stuff in structor.ts
+- querying.ts
+  - eventing.ts
+    - processReplyAddWatched
+    - updateWatched
+- router.addRoute("/watcher/{aid}/{action}", this, "AddWatched");

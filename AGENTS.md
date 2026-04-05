@@ -54,18 +54,44 @@ Split guideline:
 - Avoid duplication: keep deep detail in topic docs and concise rollups in the
   top-level index.
 
+## Learnings Update Contract
+
+When updating learnings:
+
+- Treat learnings as fast rehydration memory, not audit history.
+- Prefer rewrite-in-place over append-only updates.
+- Update `Current State` and `Current Follow-Ups` first; most tasks should
+  refine those sections instead of adding a new milestone.
+- Add a milestone only when a durable mental model changed: ownership,
+  invariants, parity rules, architecture boundaries, or the shape of the
+  remaining work.
+- Summarize substance, not implementation trivia. Prioritize what future work
+  must remember to avoid wrong design choices or repeated debugging.
+- If a topic doc starts growing noisy again, compact it before considering a
+  split.
+
+Do not put these in learnings updates unless they are themselves durable
+operational knowledge:
+
+- touched-file inventories
+- exhaustive test command transcripts
+- micro-step chronology
+- "contracts/plans touched" inventories
+- implementation trivia that git history or PR discussion already preserves
+
 ## Parser Contract Rule
 
 For parser lifecycle changes:
 
-- Treat `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` as normative.
+- Treat `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` as
+  normative.
 - Keep the contract-to-test matrix in sync with behavior changes.
 - Update parity vectors/docs when behavior contracts change.
 
 ## State-Machine Control-Flow Rule
 
-For work touching `Kever`, `Kevery`, escrows, or future state-machine ports
-such as `Tever`, `Tevery`, and similar processors:
+For work touching `Kever`, `Kevery`, escrows, or future state-machine ports such
+as `Tever`, `Tevery`, and similar processors:
 
 - Treat `docs/adr/adr-0005-kel-decision-control-flow.md` as normative.
 - Rehydrate this mental model at session start:
@@ -123,6 +149,15 @@ For new modules/classes/functions introduced during feature work:
 
 - Treat learner/maintainer comprehension as a primary design objective for
   parser and codex work. Favor explicit, reviewable structure over cleverness.
+- When the same semantic decision or policy branch appears in multiple places,
+  prefer extracting it into a small, domain-named helper when that makes the
+  surrounding control flow easier to read and review.
+- Favor expressive refactors such as `ownReceiptConflict(...)` over repeating
+  opaque conditionals inline, but only when the helper names a real domain
+  concept or invariant. Do not abstract mere line count or hide simple logic
+  behind generic utilities.
+- When porting KERIpy behavior, use helper extraction to make the TS code's
+  ownership and policy boundaries easier to see than the Python, not harder.
 - In TypeScript, prefer compile-time typed contracts and exhaustive mappings
   over runtime string indirection or implicit introspection.
 - For low-level CESR/TLV parsing, prioritize deterministic behavior and explicit

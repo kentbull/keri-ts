@@ -1,3 +1,18 @@
+/**
+ * Counted-group transport wrappers for CESR tuple/list families.
+ *
+ * This file ports the transport/enclosure half of KERIpy `Structor`.
+ *
+ * Boundary rule:
+ * - `Structor` owns counted-group framing, grouped serialization, and parser
+ *   reconstruction of enclosed payload items
+ * - `structing.ts` owns semantic fixed-field seal/blind/media records
+ * - `disclosure.ts` owns blind/unblind/commit workflow verbs
+ *
+ * If you are looking for the meaning of fields like `d`, `u`, `td`, or `mt`,
+ * this is the wrong file. `Structor` only knows how many items are in a group
+ * and how that enclosed group serializes.
+ */
 import { b, codeB64ToB2, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
@@ -45,6 +60,11 @@ export interface StructorInit {
  *
  * KERIpy substance: `Structor` models one counted-group unit where tuple/list
  * members are hydrated CESR primitives and serialization remains deterministic.
+ *
+ * TypeScript boundary:
+ * - subclasses like `Sealer`, `Blinder`, and `Mediar` specialize transport
+ *   families
+ * - semantic fixed-field values remain plain records outside this class
  */
 export class Structor extends CounterGroup {
   readonly sourceDomain: ParseDomain;

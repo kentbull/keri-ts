@@ -1,5 +1,6 @@
 import type { Dater, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
+import type { MbxTopicCursor } from "./mailbox-topics.ts";
 import type { KeyStateRecord } from "./records.ts";
 
 /** Shared `kin` discriminator carried by all cue payloads. */
@@ -28,8 +29,16 @@ export interface WitnessCue extends CueBase {
 /**
  * Cue requesting one key-state or route-specific query.
  *
- * Gate E uses this primarily from `Revery` when reply verification is blocked
- * on missing signer establishment state.
+ * Gate E uses this in two different states:
+ * - incomplete portable cues from `Revery` / `Kevery` that still need runtime
+ *   correspondence work
+ * - complete cues that already know `pre` and `src` and can be materialized by
+ *   `Hab.processCuesIter()`
+ *
+ * Field rules:
+ * - `query` and legacy `q` carry the raw KERI `qry.q` body
+ * - `wits` overrides endpoint-role lookup and tells runtime to query one of
+ *   those watcher/witness identifiers directly
  */
 export interface QueryCue extends CueBase {
   kin: "query";
@@ -39,6 +48,7 @@ export interface QueryCue extends CueBase {
   query?: Record<string, unknown>;
   q?: Record<string, unknown>;
   dest?: string;
+  wits?: string[];
 }
 
 /** Cue carrying a prebuilt replay byte stream back to the host or transport layer. */
@@ -72,10 +82,15 @@ export interface StreamCue extends CueBase {
   serder: SerderKERI;
   pre: string;
   src: string;
-  topics: string[];
+  topics: MbxTopicCursor;
 }
 
-/** Cue emitted when bootstrap `Kevery` persists a new key-state record. */
+/**
+ * Cue emitted when runtime `Kevery` persists a new key-state record.
+ *
+ * This is primarily a continuation signal for `QueryCoordinator`, not a direct
+ * wire cue.
+ */
 export interface KeyStateSavedCue extends CueBase {
   kin: "keyStateSaved";
   ksn: KeyStateRecord;

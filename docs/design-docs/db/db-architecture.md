@@ -175,6 +175,23 @@ KERIpy:
    Python MRO mechanics.
 2. Preserve externally-observable storage and retrieval semantics.
 
+### `Komer` Public Mental Model
+
+1. `Komer` is the object-mapper family for one persisted record class.
+2. The public constructor seam is `recordClass`, which supplies the
+   record-family rebuild logic through `RawRecord.fromDict(...)` and the stored
+   projection through `RawRecord.asDict()`.
+3. Callers should reason in one generic dimension: the hydrated record class.
+4. Plain-object writes are still acceptable, but only as constructor-input
+   convenience derived from that same record class. This is mapper-boundary
+   ergonomics, not a second public type axis.
+5. Public `hydrate` / `normalize` hooks and dual generic APIs such as `T` +
+   `TInput` are migration leakage. They describe transitional TS wiring, not the
+   durable DB-layer abstraction.
+6. Future non-LMDB backends should preserve this record-class-centric contract
+   so higher layers keep one mental model regardless of the underlying key/value
+   provider.
+
 ### Layer 2: Domain Databasers
 
 KERIpy:

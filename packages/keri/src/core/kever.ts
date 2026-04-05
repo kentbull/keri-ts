@@ -4,16 +4,19 @@ import {
   Ilks,
   NumberPrimitive,
   Prefixer,
+  SealEvent,
+  SealSource,
   SerderKERI,
   Siger,
   Tholder,
   Verfer,
 } from "../../../cesr/mod.ts";
 import type { Baser } from "../db/basing.ts";
+import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { DispatchOrdinal, FirstSeenReplayCouple, SourceSealCouple, SourceSealTriple } from "./dispatch.ts";
+import { DispatchOrdinal, FirstSeenReplayCouple } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import type {
   AttachmentDecision,
@@ -27,7 +30,8 @@ import type {
   KeverTransition,
   RejectKind,
 } from "./kever-decisions.ts";
-import type { KeyStateRecord } from "./records.ts";
+import { KeyStateRecord } from "./records.ts";
+import { deriveRotatedWitnessSet } from "./witnesses.ts";
 
 /**
  * Convert one integer into the Huge-number CESR family used for durable replay
@@ -78,6 +82,16 @@ function ordinalHex(ordinal: DispatchOrdinal): string {
   return ordinal instanceof NumberPrimitive ? ordinal.numh : ordinal.snh;
 }
 
+type DelegationSourceSeal = SealSource | SealEvent;
+
+function sourceSealOrdinal(seal: DelegationSourceSeal): NumberPrimitive {
+  return seal.s;
+}
+
+function sourceSealDigest(seal: DelegationSourceSeal): Diger {
+  return seal.d;
+}
+
 /** Return true when a string list has no duplicates. */
 function hasUniqueEntries(values: readonly string[]): boolean {
   return new Set(values).size === values.length;
@@ -119,8 +133,8 @@ export interface KeverEventInit extends KeverBaseInit {
   sigers: readonly Siger[];
   wigers?: readonly Siger[];
   frcs?: readonly FirstSeenReplayCouple[];
-  sscs?: readonly SourceSealCouple[];
-  ssts?: readonly SourceSealTriple[];
+  sscs?: readonly SealSource[];
+  ssts?: readonly SealEvent[];
   eager?: boolean;
 }
 
@@ -145,7 +159,7 @@ interface AttachmentValidationInput {
   wits: readonly string[];
   toader: NumberPrimitive;
   delpre?: string | null;
-  sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+  sourceSeal?: DelegationSourceSeal | null;
   local: boolean;
   eager?: boolean;
   check?: boolean;
@@ -154,7 +168,7 @@ interface AttachmentValidationInput {
 
 interface DelegatingEventLookup {
   serder: SerderKERI;
-  sourceSeal: SourceSealCouple;
+  sourceSeal: SealSource;
   sealIndex: number;
 }
 
@@ -536,7 +550,7 @@ export class Kever {
 
   /** Serialize the current accepted state into durable `states.` form. */
   state(): KeyStateRecord {
-    return {
+    return new KeyStateRecord({
       vn: [...this.version],
       i: this.pre,
       s: this.sn.toString(16),
@@ -562,7 +576,7 @@ export class Kever {
         ba: [...this.adds],
       },
       di: this.delpre ?? "",
-    };
+    });
   }
 
   /**
@@ -594,38 +608,39 @@ export class Kever {
     const nowIso8601 = replayDater?.iso8601 ?? makeNowIso8601();
     const nowDater = replayDater
       ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
+    const dgkey = dgKey(pre, said);
 
-    this.db.dtss.put([pre, said], nowDater);
+    this.db.dtss.put(dgkey, nowDater);
     if (args.sigers && args.sigers.length > 0) {
-      this.db.sigs.put([pre, said], [...args.sigers]);
+      this.db.sigs.put(dgkey, [...args.sigers]);
     }
     if (args.wigers && args.wigers.length > 0) {
-      this.db.wigs.put([pre, said], [...args.wigers]);
+      this.db.wigs.put(dgkey, [...args.wigers]);
     }
     if (args.wits && args.wits.length > 0) {
       this.db.wits.put(
-        [pre, said],
+        dgkey,
         args.wits.map((wit) => new Prefixer({ qb64: wit })),
       );
     }
 
-    this.db.evts.put([pre, said], args.serder);
+    this.db.evts.put(dgkey, args.serder);
 
     if (args.sourceSeal && this.delegated && args.serder.ilk !== Ilks.ixn) {
-      this.db.aess.pin([pre, said], [
-        normalizeOrdinal(args.sourceSeal.seqner),
-        args.sourceSeal.diger,
+      this.db.aess.pin(dgkey, [
+        normalizeOrdinal(sourceSealOrdinal(args.sourceSeal)),
+        sourceSealDigest(args.sourceSeal),
       ]);
     }
 
-    const existingEsr = this.db.esrs.get([pre, said]);
+    const existingEsr = this.db.esrs.get(dgkey);
     if (existingEsr) {
       if (local && !existingEsr.local) {
         existingEsr.local = true;
-        this.db.esrs.pin([pre, said], existingEsr);
+        this.db.esrs.pin(dgkey, existingEsr);
       }
     } else {
-      this.db.esrs.put([pre, said], { local });
+      this.db.esrs.put(dgkey, { local });
     }
 
     let fn: number | null = null;
@@ -640,11 +655,11 @@ export class Kever {
           dater: args.frc.dater,
         });
       }
-      this.db.dtss.pin([pre, said], nowDater);
-      this.db.fons.pin([pre, said], encodeHugeOrdinal(fn));
+      this.db.dtss.pin(dgkey, nowDater);
+      this.db.fons.pin(dgkey, encodeHugeOrdinal(fn));
     }
 
-    this.db.putKel(pre, sn, said);
+    this.db.kels.add(pre, sn, said);
     return { fn, dater: nowDater };
   }
 
@@ -726,7 +741,7 @@ export class Kever {
       original = false,
       eager = false,
     }: {
-      sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+      sourceSeal?: DelegationSourceSeal | null;
       original?: boolean;
       eager?: boolean;
     } = {},
@@ -899,7 +914,7 @@ export class Kever {
       // Recovery compares against the accepted event immediately before the
       // candidate recovery point, not just against current head state.
       const psn = sn - 1;
-      const pdig = this.db.getKel(this.pre, psn);
+      const pdig = this.db.kels.getLast(this.pre, psn);
       if (!pdig) {
         return Kever.reject(
           "invalidRecovery",
@@ -959,7 +974,7 @@ export class Kever {
       return Kever.fromAttachmentDecision(attachments);
     }
 
-    const state: KeyStateRecord = {
+    const state = new KeyStateRecord({
       vn: [...this.version],
       i: this.pre,
       s: sn.toString(16),
@@ -985,7 +1000,7 @@ export class Kever {
         ba: [...derived.adds],
       },
       di: this.delpre ?? "",
-    };
+    });
 
     return {
       kind: "accept",
@@ -1077,7 +1092,7 @@ export class Kever {
         pre: this.pre,
         said: serder.said ?? "",
         sn,
-        state: {
+        state: new KeyStateRecord({
           vn: [...this.version],
           i: this.pre,
           s: sn.toString(16),
@@ -1103,7 +1118,7 @@ export class Kever {
             ba: [...this.adds],
           },
           di: this.delpre ?? "",
-        },
+        }),
         log: {
           serder,
           sigers: attachments.attachments.sigers,
@@ -1339,7 +1354,7 @@ export class Kever {
   private validateDelegation(
     input: AttachmentValidationInput & {
       delpre: string | null;
-      sourceSeal: SourceSealCouple | SourceSealTriple | null;
+      sourceSeal: DelegationSourceSeal | null;
     },
   ): AttachmentDecision {
     const delpre = input.delpre;
@@ -1435,9 +1450,11 @@ export class Kever {
           q: {
             pre: delpre ?? undefined,
             sn: input.sourceSeal
-              ? ordinalHex(input.sourceSeal.seqner)
+              ? ordinalHex(sourceSealOrdinal(input.sourceSeal))
               : undefined,
-            dig: input.sourceSeal?.diger.qb64,
+            dig: input.sourceSeal
+              ? sourceSealDigest(input.sourceSeal).qb64
+              : undefined,
           },
           pre: delpre ?? undefined,
         }],
@@ -1538,7 +1555,7 @@ export class Kever {
     }: {
       input: AttachmentValidationInput & {
         delpre: string | null;
-        sourceSeal: SourceSealCouple | SourceSealTriple | null;
+        sourceSeal: DelegationSourceSeal | null;
       };
       delpre: string;
       candidateEvent: SerderKERI;
@@ -1682,17 +1699,17 @@ export class Kever {
   /** Read the stored accepted source-seal hint for one already accepted event. */
   private acceptedSourceSealForEvent(
     serder: SerderKERI,
-  ): SourceSealCouple | null {
+  ): SealSource | null {
     const pre = serder.pre;
     const said = serder.said;
     if (!pre || !said) {
       return null;
     }
-    const seal = this.db.aess.get([pre, said]);
+    const seal = this.db.aess.get(dgKey(pre, said));
     if (!seal) {
       return null;
     }
-    return new SourceSealCouple(seal[0], seal[1]);
+    return SealSource.fromTuple(seal);
   }
 
   /** Remove one broken accepted source-seal hint so a later eager pass can repair it. */
@@ -1702,7 +1719,7 @@ export class Kever {
     if (!pre || !said) {
       return;
     }
-    this.db.aess.rem([pre, said]);
+    this.db.aess.rem(dgKey(pre, said));
   }
 
   /** Repair `.aess` for accepted delegated events after re-discovering the real boss. */
@@ -1712,25 +1729,26 @@ export class Kever {
   ): void {
     const pre = serder.pre;
     const said = serder.said;
-    if (!pre || !said || !this.db.fons.get([pre, said])) {
+    const dgkey = pre && said ? dgKey(pre, said) : null;
+    if (!dgkey || !this.db.fons.get(dgkey)) {
       return;
     }
-    this.db.aess.pin([pre, said], [
-      normalizeOrdinal(lookup.sourceSeal.seqner),
-      lookup.sourceSeal.diger,
+    this.db.aess.pin(dgkey, [
+      normalizeOrdinal(sourceSealOrdinal(lookup.sourceSeal)),
+      sourceSealDigest(lookup.sourceSeal),
     ]);
   }
 
   /** Resolve one stored source seal to the exact accepted delegating event it names. */
   private lookupAcceptedDelegatingEvent(
     delpre: string,
-    sourceSeal: SourceSealCouple | SourceSealTriple,
+    sourceSeal: DelegationSourceSeal,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const candidate = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
+    const candidate = this.db.getEvtSerder(delpre, sourceSealDigest(sourceSeal).qb64);
     if (
       !candidate || !candidate.said
-      || !this.db.fons.get([delpre, candidate.said])
+      || !this.db.fons.get(dgKey(delpre, candidate.said))
     ) {
       return null;
     }
@@ -1743,10 +1761,10 @@ export class Kever {
    */
   private lookupAuthoritativeDelegatingEvent(
     delpre: string,
-    sourceSeal: SourceSealCouple | SourceSealTriple,
+    sourceSeal: DelegationSourceSeal,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const said = this.db.getKel(delpre, ordinalNumber(sourceSeal.seqner));
+    const said = this.db.kels.getLast(delpre, ordinalNumber(sourceSealOrdinal(sourceSeal)));
     if (!said) {
       return null;
     }
@@ -1770,7 +1788,7 @@ export class Kever {
       let best: DelegatingEventLookup | null = null;
       let bestFn: bigint | null = null;
       for (const [, , said] of this.db.kels.getAllItemIter(delpre)) {
-        const fn = this.db.fons.get([delpre, said]);
+        const fn = this.db.fons.get(dgKey(delpre, said));
         if (!fn) {
           continue;
         }
@@ -1816,10 +1834,10 @@ export class Kever {
     }
     return {
       serder: candidate,
-      sourceSeal: new SourceSealCouple(
+      sourceSeal: SealSource.fromTuple([
         candidate.sner ?? encodeHugeOrdinal(candidate.sn),
         new Diger({ qb64: candidate.said }),
-      ),
+      ]),
       sealIndex,
     };
   }
@@ -1841,16 +1859,11 @@ export class Kever {
     candidate: SerderKERI,
     serder: SerderKERI,
   ): number {
-    for (const [index, seal] of candidate.seals.entries()) {
+    for (const [index, seal] of candidate.eventSeals.entries()) {
       if (
-        typeof seal === "object"
-        && seal !== null
-        && "i" in seal
-        && "s" in seal
-        && "d" in seal
-        && seal.i === serder.pre
-        && seal.s === serder.snh
-        && seal.d === serder.said
+        seal.i.qb64 === serder.pre
+        && seal.s.numh === serder.snh
+        && seal.d.qb64 === serder.said
       ) {
         return index;
       }
@@ -1993,6 +2006,9 @@ export class Kever {
       );
     }
 
+    // Boundary rule: this is intentionally the raw structural `a`-list check,
+    // not the typed `sealRecords` projection. Non-transferable inception forbids
+    // any seal payloads at all, even malformed ones.
     if (!transferable && serder.seals.length > 0) {
       return Kever.reject(
         "nontransferableViolation",
@@ -2019,7 +2035,7 @@ export class Kever {
       frc: FirstSeenReplayCouple | null;
     },
   ): KeyStateRecord {
-    return {
+    return new KeyStateRecord({
       vn: [serder.pvrsn.major, serder.pvrsn.minor],
       i: pre,
       s: "0",
@@ -2045,7 +2061,7 @@ export class Kever {
         ba: [],
       },
       di: serder.delpre ?? "",
-    };
+    });
   }
 
   /**
@@ -2072,38 +2088,34 @@ export class Kever {
     const adds = [...serder.adds];
     // Ordered witness math matters here: duplicate or intersecting cut/add
     // sets would make the next witness list ambiguous for indexed receipts.
-    if (!hasUniqueEntries(cuts) || !hasUniqueEntries(adds)) {
+    const derived = deriveRotatedWitnessSet(this.wits, cuts, adds);
+    if (derived.kind !== "accept") {
       return null;
     }
-    if (cuts.some((wit) => adds.includes(wit))) {
-      return null;
-    }
-
-    const next = this.wits.filter((wit) => !cuts.includes(wit));
-    for (const add of adds) {
-      next.push(add);
-    }
-    if (!hasUniqueEntries(next)) {
-      return null;
-    }
+    const nextWitnesses = derived.value;
 
     const toader = serder.bner ?? numberPrimitiveFromBigInt(0n);
-    if (next.length > 0) {
-      if (toader.num < 1n || toader.num > BigInt(next.length)) {
+    if (nextWitnesses.wits.length > 0) {
+      if (toader.num < 1n || toader.num > BigInt(nextWitnesses.wits.length)) {
         return null;
       }
     } else if (toader.num !== 0n) {
       return null;
     }
 
-    return { wits: next, cuts, adds, toader };
+    return {
+      wits: nextWitnesses.wits,
+      cuts: nextWitnesses.cuts,
+      adds: nextWitnesses.adds,
+      toader,
+    };
   }
 
   /** Normalize the first available delegated/source-seal attachment if any. */
   private normalizeSourceSeal(
-    sscs?: readonly SourceSealCouple[],
-    ssts?: readonly SourceSealTriple[],
-  ): SourceSealCouple | SourceSealTriple | null {
+    sscs?: readonly SealSource[],
+    ssts?: readonly SealEvent[],
+  ): DelegationSourceSeal | null {
     return ssts?.[0] ?? sscs?.[0] ?? null;
   }
 

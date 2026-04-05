@@ -12,6 +12,10 @@ const V2 = { major: 2, minor: 0 } as const;
 // These tests teach the two personalities of `Aggor`:
 // - parser-facing compatibility for generic list/map counter families
 // - real aggregate-list semantics (`agid`, disclosure, verification)
+//
+// Compare with:
+// - `Compactor` for hierarchical map disclosure
+// - `disclosure.ts` for fixed-field blind/bound/media disclosure
 
 Deno.test("aggor: parses list aggregate groups", () => {
   // Minimal parser-compat inhale example for a plain generic list group.
