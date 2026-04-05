@@ -1,9 +1,19 @@
 import { run } from "effection";
-import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { Cigar, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
+import {
+  assertEquals,
+  assertInstanceOf,
+  assertRejects,
+  assertStrictEquals,
+} from "jsr:@std/assert";
+import {
+  Cigar,
+  SerderKERI,
+  Siger,
+  smell,
+  Verfer,
+} from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
-import { ValidationError } from "../../../src/core/errors.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("Habery eagerly loads persisted habitats on open", async () => {
@@ -11,7 +21,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -62,7 +72,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -97,7 +107,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
   const name = `habery-local-kevery-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -130,7 +140,7 @@ Deno.test("Habery inception keeps non-transferable prefix equal to the signing k
   const name = `habery-nontrans-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -157,7 +167,7 @@ Deno.test("Habery inception keeps non-transferable ECDSA prefixes equal to the s
   const name = `habery-nontrans-r1-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -186,7 +196,7 @@ Deno.test("Habery inception honors digestive prefix codex overrides for i", asyn
   const name = `habery-sha2-prefix-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -216,7 +226,7 @@ Deno.test("Habery inception persists weighted and nested threshold state", async
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const nested = [{ "1": ["1/2", "1/2"] }];
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -248,7 +258,7 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
   const name = `habery-sign-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -303,7 +313,7 @@ Deno.test("Hab witness helper emits receipt bytes but skips own-event local witn
   const name = `habery-witness-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -349,7 +359,7 @@ Deno.test("Hab non-transferable receipt helper emits receipt bytes but skips own
   const name = `habery-nontrans-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -390,11 +400,11 @@ Deno.test("Hab non-transferable receipt helper emits receipt bytes but skips own
   });
 });
 
-Deno.test("Hab transferable receipt helper rejects own-event local receipts under non-lax Habery semantics", async () => {
+Deno.test("Hab transferable receipt helper emits receipt bytes but drops own-event local receipts under non-lax Habery semantics", async () => {
   const name = `habery-validator-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -424,10 +434,9 @@ Deno.test("Hab transferable receipt helper rejects own-event local receipts unde
         throw new Error("Expected accepted controller inception event.");
       }
 
-      assertThrows(
-        () => validator.receipt(event),
-        ValidationError,
-      );
+      const receiptMsg = validator.receipt(event);
+
+      assertEquals(receiptMsg.length > 0, true);
       assertEquals(hby.db.vrcs.get([controller.pre, event.said]).length, 0);
     } finally {
       yield* hby.close();
@@ -441,7 +450,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
   const bran = "MyPasscodeARealSecret";
   let signatoryPre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -473,7 +482,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -503,7 +512,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
 
   await assertRejects(
     () =>
-      run(function*() {
+      run(function* () {
         const hby = yield* createHabery({
           name,
           headDirPath,
