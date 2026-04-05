@@ -1,6 +1,8 @@
 import { run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import {
+  BlindState,
+  BoundState,
   Cigar,
   Dater,
   Diger,
@@ -9,25 +11,23 @@ import {
   Noncer,
   NumberPrimitive,
   Prefixer,
+  SealEvent,
+  SealKind,
+  SealSource,
   Seqner,
   SerderKERI,
   Texter,
+  TypeMedia,
   Verser,
 } from "../../../../cesr/mod.ts";
 import { encodeHugeNumber, Manager } from "../../../src/app/keeping.ts";
 import {
-  BlindedStateQuadruple,
-  BoundStateSextuple,
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
   PathedMaterialGroup,
-  SourceSealCouple,
-  SourceSealTriple,
   TransIdxSigGroup,
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
-  TypedDigestSealCouple,
-  TypedMediaQuadruple,
 } from "../../../src/core/dispatch.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 
@@ -96,59 +96,59 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
         firner.qb64b,
         dater.qb64b,
       ]);
-      const ssc = SourceSealCouple.fromTuple([seqner, diger]);
-      const sscFromQb64b = SourceSealCouple.fromQb64bTuple([
+      const ssc = SealSource.fromTuple([firner, diger]);
+      const sscFromQb64b = SealSource.fromQb64bTuple([
         firner.qb64b,
         diger.qb64b,
       ]);
-      const sst = SourceSealTriple.fromTuple([prefixer, firner, diger]);
-      const sstFromQb64b = SourceSealTriple.fromQb64bTuple([
+      const sst = SealEvent.fromTuple([prefixer, firner, diger]);
+      const sstFromQb64b = SealEvent.fromQb64bTuple([
         prefixer.qb64b,
         firner.qb64b,
         diger.qb64b,
       ]);
-      const tdc = TypedDigestSealCouple.fromTuple([verser, typedDiger]);
-      const tdcFromQb64b = TypedDigestSealCouple.fromQb64bTuple([
+      const tdc = SealKind.fromTuple([verser, typedDiger]);
+      const tdcFromQb64b = SealKind.fromQb64bTuple([
         verser.qb64b,
         typedDiger.qb64b,
       ]);
       const ptd = PathedMaterialGroup.fromRaw(new Uint8Array([1, 2, 3, 4]));
-      const bsq = BlindedStateQuadruple.fromTuple([
-        diger,
+      const bsq = BlindState.fromTuple([
+        noncer,
         noncer,
         acdcer,
         labeler,
       ]);
-      const bsqFromQb64b = BlindedStateQuadruple.fromQb64bTuple([
-        diger.qb64b,
+      const bsqFromQb64b = BlindState.fromQb64bTuple([
+        noncer.qb64b,
         noncer.qb64b,
         acdcer.qb64b,
         labeler.qb64b,
       ]);
-      const bss = BoundStateSextuple.fromTuple([
-        diger,
+      const bss = BoundState.fromTuple([
+        noncer,
         noncer,
         acdcer,
         labeler,
         firner,
         acdcer,
       ]);
-      const bssFromQb64b = BoundStateSextuple.fromQb64bTuple([
-        diger.qb64b,
+      const bssFromQb64b = BoundState.fromQb64bTuple([
+        noncer.qb64b,
         noncer.qb64b,
         acdcer.qb64b,
         labeler.qb64b,
         firner.qb64b,
         acdcer.qb64b,
       ]);
-      const tmq = TypedMediaQuadruple.fromTuple([
-        diger,
+      const tmq = TypeMedia.fromTuple([
+        noncer,
         noncer,
         labeler,
         texter,
       ]);
-      const tmqFromQb64b = TypedMediaQuadruple.fromQb64bTuple([
-        diger.qb64b,
+      const tmqFromQb64b = TypeMedia.fromQb64bTuple([
+        noncer.qb64b,
         noncer.qb64b,
         labeler.qb64b,
         texter.qb64b,
@@ -171,20 +171,20 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
       assertEquals(frc.fnh, firner.numh);
       assertEquals(frcFromQb64b.fnh, firner.numh);
       assertEquals(frc.toTuple()[1].qb64, dater.qb64);
-      assertEquals(ssc.said, diger.qb64);
-      assertEquals(sscFromQb64b.snh, firner.numh);
-      assertEquals(sst.pre, prefixer.qb64);
-      assertEquals(sst.snh, firner.numh);
-      assertEquals(sstFromQb64b.said, diger.qb64);
-      assertEquals(tdc.said, typedDiger.qb64);
-      assertEquals(tdcFromQb64b.said, typedDiger.qb64);
+      assertEquals(ssc.d.qb64, diger.qb64);
+      assertEquals(sscFromQb64b.s.numh, firner.numh);
+      assertEquals(sst.i.qb64, prefixer.qb64);
+      assertEquals(sst.s.numh, firner.numh);
+      assertEquals(sstFromQb64b.d.qb64, diger.qb64);
+      assertEquals(tdc.d.qb64, typedDiger.qb64);
+      assertEquals(tdcFromQb64b.d.qb64, typedDiger.qb64);
       assertEquals(new Uint8Array(ptd.raw), new Uint8Array([1, 2, 3, 4]));
-      assertEquals(bsq.said, diger.qb64);
-      assertEquals(bsqFromQb64b.said, diger.qb64);
-      assertEquals(bss.toTuple()[4].qb64, firner.qb64);
-      assertEquals(bssFromQb64b.toTuple()[4].qb64, firner.qb64);
-      assertEquals(tmq.said, diger.qb64);
-      assertEquals(tmqFromQb64b.said, diger.qb64);
+      assertEquals(bsq.d.nonce, noncer.nonce);
+      assertEquals(bsqFromQb64b.d.nonce, noncer.nonce);
+      assertEquals(BoundState.toTuple(bss)[4].qb64, firner.qb64);
+      assertEquals(BoundState.toTuple(bssFromQb64b)[4].qb64, firner.qb64);
+      assertEquals(tmq.d.nonce, noncer.nonce);
+      assertEquals(tmqFromQb64b.d.nonce, noncer.nonce);
 
       const envelope = new KeriDispatchEnvelope({
         serder: new SerderKERI({
@@ -213,8 +213,8 @@ Deno.test("core/dispatch - named dispatch value objects round-trip tuples and de
       });
 
       assertInstanceOf(envelope.lastFrc, FirstSeenReplayCouple);
-      assertInstanceOf(envelope.lastSsc, SourceSealCouple);
-      assertInstanceOf(envelope.lastSst, SourceSealTriple);
+      assertInstanceOf(envelope.lastSsc?.s, NumberPrimitive);
+      assertInstanceOf(envelope.lastSst?.i, Prefixer);
       assertInstanceOf(envelope.cigars[0], Cigar);
       assertEquals(envelope.cigars[0].verfer?.qb64, verfers[0].qb64);
     } finally {

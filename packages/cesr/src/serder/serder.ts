@@ -27,6 +27,7 @@ import {
 } from "../primitives/primitive.ts";
 import { Saider } from "../primitives/saider.ts";
 import { isSealerCode, Sealer } from "../primitives/sealer.ts";
+import { SealDescriptors, SealEvent, type SealRecord } from "../primitives/structing.ts";
 import { Tholder, type ThresholdInput } from "../primitives/tholder.ts";
 import { Verfer } from "../primitives/verfer.ts";
 import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
@@ -169,6 +170,35 @@ function makeNumberPrimitive(
   const padded = new Uint8Array(entry.rawSize);
   padded.set(raw, entry.rawSize - raw.length);
   return new NumberPrimitive({ code: entry.code, raw: padded });
+}
+
+function isPlainSadObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type SealProjectionDescriptor = {
+  isSad(value: unknown): boolean;
+  fromSad(value: Record<string, string>): SealRecord;
+};
+
+const SEAL_PROJECTION_DESCRIPTORS = SealDescriptors as unknown as readonly SealProjectionDescriptor[];
+
+function parseSealRecord(value: unknown, index: number): SealRecord {
+  if (!isPlainSadObject(value)) {
+    throw new DeserializeError(`Invalid seal at a[${index}]: expected plain object.`);
+  }
+  for (const descriptor of SEAL_PROJECTION_DESCRIPTORS) {
+    if (descriptor.isSad(value)) {
+      return descriptor.fromSad(value as Record<string, string>);
+    }
+  }
+  throw new DeserializeError(
+    `Invalid seal at a[${index}]: no known KERI seal shape matched.`,
+  );
+}
+
+function isSealEventRecord(value: SealRecord): value is SealEvent {
+  return "i" in value && "s" in value && "d" in value;
 }
 
 /** Convert semantic `sith` content back into a `Tholder` wrapper when possible. */
@@ -1761,6 +1791,23 @@ export class SerderKERI extends Serder {
 
   get seals(): unknown[] {
     return Array.isArray(this.ked?.a) ? [...this.ked.a] : [];
+  }
+
+  /**
+   * Typed seal projection built from raw KERI `a` SAD entries.
+   *
+   * Boundary rule:
+   * - `seals` stays raw and untyped for KERIpy parity
+   * - `sealRecords` is the explicit semantic projection and therefore rejects
+   *   malformed or unknown seal dictionaries instead of silently skipping them
+   */
+  get sealRecords(): SealRecord[] {
+    return this.seals.map((seal, index) => parseSealRecord(seal, index));
+  }
+
+  /** Narrow `sealRecords` to event-style seals used for anchoring and delegation. */
+  get eventSeals(): SealEvent[] {
+    return this.sealRecords.filter(isSealEventRecord);
   }
 
   get traits(): string[] {

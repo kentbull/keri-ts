@@ -1,6 +1,6 @@
-import type { Dater, Diger, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import type { Dater, Diger, SealEvent, SealSource, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { AgentCue } from "./cues.ts";
-import type { FirstSeenReplayCouple, SourceSealCouple, SourceSealTriple } from "./dispatch.ts";
+import type { FirstSeenReplayCouple } from "./dispatch.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
 import type { KeyStateRecord } from "./records.ts";
 
@@ -43,7 +43,7 @@ export interface KELEventState {
   wits?: readonly string[];
   first?: boolean;
   frc?: FirstSeenReplayCouple | null;
-  sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+  sourceSeal?: SealSource | SealEvent | null;
   local: boolean;
 }
 
@@ -53,7 +53,7 @@ export interface VerifiedAttachments {
   wigers: readonly Siger[];
   wits: readonly string[];
   delpre?: string | null;
-  sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+  sourceSeal?: SealSource | SealEvent | null;
   cues?: readonly AgentCue[];
 }
 

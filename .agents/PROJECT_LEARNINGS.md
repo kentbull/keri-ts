@@ -66,10 +66,12 @@ Use this file to:
 5. When the code already knows the semantic type, it should construct and return
    the narrow primitive. `Matter` and `Indexer` are low-level parser/storage
    bases, not the default public API result.
-6. Fixed-field seal/blind/media structing values now belong to CESR through
-   `packages/cesr/src/primitives/structing.ts`; `packages/keri` still has some
-   duplicated runtime/storage value objects that should be collapsed onto that
-   layer in follow-up work.
+6. Fixed-field seal/blind/media structing values belong to CESR through
+   `packages/cesr/src/primitives/structing.ts`; the stable design there is plain
+   frozen records plus companion helpers/registries, with raw-SAD-first
+   boundaries and explicit typed projections. `packages/keri` runtime dispatch
+   now uses those CESR records directly, while LMDB tuple aliases remain a
+   derived storage boundary instead of a second semantic home.
 7. CESR-native and ACDC-native behavior should extend the shared support matrix
    in `packages/cesr/src/serder/native.ts`; do not reintroduce sidecar native
    branching.
@@ -136,9 +138,9 @@ Use this file to:
    and richer cue consumers.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
    changes in the same change set.
-5. Collapse remaining `packages/keri` source-seal / typed-digest / blind-state /
-   typed-media duplicate value objects onto CESR structing primitives instead of
-   preserving two semantic homes long term.
+5. Keep KERI storage tuple aliases derived from CESR structing descriptors and
+   resist reintroducing duplicate wrapper families or raw seal-shape parsing in
+   runtime code.
 6. Keep this memory layer compact. If a future update cannot be summarized
    cleanly, the real problem is probably unresolved design, not missing prose.
 

@@ -126,7 +126,10 @@ flowchart TD
 - `Serder` is the main structured body object for message-domain bodies.
 - `CesrBody` is the TypeScript interface for parser-emitted body objects.
 - `Structor` is not a body; it is the typed wrapper for counted attachment-group
-  payloads such as seals and media wrappers.
+  payloads.
+- Fixed-field seal/blind/media semantics now live one layer lower in
+  `primitives/structing.ts` as plain records plus descriptor helpers, not as a
+  second wrapper hierarchy.
 
 ### The two parser workflows you will feel in practice
 
@@ -138,6 +141,8 @@ flowchart TD
 4. Trailing attachment groups are parsed separately.
 5. If needed, `Serder.projectStructors(message)` projects those attachments into
    typed `Sealer`, `Blinder`, `Mediar`, or `Aggor` wrappers.
+6. For KERI seal lists, `SerderKERI.seals` stays raw-SAD-first while
+   `sealRecords` / `eventSeals` provide explicit CESR structing projections.
 
 #### 2. Native counted-group parse
 
@@ -165,6 +170,10 @@ flowchart TD
 - `Sealer`, `Blinder`, `Mediar`, and `Aggor` are `Structor` specializations.
 - `Serder.projectStructors(...)` is the TypeScript bridge from parsed
   attachments to typed group families.
+- `structing.ts` is the semantic fixed-field layer for seals, blind-state, and
+  media records; the `SerderKERI` boundary stays raw-SAD-first and exposes
+  explicit typed projections instead of converting every raw list entry
+  eagerly.
 
 ### Recovery and compatibility
 
@@ -738,9 +747,9 @@ pairing with `Verfer`.
 `coring.py`.
 
 **Common gotchas / maintainer notes:** `Signer` now owns `.verfer`,
-transferability semantics, `Signer.random(...)`, and suite-driven
-`sign(...)`. `Manager` should orchestrate stored signers, not recreate signer
-suite logic above the primitive.
+transferability semantics, `Signer.random(...)`, and suite-driven `sign(...)`.
+`Manager` should orchestrate stored signers, not recreate signer suite logic
+above the primitive.
 
 ### Encrypter
 
@@ -807,9 +816,9 @@ part of the protocol need.
 **KERIpy comparison:** Direct peer is `keri.core.coring.Cigar`.
 
 **Common gotchas / maintainer notes:** `Cigar` is not an `Indexer`. If the
-protocol needs attachment position metadata, you want `Siger` instead.
-`Cigar` may also carry an in-memory `verfer` reference in the same way KERIpy
-uses detached signatures during reply/non-transferable flows.
+protocol needs attachment position metadata, you want `Siger` instead. `Cigar`
+may also carry an in-memory `verfer` reference in the same way KERIpy uses
+detached signatures during reply/non-transferable flows.
 
 ## Indexed Signature Family
 
@@ -838,8 +847,9 @@ Before the counted-group wrappers, `keri-ts` now also has the fixed-field
 named-value layer from `keri.core.structing` in
 `packages/cesr/src/primitives/structing.ts`. That module owns `SealDigest`,
 `SealEvent`, `BlindState`, `BoundState`, `TypeMedia`, and the KERIpy-style
-clan/cast/coden registries. The counted-group classes below still own the
-enclosed counter-group framing on top of those fixed-field values.
+clan/cast/coden registries as plain frozen records with companion descriptor
+helpers. The counted-group classes below still own the enclosed counter-group
+framing on top of those fixed-field values.
 
 ### Sealer
 

@@ -25,9 +25,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 7. Syntax and semantic failures are intentionally separated on high-coupling
    paths so parser errors explain whether bytes were malformed or interpretation
    failed.
-8. Binary serder cold-start support exists for JSON, MGPK, and CBOR. Local
-   Deno source graphs must carry CESR-owned npm/import-map entries when they
-   load local CESR source.
+8. Binary serder cold-start support exists for JSON, MGPK, and CBOR. Local Deno
+   source graphs must carry CESR-owned npm/import-map entries when they load
+   local CESR source.
 9. Generated KERIpy-parity codex objects such as `MtrDex`, `PreDex`, `DigDex`,
    `IdrDex`, `IdxSigDex`, and `TraitDex` are the primary authority. Helper sets
    in `primitives/codex.ts` are derived readability views.
@@ -61,11 +61,13 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 19. Weighted thresholds are now semantic CESR primitives through `Tholder`,
     including weighted/nested normalization, `limen`/`sith` projection, exact
     threshold sizing, and `satisfy(indices)` behavior.
-20. Fixed-field `structing.py` values now belong to CESR through
-    `packages/cesr/src/primitives/structing.ts`: named seal/blind/media value
-    classes plus clan/cast/counter registries live there, while the current
-    `packages/keri` dispatch/storage duplicates are still a follow-up adoption
-    task.
+20. Fixed-field `structing.py` values belong to CESR through
+    `packages/cesr/src/primitives/structing.ts`: the right TypeScript mental
+    model is plain frozen records plus companion helpers/registries, not a mini
+    class hierarchy. Those descriptors now own raw-SAD guards/hydration
+    (`isSad`, `fromSad`, `toSad`), `SerderKERI` keeps raw `a`/`seals` but adds
+    explicit typed seal projections, and `packages/keri` runtime dispatch now
+    consumes CESR structing records directly instead of local wrapper classes.
 21. `Verser` parity is slightly broader than the top-level message-protocol
     model: auxiliary four-char tags such as `OCSR` must remain accepted because
     KERIpy uses them in typed-digest seal families even though native message
@@ -98,9 +100,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    CESR-native semantic primitive layer.
 5. Preserve maintainer-oriented docs and keep local-source Deno config handling
    aligned whenever CESR source is loaded across package boundaries.
-6. Collapse the remaining `packages/keri` duplication around source-seal,
-   typed-digest, blind-state, and typed-media value objects onto
-   `primitives/structing.ts` instead of growing parallel family definitions.
+6. Keep KERI tuple-storage aliases derived from `primitives/structing.ts` and
+   do not recreate wrapper families or ad hoc raw-SAD seal parsing above that
+   boundary.
 
 ## Milestone Rollup
 
@@ -145,10 +147,18 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ### 2026-04-04 - Fixed-Field Structing Values Moved Into CESR
 
-- Added CESR-owned fixed-field structing classes for seal, blind-state, bound-state,
-  and typed-media values, plus KERIpy-style clan/cast/coden registries.
+- Added CESR-owned fixed-field structing records/descriptors for seal,
+  blind-state, bound-state, and typed-media values, plus KERIpy-style
+  clan/cast/coden registries.
 - Preserved the existing counted-group wrapper ownership split:
   `Structor`/`Sealer`/`Blinder`/`Mediar` still own grouped serialization, while
   `structing.ts` now owns the named value layer inside those groups.
+- Simplified that named value layer back toward KERIpy's actual shape: plain
+  frozen records with companion helpers replaced the earlier
+  inheritance/generic-heavy class design.
 - Broadened `Verser` parity enough to accept KERIpy's auxiliary `OCSR` tag so
   typed-digest seal vectors no longer need a fake protocol workaround.
+- Completed the next boundary step: the descriptors now own raw-SAD
+  recognition/hydration, `SerderKERI` stays raw-SAD-first with explicit
+  `sealRecords` / `eventSeals` projections, and the KERI runtime envelope uses
+  CESR structing records directly while LMDB tuple aliases stay storage-only.

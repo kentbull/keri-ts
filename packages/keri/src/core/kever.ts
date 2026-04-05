@@ -4,6 +4,8 @@ import {
   Ilks,
   NumberPrimitive,
   Prefixer,
+  SealEvent,
+  SealSource,
   SerderKERI,
   Siger,
   Tholder,
@@ -14,7 +16,7 @@ import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { DispatchOrdinal, FirstSeenReplayCouple, SourceSealCouple, SourceSealTriple } from "./dispatch.ts";
+import { DispatchOrdinal, FirstSeenReplayCouple } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import type {
   AttachmentDecision,
@@ -80,6 +82,16 @@ function ordinalHex(ordinal: DispatchOrdinal): string {
   return ordinal instanceof NumberPrimitive ? ordinal.numh : ordinal.snh;
 }
 
+type DelegationSourceSeal = SealSource | SealEvent;
+
+function sourceSealOrdinal(seal: DelegationSourceSeal): NumberPrimitive {
+  return seal.s;
+}
+
+function sourceSealDigest(seal: DelegationSourceSeal): Diger {
+  return seal.d;
+}
+
 /** Return true when a string list has no duplicates. */
 function hasUniqueEntries(values: readonly string[]): boolean {
   return new Set(values).size === values.length;
@@ -121,8 +133,8 @@ export interface KeverEventInit extends KeverBaseInit {
   sigers: readonly Siger[];
   wigers?: readonly Siger[];
   frcs?: readonly FirstSeenReplayCouple[];
-  sscs?: readonly SourceSealCouple[];
-  ssts?: readonly SourceSealTriple[];
+  sscs?: readonly SealSource[];
+  ssts?: readonly SealEvent[];
   eager?: boolean;
 }
 
@@ -147,7 +159,7 @@ interface AttachmentValidationInput {
   wits: readonly string[];
   toader: NumberPrimitive;
   delpre?: string | null;
-  sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+  sourceSeal?: DelegationSourceSeal | null;
   local: boolean;
   eager?: boolean;
   check?: boolean;
@@ -156,7 +168,7 @@ interface AttachmentValidationInput {
 
 interface DelegatingEventLookup {
   serder: SerderKERI;
-  sourceSeal: SourceSealCouple;
+  sourceSeal: SealSource;
   sealIndex: number;
 }
 
@@ -616,8 +628,8 @@ export class Kever {
 
     if (args.sourceSeal && this.delegated && args.serder.ilk !== Ilks.ixn) {
       this.db.aess.pin(dgkey, [
-        normalizeOrdinal(args.sourceSeal.seqner),
-        args.sourceSeal.diger,
+        normalizeOrdinal(sourceSealOrdinal(args.sourceSeal)),
+        sourceSealDigest(args.sourceSeal),
       ]);
     }
 
@@ -729,7 +741,7 @@ export class Kever {
       original = false,
       eager = false,
     }: {
-      sourceSeal?: SourceSealCouple | SourceSealTriple | null;
+      sourceSeal?: DelegationSourceSeal | null;
       original?: boolean;
       eager?: boolean;
     } = {},
@@ -1342,7 +1354,7 @@ export class Kever {
   private validateDelegation(
     input: AttachmentValidationInput & {
       delpre: string | null;
-      sourceSeal: SourceSealCouple | SourceSealTriple | null;
+      sourceSeal: DelegationSourceSeal | null;
     },
   ): AttachmentDecision {
     const delpre = input.delpre;
@@ -1438,9 +1450,11 @@ export class Kever {
           q: {
             pre: delpre ?? undefined,
             sn: input.sourceSeal
-              ? ordinalHex(input.sourceSeal.seqner)
+              ? ordinalHex(sourceSealOrdinal(input.sourceSeal))
               : undefined,
-            dig: input.sourceSeal?.diger.qb64,
+            dig: input.sourceSeal
+              ? sourceSealDigest(input.sourceSeal).qb64
+              : undefined,
           },
           pre: delpre ?? undefined,
         }],
@@ -1541,7 +1555,7 @@ export class Kever {
     }: {
       input: AttachmentValidationInput & {
         delpre: string | null;
-        sourceSeal: SourceSealCouple | SourceSealTriple | null;
+        sourceSeal: DelegationSourceSeal | null;
       };
       delpre: string;
       candidateEvent: SerderKERI;
@@ -1685,7 +1699,7 @@ export class Kever {
   /** Read the stored accepted source-seal hint for one already accepted event. */
   private acceptedSourceSealForEvent(
     serder: SerderKERI,
-  ): SourceSealCouple | null {
+  ): SealSource | null {
     const pre = serder.pre;
     const said = serder.said;
     if (!pre || !said) {
@@ -1695,7 +1709,7 @@ export class Kever {
     if (!seal) {
       return null;
     }
-    return new SourceSealCouple(seal[0], seal[1]);
+    return SealSource.fromTuple(seal);
   }
 
   /** Remove one broken accepted source-seal hint so a later eager pass can repair it. */
@@ -1720,18 +1734,18 @@ export class Kever {
       return;
     }
     this.db.aess.pin(dgkey, [
-      normalizeOrdinal(lookup.sourceSeal.seqner),
-      lookup.sourceSeal.diger,
+      normalizeOrdinal(sourceSealOrdinal(lookup.sourceSeal)),
+      sourceSealDigest(lookup.sourceSeal),
     ]);
   }
 
   /** Resolve one stored source seal to the exact accepted delegating event it names. */
   private lookupAcceptedDelegatingEvent(
     delpre: string,
-    sourceSeal: SourceSealCouple | SourceSealTriple,
+    sourceSeal: DelegationSourceSeal,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const candidate = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
+    const candidate = this.db.getEvtSerder(delpre, sourceSealDigest(sourceSeal).qb64);
     if (
       !candidate || !candidate.said
       || !this.db.fons.get(dgKey(delpre, candidate.said))
@@ -1747,10 +1761,10 @@ export class Kever {
    */
   private lookupAuthoritativeDelegatingEvent(
     delpre: string,
-    sourceSeal: SourceSealCouple | SourceSealTriple,
+    sourceSeal: DelegationSourceSeal,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const said = this.db.kels.getLast(delpre, ordinalNumber(sourceSeal.seqner));
+    const said = this.db.kels.getLast(delpre, ordinalNumber(sourceSealOrdinal(sourceSeal)));
     if (!said) {
       return null;
     }
@@ -1820,10 +1834,10 @@ export class Kever {
     }
     return {
       serder: candidate,
-      sourceSeal: new SourceSealCouple(
+      sourceSeal: SealSource.fromTuple([
         candidate.sner ?? encodeHugeOrdinal(candidate.sn),
         new Diger({ qb64: candidate.said }),
-      ),
+      ]),
       sealIndex,
     };
   }
@@ -1845,16 +1859,11 @@ export class Kever {
     candidate: SerderKERI,
     serder: SerderKERI,
   ): number {
-    for (const [index, seal] of candidate.seals.entries()) {
+    for (const [index, seal] of candidate.eventSeals.entries()) {
       if (
-        typeof seal === "object"
-        && seal !== null
-        && "i" in seal
-        && "s" in seal
-        && "d" in seal
-        && seal.i === serder.pre
-        && seal.s === serder.snh
-        && seal.d === serder.said
+        seal.i.qb64 === serder.pre
+        && seal.s.numh === serder.snh
+        && seal.d.qb64 === serder.said
       ) {
         return index;
       }
@@ -2101,9 +2110,9 @@ export class Kever {
 
   /** Normalize the first available delegated/source-seal attachment if any. */
   private normalizeSourceSeal(
-    sscs?: readonly SourceSealCouple[],
-    ssts?: readonly SourceSealTriple[],
-  ): SourceSealCouple | SourceSealTriple | null {
+    sscs?: readonly SealSource[],
+    ssts?: readonly SealEvent[],
+  ): DelegationSourceSeal | null {
     return ssts?.[0] ?? sscs?.[0] ?? null;
   }
 

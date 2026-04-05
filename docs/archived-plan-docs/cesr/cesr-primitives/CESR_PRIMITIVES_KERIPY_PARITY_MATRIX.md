@@ -38,14 +38,14 @@ Baseline source for the KERIpy comparisons in this document:
 
 ## Message And Body
 
-| `keri-ts`          | KERIpy peer            | Role/category               | Initialization shapes                   | Encoded forms exposed                         | Parity note |
-| ------------------ | ---------------------- | --------------------------- | --------------------------------------- | --------------------------------------------- | ----------- |
-| `Serder`           | `serdering.Serder`     | Parsed body object          | usually `parseSerder(raw, smellage)`    | `raw`, `ked`, protocol/version metadata       | `direct`    |
-| `SerderKERI`       | `serdering.SerderKERI` | KERI body subtype           | parser-produced / constructor           | same as `Serder`                              | `direct`    |
-| `SerderACDC`       | `serdering.SerderACDC` | ACDC body subtype           | parser-produced / constructor           | same as `Serder`                              | `direct`    |
-| `CesrBody`         | no exact public peer   | Typed parser body contract  | not directly constructed                | body metadata plus optional native projection | `TS-local`  |
-| `Structor`         | `structing.Structor`   | Typed counted-group wrapper | `parseStructor(...)`, `.fromGroup(...)` | `qb64g`, `qb2g`, grouped serialization        | `direct`    |
-| `UnknownPrimitive` | no exact public peer   | Lossless opaque placeholder | `fromPayload(...)`                      | preserved `qb64`, `qb2`, `raw`                | `TS-local`  |
+| `keri-ts`          | KERIpy peer            | Role/category               | Initialization shapes                   | Encoded forms exposed                                                                | Parity note |
+| ------------------ | ---------------------- | --------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ | ----------- |
+| `Serder`           | `serdering.Serder`     | Parsed body object          | usually `parseSerder(raw, smellage)`    | `raw`, `ked`, protocol/version metadata                                              | `direct`    |
+| `SerderKERI`       | `serdering.SerderKERI` | KERI body subtype           | parser-produced / constructor           | same as `Serder` plus raw `seals` and typed `sealRecords` / `eventSeals` projections | `direct`    |
+| `SerderACDC`       | `serdering.SerderACDC` | ACDC body subtype           | parser-produced / constructor           | same as `Serder`                                                                     | `direct`    |
+| `CesrBody`         | no exact public peer   | Typed parser body contract  | not directly constructed                | body metadata plus optional native projection                                        | `TS-local`  |
+| `Structor`         | `structing.Structor`   | Typed counted-group wrapper | `parseStructor(...)`, `.fromGroup(...)` | `qb64g`, `qb2g`, grouped serialization                                               | `direct`    |
+| `UnknownPrimitive` | no exact public peer   | Lossless opaque placeholder | `fromPayload(...)`                      | preserved `qb64`, `qb2`, `raw`                                                       | `TS-local`  |
 
 ## Core `Matter` Derivatives
 
@@ -84,9 +84,9 @@ Baseline source for the KERIpy comparisons in this document:
 
 ## Fixed-Field Structing Values
 
-| `keri-ts`      | KERIpy peer                    | Role/category                     | Initialization shapes                   | Encoded forms exposed       | Parity note |
-| -------------- | ------------------------------ | --------------------------------- | --------------------------------------- | --------------------------- | ----------- |
-| `structing.ts` | named values in `structing.py` | Fixed-field seal/blind/media data | `fromTuple(...)`, `fromQb64bTuple(...)` | crew/as-dict, `qb64`, `qb2` | `direct`    |
+| `keri-ts`      | KERIpy peer                    | Role/category                     | Initialization shapes                                   | Encoded forms exposed                                | Parity note |
+| -------------- | ------------------------------ | --------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- | ----------- |
+| `structing.ts` | named values in `structing.py` | Fixed-field seal/blind/media data | `fromTuple(...)`, `fromQb64bTuple(...)`, `fromSad(...)` | `toCrew(...)`, `toSad(...)`, `qb64(...)`, `qb2(...)` | `direct`    |
 
 ## Counted-Group Structor Family
 
@@ -99,14 +99,14 @@ Baseline source for the KERIpy comparisons in this document:
 
 ## Support Surface
 
-| `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes   | Encoded forms exposed            | Parity note |
-| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | ----------------------- | -------------------------------- | ----------- |
-| `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants        | none; support constants only     | `TS-local`  |
-| `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced         | typed unions/interfaces          | `TS-local`  |
-| `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers           | typed field projection           | `TS-local`  |
-| `Compactor`                                     | no exact public peer                                     | Narrow map-group parser helper        | parse helper            | typed map projection             | `TS-local`  |
-| `registry.ts` helpers                           | codex/constructor knowledge spread across Python modules | Inspection/listing helpers            | helper functions        | lightweight `PrimitiveToken`     | `TS-local`  |
-| `primitives/structing.ts`                       | fixed-field registries in `structing.py`                 | Named value + clan/cast/coden layer   | class ctors + constants | typed values + registry metadata | `direct`    |
+| `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes             | Encoded forms exposed                                 | Parity note |
+| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | --------------------------------- | ----------------------------------------------------- | ----------- |
+| `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants                  | none; support constants only                          | `TS-local`  |
+| `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced                   | typed unions/interfaces                               | `TS-local`  |
+| `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers                     | typed field projection                                | `TS-local`  |
+| `Compactor`                                     | no exact public peer                                     | Narrow map-group parser helper        | parse helper                      | typed map projection                                  | `TS-local`  |
+| `registry.ts` helpers                           | codex/constructor knowledge spread across Python modules | Inspection/listing helpers            | helper functions                  | lightweight `PrimitiveToken`                          | `TS-local`  |
+| `primitives/structing.ts`                       | fixed-field registries in `structing.py`                 | Named value + clan/cast/coden layer   | descriptor companions + constants | plain records, SAD projections, and registry metadata | `direct`    |
 
 ## Fast Takeaways
 

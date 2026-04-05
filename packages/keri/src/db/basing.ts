@@ -16,6 +16,7 @@ import {
   NumDex,
   Prefixer,
   Saider,
+  SealEvent,
   SerderKERI,
   Siger,
   t,
@@ -85,25 +86,38 @@ import {
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
-type EventSealShape = { i: string; s: string; d: string };
+type EventSealRecord = ReturnType<typeof SealEvent.fromSad>;
 
-function normalizeEventSeal(value: unknown): EventSealShape | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const candidate = value as Record<string, unknown>;
-  const keys = Object.keys(candidate).sort();
-  if (keys.length !== 3 || keys[0] !== "d" || keys[1] !== "i" || keys[2] !== "s") {
-    return null;
-  }
-  return typeof candidate.i === "string" && typeof candidate.s === "string"
-      && typeof candidate.d === "string"
-    ? { i: candidate.i, s: candidate.s, d: candidate.d }
-    : null;
+function isEventSealRecord(value: unknown): value is EventSealRecord {
+  return typeof value === "object"
+    && value !== null
+    && !Array.isArray(value)
+    && "i" in value
+    && "s" in value
+    && "d" in value
+    && (value as { i: unknown }).i instanceof Prefixer
+    && (value as { s: unknown }).s instanceof NumberPrimitive
+    && (value as { d: unknown }).d instanceof Diger;
 }
 
-function eventSealsEqual(left: EventSealShape, right: EventSealShape): boolean {
-  return left.i === right.i && left.s === right.s && left.d === right.d;
+function normalizeEventSeal(value: unknown): EventSealRecord | null {
+  if (isEventSealRecord(value)) {
+    return value;
+  }
+  if (!SealEvent.isSad(value)) {
+    return null;
+  }
+  try {
+    return SealEvent.fromSad(value);
+  } catch {
+    return null;
+  }
+}
+
+function eventSealsEqual(left: EventSealRecord, right: EventSealRecord): boolean {
+  return left.i.qb64 === right.i.qb64
+    && left.s.numh === right.s.numh
+    && left.d.qb64 === right.d.qb64;
 }
 
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
@@ -1040,12 +1054,8 @@ export class Baser {
     }
 
     for (const serder of this.getEvtPreIter(pre, sn)) {
-      for (const eseal of serder.seals) {
-        const current = normalizeEventSeal(eseal);
-        if (
-          current && eventSealsEqual(current, target)
-          && this.fullyWitnessed(serder)
-        ) {
+      for (const current of serder.eventSeals) {
+        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
           return serder;
         }
       }

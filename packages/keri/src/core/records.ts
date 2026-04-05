@@ -1,5 +1,7 @@
 import { encode as encodeMsgpack } from "@msgpack/msgpack";
 import {
+  BlindState as BlindStateValue,
+  BoundState as BoundStateValue,
   type Cigar,
   type Dater,
   type Diger,
@@ -8,11 +10,14 @@ import {
   type Noncer,
   type NumberPrimitive,
   type Prefixer,
+  SealEvent as SealEventValue,
+  SealKind as SealKindValue,
+  SealSource as SealSourceValue,
   type Siger,
   type Texter,
   type ThresholdSith,
+  TypeMedia as TypeMediaValue,
   type Verfer,
-  type Verser,
 } from "../../../cesr/mod.ts";
 import type { MbxTopicCursor } from "./mailbox-topics.ts";
 
@@ -608,7 +613,7 @@ export class WellKnownAuthN extends RawRecord<WellKnownAuthNShape> implements We
 }
 
 /** Authorizing/source event seal tuple used by `aess.`, `udes.`, and related escrows. */
-export type EventSealTuple = [NumberPrimitive, Diger];
+export type EventSealTuple = ReturnType<typeof SealSourceValue.toTuple>;
 /** Non-transferable receipt couple stored in `rcts.`. */
 export type ReceiptCouple = [Prefixer, Cigar];
 /** Unverified non-transferable receipt triple stored in `ures.`. */
@@ -631,25 +636,18 @@ export type EscrowedValidatorReceiptQuintuple = [
 /** Group-signify member tuple used by `Keeper.smids` and `Keeper.rmids`. */
 export type GroupMemberTuple = [Prefixer, NumberPrimitive];
 /** Source-seal triple stored in `ssts.`. */
-export type SourceSealTriple = [Prefixer, NumberPrimitive, Diger];
+export type SourceSealTriple = ReturnType<typeof SealEventValue.toTuple>;
 /** First-seen replay couple stored in `frcs.`. */
 export type FirstSeenReplayCouple = [NumberPrimitive, Dater];
 /** Typed-digest seal couple stored in `tdcs.`. */
-export type TypedDigestSealCouple = [Verser, Diger];
+export type TypedDigestSealCouple = ReturnType<typeof SealKindValue.toTuple>;
 /** Verfer+cigar storage couple stored in `scgs.` and `ecigs.`. */
 export type VerferCigarCouple = [Verfer, Cigar];
 /** Typed-media quadruple stored in `tmqs.`. */
-export type TypedMediaQuadrupleTuple = [Diger, Noncer, Labeler, Texter];
+export type TypedMediaQuadrupleTuple = ReturnType<typeof TypeMediaValue.toTuple>;
 /** Blinded-state quadruple stored in `bsqs.`. */
-export type BlindedStateQuadrupleTuple = [Diger, Noncer, Noncer, Labeler];
+export type BlindedStateQuadrupleTuple = ReturnType<typeof BlindStateValue.toTuple>;
 /** Bound-state sextuple stored in `bsss.`. */
-export type BoundStateSextuple = [
-  Diger,
-  Noncer,
-  Noncer,
-  Labeler,
-  NumberPrimitive,
-  Noncer,
-];
+export type BoundStateSextuple = ReturnType<typeof BoundStateValue.toTuple>;
 /** Blinded-image/media tuple stored in `imgs.` and `iimgs.`. */
 export type BlindedImageTuple = [Noncer, Noncer, Labeler, Texter];

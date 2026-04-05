@@ -1,6 +1,8 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import {
   type AttachmentGroup,
+  BlindState,
+  BoundState,
   type CesrMessage,
   Cigar,
   createParser,
@@ -10,27 +12,25 @@ import {
   isPrimitiveTuple,
   isQualifiedPrimitive,
   parseSerder,
+  SealEvent,
+  SealKind,
+  SealSource,
   SerderKERI,
   Siger,
   type Smellage,
   Texter,
+  TypeMedia,
   Verfer,
 } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import {
-  BlindedStateQuadruple,
-  BoundStateSextuple,
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
   PathedMaterialGroup,
-  SourceSealCouple,
-  SourceSealTriple,
   TransIdxSigGroup,
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
-  TypedDigestSealCouple,
-  TypedMediaQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
@@ -400,7 +400,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.sscs.push(
-          SourceSealCouple.fromQb64bTuple([seqner.qb64b, diger.qb64b]),
+          SealSource.fromQb64bTuple([seqner.qb64b, diger.qb64b]),
         );
       }
       return;
@@ -419,7 +419,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.ssts.push(
-          SourceSealTriple.fromQb64bTuple([
+          SealEvent.fromQb64bTuple([
             prefixer.qb64b,
             seqner.qb64b,
             diger.qb64b,
@@ -438,7 +438,7 @@ function normalizeAttachmentGroup(
           continue;
         }
         envelope.tdcs.push(
-          TypedDigestSealCouple.fromQb64bTuple([verser.qb64b, diger.qb64b]),
+          SealKind.fromQb64bTuple([verser.qb64b, diger.qb64b]),
         );
       }
       return;
@@ -461,21 +461,21 @@ function normalizeAttachmentGroup(
         if (!isPrimitiveTuple(item) || item.length < 4) {
           continue;
         }
-        const [diger, noncer, acdcer, stater] = item;
+        const [blid, uuid, acdc, state] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(acdcer)
-          || !isQualifiedPrimitive(stater)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(acdc)
+          || !isQualifiedPrimitive(state)
         ) {
           continue;
         }
         envelope.bsqs.push(
-          BlindedStateQuadruple.fromQb64bTuple([
-            diger.qb64b,
-            noncer.qb64b,
-            acdcer.qb64b,
-            stater.qb64b,
+          BlindState.fromQb64bTuple([
+            blid.qb64b,
+            uuid.qb64b,
+            acdc.qb64b,
+            state.qb64b,
           ]),
         );
       }
@@ -486,25 +486,25 @@ function normalizeAttachmentGroup(
         if (!isPrimitiveTuple(item) || item.length < 6) {
           continue;
         }
-        const [diger, noncer, acdcer, stater, number, eventer] = item;
+        const [blid, uuid, acdc, state, number, bound] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(acdcer)
-          || !isQualifiedPrimitive(stater)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(acdc)
+          || !isQualifiedPrimitive(state)
           || !isQualifiedPrimitive(number)
-          || !isQualifiedPrimitive(eventer)
+          || !isQualifiedPrimitive(bound)
         ) {
           continue;
         }
         envelope.bsss.push(
-          BoundStateSextuple.fromQb64bTuple([
-            diger.qb64b,
-            noncer.qb64b,
-            acdcer.qb64b,
-            stater.qb64b,
+          BoundState.fromQb64bTuple([
+            blid.qb64b,
+            uuid.qb64b,
+            acdc.qb64b,
+            state.qb64b,
             number.qb64b,
-            eventer.qb64b,
+            bound.qb64b,
           ]),
         );
       }
@@ -515,21 +515,21 @@ function normalizeAttachmentGroup(
         if (!isPrimitiveTuple(item) || item.length < 4) {
           continue;
         }
-        const [diger, noncer, labeler, texter] = item;
+        const [blid, uuid, mediaType, mediaValue] = item;
         if (
-          !isQualifiedPrimitive(diger)
-          || !isQualifiedPrimitive(noncer)
-          || !isQualifiedPrimitive(labeler)
-          || !isQualifiedPrimitive(texter)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(mediaType)
+          || !isQualifiedPrimitive(mediaValue)
         ) {
           continue;
         }
         envelope.tmqs.push(
-          TypedMediaQuadruple.fromQb64bTuple([
-            diger.qb64b,
-            noncer.qb64b,
-            labeler.qb64b,
-            texter.qb64b,
+          TypeMedia.fromQb64bTuple([
+            blid.qb64b,
+            uuid.qb64b,
+            mediaType.qb64b,
+            mediaValue.qb64b,
           ]),
         );
       }

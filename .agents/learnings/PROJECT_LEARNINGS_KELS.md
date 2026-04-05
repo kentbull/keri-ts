@@ -46,48 +46,54 @@ runtime ownership semantics.
     instead of becoming keeper-local crypto machinery.
 13. The parser-to-runtime dispatch seam is a first-class architecture surface in
     `core/dispatch.ts`. Keep KERIpy family names (`tsgs`, `trqs`, `ssgs`,
-    `frcs`, `sscs`, `ssts`, and related families), but model family elements as
-    named value objects carrying real CESR primitives plus derived getters.
-14. Ordinal-bearing dispatch material currently needs
+    `frcs`, `sscs`, `ssts`, and related families), but do not give every family
+    a local wrapper taxonomy: receipt groups can stay named dispatch objects,
+    while fixed-field seal/blind/media families should use CESR structing
+    records directly.
+14. KEL/runtime code that cares about anchor semantics should project through
+    CESR structing helpers (`SealEvent.fromSad`, `SerderKERI.eventSeals`, and
+    related record helpers) instead of repeating raw `{ i, s, d }` shape
+    checks in each subsystem.
+15. Ordinal-bearing dispatch material currently needs
     `DispatchOrdinal = Seqner | NumberPrimitive`; forcing everything into
     `Seqner` is false parity because it ignores what the current parser actually
     emits.
-15. KEL control flow should stay TypeScript-native: normal outcomes are typed
+16. KEL control flow should stay TypeScript-native: normal outcomes are typed
     decisions (`accept`, `duplicate`, `escrow`, `reject`), `Kever` decides
     state-machine validity, and `Kevery` owns routing, escrow persistence,
     duplicate handling, and post-acceptance side effects.
-16. `docs/adr/adr-0005-kel-decision-control-flow.md` is the normative contract
+17. `docs/adr/adr-0005-kel-decision-control-flow.md` is the normative contract
     for that state-machine/orchestrator split and should guide future
     `Tever`/`Tevery`-style ports as well.
-17. Accepted identifier state should live on `Kever` / `Baser`, not on ad hoc
+18. Accepted identifier state should live on `Kever` / `Baser`, not on ad hoc
     habitat projections. Local inception needs to flow through the same `Kevery`
     acceptance path used for remote processing.
-18. Weighted threshold parity is end to end: `Tholder` owns threshold semantics,
+19. Weighted threshold parity is end to end: `Tholder` owns threshold semantics,
     structured `kt` / `nt` payloads are allowed in serder/state storage, and
     both `Kever` and `Revery` should rely on `tholder.satisfy(...)` instead of
     numeric shortcuts.
-19. Cue ownership is dual-scope, matching KERIpy more honestly than an
+20. Cue ownership is dual-scope, matching KERIpy more honestly than an
     "everything hangs off AgentRuntime" story. `AgentRuntime` holds the shared
     runtime cue deck for runtime-hosted processing, while `Habery.kevery` owns a
     separate local cue deck for `Hab` local event/receipt acceptance.
-20. `Hab.processCuesIter()` remains the cue-semantics seam across both scopes,
+21. `Hab.processCuesIter()` remains the cue-semantics seam across both scopes,
     and runtime delivery happens through `processCuesOnce()` / `cueDo()`
     yielding structured `CueEmission` values.
-21. Reply/runtime ownership is also explicit: `Revery` verifies, BADA-checks,
+22. Reply/runtime ownership is also explicit: `Revery` verifies, BADA-checks,
     and escrows reply traffic; `Kevery` owns KEL and KEL-derived reply families
     such as `/ksn`; `Oobiery` owns introduction-driven OOBI behavior.
-22. Local location-scheme state must arrive through signed `/loc/scheme` replies
+23. Local location-scheme state must arrive through signed `/loc/scheme` replies
     parsed back through `Revery`, not by direct writes to `locs.` / `lans.`.
-23. Runtime turns should stay Effection-native. Promise adaptation belongs only
+24. Runtime turns should stay Effection-native. Promise adaptation belongs only
     at real host edges such as `fetch()`, dynamic import, or server-finished
     handles.
-24. Gates B, C, and D are established enough to stop debating bootstrap
+25. Gates B, C, and D are established enough to stop debating bootstrap
     viability: local visibility, compat-store visibility, and encrypted keeper
     semantics are real foundations now.
-25. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice, and
+26. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice, and
     bounded init/incept convergence, but it is still an honest bootstrap slice
     rather than full KERIpy runtime closure.
-26. The remaining gaps are narrower and clearer now: promote key DB `Partial`
+27. The remaining gaps are narrower and clearer now: promote key DB `Partial`
     rows, finish forwarding/exchange/direct transport breadth, harden
     stale/timeout continuation behavior, and keep receipt/query/escrow parity
     honest.
@@ -199,6 +205,18 @@ runtime ownership semantics.
   for `Kevery` receipt/query replay, `Revery` reply replay, and `Broker` retry
   loops instead of mixing string unions, boolean tests, and recoverable
   exception handling styles.
+
+### 2026-04-04 - KEL Runtime Adopted CESR Structing Records
+
+- `KeriDispatchEnvelope` now uses CESR `SealSource`, `SealEvent`, `SealKind`,
+  `BlindState`, `BoundState`, and `TypeMedia` records directly instead of a
+  second `packages/keri` wrapper-class family.
+- `SerderKERI` stays raw-SAD-first for `a`/`seals`, but KEL/runtime consumers
+  now project typed anchors through `sealRecords` / `eventSeals` and
+  `SealEvent.fromSad(...)` instead of repeating raw `{ i, s, d }` checks.
+- `Baser` storage tuple aliases remain tuple-shaped for LMDB parity, but they
+  are now derived from CESR structing descriptors so the semantic source of
+  truth lives in one place.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
