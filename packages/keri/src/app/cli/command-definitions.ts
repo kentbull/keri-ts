@@ -1,7 +1,11 @@
 import { Command } from "npm:commander@^10.0.1";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { DISPLAY_VERSION } from "../version.ts";
-import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
+import {
+  type CommandArgs,
+  type CommandDispatch,
+  type CommandHandler,
+} from "./command-types.ts";
 
 /** Shape used for lazily imported command modules before handler extraction. */
 type CommandModule = Record<string, unknown>;
@@ -18,7 +22,9 @@ function* loadModule<TModule extends CommandModule>(
   return yield* action((resolve, reject) => {
     load()
       .then(resolve)
-      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+      .catch((error) =>
+        reject(error instanceof Error ? error : new Error(String(error)))
+      );
     return () => {};
   });
 }
@@ -33,7 +39,7 @@ function lazyCommand<TModule extends CommandModule>(
   load: () => Promise<TModule>,
   exportName: string,
 ): CommandHandler {
-  return function*(args: CommandArgs): Operation<void> {
+  return function* (args: CommandArgs): Operation<void> {
     const module = yield* loadModule(load);
     const handler = module[exportName];
     if (typeof handler !== "function") {
@@ -53,14 +59,36 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
   return new Map([
     ["init", lazyCommand(() => import("./init.ts"), "initCommand")],
     ["incept", lazyCommand(() => import("./incept.ts"), "inceptCommand")],
+    [
+      "challenge.generate",
+      lazyCommand(() => import("./challenge.ts"), "challengeGenerateCommand"),
+    ],
+    [
+      "challenge.respond",
+      lazyCommand(() => import("./challenge.ts"), "challengeRespondCommand"),
+    ],
+    [
+      "challenge.verify",
+      lazyCommand(() => import("./challenge.ts"), "challengeVerifyCommand"),
+    ],
+    [
+      "exchange.send",
+      lazyCommand(() => import("./exchange.ts"), "exchangeSendCommand"),
+    ],
     ["export", lazyCommand(() => import("./export.ts"), "exportCommand")],
     ["list", lazyCommand(() => import("./list.ts"), "listCommand")],
     ["aid", lazyCommand(() => import("./aid.ts"), "aidCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     ["ends.add", lazyCommand(() => import("./ends.ts"), "endsAddCommand")],
     ["loc.add", lazyCommand(() => import("./loc.ts"), "locAddCommand")],
-    ["oobi.generate", lazyCommand(() => import("./oobi.ts"), "oobiGenerateCommand")],
-    ["oobi.resolve", lazyCommand(() => import("./oobi.ts"), "oobiResolveCommand")],
+    [
+      "oobi.generate",
+      lazyCommand(() => import("./oobi.ts"), "oobiGenerateCommand"),
+    ],
+    [
+      "oobi.resolve",
+      lazyCommand(() => import("./oobi.ts"), "oobiResolveCommand"),
+    ],
     ["annotate", lazyCommand(() => import("./annotate.ts"), "annotateCommand")],
     [
       "benchmark.cesr",
@@ -91,7 +119,9 @@ export function registerCmds(
   regAidCmd(program, dispatch);
   regAnnotateCmd(program, dispatch);
   regAgentCmd(program, dispatch);
+  regChallengeSubCmd(program, dispatch);
   regEndsSubCmd(program, dispatch);
+  regExchangeSubCmd(program, dispatch);
   regLocSubCmd(program, dispatch);
   regOobiSubCmd(program, dispatch);
   regBenchmarkSubCmd(program, dispatch);
@@ -203,6 +233,11 @@ function regInceptCmd(program: Command, dispatch: CommandDispatch): void {
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
+    .option(
+      "-c, --config-dir <dir>",
+      "Directory override for configuration data",
+    )
+    .option("--config-file <file>", "Configuration filename override")
     .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
     .requiredOption(
       "-a, --alias <alias>",
@@ -257,6 +292,8 @@ function regInceptCmd(program: Command, dispatch: CommandDispatch): void {
           name: options.name,
           base: options.base,
           headDirPath: options.headDir,
+          configDir: options.configDir,
+          configFile: options.configFile,
           passcode: options.passcode,
           alias: options.alias,
           file: options.file,
@@ -453,8 +490,12 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
     .option("-P, --passcode <passcode>", "Encryption passcode for keystore")
-    .option("-p, --port <port>", "Port number for the server (default: 8000)", "8000")
-    .action(function(this: Command) {
+    .option(
+      "-p, --port <port>",
+      "Port number for the server (default: 8000)",
+      "8000",
+    )
+    .action(function (this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",
@@ -471,6 +512,115 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the `challenge` subcommands. */
+function regChallengeSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const challenge = program.command("challenge").description(
+    "Generate, respond to, and verify challenge phrases",
+  );
+
+  challenge
+    .command("generate")
+    .description("Generate a cryptographically random challenge phrase")
+    .option(
+      "-s, --strength <bits>",
+      "Approximate challenge entropy strength in bits",
+      (value: string) => Number(value),
+      128,
+    )
+    .option(
+      "-o, --out <out>",
+      "Output mode: json, string, or words",
+      "json",
+    )
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "challenge.generate",
+        args: {
+          strength: options.strength,
+          out: options.out,
+        },
+      });
+    });
+
+  challenge
+    .command("respond")
+    .description(
+      "Respond to challenge words by signing and sending an exchange message",
+    )
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-r, --recipient <prefix>", "Recipient identifier prefix")
+    .requiredOption(
+      "-w, --words <words>",
+      "Challenge words as JSON array or whitespace-separated string",
+    )
+    .option(
+      "-t, --transport <transport>",
+      "Transport mode: auto, direct, or indirect",
+      "auto",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "challenge.respond",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          recipient: options.recipient,
+          words: options.words,
+          transport: options.transport,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+
+  challenge
+    .command("verify")
+    .description(
+      "Verify that a signer responded with the expected challenge words",
+    )
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-s, --signer <prefix>", "Signer identifier prefix")
+    .requiredOption("-w, --words <words>", "Expected challenge words")
+    .option(
+      "--timeout <seconds>",
+      "How long to wait for a matching response before failing",
+      (value: string) => Number(value),
+      10,
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "challenge.verify",
+        args: {
+          name: options.name,
+          signer: options.signer,
+          words: options.words,
+          timeout: options.timeout,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+}
+
 /**
  * Register the `ends` subcommands.
  *
@@ -478,7 +628,9 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
  * until the wider endpoint authorization surface reaches parity.
  */
 function regEndsSubCmd(program: Command, dispatch: CommandDispatch): void {
-  const ends = program.command("ends").description("Manage endpoint authorizations");
+  const ends = program.command("ends").description(
+    "Manage endpoint authorizations",
+  );
   ends
     .command("add")
     .description("Authorize an endpoint role for one AID")
@@ -511,6 +663,53 @@ function regEndsSubCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the `exchange` subcommands. */
+function regExchangeSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const exchange = program.command("exchange").description(
+    "Send peer-to-peer exchange messages",
+  );
+
+  exchange
+    .command("send")
+    .description(
+      "Send one signed exchange message to a resolved remote identifier",
+    )
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-r, --recipient <prefix>", "Recipient identifier prefix")
+    .requiredOption("-R, --route <route>", "Exchange route")
+    .requiredOption("-d, --payload <json>", "Exchange payload as a JSON object")
+    .option(
+      "-t, --transport <transport>",
+      "Transport mode: auto, direct, or indirect",
+      "auto",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "exchange.send",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          recipient: options.recipient,
+          route: options.route,
+          payload: options.payload,
+          transport: options.transport,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+}
+
 /**
  * Register the `loc` subcommands.
  *
@@ -518,14 +717,21 @@ function regEndsSubCmd(program: Command, dispatch: CommandDispatch): void {
  * accepted `LocationScheme` reply state through normal parser/routing flows.
  */
 function regLocSubCmd(program: Command, dispatch: CommandDispatch): void {
-  const loc = program.command("loc").description("Manage local endpoint locations");
+  const loc = program.command("loc").description(
+    "Manage local endpoint locations",
+  );
   loc
     .command("add")
-    .description("Add one local location scheme record through reply acceptance")
+    .description(
+      "Add one local location scheme record through reply acceptance",
+    )
     .requiredOption("-n, --name <name>", "Keystore name")
     .requiredOption("-a, --alias <alias>", "Local identifier alias")
     .requiredOption("-u, --url <url>", "Endpoint URL")
-    .option("-e, --eid <eid>", "Endpoint AID (defaults to the local habitat prefix)")
+    .option(
+      "-e, --eid <eid>",
+      "Endpoint AID (defaults to the local habitat prefix)",
+    )
     .option("-t, --time <time>", "Explicit reply timestamp")
     .option("-b, --base <base>", "Optional base path prefix")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
@@ -561,7 +767,9 @@ function regLocSubCmd(program: Command, dispatch: CommandDispatch): void {
  * reply/KEL state through normal protocol processing.
  */
 function regOobiSubCmd(program: Command, dispatch: CommandDispatch): void {
-  const oobi = program.command("oobi").description("Generate and resolve OOBIs");
+  const oobi = program.command("oobi").description(
+    "Generate and resolve OOBIs",
+  );
 
   oobi
     .command("generate")

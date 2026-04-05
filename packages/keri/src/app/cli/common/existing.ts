@@ -1,5 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { createKeeper } from "../../../db/keeping.ts";
+import type { Configer } from "../../configing.ts";
 import { createHabery, Habery } from "../../habbing.ts";
 
 /**
@@ -17,6 +18,7 @@ export function* setupHby(
     readonly?: boolean;
     skipConfig?: boolean;
     skipSignator?: boolean;
+    cf?: Configer;
   } = {},
 ): Operation<Habery> {
   const ks = yield* createKeeper({
@@ -46,6 +48,7 @@ export function* setupHby(
         headDirPath,
         compat: options.compat,
         readonly: options.readonly,
+        cf: options.cf,
         skipConfig: options.skipConfig,
         skipSignator: options.skipSignator,
         bran: passcode?.replaceAll("-", ""),

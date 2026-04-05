@@ -133,13 +133,22 @@ Use this file to:
 23. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
     broader Chunk 7 query/reply correspondence closure, attached replay receipt
     parity for cloned KEL events, KERIpy-shaped transferable query ingress
-    (`ssgs` -> `source + sigers`), and bounded init/incept convergence. The
-    remaining runtime gaps are now primarily forwarding/exchange/direct
-    transport breadth and the broader stale/timeout continuation tail outside
-    the now-closed receipt/query correspondence slice.
+    (`ssgs` -> `source + sigers`), bounded init/incept convergence, and the
+    first Gate F/G bridge: `Exchanger`, `challenge generate/respond/verify`,
+    plus direct and mailbox-authorized controller-to-controller `exn` delivery.
+    The remaining runtime gaps are now primarily full mailbox
+    forwarding/polling semantics, broader exchange/forwarding route breadth,
+    KERIpy interop evidence for Gate F/G, and the broader stale/timeout
+    continuation tail outside the now-closed receipt/query correspondence
+    slice.
 24. `tufa agent` release confidence must come from the packed npm artifact, not
     just the Deno source path. CLI flag semantics and Node host/runtime
     compatibility can drift unless smoke coverage exercises `init -> incept -> agent -> /health` against the tarball users actually install.
+25. End-to-end CLI tests should stay on honest public seams. For bootstrap
+    config, prefer explicit file-path flags such as `--config-dir` /
+    `--config-file`; do not seed a command's default internal config path or
+    inspect LMDB through ad hoc `deno eval` helpers in bash and call that CLI
+    coverage.
 
 ## Current Follow-Ups
 
@@ -148,9 +157,10 @@ Use this file to:
 2. Preserve CESR parser/serder/primitive parity without reopening settled
    architecture unless KERIpy or regression evidence forces it.
 3. Continue honest runtime closure around bounded init/incept convergence,
-   mailbox/direct/forwarding/exchange breadth, and the remaining
-   stale/timeout continuation tail now that the broader query/reply and
-   receipt/query correspondence slices are landed.
+   fuller mailbox forwarding/polling semantics, broader exchange/forwarding
+   breadth, KERIpy interop evidence for Gate F/G, and the remaining
+   stale/timeout continuation tail now that the broader query/reply,
+   receipt/query, and first challenge/exchange slices are landed.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
    changes in the same change set.
 5. Keep KERI storage tuple aliases derived from CESR structing descriptors and
@@ -161,6 +171,9 @@ Use this file to:
 7. Treat `tufa agent` source-vs-npm drift as a release blocker. If CLI flags or
    Node hosting change, the tarball smoke path must prove the published entry
    point still starts cleanly.
+8. When a workflow needs external bootstrap config during `init` or `incept`,
+   keep the file input explicit at the CLI surface so scripts can use arbitrary
+   filesystem locations without hidden config-path coupling.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 

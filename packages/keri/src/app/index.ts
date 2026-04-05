@@ -4,9 +4,12 @@
  * This module provides application-level functionality including CLI and server.
  */
 export * from "./agent-runtime.ts";
+export * from "./authenticating.ts";
+export * from "./challenging.ts";
 export * from "./cli/index.ts";
 export * from "./configing.ts";
 export * from "./cue-runtime.ts";
+export * from "./exchanging.ts";
 export * from "./habbing.ts";
 export * from "./keeping.ts";
 export * from "./oobiery.ts";

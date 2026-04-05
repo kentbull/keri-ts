@@ -26,31 +26,37 @@
   - prove `tufa agent` stays protocol-only and that the bootstrap command slice
     has live KERIpy parity evidence
 
-## Status Reconciliation (2026-04-03)
+## Status Reconciliation (2026-04-05)
 
-- Verdict: Gate E is complete only as a bootstrap/runtime slice. It was not
-  honestly complete against the earlier wording that implied full reply,
-  receipt, and escrow breadth.
+- Verdict: Gate E is now materially complete for the honest bootstrap/runtime
+  slice. It is not "all runtime parity", but it no longer makes sense to treat
+  bootstrap reply/query/receipt handling as the active blocker.
 - Closed evidence in the repo now includes:
   - shared `AgentRuntime` hosting through both local commands and `tufa agent`
-  - runtime-backed `tufa loc add` and `tufa ends add`
-  - runtime-backed `tufa oobi generate` / `tufa oobi resolve`
-  - config preload feeding bootstrap URLs into `oobis.` and `woobi.` with the
-    shared runtime consuming both queues
-  - local end-to-end coverage for controller, witness, mailbox, and agent OOBI
-    flows
-  - live KERIpy parity evidence for `loc add`, `ends add`, mailbox OOBI
-    generate, and mailbox OOBI resolve
-  - protocol-only host coverage for `tufa agent`
+  - runtime-backed `tufa loc add`, `tufa ends add`, `tufa oobi generate`, and
+    `tufa oobi resolve`
+  - config preload feeding `oobis.` and `woobi.`, with `tufa init` and
+    `tufa incept` now hosting bounded command-local runtime convergence instead
+    of stopping at DB preload
+  - protocol-only indirect host coverage for `tufa agent`, including OOBI /
+    resource serving, mailbox SSE, and a local `/health` route
+  - KEL-owned `/ksn/{aid}` and `/watcher/{aid}/{action}` reply handling,
+    `Oobiery`-owned `/introduce`, and runtime `QueryCoordinator` handling for
+    incomplete `query` cues
+  - receipt/query replay closure for the real bootstrap-critical slice,
+    including unverified receipt-family reprocessing, attached replay receipt
+    handling, and transferable query ingress via `ssgs`
 - Deferred beyond Gate E:
   - broader direct/mailbox/forwarding/exchange transport breadth
-  - stricter stale/timeout continuation, MFA, and retry-convergence semantics
-  - wider reply/query correspondence beyond the current bootstrap-critical
-    KERIpy slice
+  - the broader stale/timeout continuation tail and richer cleanup/retry policy
+  - data/TEL/credential OOBI breadth beyond the controller/witness/mailbox/agent
+    bootstrap slice
+  - packaged npm/tarball runtime confidence for `tufa agent`, which is now a
+    release concern distinct from the source-path runtime design
 - Planning rule: those deferred items still matter, but they are no longer Gate
-  E exit criteria. They belong to later runtime/comms/escrow closure work.
+  E exit criteria. They belong to Gate F and later runtime/comms hardening.
 
-## Current Implementation Reality (2026-04-03)
+## Current Implementation Reality (2026-04-05)
 
 Maintainer note:
 
@@ -60,51 +66,57 @@ Maintainer note:
 - this plan remains the execution history and work-tracking view, not the
   primary long-term architecture reference
 
+- Chunks 1 through 10 are now either materially complete for the honest Gate E
+  slice or explicitly deferred beyond Gate E.
 - Chunk 1 is materially complete: the shared `AgentRuntime` composition root,
-  `Reactor`, `Oobiery`, and the long-lived/local host split all exist.
-- Chunk 2 is materially complete: config preload seeds `oobis.` / `woobi.` and
-  the shared runtime consumes both queues.
-- Chunk 3 is not exhaustive, but it is complete enough as the parser-to-runtime
-  seam to stop blocking on it. The envelope exists, normalized attachment
-  families exist, and current `ilk` dispatch is sufficient to move active work
-  forward.
-- Chunk 4 is materially complete for the init/incept-critical reply families:
-  `/end/role/*`, `/loc/scheme`, `/ksn/{aid}`, and `/introduce` are now routed
-  through their intended owners, but broader reply families still remain.
-- Chunk 5 is materially complete for the receipt/query runtime core: `Hab`-owned
-  cue semantics, mailbox `stream` capture, `logs` / `ksn` / `mbx` query routing,
-  and `receipt` / `witness` wire materialization are landed. The remaining cue
-  gap is now broader follow-on transport/exchange breadth, not the core
-  receipt/query families themselves.
-- Chunk 6 is materially complete for the first indirect-host slice: the server
-  now accepts CESR `POST` / `PUT`, serves mailbox SSE for `mbx`, and continues
-  OOBI discovery through `/introduce`, but fuller forwarding / exchange breadth
-  is still later work.
-- Chunk 7 is now materially complete for the broader query/reply correspondence
-  slice: incomplete `query` cues flow through a runtime `QueryCoordinator`,
+  `Reactor`, `Oobiery`, `MailboxDirector`, `QueryCoordinator`, and the
+  long-lived/local host split all exist.
+- Chunk 2 is complete for the Gate E bootstrap slice: config preload seeds
+  `oobis.` / `woobi.`, the shared runtime consumes both queues, and command-
+  local hosts now wait for bounded convergence in `init` and `incept`.
+- Chunk 3 is materially complete for active KERI runtime work: the dispatch
+  envelope exists, normalized attachment families use KERIpy names, and current
+  `ilk` dispatch is sufficient for KEL / reply / query / receipt bootstrap
+  flows. EXN / TEL breadth is still later work, not a reason to reopen the seam.
+- Chunk 4 is materially complete for the real reply-critical surface:
+  `/end/role/*`, `/loc/scheme`, `/ksn/{aid}`, `/watcher/{aid}/{action}`, and
+  `/introduce` are routed through their intended owners.
+- Chunk 5 is materially complete for cue/runtime projection: `Hab`-owned cue
+  semantics, mailbox `stream` capture, `logs` / `ksn` / `mbx` query routing,
+  and `receipt` / `witness` wire materialization are all landed.
+- Chunk 6 is materially complete for the indirect-host bootstrap slice: the
+  server accepts CESR `POST` / `PUT`, serves mailbox SSE for `mbx`, serves OOBI
+  resources from local reply/auth material, and remains protocol-only.
+- Chunk 7 is materially complete for the broader query/reply correspondence
+  slice: incomplete `query` cues flow through runtime `QueryCoordinator`,
   `/watcher/{aid}/{action}` is KEL-owned, `/ksn` trust-source parity is tighter,
   and runtime pending-state convergence includes active query continuations.
-- Chunk 8 is now materially complete for the KERIpy receipt/query parity slice:
+- Chunk 8 is materially complete for the KERIpy receipt/query parity slice:
   the unverified witness / non-transferable / transferable receipt escrows,
   KERIpy-aligned 300-second `query-not-found` retry policy, replay-attached
-  receipt handling for cloned KEL events (`processAttachedReceiptCouples`,
-  `processAttachedReceiptQuadruples`, `escrowTRQuadruple`), and transferable
-  query ingress via `ssgs` are all landed. The remaining escrow work is now the
-  broader stale-policy and non-receipt tail, not the core receipt/query
-  correspondence path.
-- Chunk 9 works for direct role-path bootstrap OOBIs, but not for the wider
-  reply-driven introduction/bootstrap behavior KERIpy uses.
-- Chunk 10 no longer stops at bootstrap-only behavior: `tufa init`,
-  `tufa incept`, and `tufa oobi resolve` now drive bounded runtime convergence,
-  though they still depend on later forwarding / transport breadth for complete
-  communications closure.
+  receipt handling for cloned KEL events, and transferable query ingress via
+  `ssgs` are all landed.
+- Chunk 9 is materially complete for the Gate E OOBI slice: controller,
+  witness, mailbox, and agent role-path OOBIs plus `/introduce`-seeded
+  continuation now flow through the same durable `oobis.` / `woobi.` ->
+  `coobi.` / `eoobi.` / `roobi.` runtime path. Remaining breadth is now
+  data/TEL/credential OOBIs and richer auth semantics, not bootstrap honesty.
+- Chunk 10 is materially complete: the user-facing CLI surfaces are on the
+  shared runtime, and `tufa init` / `tufa incept` no longer stop at DB preload.
+  The remaining `tufa agent` concern is packaged tarball/runtime confidence,
+  not host ownership design.
 
-## Active Continuation Slice For Reasonably Done `init` / `incept`
+## Active Continuation Slice Beyond Gate E
 
-- Planning verdict: treat Chunks 1 through 8 as materially complete for the
-  honest bootstrap/runtime/query-and-receipt-correspondence slice. The active
-  work is now the remaining escrow-policy tail in Chunk 9 and the Gate F comms
-  bridge around direct/mailbox/forwarding/exchange breadth.
+- Planning verdict: do not reopen Chunks 4 through 10 as if bootstrap-critical
+  reply/query/receipt behavior were still missing. That slice is landed.
+- The active continuation is now:
+  - Gate F/G continuation on top of the now-landed first exchange slice:
+    direct and mailbox-authorized controller delivery, `Exchanger`, and
+    challenge CLI are real, but fuller forwarding/mailbox polling semantics and
+    KERIpy interop evidence are still open
+  - the broader stale/timeout continuation tail and richer cleanup policy
+  - packaged npm/tarball smoke confidence for `tufa agent`
 - `/ksn` is not just another generic reply route. In KERIpy it is KEL-owned
   reply handling and depends on accepted key state plus query-not-found escrow.
 - `/introduce` is not generic endpoint reply routing either. It belongs with
@@ -119,61 +131,47 @@ Maintainer note:
   for a higher-level correspondent to choose a local habitat, resolve an honest
   attester, and emit a follow-on query only when that correspondence can be
   justified.
-- `tufa init` should mirror KERIpy init when config preload exists: host the
-  command-local runtime, wait for `roobi.` outcomes, and authenticate the
-  `woobi.` path instead of just preloading DB rows.
-- `tufa incept` should remain local-creation first, but it should stop assuming
-  that "local" means "runtime-blind". It must be able to consume accepted peer
-  state produced by prior or inline OOBI resolution when that state is part of
-  the honest prerequisite surface.
+- `tufa init` now mirrors KERIpy's bootstrap intent closely enough to be
+  honest: when queued `oobis.` or `woobi.` work exists, it hosts the
+  command-local runtime, waits for bounded convergence, and fails if bootstrap
+  OOBIs end in `eoobi.`.
+- `tufa incept` now does the same bounded pre-inception convergence before
+  creating local state. It is no longer "runtime blind". The remaining explicit
+  rejections such as `--endpoint` and `--proxy` reflect true missing higher-
+  level orchestration, not missing shared runtime plumbing.
 
-## Interface and Runtime Changes
+## Interface and Runtime State
 
-- Add an internal `Deck<T>` abstraction in `keri-ts` with KERIpy-shaped
-  semantics and naming:
-  - `push`, `pull`, `append`, `clear`, iteration, length
-  - use it in runtime interfaces instead of arrays, event emitters, or ad hoc
-    queues
-- Add typed cue unions for the Gate E runtime:
-  - start with the KERI families needed now: `receipt`, `notice`, `witness`,
-    `query`, `replay`, `reply`, `stream`, `keyStateSaved`, `psUnescrow`, OOBI
-    resolution/result cues
-  - preserve `kin`-first cue shape so KERIpy cue producers/consumers can be
-    ported cue-by-cue
-- Add `createAgentRuntime(hby, options)` and `runAgentRuntime(runtime)`:
-  - `AgentRuntime` is a composition root with only truly shared state: `hby`,
+- `Deck<T>` now exists as the KERIpy-shaped queue primitive used across runtime
+  interfaces instead of ad hoc arrays or callback chains.
+- Typed cue unions now exist for the active runtime families:
+  `receipt`, `notice`, `witness`, `query`, `replay`, `reply`, `stream`,
+  `keyStateSaved`, `psUnescrow`, and OOBI queue/result cues.
+- `createAgentRuntime(hby, options)` and `runAgentRuntime(runtime)` are landed:
+  - `AgentRuntime` remains a small composition root with shared `hby`, host
     `mode`, and the shared `cues` deck
-  - topic-local state and long-running flows live behind component-owned classes
-    such as `Reactor`, `Oobiery`, and `QueryCoordinator`
-  - runtime children should mirror KERIpy mental model: `msgDo`, `escrowDo`,
-    `oobiDo`, and `queryDo`
-- Add `EndpointRole` constants covering at least `controller`, `agent`,
-  `mailbox`, and `witness`
-- Add a KERI dispatch envelope after CESR parsing:
-  - make it the typed `keri-ts` equivalent of KERIpy parser `exts`, not just a
-    bootstrap subset
-  - carry the full parser-state accumulation families needed for later dispatch:
-    `sigers`, `wigers`, `cigars`, `trqs`, `tsgs`, `ssgs`, `frcs`, `sscs`,
-    `ssts`, `tdcs`, `ptds`, `essrs`, `bsqs`, `bsss`, `tmqs`, and `local`
-  - keep the KERIpy family names on the envelope, but represent each family
-    element as a named dispatch value object rather than an anonymous object
-    literal
-  - keep any TS-friendly convenience on the envelope as derived getters, not as
-    parallel raw-object aliases that compete with the primary contract
-- Add `Habery` / `Hab` helpers needed by cue-driven endpoint logic:
-  - `fetchUrls`
-  - `endsFor`
-  - `loadEndRole`
-  - `loadLocScheme`
-  - `replyEndRole`
-  - `replyLocScheme`
-  - `replyToOobi`
-  - `processCuesIter`
-- Keep `tufa agent` network listeners protocol-only:
-  - indirect-mode HTTP serving for OOBI/resource flows in Gate E
-  - direct-mode TCP host adapter defined under the same abstraction, but
-    correctness closure belongs to Gate F
-  - no localhost admin/control surface
+  - topic-local state lives behind `Reactor`, `Oobiery`, `MailboxDirector`, and
+    `QueryCoordinator`
+  - the long-lived doers now mirror the KERIpy mental model: `msgDo`,
+    `escrowDo`, `oobiDo`, `queryDo`, plus cue draining
+- Role constants covering `controller`, `agent`, `mailbox`, and `witness`
+  exist through the runtime/app role surface.
+- The KERI dispatch envelope after CESR parsing is landed:
+  - it is the typed `keri-ts` analogue to KERIpy parser `exts`
+  - it carries the KERIpy family names needed by current runtime work,
+    including `sigers`, `wigers`, `cigars`, `trqs`, `tsgs`, `ssgs`, `frcs`,
+    `sscs`, `ssts`, `tdcs`, `ptds`, `essrs`, `bsqs`, `bsss`, `tmqs`, and
+    `local`
+  - it uses named dispatch records or CESR structing records instead of opaque
+    anonymous objects
+- `Habery` / `Hab` helpers needed by cue-driven endpoint logic are landed:
+  `fetchUrls`, `endsFor`, `loadEndRole`, `loadLocScheme`, `replyEndRole`,
+  `replyLocScheme`, `replyToOobi`, and `processCuesIter`
+- `tufa agent` listeners remain protocol-only:
+  - indirect-mode HTTP serving exists for OOBI/resource/mailbox flows in Gate E
+  - direct-mode hosting belongs to the same abstraction but still closes in
+    Gate F
+  - there is still no localhost admin/control surface
 
 ## Cue Matrix
 
@@ -202,219 +200,186 @@ Maintainer note:
 
 ### Chunk 0: Write the Gate E plan artifact first
 
-- Create this dedicated Gate E subplan at
-  `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
-- Write the full architecture, chunk order, acceptance criteria, and KERIpy
-  correspondence into that file before implementation starts
-- Include a cue matrix section in that plan:
-  - producer
-  - `kin`
-  - payload shape
-  - consumer
-  - expected side effect
-- Add a pointer from `INIT_INCEPT_RECONCILIATION_PLAN.md` to the new Gate E
-  subplan so future sessions can rehydrate quickly without relying on thread
-  context
+- Status reconciliation (2026-04-05):
+  - complete
+  - this plan exists, the init/incept reconciliation plan points at it, and the
+    cue matrix plus chunk history now serve as the execution-tracking view
+  - the durable maintainer architecture references have since split out into
+    ADRs and design docs; this file should stay current as a status map, not
+    become the only source of truth again
 
 ### Chunk 1: Build the cue-driven `AgentRuntime` foundation
 
-- Implement the shared runtime and host adapters for:
-  - command-local CLI hosting
-  - long-lived `tufa agent` hosting
-- Shrink `AgentRuntime` into a composition root and move topic-local state
-  behind component-owned classes
-- Introduce `Reactor` to own:
-  - parse/message worker
-  - reply routing and `Revery`
-  - `Kevery`
-  - escrow worker
-- Introduce `Oobiery` to own:
-  - durable OOBI queue state and processing
-  - OOBI worker
-- Make every major subsystem communicate through `Deck`s and cues or through
-  KERIpy-style durable DB queues, not direct callback chains
-- Make the escrow and cue workers continuous:
-  - drain what is available
-  - yield
-  - repeat every turn
+- Status reconciliation (2026-04-05):
+  - materially complete
+  - `AgentRuntime` is now the small shared composition root for `hby`, host
+    mode, and the shared cue deck
+  - `Reactor`, `Oobiery`, `MailboxDirector`, and `QueryCoordinator` own their
+    topic-local state and long-running flows
+  - command-local hosting and long-lived `tufa agent` hosting now use the same
+    runtime bundle
+  - continuous `msgDo`, cue draining, `escrowDo`, `oobiDo`, and `queryDo` loops
+    exist and yield every runtime turn
 
 ### Chunk 2: Port config preload and bootstrap queues
 
-- Add `Habery.reconfigure()`-style config ingestion for `iurls`, `durls`, and
-  `wurls`
-- Seed `oobis` and `woobi` from config during init/open
-- Feed those bootstrap URLs into runtime decks instead of bespoke one-off init
-  logic
-- Allow command-local runtime hosting to resolve bootstrap OOBIs during
-  init/open when needed for endpoint readiness
+- Status reconciliation (2026-04-05):
+  - complete for the Gate E bootstrap slice
+  - config ingestion now seeds `oobis.` and `woobi.` during habery creation/open
+  - the shared runtime consumes those durable queues instead of bespoke
+    one-off bootstrap logic
+  - `tufa init` and `tufa incept` now host the command-local runtime long
+    enough to drive queued bootstrap work to bounded success/failure state
 
 ### Chunk 3: Add parser normalization and dispatch
 
-- Reuse the existing CESR parser
-- Add the KERI app-layer normalization step that converts parsed attachment
-  groups into the full typed KERIpy-style parser accumulation envelope expected
-  by runtime code
-- Dispatch by `ilk` into KEL events, receipts, replies, queries, and later
-  EXN/TEL
-- Push follow-on work into runtime cues instead of embedding side effects inside
-  the parser loop
+- Status reconciliation (2026-04-05):
+  - materially complete for active KERI runtime work
+  - the existing CESR parser now feeds a typed KERI dispatch envelope with the
+    KERIpy family names the runtime needs
+  - current `ilk` dispatch covers KEL events, receipts, replies, and queries
+    well enough to support bootstrap/runtime/query/receipt closure
+  - EXN / TEL breadth remains later work, but parser normalization is no longer
+    blocking honest progress
 
 ### Chunk 4: Broaden reply routing and BADA-RUN beyond the landed bootstrap slice
 
-- Keep `/end/role/add`, `/end/role/cut`, and `/loc/scheme` as the landed
-  baseline.
-- Add `/ksn/{aid}` through a KEL-owned handler that persists `kdts.` / `ksns.` /
-  `knas.` and emits `keyStateSaved` from the normal runtime path.
-- Add `/introduce` through `Oobiery` route registration so accepted reply data
-  feeds new `oobis.` work back into the ordinary resolver pipeline.
-- Keep route ownership honest:
-  - `Revery` verifies, applies BADA rules, persists reply artifacts, and owns
-    reply escrow.
-  - `Kevery` owns KEL-derived reply families such as `/ksn`.
-  - `Oobiery` owns OOBI-introduction reply families such as `/introduce`.
-- Expand BADA-RUN from the bootstrap subset to the reply families needed for
-  init/open/incept continuation:
-  - route-base normalization
-  - old-said lookup
-  - dater ordering
-  - idempotence
-  - endorsement verification
-  - escrow when prior dependencies are missing
-- Persist reply artifacts through the KERI reply stores
-- Make reply success and follow-on actions visible through cues, not hidden
-  direct calls
+- Status reconciliation (2026-04-05):
+  - materially complete for the real Gate E reply surface
+  - landed routes now include `/end/role/add`, `/end/role/cut`,
+    `/loc/scheme`, `/ksn/{aid}`, `/watcher/{aid}/{action}`, and `/introduce`
+  - route ownership is now explicit and honest:
+    - `Revery` verifies, applies BADA, persists reply artifacts, and owns reply
+      escrow/replay
+    - `Kevery` owns KEL-derived reply families such as `/ksn` and watcher
+      replies
+    - `Oobiery` owns OOBI-introduction reply families such as `/introduce`
+  - reply success and follow-on actions now surface through cues and runtime
+    continuation rather than hidden helper calls
+  - remaining reply breadth belongs to later communication/exchange work, not
+    the bootstrap slice
 
 ### Chunk 5: Complete cue processing and endpoint/location/OOBI state projection
 
-- Land `fetchUrls`, `endsFor`, `loadEndRole`, `loadLocScheme`, and `replyToOobi`
-- Port `Hab.processCuesIter` semantics so cue-to-message behavior remains
-  recognizable to KERIpy maintainers
-- Materialize the cue families that now still degrade to notify-only or partial
-  behavior when they are part of the real runtime path:
-  - `receipt`
-  - `witness`
-  - complete `query`
-  - `reply`
-  - `replay`
-  - `stream`
-- Process reply-derived endpoint/location updates through cue-driven flows
-  wherever KERIpy does
-- Make `/ksn` follow-on work, query recovery, and introduction-driven
-  continuation visible through cues instead of hidden helper calls
-- Treat cue portability as a first-class design goal, not an implementation
-  detail
+- Status reconciliation (2026-04-05):
+  - materially complete for the active Gate E runtime slice
+  - `fetchUrls`, `endsFor`, `loadEndRole`, `loadLocScheme`, `replyToOobi`, and
+    `Hab.processCuesIter()` are all landed
+  - cue-driven materialization is now real for `receipt`, `witness`, complete
+    `query`, `reply`, `replay`, and `stream`
+  - `/ksn` follow-on work, query recovery, and introduction-driven continuation
+    now move through cues and runtime coordination instead of hidden side
+    effects
+  - the remaining cue gap is broader transport/exchange breadth, not the core
+    cue-to-wire contract
 
 ### Chunk 6: Complete indirect-mode protocol serving and reply-based OOBI bootstrap
 
-- Keep the landed KERIpy-like OOBI/resource HTTP routes used by remote peers
-- Back those routes with `replyToOobi()` and stored reply/auth material
-- Add the reply-based bootstrap/resource variants needed for transferable
-  identifier discovery and introduction-driven OOBI continuation
-- Support role-based dissemination needed for `witness`, `controller`,
-  `mailbox`, and `agent` OOBI discovery where local state permits
-- Ensure served payloads include the cloned KEL and reply-auth material remote
-  peers need to verify returned `/loc/scheme`, `/end/role/*`, `/ksn`, and
-  introduction-driven continuation data
-- Keep this listener protocol-only and avoid any local administrative RPC
+- Status reconciliation (2026-04-05):
+  - materially complete for the indirect bootstrap/resource host slice
+  - the server now accepts CESR `POST` / `PUT`, serves OOBI/resource responses
+    from local reply/auth material, serves mailbox SSE for `mbx`, and exposes a
+    local `/health` route for host readiness checks
+  - role-based dissemination for `controller`, `mailbox`, `witness`, and
+    `agent` OOBIs is now real where local state permits
+  - introduction-driven continuation stays on the same parser -> routing ->
+    escrow -> finalization path
+  - remaining host work is broader direct/forwarding/exchange transport breadth,
+    not protocol-only bootstrap serving
 
 ### Chunk 7: Implement `Kevery` core event processing, first-seen logic, seals, and delegated-event handling
 
-- Build remote event acceptance, durable log updates, current-state updates, and
-  first-seen persistence
-- Populate first-seen and seal/source stores required by replay and delegation
-  semantics
-- Treat missing delegator anchors and related dependencies as escrow cases
-- Push follow-on work such as receipts, notices, witness actions, queries, and
-  replies into `Kevery.cues`
 - Status reconciliation (2026-04-05):
-  - materially complete for the broader query/reply correspondence slice
+  - materially complete for the active Gate E slice
+  - remote event acceptance, durable log/current-state updates, first-seen
+    persistence, and follow-on cue emission are all real
   - landed evidence includes `/watcher/{aid}/{action}` reply routing, stricter
-    non-lax `/ksn` source acceptance (self, KSN backer, or configured watcher),
-    runtime `QueryCoordinator` handling for incomplete `query` cues, and
-    continuation tracking through runtime pending-state convergence
+    non-lax `/ksn` source acceptance, runtime `QueryCoordinator` handling for
+    incomplete `query` cues, and continuation tracking through runtime
+    pending-state convergence
   - remaining work has moved to stale/timeout continuation parity and broader
-    transport/exchange/direct communications closure, not more Chunk 7 side
-    effects
+    transport/exchange/direct communications closure, not more core event/cue
+    side effects
 
 ### Chunk 8: Implement continuous KEL escrow processing needed for transferable/bootstrap acceptance
 
-- Run KEL escrows every runtime turn with no timer-based polling gap
-- Implement the escrow passes required by honest bootstrap continuation:
-  - `processEscrowOutOfOrders`
-  - `processEscrowUnverWitness`
-  - `processEscrowUnverNonTrans`
-  - `processEscrowUnverTrans`
-  - `processEscrowPartialDels`
-  - `processEscrowPartialWigs`
-  - `processEscrowPartialSigs`
-  - `processEscrowDuplicitous`
-  - `processEscrowMisfits`
-  - `processQueryNotFound`
-- Implement `processEscrowDelegables` as an explicit adjacent pass
-- Emit cues where KERIpy emits cues during successful unescrow/finalization
-  paths
+- Status reconciliation (2026-04-05):
+  - materially complete for the real Gate E receipt/query escrow slice
+  - KEL escrows now run every runtime turn with no timer-based polling gap
+  - the planned runtime passes are landed:
+    - `processEscrowOutOfOrders`
+    - `processEscrowUnverWitness`
+    - `processEscrowUnverNonTrans`
+    - `processEscrowUnverTrans`
+    - `processEscrowPartialDels`
+    - `processEscrowPartialWigs`
+    - `processEscrowPartialSigs`
+    - `processEscrowDuplicitous`
+    - `processEscrowDelegables`
+    - `processEscrowMisfits`
+    - `processQueryNotFound`
+  - attached replay receipt handling for cloned KEL events is also landed via
+    `processAttachedReceiptCouples(...)`,
+    `processAttachedReceiptQuadruples(...)`, and `escrowTRQuadruple(...)`
+  - the remaining escrow work is the broader stale/timeout policy tail and
+    non-bootstrap families, not these core passes
 
 ### Chunk 9: Complete the OOBI resolver beyond simple role-path fetches
 
-- Support witness, controller, mailbox, and agent role-path OOBIs generically
-- Support CESR-stream responses first and the reply-based variants needed for
-  ecosystem interop
-- Drive `oobis.` / `woobi.` -> `coobi.` / `eoobi.` -> `roobi.` through `Oobiery`
-  durable queue state and the shared cue deck
-- Support `/introduce`-seeded OOBIs and keep those follow-on discoveries on the
-  same parser -> routing -> escrow -> finalization path
-- Preserve alias hints and deterministic failure states
-- Do not allow resolver shortcuts that bypass parser, routing, or escrow logic
-- Carry `woobi.` continuation and MFA/auth convergence far enough for command
-  parity on `init` / open paths
+- Status reconciliation (2026-04-05):
+  - materially complete for the honest Gate E OOBI slice
+  - witness, controller, mailbox, and agent role-path OOBIs now route through
+    the durable `Oobiery` queue state and shared cue deck
+  - CESR-stream fetch -> parse -> route -> persist flow is real and preserves
+    alias hints plus deterministic `coobi.` / `eoobi.` / `roobi.` transitions
+  - `/introduce`-seeded OOBIs stay on the same normal parser/routing/escrow
+    path instead of using resolver shortcuts
+  - `woobi.` continuation/auth convergence is now carried far enough for honest
+    `init` / open bootstrap behavior
+  - remaining breadth is now data/TEL/credential OOBIs and richer follow-on
+    authentication semantics, not the bootstrap resolver core
 
 ### Chunk 10: Add the Gate E CLI surfaces on top of the shared runtime
 
-- `tufa loc add`
-  - create the signed reply
-  - feed it through the local runtime
-  - wait on runtime-visible completion/cue conditions
-  - confirm `loadLocScheme()`
-- `tufa ends add`
-  - create the signed reply
-  - feed it through the local runtime
-  - wait on runtime-visible completion/cue conditions
-  - confirm `loadEndRole()`
-- `tufa oobi generate`
-  - support at least `witness`, `controller`, and `mailbox`
-  - support `agent` generation when local endpoint state exists
-- `tufa oobi resolve`
-  - host the runtime in-process
-  - enqueue the OOBI job
-  - wait for `roobi` / completion cues
-  - exit cleanly
-- `tufa agent`
-  - host the same shared runtime long-lived
-  - expose only protocol routes needed for OOBI/resource serving
-- None of these commands may depend on a localhost admin endpoint
+- Status reconciliation (2026-04-05):
+  - materially complete
+  - `tufa loc add` and `tufa ends add` now create signed replies, feed them
+    through the local runtime, and confirm state through `loadLocScheme()` /
+    `loadEndRole()`
+  - `tufa oobi generate` supports the active Gate E role set, including `agent`
+    generation when local endpoint state exists
+  - `tufa oobi resolve` hosts the runtime in-process, enqueues the OOBI job,
+    and waits for durable completion
+  - `tufa agent` hosts the same shared runtime long-lived and still exposes
+    only protocol routes
+  - `tufa init` and `tufa incept` now belong in the same runtime-backed CLI
+    story: both host bounded command-local convergence when queued bootstrap
+    work exists
+  - no command depends on a localhost admin endpoint
 
 ## Init/Incept Readiness Criteria
 
-- `tufa init` should do more than create stores when config preload exists:
-  after habery open it should host a command-local runtime, wait for queued
-  bootstrap OOBIs to settle into success/failure state, and run the well-known
-  authentication path that KERIpy init already performs.
-- `tufa incept` should remain single-sig/local-creation first, but it should be
-  allowed to rely on accepted remote controller/delegator/witness state that was
-  produced by the shared runtime rather than pretending all prerequisites are
-  local-only.
-- Explicit `tufa incept` rejections should now mean "missing orchestration we
-  have not implemented yet", not "the runtime cannot consume the remote state we
-  already resolved elsewhere".
+- Status reconciliation (2026-04-05):
+  - `tufa init` now does more than create stores when config preload exists:
+    after habery open it hosts a command-local runtime, waits for queued
+    bootstrap OOBIs to settle within a bounded turn budget, and fails if
+    bootstrap work ends in `eoobi.`
+  - `tufa incept` now remains local-creation first without being runtime-blind:
+    it performs the same bounded bootstrap convergence before creating the local
+    identifier
+  - explicit `tufa incept` rejections now more honestly mean "missing higher-
+    level orchestration we have not implemented yet", such as endpoint
+    receipting or delegation proxy flow, not "the runtime cannot consume remote
+    state"
 
 ### Chunk 11: Extend the same runtime after Gate E
 
-- Add direct-mode TCP hosting under the same runtime abstraction and close its
-  correctness in Gate F
-- Add `Exchanger` with `processEscrowPartialSigned`
-- Add `Tevery` and broker txn-state escrows
-- Add registrar escrows
-- Keep all of them on the same Deck/cue/continuous-loop model
+- Status reconciliation (2026-04-05):
+  - deferred beyond Gate E and still active for later work
+  - the next honest runtime expansion remains direct-mode hosting plus the
+    broader forwarding/exchange transport surface in Gate F
+  - `Exchanger`, `Tevery`, broker txn-state escrows, and registrar escrows
+    should stay on the same Deck/cue/continuous-loop model when they land
 
 ## Test Plan
 
@@ -449,6 +414,9 @@ Maintainer note:
   from OOBIs escrow and later finalize within the bootstrap acceptance slice
 - Integration tests must verify that `tufa agent` exposes only protocol surfaces
   and no local admin API
+- Release-facing smoke must also exercise the packed npm artifact
+  (`init -> incept -> agent -> /health`) because Deno-source runtime evidence is
+  no longer sufficient for `tufa agent` confidence
 - Documentation verification must include the new Gate E plan file and its cue
   matrix so the architecture is recoverable in future sessions
 
@@ -470,5 +438,7 @@ Maintainer note:
   parity across every later runtime family
 - Config-seeded witness bootstrap through `woobi.` is part of Gate E; broader
   `woobi.` continuation semantics are not
+- Packed npm/tarball smoke is a release gate for `tufa agent`, not an optional
+  nice-to-have, because source and packaged runtime behavior can drift
 - Data OOBIs and TEL/credential txn-state escrows remain the next major chunk
   after Gate E

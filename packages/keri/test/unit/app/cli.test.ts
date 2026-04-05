@@ -10,10 +10,10 @@ interface CmdResult {
   stderr: string;
 }
 
-async function runTufaInit(args: string[]): Promise<CmdResult> {
+async function runTufa(args: string[]): Promise<CmdResult> {
   const repoRoot = new URL("../../../", import.meta.url);
   const out = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", "init", ...args],
+    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
     cwd: repoRoot,
     stdout: "piped",
     stderr: "piped",
@@ -24,6 +24,14 @@ async function runTufaInit(args: string[]): Promise<CmdResult> {
     stdout: new TextDecoder().decode(out.stdout),
     stderr: new TextDecoder().decode(out.stderr),
   };
+}
+
+async function runTufaInit(args: string[]): Promise<CmdResult> {
+  return runTufa(["init", ...args]);
+}
+
+async function runTufaIncept(args: string[]): Promise<CmdResult> {
+  return runTufa(["incept", ...args]);
 }
 
 Deno.test("CLI - init command with valid arguments", async () => {
@@ -158,4 +166,42 @@ Deno.test("CLI - --loglevel debug enables debug LMDB traces", async () => {
   const combined = `${res.stdout}\n${res.stderr}`;
   assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
   assertStringIncludes(combined, "Opening LMDB at:");
+});
+
+Deno.test("CLI - incept command accepts explicit config-dir and config-file overrides", async () => {
+  const name = `incept-config-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
+  Deno.mkdirSync(configDir, { recursive: true });
+  Deno.writeTextFileSync(`${configDir}/bootstrap.json`, "{}\n");
+
+  const init = await runTufaInit([
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--nopasscode",
+  ]);
+  assertEquals(init.code, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+
+  const incept = await runTufaIncept([
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--config-dir",
+    configDir,
+    "--config-file",
+    "bootstrap",
+    "--alias",
+    "alice",
+    "--transferable",
+  ]);
+
+  assertEquals(
+    incept.code,
+    0,
+    `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`,
+  );
+  assertStringIncludes(incept.stdout, "Prefix");
 });

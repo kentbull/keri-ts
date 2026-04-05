@@ -69,3 +69,45 @@ export function makeQuerySerder(
     makify: true,
   });
 }
+
+/**
+ * Build one canonical `exn` serder from route, sender, recipient, and payload.
+ *
+ * Current version policy:
+ * - uses the version-1 KERI `exn` body shape already exercised by the current
+ *   `SerderKERI` field registry
+ * - keeps `q` present as an explicit modifiers map even when empty so the
+ *   generated message matches KERIpy's durable exchange-message shape
+ */
+export function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  {
+    sender,
+    recipient = "",
+    modifiers = {},
+    stamp = makeNowIso8601(),
+    dig = "",
+  }: {
+    sender: string;
+    recipient?: string;
+    modifiers?: Record<string, unknown>;
+    stamp?: string;
+    dig?: string;
+  },
+): SerderKERI {
+  return new SerderKERI({
+    sad: {
+      t: Ilks.exn,
+      i: sender,
+      rp: recipient,
+      p: dig,
+      dt: stamp,
+      r: route,
+      q: modifiers,
+      a: payload,
+      e: {},
+    },
+    makify: true,
+  });
+}

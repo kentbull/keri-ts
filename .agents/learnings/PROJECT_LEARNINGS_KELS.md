@@ -99,19 +99,34 @@ runtime ownership semantics.
     correspondence requests that must resolve a local habitat and an honest
     remote attester before emitting a follow-on `qry`.
 28. The remaining gaps are narrower and clearer now: promote key DB `Partial`
-    rows, finish forwarding/exchange/direct transport breadth, and harden the
-    broader stale/timeout continuation tail rather than reopening the old
-    query/reply or receipt/query correspondence graph.
-29. The maintainer contract for the Chunk 7 query/watcher slice now lives in
+    rows, finish fuller mailbox forwarding/polling plus broader
+    exchange/forwarding route breadth, and harden the broader stale/timeout
+    continuation tail rather than reopening the old query/reply or
+    receipt/query correspondence graph.
+29. The first Gate F/G bridge is now real in `keri-ts`: `Exchanger` owns
+    accepted and partially signed `exn` persistence (`exns.`, `epse.`, `epsd.`,
+    `esigs.`, `ecigs.`, `epath.`, `essrs.`, `erpy.`), challenge responses land
+    through `/challenge/response`, and the CLI now has `exchange send` plus
+    `challenge generate/respond/verify`.
+30. Current indirect delivery is honest but still narrower than KERIpy's full
+    mailbox story. `keri-ts` now supports mailbox-authorized controller
+    delivery by choosing the resolved mailbox endpoint, but witness-forwarded
+    offline polling and richer forwarding routes remain later work.
+31. The maintainer contract for the Chunk 7 query/watcher slice now lives in
     `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`,
     and the broader escrow-control philosophy now lives in
     `docs/adr/adr-0008-escrow-decision-architecture.md`. Treat those as the
     durable sources before relying on thread history.
-30. `tufa agent` has two independent compatibility seams: CLI flag semantics
+32. `tufa agent` has two independent compatibility seams: CLI flag semantics
     and the packaged Node host runtime. Deno-source tests can prove runtime
     behavior, but release confidence also needs tarball smoke coverage because
     the npm build can drift into stale command definitions or Node-incompatible
     server code.
+33. Config-seeded bootstrap should stay on explicit CLI/file seams, not hidden
+    default-path tricks in tests. If a command needs external bootstrap config,
+    give it `--config-dir` / `--config-file` or another honest file input
+    surface; do not have bash E2E scripts write directly into the command's
+    default internal config location and pretend that proves CLI behavior.
 
 ## Use This Doc For
 
@@ -135,7 +150,8 @@ runtime ownership semantics.
 1. Keep KEL-state work parity-first on top of DB invariants rather than adding
    abstraction before behavior closure.
 2. Continue the Gate E continuation / Gate F bridge with focus on
-   forwarding/exchange/direct transport breadth and stale/timeout continuation
+   fuller mailbox forwarding/polling semantics, broader exchange/forwarding
+   route breadth, KERIpy interop evidence, and stale/timeout continuation
    behavior now that the broader query/reply correspondence slice is landed.
 3. Promote high-value DB `Partial` rows with real row-level evidence instead of
    symbol-existence optimism.
@@ -145,6 +161,9 @@ runtime ownership semantics.
    reading like archives again, compact them.
 6. Keep `tufa agent` smoke coverage honest at the packaged boundary. Help text
    alone is not enough; the tarball path should prove real host startup.
+7. Keep Gate E E2E coverage CLI-first: plain JSON config files and protocol
+   routes are fair game, arbitrary `deno eval` LMDB inspection or default-path
+   config seeding are not.
 
 ## Milestone Rollup
 
@@ -279,6 +298,19 @@ runtime ownership semantics.
 - The durable lesson is release-process, not just code-path: the packed npm
   tarball needs smoke coverage through `init -> incept -> agent -> /health` or
   source/package drift will recur silently.
+
+### 2026-04-05 - Exchange And Challenge Moved From Missing Surface To First-Class Runtime Slice
+
+- `Exchanger` now owns accepted and partial-signature `exn` verification,
+  persistence, and replay through the dedicated exchange stores instead of
+  leaving the DB rows idle.
+- The first route-level exchange behavior is live: `/challenge/response`
+  persists accepted responses into `reps.`, `challenge verify` promotes matched
+  responses into `chas.`, and the CLI now exposes `challenge
+  generate/respond/verify` plus `exchange send`.
+- The important boundary is honesty: direct delivery and mailbox-authorized
+  endpoint delivery are real in `keri-ts`, but full KERIpy witness-forwarded
+  mailbox polling and interop evidence are still the remaining Gate F/G work.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 

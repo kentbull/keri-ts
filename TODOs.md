@@ -81,3 +81,9 @@ Things to come back and do at some point:
     - processReplyAddWatched
     - updateWatched
 - router.addRoute("/watcher/{aid}/{action}", this, "AddWatched");
+- Exchanger implementation (very lightly reviewed, needs a full read through and challenging of code)
+- challenge response code
+- exchange tufa command
+- Authenticator & well known OOBIs
+  - all these new OOBI functions. are they really justified and are they properly keri-ts native?
+  - all the new Oobiery functions for multi OOBIs and well knowns

@@ -1,5 +1,11 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "../../../cesr/mod.ts";
+import {
+  type Cigar,
+  Diger,
+  Ilks,
+  Prefixer,
+  SerderKERI,
+} from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -71,7 +77,7 @@ export class Oobiery {
    */
   resolve(url: string, alias?: string): void {
     const meta = parseOobiUrl(url, alias);
-    this.pinQueuedRecord("oobis", url, meta);
+    this.pinQueuedRecord(queueKindFor(url), url, meta);
     this.cues.push({ kin: "oobiQueued", url, alias: meta.alias });
   }
 
@@ -86,11 +92,17 @@ export class Oobiery {
    */
   *processOnce(): Operation<void> {
     const item = this.nextQueued();
-    if (!item) {
+    if (item) {
+      const [kind, url, record] = item;
+      yield* this.processJob(kind, url, record);
       return;
     }
-    const [kind, url, record] = item;
-    yield* this.processJob(kind, url, record);
+
+    const multi = this.nextReadyMoobi();
+    if (multi) {
+      const [url, record] = multi;
+      this.completeMultiOobi(url, record);
+    }
   }
 
   /**
@@ -108,21 +120,37 @@ export class Oobiery {
 
   /** Return the next queued durable OOBI record, if any. */
   private nextQueued(): [OobiQueueKind, string, OobiRecord] | null {
-    const nextFrom = (
-      kind: OobiQueueKind,
-    ): [OobiQueueKind, string, OobiRecord] | null => {
-      const store = kind === "woobi" ? this.hby.db.woobi : this.hby.db.oobis;
-      for (const [keys, record] of store.getTopItemIter()) {
-        const url = keys[0];
-        if (!url) {
-          continue;
-        }
-        return [kind, url, record];
+    for (const [keys, record] of this.hby.db.oobis.getTopItemIter()) {
+      const url = keys[0];
+      if (!url) {
+        continue;
       }
-      return null;
-    };
+      return ["oobis", url, record];
+    }
 
-    return nextFrom("oobis") ?? nextFrom("woobi");
+    return null;
+  }
+
+  /** Return one multi-OOBI parent whose child URLs have all settled. */
+  private nextReadyMoobi(): [string, OobiRecord] | null {
+    for (const [keys, record] of this.hby.db.moobi.getTopItemIter()) {
+      const url = keys[0];
+      if (!url) {
+        continue;
+      }
+
+      const urls = record.urls ?? [];
+      if (
+        urls.length === 0 ||
+        urls.every((childUrl) =>
+          !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl)
+        )
+      ) {
+        return [url, record];
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -158,6 +186,7 @@ export class Oobiery {
 
     const response = yield* fetchOobiResponse(url);
     if (!response.ok) {
+      yield* closeResponseBody(response);
       this.remQueueStore(kind, url);
       this.hby.db.eoobi.pin(url, {
         ...queuedRecord,
@@ -173,12 +202,22 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
+    const contentType = response.headers.get("content-type")?.toLowerCase() ??
+      "";
     this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
       date: new Date().toISOString(),
       state: "fetched",
     });
+
+    if (contentType.includes("json")) {
+      if (this.processJsonOobiResponse(url, queuedRecord, bytes)) {
+        return;
+      }
+      this.failFetchedOobi(url, queuedRecord, "invalid-json-oobi");
+      return;
+    }
 
     this.reactor.ingest(bytes);
     this.reactor.processOnce();
@@ -195,6 +234,130 @@ export class Oobiery {
       cid: meta.cid ?? undefined,
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
+    });
+  }
+
+  /** Handle JSON OOBI responses that carry reply bodies instead of CESR streams. */
+  private processJsonOobiResponse(
+    url: string,
+    record: OobiRecordShape,
+    bytes: Uint8Array,
+  ): boolean {
+    let serder: SerderKERI;
+    try {
+      serder = new SerderKERI({ raw: bytes });
+    } catch {
+      return false;
+    }
+
+    if (!serder.verify() || serder.ilk !== Ilks.rpy) {
+      return false;
+    }
+
+    if (
+      serder.route === "/oobi/controller" || serder.route === "/oobi/witness"
+    ) {
+      this.processMultiOobiReply(url, record, serder);
+      return true;
+    }
+
+    return false;
+  }
+
+  /** Fan one multi-OOBI reply out into child `oobis.` jobs and a parent `moobi.` record. */
+  private processMultiOobiReply(
+    url: string,
+    record: OobiRecordShape,
+    serder: SerderKERI,
+  ): void {
+    const data = serder.ked?.a as Record<string, unknown> | undefined;
+    const cid = typeof data?.aid === "string"
+      ? new Prefixer({ qb64: data.aid }).qb64
+      : null;
+    const urls = Array.isArray(data?.urls)
+      ? [
+        ...new Set(
+          data.urls.filter((entry): entry is string =>
+            typeof entry === "string"
+          ),
+        ),
+      ]
+      : [];
+
+    if (
+      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null) ||
+      urls.length === 0
+    ) {
+      this.failFetchedOobi(url, record, "invalid-multi-oobi");
+      return;
+    }
+
+    for (const childUrl of urls) {
+      this.resolve(childUrl, record.oobialias ?? undefined);
+    }
+
+    this.hby.db.coobi.rem(url);
+    this.hby.db.moobi.pin(url, {
+      ...record,
+      cid,
+      date: new Date().toISOString(),
+      state: "pending-multi-oobi",
+      urls,
+    });
+  }
+
+  /** Finalize one parent multi-OOBI after its child URLs all reach terminal state. */
+  private completeMultiOobi(url: string, record: OobiRecord): void {
+    const urls = record.urls ?? [];
+    const date = new Date().toISOString();
+    const failed = urls.length === 0 ||
+      urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+
+    this.hby.db.moobi.rem(url);
+    if (failed) {
+      this.hby.db.eoobi.pin(url, {
+        ...record,
+        date,
+        state: urls.length === 0 ? "invalid-multi-oobi" : "child-failed",
+      });
+      this.cues.push({
+        kin: "oobiFailed",
+        url,
+        reason: urls.length === 0 ? "invalid multi-oobi" : "child failed",
+      });
+      return;
+    }
+
+    this.hby.db.roobi.pin(url, {
+      ...record,
+      date,
+      state: "resolved",
+    });
+    this.cues.push({
+      kin: "oobiResolved",
+      url,
+      cid: record.cid ?? undefined,
+      role: record.role ?? undefined,
+      eid: record.eid ?? undefined,
+    });
+  }
+
+  /** Mark one fetched OOBI as terminal failure and clear its in-flight state. */
+  private failFetchedOobi(
+    url: string,
+    record: OobiRecordShape,
+    state: string,
+  ): void {
+    this.hby.db.coobi.rem(url);
+    this.hby.db.eoobi.pin(url, {
+      ...record,
+      date: new Date().toISOString(),
+      state,
+    });
+    this.cues.push({
+      kin: "oobiFailed",
+      url,
+      reason: state,
     });
   }
 
@@ -282,10 +445,15 @@ export class Oobiery {
       );
     }
 
-    this.hby.db.oobis.pin(oobi, {
+    const meta = parseOobiUrl(oobi);
+    this.pinQueueStore(queueKindFor(oobi), oobi, {
       date: dt,
       state: "queued",
-      cid,
+      cid: cid ?? meta.cid ?? null,
+      eid: meta.eid ?? null,
+      role: meta.role ?? null,
+      oobialias: meta.alias ?? null,
+      said: meta.said ?? null,
     });
     this.cues.push({ kin: "oobiQueued", url: oobi });
   }
@@ -302,7 +470,7 @@ export class Oobiery {
  * runtime persists what it sees even before the broader ecosystem role matrix
  * is complete.
  */
-function parseOobiUrl(url: string, alias?: string): OobiJob {
+export function parseOobiUrl(url: string, alias?: string): OobiJob {
   const parsed = new URL(url);
   const parts = parsed.pathname.split("/").filter((part) => part.length > 0);
   const job: OobiJob = {
@@ -311,10 +479,10 @@ function parseOobiUrl(url: string, alias?: string): OobiJob {
   };
 
   if (
-    parts.length >= 4
-    && parts[0] === ".well-known"
-    && parts[1] === "keri"
-    && parts[2] === "oobi"
+    parts.length >= 4 &&
+    parts[0] === ".well-known" &&
+    parts[1] === "keri" &&
+    parts[2] === "oobi"
   ) {
     job.cid = parts[3];
     job.role = Roles.controller;
@@ -328,6 +496,20 @@ function parseOobiUrl(url: string, alias?: string): OobiJob {
   }
 
   return job;
+}
+
+/** Return true when one OOBI URL uses the well-known discovery path. */
+export function isWellKnownOobiUrl(url: string): boolean {
+  const parsed = new URL(url);
+  const parts = parsed.pathname.split("/").filter((part) => part.length > 0);
+  return parts.length >= 4 &&
+    parts[0] === ".well-known" &&
+    parts[1] === "keri" &&
+    parts[2] === "oobi";
+}
+
+function queueKindFor(url: string): OobiQueueKind {
+  return isWellKnownOobiUrl(url) ? "woobi" : "oobis";
 }
 
 /**
@@ -349,6 +531,17 @@ function* fetchOobiResponse(url: string): Operation<Response> {
         controller.abort();
       }
     };
+  });
+}
+
+function* closeResponseBody(response: Response): Operation<void> {
+  if (!response.body) {
+    return;
+  }
+
+  yield* action((resolve, reject) => {
+    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
+    return () => {};
   });
 }
 
