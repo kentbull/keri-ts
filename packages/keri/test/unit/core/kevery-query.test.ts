@@ -1,30 +1,14 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import {
-  Dater,
-  Diger,
-  Prefixer,
-  SerderKERI,
-  type Siger,
-} from "../../../../cesr/mod.ts";
+import { Dater, Diger, Prefixer, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import {
-  type KeverEventEnvelope,
-  Kevery,
-  type QueryEnvelope,
-} from "../../../src/core/eventing.ts";
-import {
-  makeQuerySerder,
-  makeReplySerder,
-} from "../../../src/core/messages.ts";
+import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
+import { makeQuerySerder, makeReplySerder } from "../../../src/core/messages.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import {
-  encodeDateTimeToDater,
-  makeNowIso8601,
-} from "../../../src/time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 import { eventingTestApi, expectKind } from "../../private-access.ts";
 
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
@@ -138,7 +122,7 @@ function eventEnvelope(args: {
 }
 
 Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefix", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ksn-qry-${crypto.randomUUID()}`,
       temp: true,
@@ -178,7 +162,7 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
 });
 
 Deno.test("Kevery.processQuery drops malformed queries that omit `q.src` even when the requester is endorsed", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ksn-qry-src-${crypto.randomUUID()}`,
       temp: true,
@@ -205,7 +189,7 @@ Deno.test("Kevery.processQuery drops malformed queries that omit `q.src` even wh
 });
 
 Deno.test("Kevery.processQuery emits `invalid` only for unsupported routes without throwing", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-qry-invalid-${crypto.randomUUID()}`,
       temp: true,
@@ -239,7 +223,7 @@ Deno.test("Kevery.processQuery emits `invalid` only for unsupported routes witho
 });
 
 Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.` and `ksns.`", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ksn-rpy-${crypto.randomUUID()}`,
       temp: true,
@@ -282,7 +266,7 @@ Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.
 });
 
 Deno.test("Kevery query-not-found escrows retry once the requested key state arrives", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-qnf-src-${crypto.randomUUID()}`,
       temp: true,
@@ -357,7 +341,7 @@ Deno.test("Kevery query-not-found escrows retry once the requested key state arr
 });
 
 Deno.test("Kevery.processQueryNotFound keeps escrowed queries on repeated missing-state decisions and uses typed replay decisions", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-qnf-keep-src-${crypto.randomUUID()}`,
       temp: true,
@@ -407,7 +391,7 @@ Deno.test("Kevery.processQueryNotFound keeps escrowed queries on repeated missin
 });
 
 Deno.test("Kevery.processQueryNotFound drops malformed escrow artifacts and clears persisted query material", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-qnf-drop-src-${crypto.randomUUID()}`,
       temp: true,
@@ -457,7 +441,7 @@ Deno.test("Kevery.processQueryNotFound drops malformed escrow artifacts and clea
 });
 
 Deno.test("Kevery query replay distinguishes missing escrowed query events and endorsements", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-qnf-artifacts-src-${crypto.randomUUID()}`,
       temp: true,
@@ -514,7 +498,7 @@ Deno.test("Kevery query replay distinguishes missing escrowed query events and e
 });
 
 Deno.test("Kevery query replay keeps live query drop reasons in escrow drop context", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-qnf-live-reason-src-${crypto.randomUUID()}`,
       temp: true,
@@ -564,7 +548,7 @@ Deno.test("Kevery query replay keeps live query drop reasons in escrow drop cont
 });
 
 Deno.test("Kevery.processQuery replays logs from fn=0 when q.fn is omitted", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-logs-qry-${crypto.randomUUID()}`,
       temp: true,
@@ -624,7 +608,7 @@ Deno.test("Kevery.processQuery replays logs from fn=0 when q.fn is omitted", asy
 });
 
 Deno.test("Kevery.processQuery replays logs from the requested first-seen ordinal", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-logs-fn-${crypto.randomUUID()}`,
       temp: true,
@@ -687,7 +671,7 @@ Deno.test("Kevery.processQuery replays logs from the requested first-seen ordina
 });
 
 Deno.test("Kevery.processQuery treats empty logs replay slices as a successful no-op", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-logs-empty-${crypto.randomUUID()}`,
       temp: true,
@@ -719,7 +703,7 @@ Deno.test("Kevery.processQuery treats empty logs replay slices as a successful n
 });
 
 Deno.test("Kevery logs query escrows on q.s and preserves fn plus dest on replay", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-logs-s-source-${crypto.randomUUID()}`,
       temp: true,
@@ -807,7 +791,7 @@ Deno.test("Kevery logs query escrows on q.s and preserves fn plus dest on replay
 });
 
 Deno.test("Kevery logs query escrows on q.a until the anchoring event is available", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-logs-a-source-${crypto.randomUUID()}`,
       temp: true,
@@ -894,7 +878,7 @@ Deno.test("Kevery logs query escrows on q.a until the anchoring event is availab
 });
 
 Deno.test("Kevery logs replay for delegated identifiers includes the delegator chain", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-logs-del-${crypto.randomUUID()}`,
       temp: true,
@@ -947,7 +931,7 @@ Deno.test("Kevery logs replay for delegated identifiers includes the delegator c
 });
 
 Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fully witnessed", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-ksn-witness-source-${crypto.randomUUID()}`,
       temp: true,
@@ -1029,7 +1013,7 @@ Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fu
 });
 
 Deno.test("Kevery.processQuery escrows `mbx` until local mailbox authority exists", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-mbx-source-${crypto.randomUUID()}`,
       temp: true,

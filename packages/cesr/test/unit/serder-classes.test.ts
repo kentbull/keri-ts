@@ -357,6 +357,32 @@ Deno.test("serder: SerderKERI typed seal projections reject malformed seal entri
   assertThrows(() => serder.eventSeals, DeserializeError);
 });
 
+Deno.test("serder: SerderKERI rejects raw seal payloads on non-transferable inception before typed projection", () => {
+  const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
+
+  assertThrows(
+    () =>
+      new SerderKERI({
+        sad: {
+          t: "icp",
+          i: key,
+          kt: "1",
+          k: [key],
+          nt: "0",
+          n: [],
+          bt: "0",
+          b: [],
+          c: [],
+          // Boundary rule: this is rejected structurally because the raw `a`
+          // list is non-empty, even though the entry is not a valid seal dict.
+          a: [{ malformed: "seal" }],
+        },
+        makify: true,
+      }),
+    DeserializeError,
+  );
+});
+
 Deno.test("serder: SerderKERI normalizes deprecated intive bt inputs for both sad and raw paths", () => {
   const key = "BCdY2Fdr0d4hX4T8sE-MN1lt4oBpl0mD1M2bK8M5j9mA";
   const nxt = "EJxJ1GB8oGD4JAH7YpiMCSWKDV3ulpt37zg9vq1QnOh_";

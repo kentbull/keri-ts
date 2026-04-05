@@ -162,3 +162,19 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
   recognition/hydration, `SerderKERI` stays raw-SAD-first with explicit
   `sealRecords` / `eventSeals` projections, and the KERI runtime envelope uses
   CESR structing records directly while LMDB tuple aliases stay storage-only.
+
+### 2026-04-04 - Disclosure Helpers Should Be Pure Functions Over Structing Records
+
+- The durable KERIpy `Blinder` / `Mediar` substance is deterministic UUID
+  derivation plus saidive commitment recomputation, not the wrapper classes.
+- In `keri-ts`, keep that behavior as pure helpers over plain structing records:
+  `makeBlindUuid`, `commitBlindState`, `makeBlindState`, `unblindBlindState`,
+  `commitBoundState`, `makeBoundState`, `unblindBoundState`, and
+  `commitTypeMedia` / `makeTypeMedia`.
+- Commitment recomputation must use the real primitive `qb64` tuple body with a
+  dummied `d` field. Using crew/SAD strings changes the bytes for empty
+  noncers, `Labeler.text`, and `Texter.text`, and therefore breaks KERIpy
+  parity.
+- Keep raw structural checks raw. `SerderKERI` should reject non-transferable
+  inception seal payloads based on the raw `a` list being non-empty, even when
+  the entries are malformed and would later fail typed seal projection.

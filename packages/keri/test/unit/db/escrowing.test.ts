@@ -1,22 +1,10 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import {
-  Cigar,
-  Dater,
-  Diger,
-  Prefixer,
-  Seqner,
-  SerderKERI,
-  Siger,
-  Signer,
-} from "../../../../cesr/mod.ts";
+import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Signer } from "../../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import { Broker } from "../../../src/db/escrowing.ts";
-import {
-  encodeDateTimeToDater,
-  makeNowIso8601,
-} from "../../../src/time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 import { brokerTestApi, expectKind } from "../../private-access.ts";
 
 const textEncoder = new TextEncoder();
@@ -89,7 +77,7 @@ function createBrokerEscrowFixture(broker: Broker) {
 }
 
 Deno.test("db/escrowing - Broker escrows and successfully unescrows state notices", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-success-${crypto.randomUUID()}`,
       temp: true,
@@ -140,7 +128,7 @@ Deno.test("db/escrowing - Broker escrows and successfully unescrows state notice
 });
 
 Deno.test("db/escrowing - Broker keeps escrowed notices on recoverable retry errors", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-retry-${crypto.randomUUID()}`,
       temp: true,
@@ -177,7 +165,7 @@ Deno.test("db/escrowing - Broker keeps escrowed notices on recoverable retry err
 });
 
 Deno.test("db/escrowing - Broker escrow helper exposes typed keep/drop/accept decisions", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-decision-${crypto.randomUUID()}`,
       temp: true,
@@ -206,7 +194,7 @@ Deno.test("db/escrowing - Broker escrow helper exposes typed keep/drop/accept de
 });
 
 Deno.test("db/escrowing - Broker preserves processing error detail on drop decisions", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-processing-detail-${crypto.randomUUID()}`,
       temp: true,
@@ -235,7 +223,7 @@ Deno.test("db/escrowing - Broker preserves processing error detail on drop decis
 });
 
 Deno.test("db/escrowing - Broker removes stale escrow entries without purging stored artifacts", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-stale-${crypto.randomUUID()}`,
       temp: true,
@@ -278,7 +266,7 @@ Deno.test("db/escrowing - Broker removes stale escrow entries without purging st
 });
 
 Deno.test("db/escrowing - Broker removes escrow and associated state on outer corruption failures", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-corrupt-${crypto.randomUUID()}`,
       temp: true,
@@ -315,7 +303,7 @@ Deno.test("db/escrowing - Broker removes escrow and associated state on outer co
 });
 
 Deno.test("db/escrowing - Broker updateReply pins current-state pointers by (prefix, aid)", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `broker-update-${crypto.randomUUID()}`,
       temp: true,

@@ -170,3 +170,47 @@ export const KERIPY_STRUCTING_DATA_VECTORS = {
       "-cAjEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
   },
 } as const;
+
+/** Blinder helper vectors derived from `tests/core/test_structing.py`. */
+export const KERIPY_DISCLOSURE_HELPER_VECTORS = {
+  salt: "0ABdM7EmNFAlGe05ng6s1ljh",
+  placeholderBlind: {
+    sn: 1,
+    uuid: "aE3_MHQbvGMppHB9ZiRxhIq6oEoYPm8AGBxMmSrcBCG_",
+    acdc: "",
+    state: "",
+    said: "EGwVS-ldAC1LTERsS34nsZITPqb4xc0CCzVTKgLST5NV",
+    states: ["issued", "revoked"],
+  },
+  revokedBlind: {
+    sn: 2,
+    uuid: "aB3RS8CZP2ds_ZgUyJBuJyim8P8qLRG9wMANIkWPGzev",
+    acdc: "EBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ",
+    state: "revoked",
+    said: "EGhjWjnjDTBTQ5uZ-17_nipeMzaCaADNeMBXa8QmmBev",
+    states: ["issued", "revoked"],
+  },
+  placeholderBound: {
+    sn: 1,
+    uuid: "aE3_MHQbvGMppHB9ZiRxhIq6oEoYPm8AGBxMmSrcBCG_",
+    acdc: "",
+    state: "",
+    bsn: "0",
+    bd: "",
+    said: "EOj0JmuM1wUbifbztCdA6av1EdV7AYb0hRkUeScCm8G4",
+    states: ["issued", "revoked"],
+    bounds: [["2", "EJOnAKXGaSyJ_43kit0V806NNeGWS07lfjybB1UcfWsv"]] as const,
+  },
+  revokedBound: {
+    sn: 2,
+    uuid: "aB3RS8CZP2ds_ZgUyJBuJyim8P8qLRG9wMANIkWPGzev",
+    acdc: "EBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ",
+    state: "revoked",
+    bsn: "2",
+    bd: "EJOnAKXGaSyJ_43kit0V806NNeGWS07lfjybB1UcfWsv",
+    said: "EEeMsBUnPL6kXTRHZoLqkYCuvIAN8LjV-GpIet2Th2e9",
+    states: ["issued", "revoked"],
+    bounds: [["2", "EJOnAKXGaSyJ_43kit0V806NNeGWS07lfjybB1UcfWsv"]] as const,
+  },
+  wrongUuid: "aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPA",
+} as const;

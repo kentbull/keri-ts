@@ -156,6 +156,19 @@ Use this file to:
   there. Do not collapse all non-keep cases into one boolean test, because
   different drop reasons can require different cleanup behavior.
 
+## 2026-04-04 - Structing Boundary Rules Matter More Than Helper Names
+
+- Fixed-field disclosure commitments (`BlindState`, `BoundState`, `TypeMedia`)
+  must compute their blinded `d` field from the primitive-field `qb64`
+  serialization with a dummied `d`, not from crew/SAD strings. Empty nonce and
+  text projections make those two representations diverge.
+- Keep raw `ked.a` / `serder.seals` access wherever the rule is structural
+  rather than semantic. Example: non-transferable inception rejects any raw seal
+  payload before typed projection is relevant.
+- The useful KERIpy `Blinder` behavior ports cleanly as pure CESR helper
+  functions (`makeBlindUuid`, `makeBlindState`, `unblindBlindState`, etc.).
+  Do not reintroduce wrapper-object inheritance just to preserve those names.
+
 ## Templates
 
 ### New Thread Kickoff Template
