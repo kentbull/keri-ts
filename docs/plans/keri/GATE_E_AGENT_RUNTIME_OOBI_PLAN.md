@@ -84,10 +84,14 @@ Maintainer note:
   slice: incomplete `query` cues flow through a runtime `QueryCoordinator`,
   `/watcher/{aid}/{action}` is KEL-owned, `/ksn` trust-source parity is tighter,
   and runtime pending-state convergence includes active query continuations.
-- Chunk 8 is now partially complete: the unverified witness / non-transferable /
-  transferable receipt escrows and a durable `query-not-found` retry path are
-  landed, but the wider stale-policy and non-receipt escrow families still need
-  later parity work.
+- Chunk 8 is now materially complete for the KERIpy receipt/query parity slice:
+  the unverified witness / non-transferable / transferable receipt escrows,
+  KERIpy-aligned 300-second `query-not-found` retry policy, replay-attached
+  receipt handling for cloned KEL events (`processAttachedReceiptCouples`,
+  `processAttachedReceiptQuadruples`, `escrowTRQuadruple`), and transferable
+  query ingress via `ssgs` are all landed. The remaining escrow work is now the
+  broader stale-policy and non-receipt tail, not the core receipt/query
+  correspondence path.
 - Chunk 9 works for direct role-path bootstrap OOBIs, but not for the wider
   reply-driven introduction/bootstrap behavior KERIpy uses.
 - Chunk 10 no longer stops at bootstrap-only behavior: `tufa init`,
@@ -97,9 +101,9 @@ Maintainer note:
 
 ## Active Continuation Slice For Reasonably Done `init` / `incept`
 
-- Planning verdict: treat Chunks 1 through 7 as materially complete for the
-  honest bootstrap/runtime/query-correspondence slice. The active work is now
-  the remaining escrow-policy tail in Chunks 8 and 9 plus the Gate F comms
+- Planning verdict: treat Chunks 1 through 8 as materially complete for the
+  honest bootstrap/runtime/query-and-receipt-correspondence slice. The active
+  work is now the remaining escrow-policy tail in Chunk 9 and the Gate F comms
   bridge around direct/mailbox/forwarding/exchange breadth.
 - `/ksn` is not just another generic reply route. In KERIpy it is KEL-owned
   reply handling and depends on accepted key state plus query-not-found escrow.

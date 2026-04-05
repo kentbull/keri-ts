@@ -105,11 +105,14 @@ Use this file to:
     `Hab.processCuesIter()` stays an interpreter for already-complete cues.
 16. Receipt-family mental models should stay KERIpy-shaped: live `rct`
     transferable receipts use grouped `tsgs`, while replay/clone attached
-    transferable receipt material uses `trqs`. Escrow/storage may flatten those
-    groups into quintuple/quadruple records, but the live API boundary should
-    not blur the two families, and the receipt escrow seams should keep KERIpy
-    names (`escrowUReceipt`, `escrowUWReceipt`, `escrowTRGroups`,
-    `escrowTReceipts`) instead of one combined local helper.
+    transferable receipt material uses `trqs`. That split is now real end to
+    end in runtime ingress too: `Reactor` routes attached replay receipts
+    through dedicated `Kevery.processAttachedReceiptCouples(...)` and
+    `processAttachedReceiptQuadruples(...)` paths, while escrow/storage may
+    flatten those families into quintuple/quadruple rows. Keep the explicit
+    KERIpy receipt escrow seams (`escrowUReceipt`, `escrowUWReceipt`,
+    `escrowTRGroups`, `escrowTReceipts`, `escrowTRQuadruple`) instead of
+    merging them into one local helper.
 17. Local location updates must enter through signed `/loc/scheme` replies that
     flow through the normal parser -> `Revery` path, not by direct writes to
     `locs.` / `lans.`.
@@ -128,10 +131,12 @@ Use this file to:
 22. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
 23. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
-    broader Chunk 7 query/reply correspondence closure, and bounded init/incept
-    convergence. The remaining runtime gaps are now primarily
-    forwarding/exchange/direct transport breadth and stricter stale/timeout
-    continuation behavior.
+    broader Chunk 7 query/reply correspondence closure, attached replay receipt
+    parity for cloned KEL events, KERIpy-shaped transferable query ingress
+    (`ssgs` -> `source + sigers`), and bounded init/incept convergence. The
+    remaining runtime gaps are now primarily forwarding/exchange/direct
+    transport breadth and the broader stale/timeout continuation tail outside
+    the now-closed receipt/query correspondence slice.
 24. `tufa agent` release confidence must come from the packed npm artifact, not
     just the Deno source path. CLI flag semantics and Node host/runtime
     compatibility can drift unless smoke coverage exercises `init -> incept -> agent -> /health` against the tarball users actually install.
@@ -142,10 +147,10 @@ Use this file to:
    `fetchTsgs` and the `Komer` family.
 2. Preserve CESR parser/serder/primitive parity without reopening settled
    architecture unless KERIpy or regression evidence forces it.
-3. Continue honest runtime closure around receipt/query escrows, bounded
-   init/incept convergence, mailbox/direct/forwarding/exchange breadth, and
-   stale/timeout continuation behavior now that the broader query/reply
-   correspondence slice is landed.
+3. Continue honest runtime closure around bounded init/incept convergence,
+   mailbox/direct/forwarding/exchange breadth, and the remaining
+   stale/timeout continuation tail now that the broader query/reply and
+   receipt/query correspondence slices are landed.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
    changes in the same change set.
 5. Keep KERI storage tuple aliases derived from CESR structing descriptors and

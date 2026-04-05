@@ -159,7 +159,7 @@ export class Reactor {
    * Current dispatch matrix:
    * - `rpy` -> `Revery`
    * - `rct` -> `Kevery`
-   * - `icp` / `dip` -> bootstrap `Kevery`
+   * - KEL event ilks -> `Kevery`, followed by replay-attached receipt handling
    *
    * All other ilks are intentionally ignored for now so the runtime can ingest
    * the minimum bootstrap OOBI material without pretending wider parity.
@@ -184,7 +184,23 @@ export class Reactor {
       case Ilks.rot:
       case Ilks.drt:
       case Ilks.ixn:
-        this.kevery.processEvent(envelope);
+        {
+          const decision = this.kevery.processEvent(envelope);
+          if (decision.kind === "accept" || decision.kind === "duplicate") {
+            this.kevery.processAttachedReceiptCouples({
+              serder: envelope.serder,
+              cigars: envelope.cigars,
+              firner: envelope.lastFrc?.firner,
+              local: envelope.local,
+            });
+            this.kevery.processAttachedReceiptQuadruples({
+              serder: envelope.serder,
+              trqs: envelope.trqs,
+              firner: envelope.lastFrc?.firner,
+              local: envelope.local,
+            });
+          }
+        }
         break;
       default:
         break;
@@ -569,18 +585,18 @@ function envelopeFromMessage(
  * Normalize one generic dispatch envelope into the KERIpy-shaped query input.
  *
  * KERIpy correspondence:
- * - parser ingress hands `Kevery.processQuery(...)` requester identity
- *   separately as `source + sigers` for transferable endorsements
+ * - parser ingress hands `Kevery.processQuery(...)` requester identity from the
+ *   last `ssgs` group as `source + sigers` for transferable endorsements
  * - non-transferable query endorsements remain detached `cigars`
  */
 function queryEnvelopeFromDispatch(
   envelope: KeriDispatchEnvelope,
 ): QueryEnvelope {
-  const firstTsg = envelope.tsgs[0];
+  const lastSsg = envelope.ssgs.at(-1);
   return {
     serder: envelope.serder,
-    source: firstTsg?.prefixer,
-    sigers: firstTsg ? [...firstTsg.sigers] : [],
+    source: lastSsg?.prefixer,
+    sigers: lastSsg ? [...lastSsg.sigers] : [],
     cigars: [...envelope.cigars],
   };
 }

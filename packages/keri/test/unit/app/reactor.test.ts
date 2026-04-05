@@ -1,17 +1,18 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
-import { Cigar } from "../../../../cesr/mod.ts";
+import { Cigar, Diger } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import type { QueryEnvelope } from "../../../src/core/eventing.ts";
+import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
+import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
 import { makeQuerySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 
-Deno.test("app/reactor - query parsing normalizes transferable endorsements into source plus sigers", async () => {
+Deno.test("app/reactor - query parsing normalizes transferable last-establishment endorsements into source plus sigers", async () => {
   await run(function*() {
     const hby = yield* createHabery({
-      name: `reactor-qry-tsg-${crypto.randomUUID()}`,
+      name: `reactor-qry-ssg-${crypto.randomUUID()}`,
       temp: true,
       skipConfig: true,
     });
@@ -44,6 +45,132 @@ Deno.test("app/reactor - query parsing normalizes transferable endorsements into
       assertEquals(captured.cigars?.length ?? 0, 0);
     } finally {
       yield* hby.close();
+    }
+  });
+});
+
+Deno.test("app/reactor - cloned events replay attached non-transferable receipt couples into Kevery", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `reactor-clone-couples-src-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const remote = yield* createHabery({
+      name: `reactor-clone-couples-remote-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const receiptor = source.makeHab("receiptor", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(event);
+      assertExists(event.said);
+      const recordingKvy = new Kevery(source.db, { local: true, lax: true });
+      recordingKvy.processAttachedReceiptCouples({
+        serder: event,
+        cigars: receiptor.sign(event.raw, false),
+        firner: controller.kever?.fner,
+        local: true,
+      });
+      assertEquals(source.db.rcts.get(dgKey(controller.pre, event.said)).length, 1);
+
+      const reactor = new Reactor(remote);
+      for (const msg of source.db.clonePreIter(controller.pre, 0)) {
+        reactor.ingest(msg);
+      }
+      reactor.processOnce();
+
+      assertEquals(remote.db.rcts.get(dgKey(controller.pre, event.said)).length, 1);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("app/reactor - cloned events replay attached transferable receipt quadruples into Kevery", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `reactor-clone-trqs-src-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const remote = yield* createHabery({
+      name: `reactor-clone-trqs-remote-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const validator = source.makeHab("validator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(event);
+      assertExists(event.said);
+      const recordingKvy = new Kevery(source.db, { local: true, lax: true });
+      recordingKvy.processAttachedReceiptQuadruples({
+        serder: event,
+        trqs: [
+          TransReceiptQuadruple.fromTuple([
+            validator.kever!.prefixer,
+            validator.kever!.sner,
+            new Diger({ qb64: validator.kever!.said }),
+            validator.sign(event.raw, true)[0]!,
+          ]),
+        ],
+        firner: controller.kever?.fner,
+        local: true,
+      });
+      assertEquals(source.db.vrcs.get(dgKey(controller.pre, event.said)).length, 1);
+
+      const reactor = new Reactor(remote);
+      for (const msg of source.db.clonePreIter(validator.pre, 0)) {
+        reactor.ingest(msg);
+      }
+      for (const msg of source.db.clonePreIter(controller.pre, 0)) {
+        reactor.ingest(msg);
+      }
+      reactor.processOnce();
+
+      assertEquals(remote.db.vrcs.get(dgKey(controller.pre, event.said)).length, 1);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
     }
   });
 });

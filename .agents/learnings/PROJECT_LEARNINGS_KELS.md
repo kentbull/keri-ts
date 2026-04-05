@@ -99,9 +99,9 @@ runtime ownership semantics.
     correspondence requests that must resolve a local habitat and an honest
     remote attester before emitting a follow-on `qry`.
 28. The remaining gaps are narrower and clearer now: promote key DB `Partial`
-    rows, finish forwarding/exchange/direct transport breadth, and harden
-    stale/timeout continuation behavior rather than reopening the old
-    query/reply side-effect graph.
+    rows, finish forwarding/exchange/direct transport breadth, and harden the
+    broader stale/timeout continuation tail rather than reopening the old
+    query/reply or receipt/query correspondence graph.
 29. The maintainer contract for the Chunk 7 query/watcher slice now lives in
     `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`,
     and the broader escrow-control philosophy now lives in
@@ -249,6 +249,25 @@ runtime ownership semantics.
 - Runtime convergence must treat active query continuations as pending work.
   Otherwise `init` / `incept` can terminate while the correspondence layer still
   owes a follow-on `logs` query or local catch-up wait.
+
+### 2026-04-05 - Receipt And Query Replay Parity Closed The Real Chunk 8 Gap
+
+- The real missing parity was not the basic `UWE` / `URE` / `VRE` / `QNF`
+  family existence. It was the replay-attached receipt path. `Reactor` now
+  dispatches cloned KEL event attachments into dedicated
+  `Kevery.processAttachedReceiptCouples(...)` and
+  `processAttachedReceiptQuadruples(...)` seams, and `Kevery` now mirrors
+  KERIpy's `escrowTRQuadruple(...)` behavior for attached transferable receipt
+  replay.
+- Transferable query ingress now follows KERIpy's attachment family split
+  honestly: `Hab.query(...)` emits `TransLastIdxSigGroups`, `Reactor`
+  reconstructs requester identity from the last `ssgs` group, and durable `QNF`
+  replay still intentionally stays scoped to stored `sigs.` plus non-transferable
+  `rcts.` because KERIpy itself still leaves transferable query-endorsement
+  replay as a TODO.
+- `TimeoutQNF` now matches KERIpy's 300-second policy. The remaining timeout
+  work is no longer "make QNF honest"; it is the broader stale/continuation
+  behavior across later runtime/comms flows.
 
 ### 2026-04-05 - `tufa agent` Must Stay Aligned Across Source And npm
 

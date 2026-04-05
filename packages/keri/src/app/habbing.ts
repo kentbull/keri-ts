@@ -21,7 +21,7 @@ import {
 import { b } from "../../../cesr/mod.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { TransIdxSigGroup } from "../core/dispatch.ts";
+import { TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
@@ -144,7 +144,8 @@ function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
  * Build one fully attached endorsed message from an arbitrary KERI body serder.
  *
  * Supported attachment shapes for the current bootstrap slice:
- * - transferable controller signature groups
+ * - transferable controller signature groups for reply-like messages
+ * - transferable last-establishment signature groups for queries
  * - non-transferable reply cigars with attached verifier context
  *
  * KERIpy parity rule:
@@ -155,6 +156,7 @@ function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
 function buildEndorsedMessage(args: {
   serder: SerderKERI;
   tsg?: TransIdxSigGroup;
+  ssg?: TransLastIdxSigGroup;
   cigars?: readonly Cigar[];
 }): Uint8Array {
   const attachments: Uint8Array[] = [];
@@ -175,6 +177,21 @@ function buildEndorsedMessage(args: {
         version: KERI_V1,
       }).qb64b,
       ...args.tsg.sigers.map((siger) => siger.qb64b),
+    );
+  } else if (args.ssg && args.ssg.sigers.length > 0) {
+    attachments.push(
+      new Counter({
+        code: CtrDexV1.TransLastIdxSigGroups,
+        count: 1,
+        version: KERI_V1,
+      }).qb64b,
+      args.ssg.prefixer.qb64b,
+      new Counter({
+        code: CtrDexV1.ControllerIdxSigs,
+        count: args.ssg.sigers.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...args.ssg.sigers.map((siger) => siger.qb64b),
     );
   } else if (args.cigars && args.cigars.length > 0) {
     attachments.push(
@@ -648,6 +665,13 @@ export class Hab {
     }
 
     const sigers = this.sign(serder.raw, true) as Siger[];
+    if (serder.ilk === Ilks.qry) {
+      return buildEndorsedMessage({
+        serder,
+        ssg: new TransLastIdxSigGroup(prefixer, sigers),
+      });
+    }
+
     const estSaid = kever.lastEst.d || kever.said;
     if (!estSaid) {
       throw new Error(`Missing establishment event for ${this.pre}.`);
@@ -657,7 +681,6 @@ export class Hab {
     if (!seqner) {
       throw new Error(`Missing establishment sequence number for ${this.pre}.`);
     }
-
     return buildEndorsedMessage({
       serder,
       tsg: new TransIdxSigGroup(

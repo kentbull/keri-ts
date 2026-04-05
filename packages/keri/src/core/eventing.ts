@@ -15,7 +15,12 @@ import { dgKey, snKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { type DispatchOrdinal, type KeriDispatchEnvelope, type TransIdxSigGroup } from "./dispatch.ts";
+import {
+  type DispatchOrdinal,
+  type KeriDispatchEnvelope,
+  type TransIdxSigGroup,
+  type TransReceiptQuadruple,
+} from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
 import {
   acceptEscrow,
@@ -107,8 +112,8 @@ export type KeverEventEnvelope = Pick<
  * Query envelope subset consumed by `Kevery.processQuery()`.
  *
  * KERIpy correspondence:
- * - parser/reactor ingress normalizes the first transferable query endorsement
- *   into requester `source + sigers`
+ * - parser/reactor ingress normalizes the last transferable query endorsement
+ *   group into requester `source + sigers`
  * - non-transferable query endorsements remain detached `cigars`
  * - `q.src` still lives in the query body and must be explicit
  */
@@ -151,7 +156,7 @@ export class Kevery {
   static readonly TimeoutUWE = 3600_000;
   static readonly TimeoutURE = 3600_000;
   static readonly TimeoutVRE = 3600_000;
-  static readonly TimeoutQNF = 3600_000;
+  static readonly TimeoutQNF = 300_000;
 
   readonly db: Baser;
   readonly cues: Deck<AgentCue>;
@@ -463,6 +468,127 @@ export class Kevery {
   }
 
   /**
+   * Process replay-attached non-transferable receipt couples for one KEL event.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Kevery.processAttachedReceiptCouples()`
+   *
+   * Unlike live `rct` processing:
+   * - `serder` is the receipted event itself, not a receipt message
+   * - replay target lookup may use `firner`/`fels.` instead of `kels.`
+   * - missing replay target escrows into `ures.` because attached couples do
+   *   not distinguish witness-vs-non-witness receipt semantics until the event
+   *   witness state is known
+   */
+  processAttachedReceiptCouples(args: {
+    serder: SerderKERI;
+    cigars: readonly Cigar[];
+    firner?: NumberPrimitive;
+    local?: boolean;
+  }): void {
+    if (args.cigars.length === 0) {
+      return;
+    }
+
+    const pre = args.serder.pre;
+    const said = args.serder.said;
+    if (!pre || !said) {
+      return;
+    }
+
+    const target = this.resolveReplayReceiptedEvent(args.serder, args.firner);
+    switch (target.kind) {
+      case "drop":
+        return;
+      case "escrow":
+        this.escrowUReceipt(args.serder, args.cigars, said);
+        return;
+      case "accept":
+        this.storeVerifiedDetachedReceiptMaterial(
+          target.event,
+          {
+            serder: args.serder,
+            cigars: [...args.cigars],
+            wigers: [],
+            tsgs: [],
+            local: args.local ?? this.local,
+          },
+          args.local ?? this.local,
+        );
+        return;
+    }
+  }
+
+  /**
+   * Process replay-attached transferable receipt quadruples for one KEL event.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Kevery.processAttachedReceiptQuadruples()`
+   *
+   * Design rule:
+   * - attached replay receipts stay on the `trqs` family instead of being
+   *   coerced back through live `rct` grouped `tsgs`
+   * - successful replay promotes verified material into `vrcs.`
+   * - missing prerequisites escrow into `vres.` using the same quintuple shape
+   *   used by live transferable receipt replay
+   */
+  processAttachedReceiptQuadruples(args: {
+    serder: SerderKERI;
+    trqs: readonly TransReceiptQuadruple[];
+    firner?: NumberPrimitive;
+    local?: boolean;
+  }): void {
+    if (args.trqs.length === 0) {
+      return;
+    }
+
+    const pre = args.serder.pre;
+    const said = args.serder.said;
+    if (!pre || !said) {
+      return;
+    }
+
+    const local = args.local ?? this.local;
+    const target = this.resolveReplayReceiptedEvent(args.serder, args.firner);
+    switch (target.kind) {
+      case "drop":
+        return;
+      case "escrow":
+        for (const trq of args.trqs) {
+          this.escrowTRQuadruple(
+            args.serder,
+            trq.prefixer,
+            trq.seqner,
+            trq.diger,
+            trq.siger,
+          );
+        }
+        return;
+      case "accept":
+        for (const trq of args.trqs) {
+          const decision = this.processVerifiedTransferableReceiptQuadruple(
+            target.event,
+            trq.prefixer,
+            trq.seqner,
+            trq.diger,
+            trq.siger,
+            local,
+            { invalidSignature: "drop" },
+          );
+          if (decision.kind === "escrow") {
+            this.escrowTRQuadruple(
+              args.serder,
+              trq.prefixer,
+              trq.seqner,
+              trq.diger,
+              trq.siger,
+            );
+          }
+        }
+    }
+  }
+
+  /**
    * Decide whether live receipt processing has an accepted receipted event,
    * needs escrow, or should be dropped.
    *
@@ -490,6 +616,50 @@ export class Kevery {
     const wits = this.resolveAcceptedEventWitnesses(pre, said, serder);
     return wits
       ? { kind: "accept", event: { pre, said, serder, wits } }
+      : escrowReceipt("missingReceiptedEvent");
+  }
+
+  /**
+   * Resolve the accepted replay target for one cloned event carrying receipts.
+   *
+   * KERIpy correspondence:
+   * - mirrors the `firner`/`fels` fallback inside
+   *   `processAttachedReceiptCouples()` and
+   *   `processAttachedReceiptQuadruples()`
+   *
+   * Replay rule:
+   * - when `firner` is present, replay lookup follows first-seen ordinal in
+   *   `fels.`
+   * - otherwise it falls back to the current latest accepted event at `(pre, sn)`
+   */
+  private resolveReplayReceiptedEvent(
+    serder: SerderKERI,
+    firner?: NumberPrimitive,
+  ): ReceiptEventDecision {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    const said = serder.said;
+    if (!pre || sn === null || !said) {
+      return dropReceipt("staleReceipt");
+    }
+
+    const replaySaid = firner
+      ? this.db.getFel(pre, Number(firner.num))
+      : this.db.kels.getLast(pre, sn);
+    if (!replaySaid) {
+      return escrowReceipt("missingReceiptedEvent");
+    }
+    if (!serder.compare(replaySaid)) {
+      return dropReceipt("mismatchedReplayEvent");
+    }
+
+    const replaySerder = this.db.getEvtSerder(pre, replaySaid);
+    if (!replaySerder) {
+      return dropReceipt("staleReceipt");
+    }
+    const wits = this.resolveAcceptedEventWitnesses(pre, replaySaid, replaySerder);
+    return wits
+      ? { kind: "accept", event: { pre, said: replaySaid, serder: replaySerder, wits } }
       : escrowReceipt("missingReceiptedEvent");
   }
 
@@ -1454,6 +1624,45 @@ export class Kevery {
   }
 
   /**
+   * Escrow one replay-attached transferable receipt quadruple into `vres.`.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Kevery.escrowTRQuadruple()`
+   *
+   * Durable shape:
+   * - replay-attached quadruples flatten into the same quintuple
+   *   `(edig, spre, ssnu, sdig, sig)` used by live transferable receipt escrows
+   */
+  private escrowTRQuadruple(
+    serder: SerderKERI,
+    prefixer: Prefixer,
+    seqner: DispatchOrdinal,
+    diger: Diger,
+    siger: Siger,
+  ): void {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    const said = serder.said;
+    if (!pre || sn === null || !said) {
+      return;
+    }
+    this.db.dtss.pin(
+      dgKey(pre, said),
+      new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+    );
+    this.db.vres.add(
+      snKey(pre, sn),
+      [
+        new Diger({ qb64: said }),
+        prefixer,
+        normalizeSealOrdinal(seqner),
+        diger,
+        siger,
+      ],
+    );
+  }
+
+  /**
    * Store verified detached receipt attachments for one accepted receipted event.
    *
    * Responsibilities:
@@ -1572,56 +1781,102 @@ export class Kevery {
     tsg: TransIdxSigGroup,
     local: boolean,
   ): ReceiptProcessDecision {
-    if (this.ownReceiptConflict(event.pre, tsg.pre, local)) {
+    let stored = false;
+    for (const siger of tsg.sigers) {
+      const decision = this.processVerifiedTransferableReceiptQuadruple(
+        event,
+        tsg.prefixer,
+        tsg.seqner,
+        tsg.diger,
+        siger,
+        local,
+        { invalidSignature: "ignore" },
+      );
+      switch (decision.kind) {
+        case "accept":
+          stored = true;
+          continue;
+        case "ignore":
+          continue;
+        case "escrow":
+        case "drop":
+          return decision;
+      }
+    }
+    return stored ? acceptReceipt() : ignoreReceipt();
+  }
+
+  /**
+   * Verify and store one transferable receipt quadruple against an accepted event.
+   *
+   * Shared policy:
+   * - live `rct` groups and replay-attached `trqs` both eventually validate the
+   *   same quadruple `(spre, ssnu, sdig, sig)` against the receiptor's
+   *   establishment event and the receipted event bytes
+   *
+   * Callers choose how to treat bad signature bytes:
+   * - live grouped `tsgs` ignore invalid indexed signatures and keep scanning
+   * - replay-attached `trqs` drop the bad quadruple outright, matching KERIpy
+   */
+  private processVerifiedTransferableReceiptQuadruple(
+    event: { pre: string; said: string; serder: SerderKERI; wits: string[] },
+    prefixer: Prefixer,
+    seqner: DispatchOrdinal,
+    diger: Diger,
+    siger: Siger,
+    local: boolean,
+    { invalidSignature }: { invalidSignature: "ignore" | "drop" },
+  ): ReceiptProcessDecision {
+    if (this.ownReceiptConflict(event.pre, prefixer.qb64, local)) {
       return dropReceipt("ownTransferableReceiptorConflict");
     }
 
-    const estSaid = this.db.kels.getLast(tsg.pre, Number(tsg.sn));
+    const estSaid = this.db.kels.getLast(
+      prefixer.qb64,
+      Number(seqner instanceof NumberPrimitive ? seqner.num : seqner.sn),
+    );
     if (!estSaid) {
       return escrowReceipt("missingReceiptorEstablishment");
     }
-    if (estSaid !== tsg.said) {
+    if (estSaid !== diger.qb64) {
       return dropReceipt("invalidReceiptorSeal");
     }
 
-    const estEvent = this.db.getEvtSerder(tsg.pre, estSaid);
+    const estEvent = this.db.getEvtSerder(prefixer.qb64, estSaid);
     if (!estEvent || estEvent.verfers.length === 0) {
       return dropReceipt("invalidReceiptorEstablishment");
     }
-
-    const dgkey = dgKey(event.pre, event.said);
-    let stored = false;
-    for (const siger of tsg.sigers) {
-      if (siger.index >= estEvent.verfers.length) {
-        return dropReceipt("invalidReceiptorIndex");
-      }
-      const verfer = estEvent.verfers[siger.index];
-      if (!verfer) {
-        return dropReceipt("invalidReceiptorEstablishment");
-      }
-      if (!verfer.verify(siger.raw, event.serder.raw)) {
-        continue;
-      }
-      this.db.vrcs.add(
-        dgkey,
-        [
-          tsg.prefixer,
-          normalizeSealOrdinal(tsg.seqner),
-          tsg.diger,
-          new Siger(
-            {
-              code: siger.code,
-              raw: siger.raw,
-              index: siger.index,
-              ondex: siger.ondex,
-            },
-            verfer,
-          ),
-        ],
-      );
-      stored = true;
+    if (siger.index >= estEvent.verfers.length) {
+      return dropReceipt("invalidReceiptorIndex");
     }
-    return stored ? acceptReceipt() : ignoreReceipt();
+    const verfer = estEvent.verfers[siger.index];
+    if (!verfer) {
+      return dropReceipt("invalidReceiptorEstablishment");
+    }
+    if (!verfer.verify(siger.raw, event.serder.raw)) {
+      return invalidSignature === "ignore"
+        ? ignoreReceipt()
+        : dropReceipt("invalidReceiptSignature");
+    }
+
+    this.db.vrcs.add(
+      dgKey(event.pre, event.said),
+      [
+        prefixer,
+        normalizeSealOrdinal(seqner),
+        diger,
+        new Siger(
+          {
+            code: siger.code,
+            raw: siger.raw,
+            index: siger.index,
+            ondex: siger.ondex,
+          },
+          verfer,
+        ),
+      ],
+    );
+    return acceptReceipt();
   }
 
   /**

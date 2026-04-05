@@ -755,6 +755,122 @@ Deno.test("Kevery.processQueryNotFound drops malformed escrow artifacts and clea
   });
 });
 
+Deno.test("Kevery.processQueryNotFound drops stale query-not-found rows after the KERIpy timeout window", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-qnf-stale-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-qnf-stale-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const querySerder = makeQuerySerder("ksn", {
+        i: "EStaleQueryNotFoundTarget000000000000000000000000",
+        src: bob.pre,
+      });
+      const kvy = new Kevery(remote.db);
+      const { escrowKey } = prepareEscrowedQuery(kvy, bob, querySerder);
+      const staleDate = new Date(Date.now() - 301_000);
+      const staleIso = staleDate.toISOString()
+        .replace("Z", "+00:00")
+        .replace(
+          /\.(\d{3})\+00:00$/,
+          (_match, millis) => `.${millis}000+00:00`,
+        );
+      remote.db.dtss.pin(
+        escrowKey,
+        new Dater({
+          qb64: encodeDateTimeToDater(staleIso),
+        }),
+      );
+
+      kvy.processQueryNotFound();
+
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(remote.db.dtss.get(escrowKey), null);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Reactor query ingress preserves transferable requester signatures through QNF replay", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-qnf-reactor-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-qnf-reactor-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const alice = source.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const query = bob.query(alice.pre, bob.pre, {}, "ksn");
+      const reactor = new Reactor(remote);
+
+      reactor.ingest(query);
+      reactor.processOnce();
+
+      assertEquals(remote.db.qnfs.cnt(), 1);
+
+      const aliceEvent = source.db.getEvtSerder(
+        alice.pre,
+        alice.kever?.said ?? "",
+      );
+      assertExists(aliceEvent);
+      reactor.kevery.processEvent(eventEnvelope({
+        serder: aliceEvent,
+        sigers: alice.sign(aliceEvent.raw, true),
+      }));
+      reactor.kevery.processQueryNotFound();
+
+      let cue = reactor.kevery.cues.pull();
+      while (cue && cue.kin !== "reply") {
+        cue = reactor.kevery.cues.pull();
+      }
+      assertExists(cue);
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(cue.kin, "reply");
+      if (cue.kin !== "reply") {
+        throw new Error("Expected reply cue.");
+      }
+      assertEquals(cue.dest, bob.pre);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
 Deno.test("Kevery query replay distinguishes missing escrowed query events and endorsements", async () => {
   await run(function*() {
     const source = yield* createHabery({

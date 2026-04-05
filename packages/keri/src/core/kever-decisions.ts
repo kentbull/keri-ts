@@ -291,10 +291,12 @@ export type ReceiptEscrowReason =
 /** Terminal live-receipt outcomes that mirror KERIpy's dropped `ValidationError` paths. */
 export type ReceiptDropReason =
   | "staleReceipt"
+  | "mismatchedReplayEvent"
   | "ownTransferableReceiptorConflict"
   | "invalidReceiptorSeal"
   | "invalidReceiptorEstablishment"
-  | "invalidReceiptorIndex";
+  | "invalidReceiptorIndex"
+  | "invalidReceiptSignature";
 
 /** Live-receipt outcome for successfully applied receipt material. */
 export interface ReceiptAccept {

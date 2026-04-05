@@ -14,7 +14,7 @@ import {
 import { createHabery } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { makeReceiptSerder } from "../../../src/core/messages.ts";
 import { dgKey, snKey } from "../../../src/db/core/keys.ts";
@@ -167,6 +167,17 @@ function transferableReceiptQuintuple(
     new Diger({ qb64: group.said }),
     siger,
   ];
+}
+
+function attachedTransferableReceiptQuadruple(
+  validator: Parameters<typeof transferableReceiptEnvelope>[0],
+  event: SerderKERI,
+): TransReceiptQuadruple {
+  const [, prefixer, snumber, diger, siger] = transferableReceiptQuintuple(
+    validator,
+    event,
+  );
+  return new TransReceiptQuadruple(prefixer, snumber, diger, siger);
 }
 
 function acceptEvent(
@@ -884,6 +895,258 @@ Deno.test("Kevery.processEscrowUnverNonTrans promotes witness cigars from pwes i
         remote.db.rcts.get(dgKey(controller.pre, event.said)).length,
         0,
       );
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processAttachedReceiptCouples stores accepted replayed witness and non-witness couples", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-attached-couples-accept-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-attached-couples-accept-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const witness = source.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const receiptor = source.makeHab("receiptor", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(event);
+      assertExists(event.said);
+      makeAcceptedReceiptReference(remote.db, event);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processAttachedReceiptCouples({
+        serder: event,
+        cigars: [
+          ...witness.sign(event.raw, false),
+          ...receiptor.sign(event.raw, false),
+        ],
+        local: false,
+      });
+
+      assertEquals(remote.db.wigs.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(remote.db.rcts.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(remote.db.ures.cnt(), 0);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processAttachedReceiptCouples escrows missing replay targets into ures", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-attached-couples-escrow-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-attached-couples-escrow-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const receiptor = source.makeHab("receiptor", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(event);
+      assertExists(event.said);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processAttachedReceiptCouples({
+        serder: event,
+        cigars: receiptor.sign(event.raw, false),
+        local: false,
+      });
+
+      assertEquals(remote.db.ures.get(snKey(controller.pre, Number(event.sn))).length, 1);
+      assertEquals(remote.db.rcts.get(dgKey(controller.pre, event.said)).length, 0);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processAttachedReceiptQuadruples stores accepted replayed validator receipts", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-attached-trqs-accept-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-attached-trqs-accept-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const validator = source.makeHab("validator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      const validatorEvent = source.db.getEvtSerder(
+        validator.pre,
+        validator.kever?.said ?? "",
+      );
+      assertExists(event);
+      assertExists(event.said);
+      assertExists(validatorEvent);
+      assertExists(validatorEvent.said);
+      makeAcceptedReceiptReference(remote.db, event);
+      makeAcceptedReceiptReference(remote.db, validatorEvent);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processAttachedReceiptQuadruples({
+        serder: event,
+        trqs: [attachedTransferableReceiptQuadruple(validator, event)],
+        local: false,
+      });
+
+      assertEquals(remote.db.vrcs.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(remote.db.vres.cnt(), 0);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processAttachedReceiptQuadruples escrows missing validator establishment and drops bad signatures", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-attached-trqs-escrow-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-attached-trqs-escrow-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const validator = source.makeHab("validator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(event);
+      assertExists(event.said);
+      makeAcceptedReceiptReference(remote.db, event);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processAttachedReceiptQuadruples({
+        serder: event,
+        trqs: [attachedTransferableReceiptQuadruple(validator, event)],
+        local: false,
+      });
+
+      assertEquals(remote.db.vres.get(snKey(controller.pre, Number(event.sn))).length, 1);
+      assertEquals(remote.db.vrcs.get(dgKey(controller.pre, event.said)).length, 0);
+
+      const validatorEvent = source.db.getEvtSerder(
+        validator.pre,
+        validator.kever?.said ?? "",
+      );
+      assertExists(validatorEvent);
+      assertExists(validatorEvent.said);
+      makeAcceptedReceiptReference(remote.db, validatorEvent);
+
+      const valid = attachedTransferableReceiptQuadruple(validator, event);
+      const badSignature = new Siger({
+        code: valid.siger.code,
+        raw: new Uint8Array(valid.siger.raw.length),
+        index: valid.siger.index,
+        ondex: valid.siger.ondex,
+      });
+      kvy.processAttachedReceiptQuadruples({
+        serder: event,
+        trqs: [
+          new TransReceiptQuadruple(
+            valid.prefixer,
+            valid.seqner,
+            valid.diger,
+            badSignature,
+          ),
+        ],
+        local: false,
+      });
+
+      assertEquals(remote.db.vrcs.get(dgKey(controller.pre, event.said)).length, 0);
+      assertEquals(remote.db.vres.get(snKey(controller.pre, Number(event.sn))).length, 1);
     } finally {
       yield* remote.close(true);
       yield* source.close(true);
