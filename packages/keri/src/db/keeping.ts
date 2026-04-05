@@ -39,6 +39,17 @@ export interface PubLotShape {
   dt: string;
 }
 
+/**
+ * Concrete keeper record for one establishment-event public-key lot.
+ *
+ * Responsibility:
+ * - normalize one old/current/next key-set snapshot into the durable
+ *   `RawRecord` shape used by keeper situation records
+ *
+ * Defaulting rule:
+ * - constructors must tolerate partial replay rows so reopen/hydration paths
+ *   can materialize an empty lot before the manager fills real key metadata
+ */
 export class PubLot extends RawRecord<PubLotShape> implements PubLotShape {
   declare pubs: string[];
   declare ridx: number;
@@ -73,6 +84,14 @@ export interface PreSitShape {
   nxt: PubLotShape;
 }
 
+/**
+ * Concrete keeper situation record for one managed prefix.
+ *
+ * Responsibility:
+ * - keep the old/current/next `PubLot` progression together as one typed
+ *   durable value so replay and rotation code can reason about slot ownership
+ *   without re-wrapping nested records manually
+ */
 export class PreSit extends RawRecord<PreSitShape> implements PreSitShape {
   declare old: PubLot;
   declare new: PubLot;
@@ -115,6 +134,17 @@ export interface PrePrmShape {
   tier: Tier | "";
 }
 
+/**
+ * Concrete keeper root-parameter record for one managed prefix.
+ *
+ * Responsibility:
+ * - persist the deterministic derivation policy that lets `Manager` recreate
+ *   signer material for an identifier prefix across reopen cycles
+ *
+ * Maintainer warning:
+ * - `salt` here is policy/state, not a transient constructor input; it may be
+ *   plaintext or encrypted depending on keeper AEID policy
+ */
 export class PrePrm extends RawRecord<PrePrmShape> implements PrePrmShape {
   declare pidx: number;
   declare algo: string;
@@ -141,6 +171,14 @@ export interface PubSetShape {
   pubs: string[];
 }
 
+/**
+ * Concrete replay record for one `(prefix, ridx)` public-key set.
+ *
+ * Responsibility:
+ * - store the exact ordered public keys associated with a replay lookup slot
+ *   without carrying the broader `PubLot` metadata used by current-state
+ *   progression records
+ */
 export class PubSet extends RawRecord<PubSetShape> implements PubSetShape {
   declare pubs: string[];
 
