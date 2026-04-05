@@ -19,7 +19,6 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
-import { signerCodeForVerferCode } from "../../../cesr/src/primitives/signature-suite.ts";
 import { Keeper, type PrePrm, type PrePrmShape, type PreSit, type PreSitShape, PubLot } from "../db/keeping.ts";
 
 /**
@@ -850,7 +849,7 @@ export class Manager {
     return keys.map(({ pub, offset }) => {
       const verfer = new Verfer({ qb64: pub });
       const signer = creator.create({
-        codes: [signerCodeForVerferCode(verfer.code)],
+        codes: [Signer.seedCodeForVerferCode(verfer.code)],
         pidx: pp.pidx,
         ridx: lot.ridx,
         kidx: lot.kidx + offset,

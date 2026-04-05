@@ -4,7 +4,6 @@ import { type Tier, Tiers } from "../core/vocabulary.ts";
 import { MtrDex } from "./codex.ts";
 import { SALTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
-import { signerSeedSizeForCode } from "./signature-suite.ts";
 import { Signer } from "./signer.ts";
 
 export interface SalterInit extends MatterInit {
@@ -125,7 +124,7 @@ export class Salter extends Matter {
     return new Signer({
       code,
       raw: this.stretch({
-        size: signerSeedSizeForCode(code),
+        size: Signer.seedSizeForCode(code),
         path,
         tier,
         temp,

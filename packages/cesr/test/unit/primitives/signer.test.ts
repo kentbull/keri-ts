@@ -48,6 +48,44 @@ Deno.test("signer: derives transferable and non-transferable verfers from the sa
   assertEquals(transferable.verfer.raw, nonTransferable.verfer.raw);
 });
 
+Deno.test("signer: exposes primitive-owned suite metadata helpers", () => {
+  assertEquals(Signer.seedSizeForCode(MtrDex.Ed25519_Seed), 32);
+  assertEquals(Signer.seedSizeForCode(MtrDex.ECDSA_256k1_Seed), 32);
+  assertEquals(Signer.seedSizeForCode(MtrDex.ECDSA_256r1_Seed), 32);
+  assertEquals(
+    Signer.seedCodeForVerferCode(MtrDex.Ed25519),
+    MtrDex.Ed25519_Seed,
+  );
+  assertEquals(
+    Signer.seedCodeForVerferCode(MtrDex.Ed25519N),
+    MtrDex.Ed25519_Seed,
+  );
+  assertEquals(
+    Signer.seedCodeForVerferCode(MtrDex.ECDSA_256k1),
+    MtrDex.ECDSA_256k1_Seed,
+  );
+  assertEquals(
+    Signer.seedCodeForVerferCode(MtrDex.ECDSA_256k1N),
+    MtrDex.ECDSA_256k1_Seed,
+  );
+  assertEquals(
+    Signer.seedCodeForVerferCode(MtrDex.ECDSA_256r1),
+    MtrDex.ECDSA_256r1_Seed,
+  );
+  assertEquals(
+    Signer.seedCodeForVerferCode(MtrDex.ECDSA_256r1N),
+    MtrDex.ECDSA_256r1_Seed,
+  );
+  assertThrows(
+    () => Signer.seedSizeForCode(MtrDex.Ed25519),
+    UnknownCodeError,
+  );
+  assertThrows(
+    () => Signer.seedCodeForVerferCode(MtrDex.Ed25519_Seed),
+    UnknownCodeError,
+  );
+});
+
 Deno.test("signer: emits suite-correct detached and indexed signature codes with verifier linkage", () => {
   const ser = new TextEncoder().encode("keri-ts-signer");
   const suites = [
