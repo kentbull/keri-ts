@@ -8,10 +8,7 @@ import {
   markChallengeVerified,
   parseChallengeWords,
 } from "../challenging.ts";
-import {
-  type ExchangeTransport,
-  sendSignedExchangeMessage,
-} from "../exchanging.ts";
+import { type ExchangeTransport, sendSignedExchangeMessage } from "../exchanging.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface ChallengeGenerateArgs {

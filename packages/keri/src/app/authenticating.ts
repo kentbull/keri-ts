@@ -55,9 +55,9 @@ export class Authenticator {
         continue;
       }
 
-      const cid = record.cid ??
-        parseOobiUrl(url, record.oobialias ?? undefined).cid ??
-        null;
+      const cid = record.cid
+        ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
+        ?? null;
       if (!isWellKnownOobiUrl(url) || !cid) {
         this.hby.db.woobi.rem(url);
         this.hby.db.rmfa.pin(url, {
@@ -104,9 +104,9 @@ export class Authenticator {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
-    const cid = record.cid ??
-      parseOobiUrl(url, record.oobialias ?? undefined).cid ??
-      null;
+    const cid = record.cid
+      ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
+      ?? null;
     const response = yield* fetchAuthResponse(url);
     const date = new Date().toISOString();
     const state = response.ok ? "resolved" : `http-${response.status}`;

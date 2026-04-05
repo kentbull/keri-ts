@@ -347,10 +347,10 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, siger] = item;
         if (
-          !isQualifiedPrimitive(prefixer) ||
-          !isQualifiedPrimitive(seqner) ||
-          !isQualifiedPrimitive(diger) ||
-          !isQualifiedPrimitive(siger)
+          !isQualifiedPrimitive(prefixer)
+          || !isQualifiedPrimitive(seqner)
+          || !isQualifiedPrimitive(diger)
+          || !isQualifiedPrimitive(siger)
         ) {
           continue;
         }
@@ -372,9 +372,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger, sigers] = item;
         if (
-          !isQualifiedPrimitive(prefixer) ||
-          !isQualifiedPrimitive(seqner) ||
-          !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer)
+          || !isQualifiedPrimitive(seqner)
+          || !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -442,9 +442,9 @@ function normalizeAttachmentGroup(
         }
         const [prefixer, seqner, diger] = item;
         if (
-          !isQualifiedPrimitive(prefixer) ||
-          !isQualifiedPrimitive(seqner) ||
-          !isQualifiedPrimitive(diger)
+          !isQualifiedPrimitive(prefixer)
+          || !isQualifiedPrimitive(seqner)
+          || !isQualifiedPrimitive(diger)
         ) {
           continue;
         }
@@ -493,10 +493,10 @@ function normalizeAttachmentGroup(
         }
         const [blid, uuid, acdc, state] = item;
         if (
-          !isQualifiedPrimitive(blid) ||
-          !isQualifiedPrimitive(uuid) ||
-          !isQualifiedPrimitive(acdc) ||
-          !isQualifiedPrimitive(state)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(acdc)
+          || !isQualifiedPrimitive(state)
         ) {
           continue;
         }
@@ -518,12 +518,12 @@ function normalizeAttachmentGroup(
         }
         const [blid, uuid, acdc, state, number, bound] = item;
         if (
-          !isQualifiedPrimitive(blid) ||
-          !isQualifiedPrimitive(uuid) ||
-          !isQualifiedPrimitive(acdc) ||
-          !isQualifiedPrimitive(state) ||
-          !isQualifiedPrimitive(number) ||
-          !isQualifiedPrimitive(bound)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(acdc)
+          || !isQualifiedPrimitive(state)
+          || !isQualifiedPrimitive(number)
+          || !isQualifiedPrimitive(bound)
         ) {
           continue;
         }
@@ -547,10 +547,10 @@ function normalizeAttachmentGroup(
         }
         const [blid, uuid, mediaType, mediaValue] = item;
         if (
-          !isQualifiedPrimitive(blid) ||
-          !isQualifiedPrimitive(uuid) ||
-          !isQualifiedPrimitive(mediaType) ||
-          !isQualifiedPrimitive(mediaValue)
+          !isQualifiedPrimitive(blid)
+          || !isQualifiedPrimitive(uuid)
+          || !isQualifiedPrimitive(mediaType)
+          || !isQualifiedPrimitive(mediaValue)
         ) {
           continue;
         }

@@ -1,22 +1,14 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
-import type { OobiRecord } from "../core/records.ts";
 import { Deck } from "../core/deck.ts";
-import type {
-  KeriDispatchEnvelope,
-  TransIdxSigGroup,
-} from "../core/dispatch.ts";
+import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import type { OobiRecord } from "../core/records.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
-import {
-  isWellKnownOobiUrl,
-  Oobiery,
-  type OobiJob,
-  parseOobiUrl,
-} from "./oobiery.ts";
+import { isWellKnownOobiUrl, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -207,9 +199,9 @@ export function runtimePendingState(
 /** Return true when any command-local runtime work remains in flight. */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
-  return state.ingress || state.cues || state.replyEscrow ||
-    state.oobiQueued || state.oobiInFlight || state.multiPending ||
-    state.authQueued || state.authInFlight || state.queriesPending;
+  return state.ingress || state.cues || state.replyEscrow
+    || state.oobiQueued || state.oobiInFlight || state.multiPending
+    || state.authQueued || state.authInFlight || state.queriesPending;
 }
 
 /** Return true when a well-known URL has been authorized into `wkas.`. */
@@ -262,8 +254,8 @@ export function runtimeOobiConverged(
   runtime: AgentRuntime,
   url: string,
 ): boolean {
-  return runtimeOobiTerminalState(runtime, url).status !== "pending" &&
-    !runtimeHasPendingWork(runtime);
+  return runtimeOobiTerminalState(runtime, url).status !== "pending"
+    && !runtimeHasPendingWork(runtime);
 }
 
 /**
@@ -329,22 +321,22 @@ export function* runAgentRuntime(
 ): Operation<never> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   const tasks = [
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* cueDo(runtime, { ...options, sink: runtime.querying });
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.authenticator.authDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.querying.queryDo();
     }),
   ];

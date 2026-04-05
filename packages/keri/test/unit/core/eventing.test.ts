@@ -14,18 +14,11 @@ import {
 import { createHabery } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import {
-  TransIdxSigGroup,
-  TransReceiptQuadruple,
-} from "../../../src/core/dispatch.ts";
+import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { makeReceiptSerder } from "../../../src/core/messages.ts";
 import { dgKey, snKey } from "../../../src/db/core/keys.ts";
-import {
-  eventingTestApi,
-  expectKind,
-  withPatchedMethod,
-} from "../../private-access.ts";
+import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
 
 const textEncoder = new TextEncoder();
 
@@ -397,7 +390,7 @@ function makeRotation(
 }
 
 Deno.test("Kevery.processEvent returns accept for an in-order local ixn", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-accept-${crypto.randomUUID()}`,
       temp: true,
@@ -446,7 +439,7 @@ Deno.test("Kevery.processEvent returns accept for an in-order local ixn", async 
 });
 
 Deno.test("Kevery.decideEvent returns duplicate for the same accepted inception SAID", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-dup-${crypto.randomUUID()}`,
       temp: true,
@@ -488,7 +481,7 @@ Deno.test("Kevery.decideEvent returns duplicate for the same accepted inception 
 });
 
 Deno.test("Kevery stores non-transferable receipt escrows under snKey and replays them into dgKey receipt stores", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-ures-snkey-src-${crypto.randomUUID()}`,
       temp: true,
@@ -555,7 +548,7 @@ Deno.test("Kevery stores non-transferable receipt escrows under snKey and replay
 });
 
 Deno.test("Kevery.processEscrowUnverWitness keeps missing-event witness receipts, then accepts them once the event arrives", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-uwes-keep-accept-src-${crypto.randomUUID()}`,
       temp: true,
@@ -623,7 +616,7 @@ Deno.test("Kevery.processEscrowUnverWitness keeps missing-event witness receipts
 });
 
 Deno.test("Kevery.processEscrowUnverWitness drops malformed witness receipt escrows with missing daters", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-uwes-drop-src-${crypto.randomUUID()}`,
       temp: true,
@@ -676,7 +669,7 @@ Deno.test("Kevery.processEscrowUnverWitness drops malformed witness receipt escr
 });
 
 Deno.test("Kevery.processEscrowUnverWitness reconstructs rotation witness lists from pwes", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-uwes-rotation-src-${crypto.randomUUID()}`,
       temp: true,
@@ -782,7 +775,7 @@ Deno.test("Kevery.processEscrowUnverWitness reconstructs rotation witness lists 
 });
 
 Deno.test("Kevery.processEscrowUnverNonTrans keeps non-witness receipts escrowed until the receipted event leaves pwes", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-ures-partial-src-${crypto.randomUUID()}`,
       temp: true,
@@ -868,7 +861,7 @@ Deno.test("Kevery.processEscrowUnverNonTrans keeps non-witness receipts escrowed
 });
 
 Deno.test("Kevery.processEscrowUnverNonTrans promotes witness cigars from pwes into wigs", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-ures-witness-src-${crypto.randomUUID()}`,
       temp: true,
@@ -936,7 +929,7 @@ Deno.test("Kevery.processEscrowUnverNonTrans promotes witness cigars from pwes i
 });
 
 Deno.test("Kevery.processAttachedReceiptCouples stores accepted replayed witness and non-witness couples", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-attached-couples-accept-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1003,7 +996,7 @@ Deno.test("Kevery.processAttachedReceiptCouples stores accepted replayed witness
 });
 
 Deno.test("Kevery.processAttachedReceiptCouples escrows missing replay targets into ures", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-attached-couples-escrow-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1058,7 +1051,7 @@ Deno.test("Kevery.processAttachedReceiptCouples escrows missing replay targets i
 });
 
 Deno.test("Kevery.processAttachedReceiptQuadruples stores accepted replayed validator receipts", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-attached-trqs-accept-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1120,7 +1113,7 @@ Deno.test("Kevery.processAttachedReceiptQuadruples stores accepted replayed vali
 });
 
 Deno.test("Kevery.processAttachedReceiptQuadruples escrows missing validator establishment and drops bad signatures", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-attached-trqs-escrow-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1215,7 +1208,7 @@ Deno.test("Kevery.processAttachedReceiptQuadruples escrows missing validator est
 });
 
 Deno.test("Kevery.reprocessEscrowedWitnessReceipt drops bad witness indexes against pwes state", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-uwe-bad-index-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1286,7 +1279,7 @@ Deno.test("Kevery.reprocessEscrowedWitnessReceipt drops bad witness indexes agai
 });
 
 Deno.test("Kevery.processEscrowUnverTrans keeps missing-establishment receipts and drops bad receiptor seals", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-vres-keep-drop-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1385,7 +1378,7 @@ Deno.test("Kevery.processEscrowUnverTrans keeps missing-establishment receipts a
 });
 
 Deno.test("Kevery receipt replay distinguishes missing accepted events, bad references, and bad digests", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-lookup-replay-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1462,7 +1455,7 @@ Deno.test("Kevery receipt replay distinguishes missing accepted events, bad refe
 });
 
 Deno.test("Kevery.processEscrowUnverTrans distinguishes missing receiptor keys from index overflow", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-vre-key-split-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1557,7 +1550,7 @@ Deno.test("Kevery.processEscrowUnverTrans distinguishes missing receiptor keys f
 });
 
 Deno.test("Kevery receipt replay helpers expose typed keep/drop/accept decisions", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-replay-vocab-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1611,7 +1604,7 @@ Deno.test("Kevery receipt replay helpers expose typed keep/drop/accept decisions
 });
 
 Deno.test("Kevery partial-witness replay labels duplicate cuts distinctly", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-pwe-reason-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1671,7 +1664,7 @@ Deno.test("Kevery partial-witness replay labels duplicate cuts distinctly", asyn
 });
 
 Deno.test("Kevery.processReceipt skips own non-transferable receipts on own events unless lax is enabled", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-own-nontrans-${crypto.randomUUID()}`,
       temp: true,
@@ -1719,7 +1712,7 @@ Deno.test("Kevery.processReceipt skips own non-transferable receipts on own even
 });
 
 Deno.test("Kevery.processReceipt only accepts own non-transferable receipts for remote events when the source is local", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-own-nontrans-src-${crypto.randomUUID()}`,
       temp: true,
@@ -1772,7 +1765,7 @@ Deno.test("Kevery.processReceipt only accepts own non-transferable receipts for 
 });
 
 Deno.test("Kevery.processReceipt skips own witness receipts on own and nonlocal events when lax is false", async () => {
-  await run(function* () {
+  await run(function*() {
     const localHby = yield* createHabery({
       name: `kevery-own-witness-local-${crypto.randomUUID()}`,
       temp: true,
@@ -1860,7 +1853,7 @@ Deno.test("Kevery.processReceipt skips own witness receipts on own and nonlocal 
 });
 
 Deno.test("Kevery.processReceipt drops own transferable receipts on own and nonlocal events unless lax is enabled", async () => {
-  await run(function* () {
+  await run(function*() {
     const localHby = yield* createHabery({
       name: `kevery-own-trq-local-${crypto.randomUUID()}`,
       temp: true,
@@ -1958,7 +1951,7 @@ Deno.test("Kevery.processReceipt drops own transferable receipts on own and nonl
 });
 
 Deno.test("Kevery.processReceipt drops stale live receipts without escrowing or storing them", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-stale-rct-src-${crypto.randomUUID()}`,
       temp: true,
@@ -2019,7 +2012,7 @@ Deno.test("Kevery.processReceipt drops stale live receipts without escrowing or 
 });
 
 Deno.test("Kevery.decideEvent returns ooo escrow for out-of-order ixn", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ooo-${crypto.randomUUID()}`,
       temp: true,
@@ -2070,7 +2063,7 @@ Deno.test("Kevery.decideEvent returns ooo escrow for out-of-order ixn", async ()
 });
 
 Deno.test("Kevery.processEscrowOutOfOrders replays stored `ooo` entries through the generic escrow path", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ooo-replay-${crypto.randomUUID()}`,
       temp: true,
@@ -2098,7 +2091,7 @@ Deno.test("Kevery.processEscrowOutOfOrders replays stored `ooo` entries through 
 });
 
 Deno.test("Kevery.processEscrowPartialDels replays stored `partialDels` entries through the generic escrow path", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-pdes-replay-${crypto.randomUUID()}`,
       temp: true,
@@ -2126,7 +2119,7 @@ Deno.test("Kevery.processEscrowPartialDels replays stored `partialDels` entries 
 });
 
 Deno.test("Kevery.processEscrowDuplicitous replays stored `duplicitous` entries through the generic escrow path", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-ldes-replay-${crypto.randomUUID()}`,
       temp: true,
@@ -2154,7 +2147,7 @@ Deno.test("Kevery.processEscrowDuplicitous replays stored `duplicitous` entries 
 });
 
 Deno.test("Kevery.processEscrowDelegables replays stored `delegables` entries through the generic escrow path", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-delegables-replay-${crypto.randomUUID()}`,
       temp: true,
@@ -2182,7 +2175,7 @@ Deno.test("Kevery.processEscrowDelegables replays stored `delegables` entries th
 });
 
 Deno.test("Kevery.processEscrowMisfits replays stored `misfit` entries through the generic escrow path", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-misfit-replay-${crypto.randomUUID()}`,
       temp: true,
@@ -2210,7 +2203,7 @@ Deno.test("Kevery.processEscrowMisfits replays stored `misfit` entries through t
 });
 
 Deno.test("Kevery.processEscrows preserves the full Gate E Chunk 8 sweep order", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-sweep-order-${crypto.randomUUID()}`,
       temp: true,
@@ -2256,7 +2249,7 @@ Deno.test("Kevery.processEscrows preserves the full Gate E Chunk 8 sweep order",
 });
 
 Deno.test("Kevery.processEvent rejects invalid local ixn without throwing normal control exceptions", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-reject-${crypto.randomUUID()}`,
       temp: true,
@@ -2307,7 +2300,7 @@ Deno.test("Kevery.processEvent rejects invalid local ixn without throwing normal
 });
 
 Deno.test("Kevery applies weighted threshold satisfaction to local ixn signatures", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-weighted-${crypto.randomUUID()}`,
       temp: true,
@@ -2371,7 +2364,7 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
 });
 
 Deno.test("Kevery accepts superseding delegated recovery when the newer delegating event is later", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-delegated-b1-source-${crypto.randomUUID()}`,
       temp: true,
@@ -2555,7 +2548,7 @@ Deno.test("Kevery accepts superseding delegated recovery when the newer delegati
 });
 
 Deno.test("Kevery accepts superseding delegated recovery when the later seal is in the same delegating event", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-delegated-b2-source-${crypto.randomUUID()}`,
       temp: true,

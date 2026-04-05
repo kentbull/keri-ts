@@ -3,12 +3,8 @@
  *
  * This module provides the KERI TypeScript CLI interface.
  */
+export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "./challenge.ts";
 export { tufa } from "./cli.ts";
-export {
-  challengeGenerateCommand,
-  challengeRespondCommand,
-  challengeVerifyCommand,
-} from "./challenge.ts";
 export { endsAddCommand } from "./ends.ts";
 export { exchangeSendCommand } from "./exchange.ts";
 export { exportCommand } from "./export.ts";

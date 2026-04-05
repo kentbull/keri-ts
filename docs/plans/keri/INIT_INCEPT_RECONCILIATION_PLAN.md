@@ -424,8 +424,7 @@ Complete P13 after M2.
 9. Challenge round-trip between controllers.
 10. Encrypted-store unlock + behavior checks.
 11. DB evidence via `tufa db dump` (raw and decoded where applicable).
-12. Packed npm/tarball smoke for `tufa agent` proves `init -> incept -> agent ->
-    /health` on the artifact users actually install.
+12. Packed npm/tarball smoke for `tufa agent` proves `init -> incept -> agent -> /health` on the artifact users actually install.
 
 ## Completion Condition for This Phase
 

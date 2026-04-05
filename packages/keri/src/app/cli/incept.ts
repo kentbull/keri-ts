@@ -10,12 +10,7 @@ import {
 import { type Configer, createConfiger } from "../configing.ts";
 import type { Habery } from "../habbing.ts";
 import { setupHby } from "./common/existing.ts";
-import {
-  InceptFileOptions,
-  loadInceptFileOptions,
-  parseDataItems,
-  parseThresholdOption,
-} from "./common/parsing.ts";
+import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
 
 interface InceptArgs {
   name?: string;
@@ -116,7 +111,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
   const cues = createQueue<{ kin: string; pre?: string; mode: string }, void>();
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const cf: Configer | undefined = inceptArgs.configFile
       ? (yield* createConfiger({
         name: inceptArgs.configFile,
@@ -188,9 +183,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
 function configuredWellKnownUrls(hby: Habery): string[] {
   return Array.isArray(hby.config.wurls)
-    ? hby.config.wurls.filter((entry): entry is string =>
-      typeof entry === "string"
-    )
+    ? hby.config.wurls.filter((entry): entry is string => typeof entry === "string")
     : [];
 }
 
@@ -199,9 +192,7 @@ function assertConfiguredWellKnownAuth(
   hby: Habery,
   context: string,
 ): void {
-  const failed = configuredWellKnownUrls(hby).filter((url) =>
-    !runtimeHasWellKnownAuth(runtime, url)
-  );
+  const failed = configuredWellKnownUrls(hby).filter((url) => !runtimeHasWellKnownAuth(runtime, url));
   if (failed.length === 0) {
     return;
   }

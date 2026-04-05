@@ -1674,7 +1674,8 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: ["exchange"],
     expectedOutputShape: "direct and mailbox message flow parity",
-    blockedReason: "Commands and local tufa-to-tufa evidence now exist, but KERIpy interop evidence and fuller witness-forwarded mailbox semantics are still pending.",
+    blockedReason:
+      "Commands and local tufa-to-tufa evidence now exist, but KERIpy interop evidence and fuller witness-forwarded mailbox semantics are still pending.",
   },
   {
     id: "G-CHALLENGE-ROUNDTRIP",
@@ -1682,7 +1683,8 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: ["challenge"],
     expectedOutputShape: "challenge generate/respond/verify parity",
-    blockedReason: "Challenge commands and local tufa-to-tufa evidence now exist, but KERIpy challenge-script parity evidence is still pending.",
+    blockedReason:
+      "Challenge commands and local tufa-to-tufa evidence now exist, but KERIpy challenge-script parity evidence is still pending.",
   },
 ];
 

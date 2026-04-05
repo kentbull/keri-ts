@@ -1,9 +1,5 @@
 import { run, spawn } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
@@ -20,10 +16,7 @@ import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
-import {
-  oobiGenerateCommand,
-  oobiResolveCommand,
-} from "../../../src/app/cli/oobi.ts";
+import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { startServer } from "../../../src/app/server.ts";
@@ -31,12 +24,7 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { makeReplySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
-import {
-  fetchOp,
-  textOp,
-  waitForServer,
-  waitForTaskHalt,
-} from "../../effection-http.ts";
+import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 const textDecoder = new TextDecoder();
@@ -95,7 +83,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   const alias = "alice";
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -128,7 +116,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   );
   assertEquals(result.output.at(-1), `${EndpointRoles.mailbox} ${pre}`);
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -160,7 +148,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
   let mailboxUrl = "";
   let agentUrl = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -223,7 +211,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
   agentUrl = agentGenerated.output.at(-1) ?? "";
   assertStringIncludes(agentUrl, `/oobi/${pre}/agent/${pre}`);
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -236,7 +224,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -244,10 +232,10 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -278,7 +266,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -320,7 +308,7 @@ Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest 
   let failingWellKnownUrl = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -390,7 +378,7 @@ Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest 
   try {
     await run(() => waitForServer(port));
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -437,10 +425,8 @@ Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest 
 Deno.test("Gate E - controller and witness OOBIs generate and resolve through shared runtime", async () => {
   const sourceName = `gate-e-controller-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-controller-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-gate-e-controller-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath =
-    `/tmp/tufa-gate-e-controller-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-controller-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-controller-dst-${crypto.randomUUID()}`;
   const alias = "controller";
   const witnessAlias = "witness";
   const port = 8912;
@@ -451,7 +437,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
   let witnessUrl = "";
   let wellKnownUrl = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -529,7 +515,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
   witnessUrl = witnessGenerated.output.at(-1) ?? "";
   assertStringIncludes(witnessUrl, `/oobi/${pre}/witness/${witnessPre}`);
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -542,7 +528,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -550,10 +536,10 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -593,7 +579,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -624,10 +610,8 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
 Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime queues", async () => {
   const sourceName = `gate-e-config-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-config-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-gate-e-config-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath =
-    `/tmp/tufa-gate-e-config-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-config-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-config-dst-${crypto.randomUUID()}`;
   const port = 8913;
   const url = `http://127.0.0.1:${port}`;
   let iPre = "";
@@ -636,7 +620,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
   let durl = "";
   let wurl = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -679,7 +663,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name: targetName,
       headDirPath: targetHeadDirPath,
@@ -697,7 +681,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -705,10 +689,10 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     });
     const hab = hby.habByName("bootstrap-init");
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -760,7 +744,7 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
   let wellKnownUrl = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -797,8 +781,8 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
 
   const host = startStaticOobiHost(port, (_request, url) => {
     if (
-      url.pathname === `/oobi/${pre}/controller` ||
-      url.pathname === `/.well-known/keri/oobi/${pre}`
+      url.pathname === `/oobi/${pre}/controller`
+      || url.pathname === `/.well-known/keri/oobi/${pre}`
     ) {
       return new Response(controllerBytes, {
         status: 200,
@@ -817,7 +801,7 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
   try {
     await run(() => waitForServer(port));
 
-    await run(function* () {
+    await run(function*() {
       const cf = yield* createConfiger({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -846,7 +830,7 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
       )
     );
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -872,10 +856,8 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
 Deno.test("Gate E - incept command waits for configured well-known auth before inception", async () => {
   const sourceName = `gate-e-incept-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-incept-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-gate-e-incept-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath =
-    `/tmp/tufa-gate-e-incept-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-incept-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-incept-dst-${crypto.randomUUID()}`;
   const port = 8918;
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
@@ -883,7 +865,7 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
   let wellKnownUrl = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -920,8 +902,8 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
 
   const host = startStaticOobiHost(port, (_request, url) => {
     if (
-      url.pathname === `/oobi/${pre}/controller` ||
-      url.pathname === `/.well-known/keri/oobi/${pre}`
+      url.pathname === `/oobi/${pre}/controller`
+      || url.pathname === `/.well-known/keri/oobi/${pre}`
     ) {
       return new Response(controllerBytes, {
         status: 200,
@@ -950,7 +932,7 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
       )
     );
 
-    await run(function* () {
+    await run(function*() {
       const cf = yield* createConfiger({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -985,7 +967,7 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
       )
     );
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -1012,10 +994,8 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
 Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs through moobi", async () => {
   const sourceName = `gate-e-multi-controller-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-multi-controller-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-gate-e-multi-controller-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath =
-    `/tmp/tufa-gate-e-multi-controller-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-multi-controller-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-multi-controller-dst-${crypto.randomUUID()}`;
   const port = 8915;
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
@@ -1023,7 +1003,7 @@ Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs thr
   let childUrls: string[] = [];
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -1090,7 +1070,7 @@ Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs thr
   try {
     await run(() => waitForServer(port));
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -1134,10 +1114,8 @@ Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs thr
 Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs through moobi", async () => {
   const sourceName = `gate-e-multi-witness-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-multi-witness-target-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-gate-e-multi-witness-src-${crypto.randomUUID()}`;
-  const targetHeadDirPath =
-    `/tmp/tufa-gate-e-multi-witness-dst-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-gate-e-multi-witness-src-${crypto.randomUUID()}`;
+  const targetHeadDirPath = `/tmp/tufa-gate-e-multi-witness-dst-${crypto.randomUUID()}`;
   const port = 8916;
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
@@ -1146,7 +1124,7 @@ Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs throug
   let childUrls: string[] = [];
   let witnessBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -1236,7 +1214,7 @@ Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs throug
   try {
     await run(() => waitForServer(port));
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -1286,7 +1264,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   const url = `http://127.0.0.1:${port}`;
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1314,7 +1292,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1322,10 +1300,10 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -1362,7 +1340,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
   let pre = "";
   const url = "http://127.0.0.1:5642";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1397,7 +1375,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
     `Location ${url} added for aid ${pre} with scheme http`,
   );
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1427,7 +1405,7 @@ Deno.test("Gate E - loc add command rejects malformed URLs deterministically", a
 });
 
 Deno.test("Gate E - `/introduce` replies enqueue discovered OOBIs through Oobiery route ownership", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `gate-e-introduce-${crypto.randomUUID()}`,
       temp: true,
@@ -1478,7 +1456,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
   const port = 8915;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1512,7 +1490,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1520,13 +1498,13 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     });
     const hab = hby.habByName(alias);
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
         sink: runtime.mailboxDirector,
       });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 

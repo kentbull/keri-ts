@@ -148,7 +148,10 @@ Use this file to:
     config, prefer explicit file-path flags such as `--config-dir` /
     `--config-file`; do not seed a command's default internal config path or
     inspect LMDB through ad hoc `deno eval` helpers in bash and call that CLI
-    coverage.
+    coverage. For runtime-hosted exchange/challenge paths, keep bash coverage
+    honest about store ownership too: if a CLI command needs the same store as
+    a long-lived `tufa agent`, stop the host, run the command, then restart the
+    recipient host as needed instead of depending on implicit concurrent access.
 
 ## Current Follow-Ups
 
@@ -174,6 +177,10 @@ Use this file to:
 8. When a workflow needs external bootstrap config during `init` or `incept`,
    keep the file input explicit at the CLI surface so scripts can use arbitrary
    filesystem locations without hidden config-path coupling.
+9. Keep Gate E/G e2e scripts honest about single-store ownership. For
+   controller-to-controller challenge coverage, run sender CLI commands only
+   when that sender's store is not also owned by a live `tufa agent`, and let
+   the recipient host be the only live process on the receiving store.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 

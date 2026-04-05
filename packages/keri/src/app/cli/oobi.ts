@@ -119,9 +119,7 @@ export function* oobiGenerateCommand(
           const url = preferredUrl(surls);
           if (url) {
             urls.push(
-              `${
-                url.replace(/\/$/, "")
-              }/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
+              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
             );
           }
         }

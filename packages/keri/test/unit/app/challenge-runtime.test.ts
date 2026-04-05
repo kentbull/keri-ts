@@ -1,9 +1,5 @@
 import { run, spawn } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import {
   createAgentRuntime,
   ingestKeriBytes,
@@ -16,12 +12,12 @@ import {
   challengeVerifyCommand,
 } from "../../../src/app/cli/challenge.ts";
 import { exchangeSendCommand } from "../../../src/app/cli/exchange.ts";
+import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { startServer } from "../../../src/app/server.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { testCLICommand } from "../../utils.ts";
-import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 
 function startStaticOobiHost(
   port: number,
@@ -70,7 +66,7 @@ async function seedHostedIdentifier(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -113,31 +109,23 @@ async function seedHostedIdentifier(
 }
 
 Deno.test("challenge generate emits JSON, string, and newline-delimited outputs", async () => {
-  const json = await run(() =>
-    testCLICommand(challengeGenerateCommand({ strength: 128, out: "json" }))
-  );
+  const json = await run(() => testCLICommand(challengeGenerateCommand({ strength: 128, out: "json" })));
   const jsonWords = JSON.parse(json.output.at(-1) ?? "[]");
   assertEquals(Array.isArray(jsonWords), true);
   assertEquals(jsonWords.length >= 1, true);
 
-  const string = await run(() =>
-    testCLICommand(challengeGenerateCommand({ strength: 128, out: "string" }))
-  );
+  const string = await run(() => testCLICommand(challengeGenerateCommand({ strength: 128, out: "string" })));
   assertStringIncludes(string.output.at(-1) ?? "", " ");
 
-  const words = await run(() =>
-    testCLICommand(challengeGenerateCommand({ strength: 128, out: "words" }))
-  );
+  const words = await run(() => testCLICommand(challengeGenerateCommand({ strength: 128, out: "words" })));
   assertStringIncludes(words.output.at(-1) ?? "", "\n");
 });
 
 Deno.test("challenge respond and verify round-trip through direct controller delivery", async () => {
   const aliceName = `challenge-direct-alice-${crypto.randomUUID()}`;
   const bobName = `challenge-direct-bob-${crypto.randomUUID()}`;
-  const aliceHeadDirPath =
-    `/tmp/tufa-challenge-direct-alice-${crypto.randomUUID()}`;
-  const bobHeadDirPath =
-    `/tmp/tufa-challenge-direct-bob-${crypto.randomUUID()}`;
+  const aliceHeadDirPath = `/tmp/tufa-challenge-direct-alice-${crypto.randomUUID()}`;
+  const bobHeadDirPath = `/tmp/tufa-challenge-direct-bob-${crypto.randomUUID()}`;
   const aliceUrl = "http://127.0.0.1:8921";
   const bobUrl = "http://127.0.0.1:8922";
   const words = ["baba", "coco", "dede"];
@@ -184,7 +172,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
     await aliceHost.close();
   }
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: bobName,
       headDirPath: bobHeadDirPath,
@@ -192,10 +180,10 @@ Deno.test("challenge respond and verify round-trip through direct controller del
     });
     const hab = hby.habByName("bob");
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(8922, undefined, runtime);
     });
 
@@ -245,7 +233,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
   );
   assertStringIncludes(verified.output.at(-1) ?? "", alice.pre);
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: bobName,
       headDirPath: bobHeadDirPath,
@@ -264,10 +252,8 @@ Deno.test("challenge respond and verify round-trip through direct controller del
 Deno.test("exchange send can deliver challenge responses through mailbox-authorized transport", async () => {
   const aliceName = `challenge-indirect-alice-${crypto.randomUUID()}`;
   const bobName = `challenge-indirect-bob-${crypto.randomUUID()}`;
-  const aliceHeadDirPath =
-    `/tmp/tufa-challenge-indirect-alice-${crypto.randomUUID()}`;
-  const bobHeadDirPath =
-    `/tmp/tufa-challenge-indirect-bob-${crypto.randomUUID()}`;
+  const aliceHeadDirPath = `/tmp/tufa-challenge-indirect-alice-${crypto.randomUUID()}`;
+  const bobHeadDirPath = `/tmp/tufa-challenge-indirect-bob-${crypto.randomUUID()}`;
   const aliceUrl = "http://127.0.0.1:8931";
   const bobUrl = "http://127.0.0.1:8932";
   const words = ["fafa", "gogo", "haha"];
@@ -315,7 +301,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
     await aliceHost.close();
   }
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: bobName,
       headDirPath: bobHeadDirPath,
@@ -323,10 +309,10 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
     });
     const hab = hby.habByName("bob");
     const runtime = createAgentRuntime(hby, { mode: "indirect" });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(8932, undefined, runtime);
     });
 
@@ -377,7 +363,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
   );
   assertStringIncludes(verified.output.at(-1) ?? "", alice.pre);
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: bobName,
       headDirPath: bobHeadDirPath,

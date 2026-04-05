@@ -127,6 +127,12 @@ runtime ownership semantics.
     give it `--config-dir` / `--config-file` or another honest file input
     surface; do not have bash E2E scripts write directly into the command's
     default internal config location and pretend that proves CLI behavior.
+34. Gate E/G bash coverage now includes `challenge generate/respond/verify`
+    across direct and mailbox-authorized controller-to-controller delivery, but
+    the honest test seam is single-store ownership: do not run a CLI command
+    against the same keystore/database that a live `tufa agent` is already
+    hosting. Stop the sender host, run the sender CLI, and keep only the
+    recipient host live for receive-side runtime coverage.
 
 ## Use This Doc For
 
@@ -163,7 +169,9 @@ runtime ownership semantics.
    alone is not enough; the tarball path should prove real host startup.
 7. Keep Gate E E2E coverage CLI-first: plain JSON config files and protocol
    routes are fair game, arbitrary `deno eval` LMDB inspection or default-path
-   config seeding are not.
+   config seeding are not. For exchange/challenge flows, keep host lifecycles
+   explicit so the script does not smuggle in concurrent single-store access as
+   an accidental dependency.
 
 ## Milestone Rollup
 
@@ -306,8 +314,7 @@ runtime ownership semantics.
   leaving the DB rows idle.
 - The first route-level exchange behavior is live: `/challenge/response`
   persists accepted responses into `reps.`, `challenge verify` promotes matched
-  responses into `chas.`, and the CLI now exposes `challenge
-  generate/respond/verify` plus `exchange send`.
+  responses into `chas.`, and the CLI now exposes `challenge generate/respond/verify` plus `exchange send`.
 - The important boundary is honesty: direct delivery and mailbox-authorized
   endpoint delivery are real in `keri-ts`, but full KERIpy witness-forwarded
   mailbox polling and interop evidence are still the remaining Gate F/G work.

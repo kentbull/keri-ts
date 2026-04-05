@@ -1,10 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import {
-  type ExchangeTransport,
-  resolveExchangeTransportUrl,
-  sendSignedExchangeMessage,
-} from "../exchanging.ts";
+import { type ExchangeTransport, resolveExchangeTransportUrl, sendSignedExchangeMessage } from "../exchanging.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface ExchangeSendArgs {

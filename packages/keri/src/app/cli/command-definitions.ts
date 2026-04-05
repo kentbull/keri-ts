@@ -1,11 +1,7 @@
 import { Command } from "npm:commander@^10.0.1";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { DISPLAY_VERSION } from "../version.ts";
-import {
-  type CommandArgs,
-  type CommandDispatch,
-  type CommandHandler,
-} from "./command-types.ts";
+import { type CommandArgs, type CommandDispatch, type CommandHandler } from "./command-types.ts";
 
 /** Shape used for lazily imported command modules before handler extraction. */
 type CommandModule = Record<string, unknown>;
@@ -22,9 +18,7 @@ function* loadModule<TModule extends CommandModule>(
   return yield* action((resolve, reject) => {
     load()
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
     return () => {};
   });
 }
@@ -39,7 +33,7 @@ function lazyCommand<TModule extends CommandModule>(
   load: () => Promise<TModule>,
   exportName: string,
 ): CommandHandler {
-  return function* (args: CommandArgs): Operation<void> {
+  return function*(args: CommandArgs): Operation<void> {
     const module = yield* loadModule(load);
     const handler = module[exportName];
     if (typeof handler !== "function") {
@@ -495,7 +489,7 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "Port number for the server (default: 8000)",
       "8000",
     )
-    .action(function (this: Command) {
+    .action(function(this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",

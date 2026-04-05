@@ -1,11 +1,5 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
-import {
-  type Cigar,
-  Diger,
-  Ilks,
-  Prefixer,
-  SerderKERI,
-} from "../../../cesr/mod.ts";
+import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -141,10 +135,8 @@ export class Oobiery {
 
       const urls = record.urls ?? [];
       if (
-        urls.length === 0 ||
-        urls.every((childUrl) =>
-          !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl)
-        )
+        urls.length === 0
+        || urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
       ) {
         return [url, record];
       }
@@ -202,8 +194,8 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
-    const contentType = response.headers.get("content-type")?.toLowerCase() ??
-      "";
+    const contentType = response.headers.get("content-type")?.toLowerCase()
+      ?? "";
     this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
@@ -277,16 +269,14 @@ export class Oobiery {
     const urls = Array.isArray(data?.urls)
       ? [
         ...new Set(
-          data.urls.filter((entry): entry is string =>
-            typeof entry === "string"
-          ),
+          data.urls.filter((entry): entry is string => typeof entry === "string"),
         ),
       ]
       : [];
 
     if (
-      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null) ||
-      urls.length === 0
+      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null)
+      || urls.length === 0
     ) {
       this.failFetchedOobi(url, record, "invalid-multi-oobi");
       return;
@@ -310,8 +300,8 @@ export class Oobiery {
   private completeMultiOobi(url: string, record: OobiRecord): void {
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
-    const failed = urls.length === 0 ||
-      urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+    const failed = urls.length === 0
+      || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
 
     this.hby.db.moobi.rem(url);
     if (failed) {
@@ -479,10 +469,10 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
   };
 
   if (
-    parts.length >= 4 &&
-    parts[0] === ".well-known" &&
-    parts[1] === "keri" &&
-    parts[2] === "oobi"
+    parts.length >= 4
+    && parts[0] === ".well-known"
+    && parts[1] === "keri"
+    && parts[2] === "oobi"
   ) {
     job.cid = parts[3];
     job.role = Roles.controller;
@@ -502,10 +492,10 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
 export function isWellKnownOobiUrl(url: string): boolean {
   const parsed = new URL(url);
   const parts = parsed.pathname.split("/").filter((part) => part.length > 0);
-  return parts.length >= 4 &&
-    parts[0] === ".well-known" &&
-    parts[1] === "keri" &&
-    parts[2] === "oobi";
+  return parts.length >= 4
+    && parts[0] === ".well-known"
+    && parts[1] === "keri"
+    && parts[2] === "oobi";
 }
 
 function queueKindFor(url: string): OobiQueueKind {
