@@ -16,6 +16,11 @@ Companion guide:
 
 - [CESR Primitives Walkthrough](./CESR_PRIMITIVES_WALKTHROUGH.md)
 
+Active disclosure-specific references:
+
+- [Graduated Disclosure Maintainer Guide](../../../design-docs/cesr/GRADUATED_DISCLOSURE_MAINTAINER_GUIDE.md)
+- [ADR-0007: Graduated Disclosure Workflow Boundaries](../../../adr/adr-0007-graduated-disclosure-workflow-boundaries.md)
+
 Baseline source for the KERIpy comparisons in this document:
 
 - `keripy` branch `main`
@@ -88,31 +93,40 @@ Baseline source for the KERIpy comparisons in this document:
 | -------------- | ------------------------------ | --------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- | ----------- |
 | `structing.ts` | named values in `structing.py` | Fixed-field seal/blind/media data | `fromTuple(...)`, `fromQb64bTuple(...)`, `fromSad(...)` | `toCrew(...)`, `toSad(...)`, `qb64(...)`, `qb2(...)` | `direct`    |
 
+## Fixed-Field Disclosure Workflow
+
+| `keri-ts`       | KERIpy peer                              | Role/category              | Initialization shapes              | Encoded forms exposed             | Parity note |
+| --------------- | ---------------------------------------- | -------------------------- | ---------------------------------- | --------------------------------- | ----------- |
+| `disclosure.ts` | `Blinder.makeUUID`, `.blind`, `.unblind` | Fixed-field workflow verbs | function calls + option interfaces | committed records / search result | `near`      |
+
 ## Counted-Group Structor Family
 
-| `keri-ts` | KERIpy peer                      | Role/category                | Initialization shapes                  | Encoded forms exposed                  | Parity note |
-| --------- | -------------------------------- | ---------------------------- | -------------------------------------- | -------------------------------------- | ----------- |
-| `Sealer`  | `structing.Sealer`               | Seal-group wrapper           | `parseSealer(...)`, `.fromGroup(...)`  | grouped `qb64g`, `qb2g`, typed members | `direct`    |
-| `Blinder` | blinder-family structor behavior | Blind-state group wrapper    | `parseBlinder(...)`, `.fromGroup(...)` | grouped encodings and typed members    | `near`      |
-| `Mediar`  | media structor behavior          | Media-bearing group wrapper  | `parseMediar(...)`, `.fromGroup(...)`  | grouped encodings and typed members    | `near`      |
-| `Aggor`   | aggregate/list structor behavior | Aggregate/list group wrapper | `parseAggor(...)`, `.fromGroup(...)`   | grouped encodings and typed members    | `near`      |
+| `keri-ts` | KERIpy peer                      | Role/category                   | Initialization shapes                  | Encoded forms exposed                  | Parity note |
+| --------- | -------------------------------- | ------------------------------- | -------------------------------------- | -------------------------------------- | ----------- |
+| `Sealer`  | `structing.Sealer`               | Seal-group wrapper              | `parseSealer(...)`, `.fromGroup(...)`  | grouped `qb64g`, `qb2g`, typed members | `direct`    |
+| `Blinder` | blinder-family structor behavior | Blind-state transport wrapper   | `parseBlinder(...)`, `.fromGroup(...)` | grouped encodings and typed members    | `near`      |
+| `Mediar`  | media structor behavior          | Media-bearing transport wrapper | `parseMediar(...)`, `.fromGroup(...)`  | grouped encodings and typed members    | `near`      |
+| `Aggor`   | aggregate/list structor behavior | Aggregate/list group wrapper    | `parseAggor(...)`, `.fromGroup(...)`   | grouped encodings and typed members    | `near`      |
 
 ## Support Surface
 
-| `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes             | Encoded forms exposed                                 | Parity note |
-| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | --------------------------------- | ----------------------------------------------------- | ----------- |
-| `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants                  | none; support constants only                          | `TS-local`  |
-| `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced                   | typed unions/interfaces                               | `TS-local`  |
-| `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers                     | typed field projection                                | `TS-local`  |
-| `Compactor`                                     | no exact public peer                                     | Narrow map-group parser helper        | parse helper                      | typed map projection                                  | `TS-local`  |
-| `registry.ts` helpers                           | codex/constructor knowledge spread across Python modules | Inspection/listing helpers            | helper functions                  | lightweight `PrimitiveToken`                          | `TS-local`  |
-| `primitives/structing.ts`                       | fixed-field registries in `structing.py`                 | Named value + clan/cast/coden layer   | descriptor companions + constants | plain records, SAD projections, and registry metadata | `direct`    |
+| `keri-ts`                                       | KERIpy peer                                              | Role/category                         | Initialization shapes              | Encoded forms exposed                                 | Parity note |
+| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------- | ---------------------------------- | ----------------------------------------------------- | ----------- |
+| `codex.ts` subsets                              | multiple codex tables in `coring.py` / `kering.py`       | Semantic code-family sets             | import constants                   | none; support constants only                          | `TS-local`  |
+| `Primitive` / `GroupEntry` / `CounterGroupLike` | no exact public peer                                     | Recursive parser graph typing         | parser-produced                    | typed unions/interfaces                               | `TS-local`  |
+| `Mapper`                                        | native map/body parsing spread across parser logic       | Map-body syntax + semantic projection | parse helpers                      | typed field projection                                | `TS-local`  |
+| `Compactor`                                     | no exact public peer                                     | Narrow map-group parser helper        | parse helper                       | typed map projection                                  | `TS-local`  |
+| `registry.ts` helpers                           | codex/constructor knowledge spread across Python modules | Inspection/listing helpers            | helper functions                   | lightweight `PrimitiveToken`                          | `TS-local`  |
+| `primitives/structing.ts`                       | fixed-field registries in `structing.py`                 | Named value + clan/cast/coden layer   | descriptor companions + constants  | plain records, SAD projections, and registry metadata | `direct`    |
+| `primitives/disclosure.ts`                      | fixed-field workflow portions of `structing.py`          | Blind/unblind/commit helper layer     | function calls + option interfaces | committed disclosure records and search helpers       | `near`      |
 
 ## Fast Takeaways
 
 - `Matter`, `Indexer`, and `Counter` are the three bases you should memorize.
 - `Serder` and `Structor` are the two big "typed projection" layers on top of
   raw CESR material.
+- `structing.ts` owns fixed-field schema; `disclosure.ts` owns fixed-field
+  workflow; `Blinder` / `Mediar` own counted-group transport.
 - Most primitive-by-primitive comparisons to KERIpy are straight across.
 - The main intentional TypeScript-specific shape is `CesrBody` and the broader
   typed parser/body contracts around it.

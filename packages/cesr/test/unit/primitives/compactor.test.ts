@@ -12,6 +12,10 @@ const V2 = { major: 2, minor: 0 } as const;
 // 1. parse one native map shape
 // 2. reject wrong group families
 // 3. trace leaves, compact them, then re-expand disclosure partials
+//
+// Compare with:
+// - `Aggor` for selective disclosure over aggregate lists
+// - `disclosure.ts` for fixed-field blinded disclosure records
 
 Deno.test("compactor: parses KERIpy map-body shape", () => {
   // Minimal inhale example: a native map-body with two labeled fields should

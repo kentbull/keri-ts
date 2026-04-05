@@ -101,7 +101,15 @@ export const KERIPY_CODE_VECTORS = {
   verserCodes: ["Y", "0O"],
 } as const;
 
-/** Selected Structor/Aggor family vectors from `tests/core/test_structing.py` + `test_mapping.py`. */
+/**
+ * Selected counted-group transport vectors from KERIpy.
+ *
+ * Teaching use:
+ * - `Sealer` / `Blinder` / `Mediar` vectors explain the counted-group wrapper
+ *   layer
+ * - `aggorEmptyList` keeps the aggregate-list disclosure path grounded in an
+ *   upstream fixture
+ */
 export const KERIPY_STRUCTOR_VECTORS = {
   aggorEmptyList: "-JAA",
   sealerTypedDigestEnclosed: "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
@@ -116,7 +124,14 @@ export const KERIPY_STRUCTOR_VECTORS = {
     "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
 } as const;
 
-/** Selected fixed-field structing vectors from `tests/core/test_structing.py`. */
+/**
+ * Selected fixed-field structing vectors from `tests/core/test_structing.py`.
+ *
+ * Teaching use:
+ * - these are the semantic record + crew + tuple parity fixtures
+ * - `blindState`, `boundState`, and `typeMedia` are the bridge into the fixed-
+ *   field graduated-disclosure workflow in `disclosure.ts`
+ */
 export const KERIPY_STRUCTING_DATA_VECTORS = {
   sealEvent: {
     i: "BN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zR",
@@ -171,7 +186,16 @@ export const KERIPY_STRUCTING_DATA_VECTORS = {
   },
 } as const;
 
-/** Blinder helper vectors derived from `tests/core/test_structing.py`. */
+/**
+ * Fixed-field disclosure workflow vectors derived from
+ * `tests/core/test_structing.py`.
+ *
+ * KERIpy correlation:
+ * - `makeBlindUuid` parity
+ * - `Blinder.blind(..., bound=False)` parity
+ * - `Blinder.blind(..., bound=True)` parity
+ * - `Blinder.unblind(...)` search parity, including placeholder cases
+ */
 export const KERIPY_DISCLOSURE_HELPER_VECTORS = {
   salt: "0ABdM7EmNFAlGe05ng6s1ljh",
   placeholderBlind: {

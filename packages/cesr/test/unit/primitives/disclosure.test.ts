@@ -16,7 +16,15 @@ import {
   KERIPY_STRUCTING_DATA_VECTORS,
 } from "../../fixtures/keripy-primitive-vectors.ts";
 
+// These tests teach the fixed-field disclosure workflow in the same order a
+// maintainer should reason about it:
+// 1. derive or validate the deterministic UUID
+// 2. commit a blinded/bound/media record with placeholder-capable fields
+// 3. search back through candidate disclosures with `unblind*`
+
 Deno.test("primitives/disclosure - helpers preserve KERIpy blind/bound/media commitments", () => {
+  // Placeholder vectors matter because KERIpy treats empty ACDC/state/bound
+  // fields as real disclosure states, not as missing data.
   const placeholderBlind = makeBlindState({
     salt: KERIPY_DISCLOSURE_HELPER_VECTORS.salt,
     sn: KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.sn,

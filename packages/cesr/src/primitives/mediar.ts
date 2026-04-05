@@ -19,6 +19,8 @@ export function isMediarCode(code: string): boolean {
  * Maintainer note:
  * - this class owns counted-group transport framing only
  * - semantic disclosure helpers live in `disclosure.ts`
+ * - the semantic fixed-field record carried by these groups is `TypeMedia`
+ *   from `structing.ts`
  */
 export class Mediar extends Structor {
   constructor(init: Structor | ConstructorParameters<typeof Structor>[0]) {

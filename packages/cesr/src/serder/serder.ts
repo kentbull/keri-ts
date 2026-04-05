@@ -185,7 +185,9 @@ const SEAL_PROJECTION_DESCRIPTORS = SealDescriptors as unknown as readonly SealP
 
 function parseSealRecord(value: unknown, index: number): SealRecord {
   if (!isPlainSadObject(value)) {
-    throw new DeserializeError(`Invalid seal at a[${index}]: expected plain object.`);
+    throw new DeserializeError(
+      `Invalid seal at a[${index}]: expected plain object.`,
+    );
   }
   for (const descriptor of SEAL_PROJECTION_DESCRIPTORS) {
     if (descriptor.isSad(value)) {
@@ -1345,6 +1347,11 @@ function collectMessageGroups(
  *
  * `other` captures counted groups that are intentionally not one of the known
  * structor families (`Aggor`, `Sealer`, `Blinder`, `Mediar`).
+ *
+ * Boundary reminder:
+ * - these are transport-family projections
+ * - fixed-field semantics for seal/blind/media records live separately in
+ *   `structing.ts` and `disclosure.ts`
  */
 export interface SerderStructorProjection {
   aggor: Aggor[];
@@ -1785,10 +1792,23 @@ export class SerderKERI extends Serder {
     return this.ked && typeof this.ked.s === "string" ? this.ked.s : null;
   }
 
+  /**
+   * Raw top-level `a` field from the decoded KERI SAD.
+   *
+   * Do not assume this is always a seal list. KERI reuses `a` for multiple
+   * semantic roles, which is why typed seal projection is exposed separately.
+   */
   get a(): unknown {
     return this.ked?.a;
   }
 
+  /**
+   * Raw KERI `a` list as decoded from the SAD.
+   *
+   * This accessor intentionally stays raw for KERIpy parity. The same label `a`
+   * is used in KERI for more than one semantic purpose, so eager typing here
+   * would conflate raw SAD decoding with higher-level interpretation.
+   */
   get seals(): unknown[] {
     return Array.isArray(this.ked?.a) ? [...this.ked.a] : [];
   }
@@ -1805,7 +1825,12 @@ export class SerderKERI extends Serder {
     return this.seals.map((seal, index) => parseSealRecord(seal, index));
   }
 
-  /** Narrow `sealRecords` to event-style seals used for anchoring and delegation. */
+  /**
+   * Narrow `sealRecords` to event-style seals used for anchoring and delegation.
+   *
+   * Use this when the caller needs semantic seal fields (`i`, `s`, `d`) instead
+   * of raw `a` dictionaries.
+   */
   get eventSeals(): SealEvent[] {
     return this.sealRecords.filter(isSealEventRecord);
   }

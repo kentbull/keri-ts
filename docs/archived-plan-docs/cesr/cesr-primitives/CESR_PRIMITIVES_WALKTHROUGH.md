@@ -39,6 +39,11 @@ Companion scan sheet:
 
 - [CESR Primitives KERIpy Parity Matrix](./CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md)
 
+Active graduated-disclosure architecture docs:
+
+- [Graduated Disclosure Maintainer Guide](../../../design-docs/cesr/GRADUATED_DISCLOSURE_MAINTAINER_GUIDE.md)
+- [ADR-0007: Graduated Disclosure Workflow Boundaries](../../../adr/adr-0007-graduated-disclosure-workflow-boundaries.md)
+
 ## How To Use This Guide
 
 1. Read the foundation section first: `Matter`, `Indexer`, `Counter`.
@@ -130,6 +135,8 @@ flowchart TD
 - Fixed-field seal/blind/media semantics now live one layer lower in
   `primitives/structing.ts` as plain records plus descriptor helpers, not as a
   second wrapper hierarchy.
+- Fixed-field blind/unblind/commit workflow lives alongside those records in
+  `primitives/disclosure.ts`, not on the counted-group wrappers themselves.
 
 ### The two parser workflows you will feel in practice
 
@@ -172,8 +179,9 @@ flowchart TD
   attachments to typed group families.
 - `structing.ts` is the semantic fixed-field layer for seals, blind-state, and
   media records; the `SerderKERI` boundary stays raw-SAD-first and exposes
-  explicit typed projections instead of converting every raw list entry
-  eagerly.
+  explicit typed projections instead of converting every raw list entry eagerly.
+- `disclosure.ts` is the fixed-field workflow layer for deterministic UUID
+  derivation, commitment recomputation, and blind/unblind helpers.
 
 ### Recovery and compatibility
 
@@ -358,7 +366,8 @@ blinders, media wrappers, and aggregate groups.
 
 **Common gotchas / maintainer notes:** `Structor` is about deterministic group
 serialization and typed payload members. It is not a replacement for `Counter`;
-it sits on top of a parsed group.
+it sits on top of a parsed group, and it is not the owner of fixed-field
+disclosure semantics.
 
 ### CounterGroup
 
@@ -848,8 +857,9 @@ named-value layer from `keri.core.structing` in
 `packages/cesr/src/primitives/structing.ts`. That module owns `SealDigest`,
 `SealEvent`, `BlindState`, `BoundState`, `TypeMedia`, and the KERIpy-style
 clan/cast/coden registries as plain frozen records with companion descriptor
-helpers. The counted-group classes below still own the enclosed counter-group
-framing on top of those fixed-field values.
+helpers. The fixed-field workflow verbs live separately in
+`packages/cesr/src/primitives/disclosure.ts`. The counted-group classes below
+still own the enclosed counter-group framing on top of those fixed-field values.
 
 ### Sealer
 
@@ -880,13 +890,14 @@ read the counter code name, not just the fact that it is "some seal".
 `parseBlinder(input, version, cold)` or `Blinder.fromGroup(group)`.
 
 **Where it shows up in workflow:** Blind-state / privacy-preserving structured
-attachment payloads.
+attachment payload transport.
 
 **KERIpy comparison:** Near/direct parity with KERIpy structing blinder-family
 behavior, but verify exact subclass naming when comparing source.
 
 **Common gotchas / maintainer notes:** `Blinder` is a structured group, not a
-single digest or single field token.
+single digest or single field token. The blind/unblind/commit verbs live in
+`disclosure.ts`; this class only transports the grouped tuple payloads.
 
 ### Mediar
 
@@ -904,7 +915,8 @@ content inside counted CESR groups.
 **KERIpy comparison:** Near/direct parity with KERIpy media structor behavior.
 
 **Common gotchas / maintainer notes:** Think "structured wrapper with embedded
-members", not "just some bytes tagged as media".
+members", not "just some bytes tagged as media". The semantic typed-media
+workflow lives in `disclosure.ts`, not on `Mediar`.
 
 ### Aggor
 

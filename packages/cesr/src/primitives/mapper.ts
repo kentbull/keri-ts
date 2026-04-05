@@ -44,6 +44,12 @@ export type MapperMap = { [key: string]: MapperValue };
  * 1. syntax probing/tokenization helpers (`parse*Syntax`)
  * 2. semantic value encode/decode helpers (`serializeValue`/`deserializeValue`)
  * 3. the `Mapper` class that owns end-to-end map lifecycle
+ *
+ * Disclosure boundary:
+ * - `Mapper` / `Compactor` own arbitrary map disclosure
+ * - `Aggor` owns aggregate-list disclosure
+ * - fixed-field blinded disclosure lives separately in `structing.ts` +
+ *   `disclosure.ts`
  */
 
 /**
@@ -653,6 +659,11 @@ function verifyMapRoundTrip(
  * Put differently:
  * syntax helpers are for inspection and parser diagnostics;
  * `Mapper` is for truth.
+ *
+ * Compare carefully:
+ * - use `Mapper` when the disclosed thing is a general map
+ * - do not use it for fixed-field blind/bound/media tuples, which have their
+ *   own explicit schema and workflow layer
  */
 export class Mapper {
   code: string;

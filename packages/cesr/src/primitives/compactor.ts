@@ -14,6 +14,11 @@ type SadMap = MapperMap;
  * 1. `Mapper` explains how one map becomes one native map-group.
  * 2. `Compactor` explains how a tree of saidive maps becomes compact leaves,
  *    compact branches, and partially re-expanded disclosure variants.
+ *
+ * Boundary rule:
+ * - this is the hierarchical map-disclosure mechanism
+ * - it is not the same thing as fixed-field blinded disclosure in
+ *   `disclosure.ts`
  */
 
 /**

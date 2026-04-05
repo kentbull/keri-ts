@@ -1,3 +1,21 @@
+/**
+ * Fixed-field structing descriptors and plain record values.
+ *
+ * This file is the TypeScript correlate of the fixed-field portion of KERIpy
+ * `structing.py`.
+ *
+ * The important mental model is a representation ladder:
+ * - semantic record: plain frozen object with real CESR primitives
+ * - crew / SAD object: same field names, projected to string properties named
+ *   by the cast metadata (`ipn`)
+ * - CESR tuple body: concatenated primitive serializations in field order
+ * - counted-group transport: attachment framing owned elsewhere by
+ *   `Structor`, `Sealer`, `Blinder`, and `Mediar`
+ *
+ * This module owns the first three layers for fixed-field seal, blind-state,
+ * and typed-media values. It does not own workflow verbs such as blind,
+ * unblind, or commitment recomputation; those live in `disclosure.ts`.
+ */
 import { b, concatBytes } from "../core/bytes.ts";
 import type { CounterCodeNameV1, CounterCodeNameV2 } from "../tables/counter-codex.ts";
 import { Bexter } from "./bexter.ts";
@@ -40,6 +58,18 @@ export type Castage = Readonly<{
   ipn: string | null;
 }>;
 
+/**
+ * Build one immutable cast entry.
+ *
+ * KERIpy substance:
+ * - mirrors `Castage(kls=..., ipn=...)`
+ *
+ * `ipn` is the string projection name used in crew/SAD form. For example:
+ * - `NumberPrimitive` uses `numh`
+ * - `Noncer` uses `nonce`
+ * - `Labeler` / `Texter` use `text`
+ * - `null` falls back to canonical `qb64`
+ */
 export function castage(
   kls: new(init: Matter | MatterInit) => StructingPrimitive,
   ipn: string | null = null,
@@ -148,6 +178,17 @@ function encodeLabelText(text: string): string {
   return encodeBytes(text);
 }
 
+/**
+ * Inverse of crew/SAD projection for one field.
+ *
+ * Maintainer rule:
+ * - `fromSad()` does not blindly assume `qb64`
+ * - it must rebuild the primitive from the same string property selected by
+ *   the field's cast metadata
+ *
+ * This is why `BlindState.ts` and friends can round-trip placeholders and
+ * human-readable labels without losing parity with KERIpy.
+ */
 function hydrateStructingField(
   spec: Castage,
   value: string,
@@ -169,6 +210,12 @@ function hydrateStructingField(
   return new spec.kls({ qb64: value });
 }
 
+/**
+ * Project one semantic primitive field into crew/SAD string form.
+ *
+ * `crew` means "same field names, but string values selected by cast
+ * metadata," not "stringify everything as `qb64`".
+ */
 function serializeCrewField(field: StructingPrimitive, spec: Castage): string {
   const prop = spec.ipn ?? "qb64";
   const value = Reflect.get(field as object, prop);
@@ -180,6 +227,7 @@ function serializeCrewField(field: StructingPrimitive, spec: Castage): string {
   return value;
 }
 
+/** Build the crew/SAD object for one fixed-field semantic record. */
 function buildCrew<TFields extends readonly string[]>(
   fields: TFields,
   cast: Readonly<Record<TFields[number], Castage>>,
@@ -266,6 +314,14 @@ function isSadShape<TFields extends readonly string[]>(
   return keys.every((key) => fields.includes(key as TFields[number]));
 }
 
+/**
+ * Attach raw-SAD helpers to one plain descriptor object.
+ *
+ * TypeScript divergence from KERIpy:
+ * - KERIpy wraps these behaviors inside richer `Structor` descendants
+ * - `keri-ts` keeps the values as plain records and exposes schema/conversion
+ *   helpers directly on frozen descriptor companions
+ */
 function withSadProjection<
   TFields extends readonly string[],
   TRecord extends Readonly<Record<TFields[number], StructingPrimitive>>,
@@ -303,6 +359,9 @@ const SEAL_DIGEST_CAST = Object.freeze({ d: castage(Diger) } as const);
  *
  * KERIpy substance:
  * - named single-value seal used for SAID/digest anchoring
+ *
+ * Counter family:
+ * - `DigestSealSingles`
  */
 export type SealDigest = Readonly<{ d: Diger }>;
 export const SealDigest = withSadProjection(
@@ -344,6 +403,9 @@ const SEAL_ROOT_CAST = Object.freeze({ rd: castage(Diger) } as const);
  *
  * KERIpy substance:
  * - named single-value seal for anchored Merkle-tree root digests
+ *
+ * Counter family:
+ * - `MerkleRootSealSingles`
  */
 export type SealRoot = Readonly<{ rd: Diger }>;
 export const SealRoot = withSadProjection(
@@ -391,6 +453,9 @@ const SEAL_SOURCE_CAST = Object.freeze(
  * Maintainer model:
  * - the issuer/delegator prefix is implied by surrounding context
  * - `s` stays a real `NumberPrimitive`; crew/object form projects `.numh`
+ *
+ * Counter family:
+ * - `SealSourceCouples`
  */
 export type SealSource = Readonly<{ s: NumberPrimitive; d: Diger }>;
 export const SealSource = withSadProjection(
@@ -441,6 +506,9 @@ const SEAL_EVENT_CAST = Object.freeze(
  *
  * KERIpy substance:
  * - named triple pointing at one anchoring or delegated key event
+ *
+ * Counter family:
+ * - `SealSourceTriples`
  */
 export type SealEvent = Readonly<{
   i: Prefixer;
@@ -495,6 +563,9 @@ const SEAL_LAST_CAST = Object.freeze({ i: castage(Prefixer) } as const);
  * KERIpy substance:
  * - named single-value marker that says "use the latest establishment event
  *   from this prefix"
+ *
+ * Counter family:
+ * - `SealSourceLastSingles`
  */
 export type SealLast = Readonly<{ i: Prefixer }>;
 export const SealLast = withSadProjection(
@@ -542,6 +613,9 @@ const SEAL_BACK_CAST = Object.freeze(
  * KERIpy substance:
  * - named pair used for registrar/backer references where `bi` is the backer
  *   prefix and `d` is the attached metadata/event digest
+ *
+ * Counter family:
+ * - `BackerRegistrarSealCouples`
  */
 export type SealBack = Readonly<{ bi: Prefixer; d: Diger }>;
 export const SealBack = withSadProjection(
@@ -592,6 +666,9 @@ const SEAL_KIND_CAST = Object.freeze(
  * KERIpy substance:
  * - pairs one `Verser` with one digest so typed/versioned digests stay
  *   explicit in counted attachment groups
+ *
+ * Counter family:
+ * - `TypedDigestSealCouples`
  */
 export type SealKind = Readonly<{ t: Verser; d: Diger }>;
 export const SealKind = withSadProjection(
@@ -643,9 +720,23 @@ const BLIND_STATE_CAST = Object.freeze(
 /**
  * Blind-state fixed-field value (`d`, `u`, `td`, `ts`).
  *
+ * Field meanings:
+ * - `d`: blinded commitment over the full tuple
+ * - `u`: disclosure UUID / nonce that scopes the blinding operation
+ * - `td`: disclosed ACDC/TEL SAID, or empty placeholder when not yet revealed
+ * - `ts`: disclosed state label, or empty placeholder when not yet revealed
+ *
  * TypeScript divergence:
  * - the digest-like slots remain `Noncer`, not `Diger`, so empty-placeholder
  *   state keeps the same expressive range as KERIpy
+ *
+ * Why `Noncer` instead of `Diger`:
+ * - KERIpy treats these slots as placeholder-capable digest material
+ * - an empty blind-state field is still meaningful during graduated
+ *   disclosure, so the value space must include "present but empty"
+ *
+ * Counter family:
+ * - `BlindedStateQuadruples`
  */
 export type BlindState = Readonly<{
   d: Noncer;
@@ -720,6 +811,17 @@ const BOUND_STATE_CAST = Object.freeze(
  * KERIpy substance:
  * - extends blind state with the issuee key-state cross-anchor pair used for
  *   bound-state sextuples
+ *
+ * Field meanings:
+ * - `bn`: issuee key-state sequence number for the cross-anchor
+ * - `bd`: issuee key-state digest for the cross-anchor
+ *
+ * Placeholder semantics:
+ * - `bn=0`, `bd=""` is a real placeholder combination used during
+ *   graduated-disclosure search and commitment recomputation
+ *
+ * Counter family:
+ * - `BoundStateSextuples`
  */
 export type BoundState = Readonly<{
   d: Noncer;
@@ -831,6 +933,11 @@ const TYPE_MEDIA_CAST = Object.freeze(
  * Maintainer model:
  * - the field names stay KERIpy-exact
  * - callers read primitive projections directly from the fields
+ * - `mt` carries the media-type label
+ * - `mv` carries the associated media value/payload text
+ *
+ * Counter family:
+ * - `TypedMediaQuadruples`
  */
 export type TypeMedia = Readonly<{
   d: Noncer;
@@ -976,6 +1083,7 @@ export const AllCastDom = Object.freeze(
 /** KERIpy alias for `AllCastDom`. */
 export const ACastDom = AllCastDom;
 
+/** All fixed-field structing clan names known to the CESR layer. */
 export type StructClanName = keyof typeof AllClanDom;
 
 /** Fixed-field seal union used by typed KERI seal projections. */

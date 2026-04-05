@@ -28,6 +28,12 @@ import {
 } from "../../../src/primitives/structing.ts";
 import { KERIPY_MATTER_VECTORS, KERIPY_STRUCTING_DATA_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
+// Read these tests as the maintainer tutorial for fixed-field structing:
+// 1. registries/codens mirror KERIpy naming and counter families
+// 2. seal values round-trip between semantic records, crew/SAD objects, and
+//    tuple serializations
+// 3. blind/media values show why crew projection is not "just qb64"
+
 Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and coden mapping", () => {
   assertEquals(EClanDom, {});
   assertEquals(ECastDom, {});
@@ -193,6 +199,9 @@ Deno.test("primitives/structing - seal records round-trip tuple values and crew 
 });
 
 Deno.test("primitives/structing - blind and media records preserve KERIpy crew semantics", () => {
+  // This is the key `crew` test: nonce-like fields project through `.nonce`,
+  // labels/text project through `.text`, and placeholder-capable values stay
+  // expressive enough for later graduated-disclosure steps.
   const blindState = BlindState.fromQb64bTuple([
     b(KERIPY_STRUCTING_DATA_VECTORS.blindState.d),
     b(KERIPY_STRUCTING_DATA_VECTORS.blindState.u),
