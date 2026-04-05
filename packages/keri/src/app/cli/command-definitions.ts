@@ -203,6 +203,11 @@ function regInceptCmd(program: Command, dispatch: CommandDispatch): void {
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
+    .option(
+      "-c, --config-dir <dir>",
+      "Directory override for configuration data",
+    )
+    .option("--config-file <file>", "Configuration filename override")
     .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
     .requiredOption(
       "-a, --alias <alias>",
@@ -257,6 +262,8 @@ function regInceptCmd(program: Command, dispatch: CommandDispatch): void {
           name: options.name,
           base: options.base,
           headDirPath: options.headDir,
+          configDir: options.configDir,
+          configFile: options.configFile,
           passcode: options.passcode,
           alias: options.alias,
           file: options.file,

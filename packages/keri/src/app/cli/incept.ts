@@ -1,6 +1,14 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime, processRuntimeUntil, runtimeHasPendingWork } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  processRuntimeUntil,
+  runtimeHasPendingWork,
+  runtimeHasWellKnownAuth,
+  runtimeOobiTerminalState,
+} from "../agent-runtime.ts";
+import { type Configer, createConfiger } from "../configing.ts";
+import type { Habery } from "../habbing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
 
@@ -11,7 +19,8 @@ interface InceptArgs {
   temp?: boolean;
   passcode?: string;
   alias?: string;
-  config?: string;
+  configDir?: string;
+  configFile?: string;
   endpoint?: boolean;
   proxy?: string;
   file?: string;
@@ -63,6 +72,8 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     temp: args.temp as boolean | undefined,
     passcode: args.passcode as string | undefined,
     alias: args.alias as string | undefined,
+    configDir: args.configDir as string | undefined,
+    configFile: args.configFile as string | undefined,
     endpoint: args.endpoint as boolean | undefined,
     proxy: args.proxy as string | undefined,
     file: args.file as string | undefined,
@@ -101,6 +112,16 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   const cues = createQueue<{ kin: string; pre?: string; mode: string }, void>();
 
   const doer = yield* spawn(function*() {
+    const cf: Configer | undefined = inceptArgs.configFile
+      ? (yield* createConfiger({
+        name: inceptArgs.configFile,
+        base: "",
+        temp: false,
+        headDirPath: inceptArgs.configDir,
+        reopen: true,
+        clear: false,
+      }))
+      : undefined;
     const hby = yield* setupHby(
       inceptArgs.name!,
       inceptArgs.base ?? "",
@@ -109,7 +130,8 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
       inceptArgs.headDirPath,
       {
         readonly: false,
-        skipConfig: false,
+        cf,
+        skipConfig: !cf,
         skipSignator: true,
       },
     );
@@ -126,6 +148,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
             "Bootstrap OOBI resolution failed before inception.",
           );
         }
+        assertConfiguredWellKnownAuth(runtime, hby, "inception");
       }
 
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {
@@ -156,4 +179,33 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   yield* doer;
   const cue = yield* cues.next();
   if (cue.done) return;
+}
+
+function configuredWellKnownUrls(hby: Habery): string[] {
+  return Array.isArray(hby.config.wurls)
+    ? hby.config.wurls.filter((entry): entry is string =>
+      typeof entry === "string"
+    )
+    : [];
+}
+
+function assertConfiguredWellKnownAuth(
+  runtime: ReturnType<typeof createAgentRuntime>,
+  hby: Habery,
+  context: string,
+): void {
+  const failed = configuredWellKnownUrls(hby).filter((url) =>
+    !runtimeHasWellKnownAuth(runtime, url)
+  );
+  if (failed.length === 0) {
+    return;
+  }
+
+  const details = failed.map((url) => {
+    const terminal = runtimeOobiTerminalState(runtime, url);
+    return `${url} (${terminal.record?.state ?? terminal.status})`;
+  }).join(", ");
+  throw new ValidationError(
+    `Bootstrap well-known auth failed before ${context}: ${details}`,
+  );
 }
