@@ -80,9 +80,10 @@ This is the preferred mental model for future Gate E/F work.
 3. It keeps durability where KERIpy keeps durability. OOBI queue state belongs
    in DB families such as `oobis.`, not in a root in-memory deck.
 
-4. It keeps the shared cue model. The cue deck remains root-level because it is
-   genuinely cross-component state, closer to the KERIpy mental model than
-   isolated per-component cue islands.
+4. It keeps the shared runtime cue model. The runtime cue deck remains
+   root-level because it is genuinely cross-component runtime state, while
+   habery-local cue ownership can still exist separately for non-runtime local
+   habitat processing.
 
 5. It keeps the single-step test/CLI helper without turning it into the
    architecture. `processRuntimeTurn()` is retained because tests and local

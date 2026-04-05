@@ -1,10 +1,11 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
+import { Dater, Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { UnverifiedReplyError } from "../../../src/core/errors.ts";
 import { Revery } from "../../../src/core/routing.ts";
-import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 
 Deno.test("Revery.acceptReply aggregates weighted reply signatures until the threshold is met", async () => {
   await run(function*() {
@@ -215,6 +216,128 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
 
       assertEquals(accepted, true);
       assertExists(hby.db.rpys.get([saider.qb64]));
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Revery.processEscrowReply keeps replies on recoverable UnverifiedReplyError replay", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `revery-escrow-keep-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("reply-keep", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const serder = new SerderKERI({
+        sad: {
+          t: "rpy",
+          dt: makeNowIso8601(),
+          r: "/escrow/reply",
+          a: { aid: hab.pre },
+        },
+        makify: true,
+      });
+      const saider = new Diger({ qb64: serder.said ?? "" });
+      const replyVerifier = new Revery(hby.db);
+      replyVerifier.escrowReply({
+        serder,
+        saider,
+        dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+        route: "/escrow/reply",
+        prefixer: new Prefixer({ qb64: hab.pre }),
+        seqner: kever.sner,
+        diger: new Diger({ qb64: kever.said }),
+        sigers: hab.sign(serder.raw, true),
+      });
+
+      const original = replyVerifier.processReply.bind(replyVerifier);
+      (
+        replyVerifier as unknown as {
+          processReply(
+            args: { serder: SerderKERI; tsgs: TransIdxSigGroup[] },
+          ): void;
+        }
+      ).processReply = () => {
+        throw new UnverifiedReplyError("retry later");
+      };
+
+      try {
+        replyVerifier.processEscrowReply();
+      } finally {
+        (
+          replyVerifier as unknown as {
+            processReply: typeof original;
+          }
+        ).processReply = original;
+      }
+
+      assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 1);
+      assertExists(hby.db.rpys.get([saider.qb64]));
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and removes stored reply state", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `revery-escrow-drop-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("reply-drop", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const serder = new SerderKERI({
+        sad: {
+          t: "rpy",
+          dt: makeNowIso8601(),
+          r: "/escrow/reply",
+          a: { aid: hab.pre },
+        },
+        makify: true,
+      });
+      const saider = new Diger({ qb64: serder.said ?? "" });
+      const replyVerifier = new Revery(hby.db);
+      replyVerifier.escrowReply({
+        serder,
+        saider,
+        dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+        route: "/escrow/reply",
+        prefixer: new Prefixer({ qb64: hab.pre }),
+        seqner: kever.sner,
+        diger: new Diger({ qb64: kever.said }),
+        sigers: hab.sign(serder.raw, true),
+      });
+
+      hby.db.rpys.rem([saider.qb64]);
+      replyVerifier.processEscrowReply();
+
+      assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 0);
+      assertEquals(hby.db.rpys.get([saider.qb64]), null);
+      assertEquals(hby.db.sdts.get([saider.qb64]), null);
+      assertEquals(hby.db.ssgs.get([saider.qb64]).length, 0);
     } finally {
       yield* hby.close(true);
     }

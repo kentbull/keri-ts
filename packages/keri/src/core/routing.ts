@@ -5,6 +5,7 @@ import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
 import { UnverifiedReplyError, ValidationError } from "./errors.ts";
+import { acceptEscrow, dropEscrow, type EscrowProcessDecision, keepEscrow } from "./kever-decisions.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 
@@ -391,7 +392,7 @@ export class Revery {
         continue;
       }
 
-      const estSaid = this.db.getKel(tsg.pre, Number(tsg.sn));
+      const estSaid = this.db.kels.getLast(tsg.pre, Number(tsg.sn));
       if (!estSaid || estSaid !== tsg.said) {
         this.escrowReply({
           serder: args.serder,
@@ -603,28 +604,49 @@ export class Revery {
       if (!route) {
         continue;
       }
-      const dater = this.db.sdts.get([diger.qb64]);
-      const serder = this.db.rpys.get([diger.qb64]);
-      const tsgs = fetchStoredTsgs(this.db, diger.qb64);
-      if (!dater || !serder || tsgs.length === 0) {
-        this.db.rpes.rem([route], diger);
-        this.removeReply(diger);
-        continue;
-      }
-      if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
-        this.db.rpes.rem([route], diger);
-        this.removeReply(diger);
-        continue;
-      }
-      try {
-        this.processReply({ serder, tsgs });
-        this.db.rpes.rem([route], diger);
-      } catch (error) {
-        if (!(error instanceof UnverifiedReplyError)) {
+      const decision = this.reprocessEscrowedReply(diger);
+      switch (decision.kind) {
+        case "accept":
+          this.db.rpes.rem([route], diger);
+          break;
+        case "drop":
           this.db.rpes.rem([route], diger);
           this.removeReply(diger);
-        }
+          break;
+        case "keep":
+          break;
       }
+    }
+  }
+
+  /**
+   * Replay one escrowed transferable reply through the normal verification path.
+   *
+   * Typed replay decisions make the Gate E control flow explicit:
+   * - `keep` mirrors recoverable `UnverifiedReplyError`
+   * - `drop` mirrors stale/corrupt escrow rows that should be removed
+   * - `accept` mirrors successful reply verification on replay
+   */
+  private reprocessEscrowedReply(
+    diger: Diger,
+  ): EscrowProcessDecision {
+    const dater = this.db.sdts.get([diger.qb64]);
+    const serder = this.db.rpys.get([diger.qb64]);
+    const tsgs = fetchStoredTsgs(this.db, diger.qb64);
+    if (!dater || !serder || tsgs.length === 0) {
+      return dropEscrow("missingEscrowArtifact");
+    }
+    if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
+      return dropEscrow("stale");
+    }
+    try {
+      this.processReply({ serder, tsgs });
+      return acceptEscrow();
+    } catch (error) {
+      if (error instanceof UnverifiedReplyError) {
+        return keepEscrow("unverifiedReply");
+      }
+      return dropEscrow("processingError");
     }
   }
 }

@@ -1,7 +1,9 @@
 import { run } from "effection";
-import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { Cigar, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
+import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("Habery eagerly loads persisted habitats on open", async () => {
@@ -31,11 +33,12 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       const state = hby.db.getState(hab.pre);
       assertEquals(state?.i, hab.pre);
       assertEquals(state?.k, hab.kever?.verfers.map((verfer) => verfer.qb64));
-      assertEquals(hby.db.getKel(hab.pre, 0), state?.d);
+      assertEquals(hby.db.kels.getLast(hab.pre, 0), state?.d);
       assertEquals(hby.db.getFel(hab.pre, 0), state?.d);
       assertEquals(hab.accepted, true);
       assertEquals(hby.db.getKever(hab.pre)?.pre, hab.pre);
       assertEquals(hby.prefixes.includes(hab.pre), true);
+      assertStrictEquals(hab.kevery, hby.kevery);
 
       const evt = state?.d ? hby.db.getEvt(dgKey(hab.pre, state.d)) : null;
       const evtText = evt ? new TextDecoder().decode(evt) : "";
@@ -72,6 +75,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(hab?.kever?.pre, hab?.pre);
       assertEquals(hab?.accepted, true);
       assertEquals(hby.prefixes.includes(hab?.pre ?? ""), true);
+      assertStrictEquals(hab?.kevery, hby.kevery);
       const storedHab = hab ? hby.db.getHab(hab.pre) : null;
       assertEquals(storedHab?.hid, hab?.pre);
       assertEquals(storedHab?.name, alias);
@@ -79,7 +83,43 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       const state = hab ? hby.db.getState(hab.pre) : null;
       assertEquals(state?.i, hab?.pre);
       assertEquals(state?.k, hab?.kever?.verfers.map((verfer) => verfer.qb64));
-      assertEquals(hab ? hby.db.getKever(hab.pre)?.pre : null, hab?.pre ?? null);
+      assertEquals(
+        hab ? hby.db.getKever(hab.pre)?.pre : null,
+        hab?.pre ?? null,
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues", async () => {
+  const name = `habery-local-kevery-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      skipSignator: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const runtime = createAgentRuntime(hby, { mode: "local" });
+
+      assertStrictEquals(hab.kevery, hby.kevery);
+      assertStrictEquals(hby.kevery.local, true);
+      assertStrictEquals(hby.kevery.lax, false);
+      assertStrictEquals(runtime.reactor.kevery.cues, runtime.cues);
+      assertEquals(runtime.reactor.kevery === hby.kevery, false);
+      assertEquals(runtime.cues === hby.kevery.cues, false);
     } finally {
       yield* hby.close();
     }
@@ -236,17 +276,159 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
       assertInstanceOf(signatorSig, Cigar);
       assertInstanceOf(hby.signator?.verfer, Verfer);
       assertEquals(hby.signator?.verfer.qb64, hby.signator?.pre);
-      assertEquals(hby.signator?.verfer.qb64, hby.signator?.hab.kever?.verfers[0]?.qb64);
+      assertEquals(
+        hby.signator?.verfer.qb64,
+        hby.signator?.hab.kever?.verfers[0]?.qb64,
+      );
       assertEquals(
         signatorSig ? hby.signator?.verify(ser, signatorSig) : false,
         true,
       );
       assertEquals(
         signatorSig
-          ? hby.signator?.verify(new TextEncoder().encode("wrong-message"), signatorSig)
+          ? hby.signator?.verify(
+            new TextEncoder().encode("wrong-message"),
+            signatorSig,
+          )
           : true,
         false,
       );
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Hab witness helper emits receipt bytes but skips own-event local witness storage", async () => {
+  const name = `habery-witness-receipts-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const witness = hby.makeHab("wit", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = hby.makeHab("ctrl", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const event = hby.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      if (!event?.said) {
+        throw new Error("Expected accepted controller inception event.");
+      }
+
+      const witnessMsg = witness.witness(event);
+
+      assertEquals(witnessMsg.length > 0, true);
+      assertEquals(
+        hby.db.wigs.get([controller.pre, event.said]).length,
+        0,
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Hab non-transferable receipt helper emits receipt bytes but skips own-event local receipt stores", async () => {
+  const name = `habery-nontrans-receipts-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const receiptor = hby.makeHab("receiptor", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = hby.makeHab("ctrl", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = hby.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      if (!event?.said) {
+        throw new Error("Expected accepted controller inception event.");
+      }
+
+      const receiptMsg = receiptor.receipt(event);
+
+      assertEquals(receiptMsg.length > 0, true);
+      assertEquals(
+        hby.db.rcts.get([controller.pre, event.said]).length,
+        0,
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Hab transferable receipt helper rejects own-event local receipts under non-lax Habery semantics", async () => {
+  const name = `habery-validator-receipts-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const validator = hby.makeHab("val", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const controller = hby.makeHab("ctrl", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const event = hby.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      if (!event?.said) {
+        throw new Error("Expected accepted controller inception event.");
+      }
+
+      assertThrows(
+        () => validator.receipt(event),
+        ValidationError,
+      );
+      assertEquals(hby.db.vrcs.get([controller.pre, event.said]).length, 0);
     } finally {
       yield* hby.close();
     }
@@ -306,7 +488,10 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
       assertInstanceOf(sig, Cigar);
       assertInstanceOf(hby.signator?.verfer, Verfer);
       assertEquals(hby.signator?.verfer.qb64, signatoryPre);
-      assertEquals(hby.signator?.verfer.qb64, hby.signator?.hab.kever?.verfers[0]?.qb64);
+      assertEquals(
+        hby.signator?.verfer.qb64,
+        hby.signator?.hab.kever?.verfers[0]?.qb64,
+      );
       assertEquals(
         sig ? hby.signator?.verify(ser, sig) : false,
         true,

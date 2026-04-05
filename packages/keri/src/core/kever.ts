@@ -10,6 +10,7 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import type { Baser } from "../db/basing.ts";
+import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
@@ -28,6 +29,7 @@ import type {
   RejectKind,
 } from "./kever-decisions.ts";
 import { KeyStateRecord } from "./records.ts";
+import { deriveRotatedWitnessSet } from "./witnesses.ts";
 
 /**
  * Convert one integer into the Huge-number CESR family used for durable replay
@@ -594,38 +596,39 @@ export class Kever {
     const nowIso8601 = replayDater?.iso8601 ?? makeNowIso8601();
     const nowDater = replayDater
       ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
+    const dgkey = dgKey(pre, said);
 
-    this.db.dtss.put([pre, said], nowDater);
+    this.db.dtss.put(dgkey, nowDater);
     if (args.sigers && args.sigers.length > 0) {
-      this.db.sigs.put([pre, said], [...args.sigers]);
+      this.db.sigs.put(dgkey, [...args.sigers]);
     }
     if (args.wigers && args.wigers.length > 0) {
-      this.db.wigs.put([pre, said], [...args.wigers]);
+      this.db.wigs.put(dgkey, [...args.wigers]);
     }
     if (args.wits && args.wits.length > 0) {
       this.db.wits.put(
-        [pre, said],
+        dgkey,
         args.wits.map((wit) => new Prefixer({ qb64: wit })),
       );
     }
 
-    this.db.evts.put([pre, said], args.serder);
+    this.db.evts.put(dgkey, args.serder);
 
     if (args.sourceSeal && this.delegated && args.serder.ilk !== Ilks.ixn) {
-      this.db.aess.pin([pre, said], [
+      this.db.aess.pin(dgkey, [
         normalizeOrdinal(args.sourceSeal.seqner),
         args.sourceSeal.diger,
       ]);
     }
 
-    const existingEsr = this.db.esrs.get([pre, said]);
+    const existingEsr = this.db.esrs.get(dgkey);
     if (existingEsr) {
       if (local && !existingEsr.local) {
         existingEsr.local = true;
-        this.db.esrs.pin([pre, said], existingEsr);
+        this.db.esrs.pin(dgkey, existingEsr);
       }
     } else {
-      this.db.esrs.put([pre, said], { local });
+      this.db.esrs.put(dgkey, { local });
     }
 
     let fn: number | null = null;
@@ -640,11 +643,11 @@ export class Kever {
           dater: args.frc.dater,
         });
       }
-      this.db.dtss.pin([pre, said], nowDater);
-      this.db.fons.pin([pre, said], encodeHugeOrdinal(fn));
+      this.db.dtss.pin(dgkey, nowDater);
+      this.db.fons.pin(dgkey, encodeHugeOrdinal(fn));
     }
 
-    this.db.putKel(pre, sn, said);
+    this.db.kels.add(pre, sn, said);
     return { fn, dater: nowDater };
   }
 
@@ -899,7 +902,7 @@ export class Kever {
       // Recovery compares against the accepted event immediately before the
       // candidate recovery point, not just against current head state.
       const psn = sn - 1;
-      const pdig = this.db.getKel(this.pre, psn);
+      const pdig = this.db.kels.getLast(this.pre, psn);
       if (!pdig) {
         return Kever.reject(
           "invalidRecovery",
@@ -1688,7 +1691,7 @@ export class Kever {
     if (!pre || !said) {
       return null;
     }
-    const seal = this.db.aess.get([pre, said]);
+    const seal = this.db.aess.get(dgKey(pre, said));
     if (!seal) {
       return null;
     }
@@ -1702,7 +1705,7 @@ export class Kever {
     if (!pre || !said) {
       return;
     }
-    this.db.aess.rem([pre, said]);
+    this.db.aess.rem(dgKey(pre, said));
   }
 
   /** Repair `.aess` for accepted delegated events after re-discovering the real boss. */
@@ -1712,10 +1715,11 @@ export class Kever {
   ): void {
     const pre = serder.pre;
     const said = serder.said;
-    if (!pre || !said || !this.db.fons.get([pre, said])) {
+    const dgkey = pre && said ? dgKey(pre, said) : null;
+    if (!dgkey || !this.db.fons.get(dgkey)) {
       return;
     }
-    this.db.aess.pin([pre, said], [
+    this.db.aess.pin(dgkey, [
       normalizeOrdinal(lookup.sourceSeal.seqner),
       lookup.sourceSeal.diger,
     ]);
@@ -1730,7 +1734,7 @@ export class Kever {
     const candidate = this.db.getEvtSerder(delpre, sourceSeal.diger.qb64);
     if (
       !candidate || !candidate.said
-      || !this.db.fons.get([delpre, candidate.said])
+      || !this.db.fons.get(dgKey(delpre, candidate.said))
     ) {
       return null;
     }
@@ -1746,7 +1750,7 @@ export class Kever {
     sourceSeal: SourceSealCouple | SourceSealTriple,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const said = this.db.getKel(delpre, ordinalNumber(sourceSeal.seqner));
+    const said = this.db.kels.getLast(delpre, ordinalNumber(sourceSeal.seqner));
     if (!said) {
       return null;
     }
@@ -1770,7 +1774,7 @@ export class Kever {
       let best: DelegatingEventLookup | null = null;
       let bestFn: bigint | null = null;
       for (const [, , said] of this.db.kels.getAllItemIter(delpre)) {
-        const fn = this.db.fons.get([delpre, said]);
+        const fn = this.db.fons.get(dgKey(delpre, said));
         if (!fn) {
           continue;
         }
@@ -2072,31 +2076,26 @@ export class Kever {
     const adds = [...serder.adds];
     // Ordered witness math matters here: duplicate or intersecting cut/add
     // sets would make the next witness list ambiguous for indexed receipts.
-    if (!hasUniqueEntries(cuts) || !hasUniqueEntries(adds)) {
-      return null;
-    }
-    if (cuts.some((wit) => adds.includes(wit))) {
-      return null;
-    }
-
-    const next = this.wits.filter((wit) => !cuts.includes(wit));
-    for (const add of adds) {
-      next.push(add);
-    }
-    if (!hasUniqueEntries(next)) {
+    const derived = deriveRotatedWitnessSet(this.wits, cuts, adds);
+    if (!derived) {
       return null;
     }
 
     const toader = serder.bner ?? numberPrimitiveFromBigInt(0n);
-    if (next.length > 0) {
-      if (toader.num < 1n || toader.num > BigInt(next.length)) {
+    if (derived.wits.length > 0) {
+      if (toader.num < 1n || toader.num > BigInt(derived.wits.length)) {
         return null;
       }
     } else if (toader.num !== 0n) {
       return null;
     }
 
-    return { wits: next, cuts, adds, toader };
+    return {
+      wits: derived.wits,
+      cuts: derived.cuts,
+      adds: derived.adds,
+      toader,
+    };
   }
 
   /** Normalize the first available delegated/source-seal attachment if any. */

@@ -1,6 +1,7 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission, ReplyCue, StreamCue } from "./../core/cues.ts";
 import { Deck } from "../core/deck.ts";
+import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import { TopicsRecord } from "../core/records.ts";
 import type { Baser } from "../db/basing.ts";
 import type { CueSink } from "./cue-runtime.ts";
@@ -103,7 +104,7 @@ export class MailboxDirector implements CueSink {
    */
   streamMailbox(
     pre: string,
-    topics: Record<string, number>,
+    topicCursor: MbxTopicCursor,
     {
       retryMs = 5000,
       pollIntervalMs = 50,
@@ -114,7 +115,7 @@ export class MailboxDirector implements CueSink {
       idleTimeoutMs?: number;
     } = {},
   ): ReadableStream<Uint8Array> {
-    const cursors = { ...topics };
+    const cursors = { ...topicCursor };
     const encoder = new TextEncoder();
     return new ReadableStream<Uint8Array>({
       start: (controller) => {

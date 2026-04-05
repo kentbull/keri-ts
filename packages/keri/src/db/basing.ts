@@ -85,6 +85,27 @@ import {
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
+type EventSealShape = { i: string; s: string; d: string };
+
+function normalizeEventSeal(value: unknown): EventSealShape | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const keys = Object.keys(candidate).sort();
+  if (keys.length !== 3 || keys[0] !== "d" || keys[1] !== "i" || keys[2] !== "s") {
+    return null;
+  }
+  return typeof candidate.i === "string" && typeof candidate.s === "string"
+      && typeof candidate.d === "string"
+    ? { i: candidate.i, s: candidate.s, d: candidate.d }
+    : null;
+}
+
+function eventSealsEqual(left: EventSealShape, right: EventSealShape): boolean {
+  return left.i === right.i && left.s === right.s && left.d === right.d;
+}
+
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
 function encodeHugeOrdinal(num: number): NumberPrimitive {
   const raw = new Uint8Array(16);
@@ -149,7 +170,7 @@ export class Baser {
   public ooes!: OnIoDupSuber<string>; // Out-of-order escrowed event digests.
   public dels!: OnIoDupSuber<string>; // Duplicitous event-log digests.
   public ldes!: OnIoDupSuber<string>; // Likely-duplicitous escrowed event digests.
-  public qnfs!: IoSetSuber<string>; // Query-not-found escrows keyed by queried event digest.
+  public qnfs!: IoSetSuber<string>; // Query-not-found escrows keyed by requester + query SAID.
   public fons!: CesrSuber<NumberPrimitive>; // First-seen ordinals for recovery and superseding.
   public migs!: CesrSuber<Dater>; // Database migration datetimes.
   public vers!: Suber; // Database version table.
@@ -955,17 +976,7 @@ export class Baser {
 
   /** Read one serialized event from `evts.` through the typed serder wrapper. */
   getEvtSerder(pre: string, said: string): SerderKERI | null {
-    return this.evts.get([pre, said]);
-  }
-
-  /** Append one event digest to the key-event log bucket for `(pre, sn)`. */
-  putKel(pre: string, sn: number, said: string): boolean {
-    return this.kels.addOn(pre, sn, said);
-  }
-
-  /** Read the latest stored event digest for `(pre, sn)` from `kels.`. */
-  getKel(pre: string, sn: number): string | null {
-    return this.kels.getOnLast(pre, sn);
+    return this.evts.get(dgKey(pre, said));
   }
 
   /** Iterate the latest digest per sequence number for one identifier's KEL. */
@@ -973,6 +984,73 @@ export class Baser {
     for (const [, sn, said] of this.kels.getOnLastItemIter(pre)) {
       yield [sn, said];
     }
+  }
+
+  /**
+   * Iterate every stored KEL event for `pre` from sequence `sn` onward.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.getEvtPreIter(...)`
+   *
+   * Unlike `getKelItemIter()`, this includes disputed or superseded events
+   * still present in `kels.` buckets.
+   */
+  *getEvtPreIter(pre: string, sn = 0): Generator<SerderKERI> {
+    for (const [, , said] of this.kels.getAllItemIter(pre, sn)) {
+      const serder = this.getEvtSerder(pre, said);
+      if (serder) {
+        yield serder;
+      }
+    }
+  }
+
+  /**
+   * Return true when `serder` currently satisfies the stored witness threshold.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.fullyWitnessed(...)`
+   */
+  fullyWitnessed(serder: SerderKERI): boolean {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (!pre || !said) {
+      return false;
+    }
+    const kever = this.getKever(pre);
+    if (!kever) {
+      return false;
+    }
+    return BigInt(this.wigs.get(dgKey(pre, said)).length) >= kever.toader.num;
+  }
+
+  /**
+   * Find the first fully witnessed event in `pre`'s KEL that carries `seal`.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.fetchAllSealingEventByEventSeal(...)`
+   */
+  fetchAllSealingEventByEventSeal(
+    pre: string,
+    seal: unknown,
+    sn = 0,
+  ): SerderKERI | null {
+    const target = normalizeEventSeal(seal);
+    if (!target) {
+      return null;
+    }
+
+    for (const serder of this.getEvtPreIter(pre, sn)) {
+      for (const eseal of serder.seals) {
+        const current = normalizeEventSeal(eseal);
+        if (
+          current && eventSealsEqual(current, target)
+          && this.fullyWitnessed(serder)
+        ) {
+          return serder;
+        }
+      }
+    }
+    return null;
   }
 
   /** Append one digest to the first-seen event log for a prefix and return the assigned ordinal. */
@@ -997,27 +1075,27 @@ export class Baser {
 
   /** Upsert the datetime stamp for one event digest in `dtss.`. */
   putDts(pre: string, said: string, qb64: string): boolean {
-    return this.dtss.pin([pre, said], new Dater({ qb64 }));
+    return this.dtss.pin(dgKey(pre, said), new Dater({ qb64 }));
   }
 
   /** Read the stored datetime stamp for one event digest from `dtss.`. */
   getDts(pre: string, said: string): string | null {
-    return this.dtss.get([pre, said])?.qb64 ?? null;
+    return this.dtss.get(dgKey(pre, said))?.qb64 ?? null;
   }
 
   /** Insert one event-source record in `esrs.` if absent. */
   putEsr(pre: string, said: string, record: EventSourceRecordShape): boolean {
-    return this.esrs.put([pre, said], record);
+    return this.esrs.put(dgKey(pre, said), record);
   }
 
   /** Upsert one event-source record in `esrs.`. */
   pinEsr(pre: string, said: string, record: EventSourceRecordShape): boolean {
-    return this.esrs.pin([pre, said], record);
+    return this.esrs.pin(dgKey(pre, said), record);
   }
 
   /** Read one event-source record from `esrs.`. */
   getEsr(pre: string, said: string): EventSourceRecord | null {
-    return this.esrs.get([pre, said]);
+    return this.esrs.get(dgKey(pre, said));
   }
 
   /** Insert one current key-state record in `states.` if absent. */
@@ -1109,14 +1187,15 @@ export class Baser {
    * signatures, source seals, receipts, and first-seen replay metadata.
    */
   cloneEvtMsg(pre: string, fn: number, said: string): Uint8Array {
-    const serder = this.getEvtSerder(pre, said);
+    const dgkey = dgKey(pre, said);
+    const serder = this.evts.get(dgkey);
     if (serder === null) {
       throw new DatabaseOperationError(
         `Missing event body for ${pre}:${said}`,
       );
     }
 
-    const sigers = this.sigs.get([pre, said]);
+    const sigers = this.sigs.get(dgkey);
     if (sigers.length === 0) {
       throw new DatabaseOperationError(
         `Missing indexed signatures for ${pre}:${said}`,
@@ -1132,7 +1211,7 @@ export class Baser {
       ...sigers.map((siger) => siger.qb64b),
     ];
 
-    const wigers = this.wigs.get([pre, said]);
+    const wigers = this.wigs.get(dgkey);
     if (wigers.length > 0) {
       attachments.push(
         new Counter({
@@ -1144,7 +1223,7 @@ export class Baser {
       );
     }
 
-    const seal = this.aess.get([pre, said]);
+    const seal = this.aess.get(dgkey);
     if (seal !== null) {
       const [number, diger] = seal;
       attachments.push(
@@ -1158,7 +1237,7 @@ export class Baser {
       );
     }
 
-    const vrcs = this.vrcs.get([pre, said]);
+    const vrcs = this.vrcs.get(dgkey);
     if (vrcs.length > 0) {
       attachments.push(
         new Counter({
@@ -1175,7 +1254,7 @@ export class Baser {
       );
     }
 
-    const rcts = this.rcts.get([pre, said]);
+    const rcts = this.rcts.get(dgkey);
     if (rcts.length > 0) {
       attachments.push(
         new Counter({
@@ -1190,7 +1269,7 @@ export class Baser {
       );
     }
 
-    const dater = this.dtss.get([pre, said]);
+    const dater = this.dtss.get(dgkey);
     if (dater === null) {
       throw new DatabaseOperationError(
         `Missing datetime stamp for ${pre}:${said}`,
@@ -1240,6 +1319,24 @@ export class Baser {
     }
   }
 
+  /**
+   * Recursively replay the delegator chain for one delegated `Kever`.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.cloneDelegation(...)`
+   */
+  *cloneDelegation(kever: Kever): Generator<Uint8Array> {
+    if (!kever.delegated || !kever.delpre) {
+      return;
+    }
+    const delegator = this.getKever(kever.delpre);
+    if (!delegator) {
+      return;
+    }
+    yield* this.cloneDelegation(delegator);
+    yield* this.clonePreIter(kever.delpre, 0);
+  }
+
   /** Insert one habitat metadata record in `habs.` if absent. */
   putHab(pre: string, record: HabitatRecordShape): boolean {
     return this.habs.put(pre, record);
@@ -1274,8 +1371,9 @@ export class Baser {
     said: string,
     sigs: readonly (Siger | string)[],
   ): boolean {
+    const dgkey = dgKey(pre, said);
     return this.sigs.put(
-      [pre, said],
+      dgkey,
       sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
@@ -1286,15 +1384,16 @@ export class Baser {
     said: string,
     sigs: readonly (Siger | string)[],
   ): boolean {
+    const dgkey = dgKey(pre, said);
     return this.sigs.pin(
-      [pre, said],
+      dgkey,
       sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 
   /** Read indexed signatures for one event from `sigs.` as qb64 text. */
   getSigs(pre: string, said: string): string[] {
-    return this.sigs.get([pre, said]).map((sig) => sig.qb64);
+    return this.sigs.get(dgKey(pre, said)).map((sig) => sig.qb64);
   }
 
   /** Insert one namespace/name to prefix mapping in `names.` if absent. */

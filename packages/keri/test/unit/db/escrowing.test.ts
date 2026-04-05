@@ -4,7 +4,7 @@ import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Signer } from
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import { Broker } from "../../../src/db/escrowing.ts";
-import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 
 const textEncoder = new TextEncoder();
 
@@ -31,7 +31,7 @@ function makeReplySerder(route: string, prefix: string): SerderKERI {
   return new SerderKERI({
     sad: {
       t: "rpy",
-      dt: "2026-04-03T12:00:00.000000+00:00",
+      dt: makeNowIso8601(),
       r: route,
       a: {
         i: prefix,
@@ -54,6 +54,12 @@ function makeCigar(ser: Uint8Array): Cigar {
   return signer.sign(ser) as Cigar;
 }
 
+function makeFreshDater(): Dater {
+  return new Dater({
+    qb64: encodeDateTimeToDater(makeNowIso8601()),
+  });
+}
+
 Deno.test("db/escrowing - Broker escrows and successfully unescrows state notices", async () => {
   await run(function*() {
     const lmdber = yield* createLMDBer({
@@ -64,9 +70,7 @@ Deno.test("db/escrowing - Broker escrows and successfully unescrows state notice
       const broker = new Broker(lmdber, "txn");
       const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
       const diger = new Diger({ qb64: serder.said ?? "" });
-      const dater = new Dater({
-        qb64: encodeDateTimeToDater("2026-04-03T12:00:00.000000+00:00"),
-      });
+      const dater = makeFreshDater();
       const tsg = makeTsg(serder.raw);
       const cigar = makeCigar(serder.raw);
 
@@ -117,9 +121,7 @@ Deno.test("db/escrowing - Broker keeps escrowed notices on recoverable retry err
       const broker = new Broker(lmdber, "txn");
       const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
       const diger = new Diger({ qb64: serder.said ?? "" });
-      const dater = new Dater({
-        qb64: encodeDateTimeToDater("2026-04-03T12:00:00.000000+00:00"),
-      });
+      const dater = makeFreshDater();
 
       broker.escrowStateNotice({
         typ: "txn",
@@ -140,6 +142,53 @@ Deno.test("db/escrowing - Broker keeps escrowed notices on recoverable retry err
       );
 
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 1);
+    } finally {
+      yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("db/escrowing - Broker escrow helper exposes typed keep/drop/accept decisions", async () => {
+  await run(function*() {
+    const lmdber = yield* createLMDBer({
+      name: `broker-decision-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const broker = new Broker(lmdber, "txn");
+      const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
+      const diger = new Diger({ qb64: serder.said ?? "" });
+
+      broker.escrowStateNotice({
+        typ: "txn",
+        pre: "Eregistry",
+        aid: "Eaid",
+        serder,
+        diger,
+        dater: makeFreshDater(),
+        tsgs: [makeTsg(serder.raw)],
+      });
+
+      const decision = (
+        broker as unknown as {
+          processEscrowedStateNotice(args: {
+            aid: string;
+            diger: Diger;
+            processReply: (args: unknown) => void;
+            extype: new(...args: any[]) => Error;
+          }): { kind: "accept" | "keep" | "drop"; reason?: string };
+        }
+      ).processEscrowedStateNotice({
+        aid: "Eaid",
+        diger,
+        processReply: () => {
+          throw new RecoverableEscrowError("retry later");
+        },
+        extype: RecoverableEscrowError,
+      });
+
+      assertEquals(decision.kind, "keep");
+      assertEquals(decision.reason, "recoverableError");
     } finally {
       yield* lmdber.close(true);
     }
@@ -199,9 +248,7 @@ Deno.test("db/escrowing - Broker removes escrow and associated state on outer co
       const broker = new Broker(lmdber, "txn");
       const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
       const diger = new Diger({ qb64: serder.said ?? "" });
-      const dater = new Dater({
-        qb64: encodeDateTimeToDater("2026-04-03T12:00:00.000000+00:00"),
-      });
+      const dater = makeFreshDater();
       const tsg = makeTsg(serder.raw);
 
       broker.daterdb.put([diger.qb64], dater);
@@ -238,9 +285,7 @@ Deno.test("db/escrowing - Broker updateReply pins current-state pointers by (pre
       const broker = new Broker(lmdber, "txn");
       const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
       const diger = new Diger({ qb64: serder.said ?? "" });
-      const dater = new Dater({
-        qb64: encodeDateTimeToDater("2026-04-03T12:00:00.000000+00:00"),
-      });
+      const dater = makeFreshDater();
 
       broker.updateReply("Eaid", serder, diger, dater);
 

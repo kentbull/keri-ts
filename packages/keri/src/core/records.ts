@@ -14,6 +14,7 @@ import {
   type Verfer,
   type Verser,
 } from "../../../cesr/mod.ts";
+import type { MbxTopicCursor } from "./mailbox-topics.ts";
 
 const textEncoder = new TextEncoder();
 
@@ -347,7 +348,7 @@ export class HabitatRecord extends RawRecord<HabitatRecordShape> implements Habi
 }
 
 export interface TopicsRecordShape {
-  topics: Record<string, number>;
+  topics: MbxTopicCursor;
 }
 
 /**
@@ -360,7 +361,7 @@ export interface TopicsRecordShape {
  * retrieval flows.
  */
 export class TopicsRecord extends RawRecord<TopicsRecordShape> implements TopicsRecordShape {
-  declare topics: Record<string, number>;
+  declare topics: MbxTopicCursor;
 }
 
 export interface OobiQueryRecordShape {

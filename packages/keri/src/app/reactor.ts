@@ -32,7 +32,7 @@ import {
   TypedDigestSealCouple,
   TypedMediaQuadruple,
 } from "../core/dispatch.ts";
-import { Kevery } from "../core/eventing.ts";
+import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import type { Habery } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -174,7 +174,7 @@ export class Reactor {
         });
         break;
       case Ilks.qry:
-        this.kevery.processQuery(envelope);
+        this.kevery.processQuery(queryEnvelopeFromDispatch(envelope));
         break;
       case Ilks.rct:
         this.kevery.processReceipt(envelope);
@@ -563,4 +563,24 @@ function envelopeFromMessage(
     normalizeAttachmentGroup(group, envelope);
   }
   return envelope;
+}
+
+/**
+ * Normalize one generic dispatch envelope into the KERIpy-shaped query input.
+ *
+ * KERIpy correspondence:
+ * - parser ingress hands `Kevery.processQuery(...)` requester identity
+ *   separately as `source + sigers` for transferable endorsements
+ * - non-transferable query endorsements remain detached `cigars`
+ */
+function queryEnvelopeFromDispatch(
+  envelope: KeriDispatchEnvelope,
+): QueryEnvelope {
+  const firstTsg = envelope.tsgs[0];
+  return {
+    serder: envelope.serder,
+    source: firstTsg?.prefixer,
+    sigers: firstTsg ? [...firstTsg.sigers] : [],
+    cigars: [...envelope.cigars],
+  };
 }

@@ -1,6 +1,7 @@
 import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from "../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
+import { acceptEscrow, dropEscrow, type EscrowProcessDecision, keepEscrow } from "../core/kever-decisions.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { LMDBer } from "./core/lmdber.ts";
@@ -105,8 +106,10 @@ export class Broker {
   /**
    * Process escrowed transaction-state notices for one escrow type.
    *
-   * Recoverable errors of `extype` keep the escrow entry in place. Other
-   * failures unescrow the entry and log diagnostics.
+   * Typed escrow decisions make Broker recovery explicit:
+   * - `keep` mirrors recoverable retry errors of `extype`
+   * - `drop` mirrors stale/corrupt escrow rows that should be unindexed
+   * - `accept` mirrors successful processing through the callback
    */
   processEscrowState(
     typ: string,
@@ -120,73 +123,39 @@ export class Broker {
         continue;
       }
 
-      try {
-        const tsgs = this.fetchTsgs(diger);
-        const escrowKeys = [diger.qb64] as const;
-        const dater = this.daterdb.get(escrowKeys);
-        const serder = this.serderdb.get(escrowKeys);
-        const vcigars = this.cigardb.get(escrowKeys);
-
-        try {
-          if (!dater || !serder || (tsgs.length === 0 && vcigars.length === 0)) {
-            throw new Error(
-              `Missing escrow artifacts at said=${diger.qb64} for pre=${pre}.`,
-            );
-          }
-
-          const cigars = vcigars.map(([verfer, cigar]) => new Cigar(cigar, verfer));
-          if (
-            (Date.now() - new Date(dater.iso8601).getTime())
-              > (this.timeout * 1000)
-          ) {
-            throw new ValidationError(
-              `Stale txn state escrow at pre=${pre}`,
-            );
-          }
-
-          const route = serder.route;
-          if (!route) {
-            throw new Error(
-              `Escrowed txn state reply ${diger.qb64} is missing route data.`,
-            );
-          }
-
-          processReply({
-            serder,
-            diger,
-            route,
-            cigars,
-            tsgs,
-            aid,
-          });
-        } catch (error) {
-          if (error instanceof extype) {
-            this.logger.info(
-              `Broker ${typ}: recoverable escrow retry failure for ${diger.qb64}`,
-              error,
-            );
-            continue;
-          }
-
+      const decision = this.processEscrowedStateNotice({
+        aid,
+        diger,
+        processReply,
+        extype,
+      });
+      switch (decision.kind) {
+        case "accept": {
           this.escrowdb.rem([typ, pre, aid], diger);
-          this.logger.error(
-            `Broker ${typ}: unescrowed due to error for ${diger.qb64}`,
-            error,
+          const serder = this.serderdb.get([diger.qb64]);
+          this.logger.info(
+            `Broker ${typ}: unescrow succeeded for txn state=${serder?.said ?? diger.qb64}`,
           );
-          continue;
+          break;
         }
-
-        this.escrowdb.rem([typ, pre, aid], diger);
-        this.logger.info(
-          `Broker ${typ}: unescrow succeeded for txn state=${serder.said}`,
-        );
-      } catch (error) {
-        this.escrowdb.rem([typ, pre, aid], diger);
-        this.removeState(diger);
-        this.logger.error(
-          `Broker ${typ}: removed escrow/state due to outer error for ${diger.qb64}`,
-          error,
-        );
+        case "keep":
+          this.logger.info(
+            `Broker ${typ}: keeping escrow ${diger.qb64} due to ${decision.reason}`,
+          );
+          break;
+        case "drop":
+          this.escrowdb.rem([typ, pre, aid], diger);
+          if (decision.reason === "outerCorruption") {
+            this.removeState(diger);
+            this.logger.error(
+              `Broker ${typ}: removed escrow/state due to ${decision.reason} for ${diger.qb64}`,
+            );
+            break;
+          }
+          this.logger.error(
+            `Broker ${typ}: unescrowed due to ${decision.reason} for ${diger.qb64}`,
+          );
+          break;
       }
     }
   }
@@ -330,5 +299,57 @@ export class Broker {
 
     flush();
     return groups;
+  }
+
+  /** Process one escrowed transaction-state notice through the supplied callback. */
+  private processEscrowedStateNotice(args: {
+    aid: string;
+    diger: Diger;
+    processReply: (args: BrokerProcessReplyArgs) => void;
+    extype: new(...args: any[]) => Error;
+  }): EscrowProcessDecision {
+    let tsgs: TransIdxSigGroup[];
+    try {
+      tsgs = this.fetchTsgs(args.diger);
+    } catch {
+      return dropEscrow("outerCorruption");
+    }
+
+    const escrowKeys = [args.diger.qb64] as const;
+    const dater = this.daterdb.get(escrowKeys);
+    const serder = this.serderdb.get(escrowKeys);
+    const vcigars = this.cigardb.get(escrowKeys);
+    if (!dater || !serder || (tsgs.length === 0 && vcigars.length === 0)) {
+      return dropEscrow("missingEscrowArtifact");
+    }
+
+    if (
+      (Date.now() - new Date(dater.iso8601).getTime()) > (this.timeout * 1000)
+    ) {
+      return dropEscrow("stale");
+    }
+
+    const route = serder.route;
+    if (!route) {
+      return dropEscrow("malformedEscrowedReply");
+    }
+
+    const cigars = vcigars.map(([verfer, cigar]) => new Cigar(cigar, verfer));
+    try {
+      args.processReply({
+        serder,
+        diger: args.diger,
+        route,
+        cigars,
+        tsgs,
+        aid: args.aid,
+      });
+      return acceptEscrow();
+    } catch (error) {
+      if (error instanceof args.extype) {
+        return keepEscrow("recoverableError");
+      }
+      return dropEscrow("processingError");
+    }
   }
 }

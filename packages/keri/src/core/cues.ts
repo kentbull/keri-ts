@@ -1,5 +1,6 @@
 import type { Dater, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
+import type { MbxTopicCursor } from "./mailbox-topics.ts";
 import type { KeyStateRecord } from "./records.ts";
 
 /** Shared `kin` discriminator carried by all cue payloads. */
@@ -72,7 +73,7 @@ export interface StreamCue extends CueBase {
   serder: SerderKERI;
   pre: string;
   src: string;
-  topics: Record<string, number>;
+  topics: MbxTopicCursor;
 }
 
 /** Cue emitted when bootstrap `Kevery` persists a new key-state record. */

@@ -1,4 +1,4 @@
-# ADR-0004: Portable Cue Runtime Semantics Over A Shared Root Cue Deck
+# ADR-0004: Portable Cue Runtime Semantics Over Runtime And Habery Cue Decks
 
 - Status: Accepted
 - Date: 2026-03-29
@@ -25,8 +25,10 @@ KERIpy already has the right mental model:
 - producers such as `Kevery`, `Revery`, and `Oobiery` push typed cue payloads
 - `BaseHab.processCuesIter()` interprets those cues into message bytes or local
   notifications
-- host doers such as `cueDo()` drain the shared deck continuously and deliver
-  the results
+- host doers such as `cueDo()` drain shared runtime decks continuously and
+  deliver the results
+- local habitat work also has a habery-owned scope: `Habery` owns `kvy` / `psr`
+  for local processing outside those long-lived runtime hosts
 
 The old `keri-ts` bootstrap slice copied only the shallowest part of that
 pattern:
@@ -42,22 +44,28 @@ behavior.
 
 ## Decision
 
-`keri-ts` keeps the shared root cue deck, but formalizes cue handling as a
-three-layer runtime contract:
+`keri-ts` keeps the shared runtime cue deck, but not as the only cue scope.
+Cue handling is formalized as a dual-scope contract:
 
-1. Cue production
-   - `Kevery`, `Revery`, `Oobiery`, and later `Tevery` / `Exchanger` produce
-     typed `AgentCue` values.
-   - Producers do not send raw bytes directly.
+1. Runtime cue production
+   - `Reactor`, `Revery`, runtime `Kevery`, `Oobiery`, and later `Tevery` /
+     `Exchanger` produce typed `AgentCue` values onto the shared runtime deck.
+   - Runtime producers do not send raw bytes directly.
 
-2. Cue interpretation
+2. Habery-local cue production
+   - `Habery.kevery` owns a separate local cue deck for `Hab`-local event and
+     receipt acceptance outside runtime hosting.
+   - This matches the KERIpy split between habery-local processing and
+     host-assembled runtime processing.
+
+3. Cue interpretation
    - `Hab.processCuesIter()` remains the semantic interpretation seam.
    - This is the closest `keri-ts` correlate to KERIpy
      `BaseHab.processCuesIter()`.
    - Cue meaning becomes structured `CueEmission` values here.
 
-3. Host delivery
-   - runtime helpers `processCuesOnce()` and `cueDo()` drain the shared deck
+4. Host delivery
+   - runtime helpers `processCuesOnce()` and `cueDo()` drain the runtime deck
    - host sinks receive `CueEmission` values and decide what to do with:
      - wire messages
      - notify-only runtime cues
@@ -70,10 +78,10 @@ choice:
 - `keri-ts` preserves the originating cue in a `CueEmission` so hosts and tests
   can observe cue semantics directly instead of re-deriving intent from bytes.
 
-## Why Keep The Root Cue Deck
+## Why Keep The Runtime Root Cue Deck
 
-The shared root `Deck<AgentCue>` is still the correct abstraction because cues
-are genuinely cross-component runtime state:
+The shared runtime `Deck<AgentCue>` is still the correct abstraction because
+runtime cues are genuinely cross-component state:
 
 - `Revery` can emit a `query` cue because reply verification is blocked
 - `Kevery` can emit `keyStateSaved`, `notice`, or later `receipt` / `witness`
@@ -81,6 +89,18 @@ are genuinely cross-component runtime state:
 
 This is different from topic-local workflow state like OOBI job queues, which
 belong behind `Oobiery` and in durable DB families such as `oobis.`.
+
+## Why Also Keep A Habery-Local Cue Deck
+
+`Habery.kevery` needs its own cue deck because local habitat work can happen
+before any runtime exists at all, such as `tufa incept` calling `hby.makeHab()`
+or local receipt helpers accepting their own generated messages.
+
+That means:
+
+- runtime cues cannot be the only cue scope
+- local habitat processing must not depend on `createAgentRuntime()`
+- the dual-scope cue model is a KERIpy correspondence, not accidental drift
 
 ## Why Habitat-Owned Interpretation
 
@@ -104,23 +124,23 @@ location-scheme update is not a direct DB mutation; it is a signed
 
 ## Cue Taxonomy
 
-| Cue kind            | Primary producer(s) in KERIpy                           | Primary consumer(s) in KERIpy        | Wire bytes?                            | Host-observable only? | Current `keri-ts` handling                                                    |
-| ------------------- | ------------------------------------------------------- | ------------------------------------ | -------------------------------------- | --------------------- | ----------------------------------------------------------------------------- |
-| `receipt`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | typed and preserved; currently surfaced as notify until receipt builders land |
-| `notice`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
-| `witness`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | typed and preserved; currently surfaced as notify until witness builders land |
-| `query`             | `core/routing.py`, `core/eventing.py`, other subsystems | `BaseHab.processCuesIter()`          | Yes                                    | No                    | complete query cues emit wire bytes; incomplete query cues stay notify        |
-| `replay`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission with preserved cue                                              |
-| `reply`             | `core/eventing.py`, later reply/status flows            | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission from route/data or prebuilt serder                              |
-| `stream`            | `core/eventing.py`                                      | indirect/mailbox host layers         | Sometimes, but host/transport-specific | Yes                   | transport emission, not flattened into ordinary wire bytes                    |
-| `noticeBadCloneFN`  | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
-| `keyStateSaved`     | `core/eventing.py`                                      | `querying.py`, local noticers        | No                                     | Yes                   | notify emission                                                               |
-| `invalid`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                               |
-| `psUnescrow`        | `core/eventing.py`                                      | higher-level recovery/notifier logic | No by default                          | Yes                   | notify emission                                                               |
-| `remoteMemberedSig` | `core/eventing.py`                                      | diagnostic/security observers        | No                                     | Yes                   | typed reserved parity cue; notify emission                                    |
-| `oobiQueued`        | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                               |
-| `oobiResolved`      | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                               |
-| `oobiFailed`        | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                               |
+| Cue kind            | Primary producer(s) in KERIpy                           | Primary consumer(s) in KERIpy        | Wire bytes?                            | Host-observable only? | Current `keri-ts` handling                                             |
+| ------------------- | ------------------------------------------------------- | ------------------------------------ | -------------------------------------- | --------------------- | ---------------------------------------------------------------------- |
+| `receipt`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission through `Hab.receipt()` with preserved cue               |
+| `notice`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                        |
+| `witness`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission through `Hab.witness()` with preserved cue               |
+| `query`             | `core/routing.py`, `core/eventing.py`, other subsystems | `BaseHab.processCuesIter()`          | Yes                                    | No                    | complete query cues emit wire bytes; incomplete query cues stay notify |
+| `replay`            | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission with preserved cue                                       |
+| `reply`             | `core/eventing.py`, later reply/status flows            | `BaseHab.processCuesIter()`          | Yes                                    | No                    | wire emission from route/data or prebuilt serder                       |
+| `stream`            | `core/eventing.py`                                      | indirect/mailbox host layers         | Sometimes, but host/transport-specific | Yes                   | transport emission, not flattened into ordinary wire bytes             |
+| `noticeBadCloneFN`  | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                        |
+| `keyStateSaved`     | `core/eventing.py`                                      | `querying.py`, local noticers        | No                                     | Yes                   | notify emission                                                        |
+| `invalid`           | `core/eventing.py`                                      | `BaseHab.processCuesIter()`          | No                                     | Yes                   | notify emission                                                        |
+| `psUnescrow`        | `core/eventing.py`                                      | higher-level recovery/notifier logic | No by default                          | Yes                   | notify emission                                                        |
+| `remoteMemberedSig` | `core/eventing.py`                                      | diagnostic/security observers        | No                                     | Yes                   | typed reserved parity cue; notify emission                             |
+| `oobiQueued`        | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                        |
+| `oobiResolved`      | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                        |
+| `oobiFailed`        | `oobiing.py` analogue                                   | host/runtime waiters                 | No                                     | Yes                   | notify emission                                                        |
 
 ## Runtime Ordering
 

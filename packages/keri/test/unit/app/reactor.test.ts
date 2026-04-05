@@ -4,10 +4,90 @@ import { Cigar } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import type { QueryEnvelope } from "../../../src/core/eventing.ts";
+import { makeQuerySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
+Deno.test("app/reactor - query parsing normalizes transferable endorsements into source plus sigers", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `reactor-qry-tsg-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const reactor = new Reactor(hby);
+      let seen: QueryEnvelope | null = null;
+
+      reactor.kevery.processQuery = ((envelope) => {
+        seen = envelope;
+      }) as typeof reactor.kevery.processQuery;
+
+      reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
+      reactor.processOnce();
+
+      if (!seen) {
+        throw new Error("Expected normalized query envelope.");
+      }
+      const captured = seen as QueryEnvelope;
+      assertEquals(captured.source?.qb64, hab.pre);
+      assertEquals(captured.sigers?.length, 1);
+      assertEquals(captured.cigars?.length ?? 0, 0);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("app/reactor - query parsing keeps non-transferable endorsements as runtime cigars", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `reactor-qry-cigar-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const reactor = new Reactor(hby);
+      let seen: QueryEnvelope | null = null;
+
+      reactor.kevery.processQuery = ((envelope) => {
+        seen = envelope;
+      }) as typeof reactor.kevery.processQuery;
+
+      reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
+      reactor.processOnce();
+
+      if (!seen) {
+        throw new Error("Expected normalized query envelope.");
+      }
+      const captured = seen as QueryEnvelope;
+      assertEquals(captured.source, undefined);
+      assertEquals(captured.sigers?.length ?? 0, 0);
+      assertEquals(captured.cigars?.[0]?.verfer?.qb64, hab.pre);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("app/reactor - reply parsing normalizes transferable groups into dispatch value objects", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `reactor-${crypto.randomUUID()}`,
       temp: true,
@@ -47,7 +127,7 @@ Deno.test("app/reactor - reply parsing normalizes transferable groups into dispa
 });
 
 Deno.test("app/reactor - reply parsing normalizes non-transferable receipt couples into runtime cigars with verfer", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `reactor-nontrans-${crypto.randomUUID()}`,
       temp: true,
@@ -83,7 +163,7 @@ Deno.test("app/reactor - reply parsing normalizes non-transferable receipt coupl
 });
 
 Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier context before runtime dispatch", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `reactor-reload-${crypto.randomUUID()}`,
       temp: true,
@@ -119,6 +199,99 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
       assertInstanceOf(seenCigar, Cigar);
       const captured = seenCigar as Cigar;
       assertEquals(captured.verfer?.qb64, hab.pre);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `reactor-rct-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const witness = hby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = hby.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const event = hby.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      if (!event) {
+        throw new Error("Expected accepted controller event.");
+      }
+
+      const reactor = new Reactor(hby);
+      let seen = 0;
+      reactor.kevery.processReceipt = ((envelope) => {
+        seen += 1;
+        assertEquals(envelope.serder.ilk, "rct");
+        assertEquals(envelope.cigars.length, 0);
+        assertEquals(envelope.wigers.length, 1);
+        assertEquals(envelope.wigers[0]?.index, 0);
+      }) as typeof reactor.kevery.processReceipt;
+
+      reactor.ingest(witness.witness(event));
+      reactor.processOnce();
+
+      assertEquals(seen, 1);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("app/reactor - malformed and unsupported queries do not throw, and unsupported routes emit invalid cues", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `reactor-qry-invalid-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const reactor = new Reactor(hby);
+
+      reactor.ingest(
+        hab.endorse(makeQuerySerder("ksn", { i: hab.pre })),
+      );
+      reactor.processOnce();
+      assertEquals(reactor.kevery.cues.pull(), undefined);
+
+      reactor.ingest(hab.query(hab.pre, hab.pre, {}, "bogus"));
+      reactor.processOnce();
+
+      const cue = reactor.kevery.cues.pull();
+      assertExists(cue);
+      assertEquals(cue.kin, "invalid");
+      if (cue.kin !== "invalid") {
+        throw new Error("Expected invalid cue.");
+      }
+      assertEquals(cue.reason, "Unsupported query route bogus.");
     } finally {
       yield* hby.close();
     }

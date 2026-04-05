@@ -8,6 +8,7 @@ import {
   type Smellage,
 } from "../../../cesr/mod.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
+import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
 import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 
@@ -129,7 +130,7 @@ function openServerHost(
             return new Response(
               runtime.mailboxDirector.streamMailbox(
                 pre,
-                normalizeMailboxTopics(query?.topics),
+                normalizeMbxTopicCursor(query?.topics),
               ),
               {
                 status: 200,
@@ -253,26 +254,4 @@ function smellageFromMessage(
     size: message.body.size,
     gvrsn: message.body.gvrsn,
   };
-}
-
-function normalizeMailboxTopics(
-  value: unknown,
-): Record<string, number> {
-  if (Array.isArray(value)) {
-    return Object.fromEntries(
-      value
-        .filter((topic): topic is string => typeof topic === "string")
-        .map((topic) => [topic, 0]),
-    );
-  }
-  if (typeof value !== "object" || value === null) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([topic]) => typeof topic === "string")
-      .map((
-        [topic, idx],
-      ) => [topic, typeof idx === "number" ? idx : Number(idx) || 0]),
-  );
 }

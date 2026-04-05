@@ -1,17 +1,81 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
+import {
+  Diger,
+  Prefixer,
+  SerderKERI,
+  type Siger,
+} from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { Kevery } from "../../../src/core/eventing.ts";
+import {
+  type KeverEventEnvelope,
+  Kevery,
+  type QueryEnvelope,
+} from "../../../src/core/eventing.ts";
+import {
+  makeQuerySerder,
+  makeReplySerder,
+} from "../../../src/core/messages.ts";
 import { Revery } from "../../../src/core/routing.ts";
-import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
+
+function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
+  let total = 0;
+  for (const msg of messages) {
+    total += msg.length;
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const msg of messages) {
+    out.set(msg, offset);
+    offset += msg.length;
+  }
+  return out;
+}
+
+function eventSeal(serder: SerderKERI) {
+  assertExists(serder.pre);
+  assertExists(serder.snh);
+  assertExists(serder.said);
+  return { i: serder.pre, s: serder.snh, d: serder.said };
+}
+
+function makeInteraction(
+  pre: string,
+  sn: number,
+  prior: string,
+  seals: ReturnType<typeof eventSeal>[] = [],
+): SerderKERI {
+  return new SerderKERI({
+    sad: {
+      t: "ixn",
+      i: pre,
+      s: sn.toString(16),
+      p: prior,
+      a: seals,
+    },
+    makify: true,
+  });
+}
+
+function pullCueOfKin(
+  kvy: Kevery,
+  kin: "reply" | "replay" | "invalid" | "stream",
+) {
+  let cue = kvy.cues.pull();
+  while (cue && cue.kin !== kin) {
+    cue = kvy.cues.pull();
+  }
+  return cue;
+}
 
 function replySigGroup(
   hab: {
     pre: string;
     kever: { sner: TransIdxSigGroup["seqner"]; said: string };
-    sign: (ser: Uint8Array) => TransIdxSigGroup["sigers"];
+    sign: (ser: Uint8Array, indexed: true) => Siger[];
   },
   serder: SerderKERI,
 ): TransIdxSigGroup {
@@ -19,8 +83,38 @@ function replySigGroup(
     new Prefixer({ qb64: hab.pre }),
     hab.kever.sner,
     new Diger({ qb64: hab.kever.said }),
-    hab.sign(serder.raw),
+    hab.sign(serder.raw, true),
   );
+}
+
+function signedQueryEnvelope(
+  hab: {
+    pre: string;
+    sign: (ser: Uint8Array, indexed: true) => Siger[];
+  },
+  serder: SerderKERI,
+): QueryEnvelope {
+  return {
+    serder,
+    source: new Prefixer({ qb64: hab.pre }),
+    sigers: hab.sign(serder.raw, true),
+    cigars: [],
+  };
+}
+
+function eventEnvelope(args: {
+  serder: SerderKERI;
+  sigers: KeverEventEnvelope["sigers"];
+}): KeverEventEnvelope {
+  return {
+    serder: args.serder,
+    sigers: args.sigers,
+    wigers: [],
+    frcs: [],
+    sscs: [],
+    ssts: [],
+    local: false,
+  };
 }
 
 Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefix", async () => {
@@ -40,22 +134,8 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
       });
 
       const kvy = new Kevery(hby.db);
-      const serder = new SerderKERI({
-        sad: {
-          t: "qry",
-          dt: makeNowIso8601(),
-          r: "ksn",
-          rr: "",
-          q: { i: hab.pre, src: hab.pre },
-        },
-        makify: true,
-      });
-
-      kvy.processQuery({
-        serder,
-        cigars: [],
-        tsgs: [],
-      });
+      const serder = makeQuerySerder("ksn", { i: hab.pre, src: hab.pre });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
 
       const cue = kvy.cues.pull();
       assertExists(cue);
@@ -63,8 +143,75 @@ Deno.test("Kevery.processQuery emits a key-state reply cue for the queried prefi
       if (cue.kin !== "reply") {
         throw new Error("Expected reply cue.");
       }
-      assertEquals(cue.route, `/ksn/${hab.pre}`);
-      assertEquals(cue.data?.i, hab.pre);
+      assertEquals(cue.route, "/ksn");
+      assertExists(cue.serder);
+      assertEquals(cue.serder?.route, `/ksn/${hab.pre}`);
+      assertEquals(
+        (cue.serder?.ked?.a as Record<string, unknown> | undefined)?.i,
+        hab.pre,
+      );
+      assertEquals(cue.dest, hab.pre);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery drops malformed queries that omit `q.src` even when the requester is endorsed", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `kevery-ksn-qry-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const kvy = new Kevery(hby.db);
+      const serder = makeQuerySerder("ksn", { i: hab.pre });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+      assertEquals(kvy.cues.pull(), undefined);
+      assertEquals(hby.db.qnfs.cnt(), 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery emits `invalid` only for unsupported routes without throwing", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `kevery-qry-invalid-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const kvy = new Kevery(hby.db);
+      const serder = makeQuerySerder("bogus", { i: hab.pre, src: hab.pre });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+
+      const cue = kvy.cues.pull();
+      assertExists(cue);
+      assertEquals(cue.kin, "invalid");
+      if (cue.kin !== "invalid") {
+        throw new Error("Expected invalid cue.");
+      }
+      assertEquals(cue.reason, "Unsupported query route bogus.");
+      assertEquals(hby.db.qnfs.cnt(), 0);
     } finally {
       yield* hby.close(true);
     }
@@ -93,15 +240,7 @@ Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.
       const kvy = new Kevery(hby.db, { rvy });
       kvy.registerReplyRoutes(rvy.rtr);
 
-      const serder = new SerderKERI({
-        sad: {
-          t: "rpy",
-          dt: makeNowIso8601(),
-          r: `/ksn/${hab.pre}`,
-          a: kever.state().asDict(),
-        },
-        makify: true,
-      });
+      const serder = makeReplySerder(`/ksn/${hab.pre}`, kever.state().asDict());
 
       rvy.processReply({
         serder,
@@ -118,6 +257,728 @@ Deno.test("Kevery reply routing persists `/ksn` key-state notices through `knas.
       assertEquals(hby.db.knas.get([hab.pre, hab.pre])?.qb64, ksnSaid);
     } finally {
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery query-not-found escrows retry once the requested key state arrives", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-qnf-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-qnf-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const alice = source.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const querySerder = makeQuerySerder("ksn", {
+        i: alice.pre,
+        src: bob.pre,
+      });
+      const queryEnvelope = signedQueryEnvelope(bob, querySerder);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processQuery(queryEnvelope);
+      assertEquals(remote.db.qnfs.cnt(), 1);
+      assertExists(querySerder.said);
+      const escrowKey = dgKey(bob.pre, querySerder.said);
+      assertExists(remote.db.evts.get(escrowKey));
+      assertEquals(remote.db.sigs.get(escrowKey).length, 1);
+
+      const aliceEvent = source.db.getEvtSerder(
+        alice.pre,
+        alice.kever?.said ?? "",
+      );
+      if (!aliceEvent) {
+        throw new Error("Expected accepted alice event.");
+      }
+      kvy.processEvent(eventEnvelope({
+        serder: aliceEvent,
+        sigers: alice.sign(aliceEvent.raw, true),
+      }));
+      kvy.processQueryNotFound();
+
+      let cue = kvy.cues.pull();
+      while (cue && cue.kin !== "reply") {
+        cue = kvy.cues.pull();
+      }
+      assertExists(cue);
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(cue.kin, "reply");
+      if (cue.kin !== "reply") {
+        throw new Error("Expected reply cue.");
+      }
+      assertEquals(cue.route, "/ksn");
+      assertEquals(cue.serder?.route, `/ksn/${bob.pre}`);
+      assertEquals(cue.dest, bob.pre);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQueryNotFound keeps escrowed queries on repeated missing-state decisions and uses typed replay decisions", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-qnf-keep-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-qnf-keep-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const alice = source.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const querySerder = makeQuerySerder("ksn", {
+        i: alice.pre,
+        src: bob.pre,
+      });
+      const queryEnvelope = signedQueryEnvelope(bob, querySerder);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processQuery(queryEnvelope);
+      assertEquals(remote.db.qnfs.cnt(), 1);
+      assertExists(querySerder.said);
+
+      const decision = (
+        kvy as unknown as {
+          reprocessEscrowedQuery(
+            requester: string,
+            qsaid: string,
+          ): { kind: "accept" | "keep" | "drop"; reason?: string };
+        }
+      ).reprocessEscrowedQuery(bob.pre, querySerder.said);
+      assertEquals(decision.kind, "keep");
+      assertEquals(decision.reason, "queryNotFound");
+
+      kvy.processQueryNotFound();
+      assertEquals(remote.db.qnfs.cnt(), 1);
+      assertEquals(pullCueOfKin(kvy, "reply"), undefined);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQueryNotFound drops malformed escrow artifacts and clears persisted query material", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-qnf-drop-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-qnf-drop-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const alice = source.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const querySerder = makeQuerySerder("ksn", {
+        i: alice.pre,
+        src: bob.pre,
+      });
+      const kvy = new Kevery(remote.db);
+      kvy.processQuery(signedQueryEnvelope(bob, querySerder));
+
+      assertEquals(remote.db.qnfs.cnt(), 1);
+      assertExists(querySerder.said);
+      const escrowKey = dgKey(bob.pre, querySerder.said);
+      remote.db.evts.rem(escrowKey);
+
+      kvy.processQueryNotFound();
+
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(remote.db.evts.get(escrowKey), null);
+      assertEquals(remote.db.sigs.get(escrowKey).length, 0);
+      assertEquals(remote.db.rcts.get(escrowKey).length, 0);
+      assertEquals(remote.db.dtss.get(escrowKey), null);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery replays logs from fn=0 when q.fn is omitted", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `kevery-logs-qry-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kvy = new Kevery(hby.db, { local: true });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const ixn1 = makeInteraction(hab.pre, 1, kever.said);
+      kvy.processEvent({
+        serder: ixn1,
+        sigers: hab.sign(ixn1.raw, true),
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+
+      const ixn2 = makeInteraction(hab.pre, 2, ixn1.said!);
+      kvy.processEvent({
+        serder: ixn2,
+        sigers: hab.sign(ixn2.raw, true),
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+
+      const serder = makeQuerySerder("logs", { i: hab.pre, src: hab.pre });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      assertEquals(cue.kin, "replay");
+      if (cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(
+        cue.msgs,
+        concatMessages([...hby.db.clonePreIter(hab.pre, 0)]),
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery replays logs from the requested first-seen ordinal", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `kevery-logs-fn-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kvy = new Kevery(hby.db, { local: true });
+      const kever = hab.kever;
+      assertExists(kever);
+
+      const ixn1 = makeInteraction(hab.pre, 1, kever.said);
+      kvy.processEvent({
+        serder: ixn1,
+        sigers: hab.sign(ixn1.raw, true),
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+      const ixn2 = makeInteraction(hab.pre, 2, ixn1.said!);
+      kvy.processEvent({
+        serder: ixn2,
+        sigers: hab.sign(ixn2.raw, true),
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+
+      const serder = makeQuerySerder("logs", {
+        i: hab.pre,
+        src: hab.pre,
+        fn: "1",
+      });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      assertEquals(cue.kin, "replay");
+      if (cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(
+        cue.msgs,
+        concatMessages([...hby.db.clonePreIter(hab.pre, 1)]),
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery treats empty logs replay slices as a successful no-op", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `kevery-logs-empty-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const kvy = new Kevery(hby.db, { local: true });
+      const serder = makeQuerySerder("logs", {
+        i: hab.pre,
+        src: hab.pre,
+        fn: "ff",
+      });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+
+      assertEquals(pullCueOfKin(kvy, "replay"), undefined);
+      assertEquals(hby.db.qnfs.cnt(), 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery logs query escrows on q.s and preserves fn plus dest on replay", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-logs-s-source-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-logs-s-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const alice = source.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const aliceKever = alice.kever;
+      assertExists(aliceKever);
+
+      const ixn1 = makeInteraction(alice.pre, 1, aliceKever.said);
+      source.kevery.processEvent(eventEnvelope({
+        serder: ixn1,
+        sigers: alice.sign(ixn1.raw, true),
+      }));
+      const ixn2 = makeInteraction(alice.pre, 2, ixn1.said!);
+      source.kevery.processEvent(eventEnvelope({
+        serder: ixn2,
+        sigers: alice.sign(ixn2.raw, true),
+      }));
+
+      const kvy = new Kevery(remote.db);
+      const aliceIcp = source.db.getEvtSerder(alice.pre, aliceKever.said);
+      assertExists(aliceIcp);
+      kvy.processEvent(eventEnvelope({
+        serder: aliceIcp,
+        sigers: source.db.sigs.get([alice.pre, aliceKever.said]),
+      }));
+
+      const querySerder = makeQuerySerder("logs", {
+        i: alice.pre,
+        src: bob.pre,
+        s: "2",
+        fn: "1",
+      });
+      kvy.processQuery(signedQueryEnvelope(bob, querySerder));
+      assertEquals(remote.db.qnfs.cnt(), 1);
+
+      kvy.processEvent(eventEnvelope({
+        serder: ixn1,
+        sigers: alice.sign(ixn1.raw, true),
+      }));
+      kvy.processEvent(eventEnvelope({
+        serder: ixn2,
+        sigers: alice.sign(ixn2.raw, true),
+      }));
+      kvy.processQueryNotFound();
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(cue.kin, "replay");
+      if (cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(cue.dest, bob.pre);
+      assertEquals(
+        cue.msgs,
+        concatMessages([...remote.db.clonePreIter(alice.pre, 1)]),
+      );
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery logs query escrows on q.a until the anchoring event is available", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-logs-a-source-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-logs-a-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const delegator = source.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = source.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegatorKever = delegator.kever;
+      const bobKever = bob.kever;
+      assertExists(delegatorKever);
+      assertExists(bobKever);
+
+      const bobIcp = source.db.getEvtSerder(bob.pre, bobKever.said);
+      assertExists(bobIcp);
+      const seal = eventSeal(bobIcp);
+      const anchor = makeInteraction(
+        delegator.pre,
+        1,
+        delegatorKever.said,
+        [seal],
+      );
+
+      const kvy = new Kevery(remote.db);
+      const delegatorIcp = source.db.getEvtSerder(
+        delegator.pre,
+        delegatorKever.said,
+      );
+      assertExists(delegatorIcp);
+      kvy.processEvent(eventEnvelope({
+        serder: delegatorIcp,
+        sigers: source.db.sigs.get([delegator.pre, delegatorKever.said]),
+      }));
+
+      const querySerder = makeQuerySerder("logs", {
+        i: delegator.pre,
+        src: bob.pre,
+        a: seal,
+      });
+      kvy.processQuery(signedQueryEnvelope(bob, querySerder));
+      assertEquals(remote.db.qnfs.cnt(), 1);
+
+      kvy.processEvent(eventEnvelope({
+        serder: anchor,
+        sigers: delegator.sign(anchor.raw, true),
+      }));
+      kvy.processQueryNotFound();
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(cue.kin, "replay");
+      if (cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(cue.dest, bob.pre);
+      assertEquals(
+        cue.msgs,
+        concatMessages([...remote.db.clonePreIter(delegator.pre, 0)]),
+      );
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery logs replay for delegated identifiers includes the delegator chain", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `kevery-logs-del-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = hby.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+      const delegateKever = delegate.kever;
+      assertExists(delegateKever);
+
+      const kvy = new Kevery(hby.db);
+      const serder = makeQuerySerder("logs", {
+        i: delegate.pre,
+        src: delegate.pre,
+      });
+      kvy.processQuery(signedQueryEnvelope(delegate, serder));
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      assertEquals(cue.kin, "replay");
+      if (cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(
+        cue.msgs,
+        concatMessages([
+          ...hby.db.clonePreIter(delegate.pre, 0),
+          ...hby.db.cloneDelegation(delegateKever),
+        ]),
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fully witnessed", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-ksn-witness-source-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-ksn-witness-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const witness = source.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const requester = source.makeHab("requester", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const controllerEvent = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(controllerEvent);
+
+      const kvy = new Kevery(remote.db);
+      kvy.processEvent(eventEnvelope({
+        serder: controllerEvent,
+        sigers: source.db.sigs.get([
+          controller.pre,
+          controller.kever?.said ?? "",
+        ]),
+      }));
+
+      const querySerder = makeQuerySerder("ksn", {
+        i: controller.pre,
+        src: requester.pre,
+      });
+      kvy.processQuery(signedQueryEnvelope(requester, querySerder));
+      assertEquals(remote.db.qnfs.cnt(), 1);
+      assertEquals(pullCueOfKin(kvy, "reply"), undefined);
+
+      const reactor = new Reactor(remote);
+      reactor.ingest(witness.witness(controllerEvent));
+      reactor.processOnce();
+      kvy.processEscrows();
+
+      kvy.processQueryNotFound();
+
+      const cue = pullCueOfKin(kvy, "reply");
+      assertExists(cue);
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      assertEquals(cue.kin, "reply");
+      if (cue.kin !== "reply") {
+        throw new Error("Expected reply cue.");
+      }
+      assertEquals(cue.route, "/ksn");
+      assertEquals(cue.serder?.route, `/ksn/${requester.pre}`);
+      assertEquals(cue.dest, requester.pre);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery escrows `mbx` until local mailbox authority exists", async () => {
+  await run(function* () {
+    const source = yield* createHabery({
+      name: `kevery-mbx-source-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-mbx-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+
+    try {
+      const controller = source.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const requester = source.makeHab("requester", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kvy = new Kevery(remote.db);
+
+      const querySerder = makeQuerySerder("mbx", {
+        i: controller.pre,
+        src: requester.pre,
+        topics: ["/reply"],
+      });
+      kvy.processQuery(signedQueryEnvelope(requester, querySerder));
+      assertEquals(remote.db.qnfs.cnt(), 1);
+      assertEquals(pullCueOfKin(kvy, "invalid"), undefined);
+
+      const controllerEvent = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(controllerEvent);
+      kvy.processEvent(eventEnvelope({
+        serder: controllerEvent,
+        sigers: source.db.sigs.get([
+          controller.pre,
+          controller.kever?.said ?? "",
+        ]),
+      }));
+      kvy.processQueryNotFound();
+
+      assertEquals(remote.db.qnfs.cnt(), 0);
+      const streamCue = pullCueOfKin(kvy, "stream");
+      assertExists(streamCue);
+      assertEquals(streamCue.kin, "stream");
+      if (streamCue.kin !== "stream") {
+        throw new Error("Expected stream cue.");
+      }
+      assertEquals(streamCue.topics, { "/reply": 0 });
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
     }
   });
 });
