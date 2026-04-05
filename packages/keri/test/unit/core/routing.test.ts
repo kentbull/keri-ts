@@ -5,10 +5,73 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { UnverifiedReplyError } from "../../../src/core/errors.ts";
 import { Revery } from "../../../src/core/routing.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
+import {
+  encodeDateTimeToDater,
+  makeNowIso8601,
+} from "../../../src/time/mod.ts";
+import { expectKind, routingTestApi } from "../../private-access.ts";
+
+function createEscrowedReplyFixture(
+  hby: {
+    db: Revery["db"];
+    makeHab(
+      name: string,
+      transferable?: unknown,
+      options?: {
+        transferable: true;
+        icount: number;
+        isith: string;
+        ncount: number;
+        nsith: string;
+        toad: number;
+      },
+    ): {
+      pre: string;
+      kever: { sner: TransIdxSigGroup["seqner"]; said: string } | null;
+      sign: (ser: Uint8Array, indexed: true) => TransIdxSigGroup["sigers"];
+    };
+  },
+  name: string,
+  route: string,
+) {
+  const hab = hby.makeHab(name, undefined, {
+    transferable: true,
+    icount: 1,
+    isith: "1",
+    ncount: 1,
+    nsith: "1",
+    toad: 0,
+  });
+  const kever = hab.kever;
+  assertExists(kever);
+
+  const serder = new SerderKERI({
+    sad: {
+      t: "rpy",
+      dt: makeNowIso8601(),
+      r: route,
+      a: { aid: hab.pre },
+    },
+    makify: true,
+  });
+  const saider = new Diger({ qb64: serder.said ?? "" });
+  const replyVerifier = new Revery(hby.db);
+  replyVerifier.escrowReply({
+    serder,
+    saider,
+    dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
+    route,
+    prefixer: new Prefixer({ qb64: hab.pre }),
+    seqner: kever.sner,
+    diger: new Diger({ qb64: kever.said }),
+    sigers: hab.sign(serder.raw, true),
+  });
+
+  return { hab, kever, serder, saider, replyVerifier };
+}
 
 Deno.test("Revery.acceptReply aggregates weighted reply signatures until the threshold is met", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-weighted-${crypto.randomUUID()}`,
       temp: true,
@@ -82,7 +145,7 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
 });
 
 Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via verifier dispatch", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-ecdsa-nontrans-${crypto.randomUUID()}`,
       temp: true,
@@ -125,7 +188,7 @@ Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via v
 });
 
 Deno.test("Revery.acceptReply still rejects non-transferable replies whose authorizing AID does not match the verifier", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-ecdsa-mismatch-${crypto.randomUUID()}`,
       temp: true,
@@ -167,7 +230,7 @@ Deno.test("Revery.acceptReply still rejects non-transferable replies whose autho
 });
 
 Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups via establishment verfers", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-ecdsa-trans-${crypto.randomUUID()}`,
       temp: true,
@@ -223,65 +286,23 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
 });
 
 Deno.test("Revery.processEscrowReply keeps replies on recoverable UnverifiedReplyError replay", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-escrow-keep-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
-      const hab = hby.makeHab("reply-keep", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const kever = hab.kever;
-      assertExists(kever);
-
-      const serder = new SerderKERI({
-        sad: {
-          t: "rpy",
-          dt: makeNowIso8601(),
-          r: "/escrow/reply",
-          a: { aid: hab.pre },
+      const { replyVerifier, saider } = createEscrowedReplyFixture(
+        hby,
+        "reply-keep",
+        "/escrow/reply",
+      );
+      replyVerifier.rtr.addRoute("/escrow/reply", {
+        processReply() {
+          throw new UnverifiedReplyError("retry later");
         },
-        makify: true,
       });
-      const saider = new Diger({ qb64: serder.said ?? "" });
-      const replyVerifier = new Revery(hby.db);
-      replyVerifier.escrowReply({
-        serder,
-        saider,
-        dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
-        route: "/escrow/reply",
-        prefixer: new Prefixer({ qb64: hab.pre }),
-        seqner: kever.sner,
-        diger: new Diger({ qb64: kever.said }),
-        sigers: hab.sign(serder.raw, true),
-      });
-
-      const original = replyVerifier.processReply.bind(replyVerifier);
-      (
-        replyVerifier as unknown as {
-          processReply(
-            args: { serder: SerderKERI; tsgs: TransIdxSigGroup[] },
-          ): void;
-        }
-      ).processReply = () => {
-        throw new UnverifiedReplyError("retry later");
-      };
-
-      try {
-        replyVerifier.processEscrowReply();
-      } finally {
-        (
-          replyVerifier as unknown as {
-            processReply: typeof original;
-          }
-        ).processReply = original;
-      }
+      replyVerifier.processEscrowReply();
 
       assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 1);
       assertExists(hby.db.rpys.get([saider.qb64]));
@@ -292,44 +313,17 @@ Deno.test("Revery.processEscrowReply keeps replies on recoverable UnverifiedRepl
 });
 
 Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and removes stored reply state", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-escrow-drop-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
-      const hab = hby.makeHab("reply-drop", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const kever = hab.kever;
-      assertExists(kever);
-
-      const serder = new SerderKERI({
-        sad: {
-          t: "rpy",
-          dt: makeNowIso8601(),
-          r: "/escrow/reply",
-          a: { aid: hab.pre },
-        },
-        makify: true,
-      });
-      const saider = new Diger({ qb64: serder.said ?? "" });
-      const replyVerifier = new Revery(hby.db);
-      replyVerifier.escrowReply({
-        serder,
-        saider,
-        dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
-        route: "/escrow/reply",
-        prefixer: new Prefixer({ qb64: hab.pre }),
-        seqner: kever.sner,
-        diger: new Diger({ qb64: kever.said }),
-        sigers: hab.sign(serder.raw, true),
-      });
+      const { replyVerifier, saider } = createEscrowedReplyFixture(
+        hby,
+        "reply-drop",
+        "/escrow/reply",
+      );
 
       hby.db.rpys.rem([saider.qb64]);
       replyVerifier.processEscrowReply();
@@ -345,81 +339,30 @@ Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and remove
 });
 
 Deno.test("Revery escrow replay preserves processing error detail on drop decisions", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-escrow-processing-detail-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
-      const hab = hby.makeHab("reply-detail", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const kever = hab.kever;
-      assertExists(kever);
-
-      const serder = new SerderKERI({
-        sad: {
-          t: "rpy",
-          dt: makeNowIso8601(),
-          r: "/escrow/reply/detail",
-          a: { aid: hab.pre },
+      const { replyVerifier, saider } = createEscrowedReplyFixture(
+        hby,
+        "reply-detail",
+        "/escrow/reply/detail",
+      );
+      replyVerifier.rtr.addRoute("/escrow/reply/detail", {
+        processReply() {
+          throw new Error("boom");
         },
-        makify: true,
       });
-      const saider = new Diger({ qb64: serder.said ?? "" });
-      const replyVerifier = new Revery(hby.db);
-      replyVerifier.escrowReply({
-        serder,
+      const decision = routingTestApi(replyVerifier).reprocessEscrowedReply(
         saider,
-        dater: new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
-        route: "/escrow/reply/detail",
-        prefixer: new Prefixer({ qb64: hab.pre }),
-        seqner: kever.sner,
-        diger: new Diger({ qb64: kever.said }),
-        sigers: hab.sign(serder.raw, true),
-      });
+      );
 
-      const original = replyVerifier.processReply.bind(replyVerifier);
-      (
-        replyVerifier as unknown as {
-          processReply(
-            args: { serder: SerderKERI; tsgs: TransIdxSigGroup[] },
-          ): void;
-        }
-      ).processReply = () => {
-        throw new Error("boom");
-      };
-
-      try {
-        const decision = (
-          replyVerifier as unknown as {
-            reprocessEscrowedReply(
-              diger: Diger,
-            ): {
-              kind: "accept" | "keep" | "drop";
-              reason?: string;
-              message?: string;
-              context?: Record<string, unknown>;
-            };
-          }
-        ).reprocessEscrowedReply(saider);
-
-        assertEquals(decision.kind, "drop");
-        assertEquals(decision.reason, "processingError");
-        assertEquals(decision.message, "boom");
-        assertEquals(decision.context?.said, saider.qb64);
-      } finally {
-        (
-          replyVerifier as unknown as {
-            processReply: typeof original;
-          }
-        ).processReply = original;
-      }
+      const drop = expectKind(decision, "drop");
+      assertEquals(drop.reason, "processingError");
+      assertEquals(drop.message, "boom");
+      assertEquals(drop.context?.said, saider.qb64);
     } finally {
       yield* hby.close(true);
     }

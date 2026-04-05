@@ -1,4 +1,13 @@
-import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from "../../../cesr/mod.ts";
+import {
+  Cigar,
+  Dater,
+  Diger,
+  Prefixer,
+  Seqner,
+  SerderKERI,
+  Siger,
+  Verfer,
+} from "../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import {
@@ -11,7 +20,12 @@ import {
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { LMDBer } from "./core/lmdber.ts";
-import { CatCesrIoSetSuber, CesrIoSetSuber, CesrSuber, SerderSuber } from "./subing.ts";
+import {
+  CatCesrIoSetSuber,
+  CesrIoSetSuber,
+  CesrSuber,
+  SerderSuber,
+} from "./subing.ts";
 
 function hexToFixedBytes(hex: string, size: number): Uint8Array {
   const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
@@ -120,7 +134,7 @@ export class Broker {
   processEscrowState(
     typ: string,
     processReply: (args: BrokerProcessReplyArgs) => void,
-    extype: new(...args: any[]) => Error,
+    extype: new (...args: any[]) => Error,
   ): void {
     for (const [keys, diger] of this.escrowdb.getTopItemIter([typ, ""])) {
       const pre = keys[1];
@@ -141,7 +155,9 @@ export class Broker {
           this.escrowdb.rem([typ, pre, aid], diger);
           const serder = this.serderdb.get([diger.qb64]);
           this.logger.info(
-            `Broker ${typ}: unescrow succeeded for txn state=${serder?.said ?? diger.qb64}`,
+            `Broker ${typ}: unescrow succeeded for txn state=${
+              serder?.said ?? diger.qb64
+            }`,
           );
           break;
         }
@@ -293,10 +309,10 @@ export class Broker {
       }
 
       if (
-        currentKey === null
-        || currentKey[0] !== groupKey[0]
-        || currentKey[1] !== groupKey[1]
-        || currentKey[2] !== groupKey[2]
+        currentKey === null ||
+        currentKey[0] !== groupKey[0] ||
+        currentKey[1] !== groupKey[1] ||
+        currentKey[2] !== groupKey[2]
       ) {
         flush();
         currentKey = [groupKey[0], groupKey[1], groupKey[2]];
@@ -313,14 +329,15 @@ export class Broker {
     aid: string;
     diger: Diger;
     processReply: (args: BrokerProcessReplyArgs) => void;
-    extype: new(...args: any[]) => Error;
+    extype: new (...args: any[]) => Error;
   }): EscrowProcessDecision {
     let tsgs: TransIdxSigGroup[];
     try {
       tsgs = this.fetchTsgs(args.diger);
     } catch {
       return dropEscrow("outerCorruption", {
-        message: `Failed to load escrowed transferable signatures at said=${args.diger.qb64}.`,
+        message:
+          `Failed to load escrowed transferable signatures at said=${args.diger.qb64}.`,
         context: { said: args.diger.qb64, aid: args.aid },
       });
     }
@@ -331,7 +348,8 @@ export class Broker {
     const vcigars = this.cigardb.get(escrowKeys);
     if (!dater || !serder || (tsgs.length === 0 && vcigars.length === 0)) {
       return dropEscrow("missingEscrowArtifact", {
-        message: `Missing escrow artifacts at said=${args.diger.qb64} for pre=${args.aid}.`,
+        message:
+          `Missing escrow artifacts at said=${args.diger.qb64} for pre=${args.aid}.`,
         context: {
           said: args.diger.qb64,
           aid: args.aid,
@@ -347,7 +365,8 @@ export class Broker {
       (Date.now() - new Date(dater.iso8601).getTime()) > (this.timeout * 1000)
     ) {
       return dropEscrow("stale", {
-        message: `Escrow unescrow error: Stale txn state escrow at pre = ${args.aid}`,
+        message:
+          `Escrow unescrow error: Stale txn state escrow at pre = ${args.aid}`,
         context: { said: args.diger.qb64, aid: args.aid, route: serder.route },
       });
     }
@@ -355,7 +374,8 @@ export class Broker {
     const route = serder.route;
     if (!route) {
       return dropEscrow("malformedEscrowedReply", {
-        message: `Escrowed state notice at said=${args.diger.qb64} is missing route.`,
+        message:
+          `Escrowed state notice at said=${args.diger.qb64} is missing route.`,
         context: { said: args.diger.qb64, aid: args.aid },
       });
     }

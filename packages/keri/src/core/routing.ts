@@ -1,4 +1,11 @@
-import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import {
+  Cigar,
+  Dater,
+  Diger,
+  Prefixer,
+  SerderKERI,
+  Siger,
+} from "../../../cesr/mod.ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
@@ -19,8 +26,8 @@ import { isRole } from "./roles.ts";
 function hasValidReplyThreshold(
   serder: SerderKERI,
 ): boolean {
-  return serder.tholder !== null
-    && serder.verfers.length >= serder.tholder.size;
+  return serder.tholder !== null &&
+    serder.verfers.length >= serder.tholder.size;
 }
 
 /** Return the hex ordinal text used for DB keys from either Seqner or Number. */
@@ -51,8 +58,8 @@ function sameOrNewerReply(
   if (!oldDater) {
     return true;
   }
-  return new Date(nextDater.iso8601).getTime()
-    > new Date(oldDater.iso8601).getTime();
+  return new Date(nextDater.iso8601).getTime() >
+    new Date(oldDater.iso8601).getTime();
 }
 
 /**
@@ -391,9 +398,9 @@ export class Revery {
         continue;
       }
       if (
-        oldLead
-        && (tsg.sn < oldLead.sn
-          || (tsg.sn === oldLead.sn && !sameOrNewerReply(dater, odater)))
+        oldLead &&
+        (tsg.sn < oldLead.sn ||
+          (tsg.sn === oldLead.sn && !sameOrNewerReply(dater, odater)))
       ) {
         continue;
       }
@@ -642,7 +649,8 @@ export class Revery {
     const tsgs = fetchStoredTsgs(this.db, diger.qb64);
     if (!dater || !serder || tsgs.length === 0) {
       return dropEscrow("missingEscrowArtifact", {
-        message: `Missing escrow artifacts at said=${diger.qb64} for reply replay.`,
+        message:
+          `Missing escrow artifacts at said=${diger.qb64} for reply replay.`,
         context: {
           said: diger.qb64,
           hasDater: !!dater,
@@ -653,7 +661,9 @@ export class Revery {
     }
     if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
       return dropEscrow("stale", {
-        message: `Stale reply escrow at route = ${serder.route ?? "<unknown>"}.`,
+        message: `Stale reply escrow at route = ${
+          serder.route ?? "<unknown>"
+        }.`,
         context: { said: diger.qb64, route: serder.route },
       });
     }
