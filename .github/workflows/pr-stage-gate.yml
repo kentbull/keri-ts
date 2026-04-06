@@ -35,11 +35,11 @@ env:
   # We pin exact runtime versions in CI because this repo uses native addons,
   # Deno->npm builds, and KERIpy interop, all of which are sensitive to drift.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  DENO_VERSION: "2.7.5"
+  DENO_VERSION: "2.7.11"
   KERIPY_GIT_SHA: 273784cb1702348c3888a09806cc37aea1877704
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
   LMDB_DATA_V1: "true"
-  NODE_VERSION: "22.14.0"
+  NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v2
   INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v1
