@@ -915,16 +915,48 @@ function regDbDumpCmd(dbCommand: Command, dispatch: CommandDispatch): void {
   dbCommand
     .command("dump")
     .description("Dump database contents")
+    .argument(
+      "[target]",
+      "Dump target like baser, baser.locs, mailboxer.tpcs, or outboxer.tgts",
+      "baser.evts",
+    )
     .requiredOption("-n, --name <name>", "Database name")
     .option("-b, --base <base>", "Additional optional prefix to database path")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root",
+    )
     .option("-t, --temp", "Use temporary database")
-    .action((options: { name: string; base?: string; temp?: boolean }) => {
+    .option("--compat", "Open KERIpy-compatible .keri stores instead of .tufa")
+    .option("--prefix <prefix>", "Logical key prefix filter for one sub-database target")
+    .option(
+      "--limit <count>",
+      "Maximum number of entries to print for one targeted sub-database",
+      (value: string) => Number.parseInt(value, 10),
+    )
+    .action((
+      target: string,
+      options: {
+        name: string;
+        base?: string;
+        headDir?: string;
+        temp?: boolean;
+        compat?: boolean;
+        prefix?: string;
+        limit?: number;
+      },
+    ) => {
       dispatch({
         name: "db.dump",
         args: {
           name: options.name,
           base: options.base,
+          headDirPath: options.headDir,
           temp: options.temp || false,
+          compat: options.compat || false,
+          target,
+          prefix: options.prefix,
+          limit: options.limit,
         },
       });
       return;

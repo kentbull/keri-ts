@@ -2,6 +2,7 @@ import { action, type Operation } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
+import { persistResolvedContact } from "./organizing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 /**
@@ -122,6 +123,10 @@ export class Authenticator {
 
     if (response.ok && cid) {
       this.hby.db.wkas.add(cid, { url, dt: date });
+      persistResolvedContact(this.hby, cid, {
+        alias: record.oobialias,
+        oobi: url,
+      });
     }
   }
 }
