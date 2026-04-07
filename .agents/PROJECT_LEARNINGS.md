@@ -147,19 +147,17 @@ Use this file to:
     first Gate F/G bridge: `Exchanger`, `challenge generate/respond/verify`,
     `exchange send` plus `exn send`, and shared runtime-composed mailbox
     forwarding and polling through `/fwd` with durable `(pre, witness)` topic
-    cursors.
-    Mailbox interop is now materially real in both directions too:
+    cursors. Mailbox interop is now materially real in both directions too:
     `kli mailbox add` works against a `tufa` mailbox host, `tufa mailbox add`
     works against the real KERIpy `kli mailbox start` host, mailbox-polled
     challenge flows pass live, and base-path-relative mailbox/OOBI serving is
     exercised. The critical host-composition invariant is that the mailbox host
     must pass the shared cue deck into `MailboxStart`; otherwise `/fwd`
     deliveries can land in KERIpy mailbox LMDB while `mbx` queries hang because
-    no `stream` cue ever reaches the SSE responder.
-    The remaining runtime gaps are now primarily broader exchange/forwarding
-    route breadth beyond the current mailbox/challenge slice, plus the broader
-    stale/timeout continuation tail outside the now-closed receipt/query
-    correspondence slice.
+    no `stream` cue ever reaches the SSE responder. The remaining runtime gaps
+    are now primarily broader exchange/forwarding route breadth beyond the
+    current mailbox/challenge slice, plus the broader stale/timeout continuation
+    tail outside the now-closed receipt/query correspondence slice.
 25. `tufa agent` release confidence must come from the packed npm artifact, not
     just the Deno source path. CLI flag semantics and Node host/runtime
     compatibility can drift unless smoke coverage exercises
@@ -195,6 +193,12 @@ Use this file to:
     normal reply acceptance on open/reopen, and `tufa agent` only falls back to
     synthesized localhost controller state when no alias config exists and
     accepted state is still incomplete.
+32. Mailbox polling timeout policy is now explicitly split by responsibility:
+    short request-open guard, KERIpy-shaped long-poll duration, and bounded
+    command-local turn budget. `MailboxPoller` remains the TS-native port of
+    KERIpy `Poller`, while `MailboxDirector` keeps topic/cursor/query-cue
+    coordination and long-lived runtime polling restores one concurrent remote
+    worker per endpoint.
 
 ## Current Follow-Ups
 
@@ -205,9 +209,12 @@ Use this file to:
 3. Continue honest runtime closure around bounded init/incept convergence,
    shared-mailbox forwarding on top of the runtime-composed provider
    `Mailboxer`, broader exchange/forwarding route breadth beyond the now-proven
-   mailbox add plus `/challenge` interop slice, and the remaining
-   stale/timeout continuation tail now that the broader query/reply,
-   receipt/query, and first challenge/exchange slices are landed.
+   mailbox add plus `/challenge` interop slice, and the remaining stale/timeout
+   continuation tail now that the broader query/reply, receipt/query, and first
+   challenge/exchange slices are landed. Mailbox polling itself now has an
+   explicit timeout split and KERIpy-shaped long-lived worker concurrency;
+   remaining timeout work should be about other continuations, not reopening
+   this poller seam.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
    changes in the same change set, especially the new cross-runtime cue
    architecture doc when mailbox/query/OOBI wiring changes.
@@ -306,8 +313,8 @@ Use this file to:
 ## 2026-04-06 - Provider Mailbox Storage Moved Out Of `Habery`
 
 - The real mailbox ownership correction is now explicit: provider-side
-  `Mailboxer` scope is still shared per habery environment, but it is no
-  longer a `Habery` dependency or field.
+  `Mailboxer` scope is still shared per habery environment, but it is no longer
+  a `Habery` dependency or field.
 - `createHabery()` now reopens only core habery state. Provider mailbox storage
   is composed above it by `createAgentRuntime()` or by explicit standalone
   mailbox tooling.
@@ -317,10 +324,10 @@ Use this file to:
 - Generic local runtimes stay mailbox-store-free by default. Indirect/mailbox
   host runtimes are the default place that auto-open and own mailbox storage.
   Runtime-owned mailbox stores must be closed by `runtime.close()`, while
-  injected mailbox stores remain caller-owned.
-  `mailbox start` should serve only the selected local prefix, and non-root
-  advertised base paths should not silently reopen root-scoped OOBI access just
-  because the AID is locally controlled.
+  injected mailbox stores remain caller-owned. `mailbox start` should serve only
+  the selected local prefix, and non-root advertised base paths should not
+  silently reopen root-scoped OOBI access just because the AID is locally
+  controlled.
 - Current verification caveat: the new `mailbox start` local lifecycle tests are
   strong, but subprocess-heavy interop runs can still be polluted by a Deno
   2.7.10 N-API panic (`Cannot remove cleanup hook which was not registered`)

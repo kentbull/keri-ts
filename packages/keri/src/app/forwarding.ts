@@ -12,7 +12,7 @@
  * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../core/messages.ts";
@@ -416,16 +416,30 @@ export class ForwardHandler implements ExchangeRouteHandler {
  * - ingests retrieved payloads back through the shared `Reactor`
  */
 export class MailboxPoller {
+  static readonly DefaultTimeoutPolicy: Readonly<MailboxPollingTimeoutPolicy> = Object.freeze({
+    requestOpenTimeoutMs: 5_000,
+    maxPollDurationMs: 30_000,
+    commandLocalBudgetMs: 5_000,
+  });
+  static readonly ReadIdleTimeoutMs = 500;
+
   readonly hby: Habery;
   readonly mailboxDirector: MailboxDirector;
+  readonly timeoutPolicy: Readonly<MailboxPollingTimeoutPolicy>;
   private readonly localCursors = new Map<string, Record<string, number>>();
 
   constructor(
     hby: Habery,
     mailboxDirector: MailboxDirector,
+    {
+      timeouts,
+    }: {
+      timeouts?: Partial<MailboxPollingTimeoutPolicy>;
+    } = {},
   ) {
     this.hby = hby;
     this.mailboxDirector = mailboxDirector;
+    this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
   }
 
   /** Configure mailbox polling state for future expansion; currently a no-op. */
@@ -445,11 +459,20 @@ export class MailboxPoller {
    */
   *processOnce(
     onMessages: (messages: Uint8Array[]) => void,
+    {
+      budgetMs,
+    }: {
+      budgetMs?: number;
+    } = {},
   ): Operation<void> {
     const topics = this.mailboxDirector.registeredTopics();
     if (topics.length === 0) {
       return;
     }
+    const deadline = Date.now() + positiveTimeoutMs(
+      budgetMs,
+      this.timeoutPolicy.commandLocalBudgetMs,
+    );
 
     for (const pre of this.hby.prefixes) {
       const local = this.readLocalMailbox(pre, topics);
@@ -461,29 +484,16 @@ export class MailboxPoller {
     for (const hab of this.hby.habs.values()) {
       const remoteEndpoints = mailboxPollEndpoints(this.hby, hab);
       for (const endpoint of remoteEndpoints) {
-        const cursor = this.mailboxDirector.remoteQueryCursor(
-          hab.pre,
-          endpoint.eid,
-        );
-        const messages = yield* fetchMailboxMessages(
+        const remainingBudgetMs = deadline - Date.now();
+        if (remainingBudgetMs <= 0) {
+          return;
+        }
+        yield* this.pollRemoteEndpointOnce(
           hab,
-          endpoint.eid,
-          endpoint.url,
-          cursor,
-          this.hby.cesrBodyMode,
+          endpoint,
+          onMessages,
+          remainingBudgetMs,
         );
-        if (messages.length === 0) {
-          continue;
-        }
-        for (const message of messages) {
-          this.mailboxDirector.updateRemoteCursor(
-            hab.pre,
-            endpoint.eid,
-            message.topic,
-            message.idx,
-          );
-        }
-        onMessages(messages.map((message) => message.msg));
       }
     }
   }
@@ -492,9 +502,28 @@ export class MailboxPoller {
   *pollDo(
     onMessages: (messages: Uint8Array[]) => void,
   ): Operation<never> {
-    while (true) {
-      yield* this.processOnce(onMessages);
-      yield* runtimeTurn();
+    const remoteWorkers = new Map<string, Task<void>>();
+
+    try {
+      while (true) {
+        const topics = this.mailboxDirector.registeredTopics();
+        yield* this.syncRemoteWorkers(remoteWorkers, onMessages, topics);
+
+        if (topics.length > 0) {
+          for (const pre of this.hby.prefixes) {
+            const local = this.readLocalMailbox(pre, topics);
+            if (local.length > 0) {
+              onMessages(local);
+            }
+          }
+        }
+
+        yield* runtimeTurn();
+      }
+    } finally {
+      for (const task of [...remoteWorkers.values()].reverse()) {
+        yield* task.halt();
+      }
     }
   }
 
@@ -539,6 +568,101 @@ export class MailboxPoller {
     const created: Record<string, number> = {};
     this.localCursors.set(pre, created);
     return created;
+  }
+
+  /**
+   * Poll one remote mailbox or witness endpoint once and ingest any payloads.
+   *
+   * Timeout ownership:
+   * - bounded callers pass their remaining command-local budget
+   * - long-lived workers pass the normal mailbox long-poll duration
+   */
+  private *pollRemoteEndpointOnce(
+    hab: Hab,
+    endpoint: { eid: string; url: string },
+    onMessages: (messages: Uint8Array[]) => void,
+    budgetMs: number,
+  ): Operation<void> {
+    const cursor = this.mailboxDirector.remoteQueryCursor(
+      hab.pre,
+      endpoint.eid,
+    );
+    const messages = yield* fetchMailboxMessages(
+      hab,
+      endpoint.eid,
+      endpoint.url,
+      cursor,
+      this.hby.cesrBodyMode,
+      mailboxFetchTimeoutPolicy(this.timeoutPolicy, budgetMs),
+    );
+    if (messages.length === 0) {
+      return;
+    }
+    for (const message of messages) {
+      this.mailboxDirector.updateRemoteCursor(
+        hab.pre,
+        endpoint.eid,
+        message.topic,
+        message.idx,
+      );
+    }
+    onMessages(messages.map((message) => message.msg));
+  }
+
+  /** Keep one long-lived worker running for each currently configured remote endpoint. */
+  private *syncRemoteWorkers(
+    remoteWorkers: Map<string, Task<void>>,
+    onMessages: (messages: Uint8Array[]) => void,
+    topics: readonly string[],
+  ): Operation<void> {
+    const active = new Set<string>();
+    const poller = this;
+    if (topics.length > 0) {
+      for (const hab of this.hby.habs.values()) {
+        for (const endpoint of mailboxPollEndpoints(this.hby, hab)) {
+          const workerKey = `${hab.pre}:${endpoint.key}`;
+          active.add(workerKey);
+          if (remoteWorkers.has(workerKey)) {
+            continue;
+          }
+
+          const task = yield* spawn(function*() {
+            yield* poller.remoteEndpointWorker(hab, endpoint, onMessages);
+          });
+          remoteWorkers.set(workerKey, task);
+        }
+      }
+    }
+
+    for (const [workerKey, task] of [...remoteWorkers.entries()]) {
+      if (active.has(workerKey)) {
+        continue;
+      }
+      yield* task.halt();
+      remoteWorkers.delete(workerKey);
+    }
+  }
+
+  /**
+   * Poll one remote endpoint continuously in the long-lived runtime shape.
+   *
+   * This keeps KERIpy's "one poller per endpoint" behavior while preserving
+   * `keri-ts`'s split between mailbox transport and runtime parser ownership.
+   */
+  private *remoteEndpointWorker(
+    hab: Hab,
+    endpoint: { eid: string; url: string },
+    onMessages: (messages: Uint8Array[]) => void,
+  ): Operation<never> {
+    while (true) {
+      yield* this.pollRemoteEndpointOnce(
+        hab,
+        endpoint,
+        onMessages,
+        this.timeoutPolicy.maxPollDurationMs,
+      );
+      yield* runtimeTurn();
+    }
   }
 }
 
@@ -631,6 +755,22 @@ interface MailboxMessage {
   topic: string;
 }
 
+/** Explicit mailbox polling timeout policy for one runtime poller. */
+export interface MailboxPollingTimeoutPolicy {
+  /** Abort the HTTP request when no response headers arrive before this deadline. */
+  requestOpenTimeoutMs: number;
+  /** Stop reading one mailbox SSE response after this long-poll window. */
+  maxPollDurationMs: number;
+  /** Bound one command-local polling turn across sequential remote endpoints. */
+  commandLocalBudgetMs: number;
+}
+
+interface MailboxFetchTimeoutPolicy {
+  requestOpenTimeoutMs: number;
+  maxReadDurationMs: number;
+  readIdleTimeoutMs: number;
+}
+
 /**
  * Query one remote mailbox endpoint and parse any returned mailbox SSE events.
  *
@@ -643,9 +783,16 @@ function* fetchMailboxMessages(
   url: string,
   topics: Record<string, number>,
   bodyMode: "header" | "body",
+  timeouts: MailboxFetchTimeoutPolicy,
 ): Operation<MailboxMessage[]> {
   const query = hab.query(hab.pre, src, { topics }, "mbx");
-  const handle = yield* fetchMailboxQueryResponse(url, query, bodyMode, src);
+  const handle = yield* fetchMailboxQueryResponse(
+    url,
+    query,
+    bodyMode,
+    src,
+    timeouts.requestOpenTimeoutMs,
+  );
   if (!handle) {
     return [];
   }
@@ -656,7 +803,14 @@ function* fetchMailboxMessages(
     return [];
   }
 
-  const text = yield* readSseBody(response, controller);
+  const text = yield* readSseBody(
+    response,
+    controller,
+    {
+      idleTimeoutMs: timeouts.readIdleTimeoutMs,
+      maxDurationMs: timeouts.maxReadDurationMs,
+    },
+  );
   return parseMailboxSse(text);
 }
 
@@ -675,6 +829,7 @@ function* fetchMailboxQueryResponse(
   query: Uint8Array,
   bodyMode: "header" | "body",
   destination: string,
+  timeoutMs: number,
 ): Operation<
   {
     response: Response;
@@ -689,15 +844,15 @@ function* fetchMailboxQueryResponse(
     method: "POST",
     headers: request.headers,
     body: request.body,
-  }, { timeoutMs: 6000 });
+  }, { timeoutMs });
 }
 
 /**
  * Read one mailbox SSE response without waiting for the server to close it.
  *
  * KERIpy mailbox queries keep the stream open for long-poll behavior, so
- * command-local callers must stop after an idle window instead of calling
- * `response.text()` and waiting for remote EOF.
+ * `keri-ts` callers stop on an explicit read budget and idle detection instead
+ * of waiting for remote EOF with `response.text()`.
  */
 function* readSseBody(
   response: Response,
@@ -825,6 +980,53 @@ function parseMailboxSse(text: string): MailboxMessage[] {
   }
 
   return messages;
+}
+
+function normalizeMailboxPollingTimeoutPolicy(
+  overrides: Partial<MailboxPollingTimeoutPolicy> | undefined,
+): Readonly<MailboxPollingTimeoutPolicy> {
+  const defaults = MailboxPoller.DefaultTimeoutPolicy;
+  return Object.freeze({
+    requestOpenTimeoutMs: positiveTimeoutMs(
+      overrides?.requestOpenTimeoutMs,
+      defaults.requestOpenTimeoutMs,
+    ),
+    maxPollDurationMs: positiveTimeoutMs(
+      overrides?.maxPollDurationMs,
+      defaults.maxPollDurationMs,
+    ),
+    commandLocalBudgetMs: positiveTimeoutMs(
+      overrides?.commandLocalBudgetMs,
+      defaults.commandLocalBudgetMs,
+    ),
+  });
+}
+
+function mailboxFetchTimeoutPolicy(
+  timeouts: Readonly<MailboxPollingTimeoutPolicy>,
+  budgetMs: number,
+): MailboxFetchTimeoutPolicy {
+  const boundedBudgetMs = Math.max(1, budgetMs);
+  return {
+    requestOpenTimeoutMs: Math.min(
+      timeouts.requestOpenTimeoutMs,
+      boundedBudgetMs,
+    ),
+    maxReadDurationMs: Math.min(
+      timeouts.maxPollDurationMs,
+      boundedBudgetMs,
+    ),
+    readIdleTimeoutMs: MailboxPoller.ReadIdleTimeoutMs,
+  };
+}
+
+function positiveTimeoutMs(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
 }
 
 /**

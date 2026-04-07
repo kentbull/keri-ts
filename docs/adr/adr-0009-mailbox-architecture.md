@@ -18,13 +18,12 @@
 ## Context
 
 Mailboxes are one of the most heavily studied parts of the KERIpy reference
-implementation because they operationalize a core promise of the protocol
-stack:
+implementation because they operationalize a core promise of the protocol stack:
 
 - a controller can be offline
 - communications can still be delivered for later pickup
-- the controller can reconnect and catch up without changing the underlying
-  KERI exchange, reply, replay, or receipt semantics
+- the controller can reconnect and catch up without changing the underlying KERI
+  exchange, reply, replay, or receipt semantics
 
 KERIpy spreads that behavior across several cooperating pieces:
 
@@ -37,8 +36,8 @@ KERIpy spreads that behavior across several cooperating pieces:
 
 `keri-ts` now has those same concerns, but not the same runtime shape:
 
-- runtime work is organized around `AgentRuntime`, `Reactor`, `Exchanger`,
-  and explicit cue/runtime bridges instead of HIO doers
+- runtime work is organized around `AgentRuntime`, `Reactor`, `Exchanger`, and
+  explicit cue/runtime bridges instead of HIO doers
 - mailbox add/remove flows are implemented through the long-lived `tufa agent`
   host plus `POST /mailboxes`
 - `keri-ts` adds an optional sender-side `Outboxer` for durable retry
@@ -47,8 +46,8 @@ KERIpy spreads that behavior across several cooperating pieces:
   contract
 
 Without an ADR-level statement, maintainers must reverse-engineer which parts of
-the mailbox story are KERIpy parity, which parts are `keri-ts` architecture,
-and which parts are Tufa-only extensions.
+the mailbox story are KERIpy parity, which parts are `keri-ts` architecture, and
+which parts are Tufa-only extensions.
 
 ## Decision
 
@@ -57,15 +56,18 @@ and which parts are Tufa-only extensions.
 - a mailbox is a recipient-side relay endpoint, not a sender-side mediator
 - mailbox authorization truth lives in accepted `/end/role` state
 - mailbox delivery is mailbox-first:
-  - if authorized mailbox endpoints exist for a recipient, send to those
-    mailbox endpoints
+  - if authorized mailbox endpoints exist for a recipient, send to those mailbox
+    endpoints
   - if more than one mailbox is authorized, broadcast to all of them
   - direct controller or agent delivery is the fallback when no mailbox is
     configured
-- mailbox storage is owned by a shared provider-side `Mailboxer` composed by
-  the runtime/host layer above `Habery`
-- mailbox polling and query streaming are coordinated by a shared
-  `MailboxDirector`
+- mailbox storage is owned by a shared provider-side `Mailboxer` composed by the
+  runtime/host layer above `Habery`
+- mailbox polling keeps the ownership split explicit:
+  - `MailboxDirector` coordinates topics, query cues, and durable remote cursors
+  - `MailboxPoller` owns local replay plus remote mailbox retrieval
+  - long-lived runtime polling keeps one remote worker per endpoint, while
+    bounded command-local polling stays sequential and budgeted
 - mailbox admin is handled by the remote mailbox host through `POST /mailboxes`
 - `/fwd` only stores traffic when the addressed mailbox endpoint is currently
   authorized for the recipient controller
@@ -76,13 +78,12 @@ operational seams.
 
 This ADR keeps mailbox storage, forwarding, authorization, and transport policy
 in scope. The broader cue-system explanation, including why `mbx` query
-streaming depends on `stream` cue routing and not just mailbox storage, lives
-in `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
+streaming depends on `stream` cue routing and not just mailbox storage, lives in
+`docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
 
 For the full end-to-end mailbox explainer, including the sender/recipient/
-mailbox-provider split, `/fwd` as a provider transport wrapper, mailbox
-polling, and the `POST /mailboxes` mental model across both KERIpy and
-`keri-ts`, see
+mailbox-provider split, `/fwd` as a provider transport wrapper, mailbox polling,
+and the `POST /mailboxes` mental model across both KERIpy and `keri-ts`, see
 `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`.
 
 ## Runtime And Data-Flow Mental Model
@@ -133,8 +134,8 @@ The important mental model is:
   - any embedded CESR attachments are carried as pathed attachment groups for
     `/e/evt`
 
-So the provider receives a forwarding envelope, not the final mailbox payload
-as the top-level request message.
+So the provider receives a forwarding envelope, not the final mailbox payload as
+the top-level request message.
 
 In current `keri-ts`, mailbox posting may also include sender context material
 ahead of the `/fwd` exchange, such as sender end-role reply material. That
@@ -183,8 +184,8 @@ application behavior:
 - receipts
 - other mailbox-topic payloads
 
-The forwarding envelope is therefore a provider transport mechanism, not part
-of the recipient's durable mailbox payload model.
+The forwarding envelope is therefore a provider transport mechanism, not part of
+the recipient's durable mailbox payload model.
 
 ### Provider Storage Path
 
@@ -198,9 +199,10 @@ of the recipient's durable mailbox payload model.
 
 ### Recipient Sync Path
 
-1. `MailboxDirector` computes the next wanted topic indices from durable
-   `tops.` cursor state.
-2. The runtime issues an `mbx` query to the mailbox or witness endpoint.
+1. `MailboxDirector` computes the next wanted topic indices from durable `tops.`
+   cursor state.
+2. `MailboxPoller` replays any local mailbox payloads and issues `mbx` queries
+   to remote mailbox or witness endpoints.
 3. Query acceptance emits a `stream` cue that starts mailbox SSE handling.
 4. The mailbox host streams ordered mailbox payloads back as SSE events.
 5. The runtime ingests those payloads through the normal parser, exchanger, and
@@ -211,6 +213,10 @@ The important split is:
 
 - the `stream` cue starts transport work
 - `Mailboxer` supplies the payload bytes
+- timeout policy is split too:
+  - short request-open guard for transport setup
+  - longer mailbox poll duration for SSE long-poll reads
+  - bounded command-local polling budget for one-shot CLI/runtime turns
 
 ## Storage Model
 
@@ -331,8 +337,8 @@ This matters because a mailbox URL is operationally meaningful:
 ### Multi-Mailbox Delivery
 
 If a recipient has more than one authorized mailbox endpoint, delivery is
-broadcast to all authorized mailboxes in this phase. There is no primary
-mailbox or weighted selection policy.
+broadcast to all authorized mailboxes in this phase. There is no primary mailbox
+or weighted selection policy.
 
 ## Consequences And Non-Goals
 
@@ -365,8 +371,8 @@ disconnected.
 - KERIpy mailbox semantics are recipient-side
 - senders may still benefit from a local retry queue when a mailbox post cannot
   be completed
-- that retry concern is operationally useful in Tufa, but it is not part of
-  the KERIpy mailbox storage model
+- that retry concern is operationally useful in Tufa, but it is not part of the
+  KERIpy mailbox storage model
 
 ### Why It Is Separate From Mailboxer
 
@@ -391,8 +397,8 @@ storage and sender retry.
 
 KERIpy-compatible stores do not require or assume `Outboxer`.
 
-When `keri-ts` opens a KERIpy store in compat mode, mailbox parity work must
-not depend on `Outboxer` existing. This keeps the Tufa-local retry model from
+When `keri-ts` opens a KERIpy store in compat mode, mailbox parity work must not
+depend on `Outboxer` existing. This keeps the Tufa-local retry model from
 polluting the KERIpy mental model or interop expectations.
 
 ## Appendix B: Maintainer Debugging

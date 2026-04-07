@@ -20,6 +20,7 @@ import {
 import { agentCommand } from "../../../src/app/cli/agent.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
+import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import {
   mailboxAddCommand,
   mailboxDebugCommand,
@@ -30,12 +31,14 @@ import {
 } from "../../../src/app/cli/mailbox.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
+import { MailboxPoller } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
+import { fetchEndpointUrls, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { startServer } from "../../../src/app/server.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
-import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
+import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { CLITestHarness, testCLICommand } from "../../utils.ts";
 
 /** Return a random localhost port for ephemeral mailbox and OOBI hosts. */
@@ -79,6 +82,101 @@ function startStaticOobiHost(
       }
     },
   };
+}
+
+/** Return one standard controller OOBI HTTP response for a seeded test host. */
+function controllerOobiResponse(
+  pre: string,
+  controllerBytes: Uint8Array,
+): Response {
+  return new Response(new Uint8Array(controllerBytes).buffer, {
+    status: 200,
+    headers: { "Content-Type": "application/cesr", "Oobi-Aid": pre },
+  });
+}
+
+/**
+ * Resolve one remote controller OOBI and authorize it locally as a mailbox.
+ *
+ * These focused poller tests care about local mailbox polling state, not the
+ * remote mailbox admin workflow, so they use the local `ends add` seam after
+ * resolving the remote controller endpoint.
+ */
+async function authorizeMailboxPollTarget(
+  name: string,
+  headDirPath: string,
+  alias: string,
+  mailboxPre: string,
+  mailboxUrl: string,
+): Promise<void> {
+  await run(function*() {
+    const resolved = yield* testCLICommand(
+      oobiResolveCommand({
+        name,
+        headDirPath,
+        url: `${mailboxUrl}/oobi/${mailboxPre}/controller`,
+        oobiAlias: mailboxPre,
+      }),
+    );
+    assertEquals(
+      resolved.output.at(-1),
+      `${mailboxUrl}/oobi/${mailboxPre}/controller`,
+    );
+
+    const added = yield* testCLICommand(
+      endsAddCommand({
+        name,
+        headDirPath,
+        alias,
+        role: "mailbox",
+        eid: mailboxPre,
+      }),
+    );
+    assertEquals(added.output.at(-1), `mailbox ${mailboxPre}`);
+  });
+}
+
+/** Wait for a short-lived test condition inside one Effection task tree. */
+function* waitForCondition(
+  condition: () => boolean,
+  {
+    timeoutMs = 500,
+    retryDelayMs = 10,
+    message = "Timed out waiting for condition.",
+  }: {
+    timeoutMs?: number;
+    retryDelayMs?: number;
+    message?: string;
+  } = {},
+): Operation<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return;
+    }
+    yield* sleepOp(retryDelayMs);
+  }
+  throw new Error(message);
+}
+
+/** Delay inside a test HTTP handler, but clear the timer if the request aborts. */
+async function delayForRequest(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /**
@@ -203,6 +301,466 @@ async function seedLocalController(
 
   return pre;
 }
+
+/**
+ * Proves the request-open timeout is separate from the SSE read duration.
+ *
+ * If response headers never arrive before the request timeout, mailbox polling
+ * should treat that as "no messages yet" instead of hanging or throwing.
+ */
+Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeout expires before headers arrive", async () => {
+  const providerName = `mailbox-open-timeout-provider-${crypto.randomUUID()}`;
+  const clientName = `mailbox-open-timeout-client-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-open-timeout-provider-${crypto.randomUUID()}`;
+  const clientHeadDirPath = `/tmp/tufa-mailbox-open-timeout-client-${crypto.randomUUID()}`;
+  const port = randomPort();
+  const providerUrl = `http://127.0.0.1:${port}`;
+  const provider = await seedHostedController(
+    providerName,
+    providerHeadDirPath,
+    "mbx",
+    providerUrl,
+  );
+  await seedLocalController(clientName, clientHeadDirPath, "bob");
+
+  let postCount = 0;
+  const host = startStaticOobiHost(port, async (request, url) => {
+    if (url.pathname === `/oobi/${provider.pre}/controller`) {
+      return controllerOobiResponse(provider.pre, provider.controllerBytes);
+    }
+    if (request.method === "POST" && url.pathname === "/") {
+      postCount += 1;
+      await delayForRequest(60, request.signal);
+      if (request.signal.aborted) {
+        return new Response(null, { status: 499 });
+      }
+      return new Response("retry: 5000\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    return new Response("Not Found", { status: 404 });
+  });
+
+  try {
+    await authorizeMailboxPollTarget(
+      clientName,
+      clientHeadDirPath,
+      "bob",
+      provider.pre,
+      providerUrl,
+    );
+
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: clientName,
+        headDirPath: clientHeadDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+
+      try {
+        const poller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          {
+            timeouts: {
+              requestOpenTimeoutMs: 20,
+              maxPollDurationMs: 120,
+              commandLocalBudgetMs: 40,
+            },
+          },
+        );
+        poller.registerTopic("/challenge");
+
+        const received: Uint8Array[] = [];
+        const started = Date.now();
+        yield* poller.processOnce((messages) => {
+          received.push(...messages);
+        });
+        const elapsed = Date.now() - started;
+
+        assertEquals(received.length, 0);
+        assertEquals(postCount, 1);
+        assertEquals(elapsed >= 15 && elapsed < 80, true);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+/**
+ * Proves SSE reads can legitimately outlive the request-open timeout.
+ *
+ * Once headers arrive, the client should keep reading for the longer
+ * mailbox poll duration and persist the consumed mailbox cursor.
+ */
+Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-open timeout", async () => {
+  const providerName = `mailbox-read-duration-provider-${crypto.randomUUID()}`;
+  const clientName = `mailbox-read-duration-client-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-read-duration-provider-${crypto.randomUUID()}`;
+  const clientHeadDirPath = `/tmp/tufa-mailbox-read-duration-client-${crypto.randomUUID()}`;
+  const port = randomPort();
+  const providerUrl = `http://127.0.0.1:${port}`;
+  const provider = await seedHostedController(
+    providerName,
+    providerHeadDirPath,
+    "mbx",
+    providerUrl,
+  );
+  const clientPre = await seedLocalController(
+    clientName,
+    clientHeadDirPath,
+    "bob",
+  );
+
+  let postCount = 0;
+  const host = startStaticOobiHost(port, (request, url) => {
+    if (url.pathname === `/oobi/${provider.pre}/controller`) {
+      return controllerOobiResponse(provider.pre, provider.controllerBytes);
+    }
+    if (request.method === "POST" && url.pathname === "/") {
+      postCount += 1;
+      const encoder = new TextEncoder();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const clearTimer = () => {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+      };
+      request.signal.addEventListener("abort", clearTimer, { once: true });
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode("retry: 5000\n\n"));
+            timer = setTimeout(() => {
+              request.signal.removeEventListener("abort", clearTimer);
+              controller.enqueue(
+                encoder.encode(
+                  "id: 0\nevent: /challenge\ndata: mailbox-message\n\n",
+                ),
+              );
+              timer = undefined;
+            }, 40);
+          },
+          cancel() {
+            request.signal.removeEventListener("abort", clearTimer);
+            clearTimer();
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        },
+      );
+    }
+    return new Response("Not Found", { status: 404 });
+  });
+
+  try {
+    await authorizeMailboxPollTarget(
+      clientName,
+      clientHeadDirPath,
+      "bob",
+      provider.pre,
+      providerUrl,
+    );
+
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: clientName,
+        headDirPath: clientHeadDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+
+      try {
+        const poller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          {
+            timeouts: {
+              requestOpenTimeoutMs: 20,
+              maxPollDurationMs: 100,
+              commandLocalBudgetMs: 150,
+            },
+          },
+        );
+        poller.registerTopic("/challenge");
+
+        const received: Uint8Array[] = [];
+        const started = Date.now();
+        yield* poller.processOnce((messages) => {
+          received.push(...messages);
+        }, { budgetMs: 150 });
+        const elapsed = Date.now() - started;
+
+        assertEquals(received.length, 1);
+        assertEquals(new TextDecoder().decode(received[0]), "mailbox-message");
+        assertEquals(postCount, 1);
+        assertEquals(elapsed >= 80 && elapsed < 180, true);
+        assertEquals(
+          hby.db.tops.get([clientPre, provider.pre])?.topics["/challenge"],
+          0,
+        );
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host.close();
+  }
+});
+
+/**
+ * Proves bounded command-local polling stays sequential and budgeted.
+ *
+ * The first slow endpoint may consume the whole bounded budget, in which case
+ * `processOnce()` must stop without serializing on later endpoints.
+ */
+Deno.test("MailboxPoller.processOnce stops after the bounded command-local budget is exhausted", async () => {
+  const clientName = `mailbox-budget-client-${crypto.randomUUID()}`;
+  const clientHeadDirPath = `/tmp/tufa-mailbox-budget-client-${crypto.randomUUID()}`;
+  await seedLocalController(clientName, clientHeadDirPath, "bob");
+
+  const provider1 = {
+    name: `mailbox-budget-provider-a-${crypto.randomUUID()}`,
+    headDirPath: `/tmp/tufa-mailbox-budget-provider-a-${crypto.randomUUID()}`,
+    port: randomPort(),
+  };
+  const provider2 = {
+    name: `mailbox-budget-provider-b-${crypto.randomUUID()}`,
+    headDirPath: `/tmp/tufa-mailbox-budget-provider-b-${crypto.randomUUID()}`,
+    port: randomPort(),
+  };
+  const seeded1 = await seedHostedController(
+    provider1.name,
+    provider1.headDirPath,
+    "mbx",
+    `http://127.0.0.1:${provider1.port}`,
+  );
+  const seeded2 = await seedHostedController(
+    provider2.name,
+    provider2.headDirPath,
+    "mbx",
+    `http://127.0.0.1:${provider2.port}`,
+  );
+
+  let postCount = 0;
+  const host1 = startStaticOobiHost(provider1.port, async (request, url) => {
+    if (url.pathname === `/oobi/${seeded1.pre}/controller`) {
+      return controllerOobiResponse(seeded1.pre, seeded1.controllerBytes);
+    }
+    if (request.method === "POST" && url.pathname === "/") {
+      postCount += 1;
+      await delayForRequest(60, request.signal);
+      if (request.signal.aborted) {
+        return new Response(null, { status: 499 });
+      }
+      return new Response("retry: 5000\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    return new Response("Not Found", { status: 404 });
+  });
+  const host2 = startStaticOobiHost(provider2.port, async (request, url) => {
+    if (url.pathname === `/oobi/${seeded2.pre}/controller`) {
+      return controllerOobiResponse(seeded2.pre, seeded2.controllerBytes);
+    }
+    if (request.method === "POST" && url.pathname === "/") {
+      postCount += 1;
+      await delayForRequest(60, request.signal);
+      if (request.signal.aborted) {
+        return new Response(null, { status: 499 });
+      }
+      return new Response("retry: 5000\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    return new Response("Not Found", { status: 404 });
+  });
+
+  try {
+    await authorizeMailboxPollTarget(
+      clientName,
+      clientHeadDirPath,
+      "bob",
+      seeded1.pre,
+      `http://127.0.0.1:${provider1.port}`,
+    );
+    await authorizeMailboxPollTarget(
+      clientName,
+      clientHeadDirPath,
+      "bob",
+      seeded2.pre,
+      `http://127.0.0.1:${provider2.port}`,
+    );
+
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: clientName,
+        headDirPath: clientHeadDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+
+      try {
+        const poller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          {
+            timeouts: {
+              requestOpenTimeoutMs: 50,
+              maxPollDurationMs: 200,
+              commandLocalBudgetMs: 50,
+            },
+          },
+        );
+        poller.registerTopic("/challenge");
+        yield* poller.processOnce(() => {});
+
+        assertEquals(postCount, 1);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host1.close();
+    await host2.close();
+  }
+});
+
+/**
+ * Proves long-lived mailbox polling now keeps one remote worker per endpoint.
+ *
+ * This is the TS-native equivalent of KERIpy's concurrent `Poller` doers: two
+ * remote endpoints should both receive their initial `mbx` request promptly,
+ * rather than being serialized behind one long poll.
+ */
+Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remote endpoint", async () => {
+  const clientName = `mailbox-concurrency-client-${crypto.randomUUID()}`;
+  const clientHeadDirPath = `/tmp/tufa-mailbox-concurrency-client-${crypto.randomUUID()}`;
+  await seedLocalController(clientName, clientHeadDirPath, "bob");
+
+  const provider1 = {
+    name: `mailbox-concurrency-provider-a-${crypto.randomUUID()}`,
+    headDirPath: `/tmp/tufa-mailbox-concurrency-provider-a-${crypto.randomUUID()}`,
+    port: randomPort(),
+  };
+  const provider2 = {
+    name: `mailbox-concurrency-provider-b-${crypto.randomUUID()}`,
+    headDirPath: `/tmp/tufa-mailbox-concurrency-provider-b-${crypto.randomUUID()}`,
+    port: randomPort(),
+  };
+  const seeded1 = await seedHostedController(
+    provider1.name,
+    provider1.headDirPath,
+    "mbx",
+    `http://127.0.0.1:${provider1.port}`,
+  );
+  const seeded2 = await seedHostedController(
+    provider2.name,
+    provider2.headDirPath,
+    "mbx",
+    `http://127.0.0.1:${provider2.port}`,
+  );
+
+  let postCount = 0;
+  const makeLongPollHost = (
+    port: number,
+    seeded: { pre: string; controllerBytes: Uint8Array },
+  ) =>
+    startStaticOobiHost(port, (request, url) => {
+      if (url.pathname === `/oobi/${seeded.pre}/controller`) {
+        return controllerOobiResponse(seeded.pre, seeded.controllerBytes);
+      }
+      if (request.method === "POST" && url.pathname === "/") {
+        postCount += 1;
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode("retry: 5000\n\n"));
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        );
+      }
+      return new Response("Not Found", { status: 404 });
+    });
+
+  const host1 = makeLongPollHost(provider1.port, seeded1);
+  const host2 = makeLongPollHost(provider2.port, seeded2);
+
+  try {
+    await authorizeMailboxPollTarget(
+      clientName,
+      clientHeadDirPath,
+      "bob",
+      seeded1.pre,
+      `http://127.0.0.1:${provider1.port}`,
+    );
+    await authorizeMailboxPollTarget(
+      clientName,
+      clientHeadDirPath,
+      "bob",
+      seeded2.pre,
+      `http://127.0.0.1:${provider2.port}`,
+    );
+
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: clientName,
+        headDirPath: clientHeadDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+
+      try {
+        const poller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          {
+            timeouts: {
+              requestOpenTimeoutMs: 20,
+              maxPollDurationMs: 80,
+              commandLocalBudgetMs: 20,
+            },
+          },
+        );
+        poller.registerTopic("/challenge");
+
+        const task = yield* spawn(function*() {
+          yield* poller.pollDo(() => {});
+        });
+
+        try {
+          yield* waitForCondition(() => postCount >= 2, {
+            timeoutMs: 120,
+            retryDelayMs: 5,
+            message: "Expected two concurrent mailbox poll requests.",
+          });
+        } finally {
+          yield* waitForTaskHalt(task);
+        }
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await host1.close();
+    await host2.close();
+  }
+});
 
 /**
  * Build one `/fwd` message carrying an embedded `/challenge/response` payload.
@@ -424,8 +982,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
         skipSignator: true,
       });
       try {
-        const hab = hby.habByName("alice");
-        assertEquals(hab?.fetchUrls(pre, "http").http, configuredUrl);
+        assertEquals(fetchEndpointUrls(hby, pre, "http").http, configuredUrl);
         assertEquals(
           hby.db.ends.get([pre, EndpointRoles.controller, pre])?.allowed,
           true,
@@ -492,8 +1049,7 @@ Deno.test("agent command falls back to synthesized controller state only when co
         skipSignator: true,
       });
       try {
-        const hab = hby.habByName("alice");
-        assertEquals(hab?.fetchUrls(pre, "http").http, fallbackUrl);
+        assertEquals(fetchEndpointUrls(hby, pre, "http").http, fallbackUrl);
         assertEquals(
           hby.db.ends.get([pre, EndpointRoles.controller, pre])?.allowed,
           true,

@@ -115,18 +115,18 @@ runtime ownership semantics.
     `exn send`, plus `challenge generate/respond/verify`.
 31. Mailbox ownership is now closer to KERIpy's real architecture: mailbox
     storage is shared provider-side state composed by runtime/host layers above
-    `Habery`, while remote topic cursors remain durable habery state in
-    `tops.`. `/fwd` forwarding publishes into that shared store, and runtime
-    polling advances durable `(pre, witness)` `tops.` cursors rather than ad
-    hoc per-command maps. Mailbox add interop is now proven in both directions
-    too, so the remaining Gate F/G gap is broader route breadth, not mailbox
+    `Habery`, while remote topic cursors remain durable habery state in `tops.`.
+    `/fwd` forwarding publishes into that shared store, and runtime polling
+    advances durable `(pre, witness)` `tops.` cursors rather than ad hoc
+    per-command maps. Mailbox add interop is now proven in both directions too,
+    so the remaining Gate F/G gap is broader route breadth, not mailbox
     ownership or add/list/debug lifecycle absence.
 32. The maintainer-facing mailbox explainer now lives in
     `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`.
     Use it to rehydrate the sender/recipient/mailbox-provider split,
     recipient-to-mailbox authorization, `/fwd` as provider transport wrapper,
-    mailbox polling through `mbx`, and the fact that `POST /mailboxes` manages
-    a controller's authorization of one already-hosted mailbox AID instead of
+    mailbox polling through `mbx`, and the fact that `POST /mailboxes` manages a
+    controller's authorization of one already-hosted mailbox AID instead of
     creating mailbox identities on demand.
 33. The maintainer contract for the Chunk 7 query/watcher slice now lives in
     `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`,
@@ -155,9 +155,9 @@ runtime ownership semantics.
     `outboxer.<subdb>` against both `.tufa` and `.keri` stores when validating
     mailbox add/list/debug flows, `/fwd` storage, or cross-runtime state drift.
 38. The long-lived host mental model is one listener/runtime per Habery or
-    command invocation with explicit hosted-prefix filtering. A bug in
-    multi-AID seeding means the host is bootstrapping or exposing too many
-    local Habs, not that it is creating one socket/listener per AID.
+    command invocation with explicit hosted-prefix filtering. A bug in multi-AID
+    seeding means the host is bootstrapping or exposing too many local Habs, not
+    that it is creating one socket/listener per AID.
 39. System-managed identities need a stricter filter than `hby.habs.values()`.
     Signatory or AEID-related identities may live in the local keystore, but
     they are not ordinary user-facing controller/mailbox identities and should
@@ -175,9 +175,9 @@ runtime ownership semantics.
 42. Controller endpoint bootstrap now has a KERIpy-shaped canonical path too:
     alias-scoped config `dt` + `curls` are applied by `Hab.reconfigure()`
     through normal `/end/role/add` and `/loc/scheme` reply acceptance, while
-    `runIndirectHost` is host wiring only. `tufa agent` may synthesize
-    localhost controller state only as a last-resort fallback when no alias
-    config exists and accepted controller endpoint state is otherwise missing.
+    `runIndirectHost` is host wiring only. `tufa agent` may synthesize localhost
+    controller state only as a last-resort fallback when no alias config exists
+    and accepted controller endpoint state is otherwise missing.
 
 ## Use This Doc For
 
@@ -229,9 +229,9 @@ runtime ownership semantics.
 
 ### 2026-04-06 - Host Selection And AEID Mental Models Needed Sharpening
 
-- `tufa agent` was never starting one HTTP listener per local AID. The bug
-  class was over-broad multi-AID bootstrap and hosted-prefix selection inside
-  one shared host/runtime.
+- `tufa agent` was never starting one HTTP listener per local AID. The bug class
+  was over-broad multi-AID bootstrap and hosted-prefix selection inside one
+  shared host/runtime.
 - `tufa mailbox start` exists because mailbox hosting needs explicit identity
   ownership, not because mailboxes need a different server topology. One host
   can serve multiple local identities when that is intentional, but the
@@ -387,12 +387,12 @@ runtime ownership semantics.
   responses into `chas.`, and the CLI now exposes
   `challenge generate/respond/verify` plus `exchange send` and the `exn send`
   alias.
-- The important mailbox boundary is now explicit: provider mailbox topic
-  storage is shared runtime-composed state scoped to one habery environment,
-  while remote cursor progress remains durable habery state in `tops.`.
-  Runtime `MailboxDirector` / poller layers sit on top of those two stores. Do
-  not fall back to per-command mailbox maps, per-hab mailbox ownership, or
-  `Habery`-owned mailbox sidecars.
+- The important mailbox boundary is now explicit: provider mailbox topic storage
+  is shared runtime-composed state scoped to one habery environment, while
+  remote cursor progress remains durable habery state in `tops.`. Runtime
+  `MailboxDirector` / poller layers sit on top of those two stores. Do not fall
+  back to per-command mailbox maps, per-hab mailbox ownership, or `Habery`-owned
+  mailbox sidecars.
 - The remaining Gate F/G work is broader exchange-route breadth and KERIpy
   interop proof, not rediscovering mailbox ownership.
 
@@ -477,8 +477,10 @@ runtime ownership semantics.
 
 ### 2026-04-07 - KERIpy Mailbox Query Replies Depend On Shared Cue Wiring
 
-- The reverse-interop failure after switching to real KERIpy `kli mailbox start` was not a Tufa mailbox-store or authorization bug. Forwarded
-  `/challenge` traffic was landing in KERIpy `.keri/mbx`, but `challenge verify` still failed because mailbox queries never received a response.
+- The reverse-interop failure after switching to real KERIpy `kli mailbox start`
+  was not a Tufa mailbox-store or authorization bug. Forwarded `/challenge`
+  traffic was landing in KERIpy `.keri/mbx`, but `challenge verify` still failed
+  because mailbox queries never received a response.
 - The real bug was in KERIpy host composition: `setupMailbox(...)` created the
   shared cue deck for `Kevery` / `Revery`, but it did not pass that deck into
   `MailboxStart`. As a result, `MailboxStart.cueDo()` watched an empty private
@@ -488,6 +490,26 @@ runtime ownership semantics.
   HTTP/query responders must observe the exact shared cue deck used by parser
   ingress processors. "Same runtime pieces" is not enough if the shared deck is
   accidentally forked.
+
+### 2026-04-07 - Mailbox Polling Timeout Policy Must Be Split By Responsibility
+
+- The real KERIpy parity seam for mailbox polling is `indirecting.Poller`, not
+  `HttpEnd.TimeoutMBX = 5`. In practice that means `keri-ts` mailbox polling
+  should treat request-open timeout, long-poll read duration, and bounded
+  command-local polling budget as different policies instead of one magic
+  number.
+- `MailboxPoller` is now the TS-native port of KERIpy `Poller`, while
+  `MailboxDirector` stays the topic/cursor/query-cue coordinator. That class
+  split was the right port shape; the important correction was behavior, not a
+  collapse back into one monolith.
+- Durable timeout policy:
+  - request-open timeout: short, internal transport guard (`5s` default)
+  - long-poll read duration: KERIpy-shaped mailbox wait window (`30s` default)
+  - command-local polling budget: bounded helper/CLI turn budget (`5s` default)
+- Long-lived runtime polling now behaves more like KERIpy again: keep one
+  concurrent remote polling worker per `(pre, endpoint)` instead of serializing
+  all remote mailboxes through one `processOnce()` loop. Bounded command-local
+  helpers still stay sequential and budgeted on purpose.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
