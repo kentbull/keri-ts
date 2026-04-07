@@ -23,6 +23,7 @@ import { makeNowIso8601 } from "../time/mod.ts";
 import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import {
   directDeliveryEndpoints,
@@ -644,51 +645,14 @@ function* fetchMailboxMessages(
   bodyMode: "header" | "body",
 ): Operation<MailboxMessage[]> {
   const query = hab.query(hab.pre, src, { topics }, "mbx");
-  const request = buildCesrRequest(query, {
-    bodyMode,
-    destination: src,
-  });
-  const { response, controller } = yield* action<{
-    response: Response | null;
-    controller: AbortController;
-  }>((resolve, reject) => {
-    const controller = new AbortController();
-    let settled = false;
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, 6000);
-    fetch(url, {
-      method: "POST",
-      headers: request.headers,
-      body: request.body,
-      signal: controller.signal,
-    }).then((current) => {
-      settled = true;
-      clearTimeout(timeoutId);
-      resolve({ response: current, controller });
-    }).catch((error) => {
-      settled = true;
-      clearTimeout(timeoutId);
-      if (error instanceof DOMException && error.name === "AbortError") {
-        resolve({ response: null, controller });
-        return;
-      }
-      reject(error);
-    });
-    return () => {
-      clearTimeout(timeoutId);
-      if (!settled) {
-        controller.abort();
-      }
-    };
-  });
-
-  if (response === null) {
+  const handle = yield* fetchMailboxQueryResponse(url, query, bodyMode, src);
+  if (!handle) {
     return [];
   }
+  const { response, controller } = handle;
 
   if (!response.ok) {
-    awaitResponseClose(response);
+    yield* closeResponseBody(response);
     return [];
   }
 
@@ -696,8 +660,36 @@ function* fetchMailboxMessages(
   return parseMailboxSse(text);
 }
 
-function awaitResponseClose(response: Response): void {
-  void response.body?.cancel().catch(() => {});
+/**
+ * Issue one mailbox `mbx` poll request and return the live response handle.
+ *
+ * The helper owns only the request lifecycle:
+ * - build one CESR-over-HTTP mailbox query request
+ * - apply the pre-response timeout policy
+ * - return `null` when that timeout expires before any response arrives
+ *
+ * Message parsing and SSE body policy remain with `fetchMailboxMessages(...)`.
+ */
+function* fetchMailboxQueryResponse(
+  url: string,
+  query: Uint8Array,
+  bodyMode: "header" | "body",
+  destination: string,
+): Operation<
+  {
+    response: Response;
+    controller: AbortController;
+  } | null
+> {
+  const request = buildCesrRequest(query, {
+    bodyMode,
+    destination,
+  });
+  return yield* fetchResponseHandleOrNull(url, {
+    method: "POST",
+    headers: request.headers,
+    body: request.body,
+  }, { timeoutMs: 6000 });
 }
 
 /**
@@ -858,27 +850,13 @@ function* postCesrMessage(
       bodyMode,
       destination,
     });
-    const response = yield* action<Response>((resolve, reject) => {
-      const controller = new AbortController();
-      let settled = false;
-      fetch(url, {
-        method: "POST",
-        headers: request.headers,
-        body: request.body,
-        signal: controller.signal,
-      }).then((current) => {
-        settled = true;
-        resolve(current);
-      }).catch(reject);
-
-      return () => {
-        if (!settled) {
-          controller.abort();
-        }
-      };
+    const { response } = yield* fetchResponseHandle(url, {
+      method: "POST",
+      headers: request.headers,
+      body: request.body,
     });
 
-    awaitResponseClose(response);
+    yield* closeResponseBody(response);
     if (!response.ok) {
       throw new ValidationError(
         `Exchange delivery to ${url} failed with HTTP ${response.status}.`,

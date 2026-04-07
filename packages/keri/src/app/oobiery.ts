@@ -7,6 +7,7 @@ import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import type { Habery } from "./habbing.ts";
+import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -530,30 +531,8 @@ function queueKindFor(url: string): OobiQueueKind {
  * surrounding runtime stays operation-native.
  */
 function* fetchOobiResponse(url: string): Operation<Response> {
-  return yield* action((resolve, reject) => {
-    const controller = new AbortController();
-    let settled = false;
-    fetch(url, { signal: controller.signal }).then((response) => {
-      settled = true;
-      resolve(response);
-    }).catch(reject);
-    return () => {
-      if (!settled) {
-        controller.abort();
-      }
-    };
-  });
-}
-
-function* closeResponseBody(response: Response): Operation<void> {
-  if (!response.body) {
-    return;
-  }
-
-  yield* action((resolve, reject) => {
-    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
-    return () => {};
-  });
+  const { response } = yield* fetchResponseHandle(url);
+  return response;
 }
 
 /**

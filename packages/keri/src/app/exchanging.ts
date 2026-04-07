@@ -1,4 +1,4 @@
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import {
   type Cigar,
   Dater,
@@ -20,6 +20,7 @@ import { Roles } from "../core/roles.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 
 const textDecoder = new TextDecoder();
 const EXCHANGE_ESCROW_TIMEOUT_MS = 10_000;
@@ -601,24 +602,10 @@ function* postCesrMessage(
       bodyMode,
       destination,
     });
-    const response = yield* action<Response>((resolve, reject) => {
-      const controller = new AbortController();
-      let settled = false;
-      fetch(url, {
-        method: "POST",
-        headers: request.headers,
-        body: request.body,
-        signal: controller.signal,
-      }).then((current) => {
-        settled = true;
-        resolve(current);
-      }).catch(reject);
-
-      return () => {
-        if (!settled) {
-          controller.abort();
-        }
-      };
+    const { response } = yield* fetchResponseHandle(url, {
+      method: "POST",
+      headers: request.headers,
+      body: request.body,
     });
 
     if (lastResponse) {
@@ -636,18 +623,6 @@ function* postCesrMessage(
 
   return lastResponse;
 }
-
-function* closeResponseBody(response: Response): Operation<void> {
-  if (!response.body) {
-    return;
-  }
-
-  yield* action((resolve, reject) => {
-    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
-    return () => {};
-  });
-}
-
 function hexToFixedBytes(hex: string, size: number): Uint8Array {
   const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
   if (!/^[0-9a-f]+$/i.test(normalized)) {

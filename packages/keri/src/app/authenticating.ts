@@ -1,6 +1,7 @@
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
+import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -132,28 +133,6 @@ export class Authenticator {
 }
 
 function* fetchAuthResponse(url: string): Operation<Response> {
-  return yield* action((resolve, reject) => {
-    const controller = new AbortController();
-    let settled = false;
-    fetch(url, { signal: controller.signal }).then((response) => {
-      settled = true;
-      resolve(response);
-    }).catch(reject);
-    return () => {
-      if (!settled) {
-        controller.abort();
-      }
-    };
-  });
-}
-
-function* closeResponseBody(response: Response): Operation<void> {
-  if (!response.body) {
-    return;
-  }
-
-  yield* action((resolve, reject) => {
-    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
-    return () => {};
-  });
+  const { response } = yield* fetchResponseHandle(url);
+  return response;
 }
