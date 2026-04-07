@@ -4,12 +4,13 @@
  * These tests exercise the mailbox stack as a cooperating runtime slice rather
  * than as isolated helpers:
  * - mailbox add/list/update/debug command flows
- * - canonical root-shaped mailbox and OOBI hosting
+ * - mailbox admin hosted relative to the stored mailbox URL path
+ * - root OOBI hosting through the shared runtime server
  * - mailbox-polled challenge verification
  * - `/fwd` authorization before provider-side storage
  */
 import { action, type Operation, run, spawn } from "effection";
-import { assertEquals, assertExists, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
@@ -38,7 +39,6 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { fetchEndpointUrls, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { startServer } from "../../../src/app/server.ts";
-import { ValidationError } from "../../../src/core/errors.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -1534,6 +1534,106 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
   });
 });
 
+Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a root alias", async () => {
+  const providerName = `mailbox-admin-path-provider-${crypto.randomUUID()}`;
+  const controllerName = `mailbox-admin-path-controller-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-path-provider-${crypto.randomUUID()}`;
+  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-path-controller-${crypto.randomUUID()}`;
+  const port = randomPort();
+  const origin = `http://127.0.0.1:${port}`;
+  const advertisedUrl = `${origin}/relay`;
+
+  await run(function*() {
+    const providerHby = yield* createHabery({
+      name: providerName,
+      headDirPath: providerHeadDirPath,
+      skipConfig: true,
+    });
+    const controllerHby = yield* createHabery({
+      name: controllerName,
+      headDirPath: controllerHeadDirPath,
+      skipConfig: true,
+    });
+
+    const mailbox = providerHby.makeHab("relay", undefined, {
+      transferable: false,
+      icount: 1,
+      isith: "1",
+      toad: 0,
+    });
+    const controller = controllerHby.makeHab("alice", undefined, {
+      transferable: true,
+      icount: 1,
+      isith: "1",
+      ncount: 1,
+      nsith: "1",
+      toad: 0,
+    });
+
+    const runtime = yield* createAgentRuntime(providerHby, { mode: "indirect" });
+    const hab = providerHby.habByName("relay");
+    ingestKeriBytes(runtime, mailbox.makeLocScheme(advertisedUrl, mailbox.pre, "http"));
+    ingestKeriBytes(
+      runtime,
+      mailbox.makeEndRole(mailbox.pre, EndpointRoles.controller, true),
+    );
+    ingestKeriBytes(
+      runtime,
+      mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+    );
+    yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
+    const runtimeTask = yield* spawn(function*() {
+      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
+    });
+    const serverTask = yield* spawn(function*() {
+      yield* startServer(port, undefined, runtime, {
+        hostedPrefixes: [mailbox.pre],
+        serviceHab: hab ?? undefined,
+      });
+    });
+
+    try {
+      yield* waitForServer(port);
+
+      const kel = new TextDecoder().decode(collectReplay(controllerHby, controller.pre));
+      const rpy = new TextDecoder().decode(
+        controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+      );
+
+      // Root `/mailboxes` is no longer a mailbox-admin alias when the hosted
+      // mailbox URL carries a non-root path. A valid multipart admin envelope
+      // therefore fails content-type handling at the generic ingress seam.
+      let response = yield* postMailboxAdminMultipart(`${origin}/mailboxes`, [
+        ["kel", kel],
+        ["rpy", rpy],
+      ]);
+      assertEquals(response.status, 406);
+      yield* textOp(response);
+
+      response = yield* postMailboxAdminMultipart(
+        `${advertisedUrl}/mailboxes`,
+        [
+          ["kel", kel],
+          ["rpy", rpy],
+        ],
+      );
+      yield* assertResponseStatus(response, 200);
+      assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
+        cid: controller.pre,
+        role: EndpointRoles.mailbox,
+        eid: mailbox.pre,
+        allowed: true,
+      });
+    } finally {
+      yield* waitForTaskHalt(serverTask);
+      yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
+      yield* controllerHby.close();
+      yield* providerHby.close();
+    }
+  });
+});
+
 Deno.test("mailbox start provisions a mailbox from config and serves root mailbox routes", async () => {
   const name = `mailbox-start-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-mailbox-start-${crypto.randomUUID()}`;
@@ -1605,16 +1705,19 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
         hby.db.ends.get([pre, EndpointRoles.mailbox, pre])?.allowed,
         true,
       );
-      assertEquals(hab!.fetchUrls(pre, "http").http, url);
+      assertEquals(hab!.fetchUrls(pre, "http").http, new URL(url).toString());
     } finally {
       yield* hby.close();
     }
   });
 });
 
-Deno.test("mailbox start rejects config URLs with non-root paths", async () => {
+Deno.test("mailbox start accepts config URLs with non-root paths and serves mailbox admin there", async () => {
   const name = `mailbox-start-path-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-mailbox-start-path-${crypto.randomUUID()}`;
+  const port = randomPort();
+  const url = `http://127.0.0.1:${port}/relay`;
+  const origin = `http://127.0.0.1:${port}`;
   const configPath = `${headDirPath}/mailbox-start.json`;
   Deno.mkdirSync(headDirPath, { recursive: true });
   Deno.writeTextFileSync(
@@ -1622,24 +1725,100 @@ Deno.test("mailbox start rejects config URLs with non-root paths", async () => {
     JSON.stringify({
       relay: {
         dt: "2026-04-06T12:00:00.000Z",
-        curls: ["http://127.0.0.1:5632/relay"],
+        curls: [url],
       },
     }),
   );
 
-  await assertRejects(
-    () =>
-      run(function*(): Operation<void> {
-        yield* mailboxStartCommand({
-          name,
-          alias: "relay",
-          headDirPath,
-          configFile: configPath,
-        });
-      }),
-    ValidationError,
-    "Mailbox URL must be rooted at '/'",
-  );
+  await run(function*(): Operation<void> {
+    const harness = new CLITestHarness();
+    harness.captureOutput();
+    const serverTask = yield* spawn(function*() {
+      yield* mailboxStartCommand({
+        name,
+        alias: "relay",
+        headDirPath,
+        configFile: configPath,
+      });
+    });
+    yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
+    const controllerHby = yield* createHabery({
+      name: `mailbox-start-path-controller-${crypto.randomUUID()}`,
+      headDirPath: `/tmp/tufa-mailbox-start-path-controller-${crypto.randomUUID()}`,
+      skipConfig: true,
+    });
+
+    try {
+      const prefixLine = harness.getOutput().find((line) => line.startsWith("Mailbox Prefix"));
+      assertEquals(!!prefixLine, true);
+      const pre = prefixLine!.split(/\s+/).at(-1)!;
+      const controller = controllerHby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const rootOobi = yield* fetchOp(
+        `http://127.0.0.1:${port}/oobi/${pre}/mailbox/${pre}`,
+      );
+      assertEquals(rootOobi.status, 200);
+      yield* textOp(rootOobi);
+
+      const kel = new TextDecoder().decode(collectReplay(controllerHby, controller.pre));
+      const rpy = new TextDecoder().decode(
+        controller.makeEndRole(pre, EndpointRoles.mailbox, true),
+      );
+
+      let admin = yield* postMailboxAdminMultipart(`${origin}/mailboxes`, [
+        ["kel", kel],
+        ["rpy", rpy],
+      ]);
+      assertEquals(admin.status, 406);
+      yield* textOp(admin);
+
+      admin = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+        ["kel", kel],
+        ["rpy", rpy],
+      ]);
+      yield* assertResponseStatus(admin, 200);
+      assertEquals(yield* jsonOp<Record<string, unknown>>(admin), {
+        cid: controller.pre,
+        role: EndpointRoles.mailbox,
+        eid: pre,
+        allowed: true,
+      });
+    } finally {
+      yield* controllerHby.close();
+      yield* waitForTaskHalt(serverTask, 100);
+      harness.restoreOutput();
+    }
+
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    try {
+      const hab = [...hby.habs.values()].find((current) => current.name === "relay");
+      assertEquals(!!hab, true);
+      const pre = hab!.pre;
+      assertEquals(hab!.kever?.transferable, false);
+      assertEquals(
+        hby.db.ends.get([pre, EndpointRoles.controller, pre])?.allowed,
+        true,
+      );
+      assertEquals(
+        hby.db.ends.get([pre, EndpointRoles.mailbox, pre])?.allowed,
+        true,
+      );
+      assertEquals(hab!.fetchUrls(pre, "http").http, url);
+    } finally {
+      yield* hby.close();
+    }
+  });
 });
 
 Deno.test("agent command uses explicit config-file controller curls and does not synthesize agent role", async () => {

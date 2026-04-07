@@ -6,7 +6,7 @@
  *
  * Mailbox-specific responsibilities:
  * - resolve hosted mailbox endpoints by advertised base path
- * - accept mailbox admin requests on `POST /mailboxes`
+ * - accept mailbox admin requests on `POST <hosted-base-path>/mailboxes`
  * - ingest mailbox queries and return `mbx` SSE streams
  * - carry request-scoped hosted mailbox identity into `/fwd` handling
  */

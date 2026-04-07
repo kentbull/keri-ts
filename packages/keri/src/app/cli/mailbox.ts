@@ -147,7 +147,7 @@ export function* mailboxStartCommand(
 
     console.log(`Mailbox Prefix  ${hab.pre}`);
     console.log(`Advertised URL  ${startup.url}`);
-    console.log(`Mailbox Admin  ${canonicalMailboxOrigin(startup.url)}/mailboxes`);
+    console.log(`Mailbox Admin  ${adminUrl(startup.url)}`);
     console.log(
       `Mailbox OOBI   ${canonicalMailboxOrigin(startup.url)}/oobi/${hab.pre}/mailbox/${hab.pre}`,
     );
@@ -732,12 +732,7 @@ function normalizeMailboxUrl(url: string): string {
       throw new ValidationError(`Mailbox URL must be HTTP(S): ${url}`);
     }
     const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    if (pathname !== "/") {
-      throw new ValidationError(
-        `Mailbox URL must be rooted at '/': ${url}`,
-      );
-    }
-    return `${parsed.protocol}//${parsed.host}`;
+    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}${parsed.hash}`;
   } catch (error) {
     if (error instanceof ValidationError) {
       throw error;
@@ -930,9 +925,19 @@ function normalizeTopic(topic: string): string {
   return topic.startsWith("/") ? topic : `/${topic}`;
 }
 
-/** Derive the mailbox admin URL relative to the mailbox endpoint base URL. */
+/** Derive the mailbox-admin URL relative to one stored mailbox endpoint path. */
 function adminUrl(url: string): string {
-  return `${url.replace(/\/$/, "")}/mailboxes`;
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+    const base = pathname === "/" ? "" : pathname;
+    return `${parsed.protocol}//${parsed.host}${base}/mailboxes`;
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    throw new ValidationError(`Invalid mailbox URL: ${url}`);
+  }
 }
 
 /**

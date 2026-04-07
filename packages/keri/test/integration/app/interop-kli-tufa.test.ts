@@ -803,7 +803,10 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     ),
   );
   const providerPre = extractPrefix(providerIncept.stdout);
-  const providerUrl = `http://127.0.0.1:${providerPort}/${providerPre}`;
+  // This interop case exercises full mailbox delivery against a real KERIpy
+  // host, not just mailbox-admin routing. KERIpy still expects mailbox
+  // transport at the rooted provider URL, so keep this fixture rooted.
+  const providerUrl = providerOrigin;
 
   await requireSuccess(
     "tufa provider location add",
@@ -1228,7 +1231,9 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
         ),
       );
       const mailboxUrl = extractLastNonEmptyLine(mailboxOobi.stdout);
-      assertStringIncludes(mailboxUrl, `${providerUrl}/oobi/`);
+      // The KERIpy mailbox provider keeps admin relative to the stored mailbox
+      // URL path, but its served OOBI surface remains rooted.
+      assertStringIncludes(mailboxUrl, `${providerOrigin}/oobi/`);
       assertStringIncludes(mailboxUrl, alicePre);
       assertStringIncludes(mailboxUrl, providerPre);
 
@@ -1427,7 +1432,10 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     ], ctx.env),
   );
   const providerPre = extractPrefix(providerIncept.stdout);
-  const providerUrl = `http://127.0.0.1:${providerPort}/${providerPre}`;
+  // This interop case exercises full mailbox delivery against a real KERIpy
+  // host, not just mailbox-admin routing. KERIpy still expects mailbox
+  // transport at the rooted provider URL, so keep this fixture rooted.
+  const providerUrl = providerOrigin;
 
   await requireSuccess(
     "kli provider location add",
@@ -1822,7 +1830,7 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
         ),
       );
       const mailboxUrl = extractLastNonEmptyLine(mailboxOobi.stdout);
-      assertStringIncludes(mailboxUrl, `${providerUrl}/oobi/`);
+      assertStringIncludes(mailboxUrl, `${providerOrigin}/oobi/`);
       assertStringIncludes(mailboxUrl, alicePre);
       assertStringIncludes(mailboxUrl, providerPre);
 
