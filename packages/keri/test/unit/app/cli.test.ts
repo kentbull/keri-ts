@@ -76,7 +76,7 @@ Deno.test("CLI - mailbox start rejects --url without --datetime", async () => {
     mailboxStartCommand(createMockArgs({
       name: `mailbox-start-${crypto.randomUUID()}`,
       alias: "relay",
-      url: "http://127.0.0.1:5632/relay",
+      url: "http://127.0.0.1:5632",
     })),
     "--url and --datetime must be provided together",
   );
@@ -102,7 +102,7 @@ Deno.test("CLI - mailbox start rejects conflicting config and explicit startup m
     JSON.stringify({
       relay: {
         dt: "2026-04-06T12:00:00.000Z",
-        curls: ["http://127.0.0.1:5632/relay"],
+        curls: ["http://127.0.0.1:5632"],
       },
     }),
   );
@@ -113,7 +113,7 @@ Deno.test("CLI - mailbox start rejects conflicting config and explicit startup m
       alias: "relay",
       headDirPath,
       configFile: configPath,
-      url: "http://127.0.0.1:5632/other",
+      url: "http://127.0.0.1:5632",
       datetime: "2026-04-06T12:05:00.000Z",
     })),
     "conflicts with explicit --url/--datetime startup material",

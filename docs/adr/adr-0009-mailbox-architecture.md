@@ -338,17 +338,18 @@ remains KERI-native CESR bytes instead of a multipart or JSON wrapper.
 CESR stream is sent in the request body. This mode is not assumed for KERIpy
 interop and must be treated as an explicit local extension.
 
-### Base-Path Hosting
+### Canonical Root Hosting
 
-Mailbox and OOBI routes are served relative to the endpoint's advertised base
-path, not only from `/`.
+Mailbox hosts are served from the origin root.
 
-This matters because a mailbox URL is operationally meaningful:
+This means the advertised mailbox URL is origin-rooted HTTP(S):
 
-- it is part of how other parties discover where to communicate
-- it determines where admin and OOBI routes are hosted
-- if one host serves multiple mailbox AIDs, distinct base paths avoid ambiguous
-  routing
+- `http(s)://host[:port]`
+
+Mailbox discovery and admin then use the normal KERIpy route shapes:
+
+- `/oobi/{aid}/{role}/{eid?}`
+- `POST /mailboxes`
 
 ### Multi-Mailbox Delivery
 
@@ -365,8 +366,8 @@ or weighted selection policy.
 - mailbox role state is the authority for send selection and inbound storage
 - maintainers must document KERIpy parity and `keri-ts` deltas explicitly when
   changing mailbox behavior
-- base-path handling is part of mailbox correctness, not a cosmetic routing
-  detail
+- mailbox startup must reject path-bearing provider URLs instead of silently
+  treating those paths as hosted mailbox namespaces
 
 ### Non-Goals In This ADR
 

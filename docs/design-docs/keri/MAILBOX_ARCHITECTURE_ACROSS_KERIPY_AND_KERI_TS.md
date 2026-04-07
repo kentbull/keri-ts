@@ -431,6 +431,17 @@ Do not collapse those two questions into one.
 
 Mailbox OOBI routes are discovery surfaces.
 
+Mailbox hosts should expose the normal KERIpy OOBI shape at the origin root:
+
+- `http(s)://host[:port]/oobi/{aid}/controller`
+- `http(s)://host[:port]/oobi/{aid}/mailbox/{eid}`
+- `http(s)://host[:port]/oobi/{aid}/witness/{eid?}`
+
+Path-prefixed mailbox OOBIs such as `http(s)://host[:port}/{prefix}/oobi/...`
+are not part of the mailbox architecture model. Mailbox startup material should
+use origin-rooted provider URLs, and mailbox OOBI generation should derive
+canonical root OOBIs from that origin.
+
 They should only disclose mailbox role state that accepted local state actually
 authorizes, but they are not the same as inbox storage.
 

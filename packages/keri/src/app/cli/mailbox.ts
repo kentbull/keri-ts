@@ -17,7 +17,7 @@ import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agen
 import { buildCesrRequest, buildCesrStreamRequest, type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import type { Habery } from "../habbing.ts";
 import { fetchResponseHandle } from "../httping.ts";
-import { endpointBasePath, fetchEndpointUrls, preferredUrl } from "../mailboxing.ts";
+import { fetchEndpointUrls, preferredUrl } from "../mailboxing.ts";
 import { Organizer } from "../organizing.ts";
 import { runIndirectHost } from "./agent.ts";
 import { ensureHby, setupHby } from "./common/existing.ts";
@@ -133,7 +133,6 @@ export function* mailboxStartCommand(
 
     validateMailboxHabitat(hby, hab);
     const startup = resolveEffectiveStartupMaterial(hby, hab.pre, configured);
-    validateHostedBasePathClaim(hby, hab.pre, startup.url);
 
     if (startup.source !== "state") {
       yield* reconcileMailboxIdentity(hby, hab, startup);
@@ -145,13 +144,12 @@ export function* mailboxStartCommand(
 
     const listenHost = resolveListenHost(commandArgs.listenHost, startup.url);
     const port = resolveListenPort(commandArgs.port, startup.url);
-    const baseUrl = startup.url.replace(/\/$/, "");
 
     console.log(`Mailbox Prefix  ${hab.pre}`);
     console.log(`Advertised URL  ${startup.url}`);
-    console.log(`Mailbox Admin  ${baseUrl}/mailboxes`);
+    console.log(`Mailbox Admin  ${canonicalMailboxOrigin(startup.url)}/mailboxes`);
     console.log(
-      `Mailbox OOBI   ${startup.url.replace(/\/$/, "")}/oobi/${hab.pre}/mailbox/${hab.pre}`,
+      `Mailbox OOBI   ${canonicalMailboxOrigin(startup.url)}/oobi/${hab.pre}/mailbox/${hab.pre}`,
     );
     console.log(`Listening On   ${listenHost}:${port}`);
     console.log(`Keystore       ${ensured.created ? "created" : "reused"}`);
@@ -200,7 +198,7 @@ export function* mailboxListCommand(
       const alias = typeof contact?.alias === "string" ? contact.alias : "";
       const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
       const oobi = url.length > 0
-        ? `${url.replace(/\/$/, "")}/oobi/${hab.pre}/mailbox/${eid}`
+        ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}`
         : "";
       const fields: string[] = [
         alias,
@@ -699,28 +697,6 @@ function storedMailboxUrl(
   return candidates[0]!;
 }
 
-function validateHostedBasePathClaim(
-  hby: Habery,
-  pre: string,
-  url: string,
-): void {
-  const targetBasePath = endpointBasePath(url);
-  for (const eid of hby.prefixes) {
-    if (eid === pre) {
-      continue;
-    }
-    const other = preferredUrl(fetchEndpointUrls(hby, eid));
-    if (!other) {
-      continue;
-    }
-    if (endpointBasePath(other) === targetBasePath) {
-      throw new ValidationError(
-        `Mailbox base path ${targetBasePath} is already claimed by local prefix ${eid}.`,
-      );
-    }
-  }
-}
-
 function* reconcileMailboxIdentity(
   hby: Habery,
   hab: ReturnType<typeof requireHab>,
@@ -756,7 +732,27 @@ function normalizeMailboxUrl(url: string): string {
       throw new ValidationError(`Mailbox URL must be HTTP(S): ${url}`);
     }
     const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}${parsed.hash}`;
+    if (pathname !== "/") {
+      throw new ValidationError(
+        `Mailbox URL must be rooted at '/': ${url}`,
+      );
+    }
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    throw new ValidationError(`Invalid mailbox URL: ${url}`);
+  }
+}
+
+function canonicalMailboxOrigin(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new ValidationError(`Mailbox URL must be HTTP(S): ${url}`);
+    }
+    return `${parsed.protocol}//${parsed.host}`;
   } catch (error) {
     if (error instanceof ValidationError) {
       throw error;

@@ -213,7 +213,7 @@ Deno.test("Gate E - transferable controller OOBI reply seal attachments use fixe
 Deno.test("Gate E - non-transferable mailbox OOBI replies use reply cigars", async () => {
   const name = `gate-e-oobi-mailbox-cigar-${crypto.randomUUID()}`;
   const passcode = "MyPasscodeARealSecret";
-  const hostUrl = "http://127.0.0.1:46322/relay";
+  const hostUrl = "http://127.0.0.1:46322";
 
   await run(function*() {
     const hby = yield* createHabery({

@@ -4,12 +4,12 @@
  * These tests exercise the mailbox stack as a cooperating runtime slice rather
  * than as isolated helpers:
  * - mailbox add/list/update/debug command flows
- * - base-path-relative mailbox and OOBI hosting
+ * - canonical root-shaped mailbox and OOBI hosting
  * - mailbox-polled challenge verification
  * - `/fwd` authorization before provider-side storage
  */
 import { action, type Operation, run, spawn } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
@@ -38,6 +38,7 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { fetchEndpointUrls, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { startServer } from "../../../src/app/server.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -1533,11 +1534,11 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
   });
 });
 
-Deno.test("mailbox start provisions a mailbox from config and serves base-path routes", async () => {
+Deno.test("mailbox start provisions a mailbox from config and serves root mailbox routes", async () => {
   const name = `mailbox-start-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-mailbox-start-${crypto.randomUUID()}`;
   const port = randomPort();
-  const url = `http://127.0.0.1:${port}/relay`;
+  const url = `http://127.0.0.1:${port}`;
   const configPath = `${headDirPath}/mailbox-start.json`;
   Deno.mkdirSync(headDirPath, { recursive: true });
   Deno.writeTextFileSync(
@@ -1574,10 +1575,6 @@ Deno.test("mailbox start provisions a mailbox from config and serves base-path r
       assertEquals(rootOobi.status, 200);
       yield* textOp(rootOobi);
 
-      const hostedOobi = yield* fetchOp(`${url}/oobi/${pre}/mailbox/${pre}`);
-      assertEquals(hostedOobi.status, 200);
-      yield* textOp(hostedOobi);
-
       const admin = yield* fetchOp(`${url}/mailboxes`, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
@@ -1613,6 +1610,36 @@ Deno.test("mailbox start provisions a mailbox from config and serves base-path r
       yield* hby.close();
     }
   });
+});
+
+Deno.test("mailbox start rejects config URLs with non-root paths", async () => {
+  const name = `mailbox-start-path-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-mailbox-start-path-${crypto.randomUUID()}`;
+  const configPath = `${headDirPath}/mailbox-start.json`;
+  Deno.mkdirSync(headDirPath, { recursive: true });
+  Deno.writeTextFileSync(
+    configPath,
+    JSON.stringify({
+      relay: {
+        dt: "2026-04-06T12:00:00.000Z",
+        curls: ["http://127.0.0.1:5632/relay"],
+      },
+    }),
+  );
+
+  await assertRejects(
+    () =>
+      run(function*(): Operation<void> {
+        yield* mailboxStartCommand({
+          name,
+          alias: "relay",
+          headDirPath,
+          configFile: configPath,
+        });
+      }),
+    ValidationError,
+    "Mailbox URL must be rooted at '/'",
+  );
 });
 
 Deno.test("agent command uses explicit config-file controller curls and does not synthesize agent role", async () => {
@@ -2006,9 +2033,9 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
 
 /**
  * Proves that `challenge verify` is mailbox-driven, not just local DB polling,
- * and that provider routes work beneath a non-root base path.
+ * and that provider routes work through canonical root mailbox/OOBI endpoints.
  */
-Deno.test("challenge verify polls a remote mailbox provider through base-path OOBI and mailbox admin routes", async () => {
+Deno.test("challenge verify polls a remote mailbox provider through root mailbox OOBI and mailbox admin routes", async () => {
   const providerName = `mailbox-base-provider-${crypto.randomUUID()}`;
   const bobName = `mailbox-base-bob-${crypto.randomUUID()}`;
   const aliceName = `mailbox-base-alice-${crypto.randomUUID()}`;
@@ -2017,7 +2044,7 @@ Deno.test("challenge verify polls a remote mailbox provider through base-path OO
   const aliceHeadDirPath = `/tmp/tufa-mailbox-base-alice-${crypto.randomUUID()}`;
   const port = randomPort();
   const alicePort = randomPort();
-  const providerUrl = `http://127.0.0.1:${port}/relay`;
+  const providerUrl = `http://127.0.0.1:${port}`;
   const aliceUrl = `http://127.0.0.1:${alicePort}`;
   const words = ["able", "baker", "charlie"];
   const providerPre = await seedMailboxHost(
