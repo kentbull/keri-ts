@@ -17,6 +17,11 @@ on:
 - ownership boundaries across `QueryCoordinator`, `Kevery`, `Revery`,
   `Hab.processCuesIter()`, and `AgentRuntime`
 
+It does not try to re-explain the whole cue system. For the broader cue
+architecture, including runtime cue decks, `stream` transport cues, mailbox
+query routing, and KERIpy-to-`keri-ts` host correspondence, read
+`docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
+
 ## Ownership Model
 
 The main rule is that `keri-ts` preserves KERIpy behavior while making ownership
@@ -246,6 +251,7 @@ When changing this area, confirm:
 
 ## Related Docs
 
+- `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
 - `docs/adr/adr-0003-agent-runtime-composition-root.md`
 - `docs/adr/adr-0004-cue-runtime-portability.md`
 - `docs/adr/adr-0005-kel-decision-control-flow.md`

@@ -102,7 +102,11 @@ Use this file to:
     verification/BADA/escrows, `Kevery` owns KEL and `/ksn`-style reply
     families, `Oobiery` owns introduction-driven OOBI work, and
     `QueryCoordinator` owns incomplete `query` cue correspondence so
-    `Hab.processCuesIter()` stays an interpreter for already-complete cues.
+    `Hab.processCuesIter()` stays an interpreter for already-complete cues. The
+    primary end-to-end explainer for this now lives in
+    `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`, while
+    `docs/adr/adr-0004-cue-runtime-portability.md` remains the normative
+    `keri-ts` runtime contract.
 16. Receipt-family mental models should stay KERIpy-shaped: live `rct`
     transferable receipts use grouped `tsgs`, while replay/clone attached
     transferable receipt material uses `trqs`. That split is now real end to end
@@ -140,8 +144,12 @@ Use this file to:
     cursors.
     Mailbox interop is now materially real in both directions too:
     `kli mailbox add` works against a `tufa` mailbox host, `tufa mailbox add`
-    works against the KERIpy-backed compatibility host, mailbox-polled challenge
-    flows pass live, and base-path-relative mailbox/OOBI serving is exercised.
+    works against the real KERIpy `kli mailbox start` host, mailbox-polled
+    challenge flows pass live, and base-path-relative mailbox/OOBI serving is
+    exercised. The critical host-composition invariant is that the mailbox host
+    must pass the shared cue deck into `MailboxStart`; otherwise `/fwd`
+    deliveries can land in KERIpy mailbox LMDB while `mbx` queries hang because
+    no `stream` cue ever reaches the SSE responder.
     The remaining runtime gaps are now primarily broader exchange/forwarding
     route breadth beyond the current mailbox/challenge slice, plus the broader
     stale/timeout continuation tail outside the now-closed receipt/query
@@ -195,7 +203,8 @@ Use this file to:
    stale/timeout continuation tail now that the broader query/reply,
    receipt/query, and first challenge/exchange slices are landed.
 4. Keep maintainer-facing docs and referenced contracts in sync with behavior
-   changes in the same change set.
+   changes in the same change set, especially the new cross-runtime cue
+   architecture doc when mailbox/query/OOBI wiring changes.
 5. Keep KERI storage tuple aliases derived from CESR structing descriptors and
    resist reintroducing duplicate wrapper families or raw seal-shape parsing in
    runtime code.

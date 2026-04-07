@@ -79,36 +79,41 @@ runtime ownership semantics.
 21. `Hab.processCuesIter()` remains the cue-semantics seam across both scopes,
     and runtime delivery happens through `processCuesOnce()` / `cueDo()`
     yielding structured `CueEmission` values.
-22. Reply/runtime ownership is also explicit: `Revery` verifies, BADA-checks,
+22. The maintainer-facing end-to-end explainer for this architecture is now
+    `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`. Keep
+    `docs/adr/adr-0004-cue-runtime-portability.md` normative for `keri-ts`
+    semantics, and keep mailbox/query docs narrower by linking back to the new
+    explainer instead of reteaching the entire cue system in fragments.
+23. Reply/runtime ownership is also explicit: `Revery` verifies, BADA-checks,
     and escrows reply traffic; `Kevery` owns KEL and KEL-derived reply families
     such as `/ksn`; `Oobiery` owns introduction-driven OOBI behavior.
-23. Local location-scheme state must arrive through signed `/loc/scheme` replies
+24. Local location-scheme state must arrive through signed `/loc/scheme` replies
     parsed back through `Revery`, not by direct writes to `locs.` / `lans.`.
-24. Runtime turns should stay Effection-native. Promise adaptation belongs only
+25. Runtime turns should stay Effection-native. Promise adaptation belongs only
     at real host edges such as `fetch()`, dynamic import, or server-finished
     handles.
-25. Gates B, C, and D are established enough to stop debating bootstrap
+26. Gates B, C, and D are established enough to stop debating bootstrap
     viability: local visibility, compat-store visibility, and encrypted keeper
     semantics are real foundations now.
-26. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
+27. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
     bounded init/incept convergence, and the broader Chunk 7 query/reply
     correspondence closure: `/watcher/{aid}/{action}`, stricter `/ksn`
     trust-source parity, runtime `QueryCoordinator`, and query-continuation
     pending-state tracking are all landed.
-27. Incomplete `query` cues are not near-wire messages. They are runtime
+28. Incomplete `query` cues are not near-wire messages. They are runtime
     correspondence requests that must resolve a local habitat and an honest
     remote attester before emitting a follow-on `qry`.
-28. The remaining gaps are narrower and clearer now: promote key DB `Partial`
+29. The remaining gaps are narrower and clearer now: promote key DB `Partial`
     rows, finish broader exchange/forwarding route breadth beyond the now-proven
     mailbox `/challenge` slice, and harden the broader stale/timeout
     continuation tail rather than reopening the old query/reply or receipt/query
     correspondence graph.
-29. The first Gate F/G bridge is now real in `keri-ts`: `Exchanger` owns
+30. The first Gate F/G bridge is now real in `keri-ts`: `Exchanger` owns
     accepted and partially signed `exn` persistence (`exns.`, `epse.`, `epsd.`,
     `esigs.`, `ecigs.`, `epath.`, `essrs.`, `erpy.`), challenge responses land
     through `/challenge/response`, and the CLI now has `exchange send`,
     `exn send`, plus `challenge generate/respond/verify`.
-30. Mailbox ownership is now closer to KERIpy's real architecture: mailbox
+31. Mailbox ownership is now closer to KERIpy's real architecture: mailbox
     storage is shared provider-side state composed by runtime/host layers above
     `Habery`, while remote topic cursors remain durable habery state in
     `tops.`. `/fwd` forwarding publishes into that shared store, and runtime
@@ -116,51 +121,51 @@ runtime ownership semantics.
     hoc per-command maps. Mailbox add interop is now proven in both directions
     too, so the remaining Gate F/G gap is broader route breadth, not mailbox
     ownership or add/list/debug lifecycle absence.
-31. The maintainer contract for the Chunk 7 query/watcher slice now lives in
+32. The maintainer contract for the Chunk 7 query/watcher slice now lives in
     `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`,
     and the broader escrow-control philosophy now lives in
     `docs/adr/adr-0008-escrow-decision-architecture.md`. Treat those as the
     durable sources before relying on thread history.
-32. `tufa agent` has two independent compatibility seams: CLI flag semantics and
+33. `tufa agent` has two independent compatibility seams: CLI flag semantics and
     the packaged Node host runtime. Deno-source tests can prove runtime
     behavior, but release confidence also needs tarball smoke coverage because
     the npm build can drift into stale command definitions or Node-incompatible
     server code.
-33. Config-seeded bootstrap should stay on explicit CLI/file seams, not hidden
+34. Config-seeded bootstrap should stay on explicit CLI/file seams, not hidden
     default-path tricks in tests. If a command needs external bootstrap config,
     give it `--config-dir` / `--config-file` or another honest file input
     surface; do not have bash E2E scripts write directly into the command's
     default internal config location and pretend that proves CLI behavior.
-34. Gate E/G bash coverage now includes `challenge generate/respond/verify`
+35. Gate E/G bash coverage now includes `challenge generate/respond/verify`
     across direct and mailbox-authorized controller-to-controller delivery, but
     the honest test seam is single-store ownership: do not run a CLI command
     against the same keystore/database that a live `tufa agent` is already
     hosting. Stop the sender host, run the sender CLI, and keep only the
     recipient host live for receive-side runtime coverage.
-35. Interop debugging is materially easier and more honest through targeted
+36. Interop debugging is materially easier and more honest through targeted
     `tufa db dump` inspection than through ad hoc LMDB scripts. Prefer narrow
     selectors such as `baser.<subdb>`, `mailboxer.<subdb>`, and
     `outboxer.<subdb>` against both `.tufa` and `.keri` stores when validating
     mailbox add/list/debug flows, `/fwd` storage, or cross-runtime state drift.
-36. The long-lived host mental model is one listener/runtime per Habery or
+37. The long-lived host mental model is one listener/runtime per Habery or
     command invocation with explicit hosted-prefix filtering. A bug in
     multi-AID seeding means the host is bootstrapping or exposing too many
     local Habs, not that it is creating one socket/listener per AID.
-37. System-managed identities need a stricter filter than `hby.habs.values()`.
+38. System-managed identities need a stricter filter than `hby.habs.values()`.
     Signatory or AEID-related identities may live in the local keystore, but
     they are not ordinary user-facing controller/mailbox identities and should
     not be auto-hosted, auto-seeded, or exposed through normal OOBI/mailbox
     surfaces by default.
-38. AEID in KERIpy is not an init-only ornament. `Habery.setup(...)` and
+39. AEID in KERIpy is not an init-only ornament. `Habery.setup(...)` and
     `Manager.updateAeid(...)` treat it as the keeper auth/encryption identity,
     and changing it with the matching seed re-encrypts keeper secrets. Model it
     as system-side keeper state, not as a normal user Hab.
-39. Keep endpoint-role capability separate from startup seeding policy. The
+40. Keep endpoint-role capability separate from startup seeding policy. The
     presence of `Roles.agent` in routing/query/OOBI code is not by itself a
     reason for `tufa agent` to auto-create self `agent` end-role records at
     startup. Until a distinct agent runtime construct needs that self state,
     startup should seed only the roles that are operationally required.
-40. Controller endpoint bootstrap now has a KERIpy-shaped canonical path too:
+41. Controller endpoint bootstrap now has a KERIpy-shaped canonical path too:
     alias-scoped config `dt` + `curls` are applied by `Hab.reconfigure()`
     through normal `/end/role/add` and `/loc/scheme` reply acceptance, while
     `runIndirectHost` is host wiring only. `tufa agent` may synthesize
@@ -196,7 +201,9 @@ runtime ownership semantics.
 3. Promote high-value DB `Partial` rows with real row-level evidence instead of
    symbol-existence optimism.
 4. Keep the new maintainer docs current when query/watcher or escrow-decision
-   behavior changes; docs drift here is a real regression.
+   behavior changes; docs drift here is a real regression. Treat
+   `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md` as the primary
+   explainer when cue ownership or host wiring changes.
 5. Keep DB/runtime worklists concise and execution-oriented; when the docs start
    reading like archives again, compact them.
 6. Keep `tufa agent` smoke coverage honest at the packaged boundary. Help text
@@ -460,6 +467,20 @@ runtime ownership semantics.
   child-process panic (`Cannot remove cleanup hook which was not registered`).
   That needs to be separated from actual mailbox-start regressions when judging
   interop failures.
+
+### 2026-04-07 - KERIpy Mailbox Query Replies Depend On Shared Cue Wiring
+
+- The reverse-interop failure after switching to real KERIpy `kli mailbox start` was not a Tufa mailbox-store or authorization bug. Forwarded
+  `/challenge` traffic was landing in KERIpy `.keri/mbx`, but `challenge verify` still failed because mailbox queries never received a response.
+- The real bug was in KERIpy host composition: `setupMailbox(...)` created the
+  shared cue deck for `Kevery` / `Revery`, but it did not pass that deck into
+  `MailboxStart`. As a result, `MailboxStart.cueDo()` watched an empty private
+  deck, so `stream` cues never reached `HttpEnd.qrycues` and `mbx` HTTP queries
+  hung.
+- Durable rule: for witness/mailbox-style hosts, the doer that routes cues to
+  HTTP/query responders must observe the exact shared cue deck used by parser
+  ingress processors. "Same runtime pieces" is not enough if the shared deck is
+  accidentally forked.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 

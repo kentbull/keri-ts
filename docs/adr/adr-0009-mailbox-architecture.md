@@ -8,6 +8,7 @@
   - `docs/adr/adr-0003-agent-runtime-composition-root.md`
   - `docs/adr/adr-0004-cue-runtime-portability.md`
   - `docs/adr/adr-0008-escrow-decision-architecture.md`
+  - `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
   - `packages/keri/src/db/mailboxing.ts`
   - `packages/keri/src/app/forwarding.ts`
   - `packages/keri/src/app/mailbox-director.ts`
@@ -71,6 +72,11 @@ and which parts are Tufa-only extensions.
 This architecture is KERIpy-shaped at the protocol and storage level, while
 remaining explicit about the places where `keri-ts` has different runtime or
 operational seams.
+
+This ADR keeps mailbox storage, forwarding, authorization, and transport policy
+in scope. The broader cue-system explanation, including why `mbx` query
+streaming depends on `stream` cue routing and not just mailbox storage, lives
+in `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
 
 ## Runtime And Data-Flow Mental Model
 
@@ -188,10 +194,16 @@ of the recipient's durable mailbox payload model.
 1. `MailboxDirector` computes the next wanted topic indices from durable
    `tops.` cursor state.
 2. The runtime issues an `mbx` query to the mailbox or witness endpoint.
-3. The mailbox host streams ordered mailbox payloads back as SSE events.
-4. The runtime ingests those payloads through the normal parser, exchanger, and
+3. Query acceptance emits a `stream` cue that starts mailbox SSE handling.
+4. The mailbox host streams ordered mailbox payloads back as SSE events.
+5. The runtime ingests those payloads through the normal parser, exchanger, and
    cue flows.
-5. The last seen indices are persisted back into `tops.`.
+6. The last seen indices are persisted back into `tops.`.
+
+The important split is:
+
+- the `stream` cue starts transport work
+- `Mailboxer` supplies the payload bytes
 
 ## Storage Model
 
@@ -402,3 +414,7 @@ Operational rule:
 - inspect `baser.tops` to understand remote poll cursor state
 - inspect `mailboxer.*` to understand provider-side stored mailbox traffic
 - inspect `outboxer.*` only when debugging the Tufa-only retry sidecar
+
+If mailbox storage looks correct but `mbx` queries still hang, inspect the cue
+bridge next. The common failure mode is not missing stored data; it is broken
+`stream` cue routing between query acceptance and the SSE responder.
