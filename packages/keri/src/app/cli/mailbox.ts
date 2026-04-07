@@ -14,7 +14,7 @@ import { TopicsRecord } from "../../core/records.ts";
 import { EndpointRoles, Roles } from "../../core/roles.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
-import { buildCesrRequest, type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
+import { buildCesrRequest, buildCesrStreamRequest, type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import type { Habery } from "../habbing.ts";
 import { fetchResponseHandle } from "../httping.ts";
 import { endpointBasePath, fetchEndpointUrls, preferredUrl } from "../mailboxing.ts";
@@ -386,9 +386,13 @@ function* withMailboxWorkflow(
       );
     }
 
-    const kel = collectReplay(hby, hab.pre);
+    const submission = collectMailboxAdminSubmission(hby, hab.pre);
     const rpy = hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
-    const response = yield* postMailboxAdmin(endpointUrl, kel, rpy);
+    const response = yield* postMailboxAdmin(
+      endpointUrl,
+      submission,
+      rpy,
+    );
     if (!response.ok) {
       throw new ValidationError(
         `Mailbox admin request failed with HTTP ${response.status}: ${response.body}`,
@@ -889,12 +893,40 @@ function collectReplay(
   hby: Habery,
   pre: string,
 ): Uint8Array {
-  const parts: Uint8Array[] = [...hby.db.clonePreIter(pre)];
+  const parts: Uint8Array[] = [];
   const kever = hby.db.getKever(pre);
   if (kever) {
     parts.push(...hby.db.cloneDelegation(kever));
   }
+  parts.push(...hby.db.clonePreIter(pre));
   return parts.length === 0 ? new Uint8Array() : concatBytes(...parts);
+}
+
+/**
+ * Collect mailbox-admin replay material in both normalized and legacy shapes.
+ *
+ * `replay` is the verifier-ready stream used by raw CESR ingress.
+ * `kel`/`delkel` preserve the legacy multipart wrapper contract used by
+ * existing KERIpy mailbox admin hosts.
+ */
+function collectMailboxAdminSubmission(
+  hby: Habery,
+  pre: string,
+): {
+  replay: Uint8Array;
+  kel: Uint8Array;
+  delkel: Uint8Array;
+} {
+  const kever = hby.db.getKever(pre);
+  const delkel = kever
+    ? concatBytes(...hby.db.cloneDelegation(kever))
+    : new Uint8Array();
+  const kel = concatBytes(...hby.db.clonePreIter(pre));
+  return {
+    replay: concatBytes(delkel, kel),
+    kel,
+    delkel,
+  };
 }
 
 /** Normalize CLI topic input into the stored mailbox topic form. */
@@ -911,18 +943,61 @@ function adminUrl(url: string): string {
  * Submit one mailbox add/remove request to the remote mailbox provider.
  *
  * Wire shape:
- * - multipart form
- * - `kel` plus signed `rpy`
+ * - raw `application/cesr` body
+ * - controller replay plus terminal signed `rpy`
  * - response body surfaced verbatim on failure for debugging
  */
 function* postMailboxAdmin(
   url: string,
-  kel: Uint8Array,
+  submission: {
+    replay: Uint8Array;
+    kel: Uint8Array;
+    delkel: Uint8Array;
+  },
+  rpy: Uint8Array,
+): Operation<{ ok: boolean; status: number; body: string }> {
+  const raw = yield* postMailboxAdminCesr(
+    url,
+    concatBytes(submission.replay, rpy),
+  );
+  if (raw.ok || (raw.status !== 406 && raw.status !== 415)) {
+    return raw;
+  }
+  return yield* postMailboxAdminMultipart(url, submission, rpy);
+}
+
+function* postMailboxAdminCesr(
+  url: string,
+  bytes: Uint8Array,
+): Operation<{ ok: boolean; status: number; body: string }> {
+  const request = buildCesrStreamRequest(bytes);
+  const { response } = yield* fetchResponseHandle(adminUrl(url), {
+    method: "POST",
+    headers: request.headers,
+    body: request.body,
+  });
+
+  const body = yield* action<string>((resolve, reject) => {
+    response.text().then(resolve).catch(reject);
+    return () => {};
+  });
+  return { ok: response.ok, status: response.status, body };
+}
+
+function* postMailboxAdminMultipart(
+  url: string,
+  submission: {
+    kel: Uint8Array;
+    delkel: Uint8Array;
+  },
   rpy: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
   const form = new FormData();
-  form.set("kel", new TextDecoder().decode(kel));
-  form.set("rpy", new TextDecoder().decode(rpy));
+  form.append("kel", new TextDecoder().decode(submission.kel));
+  if (submission.delkel.length > 0) {
+    form.append("delkel", new TextDecoder().decode(submission.delkel));
+  }
+  form.append("rpy", new TextDecoder().decode(rpy));
 
   const { response } = yield* fetchResponseHandle(adminUrl(url), {
     method: "POST",

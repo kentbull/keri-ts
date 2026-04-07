@@ -7,13 +7,7 @@ import type { Mailboxer } from "../db/mailboxing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
-import {
-  ForwardHandler,
-  MailboxPoller,
-  type MailboxPollBatch,
-  mailboxTopicForRoute,
-  Poster,
-} from "./forwarding.ts";
+import { ForwardHandler, type MailboxPollBatch, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";

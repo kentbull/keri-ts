@@ -23,6 +23,7 @@
     "npm:cbor-x@^1.6.0": "1.6.0",
     "npm:commander@^10.0.1": "10.0.1",
     "npm:dprint@0.49.0": "0.49.0",
+    "npm:effection@3.6.1": "3.6.1",
     "npm:effection@^3.6.0": "3.6.1",
     "npm:libsodium-wrappers@0.7.15": "0.7.15",
     "npm:libsodium-wrappers@0.8.2": "0.8.2",

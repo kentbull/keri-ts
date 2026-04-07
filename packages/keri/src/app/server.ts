@@ -14,19 +14,18 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import {
-  type CesrMessage,
-  createParser,
-  Ilks,
-  parseSerder,
-  type SerderKERI,
-  type Smellage,
-} from "../../../cesr/mod.ts";
+import { Ilks } from "../../../cesr/mod.ts";
+import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
 import { Roles } from "../core/roles.ts";
-import { settleRuntimeIngress, type AgentRuntime } from "./agent-runtime.ts";
-import { readCesrRequestBytes } from "./cesr-http.ts";
+import { type AgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
+import {
+  type CesrStreamInspection,
+  inspectCesrRequest,
+  readMailboxAdminRequest,
+  readRequiredCesrRequestBytes,
+} from "./cesr-http.ts";
 import type { Hab } from "./habbing.ts";
 import { endpointBasePath, fetchEndpointUrls, hostedEndpointPathMatches, preferredUrl } from "./mailboxing.ts";
 
@@ -206,7 +205,13 @@ function createProtocolHandler(
             headers: { "Content-Type": "text/plain" },
           });
         }
-        const bytes = await readCesrRequestBytes(req);
+        const bytes = await readRequiredCesrRequestBytes(req);
+        if (!bytes) {
+          return new Response("Unacceptable content type.", {
+            status: 406,
+            headers: { "Content-Type": "text/plain" },
+          });
+        }
         const serder = inspectCesrRequest(bytes);
         if (!serder) {
           return new Response("Invalid CESR request", {
@@ -388,9 +393,10 @@ function selectOobiSpeaker(
  * Handle mailbox add/remove authorization requests for one hosted mailbox AID.
  *
  * Contract:
- * - `kel` proves the controller state
- * - optional `delkel` carries delegation context when needed
- * - `rpy` must be `/end/role/add` or `/end/role/cut` for `role=mailbox`
+ * - request body is either one `application/cesr` stream or one
+ *   `multipart/form-data` request carrying `kel`, optional `delkel`, and `rpy`
+ * - both request shapes normalize to one mailbox authorization CESR stream
+ * - that stream ends in the mailbox authorization `rpy`
  *
  * Acceptance rule:
  * - the `eid` inside the signed reply must match the mailbox AID hosted at the
@@ -402,26 +408,84 @@ async function handleMailboxAdmin(
   mailboxAid: string,
   serviceHab?: Hab,
 ): Promise<Response> {
-  const form = await req.formData();
-  const kel = await formFieldBytes(form.get("kel"));
-  const delkel = await formFieldBytes(form.get("delkel"));
-  const rpy = await formFieldBytes(form.get("rpy"));
-
-  if (!kel || !rpy) {
-    return new Response("kel and rpy are required", {
+  let mailboxRequest;
+  try {
+    mailboxRequest = await readMailboxAdminRequest(req);
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return new Response(error.message, {
+        status: 400,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    return new Response(String(error), {
       status: 400,
       headers: { "Content-Type": "text/plain" },
     });
   }
-
-  processRuntimeRequest(runtime, kel, mailboxAid, serviceHab);
-  if (delkel) {
-    processRuntimeRequest(runtime, delkel, mailboxAid, serviceHab);
+  if (!mailboxRequest) {
+    return new Response("Unacceptable content type.", {
+      status: 406,
+      headers: { "Content-Type": "text/plain" },
+    });
   }
 
-  const serder = inspectCesrRequest(rpy);
-  if (!serder || serder.ilk !== Ilks.rpy) {
-    return new Response("Invalid mailbox authorization reply", {
+  const { bytes, inspection } = mailboxRequest;
+  const validation = validateMailboxAuthorizationReply(inspection, mailboxAid);
+  if (validation instanceof Response) {
+    return validation;
+  }
+
+  const { cid, role, expected } = validation;
+  let ingestRejected = false;
+  try {
+    processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
+  } catch (error) {
+    if (error instanceof UnverifiedReplyError) {
+      ingestRejected = true;
+    } else {
+      throw error;
+    }
+  }
+
+  const acceptance = confirmMailboxAuthorization(runtime, cid, mailboxAid, expected);
+  if (acceptance instanceof Response) {
+    return acceptance;
+  }
+  if (ingestRejected) {
+    return new Response("Mailbox authorization reply was not accepted", {
+      status: 403,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  return new Response(
+    JSON.stringify({
+      cid,
+      role,
+      eid: mailboxAid,
+      allowed: expected,
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+function validateMailboxAuthorizationReply(
+  inspection: CesrStreamInspection,
+  mailboxAid: string,
+): Response | { cid: string; role: string; expected: boolean } {
+  const serder = inspection.terminal;
+  if (!serder) {
+    return new Response("Mailbox authorization stream is required", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+  if (serder.ilk !== Ilks.rpy) {
+    return new Response("Mailbox authorization stream must end in rpy", {
       status: 400,
       headers: { "Content-Type": "text/plain" },
     });
@@ -460,17 +524,16 @@ async function handleMailboxAdmin(
       },
     );
   }
-  if (!runtime.hby.db.getKever(cid)) {
-    return new Response("Controller KEL was not accepted", {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
+  return { cid, role, expected: route === "/end/role/add" };
+}
 
-  processRuntimeRequest(runtime, rpy, mailboxAid, serviceHab);
-
+function confirmMailboxAuthorization(
+  runtime: AgentRuntime,
+  cid: string,
+  mailboxAid: string,
+  expected: boolean,
+): Response | null {
   const end = runtime.hby.db.ends.get([cid, Roles.mailbox, mailboxAid]);
-  const expected = route === "/end/role/add";
   const accepted = expected ? !!end?.allowed : !!end && !end.allowed;
   if (!accepted) {
     return new Response("Mailbox authorization reply was not accepted", {
@@ -478,19 +541,7 @@ async function handleMailboxAdmin(
       headers: { "Content-Type": "text/plain" },
     });
   }
-
-  return new Response(
-    JSON.stringify({
-      cid,
-      role,
-      eid: mailboxAid,
-      allowed: expected,
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    },
-  );
+  return null;
 }
 
 /**
@@ -510,19 +561,6 @@ function processRuntimeRequest(
     settleRuntimeIngress(runtime, [bytes]);
     drainRuntimeCues(runtime, serviceHab);
   });
-}
-
-/** Decode one multipart form field into raw bytes. */
-async function formFieldBytes(
-  value: FormDataEntryValue | null,
-): Promise<Uint8Array | null> {
-  if (typeof value === "string") {
-    return new TextEncoder().encode(value);
-  }
-  if (value instanceof File) {
-    return new Uint8Array(await value.arrayBuffer());
-  }
-  return null;
 }
 
 /**
@@ -824,34 +862,4 @@ function drainRuntimeCues(
   for (const emission of hab.processCuesIter(runtime.cues)) {
     runtime.mailboxDirector.handleEmission(emission);
   }
-}
-
-function inspectCesrRequest(bytes: Uint8Array): SerderKERI | null {
-  const parser = createParser({
-    framed: false,
-    attachmentDispatchMode: "compat",
-  });
-  const frames = parser.feed(bytes);
-  for (const frame of frames) {
-    if (frame.type === "error") {
-      throw frame.error;
-    }
-    return parseSerder(
-      frame.frame.body.raw,
-      smellageFromMessage(frame.frame),
-    ) as SerderKERI;
-  }
-  return null;
-}
-
-function smellageFromMessage(
-  message: CesrMessage,
-): Smellage {
-  return {
-    proto: message.body.proto,
-    pvrsn: message.body.pvrsn,
-    kind: message.body.kind,
-    size: message.body.size,
-    gvrsn: message.body.gvrsn,
-  };
 }

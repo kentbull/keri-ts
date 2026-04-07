@@ -52,6 +52,23 @@ function copyDbBytes(value: unknown): Uint8Array {
   return new Uint8Array(toBytes(value));
 }
 
+/**
+ * Build one LMDB-js range option object for a KERIpy-style branch scan.
+ *
+ * KERIpy opens a fresh read transaction per branch helper call. On the
+ * `lmdb-js` side, `snapshot: false` is the closest match for plain key/value
+ * stores, but dupsort iterators reject that option, so those stay on the
+ * default path until we replace them with a lower-level cursor implementation.
+ */
+function branchScanOptions(
+  db: Database<BinVal, BinKey>,
+  start?: Uint8Array,
+): { start?: Uint8Array; snapshot?: false } {
+  return (db as { dupSort?: boolean }).dupSort
+    ? { start }
+    : { start, snapshot: false };
+}
+
 /** Build IoDup ordering proem bytes (`000...00a.` for index `10`). */
 function iDupProem(index: number): Uint8Array {
   return b(`${index.toString(16).padStart(IODUP_PROEM_HEX_SIZE, "0")}.`);
@@ -592,7 +609,7 @@ export class LMDBer {
     try {
       let count = 0;
       const startKey = top.length > 0 ? top : undefined;
-      for (const entry of db.getRange({ start: startKey })) {
+      for (const entry of db.getRange(branchScanOptions(db, startKey))) {
         const keyBytes = copyDbBytes(entry.key);
         if (top.length > 0 && !startsWith(keyBytes, top)) {
           break;
@@ -634,7 +651,7 @@ export class LMDBer {
     try {
       const keys: Uint8Array[] = [];
       const startKey = top.length > 0 ? top : undefined;
-      for (const entry of db.getRange({ start: startKey })) {
+      for (const entry of db.getRange(branchScanOptions(db, startKey))) {
         const keyBytes = copyDbBytes(entry.key);
         if (top.length > 0 && !startsWith(keyBytes, top)) {
           break;
@@ -681,7 +698,7 @@ export class LMDBer {
       // With binary encoding, keys and values are always Uint8Array
       const startKey = top.length > 0 ? top : undefined;
 
-      for (const entry of db.getRange({ start: startKey })) {
+      for (const entry of db.getRange(branchScanOptions(db, startKey))) {
         const keyBytes = copyDbBytes(entry.key);
         const valBytes = copyDbBytes(entry.value);
 

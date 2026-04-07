@@ -9,9 +9,13 @@ import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
   buildCesrRequest,
+  buildCesrStreamRequest,
   CESR_ATTACHMENT_HEADER,
   CESR_DESTINATION_HEADER,
+  inspectCesrTerminalMessage,
+  isCesrContentType,
   readCesrRequestBytes,
+  readRequiredCesrRequestBytes,
   splitCesrStream,
 } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -64,7 +68,7 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
   );
 });
 
-/** Proves the Tufa-only body mode keeps the full CESR payload in the body. */
+/** Proves the optional `keri-ts` body mode keeps the full CESR payload in the body. */
 Deno.test("CESR HTTP - body mode preserves the full CESR message in the body", async () => {
   let message!: Uint8Array;
   let request!: ReturnType<typeof buildCesrRequest>;
@@ -150,4 +154,120 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
 
   const parts = splitCesrStream(stream);
   assertEquals(parts, [reply, query]);
+});
+
+/** Proves raw CESR stream helpers keep multi-message mailbox admin bodies intact. */
+Deno.test("CESR HTTP - stream request helper preserves a raw multi-message CESR body", async () => {
+  let stream!: Uint8Array;
+  let request!: ReturnType<typeof buildCesrStreamRequest>;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `cesr-stream-body-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const replay = [...hby.db.clonePreIter(hab.pre)];
+      const rpy = hab.makeEndRole(hab.pre, "mailbox", true);
+      stream = new Uint8Array(replay.reduce((sum, part) => sum + part.length, rpy.length));
+      let offset = 0;
+      for (const part of replay) {
+        stream.set(part, offset);
+        offset += part.length;
+      }
+      stream.set(rpy, offset);
+      request = buildCesrStreamRequest(stream);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+
+  assertEquals(request.headers[CESR_ATTACHMENT_HEADER], undefined);
+  assertEquals(new Uint8Array(request.body), stream);
+});
+
+/** Proves mailbox admin can inspect the terminal reply in a multi-message stream. */
+Deno.test("CESR HTTP - terminal message inspection returns the final message in a stream", async () => {
+  let reply!: Uint8Array;
+  let query!: Uint8Array;
+  let stream!: Uint8Array;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `cesr-terminal-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      reply = hab.reply("/loc/scheme", {
+        eid: hab.pre,
+        scheme: "http",
+        url: "http://127.0.0.1:7777",
+      });
+      query = hab.makeEndRole(hab.pre, "mailbox", true);
+      stream = new Uint8Array(reply.length + query.length);
+      stream.set(reply, 0);
+      stream.set(query, reply.length);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+
+  const serder = inspectCesrTerminalMessage(stream);
+  assertExists(serder);
+  assertEquals(serder?.route, "/end/role/add");
+  assertEquals(
+    (serder.ked?.a as Record<string, unknown> | undefined)?.role,
+    "mailbox",
+  );
+});
+
+/** Proves CESR content type matching ignores charset noise but rejects other types. */
+Deno.test("CESR HTTP - content type matching only accepts application/cesr", () => {
+  assertEquals(isCesrContentType("application/cesr"), true);
+  assertEquals(isCesrContentType("application/cesr; charset=utf-8"), true);
+  assertEquals(isCesrContentType("text/plain"), false);
+  assertEquals(isCesrContentType(null), false);
+});
+
+/** Proves direct signed-KERI ingress helpers reject non-CESR requests cleanly. */
+Deno.test("CESR HTTP - required ingress helper only accepts CESR-framed requests", async () => {
+  const plain = await readRequiredCesrRequestBytes(
+    new Request("http://example.test", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "hello",
+    }),
+  );
+  assertEquals(plain, null);
+
+  const message = new Uint8Array([0x7b, 0x7d]);
+  const request = buildCesrStreamRequest(message);
+  const cesr = await readRequiredCesrRequestBytes(
+    new Request("http://example.test", {
+      method: "POST",
+      headers: request.headers,
+      body: request.body,
+    }),
+  );
+  assertEquals(cesr, message);
 });

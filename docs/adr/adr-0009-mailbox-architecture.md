@@ -8,6 +8,7 @@
   - `docs/adr/adr-0003-agent-runtime-composition-root.md`
   - `docs/adr/adr-0004-cue-runtime-portability.md`
   - `docs/adr/adr-0008-escrow-decision-architecture.md`
+  - `docs/adr/adr-0010-signed-keri-http-ingress.md`
   - `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`
   - `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
   - `packages/keri/src/db/mailboxing.ts`
@@ -71,6 +72,9 @@ which parts are Tufa-only extensions.
   - bounded `processOnce()` returns typed mailbox batches, while long-lived
     `pollDo()` remains sink-based for concurrent runtime flow
 - mailbox admin is handled by the remote mailbox host through `POST /mailboxes`
+- mailbox admin request shape follows ADR-0010:
+  - one raw `application/cesr` stream carrying controller replay and terminal
+    signed `/end/role/add` or `/end/role/cut`
 - `/fwd` only stores traffic when the addressed mailbox endpoint is currently
   authorized for the recipient controller
 
@@ -273,14 +277,18 @@ Mailbox add and remove are remote admin workflows, not local toggles.
 
 1. The controller builds a signed `/end/role/add` reply authorizing
    `role=mailbox` for one mailbox AID.
-2. The controller posts `kel`, optional `delkel`, and `rpy` to the mailbox
-   provider's `POST /mailboxes` endpoint.
+2. The controller posts one raw `application/cesr` stream to the mailbox
+   provider's `POST /mailboxes` endpoint:
+   - controller KEL replay
+   - optional delegation replay
+   - terminal mailbox authorization `rpy`
 3. The mailbox host verifies:
-   - the controller KEL
-   - the signed reply
+   - the terminal signed reply
    - `role == mailbox`
    - the target `eid` matches the mailbox AID hosted at that endpoint
-4. On success, the controller ingests the same reply locally and publishes
+4. The mailbox host ingests the whole stream through the normal KERI pipeline
+   and confirms accepted `ends.` state matches the request.
+5. On success, the controller ingests the same reply locally and publishes
    current mailbox role state so other parties can discover the mailbox.
 
 ### Remove
@@ -319,6 +327,10 @@ KERIpy sends one CESR message per HTTP request:
   opaque stream
 
 `keri-ts` treats that as the default interop contract.
+
+Mailbox admin is the notable exception because it submits one already assembled
+multi-message KERI stream. That still follows ADR-0010 because the request body
+remains KERI-native CESR bytes instead of a multipart or JSON wrapper.
 
 ### Current `keri-ts` Difference
 

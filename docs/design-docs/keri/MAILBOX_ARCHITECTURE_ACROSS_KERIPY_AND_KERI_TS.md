@@ -25,6 +25,9 @@ architecture decision. This document is broader: it teaches the whole mailbox
 system end to end and grounds that explanation in both KERIpy and `keri-ts`
 code.
 
+For the general HTTP design rule behind mailbox admin request shape, see
+`docs/adr/adr-0010-signed-keri-http-ingress.md`.
+
 ## Verdict
 
 A mailbox is a recipient-chosen storage provider for later pickup.
@@ -480,15 +483,17 @@ Grounded in KERIpy:
    - `cid = controller pre`
    - `role = mailbox`
    - `eid = mailbox provider pre`
-2. controller includes its `kel` and optionally `delkel`
-3. controller posts multipart form data to `/mailboxes`
+2. controller builds one raw CESR stream:
+   - controller KEL replay
+   - optional delegation replay
+   - terminal signed mailbox authorization `rpy`
+3. controller posts that raw `application/cesr` stream to `/mailboxes`
 4. mailbox host verifies:
-   - `kel` exists
-   - `rpy` exists
-   - route is `/end/role/add` or `/end/role/cut`
+   - the stream ends in `rpy`
+   - terminal route is `/end/role/add` or `/end/role/cut`
    - `role == mailbox`
    - target `eid` equals the hosted mailbox AID
-5. mailbox host ingests the KEL and reply through normal KERI processing
+5. mailbox host ingests the whole CESR stream through normal KERI processing
 6. mailbox host checks local accepted `ends.` state
 7. on success, the relationship `(controller, mailbox, hostedMailboxAid)` is
    now authoritative local state
@@ -498,18 +503,19 @@ ASCII sequence:
 ```text
 Controller C                     Mailbox Host M                    Local KERI State On M
 ------------                     --------------                    ---------------------
-build kel + rpy(/end/role/add
-  cid=C, role=mailbox, eid=M)
+build raw CESR stream:
+  kel
+  optional delkel
+  rpy: /end/role/add
+    cid=C, role=mailbox, eid=M
         |
-        | POST /mailboxes (kel, optional delkel, rpy)
+        | POST /mailboxes (application/cesr stream)
         |-------------------------------------------->|
-        |                                             | parse multipart fields
+        |                                             | inspect terminal rpy
         |                                             | verify route == /end/role/add or /cut
         |                                             | verify role == mailbox
         |                                             | verify eid == hosted mailbox AID M
-        |                                             | ingest kel
-        |                                             | ingest delkel if present
-        |                                             | ingest rpy
+        |                                             | ingest full CESR stream
         |                                             |------------------------------> ends[(C, mailbox, M)] = allowed
         |                                             | check accepted state reflects request
         |<--------------------------------------------|
@@ -583,10 +589,10 @@ build signed rpy:
   eid=M
 build kel replay
         |
-        | POST /mailboxes (kel, rpy, optional delkel)
+        | POST /mailboxes (raw application/cesr stream: kel, optional delkel, rpy)
         |-------------------------------------------->|
         |                                             | verify request targets hosted mailbox AID M
-        |                                             | ingest kel + rpy into normal KERI processing
+        |                                             | ingest CESR stream into normal KERI processing
         |                                             | accepted state now says:
         |                                             | ends[(C, mailbox, M)] = allowed
         |<--------------------------------------------|
