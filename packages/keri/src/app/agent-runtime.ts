@@ -211,13 +211,14 @@ export function* processRuntimeTurn(
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
   if (options.pollMailbox ?? true) {
-    yield* runtime.mailboxPoller.processOnce((messages) => {
-      for (const message of messages) {
+    const batches = yield* runtime.mailboxPoller.processOnce();
+    for (const batch of batches) {
+      for (const message of batch.messages) {
         runtime.reactor.ingest(message);
       }
       runtime.reactor.processOnce();
       runtime.reactor.processEscrowsOnce();
-    });
+    }
   }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
@@ -394,8 +395,8 @@ export function* runAgentRuntime(
       yield* runtime.authenticator.authDo();
     }),
     yield* spawn(function*() {
-      yield* runtime.mailboxPoller.pollDo((messages) => {
-        for (const message of messages) {
+      yield* runtime.mailboxPoller.pollDo((batch) => {
+        for (const message of batch.messages) {
           runtime.reactor.ingest(message);
         }
         runtime.reactor.processOnce();

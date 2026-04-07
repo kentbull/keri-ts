@@ -178,6 +178,12 @@ runtime ownership semantics.
     `runIndirectHost` is host wiring only. `tufa agent` may synthesize localhost
     controller state only as a last-resort fallback when no alias config exists
     and accepted controller endpoint state is otherwise missing.
+43. `MailboxPoller` now uses a hybrid TS-native API surface that matches the
+    runtime shape honestly: bounded `processOnce()` returns typed
+    `MailboxPollBatch[]` so callers can ingest one local or remote batch and run
+    escrow/cue work before the next source, while infinite concurrent `pollDo()`
+    stays sink-based because long-lived per-endpoint workers cannot express that
+    flow as one finite return value.
 
 ## Use This Doc For
 

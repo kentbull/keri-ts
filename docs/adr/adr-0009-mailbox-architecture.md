@@ -68,6 +68,8 @@ which parts are Tufa-only extensions.
   - `MailboxPoller` owns local replay plus remote mailbox retrieval
   - long-lived runtime polling keeps one remote worker per endpoint, while
     bounded command-local polling stays sequential and budgeted
+  - bounded `processOnce()` returns typed mailbox batches, while long-lived
+    `pollDo()` remains sink-based for concurrent runtime flow
 - mailbox admin is handled by the remote mailbox host through `POST /mailboxes`
 - `/fwd` only stores traffic when the addressed mailbox endpoint is currently
   authorized for the recipient controller
@@ -213,6 +215,8 @@ The important split is:
 
 - the `stream` cue starts transport work
 - `Mailboxer` supplies the payload bytes
+- bounded callers receive typed local/remote batches and decide when to run
+  follow-on reactor/escrow work between those batches
 - timeout policy is split too:
   - short request-open guard for transport setup
   - longer mailbox poll duration for SSE long-poll reads

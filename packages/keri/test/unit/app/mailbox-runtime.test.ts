@@ -375,9 +375,8 @@ Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeo
 
         const received: Uint8Array[] = [];
         const started = Date.now();
-        yield* poller.processOnce((messages) => {
-          received.push(...messages);
-        });
+        const batches = yield* poller.processOnce();
+        received.push(...batches.flatMap((batch) => batch.messages));
         const elapsed = Date.now() - started;
 
         assertEquals(received.length, 0);
@@ -494,9 +493,8 @@ Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-ope
 
         const received: Uint8Array[] = [];
         const started = Date.now();
-        yield* poller.processOnce((messages) => {
-          received.push(...messages);
-        }, { budgetMs: 150 });
+        const batches = yield* poller.processOnce({ budgetMs: 150 });
+        received.push(...batches.flatMap((batch) => batch.messages));
         const elapsed = Date.now() - started;
 
         assertEquals(received.length, 1);
@@ -623,7 +621,7 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
           },
         );
         poller.registerTopic("/challenge");
-        yield* poller.processOnce(() => {});
+        yield* poller.processOnce();
 
         assertEquals(postCount, 1);
       } finally {
@@ -740,7 +738,7 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
         poller.registerTopic("/challenge");
 
         const task = yield* spawn(function*() {
-          yield* poller.pollDo(() => {});
+          yield* poller.pollDo((_batch) => {});
         });
 
         try {

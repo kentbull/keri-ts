@@ -79,7 +79,9 @@ export function* challengeRespondCommand(
     transport: args.transport as string | undefined,
     compat: args.compat as boolean | undefined,
     outboxer: args.outboxer as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
 
   if (!commandArgs.name) {
@@ -155,14 +157,18 @@ export function* challengeVerifyCommand(
     timeout: args.timeout ? Number(args.timeout) : 10,
     compat: args.compat as boolean | undefined,
     outboxer: args.outboxer as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
 
   if (!commandArgs.name) {
     throw new ValidationError("Name is required and cannot be empty");
   }
   if (!commandArgs.signer) {
-    throw new ValidationError("Signer identifier or contact alias is required.");
+    throw new ValidationError(
+      "Signer identifier or contact alias is required.",
+    );
   }
   if (!commandArgs.generate && !commandArgs.words) {
     throw new ValidationError("Challenge words are required.");
@@ -194,7 +200,9 @@ export function* challengeVerifyCommand(
   try {
     const signer = resolveSigner(hby, commandArgs.signer);
     if (commandArgs.generate) {
-      console.log(formatChallengeWords(words, normalizeOutput(commandArgs.out)));
+      console.log(
+        formatChallengeWords(words, normalizeOutput(commandArgs.out)),
+      );
     }
 
     const runtime = yield* createAgentRuntime(hby, { mode: "local" });
@@ -205,13 +213,14 @@ export function* challengeVerifyCommand(
     let match = findVerifiedChallengeResponse(hby.db, signer, words);
 
     while (!match && Date.now() < deadline) {
-      yield* runtime.mailboxPoller.processOnce((messages) => {
-        for (const message of messages) {
+      const batches = yield* runtime.mailboxPoller.processOnce();
+      for (const batch of batches) {
+        for (const message of batch.messages) {
           runtime.reactor.ingest(message);
         }
         runtime.reactor.processOnce();
         runtime.reactor.processEscrowsOnce();
-      });
+      }
       match = findVerifiedChallengeResponse(hby.db, signer, words);
       if (!match && Date.now() < deadline) {
         yield* sleep(250);

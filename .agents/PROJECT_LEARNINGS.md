@@ -198,7 +198,11 @@ Use this file to:
     command-local turn budget. `MailboxPoller` remains the TS-native port of
     KERIpy `Poller`, while `MailboxDirector` keeps topic/cursor/query-cue
     coordination and long-lived runtime polling restores one concurrent remote
-    worker per endpoint.
+    worker per endpoint. The finite/infinite API split matters too:
+    `MailboxPoller.processOnce()` returns typed mailbox batches so bounded
+    callers can preserve per-source ingestion boundaries explicitly, while
+    long-lived `pollDo()` stays sink-based because concurrent workers do not
+    have a natural finite return value.
 
 ## Current Follow-Ups
 

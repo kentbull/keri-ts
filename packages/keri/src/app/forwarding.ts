@@ -456,19 +456,23 @@ export class MailboxPoller {
    * Drain one polling turn:
    * - replay locally hosted mailbox traffic first
    * - then query remote mailbox or witness endpoints using `mbx`
+   *
+   * The returned batches preserve per-source boundaries so callers can ingest
+   * one local or remote result set and run follow-on escrow/cue work before
+   * moving to the next source.
    */
   *processOnce(
-    onMessages: (messages: Uint8Array[]) => void,
     {
       budgetMs,
     }: {
       budgetMs?: number;
     } = {},
-  ): Operation<void> {
+  ): Operation<MailboxPollBatch[]> {
     const topics = this.mailboxDirector.registeredTopics();
     if (topics.length === 0) {
-      return;
+      return [];
     }
+    const batches: MailboxPollBatch[] = [];
     const deadline = Date.now() + positiveTimeoutMs(
       budgetMs,
       this.timeoutPolicy.commandLocalBudgetMs,
@@ -477,7 +481,7 @@ export class MailboxPoller {
     for (const pre of this.hby.prefixes) {
       const local = this.readLocalMailbox(pre, topics);
       if (local.length > 0) {
-        onMessages(local);
+        batches.push({ source: "local", pre, messages: local });
       }
     }
 
@@ -486,34 +490,43 @@ export class MailboxPoller {
       for (const endpoint of remoteEndpoints) {
         const remainingBudgetMs = deadline - Date.now();
         if (remainingBudgetMs <= 0) {
-          return;
+          return batches;
         }
-        yield* this.pollRemoteEndpointOnce(
+        const batch = yield* this.pollRemoteEndpointOnce(
           hab,
           endpoint,
-          onMessages,
           remainingBudgetMs,
         );
+        if (batch) {
+          batches.push(batch);
+        }
       }
     }
+
+    return batches;
   }
 
-  /** Poll forever, yielding one runtime turn between mailbox retrieval passes. */
+  /**
+   * Poll forever, streaming typed batches into one sink.
+   *
+   * Long-lived runtime polling stays callback-based because concurrent remote
+   * workers do not have a natural finite return value.
+   */
   *pollDo(
-    onMessages: (messages: Uint8Array[]) => void,
+    onBatch: (batch: MailboxPollBatch) => void,
   ): Operation<never> {
     const remoteWorkers = new Map<string, Task<void>>();
 
     try {
       while (true) {
         const topics = this.mailboxDirector.registeredTopics();
-        yield* this.syncRemoteWorkers(remoteWorkers, onMessages, topics);
+        yield* this.syncRemoteWorkers(remoteWorkers, onBatch, topics);
 
         if (topics.length > 0) {
           for (const pre of this.hby.prefixes) {
             const local = this.readLocalMailbox(pre, topics);
             if (local.length > 0) {
-              onMessages(local);
+              onBatch({ source: "local", pre, messages: local });
             }
           }
         }
@@ -571,7 +584,7 @@ export class MailboxPoller {
   }
 
   /**
-   * Poll one remote mailbox or witness endpoint once and ingest any payloads.
+   * Poll one remote mailbox or witness endpoint once and return one batch.
    *
    * Timeout ownership:
    * - bounded callers pass their remaining command-local budget
@@ -580,9 +593,8 @@ export class MailboxPoller {
   private *pollRemoteEndpointOnce(
     hab: Hab,
     endpoint: { eid: string; url: string },
-    onMessages: (messages: Uint8Array[]) => void,
     budgetMs: number,
-  ): Operation<void> {
+  ): Operation<MailboxPollBatch | null> {
     const cursor = this.mailboxDirector.remoteQueryCursor(
       hab.pre,
       endpoint.eid,
@@ -596,7 +608,7 @@ export class MailboxPoller {
       mailboxFetchTimeoutPolicy(this.timeoutPolicy, budgetMs),
     );
     if (messages.length === 0) {
-      return;
+      return null;
     }
     for (const message of messages) {
       this.mailboxDirector.updateRemoteCursor(
@@ -606,13 +618,18 @@ export class MailboxPoller {
         message.idx,
       );
     }
-    onMessages(messages.map((message) => message.msg));
+    return {
+      source: "remote",
+      pre: hab.pre,
+      eid: endpoint.eid,
+      messages: messages.map((message) => message.msg),
+    };
   }
 
   /** Keep one long-lived worker running for each currently configured remote endpoint. */
   private *syncRemoteWorkers(
     remoteWorkers: Map<string, Task<void>>,
-    onMessages: (messages: Uint8Array[]) => void,
+    onBatch: (batch: MailboxPollBatch) => void,
     topics: readonly string[],
   ): Operation<void> {
     const active = new Set<string>();
@@ -627,7 +644,7 @@ export class MailboxPoller {
           }
 
           const task = yield* spawn(function*() {
-            yield* poller.remoteEndpointWorker(hab, endpoint, onMessages);
+            yield* poller.remoteEndpointWorker(hab, endpoint, onBatch);
           });
           remoteWorkers.set(workerKey, task);
         }
@@ -652,15 +669,17 @@ export class MailboxPoller {
   private *remoteEndpointWorker(
     hab: Hab,
     endpoint: { eid: string; url: string },
-    onMessages: (messages: Uint8Array[]) => void,
+    onBatch: (batch: MailboxPollBatch) => void,
   ): Operation<never> {
     while (true) {
-      yield* this.pollRemoteEndpointOnce(
+      const batch = yield* this.pollRemoteEndpointOnce(
         hab,
         endpoint,
-        onMessages,
         this.timeoutPolicy.maxPollDurationMs,
       );
+      if (batch) {
+        onBatch(batch);
+      }
       yield* runtimeTurn();
     }
   }
@@ -765,6 +784,14 @@ export interface MailboxPollingTimeoutPolicy {
   commandLocalBudgetMs: number;
 }
 
+/** One mailbox retrieval batch whose message boundaries should stay together. */
+export interface MailboxPollBatch {
+  source: "local" | "remote";
+  pre: string;
+  eid?: string;
+  messages: Uint8Array[];
+}
+
 interface MailboxFetchTimeoutPolicy {
   requestOpenTimeoutMs: number;
   maxReadDurationMs: number;
@@ -858,8 +885,8 @@ function* readSseBody(
   response: Response,
   controller: AbortController,
   {
-    idleTimeoutMs = 500,
-    maxDurationMs = 6000,
+    idleTimeoutMs = MailboxPoller.ReadIdleTimeoutMs,
+    maxDurationMs = MailboxPoller.DefaultTimeoutPolicy.maxPollDurationMs,
   }: {
     idleTimeoutMs?: number;
     maxDurationMs?: number;
