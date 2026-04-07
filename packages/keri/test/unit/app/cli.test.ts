@@ -120,6 +120,83 @@ Deno.test("CLI - mailbox start rejects conflicting config and explicit startup m
   );
 });
 
+Deno.test("CLI - mailbox start missing required options prints one Commander-owned error without fatal stack", async () => {
+  const res = await runTufa(["mailbox", "start"]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "error: required option '-n, --name <name>' not specified",
+  );
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
+  assertEquals(
+    res.stderr.includes("Error: error: required option"),
+    false,
+    res.stderr,
+  );
+  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
+});
+
+Deno.test("CLI - mailbox start validation errors print one concise app error without fatal stack", async () => {
+  const res = await runTufa([
+    "mailbox",
+    "start",
+    "--name",
+    `mailbox-start-${crypto.randomUUID()}`,
+    "--alias",
+    "relay",
+    "--url",
+    "http://127.0.0.1:5632",
+  ]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "Error: --url and --datetime must be provided together",
+  );
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
+  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
+  assertEquals((res.stderr.match(/Error:/g) ?? []).length, 1, res.stderr);
+});
+
+Deno.test("CLI - --debug-error prints the Commander stack for parse failures", async () => {
+  const res = await runTufa(["--debug-error", "mailbox", "start"]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "error: required option '-n, --name <name>' not specified",
+  );
+  assertStringIncludes(res.stderr, "CommanderError:", res.stderr);
+  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+});
+
+Deno.test("CLI - --debug-error prints the AppError stack for handled command failures", async () => {
+  const res = await runTufa([
+    "--debug-error",
+    "mailbox",
+    "start",
+    "--name",
+    `mailbox-start-${crypto.randomUUID()}`,
+    "--alias",
+    "relay",
+    "--url",
+    "http://127.0.0.1:5632",
+  ]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "Error: --url and --datetime must be provided together",
+  );
+  assertStringIncludes(res.stderr, "ValidationError:", res.stderr);
+  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+});
+
 Deno.test("CLI - init command with help flag", async () => {
   // Help is parsed by commander; command handlers should not be invoked directly for help tests.
   await run(() => tufa(["init", "--help"]));
@@ -413,4 +490,7 @@ Deno.test("CLI - exchange send rejects removed legacy flags", async () => {
     `${res.stdout}\n${res.stderr}`,
     "unknown option '--alias'",
   );
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
+  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
 });
