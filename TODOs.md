@@ -49,6 +49,7 @@ Things to come back and do at some point:
 
 ## Missing
 
+- explicit v2 support
 - mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow
 
 ## Review Queue

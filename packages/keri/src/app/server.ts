@@ -1,3 +1,15 @@
+/**
+ * Shared HTTP hosting for protocol, mailbox, and OOBI routes.
+ *
+ * This module intentionally centralizes externally visible route semantics so
+ * the Deno and Node hosts expose the same mailbox and OOBI behavior.
+ *
+ * Mailbox-specific responsibilities:
+ * - resolve hosted mailbox endpoints by advertised base path
+ * - accept mailbox admin requests on `POST /mailboxes`
+ * - ingest mailbox queries and return `mbx` SSE streams
+ * - carry request-scoped hosted mailbox identity into `/fwd` handling
+ */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
@@ -14,6 +26,9 @@ import { consoleLogger, type Logger } from "../core/logger.ts";
 import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
 import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
+import { readCesrRequestBytes } from "./cesr-http.ts";
+import type { Hab } from "./habbing.ts";
+import { endpointBasePath, fetchEndpointUrls, hostedEndpointPathMatches, preferredUrl } from "./mailboxing.ts";
 
 /** Minimal shutdown/wait contract shared by Deno and Node server hosts. */
 interface RunningServer {
@@ -35,6 +50,22 @@ interface ServerOptions {
   signal: AbortSignal;
   onListen: (address: { port: number }) => void;
   onError: (error: unknown) => Response;
+}
+
+/** Runtime-hosting options that scope one long-lived protocol host. */
+export interface RuntimeServerOptions {
+  /** Concrete local listen host passed to the HTTP server implementation. */
+  hostname?: string;
+  /**
+   * Local habitat used to interpret runtime-owned cue semantics for inbound
+   * request processing.
+   */
+  serviceHab?: Hab;
+  /**
+   * Optional subset of local prefixes whose advertised endpoints are hosted by
+   * this process. When omitted, all local prefixes remain visible.
+   */
+  hostedPrefixes?: readonly string[];
 }
 
 /**
@@ -59,6 +90,7 @@ function hasDenoServe(): boolean {
  */
 function createProtocolHandler(
   runtime?: AgentRuntime,
+  options: RuntimeServerOptions = {},
 ): ProtocolHandler {
   return async (req: Request): Promise<Response> => {
     try {
@@ -70,8 +102,39 @@ function createProtocolHandler(
         });
       }
 
+      if (runtime && req.method === "POST") {
+        const mailboxAdmin = resolveHostedEndpoint(
+          runtime,
+          url.pathname,
+          "/mailboxes",
+          options.hostedPrefixes,
+        );
+        if (mailboxAdmin.kind === "ambiguous") {
+          return new Response("Ambiguous mailbox endpoint path", {
+            status: 409,
+            headers: { "Content-Type": "text/plain" },
+          });
+        }
+        if (mailboxAdmin.endpoint) {
+          return await handleMailboxAdmin(
+            runtime,
+            req,
+            mailboxAdmin.endpoint.eid,
+            options.serviceHab,
+          );
+        }
+      }
+
       if (runtime) {
-        const parts = url.pathname.split("/").filter((part) => part.length > 0);
+        const hosted = resolveHostedEndpoint(
+          runtime,
+          url.pathname,
+          "",
+          options.hostedPrefixes,
+        );
+        const oobiPath = hosted.relativePath
+          ?? normalizeHostedPath(url.pathname);
+        const parts = oobiPath.split("/").filter((part) => part.length > 0);
         let aid: string | undefined;
         let role: string | undefined;
         let eid: string | undefined;
@@ -91,8 +154,21 @@ function createProtocolHandler(
         }
 
         if (aid && role) {
-          const hab = runtime.hby.habs.get(aid);
+          const speakerAid = selectOobiSpeaker(
+            runtime,
+            hosted,
+            aid,
+            eid,
+            options.hostedPrefixes,
+          );
+          const hab = speakerAid ? runtime.hby.habs.get(speakerAid) : undefined;
           if (!hab) {
+            if (hosted.kind === "ambiguous") {
+              return new Response("Ambiguous hosted endpoint path", {
+                status: 409,
+                headers: { "Content-Type": "text/plain" },
+              });
+            }
             return new Response("Not Found", {
               status: 404,
               headers: { "Content-Type": "text/plain" },
@@ -110,6 +186,7 @@ function createProtocolHandler(
             status: 200,
             headers: {
               "Content-Type": "application/cesr",
+              "KERI-AID": aid,
               "Oobi-Aid": aid,
             },
           });
@@ -117,7 +194,19 @@ function createProtocolHandler(
       }
 
       if (runtime && (req.method === "POST" || req.method === "PUT")) {
-        const bytes = new Uint8Array(await req.arrayBuffer());
+        const hosted = resolveHostedEndpoint(
+          runtime,
+          url.pathname,
+          "/",
+          options.hostedPrefixes,
+        );
+        if (hosted.kind === "ambiguous") {
+          return new Response("Ambiguous hosted endpoint path", {
+            status: 409,
+            headers: { "Content-Type": "text/plain" },
+          });
+        }
+        const bytes = await readCesrRequestBytes(req);
         const serder = inspectCesrRequest(bytes);
         if (!serder) {
           return new Response("Invalid CESR request", {
@@ -126,10 +215,12 @@ function createProtocolHandler(
           });
         }
 
-        runtime.reactor.ingest(bytes);
-        runtime.reactor.processOnce();
-        runtime.reactor.processEscrowsOnce();
-        drainRuntimeCues(runtime);
+        processRuntimeRequest(
+          runtime,
+          bytes,
+          hosted.endpoint?.eid ?? null,
+          options.serviceHab,
+        );
 
         if (serder.ilk === Ilks.qry && serder.route === "mbx") {
           const query = serder.ked?.q as Record<string, unknown> | undefined;
@@ -173,6 +264,269 @@ function createProtocolHandler(
   };
 }
 
+function resolveHostedEndpoint(
+  runtime: AgentRuntime,
+  pathname: string,
+  resourceSuffix = "",
+  hostedPrefixes?: readonly string[],
+): {
+  kind: "none" | "one" | "ambiguous";
+  endpoint: { eid: string; url: string; basePath: string } | null;
+  relativePath: string | null;
+} {
+  const matches = hostedEndpointPathMatches(
+    runtime.hby,
+    pathname,
+    hostedPrefixes,
+  )
+    .filter((match) =>
+      resourceSuffix.length === 0
+        ? true
+        : match.relativePath === normalizeHostedPath(resourceSuffix)
+    );
+  if (matches.length === 0) {
+    return { kind: "none", endpoint: null, relativePath: null };
+  }
+  const longest = matches[0]!.basePath.length;
+  const narrowed = matches.filter((match) => match.basePath.length === longest);
+  if (narrowed.length > 1) {
+    return { kind: "ambiguous", endpoint: null, relativePath: null };
+  }
+  const endpoint = narrowed[0]!;
+  return {
+    kind: "one",
+    endpoint,
+    relativePath: endpoint.relativePath,
+  };
+}
+
+/**
+ * Normalize request paths used for hosted endpoint and OOBI base-path matching.
+ */
+function normalizeHostedPath(pathname: string): string {
+  const trimmed = pathname.trim();
+  if (trimmed.length === 0 || trimmed === "/") {
+    return "/";
+  }
+  const normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return normalized.replace(/\/+$/, "") || "/";
+}
+
+/**
+ * Choose which local habitat should answer an OOBI request.
+ *
+ * Preference order:
+ * - the requested AID itself when locally controlled
+ * - the explicit endpoint AID when it is locally controlled
+ * - the hosted endpoint matched from the request path
+ */
+function selectOobiSpeaker(
+  runtime: AgentRuntime,
+  hosted: {
+    kind: "none" | "one" | "ambiguous";
+    endpoint: { eid: string; url: string; basePath: string } | null;
+  },
+  aid: string,
+  eid?: string,
+  hostedPrefixes?: readonly string[],
+): string | undefined {
+  const hostedSet = hostedPrefixes ? new Set(hostedPrefixes) : null;
+  const hostedCandidate = (candidate?: string): string | undefined => {
+    if (!candidate || !runtime.hby.habs.has(candidate)) {
+      return undefined;
+    }
+    if (hostedSet && !hostedSet.has(candidate)) {
+      return undefined;
+    }
+    return candidate;
+  };
+  const rootHostedCandidate = (candidate?: string): string | undefined => {
+    if (!candidate || !runtime.hby.habs.has(candidate)) {
+      return undefined;
+    }
+    if (hostedSet && !hostedSet.has(candidate)) {
+      return undefined;
+    }
+    const preferred = preferredUrl(fetchEndpointUrls(runtime.hby, candidate));
+    if (!preferred || endpointBasePath(preferred) !== "/") {
+      return undefined;
+    }
+    return candidate;
+  };
+
+  if (hostedSet) {
+    if (hosted.kind === "ambiguous") {
+      return undefined;
+    }
+    if (hosted.kind === "one") {
+      const hostedAid = hosted.endpoint?.eid;
+      if (
+        hostedAid
+        && runtime.hby.habs.has(hostedAid)
+        && (aid === hostedAid || eid === hostedAid)
+      ) {
+        return hostedAid;
+      }
+      return undefined;
+    }
+    return hostedCandidate(aid)
+      ?? hostedCandidate(eid)
+      ?? rootHostedCandidate(aid)
+      ?? rootHostedCandidate(eid);
+  }
+
+  if (runtime.hby.habs.has(aid)) {
+    return aid;
+  }
+  if (eid && runtime.hby.habs.has(eid)) {
+    return eid;
+  }
+  return hosted.endpoint?.eid ?? undefined;
+}
+
+/**
+ * Handle mailbox add/remove authorization requests for one hosted mailbox AID.
+ *
+ * Contract:
+ * - `kel` proves the controller state
+ * - optional `delkel` carries delegation context when needed
+ * - `rpy` must be `/end/role/add` or `/end/role/cut` for `role=mailbox`
+ *
+ * Acceptance rule:
+ * - the `eid` inside the signed reply must match the mailbox AID hosted at the
+ *   addressed endpoint path
+ */
+async function handleMailboxAdmin(
+  runtime: AgentRuntime,
+  req: Request,
+  mailboxAid: string,
+  serviceHab?: Hab,
+): Promise<Response> {
+  const form = await req.formData();
+  const kel = await formFieldBytes(form.get("kel"));
+  const delkel = await formFieldBytes(form.get("delkel"));
+  const rpy = await formFieldBytes(form.get("rpy"));
+
+  if (!kel || !rpy) {
+    return new Response("kel and rpy are required", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  processRuntimeRequest(runtime, kel, mailboxAid, serviceHab);
+  if (delkel) {
+    processRuntimeRequest(runtime, delkel, mailboxAid, serviceHab);
+  }
+
+  const serder = inspectCesrRequest(rpy);
+  if (!serder || serder.ilk !== Ilks.rpy) {
+    return new Response("Invalid mailbox authorization reply", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  const route = serder.route ?? "";
+  if (route !== "/end/role/add" && route !== "/end/role/cut") {
+    return new Response("Unsupported mailbox authorization route", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  const data = serder.ked?.a as Record<string, unknown> | undefined;
+  const cid = typeof data?.cid === "string" ? data.cid : null;
+  const role = typeof data?.role === "string" ? data.role : null;
+  const eid = typeof data?.eid === "string" ? data.eid : null;
+  if (!cid || !role || !eid) {
+    return new Response("Mailbox authorization reply is missing cid/role/eid", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+  if (role !== Roles.mailbox) {
+    return new Response("Mailbox authorization reply must use role=mailbox", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+  if (eid !== mailboxAid) {
+    return new Response(
+      "Mailbox authorization target does not match hosted mailbox",
+      {
+        status: 403,
+        headers: { "Content-Type": "text/plain" },
+      },
+    );
+  }
+  if (!runtime.hby.db.getKever(cid)) {
+    return new Response("Controller KEL was not accepted", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  processRuntimeRequest(runtime, rpy, mailboxAid, serviceHab);
+
+  const end = runtime.hby.db.ends.get([cid, Roles.mailbox, mailboxAid]);
+  const expected = route === "/end/role/add";
+  const accepted = expected ? !!end?.allowed : !!end && !end.allowed;
+  if (!accepted) {
+    return new Response("Mailbox authorization reply was not accepted", {
+      status: 403,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  return new Response(
+    JSON.stringify({
+      cid,
+      role,
+      eid: mailboxAid,
+      allowed: expected,
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/**
+ * Ingest one mailbox-related request payload through the shared runtime.
+ *
+ * The request-scoped mailbox AID is set for the duration of parsing and cue
+ * handling so `/fwd` authorization can be evaluated against the mailbox that
+ * actually received the request.
+ */
+function processRuntimeRequest(
+  runtime: AgentRuntime,
+  bytes: Uint8Array,
+  mailboxAid: string | null,
+  serviceHab?: Hab,
+): void {
+  runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
+    runtime.reactor.ingest(bytes);
+    runtime.reactor.processOnce();
+    runtime.reactor.processEscrowsOnce();
+    drainRuntimeCues(runtime, serviceHab);
+  });
+}
+
+/** Decode one multipart form field into raw bytes. */
+async function formFieldBytes(
+  value: FormDataEntryValue | null,
+): Promise<Uint8Array | null> {
+  if (typeof value === "string") {
+    return new TextEncoder().encode(value);
+  }
+  if (value instanceof File) {
+    return new Uint8Array(await value.arrayBuffer());
+  }
+  return null;
+}
+
 /**
  * Normalize startup options common to both HTTP host implementations.
  *
@@ -183,12 +537,13 @@ function buildServerOptions(
   port: number,
   logger: Logger,
   signal: AbortSignal,
+  hostname = "127.0.0.1",
 ): ServerOptions {
   return {
     port,
-    hostname: "127.0.0.1",
+    hostname,
     signal,
-    onListen: ({ port }) => logger.info(`Server running on http://localhost:${port}`),
+    onListen: ({ port }) => logger.info(`Server running on http://${hostname}:${port}`),
     onError: (error) => {
       logger.error("Server error:", error);
       return new Response("Internal Server Error", { status: 500 });
@@ -381,6 +736,7 @@ function openServerHost(
   port: number,
   logger: Logger,
   runtime?: AgentRuntime,
+  options: RuntimeServerOptions = {},
 ): ServerHost {
   const controller = new AbortController();
   const { signal } = controller;
@@ -388,11 +744,16 @@ function openServerHost(
     logger.info("Shutting down server...");
     controller.abort();
   };
-  const options = buildServerOptions(port, logger, signal);
-  const handler = createProtocolHandler(runtime);
+  const serverOptions = buildServerOptions(
+    port,
+    logger,
+    signal,
+    options.hostname ?? "127.0.0.1",
+  );
+  const handler = createProtocolHandler(runtime, options);
   const host = hasDenoServe()
-    ? openDenoServerHost(options, handler)
-    : openNodeServerHost(options, handler);
+    ? openDenoServerHost(serverOptions, handler)
+    : openNodeServerHost(serverOptions, handler);
 
   Deno.addSignalListener("SIGINT", shutdown);
   Deno.addSignalListener("SIGTERM", shutdown);
@@ -441,8 +802,9 @@ export function* startServer(
   port: number = 8000,
   logger: Logger = consoleLogger,
   runtime?: AgentRuntime,
+  options: RuntimeServerOptions = {},
 ): Operation<void> {
-  const host = openServerHost(port, logger, runtime);
+  const host = openServerHost(port, logger, runtime, options);
   try {
     yield* waitForServerFinished(host.server);
   } finally {
@@ -450,9 +812,13 @@ export function* startServer(
   }
 }
 
-function drainRuntimeCues(runtime: AgentRuntime): void {
+function drainRuntimeCues(
+  runtime: AgentRuntime,
+  serviceHab?: Hab,
+): void {
   const habitats = [...runtime.hby.habs.values()];
-  const hab = habitats.length === 1 ? habitats[0] : null;
+  const hab = serviceHab
+    ?? (habitats.length === 1 ? habitats[0] ?? null : null);
   if (!hab) {
     return;
   }

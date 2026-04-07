@@ -194,12 +194,12 @@ export function* oobiResolveCommand(
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
-      skipSignator: true,
+      skipSignator: false,
     },
   );
 
   try {
-    const runtime = createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
     enqueueOobi(runtime, {
       url: commandArgs.url,
       alias: commandArgs.oobiAlias,

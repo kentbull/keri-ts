@@ -1,5 +1,7 @@
-import { Ilks, SerderKERI } from "../../../cesr/mod.ts";
+import { concatBytes, Counter, CtrDexV1, Ilks, makePather, Saider, SerderKERI } from "../../../cesr/mod.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
+
+const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
 /**
  * Build one canonical `rct` serder for a receipted event.
@@ -110,4 +112,97 @@ export function makeExchangeSerder(
     },
     makify: true,
   });
+}
+
+/**
+ * Build one canonical `exn` plus any pathed attachment groups for embedded CESR.
+ *
+ * KERIpy correspondence:
+ * - mirrors `peer.exchanging.exchange(..., embeds=...)`
+ * - nested embedded SADs live in `e`
+ * - embedded attachment material is emitted as trailing pathed groups
+ */
+export function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  {
+    sender,
+    recipient = "",
+    modifiers = {},
+    stamp = makeNowIso8601(),
+    dig = "",
+    embeds = {},
+  }: {
+    sender: string;
+    recipient?: string;
+    modifiers?: Record<string, unknown>;
+    stamp?: string;
+    dig?: string;
+    embeds?: Record<string, Uint8Array>;
+  },
+): { serder: SerderKERI; attachments: Uint8Array } {
+  const e = exchangeEmbedsFromMessages(embeds);
+  const serder = new SerderKERI({
+    sad: {
+      t: Ilks.exn,
+      i: sender,
+      rp: recipient,
+      p: dig,
+      dt: stamp,
+      r: route,
+      q: modifiers,
+      a: payload,
+      e: e.ked,
+    },
+    makify: true,
+  });
+  return { serder, attachments: e.attachments };
+}
+
+function exchangeEmbedsFromMessages(
+  embeds: Record<string, Uint8Array>,
+): { ked: Record<string, unknown>; attachments: Uint8Array } {
+  const ked: Record<string, unknown> = {};
+  const groups: Uint8Array[] = [];
+
+  for (const [label, message] of Object.entries(embeds)) {
+    const embedded = new SerderKERI({ raw: message });
+    ked[label] = embedded.ked;
+    const atc = message.slice(embedded.size);
+    if (atc.length === 0) {
+      continue;
+    }
+
+    const pather = makePather(["e", label]);
+    const pathed = concatBytes(pather.qb64b, atc);
+    if (pathed.length % 4 !== 0) {
+      throw new Error(
+        `Embedded attachment payload for ${label} must occupy whole quadlets.`,
+      );
+    }
+
+    const code = pathed.length / 4 < 4096
+      ? CtrDexV1.PathedMaterialCouples
+      : CtrDexV1.BigPathedMaterialCouples;
+    groups.push(
+      concatBytes(
+        new Counter({
+          code,
+          count: pathed.length / 4,
+          version: KERI_V1,
+        }).qb64b,
+        pathed,
+      ),
+    );
+  }
+
+  if (Object.keys(ked).length === 0) {
+    return { ked, attachments: new Uint8Array() };
+  }
+
+  const saidified = Saider.saidify({ ...ked, d: "" }, {}).sad;
+  return {
+    ked: saidified,
+    attachments: groups.length === 0 ? new Uint8Array() : concatBytes(...groups),
+  };
 }

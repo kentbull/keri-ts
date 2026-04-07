@@ -88,11 +88,23 @@ async function canUseKli(
  * then fall back to plain PATH lookup. Each candidate is validated with
  * `canUseKli()` so the harness fails loudly instead of silently skipping.
  */
+function pyenvProbeEnv(env: Record<string, string>): Record<string, string> {
+  return {
+    ...env,
+    HOME: Deno.env.get("HOME") ?? env.HOME,
+    PATH: Deno.env.get("PATH") ?? env.PATH,
+    ...(Deno.env.get("PYENV_ROOT")
+      ? { PYENV_ROOT: Deno.env.get("PYENV_ROOT")! }
+      : {}),
+  };
+}
+
 async function resolveKliCommand(env: Record<string, string>): Promise<string> {
   const candidates: string[] = [];
+  const probeEnv = pyenvProbeEnv(env);
 
   try {
-    const pyenvWhich = await runCmd("pyenv", ["which", "kli"], env);
+    const pyenvWhich = await runCmd("pyenv", ["which", "kli"], probeEnv);
     const resolved = pyenvWhich.stdout.trim();
     if (pyenvWhich.code === 0 && resolved.length > 0) {
       candidates.push(resolved);

@@ -60,7 +60,8 @@ and which parts are Tufa-only extensions.
   - if more than one mailbox is authorized, broadcast to all of them
   - direct controller or agent delivery is the fallback when no mailbox is
     configured
-- mailbox storage is owned by a shared habery-wide `Mailboxer`
+- mailbox storage is owned by a shared provider-side `Mailboxer` composed by
+  the runtime/host layer above `Habery`
 - mailbox polling and query streaming are coordinated by a shared
   `MailboxDirector`
 - mailbox admin is handled by the remote mailbox host through `POST /mailboxes`
@@ -209,6 +210,13 @@ inner payload extracted from `/fwd`, not the outer forwarding envelope.
 The important invariant is that `Mailboxer` stores recipient-side inbox
 material, not sender retry state.
 
+Ownership rule:
+
+- `Mailboxer` scope is one habery environment
+- `Mailboxer` is not a `Habery` field or dependency
+- runtime/host composition opens and closes `Mailboxer` explicitly when
+  provider-side mailbox behavior is needed
+
 ### Baser `tops.`
 
 `tops.` stores durable remote mailbox cursor state.
@@ -219,7 +227,8 @@ material, not sender retry state.
   - `TopicsRecord` containing last seen topic indices
 
 These are not stored in `Mailboxer` because they describe polling progress, not
-provider-side stored messages.
+provider-side stored messages. This durable cursor state remains habery-owned
+through `Baser`.
 
 ### Current `keri-ts` Difference
 
@@ -310,7 +319,8 @@ mailbox or weighted selection policy.
 
 ### Consequences
 
-- mailbox behavior is shared habery-wide, not per-hab ad hoc state
+- mailbox behavior is shared per habery environment, but provider mailbox
+  storage is composed and owned above `Habery` by runtime/host layers
 - mailbox role state is the authority for send selection and inbound storage
 - maintainers must document KERIpy parity and `keri-ts` deltas explicitly when
   changing mailbox behavior

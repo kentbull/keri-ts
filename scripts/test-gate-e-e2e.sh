@@ -158,11 +158,26 @@ assert_line_contains() {
   [[ "${actual}" == *"${expected}"* ]] || fail "expected '${actual}' to contain '${expected}'"
 }
 
-start_source_host() {
-  if [[ -n "${SOURCE_AGENT_PID}" ]]; then
+kill_port_listener() {
+  local port="$1"
+  local pids
+
+  pids="$(lsof -ti "tcp:${port}" 2>/dev/null || true)"
+  if [[ -z "${pids}" ]]; then
     return
   fi
 
+  # shellcheck disable=SC2086
+  kill ${pids} >/dev/null 2>&1 || true
+  sleep 0.2
+}
+
+start_source_host() {
+  if [[ -n "${SOURCE_AGENT_PID}" ]] && kill -0 "${SOURCE_AGENT_PID}" >/dev/null 2>&1; then
+    return
+  fi
+
+  kill_port_listener "${PORT}"
   run_tufa agent --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --port "${PORT}" >"${SOURCE_AGENT_LOG}" 2>&1 &
   SOURCE_AGENT_PID="$!"
   wait_for_health "${BASE_URL}" "${SOURCE_AGENT_LOG}"
@@ -176,13 +191,15 @@ stop_source_host() {
   kill "${SOURCE_AGENT_PID}" >/dev/null 2>&1 || true
   wait "${SOURCE_AGENT_PID}" 2>/dev/null || true
   SOURCE_AGENT_PID=""
+  kill_port_listener "${PORT}"
 }
 
 start_target_host() {
-  if [[ -n "${TARGET_AGENT_PID}" ]]; then
+  if [[ -n "${TARGET_AGENT_PID}" ]] && kill -0 "${TARGET_AGENT_PID}" >/dev/null 2>&1; then
     return
   fi
 
+  kill_port_listener "${TARGET_PORT}"
   run_tufa agent --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --port "${TARGET_PORT}" >"${TARGET_AGENT_LOG}" 2>&1 &
   TARGET_AGENT_PID="$!"
   wait_for_health "${TARGET_BASE_URL}" "${TARGET_AGENT_LOG}"
@@ -196,6 +213,7 @@ stop_target_host() {
   kill "${TARGET_AGENT_PID}" >/dev/null 2>&1 || true
   wait "${TARGET_AGENT_PID}" 2>/dev/null || true
   TARGET_AGENT_PID=""
+  kill_port_listener "${TARGET_PORT}"
 }
 
 log "Using temp root ${TEMP_ROOT}"
@@ -250,9 +268,9 @@ AGENT_OOBI="$(last_non_empty_line "${AGENT_OOBI_OUTPUT}")"
 
 log "Resolve generated OOBIs into a second controller store"
 run_tufa init --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --salt "${SALT}" >/dev/null
-CONTROLLER_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --url "${CONTROLLER_OOBI}" --oobi-alias "${SOURCE_ALIAS}-controller")"
-MAILBOX_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --url "${MAILBOX_OOBI}" --oobi-alias "${SOURCE_ALIAS}-mailbox")"
-AGENT_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --url "${AGENT_OOBI}" --oobi-alias "${SOURCE_ALIAS}-agent")"
+CONTROLLER_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --url "${CONTROLLER_OOBI}" --oobi-alias "${SOURCE_ALIAS}")"
+MAILBOX_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --url "${MAILBOX_OOBI}" --oobi-alias "${SOURCE_ALIAS}")"
+AGENT_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --url "${AGENT_OOBI}" --oobi-alias "${SOURCE_ALIAS}")"
 assert_line_equals "$(last_non_empty_line "${CONTROLLER_RESOLVE_OUTPUT}")" "${CONTROLLER_OOBI}"
 assert_line_equals "$(last_non_empty_line "${MAILBOX_RESOLVE_OUTPUT}")" "${MAILBOX_OOBI}"
 assert_line_equals "$(last_non_empty_line "${AGENT_RESOLVE_OUTPUT}")" "${AGENT_OOBI}"
@@ -286,14 +304,19 @@ stop_source_host
 TARGET_CONTROLLER_OOBI_OUTPUT="$(capture_tufa oobi generate --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --role controller)"
 TARGET_CONTROLLER_OOBI="$(last_non_empty_line "${TARGET_CONTROLLER_OOBI_OUTPUT}")"
 [[ "${TARGET_CONTROLLER_OOBI}" == "${TARGET_BASE_URL}/oobi/${TARGET_PRE}/controller" ]] || fail "unexpected target controller OOBI ${TARGET_CONTROLLER_OOBI}"
-SOURCE_TARGET_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --url "${TARGET_CONTROLLER_OOBI}" --oobi-alias "${TARGET_ALIAS}-controller")"
+TARGET_MAILBOX_OOBI_OUTPUT="$(capture_tufa oobi generate --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --role mailbox)"
+TARGET_MAILBOX_OOBI="$(last_non_empty_line "${TARGET_MAILBOX_OOBI_OUTPUT}")"
+[[ "${TARGET_MAILBOX_OOBI}" == "${TARGET_BASE_URL}/oobi/${TARGET_PRE}/mailbox/${TARGET_PRE}" ]] || fail "unexpected target mailbox OOBI ${TARGET_MAILBOX_OOBI}"
+SOURCE_TARGET_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --url "${TARGET_CONTROLLER_OOBI}" --oobi-alias "${TARGET_ALIAS}")"
+SOURCE_TARGET_MAILBOX_RESOLVE_OUTPUT="$(capture_tufa oobi resolve --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --url "${TARGET_MAILBOX_OOBI}" --oobi-alias "${TARGET_ALIAS}")"
 assert_line_equals "$(last_non_empty_line "${SOURCE_TARGET_RESOLVE_OUTPUT}")" "${TARGET_CONTROLLER_OOBI}"
+assert_line_equals "$(last_non_empty_line "${SOURCE_TARGET_MAILBOX_RESOLVE_OUTPUT}")" "${TARGET_MAILBOX_OOBI}"
 
 log "Exercise challenge generate/respond/verify over direct delivery"
 DIRECT_CHALLENGE_WORDS="$(last_non_empty_line "$(capture_tufa challenge generate --strength 128 --out string)")"
 [[ -n "${DIRECT_CHALLENGE_WORDS}" ]] || fail "challenge generate returned no direct words"
-DIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --alias "${SOURCE_ALIAS}" --recipient "${TARGET_PRE}" --words "${DIRECT_CHALLENGE_WORDS}" --transport direct)"
-assert_line_contains "$(last_non_empty_line "${DIRECT_RESPOND_OUTPUT}")" "${TARGET_BASE_URL}"
+DIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --alias "${SOURCE_ALIAS}" --recipient "${TARGET_ALIAS}" --words "${DIRECT_CHALLENGE_WORDS}" --transport direct)"
+assert_line_contains "${DIRECT_RESPOND_OUTPUT}" "Sent EXN message"
 stop_target_host
 DIRECT_VERIFY_OUTPUT="$(capture_tufa challenge verify --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --signer "${SOURCE_PRE}" --words "${DIRECT_CHALLENGE_WORDS}" --timeout 5)"
 assert_line_contains "$(last_non_empty_line "${DIRECT_VERIFY_OUTPUT}")" "${SOURCE_PRE}"
@@ -302,11 +325,21 @@ log "Exercise challenge generate/respond/verify over mailbox-authorized delivery
 start_source_host
 INDIRECT_CHALLENGE_WORDS="$(last_non_empty_line "$(capture_tufa challenge generate --strength 128 --out string)")"
 [[ -n "${INDIRECT_CHALLENGE_WORDS}" ]] || fail "challenge generate returned no indirect words"
-INDIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --recipient "${SOURCE_PRE}" --words "${INDIRECT_CHALLENGE_WORDS}" --transport indirect)"
-assert_line_contains "$(last_non_empty_line "${INDIRECT_RESPOND_OUTPUT}")" "${BASE_URL}"
+INDIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --alias "${TARGET_ALIAS}" --recipient "${SOURCE_ALIAS}" --words "${INDIRECT_CHALLENGE_WORDS}" --transport indirect)"
+assert_line_contains "${INDIRECT_RESPOND_OUTPUT}" "Sent EXN message"
 stop_source_host
 INDIRECT_VERIFY_OUTPUT="$(capture_tufa challenge verify --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --signer "${TARGET_PRE}" --words "${INDIRECT_CHALLENGE_WORDS}" --timeout 5)"
 assert_line_contains "$(last_non_empty_line "${INDIRECT_VERIFY_OUTPUT}")" "${TARGET_PRE}"
+
+log "Exercise generic exn send with alias-based recipient resolution"
+start_target_host
+EXN_CHALLENGE_WORDS="$(last_non_empty_line "$(capture_tufa challenge generate --strength 128 --out json)")"
+[[ -n "${EXN_CHALLENGE_WORDS}" ]] || fail "challenge generate returned no exn words"
+EXN_SEND_OUTPUT="$(capture_tufa exn send --name "${SOURCE_NAME}" --head-dir "${SOURCE_HEAD}" --passcode "${PASSCODE}" --sender "${SOURCE_ALIAS}" --recipient "${TARGET_ALIAS}" --route /challenge/response --data "{\"i\":\"${SOURCE_PRE}\",\"words\":${EXN_CHALLENGE_WORDS}}")"
+assert_line_contains "${EXN_SEND_OUTPUT}" "Sent EXN message"
+stop_target_host
+EXN_VERIFY_OUTPUT="$(capture_tufa challenge verify --name "${TARGET_NAME}" --head-dir "${TARGET_HEAD}" --passcode "${PASSCODE}" --signer "${SOURCE_PRE}" --words "${EXN_CHALLENGE_WORDS}" --timeout 5)"
+assert_line_contains "$(last_non_empty_line "${EXN_VERIFY_OUTPUT}")" "${SOURCE_PRE}"
 
 log "Verify config-seeded init bootstrap convergence through oobis and woobi"
 start_source_host

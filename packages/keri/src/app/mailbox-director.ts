@@ -1,14 +1,28 @@
+/**
+ * Runtime-composed mailbox publication, query, and stream coordination.
+ *
+ * KERIpy correspondence:
+ * - gathers responsibilities that KERIpy spreads across `Mailboxer`,
+ *   mailbox iterables, and indirect-mode query handling
+ *
+ * Current `keri-ts` difference:
+ * - one runtime host receives an explicit mailbox sidecar instead of
+ *   discovering mailbox storage through `Habery`
+ * - runtime cues are translated into mailbox publications through an explicit
+ *   cue sink instead of HIO doer wiring
+ */
 import type { Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission, ReplyCue, StreamCue } from "./../core/cues.ts";
 import { Deck } from "../core/deck.ts";
+import { ValidationError } from "../core/errors.ts";
 import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
-import { TopicsRecord } from "../core/records.ts";
-import type { Baser } from "../db/basing.ts";
+import type { Mailboxer } from "../db/mailboxing.ts";
 import type { CueSink } from "./cue-runtime.ts";
+import type { Habery } from "./habbing.ts";
+import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "./mailboxing.ts";
 
-const textDecoder = new TextDecoder();
+/** Shared encoder for SSE mailbox stream framing. */
 const textEncoder = new TextEncoder();
-const MAILBOX_CURSOR = "__mailbox__";
 
 /**
  * Mailbox topic director for one runtime host.
@@ -16,24 +30,81 @@ const MAILBOX_CURSOR = "__mailbox__";
  * Responsibilities:
  * - persist reply/replay/receipt-style wire emissions into durable topic stores
  * - retain mailbox stream requests so protocol hosts can answer `mbx` queries
- * - expose ordered topic iteration backed by `ptds.` and durable topic cursors
+ * - expose ordered topic iteration backed by the dedicated `Mailboxer` and
+ *   durable remote cursor state in `tops.`
  *
  * KERIpy correspondence:
- * - this is the closest `keri-ts` analogue to the mailbox storage/query slice
- *   coordinated by `MailboxDirector`, `MailboxIterable`, and related helpers
- *
- * Current `keri-ts` difference:
- * - the first pass is intentionally scoped to runtime-driven mailbox topics and
- *   query streaming; forwarding/exchange orchestration lands later on top of
- *   this storage seam
+ * - coordinates the storage/query slice around `Mailboxer`,
+ *   `MailboxIterable`, and the runtime cue bridge
  */
 export class MailboxDirector implements CueSink {
-  readonly db: Baser;
+  readonly hby: Habery;
+  readonly mailboxer: Mailboxer | null;
   readonly queryCues: Deck<StreamCue>;
+  readonly topics: Set<string>;
+  private activeMailboxAid: string | null = null;
 
-  constructor(db: Baser, { queryCues }: { queryCues?: Deck<StreamCue> } = {}) {
-    this.db = db;
+  constructor(
+    hby: Habery,
+    {
+      mailboxer,
+      queryCues,
+      topics = [],
+    }: {
+      mailboxer?: Mailboxer;
+      queryCues?: Deck<StreamCue>;
+      topics?: readonly string[];
+    } = {},
+  ) {
+    this.hby = hby;
+    this.mailboxer = mailboxer ?? null;
     this.queryCues = queryCues ?? new Deck();
+    this.topics = new Set(topics);
+  }
+
+  /** Return true when provider-side mailbox storage is available. */
+  hasMailboxStore(): boolean {
+    return this.mailboxer !== null;
+  }
+
+  /** Register one mailbox topic this runtime should poll/stream. */
+  registerTopic(topic: string): void {
+    if (topic.length > 0) {
+      this.topics.add(topic);
+    }
+  }
+
+  /**
+   * Run one request-scoped block with the addressed hosted mailbox AID set.
+   *
+   * `/fwd` handling needs this so it can verify mailbox authorization against
+   * the mailbox AID that actually received the request instead of guessing from
+   * payload contents alone.
+   */
+  withActiveMailboxAid<T>(
+    aid: string | null,
+    fn: () => T,
+  ): T {
+    const prior = this.activeMailboxAid;
+    this.activeMailboxAid = aid;
+    try {
+      return fn();
+    } finally {
+      this.activeMailboxAid = prior;
+    }
+  }
+
+  /**
+   * Return the mailbox AID currently associated with the in-flight request, if
+   * any.
+   */
+  currentMailboxAid(): string | null {
+    return this.activeMailboxAid;
+  }
+
+  /** Snapshot the currently configured mailbox topic set. */
+  registeredTopics(): string[] {
+    return [...this.topics];
   }
 
   /**
@@ -63,19 +134,19 @@ export class MailboxDirector implements CueSink {
   /**
    * Persist one outbound mailbox payload under the ordered topic bucket for
    * `pre/topic`.
+   *
+   * The returned index is the newly assigned mailbox event id for that topic.
    */
   publish(pre: string, topic: string, msg: Uint8Array): number {
-    const prior = this.cursorRecord(pre);
-    const idx = (prior.topics[topic] ?? -1) + 1;
-    this.db.ptds.add([pre, topic], textDecoder.decode(msg));
-    prior.topics[topic] = idx;
-    this.db.tops.pin([pre, MAILBOX_CURSOR], prior);
+    const idx = this.lastIndex(pre, topic) + 1;
+    this.requireMailboxer().storeMsg(mailboxTopicKey(pre, topic), msg);
     return idx;
   }
 
   /** Return the latest stored publication index for one topic, or `-1`. */
   lastIndex(pre: string, topic: string): number {
-    return this.cursorRecord(pre).topics[topic] ?? -1;
+    const count = this.requireMailboxer().tpcs.cntOn(mailboxTopicKey(pre, topic));
+    return count > 0 ? count - 1 : -1;
   }
 
   /**
@@ -89,18 +160,24 @@ export class MailboxDirector implements CueSink {
     topic: string,
     from = 0,
   ): Generator<{ idx: number; msg: Uint8Array }> {
-    let idx = from;
     for (
-      const [, payload] of this.db.ptds.getItemIter([pre, topic], { ion: from })
+      const [idx, , msg] of this.requireMailboxer().cloneTopicIter(
+        mailboxTopicKey(pre, topic),
+        from,
+      )
     ) {
-      yield { idx, msg: textEncoder.encode(payload) };
-      idx += 1;
+      yield { idx, msg };
     }
   }
 
   /**
    * Return a server-sent-event stream over mailbox topics until the idle window
    * expires.
+   *
+   * SSE policy:
+   * - emit one initial `retry:` hint
+   * - stream ordered mailbox payloads as `id/event/data`
+   * - close once the idle window expires without new mailbox traffic
    */
   streamMailbox(
     pre: string,
@@ -117,24 +194,31 @@ export class MailboxDirector implements CueSink {
   ): ReadableStream<Uint8Array> {
     const cursors = { ...topicCursor };
     const encoder = new TextEncoder();
+    let closed = false;
+    let idleTimer: number | null = null;
+    let pollTimer: number | null = null;
+
+    const cleanup = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+      if (pollTimer !== null) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    };
+
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
         controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
-        let closed = false;
-        let idleTimer: number | null = null;
-        let pollTimer: number | null = null;
 
         const close = () => {
-          if (closed) {
-            return;
-          }
-          closed = true;
-          if (idleTimer !== null) {
-            clearTimeout(idleTimer);
-          }
-          if (pollTimer !== null) {
-            clearTimeout(pollTimer);
-          }
+          cleanup();
           controller.close();
         };
 
@@ -172,12 +256,38 @@ export class MailboxDirector implements CueSink {
         resetIdle();
         poll();
       },
+      cancel: () => {
+        cleanup();
+      },
     });
+  }
+
+  /**
+   * Build the next `mbx` query cursor map for one `(pre, witness)` pair.
+   *
+   * Stored cursor rows track the last seen index, while the wire query asks for
+   * the next wanted index.
+   */
+  remoteQueryCursor(pre: string, witness: string): Record<string, number> {
+    return mailboxQueryTopics(this.hby, pre, witness, this.topics);
+  }
+
+  /** Persist one consumed remote mailbox index for one `(pre, witness, topic)`. */
+  updateRemoteCursor(
+    pre: string,
+    witness: string,
+    topic: string,
+    idx: number,
+  ): void {
+    updateMailboxRemoteCursor(this.hby, pre, witness, topic, idx);
   }
 
   /**
    * Check whether the runtime has seen a matching `stream` cue for one query
    * SAID without discarding other pending query cues.
+   *
+   * This keeps query correlation observable without consuming cues that later
+   * host work still needs.
    */
   hasQueryCue(said: string): boolean {
     let found = false;
@@ -196,7 +306,12 @@ export class MailboxDirector implements CueSink {
     return found;
   }
 
-  /** Return the mailbox topic used for one runtime cue, if any. */
+  /**
+   * Return the mailbox topic used for one runtime cue, if any.
+   *
+   * Only reply, replay, and receipt-style cues produce mailbox topic
+   * publications here.
+   */
   private topicForCue(cue: AgentCue): string | null {
     switch (cue.kin) {
       case "replay":
@@ -211,7 +326,12 @@ export class MailboxDirector implements CueSink {
     }
   }
 
-  /** Return the mailbox identifier bucket used for one runtime cue, if any. */
+  /**
+   * Return the mailbox identifier bucket used for one runtime cue, if any.
+   *
+   * This is the controller prefix whose mailbox topic bucket receives the wire
+   * payload.
+   */
   private preForCue(cue: AgentCue): string | null {
     switch (cue.kin) {
       case "replay":
@@ -226,7 +346,12 @@ export class MailboxDirector implements CueSink {
     }
   }
 
-  /** Persist any mailbox-relevant wire emission into the durable topic stores. */
+  /**
+   * Persist any mailbox-relevant wire emission into the durable topic stores.
+   *
+   * Cue-to-topic mapping stays centralized here so mailbox publication policy
+   * remains consistent across runtime callers.
+   */
   private storeWireEmission(cue: AgentCue, msgs: Uint8Array[]): void {
     const topic = this.topicForCue(cue);
     const pre = this.preForCue(cue);
@@ -238,13 +363,22 @@ export class MailboxDirector implements CueSink {
     }
   }
 
-  /** Load or initialize the durable topic-index record used for local mailbox publication. */
-  private cursorRecord(pre: string): TopicsRecord {
-    return this.db.tops.get([pre, MAILBOX_CURSOR])
-      ?? new TopicsRecord({ topics: {} });
+  /** Require provider mailbox storage for publication or mailbox serving. */
+  private requireMailboxer(): Mailboxer {
+    if (!this.mailboxer) {
+      throw new ValidationError(
+        "Provider mailbox storage is unavailable for this runtime.",
+      );
+    }
+    return this.mailboxer;
   }
 }
 
+/**
+ * Resolve which controller prefix owns a reply mailbox publication.
+ *
+ * Reply cues may carry their data explicitly or only inside the reply serder.
+ */
 function replyMailboxPre(cue: ReplyCue): string | null {
   const data = cue.data
     ?? (cue.serder?.ked?.a as Record<string, unknown> | undefined);

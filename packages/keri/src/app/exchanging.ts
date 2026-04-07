@@ -18,6 +18,7 @@ import { Kever } from "../core/kever.ts";
 import { makeExchangeSerder } from "../core/messages.ts";
 import { Roles } from "../core/roles.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 const textDecoder = new TextDecoder();
@@ -510,8 +511,13 @@ export function* sendSignedExchangeMessage(
     stamp: args.date,
     dig: args.dig,
   });
-  const message = hab.endorse(serder);
-  const response = yield* postCesrMessage(url, message);
+  const message = hab.endorse(serder, { pipelined: false });
+  const response = yield* postCesrMessage(
+    url,
+    message,
+    "header",
+    args.recipient,
+  );
   yield* closeResponseBody(response);
   if (!response.ok) {
     throw new ValidationError(
@@ -584,27 +590,51 @@ function normalizeAttachments(
 function* postCesrMessage(
   url: string,
   body: Uint8Array,
+  bodyMode: CesrBodyMode,
+  destination?: string,
 ): Operation<Response> {
-  return yield* action((resolve, reject) => {
-    const controller = new AbortController();
-    const payload = new Uint8Array(body);
-    let settled = false;
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/cesr" },
-      body: payload.buffer,
-      signal: controller.signal,
-    }).then((response) => {
-      settled = true;
-      resolve(response);
-    }).catch(reject);
+  const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
+  let lastResponse: Response | null = null;
 
-    return () => {
-      if (!settled) {
-        controller.abort();
-      }
-    };
-  });
+  for (const currentBody of requests) {
+    const request = buildCesrRequest(currentBody, {
+      bodyMode,
+      destination,
+    });
+    const response = yield* action<Response>((resolve, reject) => {
+      const controller = new AbortController();
+      let settled = false;
+      fetch(url, {
+        method: "POST",
+        headers: request.headers,
+        body: request.body,
+        signal: controller.signal,
+      }).then((current) => {
+        settled = true;
+        resolve(current);
+      }).catch(reject);
+
+      return () => {
+        if (!settled) {
+          controller.abort();
+        }
+      };
+    });
+
+    if (lastResponse) {
+      yield* closeResponseBody(lastResponse);
+    }
+    lastResponse = response;
+    if (!response.ok) {
+      return response;
+    }
+  }
+
+  if (!lastResponse) {
+    throw new ValidationError("No CESR HTTP request was generated for delivery.");
+  }
+
+  return lastResponse;
 }
 
 function* closeResponseBody(response: Response): Operation<void> {

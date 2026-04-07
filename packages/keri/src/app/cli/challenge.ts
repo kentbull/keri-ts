@@ -1,5 +1,7 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { createAgentRuntime, processRuntimeTurn } from "../agent-runtime.ts";
+import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import {
   type ChallengeOutput,
   findVerifiedChallengeResponse,
@@ -8,7 +10,9 @@ import {
   markChallengeVerified,
   parseChallengeWords,
 } from "../challenging.ts";
-import { type ExchangeTransport, sendSignedExchangeMessage } from "../exchanging.ts";
+import { type ExchangeDeliveryPreference, sendExchangeMessage } from "../forwarding.ts";
+import type { Habery } from "../habbing.ts";
+import { Organizer } from "../organizing.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface ChallengeGenerateArgs {
@@ -26,6 +30,8 @@ interface ChallengeRespondArgs {
   words?: string;
   transport?: string;
   compat?: boolean;
+  outboxer?: boolean;
+  cesrBodyMode?: CesrBodyMode;
 }
 
 interface ChallengeVerifyArgs {
@@ -35,8 +41,13 @@ interface ChallengeVerifyArgs {
   passcode?: string;
   signer?: string;
   words?: string;
+  generate?: boolean;
+  strength?: number;
+  out?: string;
   timeout?: number;
   compat?: boolean;
+  outboxer?: boolean;
+  cesrBodyMode?: CesrBodyMode;
 }
 
 /** Implement `tufa challenge generate`. */
@@ -67,6 +78,8 @@ export function* challengeRespondCommand(
     words: args.words as string | undefined,
     transport: args.transport as string | undefined,
     compat: args.compat as boolean | undefined,
+    outboxer: args.outboxer as boolean | undefined,
+    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
   };
 
   if (!commandArgs.name) {
@@ -97,7 +110,9 @@ export function* challengeRespondCommand(
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
-      skipSignator: true,
+      skipSignator: false,
+      outboxer: commandArgs.outboxer ?? false,
+      cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
 
@@ -109,13 +124,15 @@ export function* challengeRespondCommand(
       );
     }
 
-    const { serder, url } = yield* sendSignedExchangeMessage(hab, {
-      route: "/challenge/response",
-      payload: { i: hab.pre, words },
+    const { serder } = yield* sendExchangeMessage(hby, hab, {
       recipient: commandArgs.recipient,
-      transport: normalizeTransport(commandArgs.transport),
+      route: "/challenge/response",
+      topic: "challenge",
+      payload: { i: hab.pre, words },
+      delivery: normalizeTransport(commandArgs.transport),
     });
-    console.log(`${serder.said} ${url}`);
+    console.log("Sent EXN message");
+    console.log(serder.pretty());
   } finally {
     yield* hby.close();
   }
@@ -132,21 +149,28 @@ export function* challengeVerifyCommand(
     passcode: args.passcode as string | undefined,
     signer: args.signer as string | undefined,
     words: args.words as string | undefined,
+    generate: args.generate as boolean | undefined,
+    strength: args.strength ? Number(args.strength) : undefined,
+    out: args.out as string | undefined,
     timeout: args.timeout ? Number(args.timeout) : 10,
     compat: args.compat as boolean | undefined,
+    outboxer: args.outboxer as boolean | undefined,
+    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
   };
 
   if (!commandArgs.name) {
     throw new ValidationError("Name is required and cannot be empty");
   }
   if (!commandArgs.signer) {
-    throw new ValidationError("Signer prefix is required.");
+    throw new ValidationError("Signer identifier or contact alias is required.");
   }
-  if (!commandArgs.words) {
+  if (!commandArgs.generate && !commandArgs.words) {
     throw new ValidationError("Challenge words are required.");
   }
 
-  const words = parseChallengeWords(commandArgs.words);
+  const words = commandArgs.generate
+    ? generateChallengeWords(commandArgs.strength ?? 128)
+    : parseChallengeWords(commandArgs.words!);
   if (words.length === 0) {
     throw new ValidationError("Challenge words must not be empty.");
   }
@@ -162,21 +186,30 @@ export function* challengeVerifyCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: true,
+      outboxer: commandArgs.outboxer ?? false,
+      cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
 
   try {
-    const timeoutMs = Math.max(1, commandArgs.timeout ?? 10) * 1000;
-    const start = Date.now();
-    let match = findVerifiedChallengeResponse(
-      hby.db,
-      commandArgs.signer,
-      words,
-    );
+    const signer = resolveSigner(hby, commandArgs.signer);
+    if (commandArgs.generate) {
+      console.log(formatChallengeWords(words, normalizeOutput(commandArgs.out)));
+    }
 
-    while (!match && (Date.now() - start) < timeoutMs) {
-      yield* sleep(250);
-      match = findVerifiedChallengeResponse(hby.db, commandArgs.signer, words);
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    runtime.mailboxDirector.topics.clear();
+    runtime.mailboxDirector.registerTopic("/challenge");
+    const timeoutMs = Math.max(1, commandArgs.timeout ?? 10) * 1000;
+    const deadline = Date.now() + timeoutMs;
+    let match = findVerifiedChallengeResponse(hby.db, signer, words);
+
+    while (!match && Date.now() < deadline) {
+      yield* processRuntimeTurn(runtime);
+      match = findVerifiedChallengeResponse(hby.db, signer, words);
+      if (!match && Date.now() < deadline) {
+        yield* sleep(250);
+      }
     }
 
     if (!match) {
@@ -185,11 +218,31 @@ export function* challengeVerifyCommand(
       );
     }
 
-    markChallengeVerified(hby.db, commandArgs.signer, match);
-    console.log(`${commandArgs.signer} ${match.said}`);
+    markChallengeVerified(hby.db, signer, match);
+    console.log(`${signer} ${match.said}`);
   } finally {
     yield* hby.close();
   }
+}
+
+function resolveSigner(
+  hby: Habery,
+  signer: string,
+): string {
+  if (hby.db.getKever(signer)) {
+    return signer;
+  }
+
+  const matches = new Organizer(hby).findExact("alias", signer);
+  if (matches.length === 0) {
+    throw new ValidationError(`no contact found with alias '${signer}'`);
+  }
+  if (matches.length > 1) {
+    throw new ValidationError(
+      `multiple contacts match alias '${signer}', use prefix instead`,
+    );
+  }
+  return matches[0]!.id;
 }
 
 function normalizeOutput(input?: string): ChallengeOutput {
@@ -200,7 +253,7 @@ function normalizeOutput(input?: string): ChallengeOutput {
   throw new ValidationError(`Unsupported challenge output ${String(input)}.`);
 }
 
-function normalizeTransport(input?: string): ExchangeTransport {
+function normalizeTransport(input?: string): ExchangeDeliveryPreference {
   const value = input ?? "auto";
   if (value === "auto" || value === "direct" || value === "indirect") {
     return value;

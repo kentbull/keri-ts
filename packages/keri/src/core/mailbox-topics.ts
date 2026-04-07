@@ -1,4 +1,11 @@
 /**
+ * Shared mailbox topic and cursor types.
+ *
+ * These types keep the mailbox query and streaming contract explicit:
+ * configured topics are human-facing lists, while runtime work uses cursor maps
+ * keyed by topic name and storing the next wanted mailbox index.
+ */
+/**
  * Configured mailbox topic names for one poll or subscription setup.
  *
  * KERIpy correspondence:

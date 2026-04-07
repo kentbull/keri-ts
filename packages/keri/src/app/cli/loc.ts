@@ -80,7 +80,7 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
     }
 
     const eid = commandArgs.eid ?? hab.pre;
-    const runtime = createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
     ingestKeriBytes(
       runtime,
       hab.makeLocScheme(commandArgs.url, eid, scheme, commandArgs.time),

@@ -6,6 +6,7 @@ import {
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
+  type AgentRuntime,
 } from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import type { Habery } from "../habbing.ts";
@@ -137,7 +138,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     );
     try {
       if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
-        const runtime = createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         yield* processRuntimeUntil(
           runtime,
           () => !runtimeHasPendingWork(runtime),
@@ -188,7 +189,7 @@ function configuredWellKnownUrls(hby: Habery): string[] {
 }
 
 function assertConfiguredWellKnownAuth(
-  runtime: ReturnType<typeof createAgentRuntime>,
+  runtime: AgentRuntime,
   hby: Habery,
   context: string,
 ): void {
