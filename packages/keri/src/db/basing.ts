@@ -86,6 +86,11 @@ import {
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
+function isMissingReloadEventError(error: unknown): boolean {
+  return error instanceof Error
+    && error.message.startsWith("Missing accepted event for reloaded Kever state ");
+}
+
 type EventSealRecord = ReturnType<typeof SealEvent.fromSad>;
 
 function isEventSealRecord(value: unknown): value is EventSealRecord {
@@ -1127,29 +1132,47 @@ export class Baser {
    * Rebuild accepted local-hab kevers from durable `habs.` and `states.`.
    *
    * KERIpy correspondence:
-   * - mirrors the eager local-hab portion of `Baser.reload()`
+   * - mirrors `keri.db.basing.Baser.reload()`
    *
-   * `keri-ts` difference:
-   * - non-hab accepted state such as hidden signators is loaded lazily through
-   *   `getKever()` instead of a Python-style read-through mapping
+   * Current `keri-ts` difference:
+   * - hidden non-hab accepted state such as the signator is still rehydrated
+   *   lazily through `getKever()` instead of living in a Python-style
+   *   read-through mapping
    */
   reloadKevers(): void {
     this.kevers.clear();
     this.prefixes.clear();
     this.groups.clear();
+    const removes: string[] = [];
 
     for (const [pre, habord] of this.getHabItemIter()) {
       const hid = habord.hid || pre;
       const state = this.getState(hid);
       if (!state) {
+        if (!habord.mid) {
+          removes.push(pre);
+        }
         continue;
       }
-      const kever = Kever.fromState({ state, db: this });
-      this.kevers.set(kever.pre, kever);
-      this.prefixes.add(kever.pre);
-      if (habord.mid) {
-        this.groups.add(kever.pre);
+
+      try {
+        const kever = Kever.fromState({ state, db: this });
+        this.kevers.set(kever.pre, kever);
+        this.prefixes.add(kever.pre);
+        if (habord.mid) {
+          this.groups.add(hid);
+        }
+      } catch (error) {
+        if (!habord.mid && isMissingReloadEventError(error)) {
+          removes.push(pre);
+          continue;
+        }
+        throw error;
       }
+    }
+
+    for (const pre of removes) {
+      this.habs.rem(pre);
     }
   }
 

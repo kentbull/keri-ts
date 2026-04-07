@@ -1342,9 +1342,12 @@ export class Habery {
    * so `Habery.habs` only contains reopenable local habitats.
    */
   private loadHabs(): void {
+    this.reconfigure();
+    this.habs.clear();
+
     for (const [pre, habord] of this.db.getHabItemIter()) {
       const hid = habord.hid || pre;
-      if (!habord.name || this.habs.has(hid) || !this.db.getKever(hid)) {
+      if (!habord.name || this.habs.has(hid)) {
         continue;
       }
       const hab = new Hab(
@@ -1356,8 +1359,15 @@ export class Habery {
         habord.domain,
         hid,
       );
-      this.habs.set(hid, hab);
+      if (!hab.accepted) {
+        throw new ValidationError(
+          `Problem loading Hab pre=${hid} name=${habord.name} from db.`,
+        );
+      }
+      this.habs.set(hab.pre, hab);
     }
+
+    this.reconfigure();
   }
 
   /** Local AID prefixes currently managed by this habery. */
