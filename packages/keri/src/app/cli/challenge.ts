@@ -1,6 +1,6 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime } from "../agent-runtime.ts";
+import { createAgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import {
   type ChallengeOutput,
@@ -213,14 +213,7 @@ export function* challengeVerifyCommand(
     let match = findVerifiedChallengeResponse(hby.db, signer, words);
 
     while (!match && Date.now() < deadline) {
-      const batches = yield* runtime.mailboxPoller.processOnce();
-      for (const batch of batches) {
-        for (const message of batch.messages) {
-          runtime.reactor.ingest(message);
-        }
-        runtime.reactor.processOnce();
-        runtime.reactor.processEscrowsOnce();
-      }
+      yield* processMailboxTurn(runtime);
       match = findVerifiedChallengeResponse(hby.db, signer, words);
       if (!match && Date.now() < deadline) {
         yield* sleep(250);

@@ -25,7 +25,7 @@ import {
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
 import { Roles } from "../core/roles.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
+import { settleRuntimeIngress, type AgentRuntime } from "./agent-runtime.ts";
 import { readCesrRequestBytes } from "./cesr-http.ts";
 import type { Hab } from "./habbing.ts";
 import { endpointBasePath, fetchEndpointUrls, hostedEndpointPathMatches, preferredUrl } from "./mailboxing.ts";
@@ -507,9 +507,7 @@ function processRuntimeRequest(
   serviceHab?: Hab,
 ): void {
   runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
-    runtime.reactor.ingest(bytes);
-    runtime.reactor.processOnce();
-    runtime.reactor.processEscrowsOnce();
+    settleRuntimeIngress(runtime, [bytes]);
     drainRuntimeCues(runtime, serviceHab);
   });
 }

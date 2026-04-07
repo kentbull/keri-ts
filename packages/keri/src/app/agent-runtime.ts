@@ -7,7 +7,13 @@ import type { Mailboxer } from "../db/mailboxing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
-import { ForwardHandler, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
+import {
+  ForwardHandler,
+  MailboxPoller,
+  type MailboxPollBatch,
+  mailboxTopicForRoute,
+  Poster,
+} from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
@@ -179,6 +185,59 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
 }
 
 /**
+ * Parse and settle one or more newly arrived KERI/CESR messages immediately.
+ *
+ * This is the shared ingress-settlement seam for mailbox-delivered batches and
+ * HTTP request payloads that should advance parser and escrow state together.
+ */
+export function settleRuntimeIngress(
+  runtime: AgentRuntime,
+  messages: Iterable<Uint8Array>,
+): void {
+  for (const message of messages) {
+    runtime.reactor.ingest(message);
+  }
+  runtime.reactor.processOnce();
+  runtime.reactor.processEscrowsOnce();
+}
+
+/**
+ * Settle one mailbox retrieval batch while preserving per-source boundaries.
+ *
+ * Local and remote poll results are intentionally processed batch-by-batch so
+ * follow-on escrow progress can occur before the next source is consumed.
+ */
+export function settleMailboxPollBatch(
+  runtime: AgentRuntime,
+  batch: MailboxPollBatch,
+): void {
+  settleRuntimeIngress(runtime, batch.messages);
+}
+
+/**
+ * Drain one bounded mailbox polling turn and settle each returned batch.
+ *
+ * This keeps mailbox polling ownership inside the shared runtime surface so
+ * commands do not need to know how mailbox ingress is parsed and escrowed.
+ */
+export function* processMailboxTurn(
+  runtime: AgentRuntime,
+  options: {
+    hab?: Hab;
+    budgetMs?: number;
+  } = {},
+): Operation<MailboxPollBatch[]> {
+  runtime.mailboxPoller.configure({ hab: options.hab });
+  const batches = yield* runtime.mailboxPoller.processOnce({
+    budgetMs: options.budgetMs,
+  });
+  for (const batch of batches) {
+    settleMailboxPollBatch(runtime, batch);
+  }
+  return batches;
+}
+
+/**
  * Drain one bounded runtime turn by delegating to component-owned flows.
  *
  * Turn order:
@@ -205,20 +264,12 @@ export function* processRuntimeTurn(
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
-  runtime.mailboxPoller.configure({ hab: options.hab });
   runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
   if (options.pollMailbox ?? true) {
-    const batches = yield* runtime.mailboxPoller.processOnce();
-    for (const batch of batches) {
-      for (const message of batch.messages) {
-        runtime.reactor.ingest(message);
-      }
-      runtime.reactor.processOnce();
-      runtime.reactor.processEscrowsOnce();
-    }
+    yield* processMailboxTurn(runtime, { hab: options.hab });
   }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
@@ -396,11 +447,7 @@ export function* runAgentRuntime(
     }),
     yield* spawn(function*() {
       yield* runtime.mailboxPoller.pollDo((batch) => {
-        for (const message of batch.messages) {
-          runtime.reactor.ingest(message);
-        }
-        runtime.reactor.processOnce();
-        runtime.reactor.processEscrowsOnce();
+        settleMailboxPollBatch(runtime, batch);
       });
     }),
     yield* spawn(function*() {

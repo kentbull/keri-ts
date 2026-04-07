@@ -9,14 +9,16 @@
  * - `/fwd` authorization before provider-side storage
  */
 import { type Operation, run, spawn } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
+  processMailboxTurn,
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
+import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { agentCommand } from "../../../src/app/cli/agent.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
@@ -758,6 +760,122 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
     await host1.close();
     await host2.close();
   }
+});
+
+/**
+ * Proves the shared mailbox-turn helper owns local mailbox batch settlement.
+ *
+ * The helper should preserve batch boundaries, return the consumed batches,
+ * and settle each batch far enough for challenge-response visibility.
+ */
+Deno.test("processMailboxTurn settles local mailbox batches and returns them", async () => {
+  const clientName = `mailbox-turn-client-${crypto.randomUUID()}`;
+  const clientHeadDirPath = `/tmp/tufa-mailbox-turn-client-${crypto.randomUUID()}`;
+  const wordsA = ["able", "baker"];
+  const wordsB = ["charlie", "delta"];
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: clientName,
+      headDirPath: clientHeadDirPath,
+      skipConfig: true,
+      skipSignator: true,
+    });
+
+    try {
+      const alice = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const bob = hby.makeHab("bob", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const senderA = hby.makeHab("sender-a", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const senderB = hby.makeHab("sender-b", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const runtime = yield* createAgentRuntime(hby, {
+        mode: "local",
+        enableMailboxStore: true,
+      });
+      const mailboxer = runtime.mailboxer;
+      if (!mailboxer) {
+        throw new Error("Expected local mailboxer for mailbox turn test.");
+      }
+
+      runtime.mailboxDirector.topics.clear();
+      runtime.mailboxDirector.registerTopic("/challenge");
+
+      const first = {
+        senderPre: senderA.pre,
+        message: senderA.endorse(
+          makeExchangeSerder("/challenge/response", {
+            i: senderA.pre,
+            words: [...wordsA],
+          }, {
+            sender: senderA.pre,
+            recipient: alice.pre,
+          }),
+        ),
+      };
+      const second = {
+        senderPre: senderB.pre,
+        message: senderB.endorse(
+          makeExchangeSerder("/challenge/response", {
+            i: senderB.pre,
+            words: [...wordsB],
+          }, {
+            sender: senderB.pre,
+            recipient: bob.pre,
+          }),
+        ),
+      };
+
+      mailboxer.storeMsg(
+        mailboxTopicKey(alice.pre, "/challenge"),
+        first.message,
+      );
+      mailboxer.storeMsg(
+        mailboxTopicKey(bob.pre, "/challenge"),
+        second.message,
+      );
+
+      const batches = yield* processMailboxTurn(runtime);
+
+      assertEquals(
+        batches.map((batch) => ({ source: batch.source, pre: batch.pre })),
+        [
+          { source: "local", pre: alice.pre },
+          { source: "local", pre: bob.pre },
+        ],
+      );
+      assertExists(findVerifiedChallengeResponse(hby.db, first.senderPre, wordsA));
+      assertExists(findVerifiedChallengeResponse(hby.db, second.senderPre, wordsB));
+    } finally {
+      yield* hby.close();
+    }
+  });
 });
 
 /**
