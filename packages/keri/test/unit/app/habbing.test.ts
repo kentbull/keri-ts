@@ -1,22 +1,10 @@
 import { run } from "effection";
-import {
-  assertEquals,
-  assertInstanceOf,
-  assertRejects,
-  assertStrictEquals,
-} from "jsr:@std/assert";
-import {
-  Cigar,
-  Counter,
-  CtrDexV1,
-  SerderKERI,
-  Siger,
-  smell,
-  Verfer,
-} from "../../../../cesr/mod.ts";
+import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { Cigar, Counter, CtrDexV1, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
+import * as parsering from "../../../src/app/parsering.ts";
 import { makeExchangeSerder } from "../../../src/core/messages.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -25,7 +13,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -76,7 +64,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -111,7 +99,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
   const name = `habery-local-kevery-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -144,7 +132,7 @@ Deno.test("Habery reconfigure preserves top-level OOBI preload queues", async ()
   const name = `habery-config-oobi-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -189,7 +177,7 @@ Deno.test("Hab reconfigure applies alias-scoped controller curls through reply a
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const url = "http://127.0.0.1:7002/controller";
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -237,7 +225,7 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
   let endSaid = "";
   let locSaid = "";
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -272,7 +260,7 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -294,11 +282,62 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
   });
 });
 
+Deno.test("Hab receives KERIpy-style config and local routing seams from Habery", async () => {
+  const name = `habery-injected-seams-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const cf = yield* createConfiger({
+      name,
+      headDirPath,
+      temp: false,
+    });
+    cf.put({
+      alice: {
+        dt: "2026-04-06T13:30:00.000Z",
+        curls: ["http://127.0.0.1:7004/controller"],
+      },
+    });
+
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      cf,
+      skipSignator: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      assertStrictEquals(hab.cf, cf);
+      assertStrictEquals(hab.rtr, hby.rtr);
+      assertStrictEquals(hab.rvy, hby.rvy);
+      assertStrictEquals(hab.kvy, hby.kevery);
+      assertEquals(hab.hasConfigSection(), true);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Parsering exports no fake parser seam", () => {
+  assertEquals("KeriParserAdapter" in parsering, false);
+  assertEquals("KeriParserLike" in parsering, false);
+  assertEquals("KeriEnvelopeStreamParser" in parsering, false);
+  assertEquals(typeof parsering.envelopesFromFrames, "function");
+});
+
 Deno.test("Hab endorse matches KERIpy EXN pipelining modes", async () => {
   const name = `habery-endorse-exn-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -338,7 +377,7 @@ Deno.test("Habery inception keeps non-transferable prefix equal to the signing k
   const name = `habery-nontrans-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -365,7 +404,7 @@ Deno.test("Habery inception keeps non-transferable ECDSA prefixes equal to the s
   const name = `habery-nontrans-r1-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -394,7 +433,7 @@ Deno.test("Habery inception honors digestive prefix codex overrides for i", asyn
   const name = `habery-sha2-prefix-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -424,7 +463,7 @@ Deno.test("Habery inception persists weighted and nested threshold state", async
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const nested = [{ "1": ["1/2", "1/2"] }];
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -456,7 +495,7 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
   const name = `habery-sign-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -511,7 +550,7 @@ Deno.test("Hab witness helper emits receipt bytes but skips own-event local witn
   const name = `habery-witness-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -557,7 +596,7 @@ Deno.test("Hab non-transferable receipt helper emits receipt bytes but skips own
   const name = `habery-nontrans-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -602,7 +641,7 @@ Deno.test("Hab transferable receipt helper emits receipt bytes but drops own-eve
   const name = `habery-validator-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -648,7 +687,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
   const bran = "MyPasscodeARealSecret";
   let signatoryPre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -680,7 +719,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -710,7 +749,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
 
   await assertRejects(
     () =>
-      run(function* () {
+      run(function*() {
         const hby = yield* createHabery({
           name,
           headDirPath,
@@ -725,4 +764,51 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
     Error,
     "Last seed missing or provided last seed not associated",
   );
+});
+
+Deno.test("Signator reuses the Habery narrow dependency seam across reopen", async () => {
+  const name = `habery-signator-seams-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  let signatoryPre = "";
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const signator = hby.signator;
+      if (!signator) {
+        throw new Error("Expected signator.");
+      }
+
+      signatoryPre = signator.pre;
+      assertStrictEquals(signator.hab.cf, hby.cf);
+      assertStrictEquals(signator.hab.rtr, hby.rtr);
+      assertStrictEquals(signator.hab.rvy, hby.rvy);
+      assertStrictEquals(signator.hab.kvy, hby.kevery);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+    });
+    try {
+      const signator = hby.signator;
+      if (!signator) {
+        throw new Error("Expected signator.");
+      }
+
+      assertEquals(signator.pre, signatoryPre);
+      assertStrictEquals(signator.hab.rtr, hby.rtr);
+      assertStrictEquals(signator.hab.rvy, hby.rvy);
+      assertStrictEquals(signator.hab.kvy, hby.kevery);
+    } finally {
+      yield* hby.close();
+    }
+  });
 });

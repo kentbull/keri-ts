@@ -1,12 +1,12 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import {
+  type AgentRuntime,
   createAgentRuntime,
   processRuntimeUntil,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
-  type AgentRuntime,
 } from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import type { Habery } from "../habbing.ts";
@@ -142,7 +142,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         yield* processRuntimeUntil(
           runtime,
           () => !runtimeHasPendingWork(runtime),
-          { maxTurns: 128 },
+          { maxTurns: 128, pollMailbox: false },
         );
         if (hby.db.eoobi.cnt() > 0) {
           throw new ValidationError(

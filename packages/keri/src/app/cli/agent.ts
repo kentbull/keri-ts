@@ -3,12 +3,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { EndpointRoles } from "../../core/roles.ts";
 import { Schemes } from "../../core/schemes.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-  runAgentRuntime,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn, runAgentRuntime } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -52,17 +47,18 @@ export function* runIndirectHost(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
   const seedHabs = options.seedHabs ?? [options.serviceHab];
-  const hostedPrefixes = options.hostedPrefixes ??
-    seedHabs.map((hab) => hab.pre);
+  const hostedPrefixes = options.hostedPrefixes
+    ?? seedHabs.map((hab) => hab.pre);
 
   for (const hab of seedHabs) {
     yield* processRuntimeTurn(runtime, {
       hab,
       sink: runtime.mailboxDirector,
+      pollMailbox: false,
     });
   }
 
-  const runtimeTask = yield* spawn(function* () {
+  const runtimeTask = yield* spawn(function*() {
     yield* runAgentRuntime(runtime, {
       hab: options.serviceHab,
       sink: runtime.mailboxDirector,
@@ -85,8 +81,8 @@ export function* runIndirectHost(
   }
 }
 
-function configuredControllerState(hby: Habery, hab: Hab): boolean {
-  return hby.hasConfiguredSectionForHab(hab);
+function configuredControllerState(hab: Hab): boolean {
+  return hab.hasConfigSection();
 }
 
 function controllerRoleEnabled(hby: Habery, pre: string): boolean {
@@ -104,8 +100,8 @@ function preferredControllerUrl(hab: Hab): string | null {
 }
 
 function controllerStartupComplete(hby: Habery, hab: Hab): boolean {
-  return controllerRoleEnabled(hby, hab.pre) &&
-    preferredControllerUrl(hab) !== null;
+  return controllerRoleEnabled(hby, hab.pre)
+    && preferredControllerUrl(hab) !== null;
 }
 
 function* reconcileHostedControllerBootstrap(
@@ -116,7 +112,7 @@ function* reconcileHostedControllerBootstrap(
   const runtime = yield* createAgentRuntime(hby, { mode: "local" });
   try {
     for (const hab of seedHabs) {
-      if (configuredControllerState(hby, hab)) {
+      if (configuredControllerState(hab)) {
         if (!controllerStartupComplete(hby, hab)) {
           throw new ValidationError(
             `Configured controller endpoint state for alias ${hab.name} is incomplete.`,
@@ -137,7 +133,7 @@ function* reconcileHostedControllerBootstrap(
           hab.makeLocScheme(synthesizeRootUrl, hab.pre, Schemes.http),
         );
       }
-      yield* processRuntimeTurn(runtime, { hab });
+      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
 
       if (!controllerStartupComplete(hby, hab)) {
         throw new ValidationError(

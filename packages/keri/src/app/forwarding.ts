@@ -159,7 +159,13 @@ export class Poster {
       const failed = new Map<string, string>();
       for (const endpoint of mailboxEndpoints) {
         try {
-          yield* this.deliverMailboxTarget(hab, recipient, topic, message, endpoint);
+          yield* this.deliverMailboxTarget(
+            hab,
+            recipient,
+            topic,
+            message,
+            endpoint,
+          );
           deliveries.push(endpoint.url);
         } catch (error) {
           failed.set(
@@ -308,7 +314,10 @@ export class Poster {
     endpoint: { eid: string; url: string },
   ): Operation<void> {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
-      this.requireMailboxer().storeMsg(mailboxTopicKey(recipient, topic), message);
+      this.requireMailboxer().storeMsg(
+        mailboxTopicKey(recipient, topic),
+        message,
+      );
       return;
     }
 
@@ -451,7 +460,10 @@ export class MailboxPoller {
     for (const hab of this.hby.habs.values()) {
       const remoteEndpoints = mailboxPollEndpoints(this.hby, hab);
       for (const endpoint of remoteEndpoints) {
-        const cursor = this.mailboxDirector.remoteQueryCursor(hab.pre, endpoint.eid);
+        const cursor = this.mailboxDirector.remoteQueryCursor(
+          hab.pre,
+          endpoint.eid,
+        );
         const messages = yield* fetchMailboxMessages(
           hab,
           endpoint.eid,
@@ -491,7 +503,10 @@ export class MailboxPoller {
    * Local cursors are in-memory only because they are scoped to the current
    * runtime process, unlike remote mailbox progress tracked in `tops.`.
    */
-  private readLocalMailbox(pre: string, topics: readonly string[]): Uint8Array[] {
+  private readLocalMailbox(
+    pre: string,
+    topics: readonly string[],
+  ): Uint8Array[] {
     if (!this.mailboxDirector.hasMailboxStore()) {
       return [];
     }
@@ -499,7 +514,13 @@ export class MailboxPoller {
     const messages: Uint8Array[] = [];
 
     for (const topic of topics) {
-      for (const item of this.mailboxDirector.topicIter(pre, topic, cursor[topic] ?? 0)) {
+      for (
+        const item of this.mailboxDirector.topicIter(
+          pre,
+          topic,
+          cursor[topic] ?? 0,
+        )
+      ) {
         cursor[topic] = item.idx + 1;
         messages.push(item.msg);
       }
@@ -627,9 +648,15 @@ function* fetchMailboxMessages(
     bodyMode,
     destination: src,
   });
-  const response = yield* action<Response>((resolve, reject) => {
+  const { response, controller } = yield* action<{
+    response: Response | null;
+    controller: AbortController;
+  }>((resolve, reject) => {
     const controller = new AbortController();
     let settled = false;
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 6000);
     fetch(url, {
       method: "POST",
       headers: request.headers,
@@ -637,29 +664,141 @@ function* fetchMailboxMessages(
       signal: controller.signal,
     }).then((current) => {
       settled = true;
-      resolve(current);
-    }).catch(reject);
+      clearTimeout(timeoutId);
+      resolve({ response: current, controller });
+    }).catch((error) => {
+      settled = true;
+      clearTimeout(timeoutId);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        resolve({ response: null, controller });
+        return;
+      }
+      reject(error);
+    });
     return () => {
+      clearTimeout(timeoutId);
       if (!settled) {
         controller.abort();
       }
     };
   });
 
+  if (response === null) {
+    return [];
+  }
+
   if (!response.ok) {
     awaitResponseClose(response);
     return [];
   }
 
-  const text = yield* action<string>((resolve, reject) => {
-    response.text().then(resolve).catch(reject);
-    return () => {};
-  });
+  const text = yield* readSseBody(response, controller);
   return parseMailboxSse(text);
 }
 
 function awaitResponseClose(response: Response): void {
   void response.body?.cancel().catch(() => {});
+}
+
+/**
+ * Read one mailbox SSE response without waiting for the server to close it.
+ *
+ * KERIpy mailbox queries keep the stream open for long-poll behavior, so
+ * command-local callers must stop after an idle window instead of calling
+ * `response.text()` and waiting for remote EOF.
+ */
+function* readSseBody(
+  response: Response,
+  controller: AbortController,
+  {
+    idleTimeoutMs = 500,
+    maxDurationMs = 6000,
+  }: {
+    idleTimeoutMs?: number;
+    maxDurationMs?: number;
+  } = {},
+): Operation<string> {
+  const body = response.body;
+  if (!body) {
+    return "";
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  const deadline = Date.now() + maxDurationMs;
+  const timedOut = Symbol("timedOut");
+
+  try {
+    while (Date.now() < deadline) {
+      const remaining = Math.max(
+        1,
+        Math.min(idleTimeoutMs, deadline - Date.now()),
+      );
+      const next = yield* action<
+        ReadableStreamReadResult<Uint8Array> | typeof timedOut
+      >((resolve, reject) => {
+        let settled = false;
+        const timeoutId = setTimeout(() => {
+          settled = true;
+          resolve(timedOut);
+        }, remaining);
+
+        reader.read().then((result) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeoutId);
+          resolve(result);
+        }).catch((error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeoutId);
+          reject(error);
+        });
+
+        return () => {
+          clearTimeout(timeoutId);
+        };
+      });
+
+      if (next === timedOut) {
+        if (
+          parseMailboxSse(text).length > 0
+          || Date.now() + idleTimeoutMs >= deadline
+        ) {
+          controller.abort();
+          break;
+        }
+        continue;
+      }
+
+      const { value, done } = next as ReadableStreamReadResult<Uint8Array>;
+      if (done) {
+        break;
+      }
+      if (value && value.length > 0) {
+        text += decoder.decode(value, { stream: true });
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) {
+      throw error;
+    }
+  } finally {
+    yield* action<void>((resolve) => {
+      void reader.cancel().catch(() => {
+        // Ignore cleanup failures from already-aborted SSE streams.
+      }).finally(() => resolve(undefined));
+      return () => {};
+    });
+  }
+
+  text += decoder.decode();
+  return text;
 }
 
 /** Parse mailbox SSE text into `(topic, idx, payload)` tuples. */

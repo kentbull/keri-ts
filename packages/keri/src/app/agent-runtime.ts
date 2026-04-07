@@ -201,6 +201,7 @@ export function* processRuntimeTurn(
   options: {
     hab?: Hab;
     sink?: CueSink;
+    pollMailbox?: boolean;
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
@@ -209,13 +210,15 @@ export function* processRuntimeTurn(
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
-  yield* runtime.mailboxPoller.processOnce((messages) => {
-    for (const message of messages) {
-      runtime.reactor.ingest(message);
-    }
-    runtime.reactor.processOnce();
-    runtime.reactor.processEscrowsOnce();
-  });
+  if (options.pollMailbox ?? true) {
+    yield* runtime.mailboxPoller.processOnce((messages) => {
+      for (const message of messages) {
+        runtime.reactor.ingest(message);
+      }
+      runtime.reactor.processOnce();
+      runtime.reactor.processEscrowsOnce();
+    });
+  }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
   runtime.reactor.processEscrowsOnce();
@@ -321,6 +324,7 @@ export function* processRuntimeUntil(
     hab?: Hab;
     sink?: CueSink;
     maxTurns?: number;
+    pollMailbox?: boolean;
   } = {},
 ): Operation<void> {
   const maxTurns = options.maxTurns ?? 64;

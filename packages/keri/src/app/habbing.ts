@@ -3,6 +3,7 @@ import {
   Cigar,
   concatBytes,
   Counter,
+  createParser,
   CtrDexV1,
   DigDex,
   Diger,
@@ -26,34 +27,20 @@ import { TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import {
-  makeQuerySerder,
-  makeReceiptSerder,
-  makeReplySerder,
-} from "../core/messages.ts";
+import { makeQuerySerder, makeReceiptSerder, makeReplySerder } from "../core/messages.ts";
 import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
+import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
-import {
-  createOutboxer,
-  DisabledOutboxer,
-  type OutboxerLike,
-} from "../db/outboxing.ts";
+import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
-import {
-  Algos,
-  branToSaltQb64,
-  ensureKeeperCryptoReady,
-  Manager,
-  normalizeSaltQb64,
-  saltySigner,
-} from "./keeping.ts";
-import { Reactor } from "./reactor.ts";
+import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
+import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -541,7 +528,10 @@ export class Hab {
   readonly db: Baser;
   readonly ks: Keeper;
   readonly mgr: Manager;
-  readonly kevery: Kevery;
+  readonly cf?: Configer;
+  readonly rtr: Router;
+  readonly rvy: Revery;
+  readonly kvy: Kevery;
   pre = "";
 
   /** Create one habitat wrapper over shared DB/keeper/manager infrastructure. */
@@ -550,7 +540,10 @@ export class Hab {
     db: Baser,
     ks: Keeper,
     mgr: Manager,
-    kevery: Kevery,
+    cf: Configer | undefined,
+    rtr: Router,
+    rvy: Revery,
+    kvy: Kevery,
     ns?: string,
     pre = "",
   ) {
@@ -558,9 +551,17 @@ export class Hab {
     this.db = db;
     this.ks = ks;
     this.mgr = mgr;
-    this.kevery = kevery;
+    this.cf = cf;
+    this.rtr = rtr;
+    this.rvy = rvy;
+    this.kvy = kvy;
     this.ns = ns;
     this.pre = pre;
+  }
+
+  /** Backward-compatible alias for the injected local `Kevery`. */
+  get kevery(): Kevery {
+    return this.kvy;
   }
 
   /** Return true when this habitat has accepted local key state. */
@@ -585,7 +586,7 @@ export class Hab {
     serder: SerderKERI,
     sigers: readonly Siger[],
   ): Kever {
-    const decision = this.kevery.processEvent({
+    const decision = this.kvy.processEvent({
       serder,
       sigers: [...sigers],
       wigers: [],
@@ -607,6 +608,66 @@ export class Hab {
       );
     }
     return kever;
+  }
+
+  /**
+   * Parse and dispatch locally generated CESR bytes through the real
+   * `CesrParser` architecture.
+   *
+   * This mirrors the KERIpy shape where locally generated bootstrap replies may
+   * still flow through the same parser-driven reply acceptance machinery as
+   * remotely received wire messages.
+   */
+  private ingestLocalCesr(ims: Uint8Array): void {
+    const parser = createParser({
+      framed: false,
+      attachmentDispatchMode: "compat",
+    });
+    for (const envelope of envelopesFromFrames(parser.feed(ims), true)) {
+      dispatchEnvelope(envelope, this.rvy, this.kvy);
+    }
+  }
+
+  /** Return the alias-scoped config section for this habitat when present. */
+  configuredSection(): Record<string, unknown> | null {
+    const conf = this.cf?.get<Record<string, unknown>>() ?? {};
+    const section = conf[this.name];
+    return section && typeof section === "object" && !Array.isArray(section)
+      ? section as Record<string, unknown>
+      : null;
+  }
+
+  /** Return true when this habitat has alias-scoped config preload material. */
+  hasConfigSection(): boolean {
+    return this.configuredSection() !== null;
+  }
+
+  /**
+   * Apply alias-scoped controller endpoint config through the real CESR parser path.
+   *
+   * KERIpy correspondence:
+   * - `Hab` owns per-alias config lookup and reply ingestion
+   * - config remains immutable bootstrap input, not mutable database state
+   */
+  reconfigure(): boolean {
+    const conf = this.configuredSection();
+    if (!conf || !this.pre || !this.accepted) {
+      return false;
+    }
+
+    const dt = requireConfigDatetime(this.name, conf.dt);
+    const messages: Uint8Array[] = [
+      this.makeEndRole(this.pre, Roles.controller, true, dt),
+    ];
+    for (const url of loadConfigUrls(conf.curls)) {
+      const parsed = new URL(url);
+      const scheme = parsed.protocol.length > 0
+        ? parsed.protocol.slice(0, -1)
+        : Schemes.http;
+      messages.push(this.makeLocScheme(url, this.pre, scheme, dt));
+    }
+    this.ingestLocalCesr(concatMessages(messages));
+    return true;
   }
 
   /**
@@ -860,7 +921,7 @@ export class Hab {
 
     if (!kever.transferable) {
       const cigars = this.sign(serder.raw, false) as Cigar[];
-      this.kevery.processReceipt({
+      this.kvy.processReceipt({
         serder: reserder,
         cigars,
         wigers: [],
@@ -885,7 +946,7 @@ export class Hab {
       new Diger({ qb64: estSaid }),
       sigers,
     );
-    this.kevery.processReceipt({
+    this.kvy.processReceipt({
       serder: reserder,
       cigars: [],
       wigers: [],
@@ -934,7 +995,7 @@ export class Hab {
       indexed: true,
       indices: [index],
     }) as Siger[];
-    this.kevery.processReceipt({
+    this.kvy.processReceipt({
       serder: reserder,
       cigars: [],
       wigers,
@@ -1310,16 +1371,28 @@ export class Signator {
   pre: string;
 
   /** Reopen or create the habery-owned `__signatory__` habitat wrapper. */
-  constructor(db: Baser, habery: Habery) {
+  constructor(args: {
+    db: Baser;
+    ks: Keeper;
+    mgr: Manager;
+    cf?: Configer;
+    rtr: Router;
+    rvy: Revery;
+    kvy: Kevery;
+  }) {
+    const { db, ks, mgr, cf, rtr, rvy, kvy } = args;
     this.db = db;
     const spre = this.db.getHby(SIGNER);
     if (!spre) {
       const hab = new Hab(
         SIGNER,
-        habery.db,
-        habery.ks,
-        habery.mgr,
-        habery.kevery,
+        db,
+        ks,
+        mgr,
+        cf,
+        rtr,
+        rvy,
+        kvy,
       );
       hab.make({ transferable: false, hidden: true });
       this.hab = hab;
@@ -1328,10 +1401,13 @@ export class Signator {
     } else {
       const hab = new Hab(
         SIGNER,
-        habery.db,
-        habery.ks,
-        habery.mgr,
-        habery.kevery,
+        db,
+        ks,
+        mgr,
+        cf,
+        rtr,
+        rvy,
+        kvy,
         undefined,
         spre,
       );
@@ -1410,9 +1486,11 @@ export class Habery {
   readonly cesrBodyMode: CesrBodyMode;
   readonly mgr: Manager;
   readonly cf?: Configer;
-  readonly config: Record<string, unknown>;
   readonly habs = new Map<string, Hab>();
+  readonly rtr: Router;
+  readonly rvy: Revery;
   readonly kevery: Kevery;
+  readonly replyRoutes: BasicReplyRouteHandler;
   readonly signator: Signator | null;
 
   /** Compose one habery from already-opened storage, manager, and config surfaces. */
@@ -1429,7 +1507,6 @@ export class Habery {
     cesrBodyMode: CesrBodyMode,
     mgr: Manager,
     cf?: Configer,
-    config: Record<string, unknown> = {},
     skipSignator = false,
   ) {
     this.name = name;
@@ -1444,14 +1521,38 @@ export class Habery {
     this.cesrBodyMode = cesrBodyMode;
     this.mgr = mgr;
     this.cf = cf;
-    this.config = config;
-    this.kevery = new Kevery(this.db, {
-      cues: new Deck<AgentCue>(),
+    this.rtr = new Router();
+    const localCues = new Deck<AgentCue>();
+    this.rvy = new Revery(this.db, {
+      rtr: this.rtr,
+      cues: localCues,
       lax: false,
       local: true,
     });
-    this.signator = skipSignator ? null : new Signator(this.db, this);
+    this.replyRoutes = new BasicReplyRouteHandler(this.db, this.rvy);
+    this.replyRoutes.registerReplyRoutes(this.rtr);
+    this.kevery = new Kevery(this.db, {
+      cues: localCues,
+      lax: false,
+      local: true,
+      rvy: this.rvy,
+    });
+    this.kevery.registerReplyRoutes(this.rtr);
+    this.signator = skipSignator ? null : new Signator({
+      db: this.db,
+      ks: this.ks,
+      mgr: this.mgr,
+      cf: this.cf,
+      rtr: this.rtr,
+      rvy: this.rvy,
+      kvy: this.kevery,
+    });
     this.loadHabs();
+  }
+
+  /** Live config snapshot from the optional config file surface. */
+  get config(): Record<string, unknown> {
+    return this.cf?.get<Record<string, unknown>>() ?? {};
   }
 
   /**
@@ -1474,6 +1575,9 @@ export class Habery {
         this.db,
         this.ks,
         this.mgr,
+        this.cf,
+        this.rtr,
+        this.rvy,
         this.kevery,
         habord.domain,
         hid,
@@ -1485,55 +1589,14 @@ export class Habery {
       }
       this.habs.set(hab.pre, hab);
     }
-
-    this.reconfigure();
+    for (const hab of this.habs.values()) {
+      hab.reconfigure();
+    }
   }
 
   /** Local AID prefixes currently managed by this habery. */
   get prefixes(): string[] {
     return [...this.db.prefixes];
-  }
-
-  /** Return the alias-scoped config section for one local habitat when present. */
-  configuredSectionForHab(hab: Hab): Record<string, unknown> | null {
-    const section = this.config[hab.name];
-    return section && typeof section === "object" && !Array.isArray(section)
-      ? section as Record<string, unknown>
-      : null;
-  }
-
-  /** Return true when one habitat has alias-scoped config preload material. */
-  hasConfiguredSectionForHab(hab: Hab): boolean {
-    return this.configuredSectionForHab(hab) !== null;
-  }
-
-  /**
-   * Apply one habitat's alias-scoped config preload through reply acceptance.
-   *
-   * Ownership rule:
-   * - config lookup and local reply-ingestion stay owned by `Habery`
-   * - `Hab` stays a local identifier wrapper instead of holding a back-pointer
-   *   to the whole habery
-   */
-  reconfigureHab(hab: Hab, reactor?: Reactor): boolean {
-    const conf = this.configuredSectionForHab(hab);
-    if (!conf || !hab.pre || !hab.accepted) {
-      return false;
-    }
-
-    const runtime = reactor ?? new Reactor(this, { local: true });
-    const dt = requireConfigDatetime(hab.name, conf.dt);
-    runtime.ingest(hab.makeEndRole(hab.pre, Roles.controller, true, dt));
-    for (const url of loadConfigUrls(conf.curls)) {
-      const parsed = new URL(url);
-      const scheme = parsed.protocol.length > 0
-        ? parsed.protocol.slice(0, -1)
-        : Schemes.http;
-      runtime.ingest(hab.makeLocScheme(url, hab.pre, scheme, dt));
-    }
-    runtime.processOnce();
-    runtime.processEscrowsOnce();
-    return true;
   }
 
   /**
@@ -1562,15 +1625,6 @@ export class Habery {
         this.db.woobi.pin(url, { date, state: "queued" });
       }
     }
-
-    if (this.habs.size === 0) {
-      return;
-    }
-
-    const reactor = new Reactor(this, { local: true });
-    for (const hab of this.habs.values()) {
-      this.reconfigureHab(hab, reactor);
-    }
   }
 
   /** Creates and caches a new habitat under this habery. */
@@ -1580,6 +1634,9 @@ export class Habery {
       this.db,
       this.ks,
       this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
       this.kevery,
       ns,
       "",
@@ -1587,7 +1644,7 @@ export class Habery {
     hab.make(args);
     if (!hab.pre) throw new Error("Hab creation failed");
     this.habs.set(hab.pre, hab);
-    this.reconfigureHab(hab);
+    hab.reconfigure();
     return hab;
   }
 
@@ -1609,10 +1666,14 @@ export class Habery {
       this.db,
       this.ks,
       this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
       this.kevery,
       ns,
       pre,
     );
+    hab.reconfigure();
     this.habs.set(pre, hab);
     return hab;
   }
@@ -1703,8 +1764,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       mustExist: outboxer === "open",
     }));
 
-  const cf = providedCf ??
-    (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf
+    ?? (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,
@@ -1712,7 +1773,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       reopen: true,
       clear: false,
     })));
-  const config = cf ? cf.get<Record<string, unknown>>() : {};
 
   let usedSeed = seed ?? "";
   let usedAeid = aeid ?? "";
@@ -1746,7 +1806,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     cesrBodyMode,
     mgr,
     cf,
-    config,
     skipSignator,
   );
 }

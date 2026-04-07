@@ -207,7 +207,7 @@ export function* oobiResolveCommand(
     yield* processRuntimeUntil(
       runtime,
       () => runtimeOobiConverged(runtime, commandArgs.url!),
-      { maxTurns: 128 },
+      { maxTurns: 128, pollMailbox: false },
     );
 
     const terminal = runtimeOobiTerminalState(runtime, commandArgs.url);

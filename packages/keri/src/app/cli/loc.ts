@@ -87,7 +87,7 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
     );
 
     for (let i = 0; i < 4; i += 1) {
-      yield* processRuntimeTurn(runtime, { hab });
+      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
       if (
         hby.db.locs.get([eid, scheme])?.url === commandArgs.url
         && !!hby.db.lans.get([eid, scheme])
