@@ -121,51 +121,58 @@ runtime ownership semantics.
     hoc per-command maps. Mailbox add interop is now proven in both directions
     too, so the remaining Gate F/G gap is broader route breadth, not mailbox
     ownership or add/list/debug lifecycle absence.
-32. The maintainer contract for the Chunk 7 query/watcher slice now lives in
+32. The maintainer-facing mailbox explainer now lives in
+    `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`.
+    Use it to rehydrate the sender/recipient/mailbox-provider split,
+    recipient-to-mailbox authorization, `/fwd` as provider transport wrapper,
+    mailbox polling through `mbx`, and the fact that `POST /mailboxes` manages
+    a controller's authorization of one already-hosted mailbox AID instead of
+    creating mailbox identities on demand.
+33. The maintainer contract for the Chunk 7 query/watcher slice now lives in
     `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`,
     and the broader escrow-control philosophy now lives in
     `docs/adr/adr-0008-escrow-decision-architecture.md`. Treat those as the
     durable sources before relying on thread history.
-33. `tufa agent` has two independent compatibility seams: CLI flag semantics and
+34. `tufa agent` has two independent compatibility seams: CLI flag semantics and
     the packaged Node host runtime. Deno-source tests can prove runtime
     behavior, but release confidence also needs tarball smoke coverage because
     the npm build can drift into stale command definitions or Node-incompatible
     server code.
-34. Config-seeded bootstrap should stay on explicit CLI/file seams, not hidden
+35. Config-seeded bootstrap should stay on explicit CLI/file seams, not hidden
     default-path tricks in tests. If a command needs external bootstrap config,
     give it `--config-dir` / `--config-file` or another honest file input
     surface; do not have bash E2E scripts write directly into the command's
     default internal config location and pretend that proves CLI behavior.
-35. Gate E/G bash coverage now includes `challenge generate/respond/verify`
+36. Gate E/G bash coverage now includes `challenge generate/respond/verify`
     across direct and mailbox-authorized controller-to-controller delivery, but
     the honest test seam is single-store ownership: do not run a CLI command
     against the same keystore/database that a live `tufa agent` is already
     hosting. Stop the sender host, run the sender CLI, and keep only the
     recipient host live for receive-side runtime coverage.
-36. Interop debugging is materially easier and more honest through targeted
+37. Interop debugging is materially easier and more honest through targeted
     `tufa db dump` inspection than through ad hoc LMDB scripts. Prefer narrow
     selectors such as `baser.<subdb>`, `mailboxer.<subdb>`, and
     `outboxer.<subdb>` against both `.tufa` and `.keri` stores when validating
     mailbox add/list/debug flows, `/fwd` storage, or cross-runtime state drift.
-37. The long-lived host mental model is one listener/runtime per Habery or
+38. The long-lived host mental model is one listener/runtime per Habery or
     command invocation with explicit hosted-prefix filtering. A bug in
     multi-AID seeding means the host is bootstrapping or exposing too many
     local Habs, not that it is creating one socket/listener per AID.
-38. System-managed identities need a stricter filter than `hby.habs.values()`.
+39. System-managed identities need a stricter filter than `hby.habs.values()`.
     Signatory or AEID-related identities may live in the local keystore, but
     they are not ordinary user-facing controller/mailbox identities and should
     not be auto-hosted, auto-seeded, or exposed through normal OOBI/mailbox
     surfaces by default.
-39. AEID in KERIpy is not an init-only ornament. `Habery.setup(...)` and
+40. AEID in KERIpy is not an init-only ornament. `Habery.setup(...)` and
     `Manager.updateAeid(...)` treat it as the keeper auth/encryption identity,
     and changing it with the matching seed re-encrypts keeper secrets. Model it
     as system-side keeper state, not as a normal user Hab.
-40. Keep endpoint-role capability separate from startup seeding policy. The
+41. Keep endpoint-role capability separate from startup seeding policy. The
     presence of `Roles.agent` in routing/query/OOBI code is not by itself a
     reason for `tufa agent` to auto-create self `agent` end-role records at
     startup. Until a distinct agent runtime construct needs that self state,
     startup should seed only the roles that are operationally required.
-41. Controller endpoint bootstrap now has a KERIpy-shaped canonical path too:
+42. Controller endpoint bootstrap now has a KERIpy-shaped canonical path too:
     alias-scoped config `dt` + `curls` are applied by `Hab.reconfigure()`
     through normal `/end/role/add` and `/loc/scheme` reply acceptance, while
     `runIndirectHost` is host wiring only. `tufa agent` may synthesize

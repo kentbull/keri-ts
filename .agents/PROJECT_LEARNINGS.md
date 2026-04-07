@@ -107,7 +107,13 @@ Use this file to:
     `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`, while
     `docs/adr/adr-0004-cue-runtime-portability.md` remains the normative
     `keri-ts` runtime contract.
-16. Receipt-family mental models should stay KERIpy-shaped: live `rct`
+16. The primary end-to-end mailbox explainer now lives in
+    `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`.
+    Use it to rehydrate the sender/recipient/mailbox-provider split, `/fwd`
+    storage semantics, mailbox polling, and `POST /mailboxes` before changing
+    mailbox behavior. `docs/adr/adr-0009-mailbox-architecture.md` remains the
+    normative decision record.
+17. Receipt-family mental models should stay KERIpy-shaped: live `rct`
     transferable receipts use grouped `tsgs`, while replay/clone attached
     transferable receipt material uses `trqs`. That split is now real end to end
     in runtime ingress too: `Reactor` routes attached replay receipts through
@@ -117,24 +123,24 @@ Use this file to:
     KERIpy receipt escrow seams (`escrowUReceipt`, `escrowUWReceipt`,
     `escrowTRGroups`, `escrowTReceipts`, `escrowTRQuadruple`) instead of merging
     them into one local helper.
-17. Local location updates must enter through signed `/loc/scheme` replies that
+18. Local location updates must enter through signed `/loc/scheme` replies that
     flow through the normal parser -> `Revery` path, not by direct writes to
     `locs.` / `lans.`.
-18. Interop contracts are exact, not approximate: keep `lmdb` pinned to `3.4.4`,
+19. Interop contracts are exact, not approximate: keep `lmdb` pinned to `3.4.4`,
     preserve `LMDB_DATA_V1=true` for KERIpy interop workflows, and route
     protocol/storage CBOR through the shared CESR codec for byte parity.
-19. Deno config ownership is graph-wide for local-source workflows, and CLI
+20. Deno config ownership is graph-wide for local-source workflows, and CLI
     startup should stay lazy so `--help` / `--version` do not pull CESR/LMDB
     startup work.
-20. CI policy is `dprint` plus stage-gated quality checks, a pinned KERIpy CLI,
+21. CI policy is `dprint` plus stage-gated quality checks, a pinned KERIpy CLI,
     explicit environment/version pins, and cache topology that respects LMDB v1
     rebuild requirements.
-21. Test parallelization should follow isolation boundaries, not folder names.
+22. Test parallelization should follow isolation boundaries, not folder names.
     DB-core suites can parallelize more freely; CLI/app/interop suites that
     mutate globals or persisted stores need stronger isolation.
-22. Gates B, C, and D are closed enough to treat local visibility, compat-store
+23. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
-23. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
+24. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
     broader Chunk 7 query/reply correspondence closure, attached replay receipt
     parity for cloned KEL events, KERIpy-shaped transferable query ingress
     (`ssgs` -> `source + sigers`), bounded init/incept convergence, and the
@@ -154,12 +160,12 @@ Use this file to:
     route breadth beyond the current mailbox/challenge slice, plus the broader
     stale/timeout continuation tail outside the now-closed receipt/query
     correspondence slice.
-24. `tufa agent` release confidence must come from the packed npm artifact, not
+25. `tufa agent` release confidence must come from the packed npm artifact, not
     just the Deno source path. CLI flag semantics and Node host/runtime
     compatibility can drift unless smoke coverage exercises
     `init -> incept -> agent -> /health` against the tarball users actually
     install.
-25. End-to-end CLI tests should stay on honest public seams. For bootstrap
+26. End-to-end CLI tests should stay on honest public seams. For bootstrap
     config, prefer explicit file-path flags such as `--config-dir` /
     `--config-file`; do not seed a command's default internal config path or
     inspect LMDB through ad hoc `deno eval` helpers in bash and call that CLI
@@ -167,23 +173,23 @@ Use this file to:
     honest about store ownership too: if a CLI command needs the same store as a
     long-lived `tufa agent`, stop the host, run the command, then restart the
     recipient host as needed instead of depending on implicit concurrent access.
-26. For interop debugging, `tufa db dump` is now a first-class maintainer seam.
+27. For interop debugging, `tufa db dump` is now a first-class maintainer seam.
     Prefer targeted selectors such as `baser.<subdb>`, `mailboxer.<subdb>`, and
     `outboxer.<subdb>` against both `.tufa` and `.keri` stores over ad hoc LMDB
     scripts or whole-store dumps when validating state transitions.
-27. The host mental model must stay explicit: one long-lived listener/runtime
+28. The host mental model must stay explicit: one long-lived listener/runtime
     serves a Habery or command invocation, while hosted-prefix filtering decides
     which local AIDs are reachable through that host. Multi-AID seeding bugs are
     about over-broad bootstrap/selection, not one-listener-per-AID topology.
-28. AEID is keeper auth/encryption identity state, not an ordinary hosted or
+29. AEID is keeper auth/encryption identity state, not an ordinary hosted or
     user-facing AID. KERIpy allows it to be supplied at init and later changed
     to re-encrypt keeper secrets, but that does not make it part of normal user
     habitat hosting or OOBI/mailbox surfaces.
-29. Keep endpoint-role support separate from startup synthesis. `Roles.agent`
+30. Keep endpoint-role support separate from startup synthesis. `Roles.agent`
     may remain part of routing and OOBI support, but `tufa agent` should not
     auto-seed self `agent` end roles until there is an intentional runtime
     construct that actually needs that state.
-30. Hosted controller endpoint bootstrap should now be config-first, KERIpy-
+31. Hosted controller endpoint bootstrap should now be config-first, KERIpy-
     style. Alias-scoped config sections own `dt` plus `curls` for self
     controller endpoint publication, `Hab`/`Habery` feed that material through
     normal reply acceptance on open/reopen, and `tufa agent` only falls back to
