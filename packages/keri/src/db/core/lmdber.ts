@@ -3,7 +3,7 @@
  */
 
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { Database, Key, open, RootDatabase } from "npm:lmdb@3.5.3";
+import { Database, Key, open, RootDatabase } from "npm:lmdb";
 import { b, bytesEqual, bytesHex, t, toBytes } from "../../../../cesr/mod.ts";
 import { startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
@@ -149,17 +149,17 @@ export class LMDBer {
   private readonly logger: Logger;
 
   // Class constants
-  static readonly HeadDirPath = "/usr/local/var";
-  static readonly TailDirPath = "keri/db";
-  static readonly CleanTailDirPath = "keri/clean/db";
-  static readonly AltHeadDirPath = "~";
-  static readonly AltTailDirPath = ".tufa/db";
-  static readonly AltCleanTailDirPath = ".tufa/clean/db";
-  static readonly TempHeadDir = "/tmp";
-  static readonly TempPrefix = "keri_lmdb_";
-  static readonly TempSuffix = "_test";
-  static readonly Perm = 0o1700;
-  static readonly MaxNamedDBs = 96;
+  static readonly HeadDirPath: string = "/usr/local/var";
+  static readonly TailDirPath: string = "keri/db";
+  static readonly CleanTailDirPath: string = "keri/clean/db";
+  static readonly AltHeadDirPath: string = "~";
+  static readonly AltTailDirPath: string = ".tufa/db";
+  static readonly AltCleanTailDirPath: string = ".tufa/clean/db";
+  static readonly TempHeadDir: string = "/tmp";
+  static readonly TempPrefix: string = "keri_lmdb_";
+  static readonly TempSuffix: string = "_test";
+  static readonly Perm: number = 0o1700;
+  static readonly MaxNamedDBs: number = 96;
 
   constructor(options: LMDBerOptions = {}, defaults?: Partial<LMDBerDefaults>) {
     this.defaults = { ...LMDBER_DEFAULTS, ...defaults };
@@ -305,7 +305,6 @@ export class LMDBer {
     const effectiveMapSize = readonly && dbExists
       ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
       : mapSize;
-
     const dbConfig = {
       path: dbPath, // Use directory path (Node.js lmdb should handle this)
       maxDbs: this.defaults.maxNamedDBs,
@@ -794,11 +793,25 @@ export class LMDBer {
       break;
     }
 
-    const added = this.putVal(db, onKey(key, nextOn, sep), val);
-    if (!added) {
-      throw new Error(`Failed appending value at key=${Array.from(key)}.`);
+    const targetKey = onKey(key, nextOn, sep);
+    const added = this.putVal(db, targetKey, val);
+    if (added) {
+      return nextOn;
     }
-    return nextOn;
+
+    // Some compat/interop flows still surface LMDB-js range behavior where the
+    // reverse tail probe fails to observe the existing highest ordinal entry.
+    // Fall back to counting the live branch and append at that count instead of
+    // failing a logically valid append.
+    const fallbackOn = this.cntOnAll(db, key, 0, sep);
+    if (fallbackOn !== nextOn) {
+      const fallbackAdded = this.putVal(db, onKey(key, fallbackOn, sep), val);
+      if (fallbackAdded) {
+        return fallbackOn;
+      }
+    }
+
+    throw new Error(`Failed appending value at key=${Array.from(key)}.`);
   }
 
   /**

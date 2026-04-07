@@ -48,7 +48,19 @@ const fs = require("fs");
 const path = require("path");
 
 try {
-  const lmdbDir = path.dirname(path.dirname(require.resolve("lmdb")));
+  let dir = process.cwd();
+  let lmdbDir;
+  while (dir !== path.dirname(dir)) {
+    const candidate = path.join(dir, "node_modules", "lmdb");
+    if (fs.existsSync(candidate)) {
+      lmdbDir = candidate;
+      break;
+    }
+    dir = path.dirname(dir);
+  }
+  if (!lmdbDir) {
+    throw new Error("lmdb not installed");
+  }
   const pkg = JSON.parse(
     fs.readFileSync(path.join(lmdbDir, "package.json"), "utf8"),
   );

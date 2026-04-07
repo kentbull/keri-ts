@@ -37,7 +37,7 @@
     "cbor-x/decode": "npm:cbor-x@^1.6.0/decode",
     "cbor-x/encode": "npm:cbor-x@^1.6.0/encode",
     "effection": "npm:effection@^3.6.0",
-    "lmdb": "npm:lmdb@3.5.3",
+    "lmdb": "npm:lmdb",
     "commander": "npm:commander@^10.0.1",
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0",
     "cesr-ts": "../cesr/mod.ts"
