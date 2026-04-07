@@ -12,7 +12,6 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 import {
   mailboxQueryTopics,
   mailboxTopicKey,
@@ -20,6 +19,7 @@ import {
   updateMailboxRemoteCursor,
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
+import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
 Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {

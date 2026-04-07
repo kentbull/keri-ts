@@ -261,7 +261,7 @@ function packageRoot(): string {
   return new URL("../../../", import.meta.url).pathname;
 }
 
-/** Resolve the checked-in KERIpy source root used by compat fixtures. */
+/** Resolve the checked-in KERIpy source root used by the real mailbox host. */
 function keripySourceRoot(): string {
   return new URL("../../../../../keripy/src/", import.meta.url).pathname;
 }

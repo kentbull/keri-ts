@@ -54,5 +54,12 @@
       "dom"
     ]
   },
-  "allowScripts": ["npm:cbor-extract@2.2.0", "npm:dprint@0.49.0", "npm:lmdb@2.6.8-v1", "npm:lmdb@3.5.3", "npm:msgpackr-extract@2.2.0", "npm:msgpackr-extract@3.0.3"]
+  "allowScripts": [
+    "npm:cbor-extract@2.2.0",
+    "npm:dprint@0.49.0",
+    "npm:lmdb@2.6.8-v1",
+    "npm:lmdb@3.5.3",
+    "npm:msgpackr-extract@2.2.0",
+    "npm:msgpackr-extract@3.0.3"
+  ]
 }

@@ -18,11 +18,7 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import { TopicsRecord } from "../core/records.ts";
 import { Roles } from "../core/roles.ts";
-import {
-  createMailboxer,
-  type Mailboxer,
-  type MailboxerOptions,
-} from "../db/mailboxing.ts";
+import { createMailboxer, type Mailboxer, type MailboxerOptions } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import type { Hab, Habery } from "./habbing.ts";
 

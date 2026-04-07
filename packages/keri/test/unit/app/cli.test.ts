@@ -1,9 +1,5 @@
 import { run } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
@@ -225,7 +221,7 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
 
   assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -256,7 +252,7 @@ Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async
   );
 
   await assertOperationThrows(
-    (function* () {
+    (function*() {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
         readonly: true,
         skipConfig: true,
@@ -285,7 +281,7 @@ Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores"
     `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
   );
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,

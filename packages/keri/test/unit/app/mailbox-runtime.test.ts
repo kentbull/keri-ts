@@ -18,12 +18,8 @@ import {
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { agentCommand } from "../../../src/app/cli/agent.ts";
-import {
-  challengeRespondCommand,
-  challengeVerifyCommand,
-} from "../../../src/app/cli/challenge.ts";
+import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
-import { createConfiger } from "../../../src/app/configing.ts";
 import {
   mailboxAddCommand,
   mailboxDebugCommand,
@@ -32,24 +28,14 @@ import {
   mailboxStartCommand,
   mailboxUpdateCommand,
 } from "../../../src/app/cli/mailbox.ts";
-import {
-  oobiGenerateCommand,
-  oobiResolveCommand,
-} from "../../../src/app/cli/oobi.ts";
+import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
+import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { startServer } from "../../../src/app/server.ts";
-import {
-  makeEmbeddedExchangeMessage,
-  makeExchangeSerder,
-} from "../../../src/core/messages.ts";
+import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
-import {
-  fetchOp,
-  textOp,
-  waitForServer,
-  waitForTaskHalt,
-} from "../../effection-http.ts";
+import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { CLITestHarness, testCLICommand } from "../../utils.ts";
 
 /** Return a random localhost port for ephemeral mailbox and OOBI hosts. */
@@ -107,7 +93,7 @@ async function seedMailboxHost(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -153,7 +139,7 @@ async function seedHostedController(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -195,7 +181,7 @@ async function seedLocalController(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -299,10 +285,10 @@ Deno.test("mailbox start provisions a mailbox from config and serves base-path r
     }),
   );
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -313,9 +299,7 @@ Deno.test("mailbox start provisions a mailbox from config and serves base-path r
     yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
 
     try {
-      const prefixLine = harness.getOutput().find((line) =>
-        line.startsWith("Mailbox Prefix")
-      );
+      const prefixLine = harness.getOutput().find((line) => line.startsWith("Mailbox Prefix"));
       assertEquals(!!prefixLine, true);
       const pre = prefixLine!.split(/\s+/).at(-1)!;
 
@@ -346,9 +330,7 @@ Deno.test("mailbox start provisions a mailbox from config and serves base-path r
       skipSignator: true,
     });
     try {
-      const hab = [...hby.habs.values()].find((current) =>
-        current.name === "relay"
-      );
+      const hab = [...hby.habs.values()].find((current) => current.name === "relay");
       assertEquals(!!hab, true);
       const pre = hab!.pre;
       assertEquals(hab!.kever?.transferable, false);
@@ -376,7 +358,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
   const configuredUrl = `http://localhost:${port}`;
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -401,7 +383,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name: configFile,
       headDirPath: configDir,
@@ -419,8 +401,8 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* agentCommand({
         name,
         headDirPath,
@@ -468,7 +450,7 @@ Deno.test("agent command falls back to synthesized controller state only when co
   const fallbackUrl = `http://127.0.0.1:${port}`;
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -489,8 +471,8 @@ Deno.test("agent command falls back to synthesized controller state only when co
     }
   });
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* agentCommand({
         name,
         headDirPath,
@@ -536,7 +518,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
   const startupUrl = `http://127.0.0.1:${port}`;
   let otherPre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -556,10 +538,10 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
     }
   });
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -571,9 +553,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
     yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
 
     try {
-      const prefixLine = harness.getOutput().find((line) =>
-        line.startsWith("Mailbox Prefix")
-      );
+      const prefixLine = harness.getOutput().find((line) => line.startsWith("Mailbox Prefix"));
       assertEquals(!!prefixLine, true);
       const relayPre = prefixLine!.split(/\s+/).at(-1)!;
 
@@ -607,8 +587,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
 Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote mailbox host", async () => {
   const providerName = `mailbox-provider-${crypto.randomUUID()}`;
   const clientName = `mailbox-client-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-mailbox-provider-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-provider-${crypto.randomUUID()}`;
   const clientHeadDirPath = `/tmp/tufa-mailbox-client-${crypto.randomUUID()}`;
   const port = randomPort();
   const url = `http://127.0.0.1:${port}`;
@@ -624,7 +603,7 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     "alice",
   );
 
-  await run(function* () {
+  await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -638,10 +617,10 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
     }
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -725,7 +704,7 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const clientHby = yield* createHabery({
       name: clientName,
       headDirPath: clientHeadDirPath,
@@ -769,11 +748,9 @@ Deno.test("challenge verify polls a remote mailbox provider through base-path OO
   const providerName = `mailbox-base-provider-${crypto.randomUUID()}`;
   const bobName = `mailbox-base-bob-${crypto.randomUUID()}`;
   const aliceName = `mailbox-base-alice-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-mailbox-base-provider-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-base-provider-${crypto.randomUUID()}`;
   const bobHeadDirPath = `/tmp/tufa-mailbox-base-bob-${crypto.randomUUID()}`;
-  const aliceHeadDirPath =
-    `/tmp/tufa-mailbox-base-alice-${crypto.randomUUID()}`;
+  const aliceHeadDirPath = `/tmp/tufa-mailbox-base-alice-${crypto.randomUUID()}`;
   const port = randomPort();
   const alicePort = randomPort();
   const providerUrl = `http://127.0.0.1:${port}/relay`;
@@ -807,7 +784,7 @@ Deno.test("challenge verify polls a remote mailbox provider through base-path OO
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const providerHby = yield* createHabery({
         name: providerName,
         headDirPath: providerHeadDirPath,
@@ -821,10 +798,10 @@ Deno.test("challenge verify polls a remote mailbox provider through base-path OO
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
       }
-      const runtimeTask = yield* spawn(function* () {
+      const runtimeTask = yield* spawn(function*() {
         yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
       });
-      const serverTask = yield* spawn(function* () {
+      const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime);
       });
 
@@ -929,7 +906,7 @@ Deno.test("challenge verify polls a remote mailbox provider through base-path OO
       }
     });
 
-    await run(function* () {
+    await run(function*() {
       const bobHby = yield* createHabery({
         name: bobName,
         headDirPath: bobHeadDirPath,
@@ -963,12 +940,9 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
   const providerName = `mailbox-auth-provider-${crypto.randomUUID()}`;
   const senderName = `mailbox-auth-sender-${crypto.randomUUID()}`;
   const clientName = `mailbox-auth-client-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-mailbox-auth-provider-${crypto.randomUUID()}`;
-  const senderHeadDirPath =
-    `/tmp/tufa-mailbox-auth-sender-${crypto.randomUUID()}`;
-  const clientHeadDirPath =
-    `/tmp/tufa-mailbox-auth-client-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-auth-provider-${crypto.randomUUID()}`;
+  const senderHeadDirPath = `/tmp/tufa-mailbox-auth-sender-${crypto.randomUUID()}`;
+  const clientHeadDirPath = `/tmp/tufa-mailbox-auth-client-${crypto.randomUUID()}`;
   const port = randomPort();
   const url = `http://127.0.0.1:${port}`;
   const providerPre = await seedMailboxHost(
@@ -983,7 +957,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
     "alice",
   );
 
-  await run(function* () {
+  await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -997,10 +971,10 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
     }
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime);
     });
 
