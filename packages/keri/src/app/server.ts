@@ -137,6 +137,7 @@ function createProtocolHandler(
         let aid: string | undefined;
         let role: string | undefined;
         let eid: string | undefined;
+        let isOobiRequest = false;
 
         if (
           parts.length >= 4
@@ -144,15 +145,26 @@ function createProtocolHandler(
           && parts[1] === "keri"
           && parts[2] === "oobi"
         ) {
+          isOobiRequest = true;
           aid = parts[3];
           role = Roles.controller;
         } else if (parts[0] === "oobi") {
+          isOobiRequest = true;
           aid = parts[1];
           role = parts[2];
           eid = parts[3];
+          if (!aid) {
+            aid = defaultOobiAid(runtime, options.serviceHab, options.hostedPrefixes);
+          }
         }
 
-        if (aid && role) {
+        if (isOobiRequest) {
+          if (!aid) {
+            return new Response("no blind oobi for this node", {
+              status: 404,
+              headers: { "Content-Type": "text/plain" },
+            });
+          }
           const speakerAid = selectOobiSpeaker(
             runtime,
             hosted,
@@ -267,6 +279,26 @@ function createProtocolHandler(
       return new Response(String(error), { status: 500 });
     }
   };
+}
+
+function defaultOobiAid(
+  runtime: AgentRuntime,
+  serviceHab?: Hab,
+  hostedPrefixes?: readonly string[],
+): string | undefined {
+  if (serviceHab?.pre) {
+    return serviceHab.pre;
+  }
+  if (hostedPrefixes?.length === 1) {
+    const candidate = hostedPrefixes[0];
+    if (candidate && runtime.hby.habs.has(candidate)) {
+      return candidate;
+    }
+  }
+  if (runtime.hby.habs.size === 1) {
+    return runtime.hby.habs.keys().next().value as string | undefined;
+  }
+  return undefined;
 }
 
 function resolveHostedEndpoint(
@@ -821,6 +853,8 @@ function* waitForServerFinished(
  * Current Gate E surface:
  * - `GET /health`
  * - `GET /.well-known/keri/oobi/{aid}`
+ * - `GET /oobi`
+ * - `GET /oobi/{aid}`
  * - `GET /oobi/{aid}/{role}/{eid?}`
  *
  * Security/runtime model:

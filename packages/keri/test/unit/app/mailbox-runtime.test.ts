@@ -1675,6 +1675,20 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
       assertEquals(rootOobi.status, 200);
       yield* textOp(rootOobi);
 
+      const blindOobi = yield* fetchOp(
+        `http://127.0.0.1:${port}/oobi`,
+      );
+      assertEquals(blindOobi.status, 200);
+      const blindBody = yield* textOp(blindOobi);
+
+      const selfOobi = yield* fetchOp(
+        `http://127.0.0.1:${port}/oobi/${pre}`,
+      );
+      assertEquals(selfOobi.status, 200);
+      const selfBody = yield* textOp(selfOobi);
+      assertEquals(blindBody, selfBody);
+      assertStringIncludes(blindBody, pre);
+
       const admin = yield* fetchOp(`${url}/mailboxes`, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
@@ -1766,6 +1780,20 @@ Deno.test("mailbox start accepts config URLs with non-root paths and serves mail
       );
       assertEquals(rootOobi.status, 200);
       yield* textOp(rootOobi);
+
+      const blindOobi = yield* fetchOp(
+        `http://127.0.0.1:${port}/oobi`,
+      );
+      assertEquals(blindOobi.status, 200);
+      const blindBody = yield* textOp(blindOobi);
+
+      const selfOobi = yield* fetchOp(
+        `http://127.0.0.1:${port}/oobi/${pre}`,
+      );
+      assertEquals(selfOobi.status, 200);
+      const selfBody = yield* textOp(selfOobi);
+      assertEquals(blindBody, selfBody);
+      assertStringIncludes(blindBody, pre);
 
       const kel = new TextDecoder().decode(collectReplay(controllerHby, controller.pre));
       const rpy = new TextDecoder().decode(

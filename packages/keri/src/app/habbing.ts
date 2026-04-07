@@ -1239,7 +1239,7 @@ export class Hab {
    */
   replyToOobi(
     aid: string,
-    role: Role | string,
+    role?: Role | string,
     eids: string[] = [],
   ): Uint8Array {
     return this.replyEndRole(aid, role, eids);
