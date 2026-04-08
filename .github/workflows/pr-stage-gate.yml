@@ -256,6 +256,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: install deterministic interop dependencies
+        # A fallback-restored shared deps cache is only a bootstrap hint. When
+        # the interop cache misses we must rebuild node_modules from the locked
+        # root dependency graph before patch-verifying or rebuilding LMDB-js.
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
       - name: rebuild LMDB-js with data v1 compatibility
         # Only the interop node_modules cache proves the native addon was
         # rebuilt for KERIpy-compatible LMDB v1 semantics.
@@ -334,6 +341,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: install deterministic interop dependencies
+        # A fallback-restored shared deps cache is only a bootstrap hint. When
+        # the interop cache misses we must rebuild node_modules from the locked
+        # root dependency graph before patch-verifying or rebuilding LMDB-js.
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
       - name: rebuild LMDB-js with data v1 compatibility
         # Only the interop node_modules cache proves the native addon was
         # rebuilt for KERIpy-compatible LMDB v1 semantics.
@@ -411,6 +425,13 @@ jobs:
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic interop dependencies
+        # A fallback-restored shared deps cache is only a bootstrap hint. When
+        # the interop cache misses we must rebuild node_modules from the locked
+        # root dependency graph before patch-verifying or rebuilding LMDB-js.
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: rebuild LMDB-js with data v1 compatibility
         # Only the interop node_modules cache proves the native addon was
