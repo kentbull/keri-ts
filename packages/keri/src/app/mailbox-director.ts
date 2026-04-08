@@ -335,9 +335,9 @@ export class MailboxDirector implements CueSink {
   private preForCue(cue: AgentCue): string | null {
     switch (cue.kin) {
       case "replay":
-        return cue.pre ?? null;
+        return cue.dest ?? cue.pre ?? null;
       case "reply":
-        return replyMailboxPre(cue);
+        return cue.dest ?? replyMailboxPre(cue);
       case "receipt":
       case "witness":
         return cue.serder.pre ?? null;

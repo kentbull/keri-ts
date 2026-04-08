@@ -1064,7 +1064,7 @@ function positiveTimeoutMs(
  * Body-mode policy:
  * - send the whole provided payload in the request body
  */
-function* postCesrMessage(
+export function* postCesrMessage(
   url: string,
   body: Uint8Array,
   bodyMode: "header" | "body",

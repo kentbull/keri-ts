@@ -14,7 +14,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { Ilks } from "../../../cesr/mod.ts";
+import { concatBytes, Ilks } from "../../../cesr/mod.ts";
+import type { CueEmission } from "../core/cues.ts";
 import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
@@ -232,7 +233,7 @@ function createProtocolHandler(
           });
         }
 
-        processRuntimeRequest(
+        const emissions = processRuntimeRequest(
           runtime,
           bytes,
           hosted.endpoint?.eid ?? null,
@@ -263,6 +264,14 @@ function createProtocolHandler(
               },
             },
           );
+        }
+
+        if (serder.ilk === Ilks.qry && serder.route === "ksn") {
+          const query = serder.ked?.q as Record<string, unknown> | undefined;
+          const pre = typeof query?.i === "string" ? query.i : null;
+          if (pre) {
+            publishQueryCatchupReplay(runtime, emissions, pre);
+          }
         }
 
         return new Response(null, {
@@ -588,11 +597,11 @@ function processRuntimeRequest(
   bytes: Uint8Array,
   mailboxAid: string | null,
   serviceHab?: Hab,
-): void {
+): CueEmission[] {
   runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
     settleRuntimeIngress(runtime, [bytes]);
-    drainRuntimeCues(runtime, serviceHab);
   });
+  return drainRuntimeCues(runtime, serviceHab);
 }
 
 /**
@@ -885,15 +894,54 @@ export function* startServer(
 function drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab?: Hab,
-): void {
+): CueEmission[] {
   const habitats = [...runtime.hby.habs.values()];
   const hab = serviceHab
     ?? (habitats.length === 1 ? habitats[0] ?? null : null);
   if (!hab) {
+    return [];
+  }
+
+  const emissions: CueEmission[] = [];
+  for (const emission of hab.processCuesIter(runtime.cues)) {
+    runtime.mailboxDirector.handleEmission(emission);
+    emissions.push(emission);
+  }
+  return emissions;
+}
+
+function publishQueryCatchupReplay(
+  runtime: AgentRuntime,
+  emissions: CueEmission[],
+  pre: string,
+): void {
+  let destination: string | null = null;
+  for (const emission of emissions) {
+    if (emission.kind !== "wire" || emission.cue.kin !== "reply") {
+      continue;
+    }
+    if (emission.cue.route !== "/ksn" || typeof emission.cue.dest !== "string") {
+      continue;
+    }
+    destination = emission.cue.dest;
+    break;
+  }
+  if (!destination) {
     return;
   }
 
-  for (const emission of hab.processCuesIter(runtime.cues)) {
-    runtime.mailboxDirector.handleEmission(emission);
+  const kever = runtime.hby.db.getKever(pre);
+  const parts = [...runtime.hby.db.clonePreIter(pre, 0)];
+  if (kever?.delpre) {
+    parts.push(...runtime.hby.db.cloneDelegation(kever));
   }
+  if (parts.length === 0) {
+    return;
+  }
+
+  runtime.mailboxDirector.publish(
+    destination,
+    "/replay",
+    Uint8Array.from(concatBytes(...parts)),
+  );
 }
