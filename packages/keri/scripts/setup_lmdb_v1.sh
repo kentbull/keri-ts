@@ -15,12 +15,11 @@ fi
 cd "${LMDB_DIR}"
 export LMDB_DATA_V1=true
 
-# The workspace now pins lmdb-js to kentbull/lmdb-js at the patched commit,
-# so setup only needs to verify the expected cleanup-hook fixes are present
-# before rebuilding the binary in LMDB_DATA_V1 mode.
+# The workspace pins lmdb-js to one forked commit. Verify the cleanup-hook
+# bridge that commit carries before rebuilding in LMDB_DATA_V1 mode.
 grep -q 'bool cleanupHookRegistered;' src/lmdb-js.h
-grep -q 'if (cleanupHookRegistered) {' src/env.cpp
-grep -Fq 'auto* envWraps = (std::vector<EnvWrap*>*) data;' src/env.cpp
+grep -q 'static void cleanupEnvWraps(void\* data);' src/lmdb-js.h
+grep -q 'void EnvWrap::cleanupEnvWraps(void\* data) {' src/env.cpp
 grep -q 'napi_add_env_cleanup_hook(napiEnv, cleanupEnvWraps, openEnvWraps);' src/env.cpp
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
