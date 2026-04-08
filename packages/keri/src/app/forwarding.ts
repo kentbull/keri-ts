@@ -633,7 +633,6 @@ export class MailboxPoller {
     topics: readonly string[],
   ): Operation<void> {
     const active = new Set<string>();
-    const poller = this;
     if (topics.length > 0) {
       for (const hab of this.hby.habs.values()) {
         for (const endpoint of mailboxPollEndpoints(this.hby, hab)) {
@@ -643,9 +642,7 @@ export class MailboxPoller {
             continue;
           }
 
-          const task = yield* spawn(function*() {
-            yield* poller.remoteEndpointWorker(hab, endpoint, onBatch);
-          });
+          const task = yield* spawn(() => this.remoteEndpointWorker(hab, endpoint, onBatch));
           remoteWorkers.set(workerKey, task);
         }
       }

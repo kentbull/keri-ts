@@ -47,6 +47,10 @@ Things to come back and do at some point:
 - Make Komer type system simple as possible with as few generics as possible.
 - Look at collapsing the types like PreSitShape and PreSit
 
+## Missing interop tests
+
+- delegation cross between kli and tufa and tufa and kli
+
 ## Missing
 
 - explicit v2 support
