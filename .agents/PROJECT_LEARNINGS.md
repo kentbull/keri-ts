@@ -359,3 +359,10 @@ Then do task: <TASK>.
 - Next: <remaining blocker, risk, or follow-up if any>
 - Verification: <passed locally / pending CI / not run>
 ```
+
+### 2026-04-07 - Sign/Verify/Query/Rotate Parity Landed On Two Different Critical Paths
+
+- Substance: `tufa sign` and `tufa verify` were mostly CLI-orchestration ports over existing habitat/manager crypto seams, but `tufa rotate` needed a real `Hab.rotate(...)` ownership seam so keeper progression, event construction, local acceptance, and rollback all stay coupled the same way KERIpy expects.
+- Why it matters: the false mental model was "rotate is just another CLI wrapper like sign/verify." It is not. Without a habitat-level rotate seam, the CLI either duplicates keeper/KEL invariants or quietly gets rollback wrong.
+- Next: if multisig/group parity work starts, do not extend the single-sig CLI directly. Re-open the habitat/manager ownership boundary first.
+- Verification: local unit/integration/interop coverage passed for single-sig sign -> query -> rotate parity.

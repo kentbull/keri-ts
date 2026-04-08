@@ -193,6 +193,15 @@ function extractPrefix(output: string): string {
   return parts[parts.length - 1];
 }
 
+/** Parse the raw qb64 signature from numbered KLI/Tufa sign output. */
+function extractRawSignature(output: string): string {
+  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
+  if (!line) {
+    throw new Error(`Unable to parse signature from output:\n${output}`);
+  }
+  return line.trim().replace(/^\d+\.\s+/, "");
+}
+
 /**
  * Normalizes non-deterministic timestamp encodings out of exported CESR text.
  *
@@ -259,6 +268,11 @@ async function detectDenoDir(): Promise<string | undefined> {
 /** Resolve the package root dynamically so CI and other machines can spawn tufa. */
 function packageRoot(): string {
   return new URL("../../../", import.meta.url).pathname;
+}
+
+/** Resolve the workspace root for direct `deno run packages/keri/mod.ts ...` calls. */
+function workspaceRoot(): string {
+  return new URL("../../../../../", import.meta.url).pathname;
 }
 
 /** Resolve the checked-in KERIpy source root used by the real mailbox host. */
@@ -732,6 +746,412 @@ Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL str
     normalizeCesr(extractKelStream(tufaExport.stdout)),
     normalizeCesr(extractKelStream(kliExport.stdout)),
   );
+});
+
+Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succeeds after KLI query", async () => {
+  const ctx = await createInteropContext();
+  const base = `interop-rotate-${crypto.randomUUID().slice(0, 8)}`;
+  const passcode = "MyPasscodeARealSecret";
+  const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+  const tufaHeadDir = await Deno.makeTempDir({ prefix: "tufa-interop-rotate-" });
+  const tufaRepoRoot = workspaceRoot();
+  const tufaName = `tufa-rotate-${crypto.randomUUID().slice(0, 8)}`;
+  const tufaAlias = "alice";
+  const kliName = `kli-rotate-${crypto.randomUUID().slice(0, 8)}`;
+  const kliAlias = "bob";
+  const message = "interop rotate";
+  const tufaPort = randomPort();
+  const tufaOrigin = `http://127.0.0.1:${tufaPort}`;
+  let rotatedSignature = "";
+  const runTufaFromRoot = (args: string[]) =>
+    runCmd(
+      "deno",
+      ["run", "--allow-all", "--unstable-ffi", "packages/keri/mod.ts", ...args],
+      ctx.env,
+      tufaRepoRoot,
+    );
+
+  await requireSuccess(
+    "tufa init",
+    runTufaFromRoot(
+      [
+        "init",
+        "--name",
+        tufaName,
+        "--base",
+        base,
+        "--head-dir",
+        tufaHeadDir,
+        "--passcode",
+        passcode,
+        "--salt",
+        salt,
+      ],
+    ),
+  );
+  const tufaIncept = await requireSuccess(
+    "tufa incept",
+    runTufaFromRoot(
+      [
+        "incept",
+        "--name",
+        tufaName,
+        "--base",
+        base,
+        "--head-dir",
+        tufaHeadDir,
+        "--passcode",
+        passcode,
+        "--alias",
+        tufaAlias,
+        "--transferable",
+        "--isith",
+        "1",
+        "--icount",
+        "1",
+        "--nsith",
+        "1",
+        "--ncount",
+        "1",
+        "--toad",
+        "0",
+      ],
+    ),
+  );
+  const tufaPre = extractPrefix(tufaIncept.stdout);
+
+  await requireSuccess(
+    "tufa loc add",
+    runTufaFromRoot(
+      [
+        "loc",
+        "add",
+        "--name",
+        tufaName,
+        "--base",
+        base,
+        "--head-dir",
+        tufaHeadDir,
+        "--passcode",
+        passcode,
+        "--alias",
+        tufaAlias,
+        "--url",
+        tufaOrigin,
+      ],
+    ),
+  );
+  await requireSuccess(
+    "tufa controller ends add",
+    runTufaFromRoot(
+      [
+        "ends",
+        "add",
+        "--name",
+        tufaName,
+        "--base",
+        base,
+        "--head-dir",
+        tufaHeadDir,
+        "--passcode",
+        passcode,
+        "--alias",
+        tufaAlias,
+        "--role",
+        "controller",
+        "--eid",
+        tufaPre,
+      ],
+    ),
+  );
+  await requireSuccess(
+    "tufa mailbox ends add",
+    runTufaFromRoot(
+      [
+        "ends",
+        "add",
+        "--name",
+        tufaName,
+        "--base",
+        base,
+        "--head-dir",
+        tufaHeadDir,
+        "--passcode",
+        passcode,
+        "--alias",
+        tufaAlias,
+        "--role",
+        "mailbox",
+        "--eid",
+        tufaPre,
+      ],
+    ),
+  );
+
+  await requireSuccess(
+    "kli init",
+    runCmd(ctx.kliCommand, [
+      "init",
+      "--name",
+      kliName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--salt",
+      salt,
+    ], ctx.env),
+  );
+  await requireSuccess(
+    "kli incept",
+    runCmd(ctx.kliCommand, [
+      "incept",
+      "--name",
+      kliName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--alias",
+      kliAlias,
+      "--transferable",
+      "--isith",
+      "1",
+      "--icount",
+      "1",
+      "--nsith",
+      "1",
+      "--ncount",
+      "1",
+      "--toad",
+      "0",
+    ], ctx.env),
+  );
+
+  const startTufaAgent = () =>
+    spawnChild(
+      "deno",
+      [
+        "run",
+        "--allow-all",
+        "--unstable-ffi",
+        "packages/keri/mod.ts",
+        "agent",
+        "--name",
+        tufaName,
+        "--base",
+        base,
+        "--head-dir",
+        tufaHeadDir,
+        "--passcode",
+        passcode,
+        "--port",
+        String(tufaPort),
+      ],
+      ctx.env,
+      tufaRepoRoot,
+    );
+
+  await withStartedChild(startTufaAgent(), tufaPort, async () => {
+    await requireSuccess(
+      "kli resolve tufa controller",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "oobi",
+          "resolve",
+          "--name",
+          kliName,
+          "--base",
+          base,
+          "--passcode",
+          passcode,
+          "--oobi",
+          `${tufaOrigin}/oobi/${tufaPre}/controller`,
+          "--oobi-alias",
+          tufaAlias,
+        ],
+        ctx.env,
+        20_000,
+      ),
+    );
+    const mailboxAdd = await requireSuccess(
+      "kli mailbox add tufa",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "mailbox",
+          "add",
+          "--name",
+          kliName,
+          "--base",
+          base,
+          "--passcode",
+          passcode,
+          "--alias",
+          kliAlias,
+          "--mailbox",
+          tufaAlias,
+        ],
+        ctx.env,
+        20_000,
+      ),
+    );
+    assertStringIncludes(mailboxAdd.stdout, tufaPre);
+
+    const initialSign = await requireSuccess(
+      "tufa sign initial",
+      runTufaFromRoot(
+        [
+          "sign",
+          "--name",
+          tufaName,
+          "--base",
+          base,
+          "--head-dir",
+          tufaHeadDir,
+          "--passcode",
+          passcode,
+          "--alias",
+          tufaAlias,
+          "--text",
+          message,
+        ],
+      ),
+    );
+    const initialVerify = await requireSuccess(
+      "kli verify initial",
+      runCmd(ctx.kliCommand, [
+        "verify",
+        "--name",
+        kliName,
+        "--base",
+        base,
+        "--passcode",
+        passcode,
+        "--prefix",
+        tufaPre,
+        "--text",
+        message,
+        "--signature",
+        extractRawSignature(initialSign.stdout),
+      ], ctx.env),
+    );
+    assertStringIncludes(initialVerify.stdout, "Signature 1 is valid.");
+
+    await requireSuccess(
+      "tufa rotate",
+      runTufaFromRoot(
+        [
+          "rotate",
+          "--name",
+          tufaName,
+          "--base",
+          base,
+          "--head-dir",
+          tufaHeadDir,
+          "--passcode",
+          passcode,
+          "--alias",
+          tufaAlias,
+        ],
+      ),
+    );
+
+    const rotatedSign = await requireSuccess(
+      "tufa sign rotated",
+      runTufaFromRoot(
+        [
+          "sign",
+          "--name",
+          tufaName,
+          "--base",
+          base,
+          "--head-dir",
+          tufaHeadDir,
+          "--passcode",
+          passcode,
+          "--alias",
+          tufaAlias,
+          "--text",
+          message,
+        ],
+      ),
+    );
+    rotatedSignature = extractRawSignature(rotatedSign.stdout);
+
+    const staleVerify = await runCmd(ctx.kliCommand, [
+      "verify",
+      "--name",
+      kliName,
+      "--base",
+      base,
+      "--passcode",
+      passcode,
+      "--prefix",
+      tufaPre,
+      "--text",
+      message,
+      "--signature",
+      rotatedSignature,
+    ], ctx.env);
+    assertEquals(
+      staleVerify.code === 0,
+      false,
+      `stdout:\n${staleVerify.stdout}\nstderr:\n${staleVerify.stderr}`,
+    );
+    assertStringIncludes(
+      `${staleVerify.stdout}\n${staleVerify.stderr}`,
+      "Signature 1 is invalid.",
+    );
+  });
+
+  await withStartedChild(startTufaAgent(), tufaPort, async () => {
+    const query = await requireSuccess(
+      "kli query tufa controller",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "query",
+          "--name",
+          kliName,
+          "--base",
+          base,
+          "--passcode",
+          passcode,
+          "--alias",
+          kliAlias,
+          "--prefix",
+          tufaPre,
+        ],
+        ctx.env,
+        20_000,
+      ),
+    );
+    assertStringIncludes(query.stdout, "Checking for updates...");
+    assertStringIncludes(query.stdout, `Identifier: ${tufaPre}`);
+    assertStringIncludes(query.stdout, "Seq No:\t1");
+
+    const refreshedVerify = await requireSuccess(
+      "kli verify after query",
+      runCmd(ctx.kliCommand, [
+        "verify",
+        "--name",
+        kliName,
+        "--base",
+        base,
+        "--passcode",
+        passcode,
+        "--prefix",
+        tufaPre,
+        "--text",
+        message,
+        "--signature",
+        rotatedSignature,
+      ], ctx.env),
+    );
+    assertStringIncludes(refreshedVerify.stdout, "Signature 1 is valid.");
+  });
 });
 
 /**

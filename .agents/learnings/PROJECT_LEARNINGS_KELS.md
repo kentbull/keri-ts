@@ -525,3 +525,18 @@ runtime ownership semantics.
   evidence-driven `Partial` promotion.
 - Tightened the public mapper API around `recordClass` plus `FooRecord` /
   `FooRecordShape` and removed the old `*Like` naming drift.
+
+### 2026-04-07 - Rotated `/ksn` Replies Are Recoverable, Not Fatal
+
+- A controller-signed key-state notice for a freshly rotated identifier may
+  arrive before the querier has the signer’s latest establishment event. In
+  that state, reply verification must be treated as recoverable correspondence
+  work, not as a terminal parser/runtime failure.
+- Durable runtime rule: `UnverifiedReplyError` from reply processing should
+  leave the reply escrowed and let follow-on query work continue. Crashing the
+  ingress turn destroys the only path that can later make the reply verifiable.
+- Single-sig interop consequence: `kli query` against a rotated Tufa controller
+  with no witnesses needed an immediate replay catch-up published to the
+  requester mailbox alongside the normal `/ksn` reply. Without that, the stale
+  querier could see the new key state notice but never learn the signer state
+  needed to verify it.

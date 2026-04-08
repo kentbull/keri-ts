@@ -3,6 +3,7 @@ import { type CesrParser, Cigar, createParser, Ilks, SerderKERI, Siger, Verfer }
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
+import { UnverifiedReplyError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { Exchanger } from "./exchanging.ts";
@@ -85,12 +86,18 @@ export class Reactor {
           this.local,
         )
       ) {
-        dispatchEnvelope(
-          envelope,
-          this.revery,
-          this.kevery,
-          this.exchanger,
-        );
+        try {
+          dispatchEnvelope(
+            envelope,
+            this.revery,
+            this.kevery,
+            this.exchanger,
+          );
+        } catch (error) {
+          if (!(error instanceof UnverifiedReplyError)) {
+            throw error;
+          }
+        }
       }
     }
   }

@@ -12,6 +12,22 @@ interface CmdResult {
   stderr: string;
 }
 
+function extractPrefixLine(output: string): string {
+  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
+  if (!line) {
+    throw new Error(`Unable to parse prefix from output:\n${output}`);
+  }
+  return line.trim().split(/\s+/).at(-1) ?? "";
+}
+
+function extractRawSignature(output: string): string {
+  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
+  if (!line) {
+    throw new Error(`Unable to parse signature output:\n${output}`);
+  }
+  return line.trim().replace(/^\d+\.\s+/, "");
+}
+
 async function runTufa(args: string[]): Promise<CmdResult> {
   const repoRoot = new URL("../../../", import.meta.url);
   const out = await new Deno.Command(Deno.execPath(), {
@@ -493,4 +509,115 @@ Deno.test("CLI - exchange send rejects removed legacy flags", async () => {
   assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
   assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
   assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
+});
+
+Deno.test("CLI - sign, verify, and rotate commands work for one persistent single-sig store", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "tufa-cli-sign-" });
+  const name = `cli-sign-${crypto.randomUUID()}`;
+  const alias = "alice";
+  const message = "cli sign verify rotate";
+
+  const init = await runTufa([
+    "init",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--nopasscode",
+  ]);
+  assertEquals(init.code, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+
+  const incept = await runTufa([
+    "incept",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--alias",
+    alias,
+    "--transferable",
+    "--isith",
+    "1",
+    "--icount",
+    "1",
+    "--nsith",
+    "1",
+    "--ncount",
+    "1",
+    "--toad",
+    "0",
+  ]);
+  assertEquals(incept.code, 0, `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`);
+  const prefix = extractPrefixLine(incept.stdout);
+
+  const sign = await runTufa([
+    "sign",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--alias",
+    alias,
+    "--text",
+    message,
+  ]);
+  assertEquals(sign.code, 0, `stdout:\n${sign.stdout}\nstderr:\n${sign.stderr}`);
+  const signature = extractRawSignature(sign.stdout);
+
+  const verify = await runTufa([
+    "verify",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--prefix",
+    prefix,
+    "--text",
+    message,
+    "--signature",
+    signature,
+  ]);
+  assertEquals(verify.code, 0, `stdout:\n${verify.stdout}\nstderr:\n${verify.stderr}`);
+  assertStringIncludes(verify.stdout, "Signature 1 is valid.");
+
+  const rotate = await runTufa([
+    "rotate",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--alias",
+    alias,
+  ]);
+  assertEquals(rotate.code, 0, `stdout:\n${rotate.stdout}\nstderr:\n${rotate.stderr}`);
+  assertStringIncludes(rotate.stdout, `Prefix  ${prefix}`);
+  assertStringIncludes(rotate.stdout, "New Sequence No.  1");
+  assertStringIncludes(rotate.stdout, "Public key 1");
+
+  const rotatedSign = await runTufa([
+    "sign",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--alias",
+    alias,
+    "--text",
+    message,
+  ]);
+  assertEquals(
+    rotatedSign.code,
+    0,
+    `stdout:\n${rotatedSign.stdout}\nstderr:\n${rotatedSign.stderr}`,
+  );
+  assertEquals(rotatedSign.stdout !== sign.stdout, true);
+});
+
+Deno.test("CLI - query help exposes KLI-compatible core flags", async () => {
+  const res = await runTufa(["query", "--help"]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(res.stdout, "--alias <alias>");
+  assertStringIncludes(res.stdout, "--prefix <prefix>");
+  assertStringIncludes(res.stdout, "--anchor <file>");
 });

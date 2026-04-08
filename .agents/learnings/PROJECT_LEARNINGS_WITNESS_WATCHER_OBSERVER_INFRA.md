@@ -91,3 +91,17 @@ deployment, CI, and interoperability operations.
 - This closed the specific failure mode where generic bootstrap jobs populated
   caches that caused interop jobs to skip the only step that made the native
   addon KERIpy-compatible.
+
+### 2026-04-07 - Mailbox Query Interop Needs More Than Just SSE Compatibility
+
+- KLI/Tufa mailbox interop was not blocked by SSE framing once `/reply` and
+  `/replay` topic publication was correct. The harder failure was controller
+  query convergence after rotation.
+- Durable rule: for controller `ksn` queries without witnesses, mailbox
+  compatibility is not enough by itself. The requester may need replay material
+  quickly enough to verify the signer state behind the reply. In practice that
+  means the host must preserve the mailbox publication path for `/reply` and
+  may also need to bridge replay catch-up for cross-implementation clients.
+- Operationally, treat mailbox topic ownership (`dest` vs subject prefix) as a
+  correctness boundary, not a storage detail. The wrong bucket silently turns
+  "query succeeded" into stale remote state.

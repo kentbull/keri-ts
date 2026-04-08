@@ -1,5 +1,5 @@
 import { run } from "effection";
-import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals, assertInstanceOf, assertNotEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { Cigar, Counter, CtrDexV1, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
@@ -7,6 +7,79 @@ import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import { makeExchangeSerder } from "../../../src/core/messages.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+
+Deno.test("Hab.rotate advances accepted key state and appends a new KEL event", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-rotate-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const priorKey = hab.kever?.verfers[0]?.qb64 ?? "";
+      const priorSaid = hab.kever?.said ?? "";
+
+      const msg = hab.rotate({ ncount: 1, nsith: "1" });
+      const nextState = hby.db.getState(hab.pre);
+      const nextKever = hab.kever;
+
+      assertEquals(nextKever?.sn, 1);
+      assertEquals(nextState?.s, "1");
+      assertNotEquals(nextState?.d, priorSaid);
+      assertNotEquals(nextState?.k?.[0], priorKey);
+      assertEquals(hby.db.kels.getLast(hab.pre, 1), nextState?.d);
+      assertEquals(hby.db.getFel(hab.pre, 1), nextState?.d);
+      assertEquals(msg.length > 0, true);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Hab.rotate rolls keeper progression back when the rotation event is invalid", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-rotate-rollback-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const before = hby.ks.getSits(hab.pre);
+
+      try {
+        hab.rotate({ isith: "2", ncount: 1, nsith: "1" });
+        throw new Error("Expected invalid rotation to throw.");
+      } catch (error) {
+        assertEquals(
+          error instanceof Error ? error.message : String(error),
+          "Invalid current threshold for 1 keys.",
+        );
+      }
+
+      const after = hby.ks.getSits(hab.pre);
+      assertEquals(after?.old.pubs, before?.old.pubs);
+      assertEquals(after?.new.pubs, before?.new.pubs);
+      assertEquals(after?.nxt.pubs, before?.nxt.pubs);
+      assertEquals(hab.kever?.sn, 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
 
 Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const name = `habery-load-${crypto.randomUUID()}`;
