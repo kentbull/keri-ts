@@ -73,9 +73,9 @@ export function* endsAddCommand(args: Record<string, unknown>): Operation<void> 
       throw new ValidationError(`No local AID found for alias ${commandArgs.alias}`);
     }
 
-    const runtime = createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
     ingestKeriBytes(runtime, hab.makeEndRole(commandArgs.eid, commandArgs.role, true));
-    yield* processRuntimeTurn(runtime, { hab });
+    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
 
     const end = hby.db.ends.get([hab.pre, commandArgs.role, commandArgs.eid]);
     if (!end?.allowed) {

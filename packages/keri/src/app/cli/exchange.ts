@@ -1,64 +1,66 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { type ExchangeTransport, resolveExchangeTransportUrl, sendSignedExchangeMessage } from "../exchanging.ts";
+import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
+import { sendExchangeMessage } from "../forwarding.ts";
 import { setupHby } from "./common/existing.ts";
+import { parseExnDataItems } from "./common/parsing.ts";
 
-interface ExchangeSendArgs {
+interface ExnSendArgs {
   name?: string;
   base?: string;
   headDirPath?: string;
   passcode?: string;
-  alias?: string;
+  sender?: string;
   recipient?: string;
   route?: string;
-  payload?: string;
-  transport?: string;
+  topic?: string;
+  data?: string[];
   compat?: boolean;
+  outboxer?: boolean;
+  cesrBodyMode?: CesrBodyMode;
 }
 
 /**
- * Implement `tufa exchange send` for one already-resolved remote identifier.
+ * Implement `tufa exchange send` / `tufa exn send` with KERIpy-shaped EXN behavior.
  *
- * Current scope:
- * - build and sign one `exn`
- * - deliver it over the selected direct or mailbox-authorized transport URL
- * - keep payload parsing explicit at the CLI seam instead of inventing a
- *   contacts/forwarding abstraction before the transport layer lands fully
+ * Public contract:
+ * - sender is a local alias
+ * - recipient is an AID or exact contact alias
+ * - payload comes from repeatable `--data`
+ * - topic defaults to the first route segment
  */
 export function* exchangeSendCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
-  const commandArgs: ExchangeSendArgs = {
+  const commandArgs: ExnSendArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
     headDirPath: args.headDirPath as string | undefined,
     passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
+    sender: args.sender as string | undefined,
     recipient: args.recipient as string | undefined,
     route: args.route as string | undefined,
-    payload: args.payload as string | undefined,
-    transport: args.transport as string | undefined,
+    topic: args.topic as string | undefined,
+    data: normalizeDataArgs(args.data),
     compat: args.compat as boolean | undefined,
+    outboxer: args.outboxer as boolean | undefined,
+    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
   };
 
   if (!commandArgs.name) {
     throw new ValidationError("Name is required and cannot be empty");
   }
-  if (!commandArgs.alias) {
-    throw new ValidationError("Alias is required and cannot be empty");
+  if (!commandArgs.sender) {
+    throw new ValidationError("Sender alias is required.");
   }
   if (!commandArgs.recipient) {
-    throw new ValidationError("Recipient prefix is required.");
+    throw new ValidationError("Recipient alias or prefix is required.");
   }
   if (!commandArgs.route) {
     throw new ValidationError("Exchange route is required.");
   }
-  if (!commandArgs.payload) {
-    throw new ValidationError("Exchange payload JSON is required.");
-  }
 
-  const transport = normalizeTransport(commandArgs.transport);
-  const payload = parsePayload(commandArgs.payload);
+  const payload = parseExnDataItems(commandArgs.data);
   const hby = yield* setupHby(
     commandArgs.name,
     commandArgs.base ?? "",
@@ -69,55 +71,37 @@ export function* exchangeSendCommand(
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
-      skipSignator: true,
+      skipSignator: false,
+      outboxer: commandArgs.outboxer ?? false,
+      cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
 
   try {
-    const hab = hby.habByName(commandArgs.alias);
+    const hab = hby.habByName(commandArgs.sender);
     if (!hab) {
-      throw new ValidationError(
-        `No local AID found for alias ${commandArgs.alias}.`,
-      );
+      throw new ValidationError(`invalid sender alias ${commandArgs.sender}`);
     }
 
-    const previewUrl = resolveExchangeTransportUrl(
-      hab,
-      commandArgs.recipient,
-      transport,
-    );
-    if (!previewUrl) {
-      throw new ValidationError(
-        `No ${transport} transport endpoint is available for ${commandArgs.recipient}.`,
-      );
-    }
-
-    const { serder, url } = yield* sendSignedExchangeMessage(hab, {
-      route: commandArgs.route,
-      payload,
+    const { serder } = yield* sendExchangeMessage(hby, hab, {
       recipient: commandArgs.recipient,
-      transport,
+      route: commandArgs.route,
+      topic: commandArgs.topic,
+      payload,
     });
-    console.log(`${serder.said} ${url}`);
+    console.log("Sent EXN message");
+    console.log(serder.pretty());
   } finally {
     yield* hby.close();
   }
 }
 
-function parsePayload(input: string): Record<string, unknown> {
-  const parsed = JSON.parse(input);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new ValidationError("Exchange payload must be a JSON object.");
+function normalizeDataArgs(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
   }
-  return parsed;
-}
-
-function normalizeTransport(input?: string): ExchangeTransport {
-  const value = input ?? "auto";
-  if (value === "auto" || value === "direct" || value === "indirect") {
-    return value;
+  if (typeof value === "string") {
+    return [value];
   }
-  throw new ValidationError(
-    `Unsupported exchange transport ${String(input)}.`,
-  );
+  return [];
 }

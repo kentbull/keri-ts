@@ -83,7 +83,7 @@ async function seedHostedIdentifier(
       });
       pre = hab.pre;
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -161,6 +161,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
           name: bobName,
           headDirPath: bobHeadDirPath,
           url: `${aliceUrl}/oobi/${alice.pre}/controller`,
+          oobiAlias: "alice",
         }),
       )
     );
@@ -179,7 +180,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
       skipConfig: true,
     });
     const hab = hby.habByName("bob");
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -195,6 +196,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
           name: aliceName,
           headDirPath: aliceHeadDirPath,
           url: `${bobUrl}/oobi/${bob.pre}/controller`,
+          oobiAlias: "bob",
         }),
       );
       assertEquals(
@@ -207,15 +209,16 @@ Deno.test("challenge respond and verify round-trip through direct controller del
           name: aliceName,
           headDirPath: aliceHeadDirPath,
           alias: "alice",
-          recipient: bob.pre,
+          recipient: "bob",
           words: JSON.stringify(words),
           transport: "direct",
         }),
       );
-      assertStringIncludes(responded.output.at(-1) ?? "", bobUrl);
+      assertEquals(responded.output[0], "Sent EXN message");
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -241,6 +244,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
       skipSignator: true,
     });
     try {
+      assertEquals(hby.db.cfld.get([alice.pre, "alias"]), "alice");
       assertEquals(hby.db.reps.get([alice.pre]).length > 0, true);
       assertEquals(hby.db.chas.get([alice.pre]).length > 0, true);
     } finally {
@@ -290,6 +294,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
           name: bobName,
           headDirPath: bobHeadDirPath,
           url: `${aliceUrl}/oobi/${alice.pre}/controller`,
+          oobiAlias: "alice",
         }),
       )
     );
@@ -308,7 +313,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
       skipConfig: true,
     });
     const hab = hby.habByName("bob");
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -324,6 +329,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
           name: aliceName,
           headDirPath: aliceHeadDirPath,
           url: `${bobUrl}/oobi/${bob.pre}/mailbox/${bob.pre}`,
+          oobiAlias: "bob",
         }),
       );
       assertEquals(
@@ -335,17 +341,17 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
         exchangeSendCommand({
           name: aliceName,
           headDirPath: aliceHeadDirPath,
-          alias: "alice",
-          recipient: bob.pre,
+          sender: "alice",
+          recipient: "bob",
           route: "/challenge/response",
-          payload: JSON.stringify({ i: alice.pre, words }),
-          transport: "indirect",
+          data: [JSON.stringify({ i: alice.pre, words })],
         }),
       );
-      assertStringIncludes(sent.output.at(-1) ?? "", bobUrl);
+      assertEquals(sent.output[0], "Sent EXN message");
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -372,6 +378,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
     });
     try {
       assertExists(hby.db.ends.get([bob.pre, EndpointRoles.mailbox, bob.pre]));
+      assertEquals(hby.db.cfld.get([alice.pre, "alias"]), "alice");
       assertEquals(hby.db.reps.get([alice.pre]).length > 0, true);
       assertEquals(hby.db.chas.get([alice.pre]).length > 0, true);
     } finally {

@@ -5,6 +5,7 @@
 - Scope: `packages/keri` Gate E cue handling, runtime orchestration, and local
   location-state mutation
 - Related:
+  - `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
   - `packages/keri/src/core/cues.ts`
   - `packages/keri/src/app/cue-runtime.ts`
   - `packages/keri/src/app/habbing.ts`
@@ -41,6 +42,11 @@ pattern:
 That was enough for the first OOBI/bootstrap slice, but it taught the wrong
 architecture to maintainers and left no honest place to port broader KERIpy cue
 behavior.
+
+This ADR stays normative for `keri-ts` cue-runtime semantics. For the broader
+cross-runtime explainer, including KERIpy doer correspondence, mailbox
+`stream` routing, and end-to-end producer/consumer inventories, read
+`docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
 
 ## Decision
 

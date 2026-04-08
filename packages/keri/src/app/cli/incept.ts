@@ -1,6 +1,7 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import {
+  type AgentRuntime,
   createAgentRuntime,
   processRuntimeUntil,
   runtimeHasPendingWork,
@@ -137,11 +138,11 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     );
     try {
       if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
-        const runtime = createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         yield* processRuntimeUntil(
           runtime,
           () => !runtimeHasPendingWork(runtime),
-          { maxTurns: 128 },
+          { maxTurns: 128, pollMailbox: false },
         );
         if (hby.db.eoobi.cnt() > 0) {
           throw new ValidationError(
@@ -188,7 +189,7 @@ function configuredWellKnownUrls(hby: Habery): string[] {
 }
 
 function assertConfiguredWellKnownAuth(
-  runtime: ReturnType<typeof createAgentRuntime>,
+  runtime: AgentRuntime,
   hby: Habery,
   context: string,
 ): void {

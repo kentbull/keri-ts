@@ -35,15 +35,16 @@ env:
   # We pin exact runtime versions in CI because this repo uses native addons,
   # Deno->npm builds, and KERIpy interop, all of which are sensitive to drift.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  DENO_VERSION: "2.7.5"
-  KERIPY_GIT_SHA: 273784cb1702348c3888a09806cc37aea1877704
+  DENO_VERSION: "2.7.11"
+  KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
+  KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
   LMDB_DATA_V1: "true"
-  NODE_VERSION: "22.14.0"
+  NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
-  DEPS_CACHE_KEY_PREFIX: ci-deps-v2
-  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v1
-  KERIPY_CACHE_KEY_PREFIX: keripy-v1
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v3
+  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v2
+  KERIPY_CACHE_KEY_PREFIX: keripy-v2-mailbox-impl
 
 jobs:
   # Fast, deterministic gate. Nothing here should depend on KERIpy being
@@ -67,6 +68,7 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
+        id: deps-cache
         # Shared cache for dependency bootstrap. This keeps all jobs fast while
         # still tying cache reuse to the exact runtime/tooling contract.
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -77,6 +79,13 @@ jobs:
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        # A restore-key cache hit is only a bootstrap hint. When the exact deps
+        # cache misses, rebuild node_modules from package-lock.json before any
+        # task or test relies on the workspace npm graph.
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
         # Emit the exact toolchain the job is about to use. This turns future
@@ -122,6 +131,7 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
+        id: deps-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -130,6 +140,10 @@ jobs:
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
         env:
@@ -161,6 +175,7 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
+        id: deps-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -169,6 +184,10 @@ jobs:
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
         env:
@@ -196,6 +215,7 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
+        id: deps-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -204,6 +224,10 @@ jobs:
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
         env:
@@ -243,6 +267,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
         # The shared deps cache is only bootstrap state. Interop jobs need a
@@ -279,7 +307,7 @@ jobs:
         run: |
           python -m venv "${KERIPY_VENV}"
           "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
 
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
@@ -321,6 +349,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
         # The shared deps cache is only bootstrap state. Interop jobs need a
@@ -357,7 +389,7 @@ jobs:
         run: |
           python -m venv "${KERIPY_VENV}"
           "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
 
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
@@ -399,6 +431,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
         # The shared deps cache is only bootstrap state. Interop jobs need a
@@ -435,7 +471,7 @@ jobs:
         run: |
           python -m venv "${KERIPY_VENV}"
           "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+https://github.com/WebOfTrust/keripy.git@${KERIPY_GIT_SHA}"
+          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
 
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
@@ -469,6 +505,7 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
+        id: deps-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -477,6 +514,10 @@ jobs:
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
         env:
@@ -506,6 +547,7 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
+        id: deps-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -514,6 +556,10 @@ jobs:
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
         env:

@@ -1,4 +1,4 @@
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import {
   type Cigar,
   Dater,
@@ -18,7 +18,9 @@ import { Kever } from "../core/kever.ts";
 import { makeExchangeSerder } from "../core/messages.ts";
 import { Roles } from "../core/roles.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 
 const textDecoder = new TextDecoder();
 const EXCHANGE_ESCROW_TIMEOUT_MS = 10_000;
@@ -510,8 +512,13 @@ export function* sendSignedExchangeMessage(
     stamp: args.date,
     dig: args.dig,
   });
-  const message = hab.endorse(serder);
-  const response = yield* postCesrMessage(url, message);
+  const message = hab.endorse(serder, { pipelined: false });
+  const response = yield* postCesrMessage(
+    url,
+    message,
+    "header",
+    args.recipient,
+  );
   yield* closeResponseBody(response);
   if (!response.ok) {
     throw new ValidationError(
@@ -584,40 +591,38 @@ function normalizeAttachments(
 function* postCesrMessage(
   url: string,
   body: Uint8Array,
+  bodyMode: CesrBodyMode,
+  destination?: string,
 ): Operation<Response> {
-  return yield* action((resolve, reject) => {
-    const controller = new AbortController();
-    const payload = new Uint8Array(body);
-    let settled = false;
-    fetch(url, {
+  const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
+  let lastResponse: Response | null = null;
+
+  for (const currentBody of requests) {
+    const request = buildCesrRequest(currentBody, {
+      bodyMode,
+      destination,
+    });
+    const { response } = yield* fetchResponseHandle(url, {
       method: "POST",
-      headers: { "Content-Type": "application/cesr" },
-      body: payload.buffer,
-      signal: controller.signal,
-    }).then((response) => {
-      settled = true;
-      resolve(response);
-    }).catch(reject);
+      headers: request.headers,
+      body: request.body,
+    });
 
-    return () => {
-      if (!settled) {
-        controller.abort();
-      }
-    };
-  });
-}
-
-function* closeResponseBody(response: Response): Operation<void> {
-  if (!response.body) {
-    return;
+    if (lastResponse) {
+      yield* closeResponseBody(lastResponse);
+    }
+    lastResponse = response;
+    if (!response.ok) {
+      return response;
+    }
   }
 
-  yield* action((resolve, reject) => {
-    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
-    return () => {};
-  });
-}
+  if (!lastResponse) {
+    throw new ValidationError("No CESR HTTP request was generated for delivery.");
+  }
 
+  return lastResponse;
+}
 function hexToFixedBytes(hex: string, size: number): Uint8Array {
   const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
   if (!/^[0-9a-f]+$/i.test(normalized)) {

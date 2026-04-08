@@ -7,6 +7,8 @@ import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import type { Habery } from "./habbing.ts";
+import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
+import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -220,6 +222,10 @@ export class Oobiery {
       date: new Date().toISOString(),
       state: "resolved",
     });
+    persistResolvedContact(this.hby, meta.cid, {
+      alias: queuedRecord.oobialias,
+      oobi: url,
+    });
     this.cues.push({
       kin: "oobiResolved",
       url,
@@ -322,6 +328,10 @@ export class Oobiery {
       ...record,
       date,
       state: "resolved",
+    });
+    persistResolvedContact(this.hby, record.cid ?? null, {
+      alias: record.oobialias,
+      oobi: url,
     });
     this.cues.push({
       kin: "oobiResolved",
@@ -468,21 +478,18 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
     alias: alias ?? parsed.searchParams.get("name") ?? undefined,
   };
 
-  if (
-    parts.length >= 4
-    && parts[0] === ".well-known"
-    && parts[1] === "keri"
-    && parts[2] === "oobi"
-  ) {
-    job.cid = parts[3];
+  const wellKnownIndex = findPathSequence(parts, [".well-known", "keri", "oobi"]);
+  if (wellKnownIndex >= 0 && wellKnownIndex + 3 < parts.length) {
+    job.cid = parts[wellKnownIndex + 3];
     job.role = Roles.controller;
     return job;
   }
 
-  if (parts[0] === "oobi") {
-    job.cid = parts[1];
-    job.role = parts[2];
-    job.eid = parts[3];
+  const oobiIndex = parts.lastIndexOf("oobi");
+  if (oobiIndex >= 0 && oobiIndex + 2 < parts.length) {
+    job.cid = parts[oobiIndex + 1];
+    job.role = parts[oobiIndex + 2];
+    job.eid = parts[oobiIndex + 3];
   }
 
   return job;
@@ -492,10 +499,25 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
 export function isWellKnownOobiUrl(url: string): boolean {
   const parsed = new URL(url);
   const parts = parsed.pathname.split("/").filter((part) => part.length > 0);
-  return parts.length >= 4
-    && parts[0] === ".well-known"
-    && parts[1] === "keri"
-    && parts[2] === "oobi";
+  return findPathSequence(parts, [".well-known", "keri", "oobi"]) >= 0;
+}
+
+function findPathSequence(parts: string[], sequence: string[]): number {
+  if (sequence.length === 0 || parts.length < sequence.length) {
+    return -1;
+  }
+
+  outer:
+  for (let index = 0; index <= parts.length - sequence.length; index += 1) {
+    for (let offset = 0; offset < sequence.length; offset += 1) {
+      if (parts[index + offset] !== sequence[offset]) {
+        continue outer;
+      }
+    }
+    return index;
+  }
+
+  return -1;
 }
 
 function queueKindFor(url: string): OobiQueueKind {
@@ -509,30 +531,8 @@ function queueKindFor(url: string): OobiQueueKind {
  * surrounding runtime stays operation-native.
  */
 function* fetchOobiResponse(url: string): Operation<Response> {
-  return yield* action((resolve, reject) => {
-    const controller = new AbortController();
-    let settled = false;
-    fetch(url, { signal: controller.signal }).then((response) => {
-      settled = true;
-      resolve(response);
-    }).catch(reject);
-    return () => {
-      if (!settled) {
-        controller.abort();
-      }
-    };
-  });
-}
-
-function* closeResponseBody(response: Response): Operation<void> {
-  if (!response.body) {
-    return;
-  }
-
-  yield* action((resolve, reject) => {
-    response.body!.cancel().then(() => resolve(undefined)).catch(reject);
-    return () => {};
-  });
+  const { response } = yield* fetchResponseHandle(url);
+  return response;
 }
 
 /**

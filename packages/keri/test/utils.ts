@@ -13,7 +13,7 @@ async function resolveCompatBinaryPath(
   const out = await new Deno.Command("node", {
     args: [
       "-p",
-      "const path=require('path'); path.join(path.dirname(path.dirname(require.resolve('lmdb'))), 'build', 'Release', 'lmdb.node')",
+      "const fs=require('fs'); const path=require('path'); let dir=process.cwd(); while (dir !== path.dirname(dir)) { const candidate=path.join(dir,'node_modules','lmdb'); if (fs.existsSync(candidate)) { console.log(path.join(candidate, 'build', 'Release', 'lmdb.node')); process.exit(0); } dir=path.dirname(dir); } process.exit(1);",
     ],
     cwd,
     stdout: "piped",

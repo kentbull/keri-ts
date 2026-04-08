@@ -4,6 +4,9 @@ import { consoleLogger } from "../../core/logger.ts";
 import { EndpointRoles } from "../../core/roles.ts";
 import { Schemes } from "../../core/schemes.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn, runAgentRuntime } from "../agent-runtime.ts";
+import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
+import { type Configer, createConfiger } from "../configing.ts";
+import type { Hab, Habery } from "../habbing.ts";
 import { startServer } from "../server.ts";
 import { setupHby } from "./common/existing.ts";
 
@@ -13,8 +16,134 @@ interface AgentArgs {
   name?: string;
   base?: string;
   headDirPath?: string;
+  configDir?: string;
+  configFile?: string;
   passcode?: string;
   compat?: boolean;
+  outboxer?: boolean;
+  cesrBodyMode?: CesrBodyMode;
+}
+
+/** Shared long-lived indirect-host settings used by `agent` and mailbox start. */
+export interface IndirectHostOptions {
+  port: number;
+  listenHost?: string;
+  serviceHab: Hab;
+  hostedPrefixes?: readonly string[];
+  seedHabs?: readonly Hab[];
+}
+
+/**
+ * Run one long-lived indirect host over the shared protocol runtime.
+ *
+ * This is the reusable host seam that higher-level porcelain commands build
+ * upon. Startup policy is intentionally explicit so mailbox-specific porcelain
+ * can select one hosted prefix without inheriting `agent`-specific role
+ * seeding.
+ */
+export function* runIndirectHost(
+  hby: Habery,
+  options: IndirectHostOptions,
+): Operation<void> {
+  const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+  const seedHabs = options.seedHabs ?? [options.serviceHab];
+  const hostedPrefixes = options.hostedPrefixes
+    ?? seedHabs.map((hab) => hab.pre);
+
+  for (const hab of seedHabs) {
+    yield* processRuntimeTurn(runtime, {
+      hab,
+      sink: runtime.mailboxDirector,
+      pollMailbox: false,
+    });
+  }
+
+  const runtimeTask = yield* spawn(function*() {
+    yield* runAgentRuntime(runtime, {
+      hab: options.serviceHab,
+      sink: runtime.mailboxDirector,
+    });
+  });
+  try {
+    yield* startServer(
+      options.port,
+      consoleLogger,
+      runtime,
+      {
+        hostname: options.listenHost,
+        hostedPrefixes,
+        serviceHab: options.serviceHab,
+      },
+    );
+  } finally {
+    yield* runtimeTask.halt();
+    yield* runtime.close();
+  }
+}
+
+function configuredControllerState(hab: Hab): boolean {
+  return hab.hasConfigSection();
+}
+
+function controllerRoleEnabled(hby: Habery, pre: string): boolean {
+  const end = hby.db.ends.get([pre, EndpointRoles.controller, pre]);
+  return !!(end?.allowed || end?.enabled);
+}
+
+function preferredControllerUrl(hab: Hab): string | null {
+  const https = hab.fetchUrls(hab.pre, Schemes.https).https;
+  if (typeof https === "string" && https.length > 0) {
+    return https;
+  }
+  const http = hab.fetchUrls(hab.pre, Schemes.http).http;
+  return typeof http === "string" && http.length > 0 ? http : null;
+}
+
+function controllerStartupComplete(hby: Habery, hab: Hab): boolean {
+  return controllerRoleEnabled(hby, hab.pre)
+    && preferredControllerUrl(hab) !== null;
+}
+
+function* reconcileHostedControllerBootstrap(
+  hby: Habery,
+  seedHabs: readonly Hab[],
+  synthesizeRootUrl: string,
+): Operation<void> {
+  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+  try {
+    for (const hab of seedHabs) {
+      if (configuredControllerState(hab)) {
+        if (!controllerStartupComplete(hby, hab)) {
+          throw new ValidationError(
+            `Configured controller endpoint state for alias ${hab.name} is incomplete.`,
+          );
+        }
+        continue;
+      }
+
+      if (!controllerRoleEnabled(hby, hab.pre)) {
+        ingestKeriBytes(
+          runtime,
+          hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
+        );
+      }
+      if (!preferredControllerUrl(hab)) {
+        ingestKeriBytes(
+          runtime,
+          hab.makeLocScheme(synthesizeRootUrl, hab.pre, Schemes.http),
+        );
+      }
+      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+
+      if (!controllerStartupComplete(hby, hab)) {
+        throw new ValidationError(
+          `Fallback controller endpoint bootstrap failed for alias ${hab.name}.`,
+        );
+      }
+    }
+  } finally {
+    yield* runtime.close();
+  }
 }
 
 /**
@@ -23,12 +152,18 @@ interface AgentArgs {
  * Host model:
  * - reopen one local habery
  * - create one shared `AgentRuntime`
- * - seed local controller/agent location auth into the runtime path
+ * - seed only the minimum local self-auth state needed for current host
+ *   behavior into the runtime path
  * - run the continuous runtime loop and protocol HTTP host together
  *
  * Current scope:
  * - this is the Gate E indirect-mode host for OOBI/resource serving
  * - it is not a localhost admin API and should not be documented as one
+ *
+ * Intentional non-goal:
+ * - do not auto-seed self `agent` end roles just because the role exists in
+ *   the endpoint model; support for a role and startup synthesis of that role
+ *   are separate choices
  */
 export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   const agentArgs: AgentArgs = {
@@ -36,8 +171,14 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
     headDirPath: args.headDirPath as string | undefined,
+    configDir: args.configDir as string | undefined,
+    configFile: args.configFile as string | undefined,
     passcode: args.passcode as string | undefined,
     compat: args.compat as boolean | undefined,
+    outboxer: args.outboxer as boolean | undefined,
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
   const port = agentArgs.port ?? 8000;
 
@@ -52,6 +193,16 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Name is required and cannot be empty");
   }
 
+  const cf: Configer | undefined = agentArgs.configFile
+    ? (yield* createConfiger({
+      name: agentArgs.configFile,
+      base: "",
+      temp: false,
+      headDirPath: agentArgs.configDir,
+      reopen: true,
+      clear: false,
+    }))
+    : undefined;
   const hby = yield* setupHby(
     agentArgs.name,
     agentArgs.base ?? "",
@@ -61,48 +212,35 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     {
       compat: agentArgs.compat ?? false,
       readonly: false,
+      cf,
       skipConfig: false,
       skipSignator: false,
+      outboxer: agentArgs.outboxer ?? false,
+      cesrBodyMode: agentArgs.cesrBodyMode,
     },
   );
 
-  const runtime = createAgentRuntime(hby, { mode: "indirect" });
   try {
-    const publicUrl = `http://127.0.0.1:${port}`;
-    for (const hab of hby.habs.values()) {
-      // add local CESR stream bytes for the loc scheme and endroles for the local controller config
-      ingestKeriBytes(
-        runtime,
-        hab.makeLocScheme(publicUrl, hab.pre, Schemes.http),
+    const seedHabs = [...hby.habs.values()];
+    const cueHab = seedHabs[0];
+    if (!cueHab) {
+      throw new ValidationError(
+        "Agent host requires at least one local identifier.",
       );
-      ingestKeriBytes(
-        runtime,
-        hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-      );
-      ingestKeriBytes(
-        runtime,
-        hab.makeEndRole(hab.pre, EndpointRoles.agent, true),
-      );
-      yield* processRuntimeTurn(runtime, {
-        hab,
-        sink: runtime.mailboxDirector,
-      });
     }
-
+    yield* reconcileHostedControllerBootstrap(
+      hby,
+      seedHabs,
+      `http://127.0.0.1:${port}`,
+    );
     console.log(`Starting server on port ${port}`);
-    const cueHab = hby.habs.values().next().value;
-    // spawn here creates a child Effection frame and immediately starts it. Lifetime is this lexical scope.
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, {
-        hab: cueHab,
-        sink: runtime.mailboxDirector,
-      });
+    yield* runIndirectHost(hby, {
+      port,
+      listenHost: "127.0.0.1",
+      serviceHab: cueHab,
+      hostedPrefixes: seedHabs.map((hab) => hab.pre),
+      seedHabs,
     });
-    try {
-      yield* startServer(port, consoleLogger, runtime);
-    } finally {
-      yield* runtimeTask.halt();
-    }
   } finally {
     yield* hby.close();
   }

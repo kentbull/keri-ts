@@ -3,6 +3,7 @@ import {
   Cigar,
   concatBytes,
   Counter,
+  createParser,
   CtrDexV1,
   DigDex,
   Diger,
@@ -11,6 +12,7 @@ import {
   parseMatter,
   PREFIX_CODES,
   Prefixer,
+  Seqner,
   SerderKERI,
   Siger,
   type ThresholdSith,
@@ -28,13 +30,17 @@ import { Kever } from "../core/kever.ts";
 import { makeQuerySerder, makeReceiptSerder, makeReplySerder } from "../core/messages.ts";
 import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
+import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper } from "../db/keeping.ts";
+import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
+import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
+import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
 
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
@@ -56,6 +62,8 @@ export interface HaberyArgs {
   salt?: string;
   algo?: Algos;
   tier?: Tier;
+  outboxer?: "disabled" | "open" | "create";
+  cesrBodyMode?: CesrBodyMode;
 }
 
 /** Habitat inception options consumed by the local bootstrap `Hab.make()` flow. */
@@ -98,6 +106,35 @@ function defaultThreshold(count: number, min: number): string {
   return `${Math.max(min, Math.ceil(count / 2)).toString(16)}`;
 }
 
+function loadConfigUrls(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function requireConfigDatetime(alias: string, value: unknown): string {
+  if (typeof value !== "string") {
+    throw new ValidationError(`Config section '${alias}' is missing dt.`);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError(
+      `Config section '${alias}' has invalid dt '${value}'.`,
+    );
+  }
+  const y = parsed.getUTCFullYear().toString().padStart(4, "0");
+  const m = (parsed.getUTCMonth() + 1).toString().padStart(2, "0");
+  const d = parsed.getUTCDate().toString().padStart(2, "0");
+  const hh = parsed.getUTCHours().toString().padStart(2, "0");
+  const mm = parsed.getUTCMinutes().toString().padStart(2, "0");
+  const ss = parsed.getUTCSeconds().toString().padStart(2, "0");
+  const micros = (parsed.getUTCMilliseconds() * 1000).toString().padStart(
+    6,
+    "0",
+  );
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
+}
+
 /** Shared zero-length message value used when a reply/resource has no payload. */
 function emptyMessage(): Uint8Array {
   return new Uint8Array();
@@ -116,28 +153,32 @@ function requireCigarVerfer(cigar: Cigar): Verfer {
   return cigar.verfer;
 }
 
+function hexToFixedBytes(hex: string, size: number): Uint8Array {
+  const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
+  if (!/^[0-9a-f]+$/i.test(normalized)) {
+    throw new ValidationError(`Invalid hex ordinal ${hex}`);
+  }
+  if (normalized.length > size * 2) {
+    throw new ValidationError(`Hex ordinal ${hex} exceeds ${size} bytes.`);
+  }
+
+  const raw = new Uint8Array(size);
+  const padded = normalized.padStart(size * 2, "0");
+  for (let i = 0; i < size; i++) {
+    raw[i] = Number.parseInt(padded.slice(i * 2, (i * 2) + 2), 16);
+  }
+  return raw;
+}
+
 /**
- * Wrap one reply attachment payload in the outer `AttachmentGroup`.
- *
- * The group count is expressed in quadlets, matching the same wire rule used
- * by event replay/export helpers elsewhere in the app layer.
+ * KERIpy-compatible transferable seal ordinals must be emitted as fixed-width
+ * `Seqner` primitives, even when the runtime currently holds a wider ordinal
+ * abstraction like `NumberPrimitive`.
  */
-function makeReplyAttachmentGroup(attachments: Uint8Array[]): Uint8Array {
-  if (attachments.length === 0) {
-    return emptyMessage();
-  }
-  const raw = concatBytes(...attachments);
-  if (raw.length % 4 !== 0) {
-    throw new Error(
-      "Reply attachments must occupy an integral number of quadlets.",
-    );
-  }
-  const group = new Counter({
-    code: CtrDexV1.AttachmentGroup,
-    count: raw.length / 4,
-    version: KERI_V1,
-  });
-  return concatBytes(group.qb64b, raw);
+function encodeSealSeqnerQb64b(tsg: TransIdxSigGroup): Uint8Array {
+  return tsg.seqner instanceof Seqner
+    ? tsg.seqner.qb64b
+    : new Seqner({ code: "0A", raw: hexToFixedBytes(tsg.snh, 16) }).qb64b;
 }
 
 /**
@@ -158,6 +199,7 @@ function buildEndorsedMessage(args: {
   tsg?: TransIdxSigGroup;
   ssg?: TransLastIdxSigGroup;
   cigars?: readonly Cigar[];
+  pipelined?: boolean;
 }): Uint8Array {
   const attachments: Uint8Array[] = [];
 
@@ -169,7 +211,7 @@ function buildEndorsedMessage(args: {
         version: KERI_V1,
       }).qb64b,
       args.tsg.prefixer.qb64b,
-      args.tsg.seqner.qb64b,
+      encodeSealSeqnerQb64b(args.tsg),
       args.tsg.diger.qb64b,
       new Counter({
         code: CtrDexV1.ControllerIdxSigs,
@@ -207,9 +249,10 @@ function buildEndorsedMessage(args: {
     );
   }
 
-  return concatBytes(
+  return concatMessageWithAttachmentGroup(
     args.serder.raw,
-    makeReplyAttachmentGroup(attachments),
+    attachments,
+    args.pipelined ?? true,
   );
 }
 
@@ -238,7 +281,7 @@ function buildReceiptMessage(args: {
       }).qb64b,
       ...args.tsgs.flatMap((tsg) => [
         tsg.prefixer.qb64b,
-        tsg.seqner.qb64b,
+        encodeSealSeqnerQb64b(tsg),
         tsg.diger.qb64b,
         new Counter({
           code: CtrDexV1.ControllerIdxSigs,
@@ -275,9 +318,42 @@ function buildReceiptMessage(args: {
     );
   }
 
+  return concatMessageWithAttachmentGroup(args.serder.raw, attachments);
+}
+
+/**
+ * KERIpy emits reply/query/receipt attachments in one counted attachment group.
+ *
+ * Some consumers, especially KERIpy's parser stack, rely on that pipelined
+ * framing to delimit attachments correctly when multiple messages are streamed.
+ */
+function concatMessageWithAttachmentGroup(
+  body: Uint8Array,
+  attachments: readonly Uint8Array[],
+  pipelined = true,
+): Uint8Array {
+  if (attachments.length === 0) {
+    return body;
+  }
+
+  const atc = concatBytes(...attachments);
+  if (!pipelined) {
+    return concatBytes(body, atc);
+  }
+  if (atc.length % 4 !== 0) {
+    throw new ValidationError(
+      `Invalid attachment quadlet size ${atc.length} for pipelined message.`,
+    );
+  }
+
   return concatBytes(
-    args.serder.raw,
-    makeReplyAttachmentGroup(attachments),
+    body,
+    new Counter({
+      code: CtrDexV1.AttachmentGroup,
+      count: atc.length / 4,
+      version: KERI_V1,
+    }).qb64b,
+    atc,
   );
 }
 
@@ -452,7 +528,10 @@ export class Hab {
   readonly db: Baser;
   readonly ks: Keeper;
   readonly mgr: Manager;
-  readonly kevery: Kevery;
+  readonly cf?: Configer;
+  readonly rtr: Router;
+  readonly rvy: Revery;
+  readonly kvy: Kevery;
   pre = "";
 
   /** Create one habitat wrapper over shared DB/keeper/manager infrastructure. */
@@ -461,7 +540,10 @@ export class Hab {
     db: Baser,
     ks: Keeper,
     mgr: Manager,
-    kevery: Kevery,
+    cf: Configer | undefined,
+    rtr: Router,
+    rvy: Revery,
+    kvy: Kevery,
     ns?: string,
     pre = "",
   ) {
@@ -469,9 +551,17 @@ export class Hab {
     this.db = db;
     this.ks = ks;
     this.mgr = mgr;
-    this.kevery = kevery;
+    this.cf = cf;
+    this.rtr = rtr;
+    this.rvy = rvy;
+    this.kvy = kvy;
     this.ns = ns;
     this.pre = pre;
+  }
+
+  /** Backward-compatible alias for the injected local `Kevery`. */
+  get kevery(): Kevery {
+    return this.kvy;
   }
 
   /** Return true when this habitat has accepted local key state. */
@@ -496,7 +586,7 @@ export class Hab {
     serder: SerderKERI,
     sigers: readonly Siger[],
   ): Kever {
-    const decision = this.kevery.processEvent({
+    const decision = this.kvy.processEvent({
       serder,
       sigers: [...sigers],
       wigers: [],
@@ -518,6 +608,66 @@ export class Hab {
       );
     }
     return kever;
+  }
+
+  /**
+   * Parse and dispatch locally generated CESR bytes through the real
+   * `CesrParser` architecture.
+   *
+   * This mirrors the KERIpy shape where locally generated bootstrap replies may
+   * still flow through the same parser-driven reply acceptance machinery as
+   * remotely received wire messages.
+   */
+  private ingestLocalCesr(ims: Uint8Array): void {
+    const parser = createParser({
+      framed: false,
+      attachmentDispatchMode: "compat",
+    });
+    for (const envelope of envelopesFromFrames(parser.feed(ims), true)) {
+      dispatchEnvelope(envelope, this.rvy, this.kvy);
+    }
+  }
+
+  /** Return the alias-scoped config section for this habitat when present. */
+  configuredSection(): Record<string, unknown> | null {
+    const conf = this.cf?.get<Record<string, unknown>>() ?? {};
+    const section = conf[this.name];
+    return section && typeof section === "object" && !Array.isArray(section)
+      ? section as Record<string, unknown>
+      : null;
+  }
+
+  /** Return true when this habitat has alias-scoped config preload material. */
+  hasConfigSection(): boolean {
+    return this.configuredSection() !== null;
+  }
+
+  /**
+   * Apply alias-scoped controller endpoint config through the real CESR parser path.
+   *
+   * KERIpy correspondence:
+   * - `Hab` owns per-alias config lookup and reply ingestion
+   * - config remains immutable bootstrap input, not mutable database state
+   */
+  reconfigure(): boolean {
+    const conf = this.configuredSection();
+    if (!conf || !this.pre || !this.accepted) {
+      return false;
+    }
+
+    const dt = requireConfigDatetime(this.name, conf.dt);
+    const messages: Uint8Array[] = [
+      this.makeEndRole(this.pre, Roles.controller, true, dt),
+    ];
+    for (const url of loadConfigUrls(conf.curls)) {
+      const parsed = new URL(url);
+      const scheme = parsed.protocol.length > 0
+        ? parsed.protocol.slice(0, -1)
+        : Schemes.http;
+      messages.push(this.makeLocScheme(url, this.pre, scheme, dt));
+    }
+    this.ingestLocalCesr(concatMessages(messages));
+    return true;
   }
 
   /**
@@ -627,7 +777,14 @@ export class Hab {
   sign(ser: Uint8Array, indexed: true): Siger[];
   sign(ser: Uint8Array, indexed?: false): Cigar[];
   sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
-    const pubs = this.kever?.verfers.map((verfer) => verfer.qb64) ?? [];
+    if (!this.pre) {
+      throw new ValidationError("Signing requires a local habitat prefix.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+    const pubs = kever.verfers.map((verfer) => verfer.qb64);
     if (indexed) {
       return this.mgr.sign(ser, pubs, true);
     }
@@ -648,7 +805,12 @@ export class Hab {
    * - the Gate E bootstrap path only actively uses the transferable branch for
    *   locally generated replies and queries
    */
-  endorse(serder: SerderKERI): Uint8Array {
+  endorse(
+    serder: SerderKERI,
+    options: {
+      pipelined?: boolean;
+    } = {},
+  ): Uint8Array {
     if (!this.pre) {
       throw new Error("Cannot endorse a message before habitat inception.");
     }
@@ -657,10 +819,12 @@ export class Hab {
       throw new Error(`Missing accepted key state for ${this.pre}.`);
     }
     const prefixer = kever.prefixer;
+    const pipelined = options.pipelined ?? true;
     if (!kever.transferable) {
       return buildEndorsedMessage({
         serder,
         cigars: this.sign(serder.raw, false) as Cigar[],
+        pipelined,
       });
     }
 
@@ -669,6 +833,7 @@ export class Hab {
       return buildEndorsedMessage({
         serder,
         ssg: new TransLastIdxSigGroup(prefixer, sigers),
+        pipelined,
       });
     }
 
@@ -689,6 +854,7 @@ export class Hab {
         new Diger({ qb64: estSaid }),
         sigers,
       ),
+      pipelined,
     });
   }
 
@@ -755,7 +921,7 @@ export class Hab {
 
     if (!kever.transferable) {
       const cigars = this.sign(serder.raw, false) as Cigar[];
-      this.kevery.processReceipt({
+      this.kvy.processReceipt({
         serder: reserder,
         cigars,
         wigers: [],
@@ -780,7 +946,7 @@ export class Hab {
       new Diger({ qb64: estSaid }),
       sigers,
     );
-    this.kevery.processReceipt({
+    this.kvy.processReceipt({
       serder: reserder,
       cigars: [],
       wigers: [],
@@ -829,7 +995,7 @@ export class Hab {
       indexed: true,
       indices: [index],
     }) as Siger[];
-    this.kevery.processReceipt({
+    this.kvy.processReceipt({
       serder: reserder,
       cigars: [],
       wigers,
@@ -1073,7 +1239,7 @@ export class Hab {
    */
   replyToOobi(
     aid: string,
-    role: Role | string,
+    role?: Role | string,
     eids: string[] = [],
   ): Uint8Array {
     return this.replyEndRole(aid, role, eids);
@@ -1205,16 +1371,28 @@ export class Signator {
   pre: string;
 
   /** Reopen or create the habery-owned `__signatory__` habitat wrapper. */
-  constructor(db: Baser, habery: Habery) {
+  constructor(args: {
+    db: Baser;
+    ks: Keeper;
+    mgr: Manager;
+    cf?: Configer;
+    rtr: Router;
+    rvy: Revery;
+    kvy: Kevery;
+  }) {
+    const { db, ks, mgr, cf, rtr, rvy, kvy } = args;
     this.db = db;
     const spre = this.db.getHby(SIGNER);
     if (!spre) {
       const hab = new Hab(
         SIGNER,
-        habery.db,
-        habery.ks,
-        habery.mgr,
-        habery.kevery,
+        db,
+        ks,
+        mgr,
+        cf,
+        rtr,
+        rvy,
+        kvy,
       );
       hab.make({ transferable: false, hidden: true });
       this.hab = hab;
@@ -1223,10 +1401,13 @@ export class Signator {
     } else {
       const hab = new Hab(
         SIGNER,
-        habery.db,
-        habery.ks,
-        habery.mgr,
-        habery.kevery,
+        db,
+        ks,
+        mgr,
+        cf,
+        rtr,
+        rvy,
+        kvy,
         undefined,
         spre,
       );
@@ -1296,13 +1477,20 @@ export class Habery {
   readonly name: string;
   readonly base: string;
   readonly temp: boolean;
+  readonly headDirPath?: string;
+  readonly compat: boolean;
+  readonly readonly: boolean;
   readonly db: Baser;
   readonly ks: Keeper;
+  readonly obx: OutboxerLike;
+  readonly cesrBodyMode: CesrBodyMode;
   readonly mgr: Manager;
   readonly cf?: Configer;
-  readonly config: Record<string, unknown>;
   readonly habs = new Map<string, Hab>();
+  readonly rtr: Router;
+  readonly rvy: Revery;
   readonly kevery: Kevery;
+  readonly replyRoutes: BasicReplyRouteHandler;
   readonly signator: Signator | null;
 
   /** Compose one habery from already-opened storage, manager, and config surfaces. */
@@ -1310,29 +1498,61 @@ export class Habery {
     name: string,
     base: string,
     temp: boolean,
+    headDirPath: string | undefined,
+    compat: boolean,
+    readonly: boolean,
     db: Baser,
     ks: Keeper,
+    obx: OutboxerLike,
+    cesrBodyMode: CesrBodyMode,
     mgr: Manager,
     cf?: Configer,
-    config: Record<string, unknown> = {},
     skipSignator = false,
   ) {
     this.name = name;
     this.base = base;
     this.temp = temp;
+    this.headDirPath = headDirPath;
+    this.compat = compat;
+    this.readonly = readonly;
     this.db = db;
     this.ks = ks;
+    this.obx = obx;
+    this.cesrBodyMode = cesrBodyMode;
     this.mgr = mgr;
     this.cf = cf;
-    this.config = config;
-    this.kevery = new Kevery(this.db, {
-      cues: new Deck<AgentCue>(),
+    this.rtr = new Router();
+    const localCues = new Deck<AgentCue>();
+    this.rvy = new Revery(this.db, {
+      rtr: this.rtr,
+      cues: localCues,
       lax: false,
       local: true,
     });
-    this.signator = skipSignator ? null : new Signator(this.db, this);
+    this.replyRoutes = new BasicReplyRouteHandler(this.db, this.rvy);
+    this.replyRoutes.registerReplyRoutes(this.rtr);
+    this.kevery = new Kevery(this.db, {
+      cues: localCues,
+      lax: false,
+      local: true,
+      rvy: this.rvy,
+    });
+    this.kevery.registerReplyRoutes(this.rtr);
+    this.signator = skipSignator ? null : new Signator({
+      db: this.db,
+      ks: this.ks,
+      mgr: this.mgr,
+      cf: this.cf,
+      rtr: this.rtr,
+      rvy: this.rvy,
+      kvy: this.kevery,
+    });
     this.loadHabs();
-    this.reconfigure();
+  }
+
+  /** Live config snapshot from the optional config file surface. */
+  get config(): Record<string, unknown> {
+    return this.cf?.get<Record<string, unknown>>() ?? {};
   }
 
   /**
@@ -1342,9 +1562,12 @@ export class Habery {
    * so `Habery.habs` only contains reopenable local habitats.
    */
   private loadHabs(): void {
+    this.reconfigure();
+    this.habs.clear();
+
     for (const [pre, habord] of this.db.getHabItemIter()) {
       const hid = habord.hid || pre;
-      if (!habord.name || this.habs.has(hid) || !this.db.getKever(hid)) {
+      if (!habord.name || this.habs.has(hid)) {
         continue;
       }
       const hab = new Hab(
@@ -1352,11 +1575,22 @@ export class Habery {
         this.db,
         this.ks,
         this.mgr,
+        this.cf,
+        this.rtr,
+        this.rvy,
         this.kevery,
         habord.domain,
         hid,
       );
-      this.habs.set(hid, hab);
+      if (!hab.accepted) {
+        throw new ValidationError(
+          `Problem loading Hab pre=${hid} name=${habord.name} from db.`,
+        );
+      }
+      this.habs.set(hab.pre, hab);
+    }
+    for (const hab of this.habs.values()) {
+      hab.reconfigure();
     }
   }
 
@@ -1377,30 +1611,40 @@ export class Habery {
    */
   reconfigure(): void {
     const conf = this.config;
-    if (typeof conf.dt !== "string") {
-      return;
-    }
-
-    const date = conf.dt;
-    const loadUrls = (value: unknown): string[] =>
-      Array.isArray(value)
-        ? value.filter((entry): entry is string => typeof entry === "string")
-        : [];
-
-    for (const url of [...loadUrls(conf.iurls), ...loadUrls(conf.durls)]) {
-      this.db.oobis.pin(url, { date, state: "queued" });
-    }
-    for (const url of loadUrls(conf.wurls)) {
-      this.db.woobi.pin(url, { date, state: "queued" });
+    if (typeof conf.dt === "string") {
+      const date = conf.dt;
+      for (
+        const url of [
+          ...loadConfigUrls(conf.iurls),
+          ...loadConfigUrls(conf.durls),
+        ]
+      ) {
+        this.db.oobis.pin(url, { date, state: "queued" });
+      }
+      for (const url of loadConfigUrls(conf.wurls)) {
+        this.db.woobi.pin(url, { date, state: "queued" });
+      }
     }
   }
 
   /** Creates and caches a new habitat under this habery. */
   makeHab(name: string, ns?: string, args: MakeHabArgs = {}): Hab {
-    const hab = new Hab(name, this.db, this.ks, this.mgr, this.kevery, ns);
+    const hab = new Hab(
+      name,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      "",
+    );
     hab.make(args);
     if (!hab.pre) throw new Error("Hab creation failed");
     this.habs.set(hab.pre, hab);
+    hab.reconfigure();
     return hab;
   }
 
@@ -1417,7 +1661,19 @@ export class Habery {
     if (this.habs.has(pre)) return this.habs.get(pre)!;
     const rec = this.db.getHab(pre);
     if (!rec || !this.db.getKever(pre)) return null;
-    const hab = new Hab(name, this.db, this.ks, this.mgr, this.kevery, ns, pre);
+    const hab = new Hab(
+      name,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      pre,
+    );
+    hab.reconfigure();
     this.habs.set(pre, hab);
     return hab;
   }
@@ -1426,6 +1682,7 @@ export class Habery {
   *close(clear = false): Operation<void> {
     yield* this.db.close(clear);
     yield* this.ks.close(clear);
+    yield* this.obx.close(clear);
     if (this.cf) {
       yield* this.cf.close(clear && this.temp);
     }
@@ -1467,6 +1724,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     aeid,
     salt,
     algo,
+    outboxer = "disabled",
+    cesrBodyMode = DEFAULT_CESR_BODY_MODE,
   } = args;
 
   const db = yield* createBaser({
@@ -1487,6 +1746,23 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     reopen: true,
     readonly,
   });
+  if (compat && outboxer !== "disabled") {
+    throw new ValidationError(
+      "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
+    );
+  }
+  const obx = outboxer === "disabled"
+    ? new DisabledOutboxer()
+    : (yield* createOutboxer({
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      reopen: true,
+      readonly,
+      mustExist: outboxer === "open",
+    }));
 
   const cf = providedCf
     ?? (skipConfig ? undefined : (yield* createConfiger({
@@ -1497,7 +1773,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       reopen: true,
       clear: false,
     })));
-  const config = cf ? cf.get<Record<string, unknown>>() : {};
 
   let usedSeed = seed ?? "";
   let usedAeid = aeid ?? "";
@@ -1518,5 +1793,19 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     salt: normalizeSaltQb64(salt),
   });
 
-  return new Habery(name, base, temp, db, ks, mgr, cf, config, skipSignator);
+  return new Habery(
+    name,
+    base,
+    temp,
+    headDirPath,
+    compat,
+    readonly,
+    db,
+    ks,
+    obx,
+    cesrBodyMode,
+    mgr,
+    cf,
+    skipSignator,
+  );
 }

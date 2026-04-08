@@ -6,6 +6,20 @@ import { DISPLAY_VERSION } from "../version.ts";
 import { createCmdHandlers, registerCmds } from "./command-definitions.ts";
 import { CommandHandler, type CommandSelection } from "./command-types.ts";
 
+/** Structured handled CLI exit used to suppress fatal-stack reporting. */
+export class CliExitError extends Error {
+  constructor(
+    public readonly exitCode: number,
+    public readonly alreadyReported: boolean,
+    public readonly debugError: boolean,
+    public readonly originalError?: unknown,
+    message = `CLI exited with code ${exitCode}`,
+  ) {
+    super(message);
+    this.name = "CliExitError";
+  }
+}
+
 /**
  * Create the CLI program with action handlers that signal command execution.
  * Command declaration is delegated to focused command modules.
@@ -20,6 +34,11 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
       "--loglevel <level>",
       `Set runtime log verbosity (${LOG_LEVELS.join(", ")})`,
     ).choices([...LOG_LEVELS]),
+  );
+  program.option(
+    "--debug-error",
+    "Print full error objects and stack traces for handled CLI failures",
+    false,
   );
 
   // Prevent Commander from exiting automatically so we can run Effection operations
@@ -37,33 +56,47 @@ function parseCLIArgs(program: Command, args: string[]): void {
   program.parse(argsToParse, { from: "user" });
 }
 
+function cliArgs(args: string[]): string[] {
+  return args.length > 0 ? args : Deno.args;
+}
+
+function debugErrorRequested(args: string[]): boolean {
+  return cliArgs(args).includes("--debug-error");
+}
+
 function isCommanderExitError(error: unknown): error is { code: string } {
   return !!(error && typeof error === "object" && "code" in error);
 }
 
-function isExpectedCommanderExit(code: string): boolean {
-  return (
-    code === "commander.help"
-    || code === "commander.helpDisplayed"
-    || code === "commander.version"
-    || code === "commander.unknownCommand"
-    || code === "commander.missingArgument"
-  );
+function commanderExitCode(error: unknown): number {
+  if (
+    error && typeof error === "object" && "exitCode" in error
+    && typeof error.exitCode === "number"
+  ) {
+    return error.exitCode;
+  }
+  return 1;
 }
 
 function handleParseError(error: unknown): void {
-  if (isCommanderExitError(error) && isExpectedCommanderExit(error.code)) {
-    // Commander already printed any relevant help/error output.
-    return;
+  if (isCommanderExitError(error) && error.code.startsWith("commander.")) {
+    const exitCode = commanderExitCode(error);
+    if (exitCode === 0) {
+      return;
+    }
+    throw new CliExitError(exitCode, true, false, error);
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof AppError && error.context) {
-    console.error(`Error: ${message}`, error.context);
-  } else {
-    console.error(`Error: ${message}`);
-  }
   throw error;
+}
+
+function reportAppError(error: AppError, debugError: boolean): never {
+  if (error.context) {
+    console.error(`Error: ${error.message}`, error.context);
+  } else {
+    console.error(`Error: ${error.message}`);
+  }
+  throw new CliExitError(1, true, debugError, error);
 }
 
 function* runCmd(
@@ -89,6 +122,7 @@ function* runCmd(
  */
 export function* tufa(args: string[] = []): Operation<void> {
   const dispatch: { selection?: CommandSelection } = {};
+  const debugError = debugErrorRequested(args);
   setLogLevel("warn");
 
   // Use Commander.js for all command parsing
@@ -99,13 +133,54 @@ export function* tufa(args: string[] = []): Operation<void> {
   try {
     parseCLIArgs(program, args);
   } catch (error: unknown) {
-    handleParseError(error);
+    try {
+      handleParseError(error);
+    } catch (handled: unknown) {
+      if (handled instanceof CliExitError) {
+        throw new CliExitError(
+          handled.exitCode,
+          handled.alreadyReported,
+          debugError,
+          handled.originalError,
+          handled.message,
+        );
+      }
+      throw handled;
+    }
     return;
   }
 
-  const options = program.opts<{ loglevel?: LogLevel }>();
+  const options = program.opts<{ loglevel?: LogLevel; debugError?: boolean }>();
   setLogLevel(options.loglevel ?? "warn");
 
   const commandHandlers = createCmdHandlers();
-  yield* runCmd(dispatch.selection, commandHandlers);
+  try {
+    yield* runCmd(dispatch.selection, commandHandlers);
+  } catch (error: unknown) {
+    if (error instanceof AppError) {
+      reportAppError(error, options.debugError ?? debugError);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Convert one top-level CLI error into the correct process exit code.
+ *
+ * Handled CLI exits should not surface a fatal stack trace, while unexpected
+ * failures still must remain diagnosable.
+ */
+export function reportCliFailure(error: unknown): number {
+  if (error instanceof CliExitError) {
+    if (error.debugError && error.originalError) {
+      console.error(error.originalError);
+    }
+    if (!error.alreadyReported && error.message.length > 0) {
+      console.error(error.message);
+    }
+    return error.exitCode;
+  }
+
+  console.error("Fatal error:", error);
+  return 1;
 }

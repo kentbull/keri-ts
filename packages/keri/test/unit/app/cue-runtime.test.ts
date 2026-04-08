@@ -27,7 +27,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
       const state = hby.db.getState(hab.pre)!;
       const said = state.d!;
       const event = hby.db.getEvtSerder(hab.pre, said)!;
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       runtime.cues.push({
         kin: "receipt",
         serder: event,
@@ -113,7 +113,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
         nsith: "1",
         toad: 0,
       });
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       runtime.cues.push({
         kin: "stream",
         serder: event,

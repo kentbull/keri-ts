@@ -1,6 +1,6 @@
 import { run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
+import { Diger, Prefixer, Seqner, SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   enqueueOobi,
@@ -19,6 +19,7 @@ import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { startServer } from "../../../src/app/server.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { makeReplySerder } from "../../../src/core/messages.ts";
@@ -76,6 +77,35 @@ function replySigGroupFor(
     hab.sign(serder.raw),
   );
 }
+
+Deno.test("Gate E - base-path OOBI parsing preserves cid, role, eid, and alias metadata", () => {
+  const aid = "EExampleAid123456789012345678901234567890123";
+  const mailbox = "EMailboxAid1234567890123456789012345678901";
+
+  const rolePath = parseOobiUrl(
+    `http://127.0.0.1:7723/relay/oobi/${aid}/mailbox/${mailbox}`,
+    "relay",
+  );
+  assertEquals(rolePath.cid, aid);
+  assertEquals(rolePath.role, EndpointRoles.mailbox);
+  assertEquals(rolePath.eid, mailbox);
+  assertEquals(rolePath.alias, "relay");
+
+  const wellKnown = parseOobiUrl(
+    `http://127.0.0.1:7723/relay/.well-known/keri/oobi/${aid}?name=Root`,
+  );
+  assertEquals(wellKnown.cid, aid);
+  assertEquals(wellKnown.role, EndpointRoles.controller);
+  assertEquals(wellKnown.alias, "Root");
+  assertEquals(
+    isWellKnownOobiUrl(`http://127.0.0.1:7723/relay/.well-known/keri/oobi/${aid}?name=Root`),
+    true,
+  );
+  assertEquals(
+    isWellKnownOobiUrl(`http://127.0.0.1:7723/relay/oobi/${aid}/controller`),
+    false,
+  );
+});
 
 Deno.test("Gate E - ends add command persists mailbox role through runtime path", async () => {
   const name = `gate-e-ends-${crypto.randomUUID()}`;
@@ -137,6 +167,87 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   });
 });
 
+Deno.test("Gate E - transferable controller OOBI reply seal attachments use fixed-width Seqner encoding", async () => {
+  const name = `gate-e-oobi-seal-${crypto.randomUUID()}`;
+  const passcode = "MyPasscodeARealSecret";
+  const hostUrl = "http://127.0.0.1:46321";
+  const fixedSeqner = new Seqner({ code: "0A", raw: new Uint8Array(16) }).qb64;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      temp: true,
+      bran: passcode,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("relay", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const pre = hab.pre;
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
+      ingestKeriBytes(runtime, hab.makeEndRole(pre, EndpointRoles.controller, true));
+      yield* processRuntimeTurn(runtime, { hab });
+
+      const stream = textDecoder.decode(
+        hab.replyToOobi(pre, EndpointRoles.controller, [pre]),
+      );
+
+      assertStringIncludes(
+        stream,
+        `-FAB${pre}${fixedSeqner}${pre}`,
+      );
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Gate E - non-transferable mailbox OOBI replies use reply cigars", async () => {
+  const name = `gate-e-oobi-mailbox-cigar-${crypto.randomUUID()}`;
+  const passcode = "MyPasscodeARealSecret";
+  const hostUrl = "http://127.0.0.1:46322";
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      temp: true,
+      bran: passcode,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("relay", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const pre = hab.pre;
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
+      ingestKeriBytes(runtime, hab.makeEndRole(pre, EndpointRoles.mailbox, true));
+      yield* processRuntimeTurn(runtime, { hab });
+
+      const stream = textDecoder.decode(
+        hab.replyToOobi(pre, EndpointRoles.mailbox, [pre]),
+      );
+
+      assertStringIncludes(stream, "\"r\":\"/loc/scheme\"");
+      assertStringIncludes(stream, "-CAB");
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared runtime", async () => {
   const sourceName = `gate-e-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-target-${crypto.randomUUID()}`;
@@ -164,7 +275,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       const url = `http://127.0.0.1:${port}`;
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
@@ -231,7 +342,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -262,6 +373,7 @@ Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared 
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -328,7 +440,7 @@ Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest 
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
       failingWellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?mode=fail`;
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -385,7 +497,7 @@ Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest 
         skipConfig: true,
       });
       try {
-        const runtime = createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         enqueueOobi(runtime, { url: controllerUrl });
         enqueueOobi(runtime, { url: wellKnownUrl });
 
@@ -472,7 +584,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
         hab.kever.wits = [witnessPre];
       }
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -535,7 +647,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -575,6 +687,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -649,7 +762,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
       durl = `${url}/oobi/${dPre}/controller`;
       wurl = `${url}/.well-known/keri/oobi/${iPre}?name=Root`;
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       for (const hab of [iHab, dHab]) {
         ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
         ingestKeriBytes(
@@ -688,7 +801,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
       skipConfig: true,
     });
     const hab = hby.habByName("bootstrap-init");
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -705,7 +818,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
         skipSignator: true,
       });
       try {
-        const targetRuntime = createAgentRuntime(target, { mode: "local" });
+        const targetRuntime = yield* createAgentRuntime(target, { mode: "local" });
         for (let i = 0; i < 6; i += 1) {
           yield* processRuntimeTurn(targetRuntime);
         }
@@ -727,6 +840,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -763,7 +877,7 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
       controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -884,7 +998,7 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
       controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1025,7 +1139,7 @@ Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs thr
         `${hostUrl}/oobi/${pre}/controller?slot=2`,
       ];
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1077,7 +1191,7 @@ Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs thr
         skipConfig: true,
       });
       try {
-        const runtime = createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         enqueueOobi(runtime, { url: parentUrl });
 
         yield* processRuntimeTurn(runtime);
@@ -1165,7 +1279,7 @@ Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs throug
         hab.kever.wits = [witnessPre];
       }
 
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1221,7 +1335,7 @@ Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs throug
         skipConfig: true,
       });
       try {
-        const runtime = createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         enqueueOobi(runtime, { url: parentUrl });
 
         yield* processRuntimeTurn(runtime);
@@ -1280,7 +1394,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(url, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1299,7 +1413,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -1328,6 +1442,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -1420,7 +1535,7 @@ Deno.test("Gate E - `/introduce` replies enqueue discovered OOBIs through Oobier
         nsith: "1",
         toad: 0,
       });
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       const introducedUrl = `http://127.0.0.1:1234/oobi/${hab.pre}/controller`;
       const serder = new SerderKERI({
         sad: {
@@ -1471,7 +1586,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
         nsith: "1",
         toad: 0,
       });
-      const runtime = createAgentRuntime(hby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       ingestKeriBytes(runtime, hab.makeLocScheme(baseUrl, hab.pre, "http"));
       ingestKeriBytes(
         runtime,
@@ -1497,7 +1612,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = createAgentRuntime(hby, { mode: "indirect" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
@@ -1541,6 +1656,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* runtime.close();
       yield* hby.close();
     }
   });

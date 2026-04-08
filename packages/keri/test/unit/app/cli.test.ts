@@ -1,7 +1,9 @@
 import { run } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";
+import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
+import { mailboxStartCommand } from "../../../src/app/cli/mailbox.ts";
 import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
 
 interface CmdResult {
@@ -67,6 +69,132 @@ Deno.test("CLI - init command with missing name", async () => {
     initCommand(args),
     "Name is required and cannot be empty",
   );
+});
+
+Deno.test("CLI - mailbox start rejects --url without --datetime", async () => {
+  await assertOperationThrows(
+    mailboxStartCommand(createMockArgs({
+      name: `mailbox-start-${crypto.randomUUID()}`,
+      alias: "relay",
+      url: "http://127.0.0.1:5632",
+    })),
+    "--url and --datetime must be provided together",
+  );
+});
+
+Deno.test("CLI - mailbox start rejects --datetime without --url", async () => {
+  await assertOperationThrows(
+    mailboxStartCommand(createMockArgs({
+      name: `mailbox-start-${crypto.randomUUID()}`,
+      alias: "relay",
+      datetime: "2026-04-06T00:00:00.000Z",
+    })),
+    "--url and --datetime must be provided together",
+  );
+});
+
+Deno.test("CLI - mailbox start rejects conflicting config and explicit startup material", async () => {
+  const headDirPath = `/tmp/tufa-mailbox-start-${crypto.randomUUID()}`;
+  const configPath = `${headDirPath}/mailbox-start.json`;
+  Deno.mkdirSync(headDirPath, { recursive: true });
+  Deno.writeTextFileSync(
+    configPath,
+    JSON.stringify({
+      relay: {
+        dt: "2026-04-06T12:00:00.000Z",
+        curls: ["http://127.0.0.1:5632"],
+      },
+    }),
+  );
+
+  await assertOperationThrows(
+    mailboxStartCommand(createMockArgs({
+      name: `mailbox-start-${crypto.randomUUID()}`,
+      alias: "relay",
+      headDirPath,
+      configFile: configPath,
+      url: "http://127.0.0.1:5632",
+      datetime: "2026-04-06T12:05:00.000Z",
+    })),
+    "conflicts with explicit --url/--datetime startup material",
+  );
+});
+
+Deno.test("CLI - mailbox start missing required options prints one Commander-owned error without fatal stack", async () => {
+  const res = await runTufa(["mailbox", "start"]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "error: required option '-n, --name <name>' not specified",
+  );
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
+  assertEquals(
+    res.stderr.includes("Error: error: required option"),
+    false,
+    res.stderr,
+  );
+  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
+});
+
+Deno.test("CLI - mailbox start validation errors print one concise app error without fatal stack", async () => {
+  const res = await runTufa([
+    "mailbox",
+    "start",
+    "--name",
+    `mailbox-start-${crypto.randomUUID()}`,
+    "--alias",
+    "relay",
+    "--url",
+    "http://127.0.0.1:5632",
+  ]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "Error: --url and --datetime must be provided together",
+  );
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
+  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
+  assertEquals((res.stderr.match(/Error:/g) ?? []).length, 1, res.stderr);
+});
+
+Deno.test("CLI - --debug-error prints the Commander stack for parse failures", async () => {
+  const res = await runTufa(["--debug-error", "mailbox", "start"]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "error: required option '-n, --name <name>' not specified",
+  );
+  assertStringIncludes(res.stderr, "CommanderError:", res.stderr);
+  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+});
+
+Deno.test("CLI - --debug-error prints the AppError stack for handled command failures", async () => {
+  const res = await runTufa([
+    "--debug-error",
+    "mailbox",
+    "start",
+    "--name",
+    `mailbox-start-${crypto.randomUUID()}`,
+    "--alias",
+    "relay",
+    "--url",
+    "http://127.0.0.1:5632",
+  ]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "Error: --url and --datetime must be provided together",
+  );
+  assertStringIncludes(res.stderr, "ValidationError:", res.stderr);
+  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
 });
 
 Deno.test("CLI - init command with help flag", async () => {
@@ -139,6 +267,111 @@ Deno.test("CLI - init command honors custom head directory", async () => {
   assertStringIncludes(res.stdout, headDirPath);
 });
 
+Deno.test("CLI - init --outboxer creates the Tufa outbox sidecar", async () => {
+  const name = `outbox-init-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const res = await runTufaInit([
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--nopasscode",
+    "--outboxer",
+  ]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertExists(Deno.statSync(`${headDirPath}/keri/obx/${name}`));
+});
+
+Deno.test("CLI - init stores the configured CESR body mode", async () => {
+  const name = `cesr-mode-init-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const res = await runTufaInit([
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--nopasscode",
+    "--cesr-body-mode",
+    "body",
+  ]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    try {
+      assertEquals(hby.cesrBodyMode, "body");
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async () => {
+  const name = `outbox-disabled-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const init = await runTufaInit([
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--nopasscode",
+  ]);
+  assertEquals(
+    init.code,
+    0,
+    `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
+  );
+
+  await assertOperationThrows(
+    (function*() {
+      const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+        outboxer: true,
+      });
+      yield* hby.close();
+    })(),
+    "Outboxer is not enabled for this keystore",
+  );
+});
+
+Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores", async () => {
+  const name = `cesr-mode-default-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const init = await runTufaInit([
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--nopasscode",
+  ]);
+  assertEquals(
+    init.code,
+    0,
+    `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
+  );
+
+  await run(function*() {
+    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    try {
+      assertEquals(hby.cesrBodyMode, "header");
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
 Deno.test("CLI - default loglevel suppresses debug LMDB traces", async () => {
   const res = await runTufaInit([
     "--name",
@@ -182,7 +415,11 @@ Deno.test("CLI - incept command accepts explicit config-dir and config-file over
     headDirPath,
     "--nopasscode",
   ]);
-  assertEquals(init.code, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+  assertEquals(
+    init.code,
+    0,
+    `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
+  );
 
   const incept = await runTufaIncept([
     "--name",
@@ -204,4 +441,56 @@ Deno.test("CLI - incept command accepts explicit config-dir and config-file over
     `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`,
   );
   assertStringIncludes(incept.stdout, "Prefix");
+});
+
+Deno.test("CLI - exchange send help exposes KERIpy-style EXN flags", async () => {
+  const res = await runTufa(["exchange", "send", "--help"]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(res.stdout, "--sender <alias>");
+  assertStringIncludes(res.stdout, "--recipient <recipient>");
+  assertStringIncludes(res.stdout, "--topic <topic>");
+  assertStringIncludes(res.stdout, "--data <item>");
+  assertEquals(res.stdout.includes("--alias <alias>"), false);
+  assertEquals(res.stdout.includes("--payload <json>"), false);
+  assertEquals(res.stdout.includes("--transport <transport>"), false);
+});
+
+Deno.test("CLI - exn send help mirrors exchange send help", async () => {
+  const res = await runTufa(["exn", "send", "--help"]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(res.stdout, "--sender <alias>");
+  assertStringIncludes(res.stdout, "--recipient <recipient>");
+  assertStringIncludes(res.stdout, "--data <item>");
+});
+
+Deno.test("CLI - exchange send rejects removed legacy flags", async () => {
+  const res = await runTufa([
+    "exchange",
+    "send",
+    "--name",
+    `legacy-${crypto.randomUUID()}`,
+    "--sender",
+    "alice",
+    "--recipient",
+    "bob",
+    "--route",
+    "/challenge/response",
+    "--alias",
+    "alice",
+  ]);
+
+  assertEquals(
+    res.code === 0,
+    false,
+    `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`,
+  );
+  assertStringIncludes(
+    `${res.stdout}\n${res.stderr}`,
+    "unknown option '--alias'",
+  );
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
+  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
 });

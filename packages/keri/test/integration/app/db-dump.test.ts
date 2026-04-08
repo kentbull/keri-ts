@@ -1,23 +1,45 @@
+/**
+ * Integration coverage for selective LMDB dumping.
+ *
+ * The mailbox architecture docs now point maintainers at `tufa db dump` as the
+ * shortest path to understanding protocol, mailbox, and outbox state. These
+ * tests keep that debugging seam honest.
+ */
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../cesr/mod.ts";
-import { dumpEvts } from "../../../src/app/cli/db-dump.ts";
+import { dumpDatabase } from "../../../src/app/cli/db-dump.ts";
 import { createBaser } from "../../../src/db/basing.ts";
+import { createKeeper, PrePrm } from "../../../src/db/keeping.ts";
+import { createMailboxer } from "../../../src/db/mailboxing.ts";
+import { createOutboxer } from "../../../src/db/outboxing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
-/**
- * Integration test for db dump command
- * Tests dumping the evts sub-database with debugging support
- */
+/** Capture stdout/stderr from one `db dump` invocation for assertion. */
+async function captureDump(args: Record<string, unknown>): Promise<{
+  output: string[];
+  errors: string[];
+}> {
+  const harness = new CLITestHarness();
+  harness.captureOutput();
+  try {
+    await run(() => dumpDatabase(args));
+    return {
+      output: harness.getOutput(),
+      errors: harness.getErrors(),
+    };
+  } finally {
+    harness.restoreOutput();
+  }
+}
 
+/** Proves summary and focused dumping for protocol-state `Baser` stores. */
 Deno.test({
-  name: "Integration: DB dump command - should dump database contents - debug iterator issue",
+  name: "Integration: db dump supports baser summaries and focused subdb targets",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    const name = `db-dump-${crypto.randomUUID()}`;
-    const key = b("evt.0001");
-    const val = b("sample event payload");
+    const name = `db-dump-baser-${crypto.randomUUID()}`;
 
     await run(function*() {
       const baser = yield* createBaser({
@@ -28,84 +50,52 @@ Deno.test({
       });
 
       try {
-        assertEquals(
-          baser.putEvt(key, val),
-          true,
-          "Fixture event should be written",
-        );
+        assertEquals(baser.putEvt(b("evt.0001"), b("sample event payload")), true);
+        baser.locs.pin(["eid1", "http"], { url: "http://127.0.0.1:8080/oobi" });
       } finally {
-        // Keep temp database files for readonly dump step.
         yield* baser.close();
       }
     });
 
-    const harness = new CLITestHarness();
-    harness.captureOutput();
+    const summary = await captureDump({
+      name,
+      temp: true,
+      target: "baser",
+    });
 
-    try {
-      const args = {
-        name,
-        base: undefined,
-        temp: true,
-      };
+    assertEquals(summary.errors.length, 0);
+    assert(summary.output.some((line) => line.includes("Domain summary for baser")));
+    assert(summary.output.some((line) => line.includes("baser.evts")));
+    assert(summary.output.some((line) => line.includes("baser.locs")));
 
-      await run(() => dumpEvts(args));
+    const focused = await captureDump({
+      name,
+      temp: true,
+      target: "baser.locs",
+    });
 
-      const output = harness.getOutput();
-      const errors = harness.getErrors();
-
-      assertEquals(
-        errors.length,
-        0,
-        `Expected no stderr output, got: ${errors.join("\n")}`,
-      );
-      assert(
-        output.some((line) => line.includes("Baser.evts sub-database dump (1 entries)")),
-      );
-      assert(output.some((line) => line.includes("Total entries: 1")));
-    } catch (error) {
-      console.error("\n=== Test Error ===");
-      console.error(
-        "Error type:",
-        error instanceof Error ? error.constructor.name : typeof error,
-      );
-      console.error(
-        "Error message:",
-        error instanceof Error ? error.message : String(error),
-      );
-      console.error(
-        "Error stack:",
-        error instanceof Error ? error.stack : "No stack trace",
-      );
-
-      const output = harness.getOutput();
-      const errors = harness.getErrors();
-
-      console.log("\n=== Output before error ===");
-      output.forEach((line, i) => console.log(`[${i}] ${line}`));
-
-      console.log("\n=== Errors before fatal ===");
-      errors.forEach((line, i) => console.log(`[${i}] ${line}`));
-
-      throw error;
-    } finally {
-      harness.restoreOutput();
-    }
+    assertEquals(focused.errors.length, 0);
+    assert(focused.output.some((line) => line.includes("Target: baser.locs")));
+    assert(focused.output.some((line) => line.includes("\"url\": \"http://127.0.0.1:8080/oobi\"")));
   },
 });
 
+/** Proves mailboxer and outboxer inspection for mailbox debugging workflows. */
 Deno.test({
-  name: "Integration: DB dump command - should test Baser.getAllEvtsIter directly",
+  name: "Integration: db dump supports mailboxer and outboxer targets",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    const name = `db-dump-iter-${crypto.randomUUID()}`;
-    const key = b("evt.0001");
-    const val = b("sample event payload");
+    const name = `db-dump-mailbox-${crypto.randomUUID()}`;
 
     await run(function*() {
-      // Seed a deterministic fixture DB first so readonly open always has files.
-      const writableBaser = yield* createBaser({
+      const mailboxer = yield* createMailboxer({
+        name,
+        temp: true,
+        reopen: true,
+        readonly: false,
+      });
+      const outboxer = yield* createOutboxer({
         name,
         temp: true,
         reopen: true,
@@ -113,82 +103,88 @@ Deno.test({
       });
 
       try {
-        assertEquals(
-          writableBaser.putEvt(key, val),
-          true,
-          "Fixture event should be written",
+        mailboxer.storeMsg("recipient/challenge", b("challenge payload"));
+        outboxer.queueMessage(
+          "EABC123",
+          b("signed exn payload"),
+          {
+            sender: "sender1",
+            recipient: "recipient1",
+            topic: "/challenge",
+            createdAt: "2026-04-05T12:00:00.000000+00:00",
+          },
+          ["mailbox1"],
         );
       } finally {
-        yield* writableBaser.close();
+        yield* mailboxer.close();
+        yield* outboxer.close();
       }
+    });
 
-      const baser = yield* createBaser({
+    const mailboxDump = await captureDump({
+      name,
+      temp: true,
+      target: "mailboxer.msgs",
+    });
+
+    assertEquals(mailboxDump.errors.length, 0);
+    assert(mailboxDump.output.some((line) => line.includes("Target: mailboxer.msgs")));
+    assert(mailboxDump.output.some((line) => line.includes("challenge payload")));
+
+    const outboxDump = await captureDump({
+      name,
+      temp: true,
+      target: "outboxer.tgts",
+    });
+
+    assertEquals(outboxDump.errors.length, 0);
+    assert(outboxDump.output.some((line) => line.includes("Target: outboxer.tgts")));
+    assert(outboxDump.output.some((line) => line.includes("\"status\": \"pending\"")));
+    assert(outboxDump.output.some((line) => line.includes("\"eid\": \"mailbox1\"")));
+  },
+});
+
+/** Proves keeper-domain inspection still works alongside newer mailbox domains. */
+Deno.test({
+  name: "Integration: db dump supports keeper targets for keystore debugging",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const name = `db-dump-keeper-${crypto.randomUUID()}`;
+
+    await run(function*() {
+      const keeper = yield* createKeeper({
         name,
         temp: true,
         reopen: true,
-        readonly: true,
+        readonly: false,
       });
-
       try {
-        console.log("Database path:", baser.path);
-        console.log("Evts database: exists");
-
-        // Get count first
-        const count = baser.cntEvts();
-        console.log("Entry count:", count);
-
-        // Try to get the iterator
-        console.log("Getting iterator...");
-        const iter = baser.getAllEvtsIter(new Uint8Array(0));
-        console.log("Iterator type:", typeof iter);
-        console.log("Iterator:", iter);
-        console.log(
-          "Is generator?",
-          iter.constructor.name === "GeneratorFunction"
-            || iter[Symbol.iterator],
+        keeper.gbls.pin("aeid", "BExampleAeid");
+        keeper.prms.pin(
+          "controller1",
+          new PrePrm({
+            pidx: 1,
+            algo: "salty",
+            salt: "0AAABBBCCC",
+            stem: "signify:aid",
+            tier: "low",
+          }),
         );
-
-        // Try to iterate
-        console.log("Starting iteration...");
-        let entryCount = 0;
-
-        try {
-          for (const [keyBytes, valBytes] of iter) {
-            entryCount++;
-            console.log(
-              `Entry ${entryCount}: key length=${keyBytes.length}, val length=${valBytes.length}`,
-            );
-
-            if (entryCount >= 5) {
-              console.log("Stopping after 5 entries for testing");
-              break;
-            }
-          }
-          assert(entryCount > 0, "Expected at least one iterated entry");
-          console.log(
-            `Iteration complete. Total entries iterated: ${entryCount}`,
-          );
-        } catch (iterError) {
-          console.error("Iteration error:", iterError);
-          console.error(
-            "Error type:",
-            iterError instanceof Error
-              ? iterError.constructor.name
-              : typeof iterError,
-          );
-          console.error(
-            "Error message:",
-            iterError instanceof Error ? iterError.message : String(iterError),
-          );
-          console.error(
-            "Error stack:",
-            iterError instanceof Error ? iterError.stack : "No stack trace",
-          );
-          throw iterError;
-        }
       } finally {
-        yield* baser.close();
+        yield* keeper.close();
       }
     });
+
+    const keeperDump = await captureDump({
+      name,
+      temp: true,
+      target: "keeper.prms",
+    });
+
+    assertEquals(keeperDump.errors.length, 0);
+    assert(keeperDump.output.some((line) => line.includes("Target: keeper.prms")));
+    assert(keeperDump.output.some((line) => line.includes("\"algo\": \"salty\"")));
+    assert(keeperDump.output.some((line) => line.includes("\"stem\": \"signify:aid\"")));
   },
 });

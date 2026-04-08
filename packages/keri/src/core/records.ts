@@ -352,6 +352,7 @@ export class HabitatRecord extends RawRecord<HabitatRecordShape> implements Habi
   }
 }
 
+/** Durable mailbox topic cursor state stored in `Baser.tops`. */
 export interface TopicsRecordShape {
   topics: MbxTopicCursor;
 }
@@ -367,6 +368,55 @@ export interface TopicsRecordShape {
  */
 export class TopicsRecord extends RawRecord<TopicsRecordShape> implements TopicsRecordShape {
   declare topics: MbxTopicCursor;
+}
+
+/** Parent metadata for one logical outbound mailbox delivery attempt. */
+export interface OutboxMessageRecordShape {
+  sender: string;
+  recipient: string;
+  topic: string;
+  createdAt: string;
+}
+
+/**
+ * Durable sender-side mailbox delivery record.
+ *
+ * Responsibilities:
+ * - identify the logical outbound message by sender/recipient/topic
+ * - pair with an outbox payload store keyed by the message SAID
+ * - act as the parent record for per-mailbox-target delivery state
+ */
+export class OutboxMessageRecord extends RawRecord<OutboxMessageRecordShape> implements OutboxMessageRecordShape {
+  declare sender: string;
+  declare recipient: string;
+  declare topic: string;
+  declare createdAt: string;
+}
+
+/** Per-mailbox-target delivery state for one logical outbound message. */
+export interface OutboxTargetRecordShape {
+  eid: string;
+  status: "pending" | "delivered" | "cancelled";
+  attempts?: number | null;
+  lastAttemptAt?: string | null;
+  deliveredAt?: string | null;
+  lastError?: string | null;
+}
+
+/**
+ * Per-mailbox-target delivery state for one outbound logical message.
+ *
+ * Design rule:
+ * - each mailbox endpoint gets its own durable state row
+ * - retries and cancellation are tracked per endpoint, not per message
+ */
+export class OutboxTargetRecord extends RawRecord<OutboxTargetRecordShape> implements OutboxTargetRecordShape {
+  declare eid: string;
+  declare status: "pending" | "delivered" | "cancelled";
+  declare attempts?: number | null;
+  declare lastAttemptAt?: string | null;
+  declare deliveredAt?: string | null;
+  declare lastError?: string | null;
 }
 
 export interface OobiQueryRecordShape {

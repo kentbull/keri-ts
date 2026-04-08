@@ -42,6 +42,12 @@ function preferredUrl(urls: Record<string, string>): string | null {
   return urls.https ?? urls.http ?? Object.values(urls)[0] ?? null;
 }
 
+/** Strip any legacy path component so mailbox OOBIs stay canonical. */
+function canonicalOobiOrigin(url: string): string {
+  const parsed = new URL(url);
+  return `${parsed.protocol}//${parsed.host}`;
+}
+
 /**
  * Implement `tufa oobi generate` from locally accepted endpoint/location state.
  *
@@ -119,7 +125,7 @@ export function* oobiGenerateCommand(
           const url = preferredUrl(surls);
           if (url) {
             urls.push(
-              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
+              `${canonicalOobiOrigin(url)}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
             );
           }
         }
@@ -194,12 +200,12 @@ export function* oobiResolveCommand(
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
-      skipSignator: true,
+      skipSignator: false,
     },
   );
 
   try {
-    const runtime = createAgentRuntime(hby, { mode: "local" });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
     enqueueOobi(runtime, {
       url: commandArgs.url,
       alias: commandArgs.oobiAlias,
@@ -207,7 +213,7 @@ export function* oobiResolveCommand(
     yield* processRuntimeUntil(
       runtime,
       () => runtimeOobiConverged(runtime, commandArgs.url!),
-      { maxTurns: 128 },
+      { maxTurns: 128, pollMailbox: false },
     );
 
     const terminal = runtimeOobiTerminalState(runtime, commandArgs.url);

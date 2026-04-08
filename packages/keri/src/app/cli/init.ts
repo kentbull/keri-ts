@@ -1,12 +1,14 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { PathError, ValidationError } from "../../core/errors.ts";
 import {
+  type AgentRuntime,
   createAgentRuntime,
   processRuntimeUntil,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
+import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import { createHabery, type Habery } from "../habbing.ts";
 
@@ -36,6 +38,10 @@ interface InitArgs {
   aeid?: string;
   /** Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived */
   seed?: string;
+  /** Enable the Tufa-only durable outbox sidecar for this keystore. */
+  outboxer?: boolean;
+  /** Transport form for outbound CESR HTTP requests. */
+  cesrBodyMode?: CesrBodyMode;
 }
 
 /**
@@ -57,6 +63,8 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     nopasscode: args.nopasscode as boolean | undefined,
     aeid: args.aeid as string | undefined,
     seed: args.seed as string | undefined,
+    outboxer: args.outboxer as boolean | undefined,
+    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
   };
 
   // Validate required name
@@ -115,6 +123,8 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
         aeid: initArgs.aeid,
         seed: initArgs.seed,
         salt: initArgs.salt,
+        outboxer: initArgs.outboxer ? "create" : "disabled",
+        cesrBodyMode: initArgs.cesrBodyMode,
       });
     } catch (error) {
       if (temp || !(error instanceof PathError)) {
@@ -135,16 +145,22 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
         aeid: initArgs.aeid,
         seed: initArgs.seed,
         salt: initArgs.salt,
+        outboxer: initArgs.outboxer ? "create" : "disabled",
+        cesrBodyMode: initArgs.cesrBodyMode,
       });
     }
 
     try {
+      if (initArgs.outboxer) {
+        hby.ks.pinGbls("outboxer", "1");
+      }
+      hby.ks.pinGbls("cesrBodyMode", initArgs.cesrBodyMode ?? "header");
       if (runtimeBootstrapNeeded(hby)) {
-        const runtime = createAgentRuntime(hby, { mode: "local" });
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         yield* processRuntimeUntil(
           runtime,
           () => !runtimeHasPendingWork(runtime),
-          { maxTurns: 128 },
+          { maxTurns: 128, pollMailbox: false },
         );
         if (hby.db.eoobi.cnt() > 0) {
           throw new ValidationError(
@@ -184,7 +200,7 @@ function configuredWellKnownUrls(hby: Habery): string[] {
 }
 
 function assertConfiguredWellKnownAuth(
-  runtime: ReturnType<typeof createAgentRuntime>,
+  runtime: AgentRuntime,
   hby: Habery,
   context: string,
 ): void {

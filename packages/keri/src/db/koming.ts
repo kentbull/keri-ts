@@ -1,5 +1,5 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
-import { type Database } from "npm:lmdb@3.4.4";
+import { type Database } from "npm:lmdb";
 import { b, decodeKeriCbor, encodeKeriCbor, type Kind, Kinds, t } from "../../../cesr/mod.ts";
 import { RawRecord, type RawRecordClass, type RecordInputOf, type RecordShapeOf } from "../core/records.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";

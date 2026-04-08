@@ -241,6 +241,50 @@ Deno.test("Baser reopen reloads accepted local kevers and prefixes", async () =>
   });
 });
 
+Deno.test("Baser reopen removes orphaned non-group hab records like KERIpy reload", async () => {
+  const name = `baser-orphan-hab-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-baser-${crypto.randomUUID()}`;
+  let pre = "";
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      skipSignator: true,
+    });
+    try {
+      pre = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      }).pre;
+      assertEquals(hby.db.getHab(pre)?.hid, pre);
+      hby.db.states.rem(pre);
+      assertEquals(hby.db.getState(pre), null);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  await run(function*() {
+    const baser = yield* createBaser({
+      name,
+      headDirPath,
+      reopen: true,
+    });
+    try {
+      assertEquals(baser.getHab(pre), null);
+      assertEquals(baser.getKever(pre), null);
+      assertEquals(baser.prefixes.has(pre), false);
+    } finally {
+      yield* baser.close(true);
+    }
+  });
+});
+
 Deno.test("Kever.verifyIndexedSignatures preserves verifier context for ECDSA prior-next exposures", async () => {
   await run(function*() {
     const hby = yield* createHabery({

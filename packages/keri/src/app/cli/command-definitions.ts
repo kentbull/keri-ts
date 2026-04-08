@@ -69,6 +69,34 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       "exchange.send",
       lazyCommand(() => import("./exchange.ts"), "exchangeSendCommand"),
     ],
+    [
+      "exn.send",
+      lazyCommand(() => import("./exchange.ts"), "exchangeSendCommand"),
+    ],
+    [
+      "mailbox.start",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxStartCommand"),
+    ],
+    [
+      "mailbox.add",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxAddCommand"),
+    ],
+    [
+      "mailbox.remove",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxRemoveCommand"),
+    ],
+    [
+      "mailbox.list",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxListCommand"),
+    ],
+    [
+      "mailbox.update",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxUpdateCommand"),
+    ],
+    [
+      "mailbox.debug",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxDebugCommand"),
+    ],
     ["export", lazyCommand(() => import("./export.ts"), "exportCommand")],
     ["list", lazyCommand(() => import("./list.ts"), "listCommand")],
     ["aid", lazyCommand(() => import("./aid.ts"), "aidCommand")],
@@ -116,6 +144,8 @@ export function registerCmds(
   regChallengeSubCmd(program, dispatch);
   regEndsSubCmd(program, dispatch);
   regExchangeSubCmd(program, dispatch);
+  regExnSubCmd(program, dispatch);
+  regMailboxSubCmd(program, dispatch);
   regLocSubCmd(program, dispatch);
   regOobiSubCmd(program, dispatch);
   regBenchmarkSubCmd(program, dispatch);
@@ -184,6 +214,16 @@ function regInitCmd(program: Command, dispatch: CommandDispatch): void {
       "-e, --seed <seed>",
       "Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived",
     )
+    .option(
+      "--outboxer",
+      "Enable the tufa-local durable outbox sidecar for this keystore",
+      false,
+    )
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+      "header",
+    )
     .action((options: Record<string, unknown>) => {
       dispatch({
         name: "init",
@@ -199,6 +239,8 @@ function regInitCmd(program: Command, dispatch: CommandDispatch): void {
           nopasscode: options.nopasscode || false,
           aeid: options.aeid,
           seed: options.seed,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
         },
       });
     });
@@ -400,6 +442,7 @@ function regAidCmd(program: Command, dispatch: CommandDispatch): void {
     )
     .option("-b, --base <base>", "Optional base path prefix")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Enable the tufa-local durable outbox sidecar", false)
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
@@ -478,12 +521,22 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
     .description("Start the KERI agent server")
     .requiredOption("-n, --name <name>", "Keystore name")
     .option("-b, --base <base>", "Optional base path prefix")
+    .option(
+      "-c, --config-dir <dir>",
+      "Directory override for configuration data",
+    )
+    .option("--config-file <file>", "Configuration filename override")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
     .option("-P, --passcode <passcode>", "Encryption passcode for keystore")
+    .option("--outboxer", "Enable the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
     .option(
       "-p, --port <port>",
       "Port number for the server (default: 8000)",
@@ -496,9 +549,13 @@ function regAgentCmd(program: Command, dispatch: CommandDispatch): void {
         args: {
           name: options.name,
           base: options.base,
+          configDir: options.configDir,
+          configFile: options.configFile,
           compat: options.compat || false,
           headDirPath: options.headDir,
           passcode: options.passcode,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
           port: options.port ? Number(options.port) : 8000,
         },
       });
@@ -555,6 +612,15 @@ function regChallengeSubCmd(program: Command, dispatch: CommandDispatch): void {
     )
     .option("-b, --base <base>", "Optional base path prefix")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
@@ -571,6 +637,8 @@ function regChallengeSubCmd(program: Command, dispatch: CommandDispatch): void {
           transport: options.transport,
           base: options.base,
           compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
           headDirPath: options.headDir,
           passcode: options.passcode,
         },
@@ -583,8 +651,27 @@ function regChallengeSubCmd(program: Command, dispatch: CommandDispatch): void {
       "Verify that a signer responded with the expected challenge words",
     )
     .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-s, --signer <prefix>", "Signer identifier prefix")
-    .requiredOption("-w, --words <words>", "Expected challenge words")
+    .requiredOption(
+      "-s, --signer <signer>",
+      "Signer identifier prefix or exact contact alias",
+    )
+    .option("-w, --words <words>", "Expected challenge words")
+    .option(
+      "-g, --generate",
+      "Generate challenge words, print them, and wait for a matching response",
+      false,
+    )
+    .option(
+      "--strength <bits>",
+      "Cryptographic strength in bits when used with --generate",
+      (value: string) => Number(value),
+      128,
+    )
+    .option(
+      "-o, --out <out>",
+      "Generated challenge word output format: json, string, or words",
+      "json",
+    )
     .option(
       "--timeout <seconds>",
       "How long to wait for a matching response before failing",
@@ -593,6 +680,11 @@ function regChallengeSubCmd(program: Command, dispatch: CommandDispatch): void {
     )
     .option("-b, --base <base>", "Optional base path prefix")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Enable the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
@@ -605,9 +697,14 @@ function regChallengeSubCmd(program: Command, dispatch: CommandDispatch): void {
           name: options.name,
           signer: options.signer,
           words: options.words,
+          generate: options.generate || false,
+          strength: options.strength,
+          out: options.out,
           timeout: options.timeout,
           base: options.base,
           compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
           headDirPath: options.headDir,
           passcode: options.passcode,
         },
@@ -659,27 +756,58 @@ function regEndsSubCmd(program: Command, dispatch: CommandDispatch): void {
 
 /** Register the `exchange` subcommands. */
 function regExchangeSubCmd(program: Command, dispatch: CommandDispatch): void {
-  const exchange = program.command("exchange").description(
-    "Send peer-to-peer exchange messages",
+  registerExnSendSubCmd(
+    program.command("exchange").description(
+      "Send peer-to-peer exchange messages",
+    ),
+    dispatch,
+    "exchange.send",
   );
+}
 
-  exchange
+/** Register the `exn` alias subcommands. */
+function regExnSubCmd(program: Command, dispatch: CommandDispatch): void {
+  registerExnSendSubCmd(
+    program.command("exn").description("Send peer-to-peer EXN messages"),
+    dispatch,
+    "exn.send",
+  );
+}
+
+function registerExnSendSubCmd(
+  root: Command,
+  dispatch: CommandDispatch,
+  name: "exchange.send" | "exn.send",
+): void {
+  root
     .command("send")
-    .description(
-      "Send one signed exchange message to a resolved remote identifier",
-    )
+    .description("Send one signed EXN message to a resolved remote identifier")
     .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-a, --alias <alias>", "Local identifier alias")
-    .requiredOption("-r, --recipient <prefix>", "Recipient identifier prefix")
+    .requiredOption("-s, --sender <alias>", "Local identifier alias (sender)")
+    .requiredOption(
+      "-r, --recipient <recipient>",
+      "Recipient alias/contact or prefix",
+    )
     .requiredOption("-R, --route <route>", "Exchange route")
-    .requiredOption("-d, --payload <json>", "Exchange payload as a JSON object")
     .option(
-      "-t, --transport <transport>",
-      "Transport mode: auto, direct, or indirect",
-      "auto",
+      "--topic <topic>",
+      "Mailbox forwarding topic; defaults to the first segment of route",
+    )
+    .option(
+      "--data <item>",
+      "Payload item: key=value, JSON object string, or @file.json",
+      (value: string, prev: string[] = []) => {
+        prev.push(value);
+        return prev;
+      },
+      [],
     )
     .option("-b, --base <base>", "Optional base path prefix")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
     .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
@@ -687,16 +815,18 @@ function regExchangeSubCmd(program: Command, dispatch: CommandDispatch): void {
     .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
     .action((options: Record<string, unknown>) => {
       dispatch({
-        name: "exchange.send",
+        name,
         args: {
           name: options.name,
-          alias: options.alias,
+          sender: options.sender,
           recipient: options.recipient,
           route: options.route,
-          payload: options.payload,
-          transport: options.transport,
+          topic: options.topic,
+          data: options.data,
           base: options.base,
           compat: options.compat || false,
+          cesrBodyMode: options.cesrBodyMode,
+          outboxer: options.outboxer || false,
           headDirPath: options.headDir,
           passcode: options.passcode,
         },
@@ -750,6 +880,234 @@ function regLocSubCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
       return;
+    });
+}
+
+function regMailboxSubCmd(program: Command, dispatch: CommandDispatch): void {
+  const mailbox = program.command("mailbox").description(
+    "Manage mailbox relay authorization and cursors",
+  );
+
+  mailbox
+    .command("start")
+    .description("Provision and run one local mailbox host")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local mailbox alias")
+    .option("-u, --url <url>", "Advertised mailbox URL")
+    .option("--datetime <time>", "Authoritative startup timestamp")
+    .option("--config-file <name>", "Mailbox startup config file or path")
+    .option("--port <port>", "Local HTTP port override")
+    .option("--listen-host <host>", "Local listen host override")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "mailbox.start",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          url: options.url,
+          datetime: options.datetime,
+          configFile: options.configFile,
+          port: options.port,
+          listenHost: options.listenHost,
+          base: options.base,
+          compat: options.compat || false,
+          cesrBodyMode: options.cesrBodyMode,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+
+  mailbox
+    .command("add")
+    .description("Authorize one remote mailbox provider for a local identifier")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption(
+      "-w, --mailbox <mailbox>",
+      "Mailbox AID or exact contact alias",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "mailbox.add",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          mailbox: options.mailbox,
+          base: options.base,
+          compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+
+  mailbox
+    .command("remove")
+    .description("Revoke one remote mailbox provider for a local identifier")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption(
+      "-w, --mailbox <mailbox>",
+      "Mailbox AID or exact contact alias",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "mailbox.remove",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          mailbox: options.mailbox,
+          base: options.base,
+          compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+
+  mailbox
+    .command("list")
+    .description("List authorized mailboxes for one local identifier")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "mailbox.list",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          base: options.base,
+          compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+
+  mailbox
+    .command("update")
+    .description("Update one local mailbox topic cursor")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-w, --witness <aid>", "Mailbox or witness AID")
+    .requiredOption("-t, --topic <topic>", "Mailbox topic")
+    .requiredOption("-i, --index <index>", "Next consumed topic index")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "mailbox.update",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          witness: options.witness,
+          topic: options.topic,
+          index: options.index ? Number(options.index) : undefined,
+          base: options.base,
+          compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
+    });
+
+  mailbox
+    .command("debug")
+    .description("Display mailbox cursor and remote mailbox topic state")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local identifier alias")
+    .requiredOption("-w, --witness <aid>", "Mailbox or witness AID")
+    .option("-V, --verbose", "Print full mailbox event bodies")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+    )
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "mailbox.debug",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          witness: options.witness,
+          verbose: options.verbose || false,
+          base: options.base,
+          compat: options.compat || false,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+        },
+      });
     });
 }
 
@@ -915,16 +1273,51 @@ function regDbDumpCmd(dbCommand: Command, dispatch: CommandDispatch): void {
   dbCommand
     .command("dump")
     .description("Dump database contents")
+    .argument(
+      "[target]",
+      "Dump target like baser, baser.locs, mailboxer.tpcs, or outboxer.tgts",
+      "baser.evts",
+    )
     .requiredOption("-n, --name <name>", "Database name")
     .option("-b, --base <base>", "Additional optional prefix to database path")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root",
+    )
     .option("-t, --temp", "Use temporary database")
-    .action((options: { name: string; base?: string; temp?: boolean }) => {
+    .option("--compat", "Open KERIpy-compatible .keri stores instead of .tufa")
+    .option(
+      "--prefix <prefix>",
+      "Logical key prefix filter for one sub-database target",
+    )
+    .option(
+      "--limit <count>",
+      "Maximum number of entries to print for one targeted sub-database",
+      (value: string) => Number.parseInt(value, 10),
+    )
+    .action((
+      target: string,
+      options: {
+        name: string;
+        base?: string;
+        headDir?: string;
+        temp?: boolean;
+        compat?: boolean;
+        prefix?: string;
+        limit?: number;
+      },
+    ) => {
       dispatch({
         name: "db.dump",
         args: {
           name: options.name,
           base: options.base,
+          headDirPath: options.headDir,
           temp: options.temp || false,
+          compat: options.compat || false,
+          target,
+          prefix: options.prefix,
+          limit: options.limit,
         },
       });
       return;

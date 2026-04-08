@@ -14,6 +14,28 @@ Use this guide for:
 Developer adoption and day-to-day package usage are documented in `README.md`,
 `packages/keri/README.md`, and `packages/cesr/README.md`.
 
+## Pinned maintainer toolchain
+
+Use the checked-in `.tool-versions` file for local maintainer work:
+
+- Node `25.9.0`
+- Deno `2.7.11`
+
+These exact versions match CI. This matters here because the repo depends on a
+native `lmdb-js` addon rebuilt with `LMDB_DATA_V1=true`, and addon behavior has
+been sensitive to runtime drift.
+
+Local macOS note:
+
+- `packages/keri/scripts/setup_lmdb_v1.sh` also applies the repo's Deno cleanup
+  hook workaround before rebuilding `lmdb-js`
+- `deno task test` triggers that rebuild automatically through the KERI test
+  group runner on macOS
+- the cleanup-hook patch is the upstream candidate
+- if the macOS data-v1 lock path still fails with `ENOSPC`, treat it as a host
+  OS/resource-exhaustion problem to document separately, not as justification
+  for weakening LMDB locking semantics in `keri-ts`
+
 ## Release and versioning
 
 Primary reference:
@@ -61,6 +83,9 @@ bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
 Tag-triggered release workflows require package version/tag alignment.
 
 ## Deno global install notes for tufa
+
+Before rebuilding LMDB locally with `deno task setup`, make sure your active
+`node` and `deno` binaries match the pinned versions above.
 
 When installing `tufa` directly from local source with Deno, allow scripts for
 native npm dependencies to avoid repeated warnings:

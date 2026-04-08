@@ -1,5 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.4.4";
+import type { Database } from "npm:lmdb";
 import {
   Cipher,
   type Decrypter,

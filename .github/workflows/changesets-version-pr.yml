@@ -13,9 +13,9 @@ env:
   # Keep version automation on the same exact runtime contract as the rest of CI
   # so generated files are consistent across workflows.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  DENO_VERSION: "2.7.5"
-  NODE_VERSION: "22.14.0"
-  DEPS_CACHE_KEY_PREFIX: ci-deps-v2
+  DENO_VERSION: "2.7.11"
+  NODE_VERSION: "25.9.0"
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v3
 
 jobs:
   version:

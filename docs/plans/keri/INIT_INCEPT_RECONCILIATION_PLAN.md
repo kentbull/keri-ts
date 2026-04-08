@@ -22,6 +22,36 @@ This is Phase 2 of a 4-phase project.
 4. Keep storage-facing semantics isolated while doing LMDB-first work so later
    provider support is an adapter exercise, not a behavioral rewrite.
 
+## Status Reconciliation (2026-04-06)
+
+- Verdict: the phase is now well beyond raw `init` / `incept` parity. Those
+  commands are no longer the active blocker.
+- Landed in the repo for current Phase 2 scope:
+  - `init`, `incept`, `list`, `aid`, `loc add`, `ends add`,
+    `oobi generate/resolve`
+  - `challenge generate/respond/verify`
+  - `exchange send` plus `exn send`
+  - mailbox lifecycle surfaces:
+    `mailbox start`, `mailbox add/remove/list/update/debug`
+  - mailbox-provider admin/runtime behavior:
+    `POST /mailboxes`, authorization-aware `/fwd`, shared `Mailboxer`,
+    optional `Outboxer`, mailbox polling, and mailbox-first delivery for the
+    current slice
+  - `tufa db dump` as a targeted parity/debug seam for both `.tufa` and
+    compat-mode `.keri` stores
+- Landed interop evidence in the repo now includes:
+  - KLI store visibility/unlock in compatibility mode
+  - `kli mailbox add` against a `tufa` mailbox host
+  - `tufa mailbox add` against the KERIpy-backed compatibility host
+  - mailbox-polled `/challenge` delivery in both directions for the current
+    challenge slice
+- The real remaining Phase 2 work is no longer "make init/incept honest." It is:
+  - broader exchange/forwarding/topic breadth beyond the current
+    challenge/mailbox slice
+  - packaged npm/tarball confidence for `tufa agent`
+  - the DB/databaser parity tail, especially `Noter`, fuller `Reger` breadth,
+    and remaining row-level closure/evidence
+
 ## Non-Negotiable Design Requirements
 
 1. Default storage isolation remains intentional:
@@ -83,9 +113,9 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
    implemented, and `tufa list` / `tufa aid` now have live interop evidence
    against KLI-created encrypted `.keri` stores.
 2. Gate B bootstrap CLI parity is now live-evidenced for
-   `init`/`incept`/`export`/`list`/`aid`, and `init` / `incept` now host
-   bounded command-local runtime convergence when queued bootstrap OOBIs exist
-   instead of stopping at config preload.
+   `init`/`incept`/`export`/`list`/`aid`, and `init` / `incept` now host bounded
+   command-local runtime convergence when queued bootstrap OOBIs exist instead
+   of stopping at config preload.
 3. Gate D is now live-evidenced: keeper-global salt, per-prefix salts, and
    `pris.` signer seeds use real sealed-box encryption with AEID
    decrypt/re-encrypt behavior and wrong-passcode failure coverage.
@@ -97,7 +127,11 @@ K/V surface from `docs/design-docs/db/lmdb-dumper.md`.
    infrastructure is now strong enough for honest bootstrap/runtime work. The
    remaining DB parity problem is narrower row-by-row closure, especially the
    highest-value `Partial` rows and fuller `Komer` evidence.
-6. Browser/mobile storage remains deferred until after 1.0, but the codebase
+6. The runtime/comms slice now goes materially beyond bootstrap: mailbox admin,
+   provider-side `Mailboxer`, optional sender-side `Outboxer`, mailbox-first
+   forwarding, mailbox-polled challenge verification, and KERIpy-shaped EXN
+   send semantics are all landed for the current scope.
+7. Browser/mobile storage remains deferred until after 1.0, but the codebase
    should keep storage-facing semantics isolated now so later IndexedDB support
    does not become a hidden rewrite.
 
@@ -151,9 +185,9 @@ Across `cha1`/`cha2`:
   subplan:
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`
 - Current status: Gate E is now materially complete for the honest
-  bootstrap/runtime slice, including bounded `init` / `incept` convergence.
-  What remains is no longer bootstrap reply/query/receipt plumbing. It is the
-  Gate F bridge around richer communications/transport breadth plus the broader
+  bootstrap/runtime slice, including bounded `init` / `incept` convergence. What
+  remains is no longer bootstrap reply/query/receipt plumbing. It is the Gate F
+  bridge around richer communications/transport breadth plus the broader
   stale/timeout continuation tail.
 
 #### Gate E Follow-On After `init` / `incept` Closure
@@ -161,18 +195,19 @@ Across `cha1`/`cha2`:
 - Treat the old Gate E continuation story as substantially closed:
   - Chunks 1 through 10 now cover the honest bootstrap/runtime/query/receipt
     slice
-  - `/ksn`, `/introduce`, fuller cue materialization, receipt/query escrows,
-    and reply-based OOBI continuation are no longer the active blocker for
-    `init` / `incept`
+  - `/ksn`, `/introduce`, fuller cue materialization, receipt/query escrows, and
+    reply-based OOBI continuation are no longer the active blocker for `init` /
+    `incept`
 - `tufa init` now hosts the shared runtime when queued `oobis.` / `woobi.` work
   exists, waits for bounded convergence, and fails if bootstrap OOBIs end in
   `eoobi.`
 - `tufa incept` now performs the same bounded convergence before local
   identifier creation. It is no longer "runtime blind".
 - The active follow-on is:
-  - Gate F/G continuation around fuller mailbox forwarding/polling semantics,
-    broader exchange/forwarding routes, and KERIpy interop evidence now that
-    the first direct and mailbox-authorized `exn` slice is landed
+  - Gate F/G continuation around broader exchange/forwarding routes and topic
+    breadth now that the first direct and mailbox-forwarded `exn` slice plus
+    mailbox-add `/challenge` interop evidence are landed on top of shared
+    Habery-wide mailbox state
   - the broader stale/timeout continuation tail
   - packaged npm/tarball confidence for `tufa agent`
 
@@ -180,17 +215,27 @@ Across `cha1`/`cha2`:
 
 - Current `keri-ts` status:
   - landed for local evidence: controller-to-controller `exn` delivery works in
-    direct mode and via resolved mailbox-authorized endpoints
-  - remaining exit criterion: KERIpy interop evidence plus fuller
-    witness-forwarded mailbox semantics
+    direct mode and via shared mailbox-forwarded endpoints
+  - landed for current interop evidence: `kli mailbox add` works against a
+    `tufa` mailbox host and `tufa mailbox add` works against the KERIpy-backed
+    compatibility host, with mailbox-polled `/challenge` delivery passing in
+    both directions
+  - landed for current local operator surface: `mailbox start`,
+    `mailbox add/remove/list/update/debug`, `POST /mailboxes`, and
+    authorization-aware `/fwd`
+  - remaining exit criterion: broader exchange-route/topic coverage plus
+    packaged-host confidence, not mailbox lifecycle absence
 
 ### Gate G: Challenge Interop
 
 - Current `keri-ts` status:
   - landed for local evidence: `challenge generate/respond/verify` works across
     two controllers with resolved peer state and selected direct or
-    mailbox-authorized transport
-  - remaining exit criterion: KERIpy challenge-script parity evidence
+    mailbox-forwarded transport
+  - landed for current interop evidence: mailbox-polled challenge verify now
+    passes across the `kli -> tufa` and `tufa -> KERIpy-backed host` paths
+  - remaining exit criterion: broader challenge-route breadth and richer
+    workflow coverage, not the basic mailbox verify loop
 
 ### Gate H: LMDB Layer Full-Parity Closure (Phase 2 tail)
 
@@ -233,8 +278,8 @@ P0 tracking artifacts:
 Current state:
 
 - Strong enough for the active Phase 2 runtime and interoperability work.
-- The main remaining DB problem is not missing basic lifecycle primitives. It
-  is row-level parity closure and evidence.
+- The main remaining DB problem is not missing basic lifecycle primitives. It is
+  row-level parity closure and evidence.
 
 ## P2 - `subing.py` + `koming.py` Parity Slice
 
@@ -276,8 +321,8 @@ Current state:
   visibility now passes live against encrypted KLI stores; Gate D encrypted
   secret semantics are also closed; and Gate E bootstrap/runtime parity now
   includes bounded `init` / `incept` convergence. The next blocker is
-  communications/runtime breadth rather than keeper unlock or bootstrap
-  endpoint work.
+  communications/runtime breadth rather than keeper unlock or bootstrap endpoint
+  work.
 
 ## P6 - AEID + Manager + Signator Reliability
 
@@ -330,11 +375,16 @@ Current state:
 
 Current state:
 
-- This is now the main active blocker after Gate E.
-- The indirect/shared-runtime host, mailbox stream slice, and protocol-only
-  server are real, but fuller direct-mode, forwarding, exchange, and richer
-  mailbox communications breadth are not yet closed.
-- `tufa agent` also has a packaged-runtime confidence seam here: source-path
+- Landed enough to stop calling this "missing communications":
+  - direct controller delivery
+  - mailbox-first forwarding
+  - mailbox admin for add/remove
+  - shared provider-side polling/streaming
+  - mailbox-start porcelain
+  - mailbox add interop in both directions for the current scope
+- The remaining blocker is broader route/topic breadth, not absence of the
+  communication model itself.
+- `tufa agent` still has a packaged-runtime confidence seam here: source-path
   evidence is not enough unless the packed npm artifact starts cleanly too.
 
 ## P10 - Challenge Commands
@@ -343,9 +393,11 @@ Current state:
 
 Current state:
 
-- Still a later gate.
-- The important planning constraint is that challenge work should build on the
-  landed shared runtime and communications seams instead of inventing a bypass.
+- Landed for the current Phase 2 slice.
+- `challenge generate/respond/verify` now use the shared runtime, `Exchanger`,
+  and mailbox polling rather than a local-only shortcut.
+- Remaining work is broader workflow breadth and future route families, not the
+  base challenge command set.
 
 ## P11 - `db dump` Expansion
 
@@ -353,7 +405,10 @@ Current state:
 
 Current state:
 
-- Still useful and still later than the runtime/comms blocker.
+- Landed enough to be part of the maintainer/debugging contract.
+- Targeted selectors such as `baser.<subdb>`, `mailboxer.<subdb>`, and
+  `outboxer.<subdb>` are now the preferred way to inspect state changes during
+  parity and interop debugging.
 - It remains a verification/evidence amplifier, not the next architectural
   blocker.
 
@@ -381,18 +436,19 @@ Current state:
 
 - Unchanged. Still post-LMDB-parity work, not a present implementation target.
 
-## Recommended Next Focus (2026-04-05)
+## Recommended Next Focus (2026-04-06)
 
-1. Gate F bridge: build on the now-landed shared runtime and close direct,
-   mailbox, forwarding, and exchange transport breadth instead of reopening
+1. Gate F/G breadth: build on the now-landed mailbox/challenge/exchange slice
+   and close broader exchange-route/topic coverage instead of reopening
    bootstrap/runtime foundations.
 2. Runtime hardening: finish the broader stale/timeout continuation tail and
-   cleanup policy now that the core query/reply and receipt/query slices are
-   landed.
+   cleanup policy now that the core query/reply, receipt/query, and current
+   mailbox/challenge slices are landed.
 3. `tufa agent` release confidence: keep smoke coverage honest at the packed
    npm/tarball boundary so source-path success does not hide Node/runtime drift.
-4. Gate H tail: keep DB parity closure moving so the wider runtime work does
-   not accrete new storage shortcuts or row-level drift.
+4. Gate H tail: keep DB parity closure moving on `Noter`, fuller `Reger`
+   breadth, and remaining row-level evidence so the wider runtime work does not
+   accrete new storage shortcuts or drift.
 
 ## Milestones
 
@@ -413,18 +469,26 @@ Complete P13 after M2.
 1. `init -> list(empty) -> incept -> list(alias+pre) -> aid(pre)`
 2. Same sequence in compatibility mode against KLI-created stores.
 3. `ends add` mailbox role auth flow.
-4. `init` with config-seeded `iurls` / `durls` / `wurls` drives runtime
+4. `mailbox start` provisions and serves one local mailbox host honestly.
+5. `mailbox add/remove/list/update/debug` against a live mailbox host.
+6. `kli mailbox add` works against a `tufa` mailbox host and `tufa mailbox add`
+   works against the KERIpy-backed compatibility host.
+7. `/fwd` only stores forwarded payloads after mailbox authorization and stops
+   after mailbox removal.
+8. `init` with config-seeded `iurls` / `durls` / `wurls` drives runtime
    resolution/auth convergence instead of only preloading DB state.
-5. `oobi generate/resolve` between `cha1` and `cha2`, including reply-driven
+9. `oobi generate/resolve` between `cha1` and `cha2`, including reply-driven
    continuation where needed.
-6. `incept` can rely honestly on accepted remote transferable prerequisites
-   when those are part of the requested flow.
-7. Direct-mode comms baseline.
-8. Mailbox-mode comms baseline with KERIpy mailbox infra.
-9. Challenge round-trip between controllers.
-10. Encrypted-store unlock + behavior checks.
-11. DB evidence via `tufa db dump` (raw and decoded where applicable).
-12. Packed npm/tarball smoke for `tufa agent` proves `init -> incept -> agent -> /health` on the artifact users actually install.
+10. `incept` can rely honestly on accepted remote transferable prerequisites
+    when those are part of the requested flow.
+11. Direct-mode comms baseline.
+12. Mailbox-mode comms baseline with KERIpy mailbox infra.
+13. Challenge round-trip between controllers.
+14. Encrypted-store unlock + behavior checks.
+15. DB evidence via targeted `tufa db dump` selectors (raw and decoded where
+    applicable).
+16. Packed npm/tarball smoke for `tufa agent` proves
+    `init -> incept -> agent -> /health` on the artifact users actually install.
 
 ## Completion Condition for This Phase
 
@@ -433,5 +497,14 @@ This Phase 2 track is complete when:
 - M1 and M2 are green.
 - Default `.tufa` isolation remains intact.
 - Compatibility mode reliably interops with KERIpy stores and mailboxes.
+- The new local mailbox admin/runtime slice is not enough by itself. Phase
+  completion still requires the now-landed KERIpy interop bar for mailbox add,
+  list/update/debug-adjacent flows, and mailbox-polled topic delivery.
+  `mailbox remove` stays outside the KLI-facing interop bar until KERIpy exposes
+  a native remove surface.
+- `init` / `incept` honesty is no longer the deciding question. Phase closure
+  now depends on the broader communications/runtime/DB tail that remains after
+  those commands, mailbox lifecycle, and the current challenge slice are all
+  landed.
 - Provider abstraction implementation begins only after LMDB full-parity
   closure.

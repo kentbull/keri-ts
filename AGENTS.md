@@ -129,6 +129,36 @@ For new modules/classes/functions introduced during feature work:
   responsibilities and invariants, but rewrite for `keri-ts` maintainers and
   call out any TypeScript or runtime divergences explicitly.
 
+## Interop Debugging Rule
+
+- When debugging interop or runtime state drift between `tufa` and KERIpy,
+  prefer targeted `tufa db dump` inspection over ad hoc LMDB scripts or broad
+  full-store dumps.
+- Use the narrowest selector that answers the question, for example:
+  - `baser`
+  - `baser.<subdb>`
+  - `mailboxer`
+  - `mailboxer.<subdb>`
+  - `outboxer`
+  - `outboxer.<subdb>`
+- Treat `tufa db dump` as a comparison seam for both `.tufa` and `.keri`
+  keystores when compat-mode reasoning needs concrete state evidence.
+
+## Hosted Identity Selection Rule
+
+- Keep the host mental model explicit: one long-lived listener/runtime per
+  Habery or command invocation, not one listener per local Hab/AID.
+- Distinguish hosted-prefix selection from startup seeding. A bug in
+  multi-AID bootstrap breadth is not evidence that separate listeners are being
+  created.
+- Do not blindly host every local Hab in `hby.habs`. Hosted prefixes should be
+  filtered to the user-intended local identities that actually have endpoint
+  state to serve.
+- Treat system-managed identities such as keeper/signatory or AEID-related
+  identities as non-user-facing by default. They should not leak into ordinary
+  user AID hosting, OOBI serving, or mailbox/agent bootstrap unless a task
+  explicitly proves that behavior is correct.
+
 ## Scope Guardrails
 
 - Prefer readability-first implementation unless roadmap phase explicitly says

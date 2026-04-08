@@ -26,7 +26,7 @@
   - prove `tufa agent` stays protocol-only and that the bootstrap command slice
     has live KERIpy parity evidence
 
-## Status Reconciliation (2026-04-05)
+## Status Reconciliation (2026-04-06)
 
 - Verdict: Gate E is now materially complete for the honest bootstrap/runtime
   slice. It is not "all runtime parity", but it no longer makes sense to treat
@@ -38,6 +38,15 @@
   - config preload feeding `oobis.` and `woobi.`, with `tufa init` and
     `tufa incept` now hosting bounded command-local runtime convergence instead
     of stopping at DB preload
+  - mailbox-provider lifecycle now extends beyond raw bootstrap:
+    `tufa mailbox start`, `mailbox add/remove/list/update/debug`, `POST /mailboxes`,
+    authorization-aware `/fwd`, shared `Mailboxer`, optional `Outboxer`, and
+    base-path-relative mailbox/OOBI hosting are all landed for the current
+    scope
+  - the first real Gate F/G bridge on top of Gate E:
+    `Exchanger`, `challenge generate/respond/verify`, `exchange send` plus
+    `exn send`, mailbox-polled `/challenge` verification, and live mailbox-add
+    interoperability in both directions
   - protocol-only indirect host coverage for `tufa agent`, including OOBI /
     resource serving, mailbox SSE, and a local `/health` route
   - KEL-owned `/ksn/{aid}` and `/watcher/{aid}/{action}` reply handling,
@@ -51,12 +60,14 @@
   - the broader stale/timeout continuation tail and richer cleanup/retry policy
   - data/TEL/credential OOBI breadth beyond the controller/witness/mailbox/agent
     bootstrap slice
+  - fuller DB/databaser parity beyond the mailbox/runtime slice, especially
+    `Noter`, remaining `Reger` breadth, and the row-level Phase 2 tail
   - packaged npm/tarball runtime confidence for `tufa agent`, which is now a
     release concern distinct from the source-path runtime design
 - Planning rule: those deferred items still matter, but they are no longer Gate
   E exit criteria. They belong to Gate F and later runtime/comms hardening.
 
-## Current Implementation Reality (2026-04-05)
+## Current Implementation Reality (2026-04-06)
 
 Maintainer note:
 
@@ -82,8 +93,8 @@ Maintainer note:
   `/end/role/*`, `/loc/scheme`, `/ksn/{aid}`, `/watcher/{aid}/{action}`, and
   `/introduce` are routed through their intended owners.
 - Chunk 5 is materially complete for cue/runtime projection: `Hab`-owned cue
-  semantics, mailbox `stream` capture, `logs` / `ksn` / `mbx` query routing,
-  and `receipt` / `witness` wire materialization are all landed.
+  semantics, mailbox `stream` capture, `logs` / `ksn` / `mbx` query routing, and
+  `receipt` / `witness` wire materialization are all landed.
 - Chunk 6 is materially complete for the indirect-host bootstrap slice: the
   server accepts CESR `POST` / `PUT`, serves mailbox SSE for `mbx`, serves OOBI
   resources from local reply/auth material, and remains protocol-only.
@@ -91,31 +102,34 @@ Maintainer note:
   slice: incomplete `query` cues flow through runtime `QueryCoordinator`,
   `/watcher/{aid}/{action}` is KEL-owned, `/ksn` trust-source parity is tighter,
   and runtime pending-state convergence includes active query continuations.
-- Chunk 8 is materially complete for the KERIpy receipt/query parity slice:
-  the unverified witness / non-transferable / transferable receipt escrows,
+- Chunk 8 is materially complete for the KERIpy receipt/query parity slice: the
+  unverified witness / non-transferable / transferable receipt escrows,
   KERIpy-aligned 300-second `query-not-found` retry policy, replay-attached
   receipt handling for cloned KEL events, and transferable query ingress via
   `ssgs` are all landed.
-- Chunk 9 is materially complete for the Gate E OOBI slice: controller,
-  witness, mailbox, and agent role-path OOBIs plus `/introduce`-seeded
-  continuation now flow through the same durable `oobis.` / `woobi.` ->
-  `coobi.` / `eoobi.` / `roobi.` runtime path. Remaining breadth is now
-  data/TEL/credential OOBIs and richer auth semantics, not bootstrap honesty.
+- Chunk 9 is materially complete for the Gate E OOBI slice: controller, witness,
+  mailbox, and agent role-path OOBIs plus `/introduce`-seeded continuation now
+  flow through the same durable `oobis.` / `woobi.` -> `coobi.` / `eoobi.` /
+  `roobi.` runtime path. Remaining breadth is now data/TEL/credential OOBIs and
+  richer auth semantics, not bootstrap honesty.
 - Chunk 10 is materially complete: the user-facing CLI surfaces are on the
   shared runtime, and `tufa init` / `tufa incept` no longer stop at DB preload.
-  The remaining `tufa agent` concern is packaged tarball/runtime confidence,
-  not host ownership design.
+  The remaining `tufa agent` concern is packaged tarball/runtime confidence plus
+  continued explicit hosted-prefix filtering, not host ownership design.
 
 ## Active Continuation Slice Beyond Gate E
 
 - Planning verdict: do not reopen Chunks 4 through 10 as if bootstrap-critical
   reply/query/receipt behavior were still missing. That slice is landed.
 - The active continuation is now:
-  - Gate F/G continuation on top of the now-landed first exchange slice:
-    direct and mailbox-authorized controller delivery, `Exchanger`, and
-    challenge CLI are real, but fuller forwarding/mailbox polling semantics and
-    KERIpy interop evidence are still open
+  - Gate F/G continuation on top of the now-landed first exchange slice: direct
+    and mailbox-forwarded controller delivery, `Exchanger`, challenge CLI,
+    shared Habery-wide mailbox forwarding/polling, and current mailbox-add plus
+    `/challenge` interop evidence are real, but broader exchange-route/topic
+    breadth is still open
   - the broader stale/timeout continuation tail and richer cleanup policy
+  - the Phase 2 DB tail outside the now-landed mailbox/runtime slice, notably
+    `Noter`, fuller `Reger` breadth, and remaining row-level parity evidence
   - packaged npm/tarball smoke confidence for `tufa agent`
 - `/ksn` is not just another generic reply route. In KERIpy it is KEL-owned
   reply handling and depends on accepted key state plus query-not-found escrow.
@@ -131,10 +145,10 @@ Maintainer note:
   for a higher-level correspondent to choose a local habitat, resolve an honest
   attester, and emit a follow-on query only when that correspondence can be
   justified.
-- `tufa init` now mirrors KERIpy's bootstrap intent closely enough to be
-  honest: when queued `oobis.` or `woobi.` work exists, it hosts the
-  command-local runtime, waits for bounded convergence, and fails if bootstrap
-  OOBIs end in `eoobi.`.
+- `tufa init` now mirrors KERIpy's bootstrap intent closely enough to be honest:
+  when queued `oobis.` or `woobi.` work exists, it hosts the command-local
+  runtime, waits for bounded convergence, and fails if bootstrap OOBIs end in
+  `eoobi.`.
 - `tufa incept` now does the same bounded pre-inception convergence before
   creating local state. It is no longer "runtime blind". The remaining explicit
   rejections such as `--endpoint` and `--proxy` reflect true missing higher-
@@ -144,9 +158,9 @@ Maintainer note:
 
 - `Deck<T>` now exists as the KERIpy-shaped queue primitive used across runtime
   interfaces instead of ad hoc arrays or callback chains.
-- Typed cue unions now exist for the active runtime families:
-  `receipt`, `notice`, `witness`, `query`, `replay`, `reply`, `stream`,
-  `keyStateSaved`, `psUnescrow`, and OOBI queue/result cues.
+- Typed cue unions now exist for the active runtime families: `receipt`,
+  `notice`, `witness`, `query`, `replay`, `reply`, `stream`, `keyStateSaved`,
+  `psUnescrow`, and OOBI queue/result cues.
 - `createAgentRuntime(hby, options)` and `runAgentRuntime(runtime)` are landed:
   - `AgentRuntime` remains a small composition root with shared `hby`, host
     `mode`, and the shared `cues` deck
@@ -154,14 +168,13 @@ Maintainer note:
     `QueryCoordinator`
   - the long-lived doers now mirror the KERIpy mental model: `msgDo`,
     `escrowDo`, `oobiDo`, `queryDo`, plus cue draining
-- Role constants covering `controller`, `agent`, `mailbox`, and `witness`
-  exist through the runtime/app role surface.
+- Role constants covering `controller`, `agent`, `mailbox`, and `witness` exist
+  through the runtime/app role surface.
 - The KERI dispatch envelope after CESR parsing is landed:
   - it is the typed `keri-ts` analogue to KERIpy parser `exts`
-  - it carries the KERIpy family names needed by current runtime work,
-    including `sigers`, `wigers`, `cigars`, `trqs`, `tsgs`, `ssgs`, `frcs`,
-    `sscs`, `ssts`, `tdcs`, `ptds`, `essrs`, `bsqs`, `bsss`, `tmqs`, and
-    `local`
+  - it carries the KERIpy family names needed by current runtime work, including
+    `sigers`, `wigers`, `cigars`, `trqs`, `tsgs`, `ssgs`, `frcs`, `sscs`,
+    `ssts`, `tdcs`, `ptds`, `essrs`, `bsqs`, `bsss`, `tmqs`, and `local`
   - it uses named dispatch records or CESR structing records instead of opaque
     anonymous objects
 - `Habery` / `Hab` helpers needed by cue-driven endpoint logic are landed:
@@ -169,9 +182,16 @@ Maintainer note:
   `replyLocScheme`, `replyToOobi`, and `processCuesIter`
 - `tufa agent` listeners remain protocol-only:
   - indirect-mode HTTP serving exists for OOBI/resource/mailbox flows in Gate E
-  - direct-mode hosting belongs to the same abstraction but still closes in
-    Gate F
+  - direct-mode hosting belongs to the same abstraction but still closes in Gate
+    F
   - there is still no localhost admin/control surface
+  - hosted controller endpoint bootstrap is now config-first: alias-scoped
+    config `dt` + `curls` are accepted through normal reply processing on open,
+    and `tufa agent` only falls back to synthesized localhost controller state
+    when config is absent and accepted controller endpoint state is incomplete
+  - startup no longer auto-seeds self `agent` end roles just because the role
+    exists in the endpoint model; role support and startup synthesis are
+    separate choices
 
 ## Cue Matrix
 
@@ -226,10 +246,10 @@ Maintainer note:
 - Status reconciliation (2026-04-05):
   - complete for the Gate E bootstrap slice
   - config ingestion now seeds `oobis.` and `woobi.` during habery creation/open
-  - the shared runtime consumes those durable queues instead of bespoke
-    one-off bootstrap logic
-  - `tufa init` and `tufa incept` now host the command-local runtime long
-    enough to drive queued bootstrap work to bounded success/failure state
+  - the shared runtime consumes those durable queues instead of bespoke one-off
+    bootstrap logic
+  - `tufa init` and `tufa incept` now host the command-local runtime long enough
+    to drive queued bootstrap work to bounded success/failure state
 
 ### Chunk 3: Add parser normalization and dispatch
 
@@ -246,8 +266,8 @@ Maintainer note:
 
 - Status reconciliation (2026-04-05):
   - materially complete for the real Gate E reply surface
-  - landed routes now include `/end/role/add`, `/end/role/cut`,
-    `/loc/scheme`, `/ksn/{aid}`, `/watcher/{aid}/{action}`, and `/introduce`
+  - landed routes now include `/end/role/add`, `/end/role/cut`, `/loc/scheme`,
+    `/ksn/{aid}`, `/watcher/{aid}/{action}`, and `/introduce`
   - route ownership is now explicit and honest:
     - `Revery` verifies, applies BADA, persists reply artifacts, and owns reply
       escrow/replay
@@ -280,8 +300,8 @@ Maintainer note:
   - the server now accepts CESR `POST` / `PUT`, serves OOBI/resource responses
     from local reply/auth material, serves mailbox SSE for `mbx`, and exposes a
     local `/health` route for host readiness checks
-  - role-based dissemination for `controller`, `mailbox`, `witness`, and
-    `agent` OOBIs is now real where local state permits
+  - role-based dissemination for `controller`, `mailbox`, `witness`, and `agent`
+    OOBIs is now real where local state permits
   - introduction-driven continuation stays on the same parser -> routing ->
     escrow -> finalization path
   - remaining host work is broader direct/forwarding/exchange transport breadth,
@@ -332,8 +352,8 @@ Maintainer note:
     the durable `Oobiery` queue state and shared cue deck
   - CESR-stream fetch -> parse -> route -> persist flow is real and preserves
     alias hints plus deterministic `coobi.` / `eoobi.` / `roobi.` transitions
-  - `/introduce`-seeded OOBIs stay on the same normal parser/routing/escrow
-    path instead of using resolver shortcuts
+  - `/introduce`-seeded OOBIs stay on the same normal parser/routing/escrow path
+    instead of using resolver shortcuts
   - `woobi.` continuation/auth convergence is now carried far enough for honest
     `init` / open bootstrap behavior
   - remaining breadth is now data/TEL/credential OOBIs and richer follow-on
@@ -348,10 +368,10 @@ Maintainer note:
     `loadEndRole()`
   - `tufa oobi generate` supports the active Gate E role set, including `agent`
     generation when local endpoint state exists
-  - `tufa oobi resolve` hosts the runtime in-process, enqueues the OOBI job,
-    and waits for durable completion
-  - `tufa agent` hosts the same shared runtime long-lived and still exposes
-    only protocol routes
+  - `tufa oobi resolve` hosts the runtime in-process, enqueues the OOBI job, and
+    waits for durable completion
+  - `tufa agent` hosts the same shared runtime long-lived and still exposes only
+    protocol routes
   - `tufa init` and `tufa incept` now belong in the same runtime-backed CLI
     story: both host bounded command-local convergence when queued bootstrap
     work exists
@@ -406,6 +426,17 @@ Maintainer note:
   local state through the runtime, not via direct DB mutation
 - Integration tests must prove mailbox OOBI generation and mailbox OOBI
   resolution work end-to-end against KERIpy
+- Integration tests must prove the long-lived mailbox host accepts
+  `POST /mailboxes` add/cut admin requests, and that
+  `tufa mailbox add/remove/list/update/debug` work against that host without
+  side-channel DB mutation
+- Integration tests must prove `tufa mailbox start` can provision one
+  non-transferable mailbox identity, reconcile self `loc` / `controller` /
+  `mailbox` state, and serve base-path-relative admin/OOBI routes through the
+  same indirect runtime host
+- Integration tests must prove `/fwd` storage is authorization-aware: forwarded
+  payloads must not land before mailbox authorization, must land after
+  authorization, and must stop landing after a cut
 - Integration tests must prove controller, witness, and agent OOBI flows work
   end-to-end in the shared runtime
 - Integration tests must prove introduction-driven and `/ksn`-dependent
@@ -438,6 +469,17 @@ Maintainer note:
   parity across every later runtime family
 - Config-seeded witness bootstrap through `woobi.` is part of Gate E; broader
   `woobi.` continuation semantics are not
+- Endpoint-role support and startup synthesis are separate choices. `Roles.agent`
+  may remain part of routing and OOBI generation while `tufa agent` refrains
+  from auto-creating self `agent` end-role state until a real agent-runtime
+  construct needs it
+- The mailbox runtime slice now includes a real provider-side `Mailboxer`, a
+  sender-side `Outboxer`, local `tufa mailbox` command coverage, and live
+  mailbox-add interoperability in both directions for the current scope:
+  `kli mailbox add` against a `tufa` mailbox host and `tufa mailbox add` against
+  the KERIpy-backed compatibility host both pass with mailbox-polled
+  `/challenge` delivery. KLI-facing `mailbox remove` stays out of the interop
+  bar because checked-in KERIpy does not expose a native remove command.
 - Packed npm/tarball smoke is a release gate for `tufa agent`, not an optional
   nice-to-have, because source and packaged runtime behavior can drift
 - Data OOBIs and TEL/credential txn-state escrows remain the next major chunk

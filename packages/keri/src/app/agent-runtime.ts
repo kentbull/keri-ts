@@ -3,11 +3,14 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import type { OobiRecord } from "../core/records.ts";
+import type { Mailboxer } from "../db/mailboxing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
+import { ForwardHandler, type MailboxPollBatch, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
+import { openMailboxerForHabery } from "./mailboxing.ts";
 import { isWellKnownOobiUrl, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
@@ -43,12 +46,17 @@ export type { CueSink };
 export interface AgentRuntime {
   hby: Habery;
   mode: AgentMode;
+  mailboxer: Mailboxer | null;
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
   authenticator: Authenticator;
   mailboxDirector: MailboxDirector;
+  mailboxPoller: MailboxPoller;
+  poster: Poster;
   querying: QueryCoordinator;
+  /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
+  close(): Operation<void>;
 }
 
 /**
@@ -59,6 +67,8 @@ export interface AgentRuntime {
  */
 export interface AgentRuntimeOptions {
   mode?: AgentMode;
+  mailboxer?: Mailboxer;
+  enableMailboxStore?: boolean;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -71,6 +81,7 @@ export interface RuntimePendingState {
   multiPending: boolean;
   authQueued: boolean;
   authInFlight: boolean;
+  outboxPending: boolean;
   /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
 }
@@ -90,27 +101,57 @@ export interface RuntimeOobiTerminalState {
  *   classes
  * - hosting style changes where the runtime is run, not what it is
  */
-export function createAgentRuntime(
+export function* createAgentRuntime(
   hby: Habery,
   options: AgentRuntimeOptions = {},
-): AgentRuntime {
+): Operation<AgentRuntime> {
+  const mode = options.mode ?? "local";
+  const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
+  const mailboxer = options.mailboxer
+    ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
+  const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
   const cues = new Deck<AgentCue>();
   const reactor = new Reactor(hby, { cues });
   loadChallengeHandlers(hby.db, reactor.exchanger);
+  const mailboxDirector = new MailboxDirector(
+    hby,
+    mailboxer ? { mailboxer } : {},
+  );
+  if (mailboxer) {
+    reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
+  }
+  for (const route of reactor.exchanger.routes.keys()) {
+    if (route === ForwardHandler.resource) {
+      continue;
+    }
+    const topic = mailboxTopicForRoute(route);
+    if (topic.length > 0) {
+      mailboxDirector.registerTopic(topic);
+    }
+  }
+  const mailboxPoller = new MailboxPoller(hby, mailboxDirector);
+  const poster = new Poster(hby, { mailboxer });
   const oobiery = new Oobiery(hby, reactor, { cues });
   oobiery.registerReplyRoutes(reactor.router);
   const authenticator = new Authenticator(hby);
-  const mailboxDirector = new MailboxDirector(hby.db);
   const querying = new QueryCoordinator(hby);
   return {
     hby,
-    mode: options.mode ?? "local",
+    mode,
+    mailboxer,
     cues,
     reactor,
     oobiery,
     authenticator,
     mailboxDirector,
+    mailboxPoller,
+    poster,
     querying,
+    *close(): Operation<void> {
+      if (ownsMailboxer && mailboxer?.opened) {
+        yield* mailboxer.close();
+      }
+    },
   };
 }
 
@@ -138,6 +179,59 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
 }
 
 /**
+ * Parse and settle one or more newly arrived KERI/CESR messages immediately.
+ *
+ * This is the shared ingress-settlement seam for mailbox-delivered batches and
+ * HTTP request payloads that should advance parser and escrow state together.
+ */
+export function settleRuntimeIngress(
+  runtime: AgentRuntime,
+  messages: Iterable<Uint8Array>,
+): void {
+  for (const message of messages) {
+    runtime.reactor.ingest(message);
+  }
+  runtime.reactor.processOnce();
+  runtime.reactor.processEscrowsOnce();
+}
+
+/**
+ * Settle one mailbox retrieval batch while preserving per-source boundaries.
+ *
+ * Local and remote poll results are intentionally processed batch-by-batch so
+ * follow-on escrow progress can occur before the next source is consumed.
+ */
+export function settleMailboxPollBatch(
+  runtime: AgentRuntime,
+  batch: MailboxPollBatch,
+): void {
+  settleRuntimeIngress(runtime, batch.messages);
+}
+
+/**
+ * Drain one bounded mailbox polling turn and settle each returned batch.
+ *
+ * This keeps mailbox polling ownership inside the shared runtime surface so
+ * commands do not need to know how mailbox ingress is parsed and escrowed.
+ */
+export function* processMailboxTurn(
+  runtime: AgentRuntime,
+  options: {
+    hab?: Hab;
+    budgetMs?: number;
+  } = {},
+): Operation<MailboxPollBatch[]> {
+  runtime.mailboxPoller.configure({ hab: options.hab });
+  const batches = yield* runtime.mailboxPoller.processOnce({
+    budgetMs: options.budgetMs,
+  });
+  for (const batch of batches) {
+    settleMailboxPollBatch(runtime, batch);
+  }
+  return batches;
+}
+
+/**
  * Drain one bounded runtime turn by delegating to component-owned flows.
  *
  * Turn order:
@@ -160,12 +254,17 @@ export function* processRuntimeTurn(
   options: {
     hab?: Hab;
     sink?: CueSink;
+    pollMailbox?: boolean;
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.reactor.processOnce();
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
+  yield* runtime.poster.processPending();
+  if (options.pollMailbox ?? true) {
+    yield* processMailboxTurn(runtime, { hab: options.hab });
+  }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
   runtime.reactor.processEscrowsOnce();
@@ -192,6 +291,7 @@ export function runtimePendingState(
     multiPending: runtime.hby.db.moobi.cnt() > 0,
     authQueued: runtime.hby.db.woobi.cnt() > 0,
     authInFlight: runtime.hby.db.mfa.cnt() > 0,
+    outboxPending: runtime.poster.hasPendingWork(),
     queriesPending: runtime.querying.hasPendingWork(),
   };
 }
@@ -201,7 +301,8 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
   return state.ingress || state.cues || state.replyEscrow
     || state.oobiQueued || state.oobiInFlight || state.multiPending
-    || state.authQueued || state.authInFlight || state.queriesPending;
+    || state.authQueued || state.authInFlight || state.outboxPending
+    || state.queriesPending;
 }
 
 /** Return true when a well-known URL has been authorized into `wkas.`. */
@@ -269,6 +370,7 @@ export function* processRuntimeUntil(
     hab?: Hab;
     sink?: CueSink;
     maxTurns?: number;
+    pollMailbox?: boolean;
   } = {},
 ): Operation<void> {
   const maxTurns = options.maxTurns ?? 64;
@@ -320,6 +422,7 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<never> {
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
+  runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
     yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
@@ -335,6 +438,11 @@ export function* runAgentRuntime(
     }),
     yield* spawn(function*() {
       yield* runtime.authenticator.authDo();
+    }),
+    yield* spawn(function*() {
+      yield* runtime.mailboxPoller.pollDo((batch) => {
+        settleMailboxPollBatch(runtime, batch);
+      });
     }),
     yield* spawn(function*() {
       yield* runtime.querying.queryDo();

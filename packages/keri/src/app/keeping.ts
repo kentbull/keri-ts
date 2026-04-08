@@ -480,10 +480,12 @@ export class Manager {
     this._ks = ks;
     this._seed = seed;
 
-    if (this.pidx === null) this.pidx = pidx;
-    if (this.algo === null) this.algo = algo;
-    if (this.salt === null) this.salt = salt;
-    if (this.tier === null) this.tier = tier;
+    if (!this.ks.readonly) {
+      if (this.pidx === null) this.pidx = pidx;
+      if (this.algo === null) this.algo = algo;
+      if (this.salt === null) this.salt = salt;
+      if (this.tier === null) this.tier = tier;
+    }
 
     this.setup(aeid, seed);
   }
