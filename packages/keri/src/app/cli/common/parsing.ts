@@ -14,18 +14,51 @@ export interface InceptFileOptions {
   delpre?: string;
 }
 
+/** JSON file schema for `tufa rotate --file` option loading. */
+export interface RotateFileOptions {
+  isith?: ThresholdSith;
+  ncount?: number;
+  nsith?: ThresholdSith;
+  toad?: number;
+  wits?: string[];
+  witsCut?: string[];
+  witsAdd?: string[];
+  data?: unknown[];
+}
+
+function normalizeThresholdOption(
+  value: unknown,
+): ThresholdSith | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "number") {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`Invalid numeric threshold ${value}`);
+    }
+    return value.toString(16);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    if (trimmed.startsWith("[")) {
+      return JSON.parse(trimmed) as ThresholdSith;
+    }
+    return trimmed;
+  }
+  if (Array.isArray(value)) {
+    return structuredClone(value) as ThresholdSith;
+  }
+  throw new Error(`Unsupported threshold option type ${typeof value}`);
+}
+
 /** Parse one CLI/file threshold input into semantic numeric or weighted form. */
 export function parseThresholdOption(
   value: string | undefined,
 ): ThresholdSith | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  if (trimmed.startsWith("[")) {
-    return JSON.parse(trimmed) as ThresholdSith;
-  }
-  return trimmed;
+  return normalizeThresholdOption(value);
 }
 
 /** Parse inline JSON values or `@file` references used by CLI `--data` flags. */
@@ -138,5 +171,38 @@ export function parseExnDataItems(
 /** Load one JSON file of inception options using the CLI file-input contract. */
 export function loadInceptFileOptions(path: string): InceptFileOptions {
   const text = Deno.readTextFileSync(path);
-  return JSON.parse(text) as InceptFileOptions;
+  const loaded = JSON.parse(text) as InceptFileOptions;
+  return {
+    ...loaded,
+    isith: normalizeThresholdOption(loaded.isith),
+    nsith: normalizeThresholdOption(loaded.nsith),
+  };
+}
+
+/** Load one JSON file of rotation options using the CLI file-input contract. */
+export function loadRotateFileOptions(path: string): RotateFileOptions {
+  const text = Deno.readTextFileSync(path);
+  const loaded = JSON.parse(text) as RotateFileOptions;
+  return {
+    ...loaded,
+    isith: normalizeThresholdOption(loaded.isith),
+    nsith: normalizeThresholdOption(loaded.nsith),
+    wits: Array.isArray(loaded.wits)
+      ? loaded.wits.filter((value): value is string => typeof value === "string")
+      : loaded.wits,
+    witsCut: Array.isArray(loaded.witsCut)
+      ? loaded.witsCut.filter((value): value is string => typeof value === "string")
+      : loaded.witsCut,
+    witsAdd: Array.isArray(loaded.witsAdd)
+      ? loaded.witsAdd.filter((value): value is string => typeof value === "string")
+      : loaded.witsAdd,
+  };
+}
+
+/** Load one required CLI text argument or `@file` reference as UTF-8 bytes. */
+export function loadTextArgument(text: string): Uint8Array {
+  const source = text.startsWith("@")
+    ? Deno.readTextFileSync(text.slice(1))
+    : text;
+  return new TextEncoder().encode(source);
 }
