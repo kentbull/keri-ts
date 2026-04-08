@@ -3,8 +3,7 @@ import { assertEquals, assertExists } from "jsr:@std/assert";
 import { Dater, Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { UnverifiedReplyError } from "../../../src/core/errors.ts";
-import { Revery } from "../../../src/core/routing.ts";
+import { Revery, unverifiedReplyDecision } from "../../../src/core/routing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 import { expectKind, routingTestApi } from "../../private-access.ts";
 
@@ -107,28 +106,28 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
         );
       const replyVerifier = new Revery(hby.db);
 
-      const firstAccepted = replyVerifier.acceptReply({
+      const firstDecision = replyVerifier.acceptReply({
         serder,
         saider,
         route: "/weighted/reply",
         aid: hab.pre,
         tsgs: [makeGroup([sigers[0]])],
       });
-      assertEquals(firstAccepted, false);
+      assertEquals(firstDecision.kind, "unverified");
       assertEquals(
         hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said])
           .length,
         1,
       );
 
-      const secondAccepted = replyVerifier.acceptReply({
+      const secondDecision = replyVerifier.acceptReply({
         serder,
         saider,
         route: "/weighted/reply",
         aid: hab.pre,
         tsgs: [makeGroup([sigers[1]])],
       });
-      assertEquals(secondAccepted, true);
+      assertEquals(secondDecision.kind, "accept");
       assertExists(hby.db.rpys.get([saider.qb64]));
       assertEquals(
         hby.db.ssgs.get([saider.qb64, hab.pre, kever.sner.numh, kever.said])
@@ -168,7 +167,7 @@ Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via v
       const cigars = hab.sign(serder.raw, false);
       const replyVerifier = new Revery(hby.db);
 
-      const accepted = replyVerifier.acceptReply({
+      const decision = replyVerifier.acceptReply({
         serder,
         saider,
         route: "/ecdsa/nontrans",
@@ -176,7 +175,7 @@ Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via v
         cigars: [cigars[0]],
       });
 
-      assertEquals(accepted, true);
+      assertEquals(decision.kind, "accept");
       assertExists(hby.db.rpys.get([saider.qb64]));
     } finally {
       yield* hby.close(true);
@@ -211,7 +210,7 @@ Deno.test("Revery.acceptReply still rejects non-transferable replies whose autho
       const cigars = hab.sign(serder.raw, false);
       const replyVerifier = new Revery(hby.db);
 
-      const accepted = replyVerifier.acceptReply({
+      const decision = replyVerifier.acceptReply({
         serder,
         saider,
         route: "/ecdsa/mismatch",
@@ -219,7 +218,7 @@ Deno.test("Revery.acceptReply still rejects non-transferable replies whose autho
         cigars: [cigars[0]],
       });
 
-      assertEquals(accepted, false);
+      assertEquals(decision.kind, "unverified");
     } finally {
       yield* hby.close(true);
     }
@@ -259,7 +258,7 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
       const sigers = hab.sign(serder.raw, true);
       const replyVerifier = new Revery(hby.db);
 
-      const accepted = replyVerifier.acceptReply({
+      const decision = replyVerifier.acceptReply({
         serder,
         saider,
         route: "/ecdsa/trans",
@@ -274,7 +273,7 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
         ],
       });
 
-      assertEquals(accepted, true);
+      assertEquals(decision.kind, "accept");
       assertExists(hby.db.rpys.get([saider.qb64]));
     } finally {
       yield* hby.close(true);
@@ -282,7 +281,7 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
   });
 });
 
-Deno.test("Revery.processEscrowReply keeps replies on recoverable UnverifiedReplyError replay", async () => {
+Deno.test("Revery.processEscrowReply keeps replies on recoverable unverified replay decisions", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `revery-escrow-keep-${crypto.randomUUID()}`,
@@ -296,7 +295,7 @@ Deno.test("Revery.processEscrowReply keeps replies on recoverable UnverifiedRepl
       );
       replyVerifier.rtr.addRoute("/escrow/reply", {
         processReply() {
-          throw new UnverifiedReplyError("retry later");
+          return unverifiedReplyDecision("retry later");
         },
       });
       replyVerifier.processEscrowReply();

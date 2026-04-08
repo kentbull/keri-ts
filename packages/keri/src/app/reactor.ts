@@ -3,7 +3,6 @@ import { type CesrParser, Cigar, createParser, Ilks, SerderKERI, Siger, Verfer }
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
-import { UnverifiedReplyError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { Exchanger } from "./exchanging.ts";
@@ -86,20 +85,14 @@ export class Reactor {
           this.local,
         )
       ) {
-        try {
-          dispatchEnvelope(
-            envelope,
-            this.revery,
-            this.kevery,
-            this.exchanger,
-          );
-        } catch (error) {
-          // Match the KERIpy recoverability model: an unverifiable reply is
-          // often escrow-worthy work, not fatal ingress corruption. The actual
-          // retry happens later in `processEscrowsOnce()`.
-          if (!(error instanceof UnverifiedReplyError)) {
-            throw error;
-          }
+        const decision = dispatchEnvelope(
+          envelope,
+          this.revery,
+          this.kevery,
+          this.exchanger,
+        );
+        if (decision?.kind === "unverified") {
+          continue;
         }
       }
     }

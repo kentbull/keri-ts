@@ -3,9 +3,10 @@ import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "../../../cesr/mod
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
-import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
+import { ValidationError } from "../core/errors.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
+import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import type { Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { persistResolvedContact } from "./organizing.ts";
@@ -404,7 +405,7 @@ export class Oobiery {
     route: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     if (args.route !== "/introduce") {
       throw new ValidationError(
         `Unsupported route=${args.route} in ${Ilks.rpy} reply.`,
@@ -430,7 +431,7 @@ export class Oobiery {
       );
     }
 
-    const accepted = this.reactor.revery.acceptReply({
+    const decision = this.reactor.revery.acceptReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -439,8 +440,8 @@ export class Oobiery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (!accepted) {
-      throw new UnverifiedReplyError(
+    if (decision.kind === "unverified") {
+      return unverifiedReplyDecision(
         `Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`,
       );
     }
@@ -456,6 +457,7 @@ export class Oobiery {
       said: meta.said ?? null,
     });
     this.cues.push({ kin: "oobiQueued", url: oobi });
+    return acceptReplyDecision();
   }
 }
 

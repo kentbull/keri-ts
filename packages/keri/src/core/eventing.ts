@@ -21,7 +21,7 @@ import {
   type TransIdxSigGroup,
   type TransReceiptQuadruple,
 } from "./dispatch.ts";
-import { UnverifiedReplyError, ValidationError } from "./errors.ts";
+import { ValidationError } from "./errors.ts";
 import {
   acceptEscrow,
   acceptQuery,
@@ -54,7 +54,7 @@ import { Kever, type KeverEventInit } from "./kever.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
 import { makeReplySerder } from "./messages.ts";
 import { KeyStateRecord, ObservedRecord } from "./records.ts";
-import { Revery, Router } from "./routing.ts";
+import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "./routing.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
 
 /** Normalize one dispatch ordinal into the number primitive expected by DB seal tuples. */
@@ -1057,7 +1057,7 @@ export class Kevery {
     aid: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     if (!this.rvy) {
       throw new ValidationError(
         "Kevery is not configured with a reply verifier.",
@@ -1105,7 +1105,7 @@ export class Kevery {
     if (osaider?.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const accepted = this.rvy.acceptReply({
+    const decision = this.rvy.acceptReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -1114,8 +1114,8 @@ export class Kevery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (!accepted) {
-      throw new UnverifiedReplyError(
+    if (decision.kind === "unverified") {
+      return unverifiedReplyDecision(
         `Unverified key state notice reply ${args.serder.said ?? "<unknown>"}.`,
       );
     }
@@ -1131,6 +1131,7 @@ export class Kevery {
     const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
     this.updateKeyState(args.aid, ksn, saider, dater);
     this.cues.push({ kin: "keyStateSaved", ksn });
+    return acceptReplyDecision();
   }
 
   /**
@@ -1154,7 +1155,7 @@ export class Kevery {
     action?: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     if (!this.rvy) {
       throw new ValidationError(
         "Kevery is not configured with a reply verifier.",
@@ -1196,7 +1197,7 @@ export class Kevery {
     if (osaider?.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const accepted = this.rvy.acceptReply({
+    const decision = this.rvy.acceptReply({
       serder: args.serder,
       saider: args.diger,
       // BADA state is keyed on the semantic base route, not the specific add/cut
@@ -1208,8 +1209,8 @@ export class Kevery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (!accepted) {
-      throw new UnverifiedReplyError(
+    if (decision.kind === "unverified") {
+      return unverifiedReplyDecision(
         `Unverified watcher reply ${args.serder.said ?? "<unknown>"}.`,
       );
     }
@@ -1221,6 +1222,7 @@ export class Kevery {
       });
     }
     this.updateWatched(keys, args.diger, enabled);
+    return acceptReplyDecision();
   }
 
   /**

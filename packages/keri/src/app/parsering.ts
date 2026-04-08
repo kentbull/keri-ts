@@ -30,7 +30,7 @@ import {
   TransReceiptQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
-import { Revery } from "../core/routing.ts";
+import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
 
 export interface ExchangerLike {
   processEvent(args: {
@@ -74,15 +74,14 @@ export function dispatchEnvelope(
   revery: Revery,
   kevery: Kevery,
   exchanger?: ExchangerLike,
-): void {
+): ReplyProcessDecision | void {
   switch (envelope.serder.ilk) {
     case Ilks.rpy:
-      revery.processReply({
+      return revery.processReply({
         serder: envelope.serder,
         cigars: envelope.cigars,
         tsgs: envelope.tsgs,
       });
-      break;
     case Ilks.qry:
       kevery.processQuery(queryEnvelopeFromDispatch(envelope));
       break;

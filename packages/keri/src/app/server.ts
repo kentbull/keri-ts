@@ -16,7 +16,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { concatBytes, Ilks } from "../../../cesr/mod.ts";
 import type { CueEmission } from "../core/cues.ts";
-import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
+import { ValidationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
 import { Roles } from "../core/roles.ts";
@@ -478,26 +478,11 @@ async function handleMailboxAdmin(
   }
 
   const { cid, role, expected } = validation;
-  let ingestRejected = false;
-  try {
-    processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
-  } catch (error) {
-    if (error instanceof UnverifiedReplyError) {
-      ingestRejected = true;
-    } else {
-      throw error;
-    }
-  }
+  processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
 
   const acceptance = confirmMailboxAuthorization(runtime, cid, mailboxAid, expected);
   if (acceptance instanceof Response) {
     return acceptance;
-  }
-  if (ingestRejected) {
-    return new Response("Mailbox authorization reply was not accepted", {
-      status: 403,
-      headers: { "Content-Type": "text/plain" },
-    });
   }
 
   return new Response(
