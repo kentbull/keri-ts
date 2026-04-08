@@ -42,8 +42,8 @@ env:
   LMDB_DATA_V1: "true"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
-  DEPS_CACHE_KEY_PREFIX: ci-deps-v2
-  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v1
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v3
+  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v2
   KERIPY_CACHE_KEY_PREFIX: keripy-v2-mailbox-impl
 
 jobs:
