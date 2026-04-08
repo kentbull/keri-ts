@@ -36,12 +36,20 @@ import { runtimeTurn } from "./runtime-turn.ts";
  */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
 
+/** Sink used when the runtime has no external transport side effects to perform. */
 const ignoreSink: CueSink = {
   *send(_emission: CueEmission): Operation<void> {
     return;
   },
 };
 
+/**
+ * One queued query request awaiting honest habitat/attester resolution.
+ *
+ * These requests are intentionally portable: the coordinator may defer them
+ * across runtime turns until enough local knowledge exists to emit a real wire
+ * query without guessing.
+ */
 interface QueryRequest {
   pre: string;
   route: string;
@@ -120,6 +128,7 @@ function normalizeOutboundQuery(cue: QueryCue): Record<string, unknown> {
   return body;
 }
 
+/** Parse one hex sequence number field from key-state/query payloads. */
 function parseHexOrdinal(value: unknown): number | null {
   if (typeof value !== "string" || value.length === 0) {
     return null;
@@ -128,6 +137,7 @@ function parseHexOrdinal(value: unknown): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+/** Encode one non-negative sequence number in KERI hex-ordinal form. */
 function encodeHexOrdinal(num: number): string {
   return Math.max(0, num).toString(16);
 }
@@ -638,6 +648,9 @@ export class QueryCoordinator implements CueSink {
         continue;
       }
       // Pick the first sorted endpoint deterministically instead of randomly.
+      // This is a deliberate `keri-ts` divergence from KERIpy's more variable
+      // witness/controller selection because deterministic choice makes
+      // interop tests and maintainer reasoning much easier.
       const eid = firstSorted(Object.keys(roleEnds));
       if (eid) {
         return eid;

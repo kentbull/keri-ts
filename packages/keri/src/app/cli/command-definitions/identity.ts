@@ -1,3 +1,11 @@
+/**
+ * Commander registrations for identifier inspection and local-state commands.
+ *
+ * Topic boundary:
+ * - local signing and verification
+ * - remote-state query and export
+ * - alias/prefix inspection helpers
+ */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
 
@@ -15,6 +23,7 @@ export function registerIdentityCmds(
   registerAnnotateCmd(program, dispatch);
 }
 
+/** Register the KLI-style arbitrary text signing command. */
 function registerSignCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("sign")
@@ -51,6 +60,12 @@ function registerSignCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/**
+ * Register the signature verification command.
+ *
+ * Verification stays explicitly local-state based: the operator must run
+ * `query` when remote key state may have advanced.
+ */
 function registerVerifyCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("verify")
@@ -94,6 +109,7 @@ function registerVerifyCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the bounded remote key-state/log query command. */
 function registerQueryCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("query")
@@ -129,6 +145,7 @@ function registerQueryCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the CESR export command surface. */
 function registerExportCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("export")
@@ -162,6 +179,7 @@ function registerExportCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the local identifier listing command. */
 function registerListCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("list")
@@ -188,6 +206,7 @@ function registerListCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the alias-to-prefix lookup command. */
 function registerAidCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("aid")
@@ -220,6 +239,7 @@ function registerAidCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the CESR annotation/debugging command. */
 function registerAnnotateCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("annotate")

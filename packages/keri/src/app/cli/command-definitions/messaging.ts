@@ -1,3 +1,4 @@
+/** Commander registrations for EXN and exchange messaging commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
 

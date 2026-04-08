@@ -1,3 +1,11 @@
+/**
+ * Commander registrations for lifecycle and environment-management commands.
+ *
+ * Topic boundary:
+ * - keystore/environment creation
+ * - identifier establishment/rotation lifecycle
+ * - long-lived agent hosting
+ */
 import { Command } from "npm:commander@^10.0.1";
 import { DISPLAY_VERSION } from "../../version.ts";
 import type { CommandDispatch } from "../command-types.ts";
@@ -14,6 +22,7 @@ export function registerLifecycleCmds(
   registerAgentCmd(program, dispatch);
 }
 
+/** Register the lightweight version command that bypasses lazy command dispatch. */
 function registerVersionCmd(program: Command): void {
   program
     .command("version")
@@ -23,6 +32,7 @@ function registerVersionCmd(program: Command): void {
     });
 }
 
+/** Register the keystore/bootstrap creation command. */
 function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("init")
@@ -91,6 +101,7 @@ function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the local identifier inception command surface. */
 function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("incept")
@@ -186,6 +197,14 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/**
+ * Register the single-sig rotation command surface.
+ *
+ * Maintainer note:
+ * - the option set intentionally mirrors KLI even where runtime support is not
+ *   yet complete, because parser/help parity is tracked independently from
+ *   implementation parity
+ */
 function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("rotate")
@@ -305,6 +324,7 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
     });
 }
 
+/** Register the long-lived protocol host command surface. */
 function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
   program
     .command("agent")

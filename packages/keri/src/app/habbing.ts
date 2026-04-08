@@ -1,3 +1,17 @@
+/**
+ * Habitat and shared-environment primitives for local KERI operation.
+ *
+ * KERIpy correspondence:
+ * - this module is the closest analogue to `keri.app.habbing`
+ * - `Hab` owns local identifier behavior while `Habery` owns the shared
+ *   keeper/database/router/parser environment
+ *
+ * `keri-ts` difference:
+ * - parser ingress uses the CESR frame/envelope pipeline instead of KERIpy's
+ *   monolithic `Parser`
+ * - local bootstrap replies and events still flow through the same accepted
+ *   state machinery instead of being written directly to persistent state
+ */
 import { type Operation } from "npm:effection@^3.6.0";
 import {
   Cigar,
@@ -108,6 +122,13 @@ function defaultThreshold(count: number, min: number): string {
   return `${Math.max(min, Math.ceil(count / 2)).toString(16)}`;
 }
 
+/**
+ * Derive a KERI-style ample witness threshold.
+ *
+ * KERIpy correspondence:
+ * - mirrors the intent of KERIpy's `ample()` helper used when witness
+ *   membership changes and the operator did not pin an explicit `toad`
+ */
 function ample(count: number, faults?: number, weak = true): number {
   const n = Math.max(0, count);
   if (faults === undefined) {
@@ -946,6 +967,9 @@ export class Hab {
     let verfers: Verfer[];
     let digers: Diger[];
     try {
+      // Prefer replayed pre-rotated material when keeper state already has it,
+      // matching the operator expectation that an earlier pre-rotation is
+      // consumed before brand-new next keys are generated.
       [verfers, digers] = this.mgr.replay({
         pre: this.pre,
         erase: false,
@@ -992,12 +1016,17 @@ export class Hab {
       const sigers = this.mgr.sign(serder.raw, keys, true) as Siger[];
       this.acceptLocally(serder, sigers);
 
+      // Old private keys become stale only after local accepted state advances.
+      // That ordering is what makes the interop "verify fails before query,
+      // succeeds after query" story honest instead of a local-storage trick.
       for (const pub of new PreSit(priorSit).old.pubs) {
         this.ks.pris.rem(pub);
       }
 
       return buildEventMessage(serder, sigers);
     } catch (error) {
+      // Roll keeper state back if the event was not accepted locally. The
+      // accepted-state machine, not keeper progression alone, defines success.
       this.ks.pinSits(this.pre, new PreSit(priorSit));
       throw error;
     }

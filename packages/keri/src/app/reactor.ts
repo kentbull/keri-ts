@@ -94,6 +94,9 @@ export class Reactor {
             this.exchanger,
           );
         } catch (error) {
+          // Match the KERIpy recoverability model: an unverifiable reply is
+          // often escrow-worthy work, not fatal ingress corruption. The actual
+          // retry happens later in `processEscrowsOnce()`.
           if (!(error instanceof UnverifiedReplyError)) {
             throw error;
           }

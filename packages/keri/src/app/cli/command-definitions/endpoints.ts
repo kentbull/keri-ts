@@ -1,3 +1,4 @@
+/** Commander registrations for endpoint, location, and OOBI commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
 

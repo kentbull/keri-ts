@@ -1,3 +1,17 @@
+/**
+ * `tufa query` command implementation.
+ *
+ * KERIpy correspondence:
+ * - mirrors the bounded "launch query, poll for replies, print external state"
+ *   behavior of `keri.cli.commands.query`
+ * - builds on the `QueryCoordinator`/querier helpers that correspond to
+ *   KERIpy's query/noticer doers
+ *
+ * `keri-ts` difference:
+ * - transport, mailbox polling, and parser ingress are composed explicitly for
+ *   one bounded command lifetime instead of being spread across long-lived HIO
+ *   doers
+ */
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -18,6 +32,7 @@ import { flattenRoleUrls } from "../mailboxing.ts";
 import { printExternal } from "./common/displaying.ts";
 import { setupHby } from "./common/existing.ts";
 
+/** Parsed command arguments for one `tufa query` invocation. */
 interface QueryArgs {
   name?: string;
   base?: string;
@@ -29,8 +44,16 @@ interface QueryArgs {
   anchor?: string;
 }
 
+/**
+ * Bounded runtime window for the primary query/watch pass.
+ *
+ * KLI compatibility:
+ * - KERIpy's CLI query flow waits for roughly ten seconds before printing the
+ *   best available external state
+ */
 const QueryTimeoutMs = 10_000;
 
+/** Load and validate one anchor JSON object for `--anchor` query mode. */
 function loadAnchor(path: string): Record<string, unknown> {
   const text = Deno.readTextFileSync(path);
   const anchor = JSON.parse(text);
@@ -40,6 +63,14 @@ function loadAnchor(path: string): Record<string, unknown> {
   return anchor as Record<string, unknown>;
 }
 
+/**
+ * Resolve the actual transport URL for one query destination AID.
+ *
+ * Maintainer note:
+ * - destination selection is performed earlier by the query coordinator
+ * - this helper only maps the chosen destination identifier onto a concrete
+ *   advertised URL
+ */
 function resolveQueryDestinationUrl(
   hab: Hab,
   queriedPre: string,
@@ -55,6 +86,15 @@ function resolveQueryDestinationUrl(
   return null;
 }
 
+/**
+ * Build the controller OOBI URL used for query catch-up fallback.
+ *
+ * Why this exists:
+ * - a successful `ksn` reply can prove a remote controller is ahead of local
+ *   accepted state without carrying the whole log replay
+ * - when that happens, the CLI falls back to controller OOBI replay so local
+ *   verification state can converge within the command's bounded lifetime
+ */
 function controllerCatchupUrl(
   hab: Hab,
   queriedPre: string,
@@ -73,6 +113,14 @@ function controllerCatchupUrl(
   return url.toString();
 }
 
+/**
+ * Create the cue sink that actually posts outbound `qry` messages.
+ *
+ * Ownership split:
+ * - `QueryCoordinator` decides *that* a query should be emitted and who it
+ *   should target
+ * - this sink decides *how* to deliver the already-chosen wire message
+ */
 function queryTransportSink(
   runtime: AgentRuntime,
   hby: Habery,
@@ -101,6 +149,7 @@ function queryTransportSink(
   };
 }
 
+/** Read one HTTP response body fully so parser ingress can consume it. */
 function* readResponseBytes(response: Response): Operation<Uint8Array> {
   const buffer = yield* action<ArrayBuffer>((resolve, reject) => {
     response.arrayBuffer()
@@ -111,6 +160,14 @@ function* readResponseBytes(response: Response): Operation<Uint8Array> {
   return new Uint8Array(buffer);
 }
 
+/**
+ * Post one outbound query message and ingest any immediate CESR reply bytes.
+ *
+ * Transport policy:
+ * - header-mode bodies are split exactly like other CESR HTTP helpers
+ * - non-empty responses are fed back into the same local runtime so reply and
+ *   escrow machinery stay aligned with other ingress sources
+ */
 function* postQueryMessage(
   runtime: AgentRuntime,
   url: string,
@@ -141,7 +198,15 @@ function* postQueryMessage(
   }
 }
 
-/** Implements `tufa query`. */
+/**
+ * Query remote key state or anchored logs and then print KLI-style external state.
+ *
+ * Behavioral shape:
+ * - start a bounded local runtime
+ * - register either a key-state or anchor continuation
+ * - poll transport/mailbox work until convergence or timeout
+ * - optionally fall back to controller catch-up replay before printing
+ */
 export function* queryCommand(args: Record<string, unknown>): Operation<void> {
   const queryArgs: QueryArgs = {
     name: args.name as string | undefined,

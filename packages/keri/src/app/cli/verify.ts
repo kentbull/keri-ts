@@ -1,9 +1,23 @@
+/**
+ * `tufa verify` command implementation.
+ *
+ * KERIpy correspondence:
+ * - mirrors `keri.cli.commands.verify`
+ * - verifies indexed signatures against the locally accepted key state for the
+ *   supplied prefix rather than consulting remote state on demand
+ *
+ * Maintainer implication:
+ * - signature validity after a remote rotation depends on whether local state
+ *   has already been updated, which is why the interop proof must include the
+ *   pre-query failure and post-query success cases
+ */
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { Siger } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { setupHby } from "./common/existing.ts";
 import { loadTextArgument } from "./common/parsing.ts";
 
+/** Parsed command arguments for one `tufa verify` invocation. */
 interface VerifyArgs {
   name?: string;
   base?: string;
@@ -15,7 +29,14 @@ interface VerifyArgs {
   signature?: string[];
 }
 
-/** Implements `tufa verify`. */
+/**
+ * Verify one or more indexed signatures against locally accepted key state.
+ *
+ * KLI/KERIpy compatibility:
+ * - `--signature` values are raw qb64 signatures, not the numbered lines from
+ *   `tufa sign`
+ * - each `Siger` is rebound to `kever.verfers[index]` before verification
+ */
 export function* verifyCommand(args: Record<string, unknown>): Operation<void> {
   const verifyArgs: VerifyArgs = {
     name: args.name as string | undefined,

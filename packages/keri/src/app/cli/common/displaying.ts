@@ -2,11 +2,20 @@ import { ValidationError } from "../../../core/errors.ts";
 import { dgKey } from "../../../db/core/keys.ts";
 import type { Habery } from "../../habbing.ts";
 
+/** Render one threshold bigint in the KLI-style decimal display form. */
 function decimalThreshold(value: bigint): string {
   return value.toString();
 }
 
-/** Print KLI-style external key-state output for one known identifier. */
+/**
+ * Print KLI-style external key-state output for one known identifier.
+ *
+ * Maintainer note:
+ * - this is intentionally presentation-oriented and should not be reused as a
+ *   structured state API
+ * - `query` relies on this exact mental model to show "best local view of
+ *   external state after bounded convergence work"
+ */
 export function printExternal(hby: Habery, pre: string, label = "Identifier"): void {
   const kever = hby.db.getKever(pre);
   if (!kever) {

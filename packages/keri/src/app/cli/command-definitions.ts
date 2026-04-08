@@ -1,3 +1,11 @@
+/**
+ * Top-level CLI command-tree coordinator.
+ *
+ * This file intentionally stays thin: topic modules own the concrete Commander
+ * registrations, while `handlers.ts` owns the lazy dispatch map. Keeping the
+ * coordinator small makes it easier to verify that parse-time command names and
+ * run-time handler keys stay aligned.
+ */
 import { Command } from "npm:commander@^10.0.1";
 import { registerChallengeCmds } from "./command-definitions/challenge.ts";
 import { registerEndpointCmds } from "./command-definitions/endpoints.ts";

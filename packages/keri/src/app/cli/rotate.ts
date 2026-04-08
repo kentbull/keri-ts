@@ -1,3 +1,16 @@
+/**
+ * `tufa rotate` command implementation.
+ *
+ * KERIpy correspondence:
+ * - mirrors the single-sig `kli rotate` command surface and merge semantics
+ * - keeps the CLI/output mental model aligned even though `keri-ts` does not
+ *   yet implement KERIpy's advanced witness-auth and delegation follow-on flows
+ *
+ * Current scope:
+ * - local rotation event construction and acceptance
+ * - witness replacement/cut/add math
+ * - KLI-compatible success output
+ */
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { setupHby } from "./common/existing.ts";
@@ -8,6 +21,7 @@ import {
   type RotateFileOptions,
 } from "./common/parsing.ts";
 
+/** Parsed command arguments for one `tufa rotate` invocation. */
 interface RotateArgs {
   name?: string;
   base?: string;
@@ -31,6 +45,7 @@ interface RotateArgs {
   data?: string[];
 }
 
+/** Empty baseline used before CLI/file precedence is applied. */
 function emptyRotateOptions(): RotateFileOptions {
   return {};
 }
@@ -79,11 +94,18 @@ function mergeWithFile(args: RotateArgs): RotateFileOptions {
   return options;
 }
 
+/** Return items present in `left` but absent from `right` while preserving order. */
 function difference(left: readonly string[], right: readonly string[]): string[] {
   const rightSet = new Set(right);
   return left.filter((value) => !rightSet.has(value));
 }
 
+/**
+ * Reject KERIpy rotate flows that `keri-ts` has not ported yet.
+ *
+ * This guard is intentionally front-loaded so the command does not imply full
+ * parity in cases where the underlying runtime orchestration is still absent.
+ */
 function assertUnsupportedAdvancedFlows(args: RotateArgs, delegated: boolean): void {
   if (args.endpoint) {
     throw new ValidationError(
@@ -102,7 +124,13 @@ function assertUnsupportedAdvancedFlows(args: RotateArgs, delegated: boolean): v
   }
 }
 
-/** Implements `tufa rotate`. */
+/**
+ * Rotate one local habitat and print the newly accepted public key state.
+ *
+ * Maintainer boundary:
+ * - CLI concerns stop at option merge/validation and success output
+ * - habitat/key-state mutation lives in `Hab.rotate(...)`
+ */
 export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
   const rotateArgs: RotateArgs = {
     name: args.name as string | undefined,

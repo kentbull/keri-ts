@@ -1,3 +1,10 @@
+/**
+ * Lazy command-dispatch registry for the `tufa` CLI.
+ *
+ * The string keys here are part of the CLI architecture contract: Commander
+ * actions emit these names, and the main CLI runtime uses them to resolve the
+ * right generator-based command handler.
+ */
 import type { Operation } from "npm:effection@^3.6.0";
 import type { CommandArgs, CommandHandler } from "../command-types.ts";
 import { lazyCommand } from "./shared.ts";

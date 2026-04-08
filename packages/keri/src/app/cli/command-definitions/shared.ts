@@ -1,3 +1,14 @@
+/**
+ * Shared lazy-load plumbing for CLI command execution.
+ *
+ * KERIpy correspondence:
+ * - KERIpy imports most CLI handlers eagerly because argparse/HIO startup
+ *   costs differ
+ *
+ * `keri-ts` difference:
+ * - `tufa` keeps help/version startup light by delaying heavy imports until one
+ *   command is actually selected
+ */
 import { action, type Operation } from "npm:effection@^3.6.0";
 import type { CommandArgs, CommandHandler } from "../command-types.ts";
 

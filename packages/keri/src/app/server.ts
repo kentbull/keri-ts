@@ -891,6 +891,14 @@ export function* startServer(
   }
 }
 
+/**
+ * Drain runtime cues through one service habitat and mailbox side effects.
+ *
+ * Ownership split:
+ * - `Hab.processCuesIter(...)` remains the cue-to-wire interpreter
+ * - the server owns any mailbox publication side effects needed before HTTP
+ *   responses are finalized
+ */
 function drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab?: Hab,
@@ -910,6 +918,16 @@ function drainRuntimeCues(
   return emissions;
 }
 
+/**
+ * Publish one replay catch-up payload after a successful `/ksn` style reply.
+ *
+ * Why this exists:
+ * - a key-state notice can prove the remote controller is ahead of local state
+ *   while still leaving local verification stale
+ * - publishing replay material onto the mailbox lets a later query/poll turn
+ *   converge local accepted state without treating the initial `/ksn` reply as
+ *   fatal or "final enough"
+ */
 function publishQueryCatchupReplay(
   runtime: AgentRuntime,
   emissions: CueEmission[],
@@ -931,6 +949,9 @@ function publishQueryCatchupReplay(
   }
 
   const kever = runtime.hby.db.getKever(pre);
+  // Publish the whole known KEL prefix stream so a mailbox consumer that just
+  // learned "remote state is newer" can catch local accepted state up enough
+  // for signature verification and later KSN acceptance to succeed.
   const parts = [...runtime.hby.db.clonePreIter(pre, 0)];
   if (kever?.delpre) {
     parts.push(...runtime.hby.db.cloneDelegation(kever));
