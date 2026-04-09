@@ -254,6 +254,14 @@ Use this file to:
     - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
       cross-implementation replacement. Keep the 6-witness KERIpy soak
       manual/ignored by default.
+35. Stage 1 of the package split is now real in code even though the physical
+    source extraction is not complete yet: `packages/tufa` owns the runnable
+    CLI package boundary, `packages/keri/mod.ts` is now a library entrypoint,
+    `keri-ts` root/default imports are intentionally narrow and browser-safe,
+    and explicit `keri-ts/runtime` plus `keri-ts/db` entrypoints now carry the
+    non-browser-safe runtime and LMDB surfaces. Do not reopen the old mental
+    model where `keri-ts` root is both app and library just because some
+    app-owned source still lives under `packages/keri/src/app/**`.
 
 ## Current Follow-Ups
 
@@ -303,6 +311,10 @@ Use this file to:
     not quietly reintroduce repeated subprocess launches or repeated cold store
     setup in the older app-stateful files when a shared in-file baseline would
     prove the same behavior more honestly.
+13. Continue the package split by moving remaining physical CLI/server source
+    ownership out of `packages/keri/src/app/**` over time, but do not regress
+    the already-landed contract that `keri-ts` root is library-only and `tufa`
+    is the runnable application package.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 
@@ -466,3 +478,18 @@ Then do task: <TASK>.
 - Verification: local protocol-handler, witness-runtime, mailbox-runtime, server
   integration, `interop-witness`, `interop-kli-tufa`, and `deno check` passed
   after the refactor.
+
+### 2026-04-09 - Package Ownership Split Began For Real
+
+- Substance: `packages/tufa` now owns the runnable CLI package boundary, while
+  `packages/keri/mod.ts` changed from a CLI runner into a library entrypoint.
+  The durable public rule is now explicit in code: `keri-ts` root stays
+  browser-safe by default, and non-browser-safe runtime plus LMDB surfaces live
+  behind explicit `runtime` and `db` subpaths.
+- Why it matters: the bad mental model was "we can decide package boundaries
+  later while still letting `keri-ts` root be both app and library." That is
+  exactly how accidental Node/Deno/CLI leakage persists forever.
+- Next: finish the physical source move for remaining CLI/server files and
+  tighten docs/release tooling around the new `tufa` package.
+- Verification: local repo-root `deno task check`, `packages/keri`
+  `build:npm`, `packages/tufa` `build:npm`, and `deno run --allow-all --unstable-ffi packages/tufa/mod.ts version` passed.

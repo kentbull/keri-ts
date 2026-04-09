@@ -227,7 +227,7 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
   const runTufaFromRoot = (args: string[]) =>
     runCmd(
       "deno",
-      ["run", "--allow-all", "--unstable-ffi", "packages/keri/mod.ts", ...args],
+      ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
       ctx.env,
       tufaRepoRoot,
     );
@@ -396,7 +396,7 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
         "run",
         "--allow-all",
         "--unstable-ffi",
-        "packages/keri/mod.ts",
+        "packages/tufa/mod.ts",
         "agent",
         "--name",
         tufaName,

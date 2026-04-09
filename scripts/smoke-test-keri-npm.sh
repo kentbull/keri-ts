@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke-test a packed `keri-ts` npm artifact by installing the tarball into a
+# Smoke-test a packed `tufa` npm artifact by installing the tarball into a
 # fresh runtime and exercising the published CLI entrypoint.
 # Optional second arg:
 # - a locally built `cesr-ts` tarball, so smoke tests validate the artifact pair
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_DIR="${ROOT_DIR}/packages/keri/npm"
+PACKAGE_DIR="${ROOT_DIR}/packages/tufa/npm"
 SAMPLES_DIR="${SAMPLES_DIR:-${ROOT_DIR}/samples}"
 SAMPLE_STREAM_REL="${SAMPLE_STREAM_REL:-cesr-streams/CESR_1_0-oor-auth-vc.cesr}"
 
@@ -15,9 +15,9 @@ TARBALL_PATH="${1:-}"
 CESR_TARBALL_PATH="${2:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   # Local fallback for manual use; CI normally passes an already packed tarball.
-  echo "No tarball provided; building and packing keri-ts..."
+  echo "No tarball provided; building and packing tufa..."
   (
-    cd "${ROOT_DIR}/packages/keri"
+    cd "${ROOT_DIR}/packages/tufa"
     deno task build:npm
   )
   TARBALL_NAME="$(cd "${PACKAGE_DIR}" && npm pack --silent | tail -n1)"

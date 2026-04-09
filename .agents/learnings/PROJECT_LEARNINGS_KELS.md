@@ -533,6 +533,19 @@ runtime ownership semantics.
   not a surprise boolean buried inside generic POST handling. Keep witness,
   mailbox, OOBI, and generic ingress precedence explicit and directly tested.
 
+### 2026-04-09 - Package Boundaries Now Mirror The Host/Runtime Mental Model
+
+- The Stage 1 package split is now explicit in code even though the physical
+  source extraction is still incomplete: `packages/tufa` owns the runnable CLI
+  boundary, while `packages/keri/mod.ts` is now a library entrypoint.
+- Durable rule: `keri-ts` root/default imports must stay browser-safe and
+  library-shaped. Runtime and LMDB-backed behavior now belong on explicit
+  `keri-ts/runtime` and `keri-ts/db` subpaths instead of leaking through the
+  default package surface.
+- Do not misread the remaining `packages/keri/src/app/**` file locations as
+  evidence that package ownership is still undecided. The real contract is the
+  exported package surface, not the current temporary source layout.
+
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
 - Re-audited the DB parity matrix against current source.

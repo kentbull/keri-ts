@@ -1,4 +1,4 @@
-# Plan: Reorganize Layers and Libraries Across cesr-ts, keri-ts, tufa-server, and tufa-cli
+# Plan: Reorganize Layers and Libraries Across cesr-ts, keri-ts, and tufa
 
 ## Summary
 
@@ -10,13 +10,12 @@ The solution is a hard package split now:
 - `cesr-ts` stays the pure codec/primitive library
 - `keri-ts` becomes the protocol/runtime library and stays browser-safe by
   default
-- `tufa-server` becomes the server hosting toolkit/platform layer
-- `tufa-cli` becomes the CLI application package on top of `tufa-server`
+- `tufa` becomes the CLI and server application package on top of `keri-ts`
 
 One shared host kernel must come first so mailbox, witness, and later roles
 reuse one lifecycle, middleware, and runtime foundation instead of each growing
 their own server stack. Hono is the only HTTP framework choice for the new
-server layer, and it stays at the HTTP edge of `tufa-server`.
+server layer, and it stays at the HTTP edge of `tufa`.
 
 ## Current Findings
 
@@ -40,16 +39,16 @@ These decisions are locked for this reorganization:
 
 1. Do a hard split now. Do not add staged compatibility shims as the main
    strategy.
-2. `tufa-server` and `tufa-cli` become first-class packages.
+2. `tufa` becomes the first-class application package.
 3. `keri-ts` main surface becomes browser-safe by default.
-4. Hono is used only in `tufa-server`.
+4. Hono is used only in `tufa`.
 5. Hono does not leak into `keri-ts`.
-6. A shared host kernel is the first internal boundary inside `tufa-server`.
+6. A shared host kernel is the first internal boundary inside `tufa`.
 7. Role modules sit on top of that kernel:
    - mailbox
    - witness
    - later watcher, observer, registrar, adjudicator
-8. `tufa-cli` is an application package, not a peer library abstraction.
+8. `tufa` is an application package, not a peer library abstraction.
 9. Effection is canonical for orchestration and lifecycle layers, but pure and
    synchronous protocol code remains pure.
 
@@ -57,7 +56,7 @@ These decisions are locked for this reorganization:
 
 The intended dependency graph is:
 
-- `tufa-cli -> tufa-server -> keri-ts -> cesr-ts`
+- `tufa -> keri-ts -> cesr-ts`
 
 Package responsibilities:
 
@@ -72,22 +71,18 @@ Package responsibilities:
 - browser-safe default surface
 - no default Hono, Node server, or CLI hosting API
 
-### `tufa-server`
+### `tufa`
 
 - shared host kernel
 - Hono app and middleware edge
+- CLI commands
+- operator UX
 - server role modules
 - adapters into `keri-ts`
 
-### `tufa-cli`
+## Target Internal Layering Inside `tufa`
 
-- CLI commands
-- operator UX
-- one consumer of `tufa-server`
-
-## Target Internal Layering Inside `tufa-server`
-
-`tufa-server` should be built from these layers, in this order:
+`tufa` should be built from these layers, in this order:
 
 ### Host kernel
 
@@ -149,8 +144,7 @@ application developers.
 
 - define what must leave `keri-ts`
 - identify server-only and CLI-only exports
-- decide the future public surfaces of `keri-ts`, `tufa-server`, and
-  `tufa-cli`
+- decide the future public surfaces of `keri-ts` and `tufa`
 - lock the rule that `keri-ts` default imports must remain browser-safe
 
 ### Stage 2. Extract the shared host kernel
@@ -160,7 +154,7 @@ application developers.
 - define the kernel API around Effection lifecycle and runtime hosting
 - ensure mailbox and witness can both sit on top of it
 
-### Stage 3. Introduce `tufa-server`
+### Stage 3. Introduce `tufa`
 
 - create the new package
 - move server hosting code there
@@ -184,12 +178,11 @@ application developers.
 - preserve current behavior and tests
 - do not expand into future roles yet beyond skeletal placeholders if helpful
 
-### Stage 6. Split out `tufa-cli`
+### Stage 6. Complete `tufa` application ownership
 
-- create `tufa-cli`
-- move CLI entrypoints and command registration there
-- make it call into `tufa-server`
-- remove CLI ownership from `keri-ts`
+- move remaining CLI entrypoints and command registration into `tufa`
+- make the shared host kernel and role servers `tufa`-owned
+- remove remaining application ownership from `keri-ts`
 
 ### Stage 7. Slim `keri-ts` to its proper library boundary
 
@@ -213,9 +206,9 @@ These are explicitly later work, not part of the initial hard split:
 This reorganization is intentionally breaking:
 
 1. `keri-ts` no longer owns the main server and CLI surface.
-2. `startServer` moves out of `keri-ts` main boundary into `tufa-server`.
-3. `tufa` CLI entrypoint moves into `tufa-cli`.
-4. Role-specific server builders live in `tufa-server`.
+2. `startServer` moves out of `keri-ts` main boundary into `tufa`.
+3. `tufa` CLI entrypoint moves into `tufa`.
+4. Role-specific server builders live in `tufa`.
 5. Browser consumers should import only `keri-ts` protocol and runtime
    surfaces.
 
@@ -227,7 +220,7 @@ This reorganization is intentionally breaking:
 - no Hono or Node server imports reachable from the default `keri-ts` surface
 - expected dependency graph between packages
 
-### `tufa-server` validation
+### `tufa` validation
 
 - Hono `app.request()` tests for:
   - CORS
@@ -243,11 +236,9 @@ This reorganization is intentionally breaking:
 - witness host parity tests
 - no regression in current Gate E, mailbox, or witness behavior
 
-### `tufa-cli` validation
-
 - command wiring tests
 - loglevel and failure reporting tests
-- end-to-end command flows through `tufa-server`
+- end-to-end command flows through `tufa`
 
 ## Assumptions
 

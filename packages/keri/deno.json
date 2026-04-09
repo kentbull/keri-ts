@@ -2,13 +2,15 @@
   "name": "keri-ts",
   "version": "0.5.0",
   "exports": {
-    ".": "./mod.ts"
+    ".": "./mod.ts",
+    "./runtime": "./runtime.ts",
+    "./db": "./db.ts"
   },
   "tasks": {
     "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
     "fmt:check": "deno run -A npm:dprint@0.49.0 check --config ../../dprint.json .",
-    "lint": "deno lint mod.ts src test scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
-    "check": "deno check mod.ts ../cesr/mod.ts",
+    "lint": "deno lint mod.ts runtime.ts db.ts src test scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
+    "check": "deno check mod.ts runtime.ts db.ts ../cesr/mod.ts",
     "quality": "deno task fmt:check && deno task lint && deno task check && deno task version:check && deno task test:quality",
     "manifest:sync": "deno run -A ../../scripts/sync_manifest_versions.ts",
     "manifest:check": "deno run -A ../../scripts/sync_manifest_versions.ts --check",
@@ -17,9 +19,6 @@
     "build:npm": "deno task version:generate && deno run -A scripts/build_npm.ts",
     "setup": "deno task setup:compat-lmdb",
     "setup:compat-lmdb": "bash scripts/setup_lmdb_v1.sh",
-    "start": "deno run --allow-all --unstable-ffi mod.ts",
-    "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
-    "tufa": "deno run --allow-all --unstable-ffi mod.ts",
     "test": "bash ../../scripts/ci/run-keri-test-group.sh full",
     "test:quality": "bash ../../scripts/ci/run-keri-test-group.sh quality",
     "test:slow": "bash ../../scripts/ci/run-keri-test-group.sh slow",

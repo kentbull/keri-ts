@@ -17,7 +17,7 @@
    - `keri-ts` only: `deno task quality` and `deno task build:npm`
    - joint release: `deno task quality` and `deno task npm:build:all`
 7. Smoke test keri npm artifact:
-   - `deno task smoke:keri:npm`
+   - `deno task smoke:tufa:npm`
 8. Commit release changes:
    - `git add -A`
    - `git commit -m "release: ..."`
@@ -151,13 +151,13 @@ deno task version:check
    `tufa annotate`):
 
 ```bash
-deno task smoke:keri:npm
+deno task smoke:tufa:npm
 ```
 
 To smoke test a specific tarball (already packed):
 
 ```bash
-bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
+bash scripts/smoke-test-keri-npm.sh packages/tufa/npm/tufa-<version>.tgz
 ```
 
 ## Publishing

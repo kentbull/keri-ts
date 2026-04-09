@@ -54,7 +54,7 @@ SOURCE_AGENT_PID=""
 TARGET_AGENT_LOG="${LOG_DIR}/target-agent.log"
 TARGET_AGENT_PID=""
 
-TUFA=(deno run --allow-all --unstable-ffi packages/keri/mod.ts)
+TUFA=(deno run --allow-all --unstable-ffi packages/tufa/mod.ts)
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"

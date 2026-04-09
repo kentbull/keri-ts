@@ -65,7 +65,7 @@ function spawnChild(
 async function runTufa(args: string[]): Promise<CmdResult> {
   return await runCmd(
     "deno",
-    ["run", "--allow-all", "--unstable-ffi", "packages/keri/mod.ts", ...args],
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     packageRoot(),
   );
 }
@@ -173,7 +173,7 @@ function startWitnessHost(
       "run",
       "--allow-all",
       "--unstable-ffi",
-      "packages/keri/mod.ts",
+      "packages/tufa/mod.ts",
       "witness",
       "start",
       "--name",

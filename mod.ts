@@ -1,1 +1,1 @@
-import "./packages/keri/mod.ts";
+import "./packages/tufa/mod.ts";

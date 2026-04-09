@@ -8,6 +8,7 @@
     "lmdb": "git+https://github.com/kentbull/lmdb-js.git#d1c29f07d394afcec746ebef20d6e1c706388092"
   },
   "workspaces": [
+    "packages/tufa",
     "packages/keri",
     "packages/cesr"
   ],
@@ -15,6 +16,7 @@
     "changeset": "npx --yes @changesets/cli add",
     "version-packages": "npx --yes @changesets/cli version",
     "publish-packages": "npx --yes @changesets/cli publish",
-    "smoke:keri:npm": "bash scripts/smoke-test-keri-npm.sh"
+    "smoke:keri:npm": "bash scripts/smoke-test-keri-npm.sh",
+    "smoke:tufa:npm": "bash scripts/smoke-test-keri-npm.sh"
   }
 }

@@ -58,20 +58,20 @@ deno task version:check
 ## Build and smoke-test npm artifacts
 
 ```bash
-# Build keri npm package
+# Build keri-ts library npm package
 deno task build:npm
 
-# Build both npm packages
+# Build all npm packages
 deno task npm:build:all
 
-# Smoke test keri tarball in node:alpine (tufa version + annotate)
-deno task smoke:keri:npm
+# Smoke test the tufa tarball in node:alpine (tufa version + annotate)
+deno task smoke:tufa:npm
 ```
 
 To test a specific prebuilt tarball:
 
 ```bash
-bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
+bash scripts/smoke-test-keri-npm.sh packages/tufa/npm/tufa-<version>.tgz
 ```
 
 ## CI workflows
