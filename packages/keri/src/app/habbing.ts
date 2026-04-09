@@ -151,7 +151,9 @@ function ample(count: number, faults?: number, weak = true): number {
   const m1 = Math.ceil((n + f + 1) / 2);
   const m2 = Math.max(0, n - f);
   if (m2 < m1 && n > 0) {
-    throw new ValidationError(`Invalid faults ${faults} for witness count ${count}.`);
+    throw new ValidationError(
+      `Invalid faults ${faults} for witness count ${count}.`,
+    );
   }
   return weak ? Math.min(n, m1, m2) : Math.min(n, Math.max(m1, m2));
 }
@@ -591,20 +593,28 @@ function makeRotateRaw(
     sith: args.isith ?? defaultThreshold(keys.length, 1),
   });
   if (tholder.num !== null && tholder.num < 1n) {
-    throw new ValidationError(`Invalid current threshold ${String(args.isith ?? "")}.`);
+    throw new ValidationError(
+      `Invalid current threshold ${String(args.isith ?? "")}.`,
+    );
   }
   if (tholder.size > keys.length) {
-    throw new ValidationError(`Invalid current threshold for ${keys.length} keys.`);
+    throw new ValidationError(
+      `Invalid current threshold for ${keys.length} keys.`,
+    );
   }
 
   const ntholder = new Tholder({
     sith: args.nsith ?? defaultThreshold(ndigs.length, 0),
   });
   if (ntholder.num !== null && ntholder.num < 0n) {
-    throw new ValidationError(`Invalid next threshold ${String(args.nsith ?? "")}.`);
+    throw new ValidationError(
+      `Invalid next threshold ${String(args.nsith ?? "")}.`,
+    );
   }
   if (ntholder.size > ndigs.length) {
-    throw new ValidationError(`Invalid next threshold for ${ndigs.length} next keys.`);
+    throw new ValidationError(
+      `Invalid next threshold for ${ndigs.length} next keys.`,
+    );
   }
 
   const cuts = [...(args.cuts ?? [])];
@@ -616,13 +626,17 @@ function makeRotateRaw(
     );
   }
 
-  const toad = args.toad ?? (cuts.length === 0 && adds.length === 0
-    ? parseInt(defaultThreshold(args.currentWits.length, 0), 16)
-    : ample(derived.value.wits.length));
+  const toad = args.toad
+    ?? (cuts.length === 0 && adds.length === 0
+      ? parseInt(defaultThreshold(args.currentWits.length, 0), 16)
+      : ample(derived.value.wits.length));
   if (derived.value.wits.length === 0 && toad !== 0) {
     throw new ValidationError(`Invalid toad ${toad} for empty witness set.`);
   }
-  if (derived.value.wits.length > 0 && (toad < 1 || toad > derived.value.wits.length)) {
+  if (
+    derived.value.wits.length > 0
+    && (toad < 1 || toad > derived.value.wits.length)
+  ) {
     throw new ValidationError(
       `Invalid toad ${toad} for witness count ${derived.value.wits.length}.`,
     );
@@ -643,6 +657,37 @@ function makeRotateRaw(
       br: cuts,
       ba: adds,
       a: [...(args.data ?? [])],
+    },
+    makify: true,
+  });
+}
+
+/**
+ * Build one interaction serder from current accepted state and committed data.
+ *
+ * KERIpy correspondence:
+ * - exact `ixn` SAD shape with `{ t, d, i, s, p, a }`
+ * - `sn` must begin at 1 because interactions always follow an establishment
+ *   event
+ */
+function makeInteractRaw(
+  pre: string,
+  priorSaid: string,
+  sn: number,
+  data: unknown[] = [],
+): SerderKERI {
+  if (sn < 1) {
+    throw new ValidationError(`Invalid interaction sequence number ${sn}.`);
+  }
+
+  return new SerderKERI({
+    sad: {
+      t: Ilks.ixn,
+      d: "",
+      i: pre,
+      s: sn.toString(16),
+      p: priorSaid,
+      a: [...data],
     },
     makify: true,
   });
@@ -1030,6 +1075,42 @@ export class Hab {
       this.ks.pinSits(this.pre, new PreSit(priorSit));
       throw error;
     }
+  }
+
+  /**
+   * Create and locally accept one interaction event for this habitat.
+   *
+   * KERIpy correspondence:
+   * - author one `ixn` from current accepted state
+   * - sign with the current controller keys
+   * - feed the event back through local `Kevery` acceptance
+   *
+   * `keri-ts` difference:
+   * - local acceptance still flows through the explicit decision architecture,
+   *   and non-accept outcomes surface as local validation failures
+   */
+  interact(
+    args: {
+      data?: unknown[];
+    } = {},
+  ): Uint8Array {
+    if (!this.pre) {
+      throw new ValidationError("Interaction requires a local habitat prefix.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+
+    const serder = makeInteractRaw(
+      this.pre,
+      kever.serder.said ?? kever.said,
+      kever.sn + 1,
+      args.data ?? [],
+    );
+    const sigers = this.sign(serder.raw, true) as Siger[];
+    this.acceptLocally(serder, sigers);
+    return buildEventMessage(serder, sigers);
   }
 
   /** Produces signatures with this habitat's current signing keys. */

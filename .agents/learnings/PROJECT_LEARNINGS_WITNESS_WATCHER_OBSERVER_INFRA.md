@@ -22,7 +22,7 @@ deployment, CI, and interoperability operations.
    the controller OOBI path.
 4. The currently proved witness matrix is:
    - `tufa` controller with only KERIpy witnesses, including successful cut/add
-     witness rotation and full receipt convergence.
+     witness rotation, interaction events, and full receipt convergence.
    - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
      witnessed rotations while keeping the witness set stable.
    - `tufa` controller with a mixed `tufa` + KERIpy witness set, including

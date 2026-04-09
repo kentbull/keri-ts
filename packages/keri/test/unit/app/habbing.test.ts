@@ -1,7 +1,14 @@
 // @file-test-lane app-stateful-a
 
 import { run } from "effection";
-import { assertEquals, assertInstanceOf, assertNotEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertInstanceOf,
+  assertNotEquals,
+  assertRejects,
+  assertStrictEquals,
+  assertThrows,
+} from "jsr:@std/assert";
 import { Cigar, Counter, CtrDexV1, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
@@ -65,6 +72,72 @@ Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", asyn
       assertEquals(after?.new.pubs, before?.new.pubs);
       assertEquals(after?.nxt.pubs, before?.nxt.pubs);
       assertEquals(rollbackHab.kever?.sn, 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Hab.interact advances accepted state, preserves keys, and commits anchor data", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-interact-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const acceptedHab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const priorKey = acceptedHab.kever?.verfers[0]?.qb64 ?? "";
+      const priorSaid = acceptedHab.kever?.said ?? "";
+      const committed = [
+        {
+          i: acceptedHab.pre,
+          s: "0",
+          d: priorSaid,
+        },
+      ];
+
+      const msg = acceptedHab.interact({ data: committed });
+      const nextState = hby.db.getState(acceptedHab.pre);
+      const nextKever = acceptedHab.kever;
+      const event = nextState?.d
+        ? hby.db.getEvtSerder(acceptedHab.pre, nextState.d)
+        : null;
+
+      assertEquals(nextKever?.sn, 1);
+      assertEquals(nextState?.s, "1");
+      assertNotEquals(nextState?.d, priorSaid);
+      assertEquals(nextState?.k?.[0], priorKey);
+      assertEquals(hby.db.kels.getLast(acceptedHab.pre, 1), nextState?.d);
+      assertEquals(hby.db.getFel(acceptedHab.pre, 1), nextState?.d);
+      if (!event) {
+        throw new Error("Expected stored interaction event serder.");
+      }
+      assertInstanceOf(event, SerderKERI);
+      assertEquals(event.ked?.["a"], committed);
+      assertEquals(msg.length > 0, true);
+
+      const estOnlyHab = hby.makeHab("est-only", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        estOnly: true,
+      });
+      assertThrows(
+        () => estOnlyHab.interact(),
+        Error,
+        "was not accepted",
+      );
+      assertEquals(estOnlyHab.kever?.sn, 0);
     } finally {
       yield* hby.close(true);
     }
@@ -593,7 +666,9 @@ Deno.test("Hab receipt helpers reuse one Habery across witness and receipt varia
         witnessController.kever?.said ?? "",
       );
       if (!witnessEvent?.said) {
-        throw new Error("Expected accepted witness controller inception event.");
+        throw new Error(
+          "Expected accepted witness controller inception event.",
+        );
       }
       const witnessMsg = witness.witness(witnessEvent);
       assertEquals(witnessMsg.length > 0, true);

@@ -76,7 +76,9 @@ async function requireSuccess(
 ): Promise<CmdResult> {
   const result = await resultPromise;
   if (result.code !== 0) {
-    throw new Error(`${label} failed:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+    throw new Error(
+      `${label} failed:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    );
   }
   return result;
 }
@@ -242,8 +244,16 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
   const witness1TcpPort = randomPort();
   const witness2TcpPort = randomPort();
 
-  const witness1Pre = await createWitnessIdentity(witness1Name, witness1Alias, headDirPath);
-  const witness2Pre = await createWitnessIdentity(witness2Name, witness2Alias, headDirPath);
+  const witness1Pre = await createWitnessIdentity(
+    witness1Name,
+    witness1Alias,
+    headDirPath,
+  );
+  const witness2Pre = await createWitnessIdentity(
+    witness2Name,
+    witness2Alias,
+    headDirPath,
+  );
   await initController(controllerName, headDirPath);
 
   const witness1 = startWitnessHost(
@@ -386,7 +396,11 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
         assertEquals(witness1Hby.db.getKever(controllerPre)?.sn, 0);
         assertEquals(witness2Hby.db.getKever(controllerPre)?.sn, 0);
         assertEquals(
-          witness1Hby.db.ends.get([controllerPre, EndpointRoles.mailbox, witness1Pre])?.allowed,
+          witness1Hby.db.ends.get([
+            controllerPre,
+            EndpointRoles.mailbox,
+            witness1Pre,
+          ])?.allowed,
           true,
         );
       } finally {
@@ -400,17 +414,31 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
   }
 });
 
-Deno.test("CLI integration - receipt-endpoint rotation adds a third witness and converges receipts across all witnesses", async () => {
-  const headDirPath = await Deno.makeTempDir({ prefix: "tufa-witness-rotate-" });
+Deno.test("CLI integration - receipt-endpoint rotation and interaction converge receipts across all witnesses", async () => {
+  const headDirPath = await Deno.makeTempDir({
+    prefix: "tufa-witness-rotate-",
+  });
   const witness1Name = `wit1-${crypto.randomUUID()}`;
   const witness2Name = `wit2-${crypto.randomUUID()}`;
   const witness3Name = `wit3-${crypto.randomUUID()}`;
   const controllerName = `ctrl-${crypto.randomUUID()}`;
   const controllerAlias = "controller";
 
-  const witness1Pre = await createWitnessIdentity(witness1Name, "wit1", headDirPath);
-  const witness2Pre = await createWitnessIdentity(witness2Name, "wit2", headDirPath);
-  const witness3Pre = await createWitnessIdentity(witness3Name, "wit3", headDirPath);
+  const witness1Pre = await createWitnessIdentity(
+    witness1Name,
+    "wit1",
+    headDirPath,
+  );
+  const witness2Pre = await createWitnessIdentity(
+    witness2Name,
+    "wit2",
+    headDirPath,
+  );
+  const witness3Pre = await createWitnessIdentity(
+    witness3Name,
+    "wit3",
+    headDirPath,
+  );
   await initController(controllerName, headDirPath);
 
   const ports = [
@@ -419,9 +447,27 @@ Deno.test("CLI integration - receipt-endpoint rotation adds a third witness and 
     { http: randomPort(), tcp: randomPort() },
   ];
   const children = [
-    startWitnessHost(witness1Name, "wit1", headDirPath, ports[0]!.http, ports[0]!.tcp),
-    startWitnessHost(witness2Name, "wit2", headDirPath, ports[1]!.http, ports[1]!.tcp),
-    startWitnessHost(witness3Name, "wit3", headDirPath, ports[2]!.http, ports[2]!.tcp),
+    startWitnessHost(
+      witness1Name,
+      "wit1",
+      headDirPath,
+      ports[0]!.http,
+      ports[0]!.tcp,
+    ),
+    startWitnessHost(
+      witness2Name,
+      "wit2",
+      headDirPath,
+      ports[1]!.http,
+      ports[1]!.tcp,
+    ),
+    startWitnessHost(
+      witness3Name,
+      "wit3",
+      headDirPath,
+      ports[2]!.http,
+      ports[2]!.tcp,
+    ),
   ];
 
   try {
@@ -491,6 +537,22 @@ Deno.test("CLI integration - receipt-endpoint rotation adds a third witness and 
       ]),
     );
 
+    await requireSuccess(
+      "controller interact after witness expansion",
+      runTufa([
+        "interact",
+        "--name",
+        controllerName,
+        "--head-dir",
+        headDirPath,
+        "--alias",
+        controllerAlias,
+        "--receipt-endpoint",
+        "--data",
+        "{\"anchor\":\"acdc\"}",
+      ]),
+    );
+
     await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
@@ -518,14 +580,28 @@ Deno.test("CLI integration - receipt-endpoint rotation adds a third witness and 
       });
       try {
         const rotationSaid = controllerHby.db.kels.getLast(controllerPre, 1);
+        const interactionSaid = controllerHby.db.kels.getLast(controllerPre, 2);
         assertExists(rotationSaid);
+        assertExists(interactionSaid);
         assertEquals(
           controllerHby.db.wigs.get(dgKey(controllerPre, rotationSaid)).length,
           3,
         );
+        assertEquals(
+          controllerHby.db.wigs.get(dgKey(controllerPre, interactionSaid))
+            .length,
+          3,
+        );
         for (const hby of [witness1Hby, witness2Hby, witness3Hby]) {
-          assertEquals(hby.db.getKever(controllerPre)?.sn, 1);
-          assertEquals(hby.db.wigs.get(dgKey(controllerPre, rotationSaid)).length, 3);
+          assertEquals(hby.db.getKever(controllerPre)?.sn, 2);
+          assertEquals(
+            hby.db.wigs.get(dgKey(controllerPre, rotationSaid)).length,
+            3,
+          );
+          assertEquals(
+            hby.db.wigs.get(dgKey(controllerPre, interactionSaid)).length,
+            3,
+          );
         }
       } finally {
         yield* witness3Hby.close();

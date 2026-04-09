@@ -94,7 +94,13 @@ Use this file to:
     mapper-facing `hydrate` / `normalize` APIs are drift.
 14. KEL control flow should stay on typed decisions (`accept`, `duplicate`,
     `escrow`, `reject`): `Kever` decides validity, `Kevery` routes/applies, and
-    `docs/adr/adr-0005-kel-decision-control-flow.md` is normative.
+    `docs/adr/adr-0005-kel-decision-control-flow.md` is normative. That now
+    includes single-sig `tufa interact`: local `ixn` authoring lives in
+    `Hab.interact(...)`, local acceptance still flows through `Kevery`, and
+    witness convergence reuses the same receipting seam as `incept`/`rotate`
+    instead of reviving KERIpy-style exception control flow or inventing a
+    proxy/delegator-publication branch that `kli interact` does not actually
+    have.
 15. Cue/runtime ownership is dual-scope and explicit: `AgentRuntime` owns the
     shared runtime cue deck for `Reactor` / `Revery` / runtime `Kevery` /
     `Oobiery`, `Habery.kevery` owns a separate local cue deck for `Hab` local
