@@ -72,14 +72,14 @@ export function handleOobiRoute(
     endpoint: null,
     relativePath: null,
   };
-  const speakerAid = selectOobiSpeaker(
+  const respondingHabAid = selectResponderHab(
     runtime,
     hosted,
     aid,
     request.eid,
     context.options.hostedPrefixes,
   );
-  const hab = speakerAid ? runtime.hby.habs.get(speakerAid) : undefined;
+  const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
   if (!hab) {
     if (hosted.kind === "ambiguous" && context.options.hostedPrefixes) {
       return textResponse("Ambiguous hosted endpoint path", 409);
@@ -102,7 +102,10 @@ export function handleOobiRoute(
   });
 }
 
-/** Pick the default blind OOBI speaker when the request omits an AID. */
+/**
+ * Pick the default local AID whose Hab should answer a blind OOBI request when
+ * the request omits an AID.
+ */
 export function defaultOobiAid(
   runtime: AgentRuntime,
   serviceHab?: Hab,
@@ -124,14 +127,15 @@ export function defaultOobiAid(
 }
 
 /**
- * Choose which local habitat should answer an OOBI request.
+ * Choose which local Hab should answer an OOBI request and return that Hab's
+ * AID.
  *
  * Preference order:
  * - the requested AID itself when locally controlled
  * - the explicit endpoint AID when it is locally controlled
  * - the hosted endpoint matched from the request path
  */
-export function selectOobiSpeaker(
+export function selectResponderHab(
   runtime: AgentRuntime,
   hosted: {
     kind: "none" | "one" | "ambiguous";

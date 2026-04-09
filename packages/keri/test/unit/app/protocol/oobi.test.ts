@@ -1,6 +1,9 @@
 import { assertEquals } from "jsr:@std/assert";
 import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
-import { defaultOobiAid, selectOobiSpeaker } from "../../../../src/app/protocol/endpoints/oobi.ts";
+import {
+  defaultOobiAid,
+  selectResponderHab,
+} from "../../../../src/app/protocol/endpoints/oobi.ts";
 
 Deno.test("app/protocol/oobi - default blind OOBI aid prefers service hab, then hosted singleton, then lone local hab", () => {
   const serviceRuntime = {
@@ -37,7 +40,7 @@ Deno.test("app/protocol/oobi - default blind OOBI aid prefers service hab, then 
   assertEquals(defaultOobiAid(loneRuntime), "EAID");
 });
 
-Deno.test("app/protocol/oobi - speaker selection prefers local aid/eid before falling back to hosted endpoint", () => {
+Deno.test("app/protocol/oobi - responding Hab selection prefers local aid/eid before falling back to hosted endpoint", () => {
   const runtime = {
     hby: {
       habs: new Map([
@@ -49,7 +52,7 @@ Deno.test("app/protocol/oobi - speaker selection prefers local aid/eid before fa
   } as unknown as AgentRuntime;
 
   assertEquals(
-    selectOobiSpeaker(
+    selectResponderHab(
       runtime,
       {
         kind: "one",
@@ -65,7 +68,7 @@ Deno.test("app/protocol/oobi - speaker selection prefers local aid/eid before fa
   );
 
   assertEquals(
-    selectOobiSpeaker(
+    selectResponderHab(
       runtime,
       {
         kind: "one",
@@ -82,7 +85,7 @@ Deno.test("app/protocol/oobi - speaker selection prefers local aid/eid before fa
   );
 
   assertEquals(
-    selectOobiSpeaker(
+    selectResponderHab(
       runtime,
       {
         kind: "one",
@@ -99,7 +102,7 @@ Deno.test("app/protocol/oobi - speaker selection prefers local aid/eid before fa
   );
 });
 
-Deno.test("app/protocol/oobi - hosted-prefix selection only allows the matched local hosted endpoint", () => {
+Deno.test("app/protocol/oobi - hosted-prefix selection only allows the matched local responding Hab", () => {
   const runtime = {
     hby: {
       habs: new Map([
@@ -117,7 +120,7 @@ Deno.test("app/protocol/oobi - hosted-prefix selection only allows the matched l
   } as unknown as AgentRuntime;
 
   assertEquals(
-    selectOobiSpeaker(
+    selectResponderHab(
       runtime,
       {
         kind: "one",
@@ -135,7 +138,7 @@ Deno.test("app/protocol/oobi - hosted-prefix selection only allows the matched l
   );
 
   assertEquals(
-    selectOobiSpeaker(
+    selectResponderHab(
       runtime,
       {
         kind: "one",
