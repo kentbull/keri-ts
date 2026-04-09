@@ -18,16 +18,22 @@ npm install -g "$CESR_TARBALL_PATH"
 echo "Installing local keri-ts tarball globally: $KERI_TARBALL_PATH"
 npm install -g "$KERI_TARBALL_PATH"
 
-# Reinstalling `tufa` should be idempotent. If the package is already present,
-# remove the npm-managed install first, then overwrite any leftover `tufa`
-# binary path so the fresh tarball can take ownership of the global command.
+# Reinstalling Tufa should be idempotent across both the old unscoped package
+# name and the scoped `@keri-ts/tufa` publish target.
+if npm ls -g --depth=0 @keri-ts/tufa >/dev/null 2>&1; then
+  echo "Removing existing global @keri-ts/tufa package before reinstall"
+  npm uninstall -g @keri-ts/tufa >/dev/null 2>&1 || true
+fi
 if npm ls -g --depth=0 tufa >/dev/null 2>&1; then
-  echo "Removing existing global tufa package before reinstall"
+  echo "Removing existing legacy global tufa package before reinstall"
   npm uninstall -g tufa >/dev/null 2>&1 || true
 fi
 
-echo "Installing local tufa tarball globally: $TUFA_TARBALL_PATH"
-npm install -g --force "$TUFA_TARBALL_PATH"
+echo "Installing local tufa tarball globally with local keri-ts and cesr-ts dependencies: $TUFA_TARBALL_PATH"
+npm install -g --force \
+  "$CESR_TARBALL_PATH" \
+  "$KERI_TARBALL_PATH" \
+  "$TUFA_TARBALL_PATH"
 
 echo "Running tarball smoke test"
 bash scripts/smoke-test-tufa-npm.sh \
