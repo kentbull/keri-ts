@@ -9,14 +9,14 @@
    - `@keri-ts/tufa` only
    - `cesr-ts`, `keri-ts`, and `@keri-ts/tufa` together
 3. Create changeset(s):
-   - `deno task release:changeset` (once for `keri-ts` only)
-   - `deno task release:changeset` twice (one per package for joint release)
+   - `deno task release:changeset` once per publishable package in the release
 4. Apply version/changelog/runtime version updates:
    - `deno task release:version`
 5. Validate generated versions are in sync:
    - `deno task version:check`
 6. Run quality/build checks:
    - `keri-ts` only: `deno task quality` and `deno task build:npm`
+   - `@keri-ts/tufa` only: `deno task release:verify:tufa`
    - joint release: `deno task quality` and `deno task npm:build:all`
 7. Smoke test packed npm artifacts:
    - `deno task smoke:keri:npm`
@@ -33,6 +33,7 @@
 11. Confirm GitHub release workflow success:
     - `.github/workflows/keri-ts-npm-release.yml`
     - `.github/workflows/cesr-npm-release.yml` (if `cesr-ts` released)
+    - `.github/workflows/tufa-npm-release.yml` (if `@keri-ts/tufa` released)
 
 Rules that must hold:
 
@@ -44,10 +45,11 @@ Rules that must hold:
 
 ## Version model
 
-- `keri-ts` and `cesr-ts` are versioned independently.
+- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` are versioned independently.
 - Canonical versions are sourced from:
   - `packages/keri/package.json` (`keri-ts`)
   - `packages/cesr/package.json` (`cesr-ts`)
+  - `packages/tufa/package.json` (`@keri-ts/tufa`)
 - `deno.json` versions are synchronized from package manifests:
   - `deno task manifest:sync`
   - `deno task manifest:check`
@@ -103,6 +105,28 @@ Notes:
   `packages/cesr/package.json`.
 - Deno import-map entries for `cesr-ts` (for example in `deno.json` and
   `packages/keri/deno.json`) are managed manually and are not CI-enforced.
+
+### Common sequence: bump and release `@keri-ts/tufa` only
+
+Use this when only the published Tufa CLI artifact changes.
+
+```bash
+# 1) Create a changeset for @keri-ts/tufa
+deno task release:changeset
+# select package: @keri-ts/tufa
+
+# 2) Apply versioning updates
+deno task release:version
+
+# 3) Validate the release path
+deno task release:verify:tufa
+
+# 4) Commit and tag
+git add -A
+git commit -m "release: bump @keri-ts/tufa to <version>"
+git tag tufa-v<version>
+git push origin master --follow-tags
+```
 
 ### Common sequence: bump and release `cesr-ts` + `keri-ts` together
 

@@ -21,6 +21,7 @@
     "release:changeset": "npx --yes @changesets/cli add",
     "release:version": "npx --yes @changesets/cli version && deno task manifest:sync && deno task version:generate",
     "release:publish": "npx --yes @changesets/cli publish",
+    "release:verify:tufa": "deno task fmt:check && deno task version:check && deno task test:quality:tufa && deno task npm:build:all && deno task smoke:tufa:npm",
     "setup": "cd packages/keri && deno task setup:compat-lmdb",
     "setup:compat-lmdb": "cd packages/keri && deno task setup:compat-lmdb",
     "start": "cd packages/tufa && deno task start",

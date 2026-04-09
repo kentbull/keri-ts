@@ -53,6 +53,9 @@ deno task release:version
 
 # Verify generated/runtime versions
 deno task version:check
+
+# Validate the full Tufa release path before tagging
+deno task release:verify:tufa
 ```
 
 ## Build and smoke-test npm artifacts
@@ -91,6 +94,12 @@ Tufa release order rule:
 
 - if `@keri-ts/tufa` depends on new `cesr-ts` or `keri-ts` versions, publish
   those first, then publish `@keri-ts/tufa`
+
+Tufa release prep rule:
+
+- add a changeset when `@keri-ts/tufa` changes in a publishable way, run
+  `deno task release:version`, then run `deno task release:verify:tufa` before
+  creating `tufa-v<version>`
 
 ## Deno global install notes for tufa
 
