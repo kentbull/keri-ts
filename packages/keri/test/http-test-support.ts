@@ -48,7 +48,7 @@ export function controllerOobiResponse(
  * The host binds on port `0` by default so tests can safely run in parallel
  * without hard-coded port literals.
  */
-export async function startStaticHttpHost(
+export function startStaticHttpHost(
   handler: (request: Request, url: URL) => Response | Promise<Response>,
   {
     hostname = "127.0.0.1",
@@ -57,7 +57,7 @@ export async function startStaticHttpHost(
     hostname?: string;
     port?: number;
   } = {},
-): Promise<StartedStaticHost> {
+): StartedStaticHost {
   const controller = new AbortController();
   const server = Deno.serve({
     hostname,

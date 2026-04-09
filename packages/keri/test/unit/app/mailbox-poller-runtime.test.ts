@@ -33,7 +33,7 @@ Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeo
   let postCount = 0;
   let provider!: Awaited<ReturnType<typeof seedHostedController>>;
 
-  const host = await startStaticHttpHost(async (request, url) => {
+  const host = startStaticHttpHost(async (request, url) => {
     if (url.pathname === `/oobi/${provider.pre}/controller`) {
       return controllerOobiResponse(provider.pre, provider.controllerBytes);
     }
@@ -121,7 +121,7 @@ Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-ope
   let postCount = 0;
   let provider!: Awaited<ReturnType<typeof seedHostedController>>;
 
-  const host = await startStaticHttpHost((request, url) => {
+  const host = startStaticHttpHost((request, url) => {
     if (url.pathname === `/oobi/${provider.pre}/controller`) {
       return controllerOobiResponse(provider.pre, provider.controllerBytes);
     }
@@ -244,7 +244,7 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
   let seeded2!: Awaited<ReturnType<typeof seedHostedController>>;
   let postCount = 0;
 
-  const host1 = await startStaticHttpHost(async (request, url) => {
+  const host1 = startStaticHttpHost(async (request, url) => {
     if (url.pathname === `/oobi/${seeded1.pre}/controller`) {
       return controllerOobiResponse(seeded1.pre, seeded1.controllerBytes);
     }
@@ -261,7 +261,7 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
     }
     return new Response("Not Found", { status: 404 });
   });
-  const host2 = await startStaticHttpHost(async (request, url) => {
+  const host2 = startStaticHttpHost(async (request, url) => {
     if (url.pathname === `/oobi/${seeded2.pre}/controller`) {
       return controllerOobiResponse(seeded2.pre, seeded2.controllerBytes);
     }
@@ -357,7 +357,7 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
   let seeded2!: Awaited<ReturnType<typeof seedHostedController>>;
   let postCount = 0;
 
-  const host1 = await startStaticHttpHost((request, url) => {
+  const host1 = startStaticHttpHost((request, url) => {
     if (url.pathname === `/oobi/${seeded1.pre}/controller`) {
       return controllerOobiResponse(seeded1.pre, seeded1.controllerBytes);
     }
@@ -378,7 +378,7 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
     }
     return new Response("Not Found", { status: 404 });
   });
-  const host2 = await startStaticHttpHost((request, url) => {
+  const host2 = startStaticHttpHost((request, url) => {
     if (url.pathname === `/oobi/${seeded2.pre}/controller`) {
       return controllerOobiResponse(seeded2.pre, seeded2.controllerBytes);
     }

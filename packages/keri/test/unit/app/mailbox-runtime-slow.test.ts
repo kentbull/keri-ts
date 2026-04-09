@@ -960,7 +960,7 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
   let alice:
     | Awaited<ReturnType<typeof seedHostedController>>
     | undefined;
-  const aliceHost = await startStaticHttpHost((_request, url) => {
+  const aliceHost = startStaticHttpHost((_request, url) => {
     if (alice && url.pathname === `/oobi/${alice.pre}/controller`) {
       return controllerOobiResponse(alice.pre, alice.controllerBytes);
     }

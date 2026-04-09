@@ -68,7 +68,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
     "bob",
   );
   let alice!: Awaited<ReturnType<typeof seedHostedIdentifier>>;
-  const aliceHost = await startStaticHttpHost((_request, url) => {
+  const aliceHost = startStaticHttpHost((_request, url) => {
     if (url.pathname === `/oobi/${alice.pre}/controller`) {
       return controllerOobiResponse(alice.pre, alice.controllerBytes);
     }
