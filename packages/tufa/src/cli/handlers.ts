@@ -16,6 +16,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["init", lazyCommand(() => import("keri-ts/runtime"), "initCommand")],
     ["incept", lazyCommand(() => import("keri-ts/runtime"), "inceptCommand")],
     ["rotate", lazyCommand(() => import("keri-ts/runtime"), "rotateCommand")],
+    [
+      "delegate.confirm",
+      lazyCommand(() => import("keri-ts/runtime"), "delegateConfirmCommand"),
+    ],
     ["sign", lazyCommand(() => import("keri-ts/runtime"), "signCommand")],
     ["verify", lazyCommand(() => import("keri-ts/runtime"), "verifyCommand")],
     ["query", lazyCommand(() => import("keri-ts/runtime"), "queryCommand")],

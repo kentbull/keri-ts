@@ -5,6 +5,9 @@
  * configured topics are human-facing lists, while runtime work uses cursor maps
  * keyed by topic name and storing the next wanted mailbox index.
  */
+
+/** Raw delegated event mailbox topic used for delegation approval flows. */
+export const DELEGATE_MAILBOX_TOPIC = "/delegate";
 /**
  * Configured mailbox topic names for one poll or subscription setup.
  *

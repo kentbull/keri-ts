@@ -14,6 +14,8 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
+import { createAgentRuntime, processRuntimeTurn } from "../agent-runtime.ts";
+import type { Habery } from "../habbing.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import {
@@ -105,21 +107,16 @@ function difference(
   return left.filter((value) => !rightSet.has(value));
 }
 
-/**
- * Reject KERIpy rotate flows that `keri-ts` has not ported yet.
- *
- * This guard is intentionally front-loaded so the command does not imply full
- * parity in cases where the underlying runtime orchestration is still absent.
- */
-function assertUnsupportedAdvancedFlows(
-  args: RotateArgs,
-  delegated: boolean,
-): void {
-  if (args.proxy || delegated) {
-    throw new ValidationError(
-      "Delegation-assisted rotation flow is not yet available in tufa.",
-    );
-  }
+function delegationWorkflowPhase(
+  hby: Habery,
+  pre: string,
+  snh: string,
+): string | null {
+  const key: [string, string] = [pre, snh];
+  if (hby.db.dpwe.get(key)) return "waitingWitnessReceipts";
+  if (hby.db.dune.get(key)) return "waitingDelegatorAnchor";
+  if (hby.db.dpub.get(key)) return "waitingWitnessPublication";
+  return null;
 }
 
 function resolveWitnessAuths(
@@ -220,7 +217,11 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
 
-      assertUnsupportedAdvancedFlows(rotateArgs, kever.delpre !== null);
+      if (rotateArgs.proxy) {
+        throw new ValidationError(
+          "Delegation proxy flow is not available in single-sig local phase",
+        );
+      }
 
       let cuts = [...(options.witsCut ?? [])];
       let adds = [...(options.witsAdd ?? [])];
@@ -266,11 +267,35 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         }
       }
 
+      let delegationPhase: string | null = null;
+      if (kever.delpre !== null && hab.kever) {
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        try {
+          runtime.delegating.beginLatest(hab.pre, hab.kever.sn);
+          for (let turn = 0; turn < 8; turn += 1) {
+            yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
+            delegationPhase = delegationWorkflowPhase(
+              hby,
+              hab.pre,
+              hab.kever.sn.toString(16),
+            );
+            if (delegationPhase !== "waitingWitnessReceipts") {
+              break;
+            }
+          }
+        } finally {
+          yield* runtime.close();
+        }
+      }
+
       const state = hby.db.getState(hab.pre);
       console.log(`Prefix  ${hab.pre}`);
       console.log(`New Sequence No.  ${hab.kever?.sn ?? state?.s ?? ""}`);
       for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
+      }
+      if (delegationPhase) {
+        console.log(`Delegation status  ${delegationPhase}`);
       }
     } finally {
       yield* hby.close();

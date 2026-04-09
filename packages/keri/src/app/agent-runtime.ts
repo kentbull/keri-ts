@@ -2,11 +2,13 @@ import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
+import { SingleSigDelegationCoordinator } from "./delegating.ts";
 import { ForwardHandler, type MailboxPollBatch, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
@@ -54,6 +56,7 @@ export interface AgentRuntime {
   mailboxDirector: MailboxDirector;
   mailboxPoller: MailboxPoller;
   poster: Poster;
+  delegating: SingleSigDelegationCoordinator;
   querying: QueryCoordinator;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -82,6 +85,7 @@ export interface RuntimePendingState {
   authQueued: boolean;
   authInFlight: boolean;
   outboxPending: boolean;
+  delegationPending: boolean;
   /** True when query continuations or deferred correspondence requests remain. */
   queriesPending: boolean;
 }
@@ -131,6 +135,8 @@ export function* createAgentRuntime(
   }
   const mailboxPoller = new MailboxPoller(hby, mailboxDirector);
   const poster = new Poster(hby, { mailboxer });
+  mailboxDirector.registerTopic(DELEGATE_MAILBOX_TOPIC);
+  const delegating = new SingleSigDelegationCoordinator(hby, { poster });
   const oobiery = new Oobiery(hby, reactor, { cues });
   oobiery.registerReplyRoutes(reactor.router);
   const authenticator = new Authenticator(hby);
@@ -146,6 +152,7 @@ export function* createAgentRuntime(
     mailboxDirector,
     mailboxPoller,
     poster,
+    delegating,
     querying,
     *close(): Operation<void> {
       if (ownsMailboxer && mailboxer?.opened) {
@@ -280,12 +287,14 @@ export function* processRuntimeTurn(
   yield* runtime.oobiery.processOnce();
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
+  yield* runtime.delegating.processAllOnce();
   if (options.pollMailbox ?? true) {
     yield* processMailboxTurn(runtime, { hab: options.hab });
   }
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
   runtime.reactor.processEscrowsOnce();
+  yield* runtime.delegating.processAllOnce();
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
 }
@@ -310,6 +319,9 @@ export function runtimePendingState(
     authQueued: runtime.hby.db.woobi.cnt() > 0,
     authInFlight: runtime.hby.db.mfa.cnt() > 0,
     outboxPending: runtime.poster.hasPendingWork(),
+    delegationPending: runtime.hby.db.dpwe.cnt() > 0
+      || runtime.hby.db.dune.cnt() > 0
+      || runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
   };
 }
@@ -320,6 +332,7 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   return state.ingress || state.cues || state.replyEscrow
     || state.oobiQueued || state.oobiInFlight || state.multiPending
     || state.authQueued || state.authInFlight || state.outboxPending
+    || state.delegationPending
     || state.queriesPending;
 }
 
@@ -458,9 +471,21 @@ export function* runAgentRuntime(
       yield* runtime.authenticator.authDo();
     }),
     yield* spawn(function*() {
+      while (true) {
+        yield* runtime.poster.processPending();
+        yield* runtimeTurn();
+      }
+    }),
+    yield* spawn(function*() {
       yield* runtime.mailboxPoller.pollDo((batch) => {
         settleMailboxPollBatch(runtime, batch);
       });
+    }),
+    yield* spawn(function*() {
+      while (true) {
+        yield* runtime.delegating.processAllOnce();
+        yield* runtimeTurn();
+      }
     }),
     yield* spawn(function*() {
       yield* runtime.querying.queryDo();

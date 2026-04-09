@@ -51,6 +51,12 @@ export interface ExchangeSendResult {
   queued: string[];
 }
 
+/** Result summary for one raw CESR delivery attempt. */
+export interface RawCesrSendResult {
+  deliveries: string[];
+  queued: string[];
+}
+
 /**
  * Mailbox-first postman for outbound EXN transport.
  *
@@ -232,6 +238,111 @@ export class Poster {
     }
 
     return { serder, deliveries, queued };
+  }
+
+  /**
+   * Send one raw CESR message through the same mailbox-first transport policy.
+   *
+   * This is used by delegation workflows where correctness depends on the
+   * actual KEL bytes reaching the delegator or delegate, not on an EXN wrapper.
+   */
+  *sendBytes(
+    hab: Hab,
+    args: {
+      recipient: string;
+      message: Uint8Array;
+      topic?: string;
+      delivery?: ExchangeDeliveryPreference;
+    },
+  ): Operation<RawCesrSendResult> {
+    const recipient = this.resolveRecipient(args.recipient);
+    const topic = args.topic ?? "";
+    const deliveries: string[] = [];
+    const queued: string[] = [];
+    const delivery = args.delivery ?? "auto";
+    const mailboxEndpoints = delivery === "direct"
+      ? []
+      : mailboxDeliveryEndpoints(hab, recipient);
+
+    if (mailboxEndpoints.length > 0) {
+      if (topic.length === 0) {
+        throw new ValidationError(
+          `Mailbox delivery requires an explicit topic for ${recipient}.`,
+        );
+      }
+
+      const failed = new Map<string, string>();
+      for (const endpoint of mailboxEndpoints) {
+        try {
+          yield* this.deliverMailboxTarget(
+            hab,
+            recipient,
+            topic,
+            args.message,
+            endpoint,
+          );
+          deliveries.push(endpoint.url);
+        } catch (error) {
+          failed.set(
+            endpoint.eid,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+
+      if (failed.size > 0) {
+        if (this.outboxer.enabled) {
+          const said = crypto.randomUUID();
+          this.outboxer.queueMessage(
+            said,
+            args.message,
+            {
+              sender: hab.pre,
+              recipient,
+              topic,
+              createdAt: makeNowIso8601(),
+            },
+            failed.keys(),
+          );
+          const attemptedAt = makeNowIso8601();
+          for (const [eid, error] of failed.entries()) {
+            this.outboxer.markFailed(said, eid, attemptedAt, error);
+            queued.push(`outbox:${eid}`);
+          }
+        } else if (deliveries.length === 0) {
+          throw new ValidationError(
+            `CESR delivery failed for ${recipient}: ${[...failed.values()].join("; ")}`,
+          );
+        }
+      }
+
+      return { deliveries, queued };
+    }
+
+    if (delivery === "indirect") {
+      throw new ValidationError(
+        `No authorized mailbox endpoints are configured for ${recipient}.`,
+      );
+    }
+
+    const directEndpoints = directDeliveryEndpoints(hab, recipient);
+    if (directEndpoints.length === 0) {
+      throw new ValidationError(
+        `No end roles for ${recipient} to send raw CESR payload.`,
+      );
+    }
+
+    for (const endpoint of directEndpoints) {
+      yield* postCesrMessage(
+        endpoint.url,
+        args.message,
+        this.hby.cesrBodyMode,
+        endpoint.eid,
+      );
+      deliveries.push(endpoint.url);
+    }
+
+    return { deliveries, queued };
   }
 
   /**

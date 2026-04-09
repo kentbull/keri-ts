@@ -1521,8 +1521,27 @@ export class Hab {
   ): Uint8Array {
     const messages: Uint8Array[] = [];
     const cloned = new Set<string>();
+    const delegatedReady = (pre: string): boolean => {
+      const kever = this.db.getKever(pre);
+      if (!kever?.delegated) {
+        return true;
+      }
+      const estSaid = kever.lastEst.d || kever.said;
+      if (!estSaid || !this.db.aess.get(dgKey(pre, estSaid))) {
+        return false;
+      }
+      const chain = [...this.db.cloneDelegation(kever)];
+      if (chain.length === 0) {
+        return false;
+      }
+      messages.push(...chain);
+      return true;
+    };
     const appendClone = (pre: string) => {
       if (!pre || cloned.has(pre)) {
+        return;
+      }
+      if (!delegatedReady(pre)) {
         return;
       }
       messages.push(...this.db.clonePreIter(pre));
@@ -1582,6 +1601,14 @@ export class Hab {
     role?: Role | string,
     eids: string[] = [],
   ): Uint8Array {
+    const kever = this.db.getKever(aid);
+    const estSaid = kever?.lastEst.d || kever?.said;
+    if (
+      kever?.delegated
+      && (!estSaid || !this.db.aess.get(dgKey(aid, estSaid)) || [...this.db.cloneDelegation(kever)].length === 0)
+    ) {
+      return new Uint8Array();
+    }
     return this.replyEndRole(aid, role, eids);
   }
 

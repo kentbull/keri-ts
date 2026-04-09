@@ -20,6 +20,7 @@ export function registerLifecycleCmds(
   registerInceptCmd(program, dispatch);
   registerRotateCmd(program, dispatch);
   registerInteractCmd(program, dispatch);
+  registerDelegateCmd(program, dispatch);
   registerAgentCmd(program, dispatch);
 }
 
@@ -392,6 +393,75 @@ function registerInteractCmd(
           passcode: options.passcode,
           data: options.data || [],
           endpoint: options.receiptEndpoint || false,
+          authenticate: options.authenticate || false,
+          code: options.code || [],
+          codeTime: options.codeTime,
+        },
+      });
+    });
+}
+
+/** Register delegated-approval lifecycle commands. */
+function registerDelegateCmd(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
+  const delegate = program
+    .command("delegate")
+    .description("Delegation lifecycle commands");
+
+  delegate
+    .command("confirm")
+    .description("Approve delegated events anchored to one local delegator")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for the delegator identifier prefix",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .option(
+      "--interact",
+      "Use an interaction event instead of a rotation event for approval",
+      false,
+    )
+    .option(
+      "--auto",
+      "Approve all pending delegated events for this delegator in order",
+      false,
+    )
+    .option(
+      "-z, --authenticate",
+      "Prompt the controller for authentication codes for each witness",
+      false,
+    )
+    .option(
+      "--code <code>",
+      "<Witness AID>:<code> formatted witness auth codes",
+      (value: string, prev: string[] = []) => {
+        prev.push(value);
+        return prev;
+      },
+      [],
+    )
+    .option("--code-time <time>", "Time the witness codes were captured.")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "delegate.confirm",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+          interact: options.interact || false,
+          auto: options.auto || false,
           authenticate: options.authenticate || false,
           code: options.code || [],
           codeTime: options.codeTime,

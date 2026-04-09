@@ -3,6 +3,7 @@ import { ValidationError } from "../../core/errors.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
+  processRuntimeTurn,
   processRuntimeUntil,
   runtimeHasPendingWork,
   runtimeHasWellKnownAuth,
@@ -36,6 +37,18 @@ interface InceptArgs {
   estOnly?: boolean;
   data?: string[];
   delpre?: string;
+}
+
+function delegationWorkflowPhase(
+  hby: Habery,
+  pre: string,
+  snh: string,
+): string | null {
+  const key: [string, string] = [pre, snh];
+  if (hby.db.dpwe.get(key)) return "waitingWitnessReceipts";
+  if (hby.db.dune.get(key)) return "waitingDelegatorAnchor";
+  if (hby.db.dpub.get(key)) return "waitingWitnessPublication";
+  return null;
 }
 
 /**
@@ -174,11 +187,31 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         }
       }
 
+      let delegationPhase: string | null = null;
+      if (opts.delpre) {
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        try {
+          runtime.delegating.beginLatest(hab.pre, 0);
+          for (let turn = 0; turn < 8; turn += 1) {
+            yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
+            delegationPhase = delegationWorkflowPhase(hby, hab.pre, "0");
+            if (delegationPhase !== "waitingWitnessReceipts") {
+              break;
+            }
+          }
+        } finally {
+          yield* runtime.close();
+        }
+      }
+
       const state = hby.db.getState(hab.pre);
 
       console.log(`Prefix  ${hab.pre}`);
       for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
+      }
+      if (delegationPhase) {
+        console.log(`Delegation status  ${delegationPhase}`);
       }
       console.log("");
       cues.add({ kin: "incept", pre: hab.pre, mode: "native" });

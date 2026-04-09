@@ -10,9 +10,21 @@ import {
   assertStrictEquals,
   assertThrows,
 } from "jsr:@std/assert";
-import { Cigar, Counter, CtrDexV1, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
+import {
+  Cigar,
+  concatBytes,
+  Counter,
+  CtrDexV1,
+  Diger,
+  SerderKERI,
+  Siger,
+  smell,
+  Verfer,
+} from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
+import { SingleSigDelegationCoordinator } from "../../../src/app/delegating.ts";
+import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import { makeExchangeSerder } from "../../../src/core/messages.ts";
@@ -191,6 +203,124 @@ Deno.test("Hab.interact preserves hex-width boundaries across successive accepte
           assertEquals(event.ked?.["a"], [{ step: 256 }]);
         }
       }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("SingleSigDelegationCoordinator advances delegated inception and pins approval seals", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegate-coordinator-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = hby.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+
+      const sent: Array<{ recipient: string; topic?: string }> = [];
+      const poster = {
+        *sendBytes(
+          _hab: unknown,
+          args: { recipient: string; topic?: string },
+        ) {
+          sent.push({ recipient: args.recipient, topic: args.topic });
+          return { deliveries: ["mock"], queued: [] };
+        },
+      } as unknown as Poster;
+      const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
+
+      const started = coordinator.beginLatest(delegate.pre, 0);
+      assertEquals(started.pre, delegate.pre);
+      const initial = yield* coordinator.processAllOnce();
+      assertEquals(initial[0]?.kind, "advance");
+      assertEquals(initial[0] && "to" in initial[0] ? initial[0].to : null, "waitingDelegatorAnchor");
+      assertEquals(sent, [{ recipient: delegator.pre, topic: "/delegate" }]);
+
+      assertExists(delegate.kever?.said);
+      delegator.interact({
+        data: [{
+          i: delegate.pre,
+          s: "0",
+          d: delegate.kever.said,
+        }],
+      });
+
+      const completed = yield* coordinator.processAllOnce();
+      assertEquals(completed[0]?.kind, "complete");
+      assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
+      assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approved delegation chains", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegate-oobi-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = hby.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+
+      assertEquals(delegate.replyToOobi(delegate.pre).length, 0);
+
+      assertExists(delegate.kever?.said);
+      delegator.interact({
+        data: [{
+          i: delegate.pre,
+          s: "0",
+          d: delegate.kever.said,
+        }],
+      });
+      assertExists(delegator.kever?.said);
+      const approving = hby.db.getEvtSerder(delegator.pre, delegator.kever.said);
+      assertExists(approving?.sner);
+      hby.db.aess.pin(dgKey(delegate.pre, delegate.kever.said), [
+        approving.sner,
+        new Diger({ qb64: approving.said! }),
+      ]);
+
+      const approved = delegate.replyToOobi(delegate.pre);
+      const expected = concatBytes(
+        ...hby.db.cloneDelegation(delegate.kever!),
+        ...hby.db.clonePreIter(delegate.pre),
+      );
+      assertEquals([...approved], [...expected]);
     } finally {
       yield* hby.close(true);
     }
