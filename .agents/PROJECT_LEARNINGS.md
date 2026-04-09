@@ -172,9 +172,9 @@ Use this file to:
     `challenge-direct-runtime` / `challenge-mailbox-runtime`,
     `gate-e-local-state`, `mailbox-poller-runtime`, and `mailbox-runtime-slow`.
     CI has to follow those splits too: if meaningful coverage moves out of
-    `runtime-medium`, add an explicit `runtime-slow` job or PR coverage
-    silently regresses. Keep compat LMDB rebuild as job/local setup, not hidden
-    harness behavior.
+    `runtime-medium`, add an explicit `runtime-slow` job or PR coverage silently
+    regresses. Keep compat LMDB rebuild as job/local setup, not hidden harness
+    behavior.
 24. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
 25. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
@@ -255,31 +255,31 @@ Use this file to:
       cross-implementation replacement. Keep the 6-witness KERIpy soak
       manual/ignored by default.
 35. Stage 1 of the package split is now real in code even though the physical
-    source extraction is not complete yet: `packages/tufa` owns the runnable
-    CLI package boundary, `packages/keri/mod.ts` is now a library entrypoint,
+    source extraction is not complete yet: `packages/tufa` owns the runnable CLI
+    package boundary, `packages/keri/mod.ts` is now a library entrypoint,
     `keri-ts` root/default imports are intentionally narrow and browser-safe,
     and explicit `keri-ts/runtime` plus `keri-ts/db` entrypoints now carry the
     non-browser-safe runtime and LMDB surfaces. Do not reopen the old mental
     model where `keri-ts` root is both app and library just because some
     app-owned source still lives under `packages/keri/src/app/**`.
 36. Stage 2-3 of the package split are now active in code too: `tufa` owns the
-    shared host kernel, the thin Hono HTTP edge, the active Deno/Node HTTP
-    host adapters, the active witness TCP listener, and the active CLI runtime.
-    The durable route-policy seam is `ProtocolHostPolicy` on the explicit
+    shared host kernel, the thin Hono HTTP edge, the active Deno/Node HTTP host
+    adapters, the active witness TCP listener, and the active CLI runtime. The
+    durable route-policy seam is `ProtocolHostPolicy` on the explicit
     `keri-ts/runtime` surface. Keep Hono and listener startup out of `keri-ts`,
     and prefer testing the active `tufa` edge rather than the older
     `packages/keri/src/app/server.ts` / `protocol-handler.ts` internals.
-37. The legacy `keri` copies of the host edge are now intentionally removed,
-    not merely unused. `packages/keri/src/app/server.ts`,
-    `protocol-handler.ts`, the old `protocol/**` tree, and the old long-lived
-    host CLI files are gone. Future cleanup should continue from that state
-    rather than resurrecting compatibility wrappers inside `keri-ts`.
-38. Stage 4 of the package split is now active on the HTTP edge too:
-    app-level CORS, `OPTIONS` handling, request logging, and unhandled-error
-    mapping live in `packages/tufa/src/http/**` as Tufa-owned middleware
-    policy, while `ProtocolHostPolicy` remains the route-facing
-    `keri-ts/runtime` seam. Do not push transport-envelope concerns back into
-    protocol handlers or host adapters.
+37. The legacy `keri` copies of the host edge are now intentionally removed, not
+    merely unused. `packages/keri/src/app/server.ts`, `protocol-handler.ts`, the
+    old `protocol/**` tree, and the old long-lived host CLI files are gone.
+    Future cleanup should continue from that state rather than resurrecting
+    compatibility wrappers inside `keri-ts`.
+38. Stage 4 of the package split is now active on the HTTP edge too: app-level
+    CORS, `OPTIONS` handling, request logging, and unhandled-error mapping live
+    in `packages/tufa/src/http/**` as Tufa-owned middleware policy, while
+    `ProtocolHostPolicy` remains the route-facing `keri-ts/runtime` seam. Do not
+    push transport-envelope concerns back into protocol handlers or host
+    adapters.
 39. Stages 5 and 6 are now active in code too: mailbox and witness long-lived
     hosts live under `packages/tufa/src/roles/**`, the reusable indirect host
     seam lives under `packages/tufa/src/host/indirect-host.ts`, and the
@@ -338,13 +338,13 @@ Use this file to:
     setup in the older app-stateful files when a shared in-file baseline would
     prove the same behavior more honestly.
 13. Keep the new Stage 6 ownership line hard: reusable non-host command
-    operation bodies may remain in `packages/keri/src/app/cli/*.ts`, but
-    command registration, lazy dispatch plumbing, role-host composition, and
-    the runnable CLI stay in `packages/tufa/**`.
-14. Keep future auth/session/rate-limit work on the same ownership line as
-    Stage 4: app-level HTTP middleware belongs in `packages/tufa/src/http/**`,
-    while `keri-ts/runtime` should stay focused on route-facing protocol policy
-    and runtime semantics.
+    operation bodies may remain in `packages/keri/src/app/cli/*.ts`, but command
+    registration, lazy dispatch plumbing, role-host composition, and the
+    runnable CLI stay in `packages/tufa/**`.
+14. Keep future auth/session/rate-limit work on the same ownership line as Stage
+    4: app-level HTTP middleware belongs in `packages/tufa/src/http/**`, while
+    `keri-ts/runtime` should stay focused on route-facing protocol policy and
+    runtime semantics.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 
@@ -521,5 +521,21 @@ Then do task: <TASK>.
   exactly how accidental Node/Deno/CLI leakage persists forever.
 - Next: finish the physical source move for remaining CLI/server files and
   tighten docs/release tooling around the new `tufa` package.
-- Verification: local repo-root `deno task check`, `packages/keri`
-  `build:npm`, `packages/tufa` `build:npm`, and `deno run --allow-all --unstable-ffi packages/tufa/mod.ts version` passed.
+- Verification: local repo-root `deno task check`, `packages/keri` `build:npm`,
+  `packages/tufa` `build:npm`, and
+  `deno run --allow-all --unstable-ffi packages/tufa/mod.ts version` passed.
+
+### 2026-04-09 - CLI Tests Must Launch `packages/tufa/mod.ts`, Not `packages/keri/mod.ts`
+
+- Substance: subprocess-based CLI tests under `packages/keri/test/**` now need
+  to run `packages/tufa/mod.ts` from the workspace root and should prefer
+  `Deno.execPath()` over a raw `"deno"` command string. After the package split,
+  `packages/keri/mod.ts` is a browser-safe library entrypoint and will happily
+  exit without CLI help text or command behavior.
+- Why it matters: the bad mental model was "a successful `deno run mod.ts` still
+  means we exercised the CLI." It doesn’t anymore. That assumption silently
+  turns CLI tests into no-op library launches.
+- Next: keep shared test helpers aligned on one launch contract instead of
+  reintroducing per-file subprocess glue that points back at `keri/mod.ts`.
+- Verification: local targeted `agent-cli` and unit `cli.test.ts` help tests
+  passed after repointing stale helpers and removing raw `"deno"` launches.

@@ -1,9 +1,6 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import type { Habery } from "../../../keri/runtime.ts";
-import {
-  type IndirectHostOptions,
-  runIndirectHost,
-} from "../host/indirect-host.ts";
+import { type IndirectHostOptions, runIndirectHost } from "../host/indirect-host.ts";
 
 /** Package-internal long-lived mailbox-host settings. */
 export interface MailboxHostOptions extends IndirectHostOptions {}

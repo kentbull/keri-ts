@@ -312,6 +312,11 @@ async function detectDenoDir(): Promise<string | undefined> {
 /**
  * Resolve the workspace root used for `deno run packages/tufa/mod.ts ...`
  * test invocations.
+ *
+ * Historical note:
+ * - many older tests called this the "package root" because `keri/mod.ts`
+ *   used to be the CLI entrypoint
+ * - after the package split, the real runnable entrypoint lives in `tufa`
  */
 export function packageRoot(): string {
   return workspaceRoot();

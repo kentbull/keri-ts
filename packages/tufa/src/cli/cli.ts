@@ -1,10 +1,10 @@
 import { Command, Option } from "npm:commander@^10.0.1";
 import { type Operation } from "npm:effection@^3.6.0";
-import { registerCmds } from "./command-definitions.ts";
-import { type CommandHandler, type CommandSelection } from "./command-types.ts";
 import { DISPLAY_VERSION } from "../../../keri/src/app/version.ts";
 import { AppError } from "../../../keri/src/core/errors.ts";
 import { LOG_LEVELS, type LogLevel, setLogLevel } from "../../../keri/src/core/logger.ts";
+import { registerCmds } from "./command-definitions.ts";
+import { type CommandHandler, type CommandSelection } from "./command-types.ts";
 import { createCmdHandlers } from "./handlers.ts";
 
 /** Structured handled CLI exit used to suppress fatal-stack reporting. */
