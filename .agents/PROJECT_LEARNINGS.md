@@ -274,6 +274,12 @@ Use this file to:
     `protocol-handler.ts`, the old `protocol/**` tree, and the old long-lived
     host CLI files are gone. Future cleanup should continue from that state
     rather than resurrecting compatibility wrappers inside `keri-ts`.
+38. Stage 4 of the package split is now active on the HTTP edge too:
+    app-level CORS, `OPTIONS` handling, request logging, and unhandled-error
+    mapping live in `packages/tufa/src/http/**` as Tufa-owned middleware
+    policy, while `ProtocolHostPolicy` remains the route-facing
+    `keri-ts/runtime` seam. Do not push transport-envelope concerns back into
+    protocol handlers or host adapters.
 
 ## Current Follow-Ups
 
@@ -328,6 +334,10 @@ Use this file to:
     but do not regress the already-landed contract that `keri-ts` root is
     library-only and `tufa` owns the active host kernel, HTTP edge, and
     runnable CLI.
+14. Keep future auth/session/rate-limit work on the same ownership line as
+    Stage 4: app-level HTTP middleware belongs in `packages/tufa/src/http/**`,
+    while `keri-ts/runtime` should stay focused on route-facing protocol policy
+    and runtime semantics.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 

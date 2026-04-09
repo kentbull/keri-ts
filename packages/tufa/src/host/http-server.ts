@@ -230,11 +230,26 @@ function openServerHost(
     options.hostname ?? "127.0.0.1",
     options.onListen,
   );
-  const app = createTufaApp(runtime, options);
+  const app = createTufaApp({
+    runtime,
+    protocolPolicy: options,
+    app: { logger },
+  });
   const handler = (req: Request): Promise<Response> => Promise.resolve(app.fetch(req));
-  const host = hasDenoServe()
-    ? openDenoServerHost(serverOptions, handler)
-    : openNodeServerHost(serverOptions, handler);
+  let host: ServerHost;
+  if (hasDenoServe()) {
+    try {
+      host = openDenoServerHost(serverOptions, handler);
+    } catch (error) {
+      logger.warn(
+        "Falling back to Node HTTP host after Deno.serve() startup failed:",
+        error,
+      );
+      host = openNodeServerHost(serverOptions, handler);
+    }
+  } else {
+    host = openNodeServerHost(serverOptions, handler);
+  }
 
   Deno.addSignalListener("SIGINT", shutdown);
   Deno.addSignalListener("SIGTERM", shutdown);

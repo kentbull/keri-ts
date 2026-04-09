@@ -41,13 +41,9 @@ export function createProtocolHandler(
   policy: ProtocolHostPolicy = {},
 ): ProtocolHandler {
   return async (req: Request): Promise<Response> => {
-    try {
-      const context = buildProtocolRequestContext(req, runtime, policy);
-      const route = classifyProtocolRoute(context);
-      return await dispatchProtocolRoute(context, route);
-    } catch (error) {
-      return new Response(String(error), { status: 500 });
-    }
+    const context = buildProtocolRequestContext(req, runtime, policy);
+    const route = classifyProtocolRoute(context);
+    return await dispatchProtocolRoute(context, route);
   };
 }
 

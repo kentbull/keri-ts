@@ -168,6 +168,7 @@ application developers.
 
 ### Stage 4. Introduce Hono middleware and server policy
 
+- status: completed for the active HTTP edge
 - add CORS
 - add `OPTIONS`
 - add request logging
@@ -205,6 +206,18 @@ These are explicitly later work, not part of the initial hard split:
 - static asset serving if needed
 - richer app composition for non-KERI platform consumers
 - future role servers beyond mailbox and witness
+
+### Stage 9. Package publishing
+
+Ensure there is versioning and publishing support for the `tufa` package being
+published to NPM similar to `keri-ts` and `cesr-ts`.
+
+- Do a check in the NPM registry to see if `tufa` is available
+- `tufa` should depend on `keri-ts`
+- We should change the package reinstall script to install cesr-ts, then keri-ts,
+  and finally tufa locally
+- Add a tag-driven CI publishing workflow for `tufa` similar to the other two
+  packages
 
 ## Public Interface Impact
 

@@ -546,6 +546,17 @@ runtime ownership semantics.
   evidence that package ownership is still undecided. The real contract is the
   exported package surface, not the current temporary source layout.
 
+### 2026-04-09 - Stage 4 HTTP Policy Belongs To Tufa, Not `keri-ts`
+
+- The Hono edge now owns app-level CORS, preflight `OPTIONS`, request logging,
+  and last-resort HTTP error mapping through `packages/tufa/src/http/**`.
+- Durable rule: `ProtocolHostPolicy` remains route-facing only. If a change is
+  about transport envelope behavior or middleware ergonomics, default to
+  `tufa`, not `keri-ts/runtime`.
+- `createProtocolHandler(...)` should now throw unexpected failures to the Hono
+  edge instead of manufacturing its own catch-all `500` response. Keep
+  endpoint-specific response semantics explicit where handlers already own them.
+
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
 - Re-audited the DB parity matrix against current source.

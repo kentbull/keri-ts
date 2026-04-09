@@ -24,7 +24,8 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/tufa/src/host/**`
   - Active shared host kernel plus Deno/Node/TCP listener ownership.
 - `packages/tufa/src/http/**`
-  - Active Hono shell and HTTP route composition ownership.
+  - Active Hono shell, Stage 4 middleware policy, and HTTP route composition
+    ownership.
 - `packages/tufa/src/cli/**`
   - Active CLI runtime plus long-lived host command ownership.
 - `packages/keri/src/**`
@@ -53,7 +54,8 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/tufa/src/host/*`
   - Internal shared host kernel and listener adapters.
 - `packages/tufa/src/http/*`
-  - Internal Hono edge and protocol-route composition.
+  - Internal Hono edge, app policy middleware/error mapping, and
+    protocol-route composition.
 - `packages/tufa/src/cli/*`
   - Internal CLI runtime and active long-lived host commands.
 
@@ -113,9 +115,14 @@ internal-only implementation areas so refactors can preserve stable contracts.
 
 ## Cross-Cutting Concerns
 
-- Error model: currently mixed (`ParserError` typed in CESR, generic `Error`
-  elsewhere).
-- Logging: currently direct `console.*` in core and app layers.
+- Error model:
+  - CESR still owns its typed parser errors.
+  - `packages/tufa/src/http/*` now owns app-level HTTP error mapping for
+    unhandled transport-edge failures.
+- Logging:
+  - `packages/tufa/src/http/*` now uses injected `Logger` middleware for
+    request logging and edge-failure reporting.
+  - core and runtime layers still mostly use the shared console-backed logger.
 - Config/runtime flags: spread between task definitions and module constants.
 
 ## Refactor Invariants
