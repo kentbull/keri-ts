@@ -144,7 +144,10 @@ Use this file to:
     runner, default parallelism should be capped auto-detect, not uncapped
     fanout: KERI parallel lanes now honor `KERI_TEST_JOBS`, then `DENO_JOBS`,
     otherwise auto-detect CPUs and cap by lane; CESR follows the same pattern
-    with `CESR_TEST_JOBS`. When the real safe parallel boundary is the module
+    with `CESR_TEST_JOBS`. One oversized parallel lane can still hide a serial
+    bottleneck if the runner has to batch it internally, so the core unit slice
+    now stays split as `core-fast-a` and `core-fast-b`, with `core-fast` only a
+    compatibility alias. When the real safe parallel boundary is the module
     rather than the individual `Deno.test(...)`, split the file physically
     instead of carrying a growing pile of per-test lane overrides. The shared
     helper pattern for that rewrite is now: ephemeral static host, ephemeral
@@ -156,9 +159,10 @@ Use this file to:
     case is missing or double-owned. The current truthful inventory is 66 KERI
     `*.test.ts` files and 360 named tests, with older stateful app files now
     simplified around local setup reuse and in-process command assertions.
-    `app-fast` is now a public alias over `app-fast-parallel` and
-    `app-fast-isolated`, and the runtime-heavy phase now follows the same
-    principle with physical splits such as `challenge-generate` /
+    `core-fast` is now a public alias over `core-fast-a` and `core-fast-b`, and
+    `app-fast` is a public alias over `app-fast-parallel` and
+    `app-fast-isolated`. The runtime-heavy phase now follows the same principle
+    with physical splits such as `challenge-generate` /
     `challenge-direct-runtime` / `challenge-mailbox-runtime`,
     `gate-e-local-state`, `mailbox-poller-runtime`, and `mailbox-runtime-slow`.
     CI has to follow those splits too: if meaningful coverage moves out of

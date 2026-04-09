@@ -113,8 +113,8 @@
   splitting the file at the module boundary instead of accumulating long-lived
   per-test lane overrides.
 - Immediate parallel-safe coverage is now broader than before: KERI `db-fast`,
-  `core-fast`, and most of `app-fast`, plus the CESR package, all run with
-  capped auto-detected module parallelism by default.
+  `core-fast-a`, `core-fast-b`, and most of `app-fast`, plus the CESR package,
+  all run with capped auto-detected module parallelism by default.
 
 ## Verdict
 
@@ -185,7 +185,11 @@
 - `db-fast`
   - DB core and wrapper files, now including `db/mailboxing.test.ts`
 - `core-fast`
-  - KEL/query/reply/core unit files that were previously omitted entirely
+  - public alias over `core-fast-a` and `core-fast-b`
+- `core-fast-a`
+  - balanced eventing/receipt/foundation slice of the core unit files
+- `core-fast-b`
+  - balanced kever/query/routing slice of the core unit files
 - `app-fast`
   - public alias over `app-fast-parallel` and `app-fast-isolated`
 - `app-fast-parallel`

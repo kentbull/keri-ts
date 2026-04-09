@@ -41,11 +41,18 @@ const laneConfigs: Record<string, LaneConfig> = {
     maxFilesPerRun: 8,
     maxJobs: 8,
   },
-  "core-fast": {
-    description: "Core KEL/query/reply unit coverage.",
+  "core-fast-a": {
+    description: "Core eventing/receipt/foundation unit coverage.",
     allowAll: true,
     parallelFullFiles: true,
     maxFilesPerRun: 6,
+    maxJobs: 6,
+  },
+  "core-fast-b": {
+    description: "Core kever/query/routing unit coverage.",
+    allowAll: true,
+    parallelFullFiles: true,
+    maxFilesPerRun: 5,
     maxJobs: 6,
   },
   "app-fast-parallel": {
@@ -102,6 +109,13 @@ const laneConfigs: Record<string, LaneConfig> = {
 };
 
 const groupDefinitions: Record<string, GroupDefinition> = {
+  "core-fast": {
+    description: "Public core-fast alias over the two balanced core slices.",
+    lanes: [
+      "core-fast-a",
+      "core-fast-b",
+    ],
+  },
   "app-fast": {
     description: "Public app-fast alias over parallel-safe and isolated app slices.",
     lanes: [
@@ -113,7 +127,8 @@ const groupDefinitions: Record<string, GroupDefinition> = {
     description: "Truthful default path with representative runtime and interop coverage.",
     lanes: [
       "db-fast",
-      "core-fast",
+      "core-fast-a",
+      "core-fast-b",
       "app-fast-parallel",
       "app-fast-isolated",
       "server",
@@ -137,7 +152,8 @@ const groupDefinitions: Record<string, GroupDefinition> = {
     description: "All KERI tests: default path plus explicit slow lanes.",
     lanes: [
       "db-fast",
-      "core-fast",
+      "core-fast-a",
+      "core-fast-b",
       "app-fast-parallel",
       "app-fast-isolated",
       "server",

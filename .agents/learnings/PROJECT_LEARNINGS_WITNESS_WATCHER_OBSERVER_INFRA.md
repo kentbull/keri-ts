@@ -56,8 +56,9 @@ deployment, CI, and interoperability operations.
     checks, interop-sensitive jobs, smoke paths, and slower lanes should be
     split so failures localize quickly without breaking branch-protection
     stability. That now includes KERI lane fanout inside the default path
-    itself: DB, core, app/server, runtime-medium, stateful app, and interop jobs
-    should be separate when their wall clocks diverge materially.
+    itself: DB, core-fast-a, core-fast-b, app/server, runtime-medium, stateful
+    app, and interop jobs should be separate when their wall clocks diverge
+    materially.
 14. Exact env pins, action SHAs, environment assertions, and saved artifacts are
     part of reproducibility for a native-addon library repo, not optional
     polish.
@@ -69,21 +70,23 @@ deployment, CI, and interoperability operations.
     The current maintained inventory is 66 KERI test files and 360 named tests.
     Keep compat LMDB rebuild out of the runner itself; the harness should audit
     and execute, while job/local setup owns native-addon preparation.
-16. Parallelism policy is now explicit too. `db-fast`, `core-fast`, and the
-    whole-file-safe slice of `app-fast` run with capped auto-detected workers,
-    while `server`, `runtime-*`, `app-stateful-*`, and `interop-*` stay serial
-    until their fixed-port, global-state, or persisted-store assumptions are
-    refactored away. Override worker count with `KERI_TEST_JOBS` or
-    `CESR_TEST_JOBS`, with `DENO_JOBS` as the shared fallback. The phase-2
-    runtime split now follows a stronger rule too: once a mixed file contains a
-    pure module-safe slice and a listener-backed/mailbox-heavy slice, prefer
-    physical file splits such as `challenge-generate`,
-    `challenge-direct-runtime`, `challenge-mailbox-runtime`,
-    `gate-e-local-state`, `mailbox-poller-runtime`, and `mailbox-runtime-slow`
-    over permanent per-test lane escape hatches. CI must mirror that move: once
-    default-path coverage is extracted into `runtime-slow`, PR workflows need a
-    dedicated runtime-slow job instead of assuming `runtime-medium` still covers
-    it.
+16. Parallelism policy is now explicit too. `db-fast`, `core-fast-a`,
+    `core-fast-b`, and the whole-file-safe slice of `app-fast` run with capped
+    auto-detected workers, while `server`, `runtime-*`, `app-stateful-*`, and
+    `interop-*` stay serial until their fixed-port, global-state, or
+    persisted-store assumptions are refactored away. Override worker count with
+    `KERI_TEST_JOBS` or `CESR_TEST_JOBS`, with `DENO_JOBS` as the shared
+    fallback. Keep `core-fast` only as a compatibility alias: one oversized
+    "parallel" lane can still serialize itself if the runner has to batch heavy
+    files internally. The phase-2 runtime split now follows a stronger rule
+    too: once a mixed file contains a pure module-safe slice and a
+    listener-backed/mailbox-heavy slice, prefer physical file splits such as
+    `challenge-generate`, `challenge-direct-runtime`,
+    `challenge-mailbox-runtime`, `gate-e-local-state`,
+    `mailbox-poller-runtime`, and `mailbox-runtime-slow` over permanent
+    per-test lane escape hatches. CI must mirror that move: once default-path
+    coverage is extracted into `runtime-slow`, PR workflows need a dedicated
+    runtime-slow job instead of assuming `runtime-medium` still covers it.
 
 ## Use This Doc For
 
@@ -258,7 +261,7 @@ deployment, CI, and interoperability operations.
 ### 2026-04-09 - Parallelism Needs Capped Defaults And Honest Isolation
 
 - After the CI fanout split, the next durable speed win was inside the runner:
-  keep `db-fast` and `core-fast` parallel, split `app-fast` into
+  keep `db-fast` and core parallel, split `app-fast` into
   `app-fast-parallel` vs `app-fast-isolated`, and leave `server`, `runtime-*`,
   `app-stateful-*`, and `interop-*` serial until their isolation assumptions
   change.
@@ -269,6 +272,19 @@ deployment, CI, and interoperability operations.
 - Durable rule: use source-owned lane metadata to encode the true isolation
   boundary. Do not keep fragile side manifests of "safe" test names in the
   runner just to force more parallelism.
+
+### 2026-04-09 - One Oversized Parallel Lane Was Still A Serial Bottleneck
+
+- `core-fast` looked parallel on paper but still ran as one dominant CI bucket
+  because the runner had to batch its 11 files into two sequential invocations,
+  and the first batch contained almost all of the heavy stateful core files.
+- Durable fix: split the source-owned core unit slice into `core-fast-a` and
+  `core-fast-b`, keep `core-fast` only as a compatibility alias, and mirror
+  that split in CI with `keri-core-fast-a-tests` and
+  `keri-core-fast-b-tests`.
+- For local wall-clock wins, the new `test:quality:core-fast-parallel` helper
+  runs both slices concurrently and divides the detected or caller-specified
+  worker budget across the two child lanes.
 
 ### 2026-04-09 - Runtime File Splits Beat Long-Lived Slow-Test Escape Hatches
 

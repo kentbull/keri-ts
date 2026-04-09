@@ -15,7 +15,10 @@ deno task test:quality
 
 # Fast DB, core, and app lanes
 deno task test:quality:db-fast
+deno task test:quality:core-fast-a
+deno task test:quality:core-fast-b
 deno task test:quality:core-fast
+deno task test:quality:core-fast-parallel
 deno task test:quality:app-fast
 
 # Optional app-fast debug lanes
@@ -52,8 +55,8 @@ deno task test:integration:server
 - Most developers adopting `keri-ts` will primarily use `tufa version` and
   `tufa annotate` as initial verification commands.
 - CI groups tests by isolation boundary, not just by folder:
-  - `db-fast`, `core-fast`, and the parallel-safe portion of `app-fast` run
-    with `deno test --parallel`.
+  - `db-fast`, `core-fast-a`, `core-fast-b`, and the parallel-safe portion of
+    `app-fast` run with `deno test --parallel`.
   - Stateful CLI/app tests that mutate `console`, `HOME`, or persisted local
     stores run one file at a time.
   - Interop tests are split into their own lanes because they are the slowest
@@ -63,6 +66,7 @@ deno task test:integration:server
     `kli witness demo` topology.
 - Parallel lanes auto-detect available CPUs and cap themselves conservatively
   by default. Override with `KERI_TEST_JOBS` or `DENO_JOBS` when you need a
-  different worker count locally or in CI.
+  different worker count locally or in CI. `test:quality:core-fast-parallel`
+  splits that worker budget across the two core slices and runs them together.
 - Maintainer-focused testing and release flows are documented in
   `MAINTAINER-README.md`.
