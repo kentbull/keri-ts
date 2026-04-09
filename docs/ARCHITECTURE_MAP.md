@@ -26,8 +26,11 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/tufa/src/http/**`
   - Active Hono shell, Stage 4 middleware policy, and HTTP route composition
     ownership.
+- `packages/tufa/src/roles/**`
+  - Active mailbox and witness role-host composition ownership.
 - `packages/tufa/src/cli/**`
-  - Active CLI runtime plus long-lived host command ownership.
+  - Active CLI runtime, command tree, dispatch plumbing, and long-lived host
+    command ownership.
 - `packages/keri/src/**`
   - Core, runtime, DB, and the remaining non-host command implementations for
     `keri-ts`.
@@ -56,8 +59,11 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/tufa/src/http/*`
   - Internal Hono edge, app policy middleware/error mapping, and
     protocol-route composition.
+- `packages/tufa/src/roles/*`
+  - Internal mailbox/witness role-host composition over the shared kernel.
 - `packages/tufa/src/cli/*`
-  - Internal CLI runtime and active long-lived host commands.
+  - Internal CLI runtime, command registration, dispatch helpers, and active
+    long-lived host commands.
 
 ### CESR Package
 
@@ -72,9 +78,9 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/keri/src/db/core/*`
   - LMDB/path internals and key encoding details.
 - `packages/keri/src/app/cli/*`
-  - Transitional source location for the remaining non-host command
-    implementations and command-definition helpers; the active runnable CLI and
-    long-lived host commands live in `packages/tufa/src/cli/*`.
+  - Transitional source location for the remaining reusable non-host command
+    implementation bodies only; the active runnable CLI, command tree, dispatch
+    plumbing, and long-lived host commands live in `packages/tufa/src/cli/*`.
 - `packages/cesr/src/tables/*.generated.ts`
   - Generated code tables.
 - `packages/cesr/scripts/*`

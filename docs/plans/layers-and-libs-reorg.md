@@ -178,6 +178,7 @@ application developers.
 
 ### Stage 5. Move role servers onto the shared kernel
 
+- status: completed
 - mailbox server
 - witness server
 - preserve current behavior and tests
@@ -185,7 +186,9 @@ application developers.
 
 ### Stage 6. Complete `tufa` application ownership
 
-- status: partially complete
+- status: completed for the active CLI command tree and role-host ownership;
+  reusable non-host command operation bodies intentionally remain in
+  `packages/keri/src/app/cli/*.ts`
 - move remaining CLI entrypoints and command registration into `tufa`
 - make the shared host kernel and role servers `tufa`-owned
 - remove remaining application ownership from `keri-ts`
@@ -253,6 +256,12 @@ This reorganization is intentionally breaking:
 - mailbox host parity tests
 - witness host parity tests
 - no regression in current Gate E, mailbox, or witness behavior
+
+### CLI/runtime ownership validation
+
+- `packages/tufa/test/**` owns top-level CLI/runtime/help/version coverage
+- parse-time command wiring and host-command failure reporting stay verified at
+  the `tufa` package boundary
 
 - command wiring tests
 - loglevel and failure reporting tests

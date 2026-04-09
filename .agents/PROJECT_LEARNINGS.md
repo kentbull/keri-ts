@@ -280,6 +280,14 @@ Use this file to:
     policy, while `ProtocolHostPolicy` remains the route-facing
     `keri-ts/runtime` seam. Do not push transport-envelope concerns back into
     protocol handlers or host adapters.
+39. Stages 5 and 6 are now active in code too: mailbox and witness long-lived
+    hosts live under `packages/tufa/src/roles/**`, the reusable indirect host
+    seam lives under `packages/tufa/src/host/indirect-host.ts`, and the
+    canonical CLI command tree plus lazy dispatch plumbing live under
+    `packages/tufa/src/cli/**`. The old `packages/keri/src/app/cli/command-*`
+    ownership files are gone. Keep remaining `packages/keri/src/app/cli/*.ts`
+    modules limited to reusable non-host command operation bodies rather than
+    reopening command-tree ownership there.
 
 ## Current Follow-Ups
 
@@ -329,11 +337,10 @@ Use this file to:
     not quietly reintroduce repeated subprocess launches or repeated cold store
     setup in the older app-stateful files when a shared in-file baseline would
     prove the same behavior more honestly.
-13. Continue the package split by moving remaining non-host CLI wiring and
-    command-definition ownership out of `packages/keri/src/app/**` over time,
-    but do not regress the already-landed contract that `keri-ts` root is
-    library-only and `tufa` owns the active host kernel, HTTP edge, and
-    runnable CLI.
+13. Keep the new Stage 6 ownership line hard: reusable non-host command
+    operation bodies may remain in `packages/keri/src/app/cli/*.ts`, but
+    command registration, lazy dispatch plumbing, role-host composition, and
+    the runnable CLI stay in `packages/tufa/**`.
 14. Keep future auth/session/rate-limit work on the same ownership line as
     Stage 4: app-level HTTP middleware belongs in `packages/tufa/src/http/**`,
     while `keri-ts/runtime` should stay focused on route-facing protocol policy

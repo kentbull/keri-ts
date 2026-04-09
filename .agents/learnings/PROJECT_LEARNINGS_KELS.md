@@ -557,6 +557,21 @@ runtime ownership semantics.
   edge instead of manufacturing its own catch-all `500` response. Keep
   endpoint-specific response semantics explicit where handlers already own them.
 
+### 2026-04-09 - Stage 5-6 Made `tufa` The Real CLI And Role-Host Owner
+
+- The shared host kernel is no longer the top of the ownership story by
+  itself. Mailbox and witness long-lived host composition now lives in
+  `packages/tufa/src/roles/**`, with the generic indirect-host seam extracted to
+  `packages/tufa/src/host/indirect-host.ts`.
+- Durable rule: `agent.ts`, `mailbox.ts`, and `witness.ts` under
+  `packages/tufa/src/cli/**` are porcelain. Long-lived role-host composition
+  should not drift back into CLI command modules.
+- The canonical command tree, dispatch types, and lazy dispatch helper now live
+  under `packages/tufa/src/cli/**`, and the old
+  `packages/keri/src/app/cli/command-definitions*` ownership files are gone.
+  Keep remaining `packages/keri/src/app/cli/*.ts` modules as reusable
+  non-host command operation bodies only.
+
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
 - Re-audited the DB parity matrix against current source.

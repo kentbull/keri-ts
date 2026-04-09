@@ -28,7 +28,7 @@ import { ValidationError } from "../../../keri/src/core/errors.ts";
 import { TopicsRecord } from "../../../keri/src/core/records.ts";
 import { EndpointRoles, Roles } from "../../../keri/src/core/roles.ts";
 import { makeNowIso8601 } from "../../../keri/src/time/mod.ts";
-import { runIndirectHost } from "./agent.ts";
+import { runMailboxHost } from "../roles/mailbox.ts";
 
 interface MailboxBaseArgs {
   name?: string;
@@ -163,7 +163,7 @@ export function* mailboxStartCommand(
     console.log(`Keystore       ${ensured.created ? "created" : "reused"}`);
     console.log(`Mailbox AID    ${aidCreated ? "created" : "reused"}`);
 
-    yield* runIndirectHost(hby, {
+    yield* runMailboxHost(hby, {
       port,
       listenHost,
       serviceHab: hab,

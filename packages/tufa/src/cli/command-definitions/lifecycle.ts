@@ -7,7 +7,7 @@
  * - long-lived agent hosting
  */
 import { Command } from "npm:commander@^10.0.1";
-import { DISPLAY_VERSION } from "../../version.ts";
+import { DISPLAY_VERSION } from "../../../../keri/src/app/version.ts";
 import type { CommandDispatch } from "../command-types.ts";
 
 /** Register lifecycle-oriented top-level commands. */

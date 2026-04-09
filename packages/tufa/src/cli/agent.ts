@@ -14,7 +14,7 @@ import { setupHby } from "../../../keri/src/app/cli/common/existing.ts";
 import { ValidationError } from "../../../keri/src/core/errors.ts";
 import { EndpointRoles } from "../../../keri/src/core/roles.ts";
 import { Schemes } from "../../../keri/src/core/schemes.ts";
-import { runHostKernel } from "../host/kernel.ts";
+import { runIndirectHost } from "../host/indirect-host.ts";
 
 /** Parsed arguments for the long-lived `tufa agent` host command. */
 interface AgentArgs {
@@ -28,48 +28,6 @@ interface AgentArgs {
   compat?: boolean;
   outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
-}
-
-/** Shared long-lived indirect-host settings used by `agent` and mailbox start. */
-export interface IndirectHostOptions {
-  port: number;
-  listenHost?: string;
-  serviceHab: Hab;
-  hostedPrefixes?: readonly string[];
-  seedHabs?: readonly Hab[];
-  onListen?: (address: { port: number; hostname: string }) => void;
-}
-
-/**
- * Run one long-lived indirect host over the shared protocol runtime.
- *
- * This is the reusable host seam that higher-level porcelain commands build
- * upon. Startup policy is intentionally explicit so mailbox-specific porcelain
- * can select one hosted prefix without inheriting `agent`-specific role
- * seeding.
- */
-export function* runIndirectHost(
-  hby: Habery,
-  options: IndirectHostOptions,
-): Operation<void> {
-  const seedHabs = options.seedHabs ?? [options.serviceHab];
-  const hostedPrefixes = options.hostedPrefixes
-    ?? seedHabs.map((hab) => hab.pre);
-  yield* runHostKernel(hby, {
-    runtimeMode: "indirect",
-    serviceHab: options.serviceHab,
-    seedHabs,
-    hostedPrefixes,
-    http: {
-      port: options.port,
-      hostname: options.listenHost,
-      onListen: options.onListen,
-    },
-    protocolPolicy: {
-      serviceHab: options.serviceHab,
-      hostedPrefixes,
-    },
-  });
 }
 
 function configuredControllerState(hab: Hab): boolean {

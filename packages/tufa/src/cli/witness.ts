@@ -18,8 +18,7 @@ import { ValidationError } from "../../../keri/src/core/errors.ts";
 import { EndpointRoles } from "../../../keri/src/core/roles.ts";
 import { type Scheme, Schemes } from "../../../keri/src/core/schemes.ts";
 import { makeNowIso8601 } from "../../../keri/src/time/mod.ts";
-import { runHostKernel } from "../host/kernel.ts";
-import { startWitnessTcpServer } from "../host/witness-tcp.ts";
+import { runWitnessHost } from "../roles/witness.ts";
 
 interface WitnessBaseArgs {
   name?: string;
@@ -190,50 +189,6 @@ export function* witnessSubmitCommand(
   } finally {
     yield* hby.close();
   }
-}
-
-/** Run one combined witness+mailbox host over the shared runtime stack. */
-export function* runWitnessHost(
-  hby: Habery,
-  {
-    serviceHab,
-    httpPort,
-    httpListenHost,
-    tcpPort,
-    tcpListenHost,
-  }: {
-    serviceHab: Hab;
-    httpPort: number;
-    httpListenHost: string;
-    tcpPort: number;
-    tcpListenHost: string;
-  },
-): Operation<void> {
-  yield* runHostKernel(hby, {
-    runtimeMode: "both",
-    enableMailboxStore: true,
-    serviceHab,
-    seedHabs: [serviceHab],
-    hostedPrefixes: [serviceHab.pre],
-    http: {
-      port: httpPort,
-      hostname: httpListenHost,
-    },
-    protocolPolicy: {
-      serviceHab,
-      hostedPrefixes: [serviceHab.pre],
-      witnessHab: serviceHab,
-    },
-    companionHosts: [
-      ({ runtime }) =>
-        startWitnessTcpServer(
-          tcpPort,
-          tcpListenHost,
-          runtime,
-          serviceHab,
-        ),
-    ],
-  });
 }
 
 function parseWitnessStartArgs(args: Record<string, unknown>): WitnessStartArgs {

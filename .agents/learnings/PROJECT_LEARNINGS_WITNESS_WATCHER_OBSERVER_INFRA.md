@@ -93,6 +93,11 @@ deployment, CI, and interoperability operations.
     target that edge, not rebuild new dependencies on the older
     `packages/keri/src/app/server.ts` path. The old `keri` listener copies have
     now been removed, so new infra work should assume that boundary is final.
+18. Witness hosting now has an explicit role-host seam in
+    `packages/tufa/src/roles/witness.ts`, while mailbox hosting parallels it in
+    `packages/tufa/src/roles/mailbox.ts`. Infra and runtime tests should prefer
+    those role seams plus the shared kernel/HTTP edge rather than importing
+    long-lived host composition from CLI command modules.
 
 ## Use This Doc For
 
