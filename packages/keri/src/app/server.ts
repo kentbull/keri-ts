@@ -75,6 +75,11 @@ export interface RuntimeServerOptions {
    * root ingress through the witness-local settlement seam for KERIpy parity.
    */
   witnessHab?: Hab;
+  /**
+   * Optional callback fired only after the underlying HTTP host has bound and
+   * is listening on the configured port.
+   */
+  onListen?: (address: { port: number; hostname: string }) => void;
 }
 
 /**
@@ -99,12 +104,16 @@ function buildServerOptions(
   logger: Logger,
   signal: AbortSignal,
   hostname = "127.0.0.1",
+  onListen?: (address: { port: number; hostname: string }) => void,
 ): ServerOptions {
   return {
     port,
     hostname,
     signal,
-    onListen: ({ port }) => logger.info(`Server running on http://${hostname}:${port}`),
+    onListen: ({ port }) => {
+      logger.info(`Server running on http://${hostname}:${port}`);
+      onListen?.({ port, hostname });
+    },
     onError: (error) => {
       logger.error("Server error:", error);
       return new Response("Internal Server Error", { status: 500 });
@@ -315,6 +324,7 @@ function openServerHost(
     logger,
     signal,
     options.hostname ?? "127.0.0.1",
+    options.onListen,
   );
   const handler = createProtocolHandler(runtime, options);
   const host = hasDenoServe()

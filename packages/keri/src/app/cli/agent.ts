@@ -31,6 +31,7 @@ export interface IndirectHostOptions {
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
   seedHabs?: readonly Hab[];
+  onListen?: (address: { port: number; hostname: string }) => void;
 }
 
 /**
@@ -73,6 +74,7 @@ export function* runIndirectHost(
         hostname: options.listenHost,
         hostedPrefixes,
         serviceHab: options.serviceHab,
+        onListen: options.onListen,
       },
     );
   } finally {
@@ -233,13 +235,15 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       seedHabs,
       `http://127.0.0.1:${port}`,
     );
-    console.log(`Starting server on port ${port}`);
     yield* runIndirectHost(hby, {
       port,
       listenHost: "127.0.0.1",
       serviceHab: cueHab,
       hostedPrefixes: seedHabs.map((hab) => hab.pre),
       seedHabs,
+      onListen: ({ hostname, port }) => {
+        console.log(`Server listening on http://${hostname}:${port}`);
+      },
     });
   } finally {
     yield* hby.close();

@@ -86,6 +86,23 @@ log_agent() {
   fi
   echo '--- end /tmp/tufa-agent.log ---' >&2
 }
+log_agent_process() {
+  echo '--- tufa-agent process ---' >&2
+  echo "pid=\${AGENT_PID:-unset}" >&2
+  if [ -n "\${AGENT_PID:-}" ] && kill -0 "\${AGENT_PID}" >/dev/null 2>&1; then
+    echo 'state=running' >&2
+  else
+    echo 'state=exited' >&2
+  fi
+  if [ -f /tmp/tufa-agent.exitcode ]; then
+    printf 'exit_code=' >&2
+    tr -d '\r\n' </tmp/tufa-agent.exitcode >&2
+    printf '\n' >&2
+  else
+    echo 'exit_code=unknown' >&2
+  fi
+  echo '--- end tufa-agent process ---' >&2
+}
 npm install -g ${INSTALL_TARGETS} >/dev/null
 echo \"Node runtime: \$(node --version), npm: \$(npm --version)\" >&2
 V1=\$(tufa version | tr -d '\r')
@@ -103,23 +120,57 @@ PORT=8711
 PASSCODE=MyPasscodeARealSecret
 tufa init --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" --passcode \"\$PASSCODE\" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
 tufa incept --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" --passcode \"\$PASSCODE\" --alias \"\$ALIAS\" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
-tufa agent --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" -p \"\$PORT\" -P \"\$PASSCODE\" >/tmp/tufa-agent.log 2>&1 &
+rm -f /tmp/tufa-agent.exitcode
+(
+  tufa agent --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" -p \"\$PORT\" -P \"\$PASSCODE\" >/tmp/tufa-agent.log 2>&1
+  status=\$?
+  printf '%s\n' \"\$status\" >/tmp/tufa-agent.exitcode
+  exit \"\$status\"
+) &
 AGENT_PID=\$!
 cleanup() {
   status=\$?
-  kill \"\$AGENT_PID\" >/dev/null 2>&1 || true
+  if kill -0 \"\$AGENT_PID\" >/dev/null 2>&1; then
+    kill \"\$AGENT_PID\" >/dev/null 2>&1 || true
+  fi
   wait \"\$AGENT_PID\" 2>/dev/null || true
   if [ \"\$status\" -ne 0 ]; then
+    log_agent_process
     log_agent
   fi
 }
 trap cleanup EXIT
-TUFA_SMOKE_PORT=\"\$PORT\" node --input-type=module -e '
+TUFA_SMOKE_PORT=\"\$PORT\" TUFA_SMOKE_AGENT_PID=\"\$AGENT_PID\" TUFA_SMOKE_AGENT_EXIT_FILE=\"/tmp/tufa-agent.exitcode\" node --input-type=module -e '
   import { readFile } from \"node:fs/promises\";
+  import { setTimeout as delay } from \"node:timers/promises\";
 
   const url = \"http://127.0.0.1:\" + process.env.TUFA_SMOKE_PORT + \"/health\";
+  const agentPid = Number(process.env.TUFA_SMOKE_AGENT_PID ?? \"0\");
+  const agentExitFile = process.env.TUFA_SMOKE_AGENT_EXIT_FILE ?? \"\";
   let lastStatus = \"\";
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+
+  async function readExitCode() {
+    if (!agentExitFile) return null;
+    try {
+      return (await readFile(agentExitFile, \"utf8\")).trim() || \"<empty>\";
+    } catch {
+      return null;
+    }
+  }
+
+  function agentAlive() {
+    if (!Number.isFinite(agentPid) || agentPid <= 0) {
+      return true;
+    }
+    try {
+      process.kill(agentPid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     try {
       const response = await fetch(url);
       const text = await response.text();
@@ -130,10 +181,23 @@ TUFA_SMOKE_PORT=\"\$PORT\" node --input-type=module -e '
     } catch (error) {
       lastStatus = String(error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (!agentAlive()) {
+      const exitCode = await readExitCode();
+      lastStatus += exitCode
+        ? \" (agent exited with code \" + exitCode + \")\"
+        : \" (agent exited)\";
+      break;
+    }
+    await delay(100);
   }
 
   process.stderr.write(\"Health probe failed: \" + lastStatus + \"\\n\");
+  process.stderr.write(
+    \"Agent PID: \" + (Number.isFinite(agentPid) ? String(agentPid) : \"<unknown>\") + \"\\n\",
+  );
+  process.stderr.write(\"Agent alive: \" + (agentAlive() ? \"yes\" : \"no\") + \"\\n\");
+  const exitCode = await readExitCode();
+  process.stderr.write(\"Agent exit code: \" + (exitCode ?? \"<unknown>\") + \"\\n\");
   try {
     const log = await readFile(\"/tmp/tufa-agent.log\", \"utf8\");
     process.stderr.write(\"--- /tmp/tufa-agent.log ---\\n\");
