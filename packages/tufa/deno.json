@@ -8,11 +8,14 @@
     "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
     "fmt:check": "deno run -A npm:dprint@0.49.0 check --config ../../dprint.json .",
     "lint": "deno lint mod.ts src scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
-    "check": "deno check mod.ts src/npm/index.ts src/app/cli-node.ts scripts/build_npm.ts",
+    "check": "deno check mod.ts src/npm/index.ts src/app/cli-node.ts scripts/build_npm.ts test/*.ts test/integration/*.ts",
     "build:npm": "deno run -A scripts/build_npm.ts",
     "start": "deno run --allow-all --unstable-ffi mod.ts",
     "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
-    "tufa": "deno run --allow-all --unstable-ffi mod.ts"
+    "tufa": "deno run --allow-all --unstable-ffi mod.ts",
+    "test": "deno test -A test",
+    "test:quality": "deno test -A test",
+    "test:integration:server": "deno test -A test/integration/server.test.ts"
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.42.3"

@@ -241,6 +241,17 @@ runtime ownership semantics.
 - `tufa agent` was never starting one HTTP listener per local AID. The bug class
   was over-broad multi-AID bootstrap and hosted-prefix selection inside one
   shared host/runtime.
+
+### 2026-04-09 - Stage 7 Hardened Package Surfaces Instead Of Reopening Source Moves
+
+- `keri-ts` now has a stricter package-level contract than the source tree shape
+  alone would suggest: only `.`, `./runtime`, and `./db` are supported public
+  entrypoints, and the built npm manifest is normalized after `dnt` so internal
+  `./src/npm/*` paths do not leak as accidental API.
+- The honest validation split matters too: `packages/tufa/test/**` owns
+  package-surface CLI/server/host checks, while `packages/keri/test/**` stays
+  focused on protocol/runtime/DB behavior. If CI or release smoke merges those
+  stories back together, the library boundary will drift before the code does.
 - `tufa mailbox start` exists because mailbox hosting needs explicit identity
   ownership, not because mailboxes need a different server topology. One host
   can serve multiple local identities when that is intentional, but the
@@ -526,9 +537,10 @@ runtime ownership semantics.
   `server.ts` should own Deno/Node startup, request bridging, and shutdown,
   while protocol request classification and dispatch live in
   `protocol-handler.ts`.
-- Hosted endpoint tie-break policy (`longest base path wins`, `ties are ambiguous`) belongs next to the mailbox endpoint helpers, not hidden inside
-  one host file. Route classifiers should consume that decision rather than
-  re-deriving it inline.
+- Hosted endpoint tie-break policy (`longest base path wins`,
+  `ties are ambiguous`) belongs next to the mailbox endpoint helpers, not hidden
+  inside one host file. Route classifiers should consume that decision rather
+  than re-deriving it inline.
 - Durable rule: witness-root local ingress is a phase-two CESR ingress decision,
   not a surprise boolean buried inside generic POST handling. Keep witness,
   mailbox, OOBI, and generic ingress precedence explicit and directly tested.
@@ -542,6 +554,9 @@ runtime ownership semantics.
   library-shaped. Runtime and LMDB-backed behavior now belong on explicit
   `keri-ts/runtime` and `keri-ts/db` subpaths instead of leaking through the
   default package surface.
+- `docs/adr/adr-0011-three-package-architecture.md` is now the normative
+  package-boundary record. Use it when deciding what belongs in `tufa`,
+  `keri-ts`, and `cesr-ts`.
 - Do not misread the remaining `packages/keri/src/app/**` file locations as
   evidence that package ownership is still undecided. The real contract is the
   exported package surface, not the current temporary source layout.
@@ -551,16 +566,16 @@ runtime ownership semantics.
 - The Hono edge now owns app-level CORS, preflight `OPTIONS`, request logging,
   and last-resort HTTP error mapping through `packages/tufa/src/http/**`.
 - Durable rule: `ProtocolHostPolicy` remains route-facing only. If a change is
-  about transport envelope behavior or middleware ergonomics, default to
-  `tufa`, not `keri-ts/runtime`.
+  about transport envelope behavior or middleware ergonomics, default to `tufa`,
+  not `keri-ts/runtime`.
 - `createProtocolHandler(...)` should now throw unexpected failures to the Hono
   edge instead of manufacturing its own catch-all `500` response. Keep
   endpoint-specific response semantics explicit where handlers already own them.
 
 ### 2026-04-09 - Stage 5-6 Made `tufa` The Real CLI And Role-Host Owner
 
-- The shared host kernel is no longer the top of the ownership story by
-  itself. Mailbox and witness long-lived host composition now lives in
+- The shared host kernel is no longer the top of the ownership story by itself.
+  Mailbox and witness long-lived host composition now lives in
   `packages/tufa/src/roles/**`, with the generic indirect-host seam extracted to
   `packages/tufa/src/host/indirect-host.ts`.
 - Durable rule: `agent.ts`, `mailbox.ts`, and `witness.ts` under
@@ -569,8 +584,8 @@ runtime ownership semantics.
 - The canonical command tree, dispatch types, and lazy dispatch helper now live
   under `packages/tufa/src/cli/**`, and the old
   `packages/keri/src/app/cli/command-definitions*` ownership files are gone.
-  Keep remaining `packages/keri/src/app/cli/*.ts` modules as reusable
-  non-host command operation bodies only.
+  Keep remaining `packages/keri/src/app/cli/*.ts` modules as reusable non-host
+  command operation bodies only.
 
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
@@ -584,9 +599,9 @@ runtime ownership semantics.
 ### 2026-04-07 - Rotated `/ksn` Replies Are Recoverable, Not Fatal
 
 - A controller-signed key-state notice for a freshly rotated identifier may
-  arrive before the querier has the signer’s latest establishment event. In
-  that state, reply verification must be treated as recoverable correspondence
-  work, not as a terminal parser/runtime failure.
+  arrive before the querier has the signer’s latest establishment event. In that
+  state, reply verification must be treated as recoverable correspondence work,
+  not as a terminal parser/runtime failure.
 - Durable runtime rule: `UnverifiedReplyError` from reply processing should
   leave the reply escrowed and let follow-on query work continue. Crashing the
   ingress turn destroys the only path that can later make the reply verifiable.

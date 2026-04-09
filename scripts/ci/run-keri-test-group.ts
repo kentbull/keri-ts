@@ -66,10 +66,6 @@ const laneConfigs: Record<string, LaneConfig> = {
     description: "Global-state app coverage that still mutates console or HOME.",
     allowAll: true,
   },
-  server: {
-    description: "Dedicated server integration coverage.",
-    allowAll: true,
-  },
   "runtime-medium": {
     description: "Representative runtime coverage kept on the default path.",
     allowAll: true,
@@ -131,7 +127,6 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "core-fast-b",
       "app-fast-parallel",
       "app-fast-isolated",
-      "server",
       "runtime-medium",
       "app-stateful-a",
       "app-stateful-b",
@@ -156,7 +151,6 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "core-fast-b",
       "app-fast-parallel",
       "app-fast-isolated",
-      "server",
       "runtime-medium",
       "app-stateful-a",
       "app-stateful-b",

@@ -8,9 +8,12 @@ internal-only implementation areas so refactors can preserve stable contracts.
 ## Relevant ADRs
 
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+- `docs/adr/adr-0011-three-package-architecture.md`
 
 ## Top-Level Boundaries
 
+- Dependency graph:
+  - `tufa -> keri-ts -> cesr-ts`
 - `mod.ts`
   - Repo-root runner for the `tufa` application package.
 - `packages/keri/mod.ts`
@@ -42,11 +45,14 @@ internal-only implementation areas so refactors can preserve stable contracts.
 ### `keri-ts`
 
 - `packages/keri/mod.ts`
-  - Narrow browser-safe default library surface.
+  - Narrow browser-safe default library surface. This is one of exactly three
+    supported `keri-ts` entrypoints.
 - `packages/keri/runtime.ts`
-  - Explicit runtime surface for host/runtime/file/network concerns.
+  - Explicit runtime surface for runtime/file/network concerns. This is one of
+    exactly three supported `keri-ts` entrypoints.
 - `packages/keri/db.ts`
-  - Explicit LMDB-backed persistence surface.
+  - Explicit LMDB-backed persistence surface. This is one of exactly three
+    supported `keri-ts` entrypoints.
 
 ### `tufa`
 
@@ -57,8 +63,8 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/tufa/src/host/*`
   - Internal shared host kernel and listener adapters.
 - `packages/tufa/src/http/*`
-  - Internal Hono edge, app policy middleware/error mapping, and
-    protocol-route composition.
+  - Internal Hono edge, app policy middleware/error mapping, and protocol-route
+    composition.
 - `packages/tufa/src/roles/*`
   - Internal mailbox/witness role-host composition over the shared kernel.
 - `packages/tufa/src/cli/*`
@@ -81,6 +87,11 @@ internal-only implementation areas so refactors can preserve stable contracts.
   - Transitional source location for the remaining reusable non-host command
     implementation bodies only; the active runnable CLI, command tree, dispatch
     plumbing, and long-lived host commands live in `packages/tufa/src/cli/*`.
+- `packages/tufa/test/*`
+  - Canonical package-surface CLI, server, host, and HTTP edge validation.
+- `packages/keri/test/*`
+  - Canonical library/runtime/DB/protocol validation, even when some tests use
+    Tufa helpers as scaffolding.
 - `packages/cesr/src/tables/*.generated.ts`
   - Generated code tables.
 - `packages/cesr/scripts/*`
@@ -93,7 +104,8 @@ internal-only implementation areas so refactors can preserve stable contracts.
 ### Application Stack
 
 1. Application composition (`packages/tufa/**`)
-2. Domain/runtime services (`packages/keri/src/app/**`, `packages/keri/src/db/**`)
+2. Domain/runtime services (`packages/keri/src/app/**`,
+   `packages/keri/src/db/**`)
    - `Manager` orchestrates creators, keeper state, AEID policy, and replay.
    - concrete signing/verification should stay on CESR primitives.
 3. Infrastructure adapters (`packages/keri/src/db/core/**`)
@@ -126,8 +138,8 @@ internal-only implementation areas so refactors can preserve stable contracts.
   - `packages/tufa/src/http/*` now owns app-level HTTP error mapping for
     unhandled transport-edge failures.
 - Logging:
-  - `packages/tufa/src/http/*` now uses injected `Logger` middleware for
-    request logging and edge-failure reporting.
+  - `packages/tufa/src/http/*` now uses injected `Logger` middleware for request
+    logging and edge-failure reporting.
   - core and runtime layers still mostly use the shared console-backed logger.
 - Config/runtime flags: spread between task definitions and module constants.
 

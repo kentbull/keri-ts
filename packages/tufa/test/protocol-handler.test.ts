@@ -1,17 +1,17 @@
 // @file-test-lane app-fast-parallel
 
 import { assertEquals } from "jsr:@std/assert";
-import { Ilks } from "../../../../cesr/mod.ts";
+import { Ilks } from "../../cesr/mod.ts";
+import type { ProtocolHostPolicy } from "../../keri/runtime.ts";
+import type { AgentRuntime } from "../../keri/src/app/agent-runtime.ts";
+import type { Hab } from "../../keri/src/app/habbing.ts";
+import type { HostedRouteResolution } from "../../keri/src/app/mailboxing.ts";
 import {
   classifyCesrIngressRoute,
   classifyProtocolRoute,
   parseOobiRouteRequest,
   type ProtocolRequestContext,
-} from "../../../../tufa/src/http/protocol-handler.ts";
-import type { ProtocolHostPolicy } from "../../../runtime.ts";
-import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
-import type { Hab } from "../../../src/app/habbing.ts";
-import type { HostedRouteResolution } from "../../../src/app/mailboxing.ts";
+} from "../src/http/protocol-handler.ts";
 
 const NONE_HOSTED: HostedRouteResolution = {
   kind: "none",
@@ -63,14 +63,14 @@ function makeContext(
   };
 }
 
-Deno.test("app/protocol-handler - health short-circuits before runtime routing", () => {
+Deno.test("tufa/protocol-handler - health short-circuits before runtime routing", () => {
   const route = classifyProtocolRoute(
     makeContext({ pathname: "/health", runtime: undefined }),
   );
   assertEquals(route, { kind: "health" });
 });
 
-Deno.test("app/protocol-handler - mailbox admin path classification preserves exact-path precedence and ambiguity", () => {
+Deno.test("tufa/protocol-handler - mailbox admin path classification preserves exact-path precedence and ambiguity", () => {
   const mailboxRoute = classifyProtocolRoute(
     makeContext({
       pathname: "/mailboxes",
@@ -100,7 +100,7 @@ Deno.test("app/protocol-handler - mailbox admin path classification preserves ex
   });
 });
 
-Deno.test("app/protocol-handler - witness receipts and query routes win before generic ingress", () => {
+Deno.test("tufa/protocol-handler - witness receipts and query routes win before generic ingress", () => {
   const witnessHab = { pre: "EWIT" } as Hab;
   const policy: ProtocolHostPolicy = { witnessHab };
 
@@ -127,7 +127,7 @@ Deno.test("app/protocol-handler - witness receipts and query routes win before g
   assertEquals(queryRoute.kind, "witnessQueryGet");
 });
 
-Deno.test("app/protocol-handler - parses well-known and explicit OOBI paths", () => {
+Deno.test("tufa/protocol-handler - parses well-known and explicit OOBI paths", () => {
   assertEquals(
     parseOobiRouteRequest("/.well-known/keri/oobi/EAID"),
     {
@@ -147,7 +147,7 @@ Deno.test("app/protocol-handler - parses well-known and explicit OOBI paths", ()
   );
 });
 
-Deno.test("app/protocol-handler - ambiguous hosted paths stay explicit for OOBI and witness hosting", () => {
+Deno.test("tufa/protocol-handler - ambiguous hosted paths stay explicit for OOBI and witness hosting", () => {
   const ambiguousHosted: HostedRouteResolution = {
     kind: "ambiguous",
     endpoint: null,
@@ -180,7 +180,7 @@ Deno.test("app/protocol-handler - ambiguous hosted paths stay explicit for OOBI 
   });
 });
 
-Deno.test("app/protocol-handler - classifies witness-local and runtime ingress modes explicitly", () => {
+Deno.test("tufa/protocol-handler - classifies witness-local and runtime ingress modes explicitly", () => {
   const witnessHab = { pre: "EWIT" } as Hab;
   const context = makeContext({
     method: "POST",

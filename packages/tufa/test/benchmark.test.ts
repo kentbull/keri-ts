@@ -1,10 +1,10 @@
 // @file-test-lane app-fast-isolated
 
-import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { run } from "npm:effection@^3.6.0";
+import { tufa } from "../src/cli/cli.ts";
 
-Deno.test("CLI - tufa benchmark cesr reads stream file and prints metrics", async () => {
+Deno.test("tufa/benchmark - cesr reads stream file and prints metrics", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const sample = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
@@ -38,7 +38,7 @@ Deno.test("CLI - tufa benchmark cesr reads stream file and prints metrics", asyn
   }
 });
 
-Deno.test("CLI - tufa benchmark cesr emits JSON result when requested", async () => {
+Deno.test("tufa/benchmark - cesr emits JSON result when requested", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const sample = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";

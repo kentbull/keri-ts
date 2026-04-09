@@ -288,6 +288,14 @@ Use this file to:
     ownership files are gone. Keep remaining `packages/keri/src/app/cli/*.ts`
     modules limited to reusable non-host command operation bodies rather than
     reopening command-tree ownership there.
+40. Stage 7 is about hardening the package contract, not doing another broad
+    source-tree move. `keri-ts` now has exactly three supported public
+    entrypoints (`.`, `./runtime`, and `./db`), the built npm manifest is
+    normalized so `./src/npm/*` paths do not leak as accidental API, and
+    package-surface CLI/server/host validation belongs under `packages/tufa`
+    rather than `packages/keri`. If a future change touches smoke scripts,
+    release docs, or CI, keep the `keri-ts` library smoke separate from the
+    `tufa` CLI smoke or the boundary will drift again.
 
 ## Current Follow-Ups
 
@@ -516,6 +524,8 @@ Then do task: <TASK>.
   The durable public rule is now explicit in code: `keri-ts` root stays
   browser-safe by default, and non-browser-safe runtime plus LMDB surfaces live
   behind explicit `runtime` and `db` subpaths.
+- `docs/adr/adr-0011-three-package-architecture.md` is now the normative
+  decision record for the three-package split: `tufa -> keri-ts -> cesr-ts`.
 - Why it matters: the bad mental model was "we can decide package boundaries
   later while still letting `keri-ts` root be both app and library." That is
   exactly how accidental Node/Deno/CLI leakage persists forever.

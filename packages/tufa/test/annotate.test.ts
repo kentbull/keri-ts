@@ -1,12 +1,12 @@
 // @file-test-lane app-fast-isolated
 
-import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { run } from "npm:effection@^3.6.0";
+import { tufa } from "../src/cli/cli.ts";
 
 const ESC = String.fromCharCode(0x1b);
 
-Deno.test("CLI - tufa annotate reads from file and writes annotation", async () => {
+Deno.test("tufa/annotate - reads from file and writes annotation", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const outPath = `${dir}/out.annotated`;
@@ -24,7 +24,7 @@ Deno.test("CLI - tufa annotate reads from file and writes annotation", async () 
   }
 });
 
-Deno.test("CLI - tufa annotate --colored applies ANSI styling on stdout", async () => {
+Deno.test("tufa/annotate - --colored applies ANSI styling on stdout", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const cesr = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
@@ -47,7 +47,7 @@ Deno.test("CLI - tufa annotate --colored applies ANSI styling on stdout", async 
   assertStringIncludes(captured, ESC);
 });
 
-Deno.test("CLI - tufa annotate --colored --pretty colors pretty JSON body lines", async () => {
+Deno.test("tufa/annotate - --colored --pretty colors pretty JSON body lines", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const cesr = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
@@ -71,7 +71,7 @@ Deno.test("CLI - tufa annotate --colored --pretty colors pretty JSON body lines"
   assertStringIncludes(captured, "  \"v\":");
 });
 
-Deno.test("CLI - tufa annotate --colored never colors --out file output", async () => {
+Deno.test("tufa/annotate - --colored never colors --out file output", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
   const outPath = `${dir}/out.annotated`;
@@ -88,7 +88,7 @@ Deno.test("CLI - tufa annotate --colored never colors --out file output", async 
   }
 });
 
-Deno.test("CLI - tufa annotate loads valid YAML color overrides from HOME", async () => {
+Deno.test("tufa/annotate - loads valid YAML color overrides from HOME", async () => {
   const dir = await Deno.makeTempDir();
   const homeDir = `${dir}/home`;
   const inPath = `${dir}/in.cesr`;

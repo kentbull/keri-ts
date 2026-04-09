@@ -16,6 +16,10 @@ interface PackageManifest {
   version?: string;
 }
 
+interface BuiltNpmPackageManifest {
+  exports?: Record<string, unknown>;
+}
+
 /**
  * Resolve the version of the package from package.json or the environment variable.
  * @returns The version of the package.
@@ -81,6 +85,27 @@ function writeDntImportMap(cesrVersion: string): void {
     DNT_IMPORT_MAP_PATH,
     `${JSON.stringify(importMap, null, 2)}\n`,
   );
+}
+
+function normalizeBuiltManifest(): void {
+  const packageJsonPath = `${OUT_DIR}/package.json`;
+  const raw = Deno.readTextFileSync(packageJsonPath);
+  const manifest = JSON.parse(raw) as BuiltNpmPackageManifest;
+  manifest.exports = {
+    ".": {
+      import: NPM_MAIN_PATH,
+      types: NPM_TYPES_PATH,
+    },
+    "./runtime": {
+      import: NPM_RUNTIME_PATH,
+      types: NPM_RUNTIME_TYPES_PATH,
+    },
+    "./db": {
+      import: NPM_DB_PATH,
+      types: NPM_DB_TYPES_PATH,
+    },
+  };
+  Deno.writeTextFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 // Avoid running native install scripts (for example lmdb build) during packaging.
@@ -154,6 +179,7 @@ try {
       },
     },
     postBuild() {
+      normalizeBuiltManifest();
       Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
       Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
     },

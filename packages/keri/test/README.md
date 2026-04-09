@@ -2,6 +2,9 @@
 
 This directory contains `keri-ts` package tests.
 
+The focus here is library/runtime/DB behavior. Package-surface CLI, server, and
+host validation now lives under `packages/tufa/test/**`.
+
 ## Run tests
 
 From `packages/keri`:
@@ -37,9 +40,6 @@ deno task test:quality:interop-parity
 deno task test:quality:interop-witness
 deno task test:quality:interop-gates-b
 deno task test:quality:interop-gates-c
-
-# Server integration test
-deno task test:integration:server
 ```
 
 From repo root:
@@ -47,13 +47,10 @@ From repo root:
 ```bash
 deno task test
 deno task test:quality
-deno task test:integration:server
 ```
 
 ## Notes
 
-- Most developers adopting `keri-ts` will primarily use `tufa version` and
-  `tufa annotate` as initial verification commands.
 - CI groups tests by isolation boundary, not just by folder:
   - `db-fast`, `core-fast-a`, `core-fast-b`, and the parallel-safe portion of
     `app-fast` run with `deno test --parallel`.
@@ -64,6 +61,8 @@ deno task test:integration:server
   - `interop-witness` is the dedicated witness receipting parity lane. It uses
     explicit randomized KERIpy witness processes instead of the fixed-port
     `kli witness demo` topology.
+- Repo-root `deno task test:integration:server` now runs the `tufa` package
+  server integration seam rather than a `keri-ts`-owned host surface.
 - Parallel lanes auto-detect available CPUs and cap themselves conservatively
   by default. Override with `KERI_TEST_JOBS` or `DENO_JOBS` when you need a
   different worker count locally or in CI. `test:quality:core-fast-parallel`

@@ -15,9 +15,8 @@ npm install keri-ts
 - `keri-ts/runtime`: explicit non-browser-safe runtime surface
 - `keri-ts/db`: explicit LMDB-backed storage surface
 
-```bash
-npm install keri-ts
-```
+Only those three entrypoints are supported public surfaces. Runnable CLI/server
+ownership lives in the separate `tufa` package.
 
 ## License
 

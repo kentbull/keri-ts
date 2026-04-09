@@ -17,6 +17,6 @@
     "version-packages": "npx --yes @changesets/cli version",
     "publish-packages": "npx --yes @changesets/cli publish",
     "smoke:keri:npm": "bash scripts/smoke-test-keri-npm.sh",
-    "smoke:tufa:npm": "bash scripts/smoke-test-keri-npm.sh"
+    "smoke:tufa:npm": "bash scripts/smoke-test-tufa-npm.sh"
   }
 }

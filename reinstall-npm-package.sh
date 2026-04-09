@@ -17,6 +17,6 @@ echo "Installing local tufa tarball globally: $TUFA_TARBALL_PATH"
 npm install -g "$TUFA_TARBALL_PATH"
 
 echo "Running tarball smoke test"
-bash scripts/smoke-test-keri-npm.sh \
+bash scripts/smoke-test-tufa-npm.sh \
   "$TUFA_TARBALL_PATH" \
   "$CESR_TARBALL_PATH"

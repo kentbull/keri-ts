@@ -195,10 +195,18 @@ application developers.
 
 ### Stage 7. Slim `keri-ts` to its proper library boundary
 
+- status: completed for public entrypoints, npm artifact normalization, and
+  package-surface test/task ownership
 - remove default server and CLI exports from the main public surface
 - keep protocol, runtime, and browser-usable APIs
 - audit package exports to ensure browser safety and no accidental server
   framework leakage
+- keep exactly three supported `keri-ts` entrypoints: `.`, `./runtime`, and
+  `./db`
+- validate packed npm artifacts with a true `keri-ts` library smoke path and a
+  separate `tufa` CLI smoke path
+- keep package-surface CLI/server/host validation under `packages/tufa/test/**`
+  and library/runtime/db validation under `packages/keri/test/**`
 
 ### Stage 8. Future platform follow-ons
 
