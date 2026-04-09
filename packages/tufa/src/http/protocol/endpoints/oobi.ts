@@ -1,11 +1,4 @@
-import {
-  type AgentRuntime,
-  endpointBasePath,
-  fetchEndpointUrls,
-  type Hab,
-  preferredUrl,
-} from "../../../../../keri/runtime.ts";
-import { Roles } from "../../../../../keri/src/core/roles.ts";
+import { type AgentRuntime, endpointBasePath, fetchEndpointUrls, type Hab, preferredUrl, Roles } from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
 import type { OobiRouteRequest, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 

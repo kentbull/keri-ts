@@ -1,4 +1,4 @@
-import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "../../../../keri/runtime.ts";
+import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
 
 /** Shared request handler contract consumed by both Deno and Node hosts. */
 export type ProtocolHandler = (req: Request) => Promise<Response>;

@@ -1,12 +1,12 @@
-import { Ilks } from "../../../../../cesr/mod.ts";
+import { Ilks } from "cesr-ts";
 import {
   type AgentRuntime,
   type CesrStreamInspection,
   type Hab,
   readMailboxAdminRequest,
-} from "../../../../../keri/runtime.ts";
-import { ValidationError } from "../../../../../keri/src/core/errors.ts";
-import { Roles } from "../../../../../keri/src/core/roles.ts";
+  Roles,
+  ValidationError,
+} from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
 import { processRuntimeRequest } from "../runtime-bridge.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";

@@ -1,11 +1,8 @@
 // @file-test-lane app-fast-parallel
 
+import { Ilks } from "cesr-ts";
 import { assertEquals } from "jsr:@std/assert";
-import { Ilks } from "../../cesr/mod.ts";
-import type { ProtocolHostPolicy } from "../../keri/runtime.ts";
-import type { AgentRuntime } from "../../keri/src/app/agent-runtime.ts";
-import type { Hab } from "../../keri/src/app/habbing.ts";
-import type { HostedRouteResolution } from "../../keri/src/app/mailboxing.ts";
+import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
 import {
   classifyCesrIngressRoute,
   classifyProtocolRoute,

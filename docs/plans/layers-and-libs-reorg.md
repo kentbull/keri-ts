@@ -220,15 +220,17 @@ These are explicitly later work, not part of the initial hard split:
 
 ### Stage 9. Package publishing
 
-Ensure there is versioning and publishing support for the `tufa` package being
-published to NPM similar to `keri-ts` and `cesr-ts`.
+Ensure there is versioning and publishing support for the Tufa application
+package being published to npm similar to `keri-ts` and `cesr-ts`.
 
-- Do a check in the NPM registry to see if `tufa` is available
-- `tufa` should depend on `keri-ts`
-- We should change the package reinstall script to install cesr-ts, then keri-ts,
-  and finally tufa locally
-- Add a tag-driven CI publishing workflow for `tufa` similar to the other two
-  packages
+- Publish the package as `@keri-ts/tufa` because unscoped `tufa` is already
+  taken on npm
+- Make `@keri-ts/tufa` depend on exact `keri-ts` and `cesr-ts` versions instead
+  of vendoring local source into the tarball
+- Keep the reinstall/smoke flow installing `cesr-ts`, then `keri-ts`, and
+  finally `@keri-ts/tufa`
+- Add a tag-driven CI publishing workflow for `@keri-ts/tufa` similar to the
+  other two packages, with a dependency-readiness check before publish
 
 ## Public Interface Impact
 

@@ -1,7 +1,7 @@
+import { concatBytes } from "cesr-ts";
 import { action, type Operation } from "effection";
+import { type AgentRuntime, type Hab, processWitnessIngress } from "keri-ts/runtime";
 import { createServer, type Server, type Socket } from "node:net";
-import { concatBytes } from "../../../cesr/mod.ts";
-import { type AgentRuntime, type Hab, processWitnessIngress } from "../../../keri/runtime.ts";
 
 interface RunningWitnessTcpServer {
   readonly finished: Promise<void>;

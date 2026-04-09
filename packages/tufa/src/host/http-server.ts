@@ -6,11 +6,10 @@
  * policy lives in `keri-ts` through `ProtocolHostPolicy`.
  */
 import { action, type Operation } from "effection";
+import { type AgentRuntime, consoleLogger, type Logger, type ProtocolHostPolicy } from "keri-ts/runtime";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import type { AgentRuntime, ProtocolHostPolicy } from "../../../keri/runtime.ts";
-import { consoleLogger, type Logger } from "../../../keri/src/core/logger.ts";
 import { createTufaApp } from "../http/app.ts";
 
 interface RunningServer {

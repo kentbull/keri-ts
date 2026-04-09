@@ -7,7 +7,7 @@
  * - long-lived agent hosting
  */
 import { Command } from "npm:commander@^10.0.1";
-import { DISPLAY_VERSION } from "../../../../keri/src/app/version.ts";
+import { tufaCliVersionLine } from "../../version-display.ts";
 import type { CommandDispatch } from "../command-types.ts";
 
 /** Register lifecycle-oriented top-level commands. */
@@ -29,7 +29,7 @@ function registerVersionCmd(program: Command): void {
     .command("version")
     .description("Show tufa version")
     .action(() => {
-      console.log(DISPLAY_VERSION);
+      console.log(tufaCliVersionLine());
     });
 }
 

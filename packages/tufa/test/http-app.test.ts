@@ -1,6 +1,5 @@
 import { assertEquals, assertMatch, assertStringIncludes } from "jsr:@std/assert";
-import { ValidationError } from "../../keri/src/core/errors.ts";
-import type { Logger } from "../../keri/src/core/logger.ts";
+import { type Logger, ValidationError } from "keri-ts/runtime";
 import { createTufaApp } from "../src/http/app.ts";
 
 interface LogEntry {

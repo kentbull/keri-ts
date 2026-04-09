@@ -1,5 +1,5 @@
 import type { Operation } from "effection";
-import type { Habery } from "../../../keri/runtime.ts";
+import type { Habery } from "keri-ts/runtime";
 import { type IndirectHostOptions, runIndirectHost } from "../host/indirect-host.ts";
 
 /** Package-internal long-lived mailbox-host settings. */

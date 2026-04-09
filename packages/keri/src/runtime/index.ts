@@ -10,6 +10,24 @@ export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
 export * from "../app/cesr-http.ts";
 export * from "../app/challenging.ts";
+export { aidCommand } from "../app/cli/aid.ts";
+export { annotateCommand } from "../app/cli/annotate.ts";
+export { benchmarkCommand } from "../app/cli/benchmark.ts";
+export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "../app/cli/challenge.ts";
+export { dumpEvts } from "../app/cli/db-dump.ts";
+export { endsAddCommand } from "../app/cli/ends.ts";
+export { exchangeSendCommand } from "../app/cli/exchange.ts";
+export { exportCommand } from "../app/cli/export.ts";
+export { inceptCommand } from "../app/cli/incept.ts";
+export { initCommand } from "../app/cli/init.ts";
+export { interactCommand } from "../app/cli/interact.ts";
+export { listCommand } from "../app/cli/list.ts";
+export { locAddCommand } from "../app/cli/loc.ts";
+export { oobiGenerateCommand, oobiResolveCommand } from "../app/cli/oobi.ts";
+export { queryCommand } from "../app/cli/query.ts";
+export { rotateCommand } from "../app/cli/rotate.ts";
+export { signCommand } from "../app/cli/sign.ts";
+export { verifyCommand } from "../app/cli/verify.ts";
 export * from "../app/configing.ts";
 export * from "../app/cue-runtime.ts";
 export * from "../app/exchanging.ts";
@@ -41,3 +59,11 @@ export {
   type WitnessReceiptPostResult,
   type WitnessReceiptRunResult,
 } from "../app/witnessing.ts";
+export * from "../core/cues.ts";
+export * from "../core/errors.ts";
+export * from "../core/logger.ts";
+export * from "../core/mailbox-topics.ts";
+export * from "../core/records.ts";
+export * from "../core/roles.ts";
+export * from "../core/schemes.ts";
+export * from "../time/mod.ts";

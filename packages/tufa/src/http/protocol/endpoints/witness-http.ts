@@ -5,7 +5,7 @@ import {
   witnessQueryGet,
   witnessReceiptGet,
   witnessReceiptPost,
-} from "../../../../../keri/runtime.ts";
+} from "keri-ts/runtime";
 import { cesrResponse, textResponse } from "../responses.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 

@@ -1,8 +1,7 @@
 import { type Operation } from "effection";
+import { AppError, LOG_LEVELS, type LogLevel, setLogLevel } from "keri-ts/runtime";
 import { Command, Option } from "npm:commander@^10.0.1";
-import { DISPLAY_VERSION } from "../../../keri/src/app/version.ts";
-import { AppError } from "../../../keri/src/core/errors.ts";
-import { LOG_LEVELS, type LogLevel, setLogLevel } from "../../../keri/src/core/logger.ts";
+import { tufaCliVersionLine } from "../version-display.ts";
 import { registerCmds } from "./command-definitions.ts";
 import { type CommandHandler, type CommandSelection } from "./command-types.ts";
 import { createCmdHandlers } from "./handlers.ts";
@@ -24,7 +23,7 @@ export class CliExitError extends Error {
 /** Create the CLI program with action handlers that signal command execution. */
 function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
-  program.name("tufa").version(DISPLAY_VERSION).description(
+  program.name("tufa").version(tufaCliVersionLine()).description(
     "Trust Utilities for Agents CLI",
   );
   program.addOption(

@@ -2,10 +2,10 @@
 
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
-import { DISPLAY_VERSION } from "../../keri/src/app/version.ts";
-import { ValidationError } from "../../keri/src/core/errors.ts";
+import { DISPLAY_VERSION as KERI_DISPLAY_VERSION, ValidationError } from "keri-ts/runtime";
 import { tufa } from "../src/cli/cli.ts";
 import { mailboxStartCommand } from "../src/cli/mailbox.ts";
+import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
 interface CmdResult {
   code: number;
@@ -60,14 +60,17 @@ function extractPrefix(output: string): string {
 Deno.test("tufa/cli - version command prints display version", async () => {
   const captured = await captureConsoleLog(() => run(() => tufa(["version"])));
 
-  assertEquals(captured, [DISPLAY_VERSION]);
+  assertEquals(captured, [`tufa ${TUFA_DISPLAY_VERSION} (keri-ts ${KERI_DISPLAY_VERSION})`]);
 });
 
 Deno.test("tufa/cli - --version prints display version", async () => {
   const res = await runTufa(["--version"]);
 
   assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-  assertStringIncludes(res.stdout, DISPLAY_VERSION);
+  assertStringIncludes(
+    res.stdout,
+    `tufa ${TUFA_DISPLAY_VERSION} (keri-ts ${KERI_DISPLAY_VERSION})`,
+  );
 });
 
 Deno.test("tufa/cli - --help advertises the Tufa-owned command tree", async () => {

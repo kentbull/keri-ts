@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Smoke-test a packed `tufa` npm artifact by installing the tarball into a
+# Smoke-test a packed `@keri-ts/tufa` npm artifact by installing the tarball
+# into a
 # fresh runtime and exercising the published CLI entrypoint.
 # Optional additional args:
 # - a locally built `cesr-ts` tarball
@@ -15,7 +16,7 @@ TARBALL_PATH="${1:-}"
 CESR_TARBALL_PATH="${2:-}"
 KERI_TARBALL_PATH="${3:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
-  echo "No tarball provided; building and packing tufa..."
+  echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
     cd "${ROOT_DIR}/packages/tufa"
     deno task build:npm
@@ -211,5 +212,5 @@ TUFA_SMOKE_PORT=\"\$PORT\" TUFA_SMOKE_AGENT_PID=\"\$AGENT_PID\" TUFA_SMOKE_AGENT
   }
   process.exit(1);
 ' >/dev/null
-echo \"Smoke test passed for tufa \$V1 on ${SMOKE_NODE_IMAGE}\"
+echo \"Smoke test passed for @keri-ts/tufa \$V1 on ${SMOKE_NODE_IMAGE}\"
 "

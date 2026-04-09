@@ -6,7 +6,7 @@
  * setup lives under `tufa/src/host`, while endpoint-specific HTTP semantics
  * live under `tufa/src/http/protocol`.
  */
-import type { AgentRuntime, ProtocolHostPolicy } from "../../../keri/runtime.ts";
+import type { AgentRuntime, ProtocolHostPolicy } from "keri-ts/runtime";
 import { buildProtocolRequestContext } from "./protocol/context.ts";
 import {
   classifyCesrIngressRoute,

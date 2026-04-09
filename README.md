@@ -2,7 +2,7 @@
 
 TypeScript packages for KERI and CESR:
 
-- `tufa`: Trust Utilities for Agents CLI application package
+- `@keri-ts/tufa`: Trust Utilities for Agents CLI application package
 - `keri-ts`: KERI protocol/runtime library
 - `cesr-ts`: CESR parsing and annotation library
 
@@ -10,17 +10,17 @@ TypeScript packages for KERI and CESR:
 
 ```bash
 # Global install
-npm install -g tufa
+npm install -g @keri-ts/tufa
 tufa version
 
 # One-off usage without global install
-npx tufa version
+npx @keri-ts/tufa version
 ```
 
 ### Install with NPM
 
 ```bash
-npm i -g tufa
+npm i -g @keri-ts/tufa
 
 tufa -h
 ```
@@ -95,7 +95,7 @@ deno task quality
 
 ## Package docs
 
-- `packages/tufa/README.md`: `tufa` CLI package
+- `packages/tufa/README.md`: `@keri-ts/tufa` CLI package
 - `packages/keri/README.md`: `keri-ts` library package
 - `packages/cesr/README.md`: `cesr-ts` parser/annotator library
 
@@ -104,7 +104,7 @@ deno task quality
 Release/versioning and maintainer workflows are documented in:
 
 - `MAINTAINER-README.md`
-- `docs/release-versioning.md`
+- `docs/versioning/release-versioning.md`
 
 ## License
 

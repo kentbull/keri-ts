@@ -1,5 +1,5 @@
+import { consoleLogger, type Logger } from "keri-ts/runtime";
 import type { Hono, MiddlewareHandler } from "npm:hono@^4.7.11";
-import { consoleLogger, type Logger } from "../../../keri/src/core/logger.ts";
 import { normalizeProtocolPath } from "./protocol/context.ts";
 
 /** Fixed CORS policy owned by the Stage 4 Tufa HTTP edge. */

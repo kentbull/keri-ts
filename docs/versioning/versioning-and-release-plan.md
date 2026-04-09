@@ -13,13 +13,13 @@ Chosen decisions from this review:
 - CI build metadata: Display-only suffix in CLI output (not npm package
   version).
 - Release automation: Changesets.
-- tufa version output: single-line keri-ts version.
+- tufa version output: `tufa <tufa-version> (keri-ts <keri-version>)`.
 
 ———
 
 ## Goals and Success Criteria
 
-1. tufa version and tufa --version return the exact same value.
+1. tufa version and tufa --version return the exact same one-line value.
 2. Released artifacts show clean SemVer (x.y.z).
 3. CI-built artifacts automatically show x.y.z+build.<run>.<sha> (or equivalent)
    in CLI output.

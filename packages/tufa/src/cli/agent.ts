@@ -4,17 +4,17 @@ import {
   type Configer,
   createAgentRuntime,
   createConfiger,
+  EndpointRoles,
   type Hab,
   type Habery,
   ingestKeriBytes,
   normalizeCesrBodyMode,
   processRuntimeTurn,
-} from "../../../keri/runtime.ts";
-import { setupHby } from "../../../keri/src/app/cli/common/existing.ts";
-import { ValidationError } from "../../../keri/src/core/errors.ts";
-import { EndpointRoles } from "../../../keri/src/core/roles.ts";
-import { Schemes } from "../../../keri/src/core/schemes.ts";
+  Schemes,
+  ValidationError,
+} from "keri-ts/runtime";
 import { runIndirectHost } from "../host/indirect-host.ts";
+import { setupHby } from "./support/existing.ts";
 
 /** Parsed arguments for the long-lived `tufa agent` host command. */
 interface AgentArgs {

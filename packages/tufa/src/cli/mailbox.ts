@@ -6,29 +6,30 @@
  * seams over the runtime and databaser contracts documented elsewhere; the goal
  * here is to keep the operational flow obvious.
  */
+import { concatBytes } from "cesr-ts";
 import { action, type Operation } from "effection";
 import { join } from "jsr:@std/path";
-import { concatBytes } from "../../../cesr/mod.ts";
 import {
   buildCesrRequest,
   buildCesrStreamRequest,
   type CesrBodyMode,
   createAgentRuntime,
+  EndpointRoles,
   fetchEndpointUrls,
   fetchResponseHandle,
   type Habery,
   ingestKeriBytes,
+  makeNowIso8601,
   normalizeCesrBodyMode,
   Organizer,
   preferredUrl,
   processRuntimeTurn,
-} from "../../../keri/runtime.ts";
-import { ensureHby, setupHby } from "../../../keri/src/app/cli/common/existing.ts";
-import { ValidationError } from "../../../keri/src/core/errors.ts";
-import { TopicsRecord } from "../../../keri/src/core/records.ts";
-import { EndpointRoles, Roles } from "../../../keri/src/core/roles.ts";
-import { makeNowIso8601 } from "../../../keri/src/time/mod.ts";
+  Roles,
+  TopicsRecord,
+  ValidationError,
+} from "keri-ts/runtime";
 import { runMailboxHost } from "../roles/mailbox.ts";
+import { ensureHby, setupHby } from "./support/existing.ts";
 
 interface MailboxBaseArgs {
   name?: string;

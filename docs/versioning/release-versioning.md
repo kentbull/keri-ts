@@ -5,7 +5,9 @@
 1. Ensure `master` is up to date and working tree is clean.
 2. Decide release scope:
    - `keri-ts` only
-   - `cesr-ts` and `keri-ts` together
+   - `cesr-ts` only
+   - `@keri-ts/tufa` only
+   - `cesr-ts`, `keri-ts`, and `@keri-ts/tufa` together
 3. Create changeset(s):
    - `deno task release:changeset` (once for `keri-ts` only)
    - `deno task release:changeset` twice (one per package for joint release)
@@ -25,6 +27,7 @@
 9. Tag exact release versions:
    - `git tag keri-v<keri-version>`
    - `git tag cesr-v<cesr-version>` (joint release only)
+   - `git tag tufa-v<tufa-version>` (`@keri-ts/tufa` release only)
 10. Push commit and tags:
     - `git push origin master --follow-tags`
 11. Confirm GitHub release workflow success:
@@ -34,8 +37,8 @@
 Rules that must hold:
 
 - Tag version must match package manifest version for each package.
-- `keri-ts` and `cesr-ts` are independently versioned; matching versions are
-  optional.
+- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` are independently versioned;
+  matching versions are optional.
 - `deno task release:version` already runs `changeset version`, `manifest:sync`,
   and `version:generate`.
 
@@ -52,8 +55,9 @@ Rules that must hold:
 ## Runtime CLI version strings
 
 - Generated files:
-  - `packages/keri/src/app/version.ts`
-  - `packages/cesr/src/version.ts`
+- `packages/keri/src/app/version.ts`
+- `packages/cesr/src/version.ts`
+- `packages/tufa/src/version.ts`
 - Generator:
   - `scripts/generate_versions.ts`
 - Output format:
@@ -159,17 +163,21 @@ To smoke test a specific tarball (already packed):
 
 ```bash
 bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
-bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/tufa-<version>.tgz
+bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/keri-ts-tufa-<version>.tgz
 ```
 
 ## Publishing
 
 - `keri-ts` release workflow: `.github/workflows/keri-ts-npm-release.yml`
 - `cesr-ts` release workflow: `.github/workflows/cesr-npm-release.yml`
+- `@keri-ts/tufa` release workflow: `.github/workflows/tufa-npm-release.yml`
 - Tag formats:
   - `keri-v<version>`
   - `cesr-v<version>`
+  - `tufa-v<version>`
 - Each workflow validates that the tag version matches package manifest version
   before publishing.
 - `keri-ts` release workflow also runs Docker smoke validation (`node:alpine`)
   against the packed tarball before `npm publish`.
+- `@keri-ts/tufa` release workflow validates that its exact `keri-ts` and
+  `cesr-ts` dependency versions are already published before `npm publish`.

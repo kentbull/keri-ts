@@ -1,5 +1,5 @@
 import type { Operation } from "effection";
-import type { Hab, Habery } from "../../../keri/runtime.ts";
+import type { Hab, Habery } from "keri-ts/runtime";
 import { runHostKernel } from "../host/kernel.ts";
 import { startWitnessTcpServer } from "../host/witness-tcp.ts";
 

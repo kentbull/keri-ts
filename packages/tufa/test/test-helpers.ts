@@ -1,5 +1,5 @@
 import { action, type Operation, spawn, type Task } from "effection";
-import type { AgentRuntime } from "../../keri/runtime.ts";
+import type { AgentRuntime } from "keri-ts/runtime";
 import { type RuntimeHttpHostOptions, startServer } from "../src/host/http-server.ts";
 
 export interface CmdResult {

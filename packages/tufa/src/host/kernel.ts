@@ -1,14 +1,14 @@
 import { action, type Operation, spawn, type Task } from "effection";
 import {
   type AgentRuntime,
+  consoleLogger,
   createAgentRuntime,
   type Hab,
   type Habery,
   processRuntimeTurn,
   type ProtocolHostPolicy,
   runAgentRuntime,
-} from "../../../keri/runtime.ts";
-import { consoleLogger } from "../../../keri/src/core/logger.ts";
+} from "keri-ts/runtime";
 import { startServer } from "./http-server.ts";
 
 /** Resolved listen callback address for one HTTP host. */

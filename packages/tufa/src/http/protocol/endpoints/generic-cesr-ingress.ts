@@ -1,11 +1,11 @@
-import { Ilks, type SerderKERI } from "../../../../../cesr/mod.ts";
+import { Ilks, type SerderKERI } from "cesr-ts";
 import {
   type HostedRouteResolution,
   inspectCesrRequest,
+  normalizeMbxTopicCursor,
   processWitnessIngress,
   readRequiredCesrRequestBytes,
-} from "../../../../../keri/runtime.ts";
-import { normalizeMbxTopicCursor } from "../../../../../keri/src/core/mailbox-topics.ts";
+} from "keri-ts/runtime";
 import { jsonNoContentResponse, textResponse } from "../responses.ts";
 import { processRuntimeRequest, publishQueryCatchupReplay } from "../runtime-bridge.ts";
 import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";

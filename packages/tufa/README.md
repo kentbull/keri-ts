@@ -1,4 +1,4 @@
-# tufa
+# @keri-ts/tufa
 
 Trust Utilities for Agents CLI application package.
 
@@ -12,9 +12,12 @@ deno task tufa version
 ## Install
 
 ```bash
-npm install -g tufa
+npm install -g @keri-ts/tufa
 tufa version
 ```
+
+The published npm package name is `@keri-ts/tufa`. The installed binary remains
+`tufa`.
 
 ## License
 

@@ -1,5 +1,5 @@
+import type { AgentRuntime, ProtocolHostPolicy } from "keri-ts/runtime";
 import { Hono } from "npm:hono@^4.7.11";
-import type { AgentRuntime, ProtocolHostPolicy } from "../../../keri/runtime.ts";
 import { installTufaHttpErrorHandling } from "./error-mapping.ts";
 import { installTufaHttpPolicy, resolveTufaHttpAppPolicy, type TufaHttpAppOptions } from "./policy.ts";
 import { createProtocolHandler } from "./protocol-handler.ts";

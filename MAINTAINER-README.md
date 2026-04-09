@@ -40,7 +40,7 @@ Local macOS note:
 
 Primary reference:
 
-- `docs/release-versioning.md`
+- `docs/versioning/release-versioning.md`
 
 Quick commands:
 
@@ -75,7 +75,7 @@ To test a specific prebuilt tarball:
 
 ```bash
 bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
-bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/tufa-<version>.tgz
+bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/keri-ts-tufa-<version>.tgz
 ```
 
 ## CI workflows
@@ -83,8 +83,14 @@ bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/tufa-<version>.tgz
 - `/.github/workflows/changesets-version-pr.yml`
 - `/.github/workflows/keri-ts-npm-release.yml`
 - `/.github/workflows/cesr-npm-release.yml`
+- `/.github/workflows/tufa-npm-release.yml`
 
 Tag-triggered release workflows require package version/tag alignment.
+
+Tufa release order rule:
+
+- if `@keri-ts/tufa` depends on new `cesr-ts` or `keri-ts` versions, publish
+  those first, then publish `@keri-ts/tufa`
 
 ## Deno global install notes for tufa
 

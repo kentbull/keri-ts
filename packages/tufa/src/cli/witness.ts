@@ -4,21 +4,22 @@ import {
   type Configer,
   createAgentRuntime,
   createConfiger,
+  EndpointRoles,
   fetchEndpointUrls,
   type Hab,
   type Habery,
   ingestKeriBytes,
+  makeNowIso8601,
   processRuntimeTurn,
   Receiptor,
+  type Scheme,
+  Schemes,
+  ValidationError,
   type WitnessAuthMap,
   WitnessReceiptor,
-} from "../../../keri/runtime.ts";
-import { ensureHby, setupHby } from "../../../keri/src/app/cli/common/existing.ts";
-import { ValidationError } from "../../../keri/src/core/errors.ts";
-import { EndpointRoles } from "../../../keri/src/core/roles.ts";
-import { type Scheme, Schemes } from "../../../keri/src/core/schemes.ts";
-import { makeNowIso8601 } from "../../../keri/src/time/mod.ts";
+} from "keri-ts/runtime";
 import { runWitnessHost } from "../roles/witness.ts";
+import { ensureHby, setupHby } from "./support/existing.ts";
 
 interface WitnessBaseArgs {
   name?: string;
