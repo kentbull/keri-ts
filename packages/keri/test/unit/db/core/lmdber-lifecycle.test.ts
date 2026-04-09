@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { b, t } from "../../../../../cesr/mod.ts";

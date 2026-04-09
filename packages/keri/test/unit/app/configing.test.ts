@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { basename, dirname } from "jsr:@std/path";

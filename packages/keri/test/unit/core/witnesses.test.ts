@@ -1,3 +1,5 @@
+// @file-test-lane core-fast
+
 import { assertEquals } from "jsr:@std/assert";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "../../../src/core/witnesses.ts";
 

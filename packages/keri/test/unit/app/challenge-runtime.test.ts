@@ -1,3 +1,5 @@
+// @file-test-lane runtime-medium
+
 import { run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import {
@@ -253,6 +255,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
   });
 });
 
+// @test-lane runtime-slow
 Deno.test("exchange send can deliver challenge responses through mailbox-authorized transport", async () => {
   const aliceName = `challenge-indirect-alice-${crypto.randomUUID()}`;
   const bobName = `challenge-indirect-bob-${crypto.randomUUID()}`;

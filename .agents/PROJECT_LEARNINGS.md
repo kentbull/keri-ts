@@ -137,10 +137,21 @@ Use this file to:
     rebuild requirements.
 22. Test parallelization should follow isolation boundaries, not folder names.
     DB-core suites can parallelize more freely; CLI/app/interop suites that
-    mutate globals or persisted stores need stronger isolation.
-23. Gates B, C, and D are closed enough to treat local visibility, compat-store
+    mutate globals or persisted stores need stronger isolation. In CI, do not
+    hide a heavy lane under a broad "fast" umbrella job name once its wall
+    clock stops being fast; split DB, core, app/server, and representative
+    runtime lanes into separate jobs so the slowest bucket is explicit.
+23. The KERI test runner must stay truthful as runtime and interop files grow.
+    `scripts/ci/run-keri-test-group.ts` is now the authoritative lane map,
+    `test:quality` is the honest default path, `test:slow` is the explicit
+    mailbox-heavy path, and lane audit should fail if any discovered KERI test
+    case is missing or double-owned. The current truthful inventory is 61 KERI
+    `*.test.ts` files and 360 named tests, with older stateful app files now
+    simplified around local setup reuse and in-process command assertions.
+    Keep compat LMDB rebuild as job/local setup, not hidden harness behavior.
+24. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
-24. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
+25. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
     broader Chunk 7 query/reply correspondence closure, attached replay receipt
     parity for cloned KEL events, KERIpy-shaped transferable query ingress
     (`ssgs` -> `source + sigers`), bounded init/incept convergence, and the
@@ -158,12 +169,12 @@ Use this file to:
     are now primarily broader exchange/forwarding route breadth beyond the
     current mailbox/challenge slice, plus the broader stale/timeout continuation
     tail outside the now-closed receipt/query correspondence slice.
-25. `tufa agent` release confidence must come from the packed npm artifact, not
+26. `tufa agent` release confidence must come from the packed npm artifact, not
     just the Deno source path. CLI flag semantics and Node host/runtime
     compatibility can drift unless smoke coverage exercises
     `init -> incept -> agent -> /health` against the tarball users actually
     install.
-26. End-to-end CLI tests should stay on honest public seams. For bootstrap
+27. End-to-end CLI tests should stay on honest public seams. For bootstrap
     config, prefer explicit file-path flags such as `--config-dir` /
     `--config-file`; do not seed a command's default internal config path or
     inspect LMDB through ad hoc `deno eval` helpers in bash and call that CLI
@@ -171,29 +182,29 @@ Use this file to:
     honest about store ownership too: if a CLI command needs the same store as a
     long-lived `tufa agent`, stop the host, run the command, then restart the
     recipient host as needed instead of depending on implicit concurrent access.
-27. For interop debugging, `tufa db dump` is now a first-class maintainer seam.
+28. For interop debugging, `tufa db dump` is now a first-class maintainer seam.
     Prefer targeted selectors such as `baser.<subdb>`, `mailboxer.<subdb>`, and
     `outboxer.<subdb>` against both `.tufa` and `.keri` stores over ad hoc LMDB
     scripts or whole-store dumps when validating state transitions.
-28. The host mental model must stay explicit: one long-lived listener/runtime
+29. The host mental model must stay explicit: one long-lived listener/runtime
     serves a Habery or command invocation, while hosted-prefix filtering decides
     which local AIDs are reachable through that host. Multi-AID seeding bugs are
     about over-broad bootstrap/selection, not one-listener-per-AID topology.
-29. AEID is keeper auth/encryption identity state, not an ordinary hosted or
+30. AEID is keeper auth/encryption identity state, not an ordinary hosted or
     user-facing AID. KERIpy allows it to be supplied at init and later changed
     to re-encrypt keeper secrets, but that does not make it part of normal user
     habitat hosting or OOBI/mailbox surfaces.
-30. Keep endpoint-role support separate from startup synthesis. `Roles.agent`
+31. Keep endpoint-role support separate from startup synthesis. `Roles.agent`
     may remain part of routing and OOBI support, but `tufa agent` should not
     auto-seed self `agent` end roles until there is an intentional runtime
     construct that actually needs that state.
-31. Hosted controller endpoint bootstrap should now be config-first, KERIpy-
+32. Hosted controller endpoint bootstrap should now be config-first, KERIpy-
     style. Alias-scoped config sections own `dt` plus `curls` for self
     controller endpoint publication, `Hab`/`Habery` feed that material through
     normal reply acceptance on open/reopen, and `tufa agent` only falls back to
     synthesized localhost controller state when no alias config exists and
     accepted state is still incomplete.
-32. Mailbox polling timeout policy is now explicitly split by responsibility:
+33. Mailbox polling timeout policy is now explicitly split by responsibility:
     short request-open guard, KERIpy-shaped long-poll duration, and bounded
     command-local turn budget. `MailboxPoller` remains the TS-native port of
     KERIpy `Poller`, while `MailboxDirector` keeps topic/cursor/query-cue
@@ -203,7 +214,7 @@ Use this file to:
     callers can preserve per-source ingestion boundaries explicitly, while
     long-lived `pollDo()` stays sink-based because concurrent workers do not
     have a natural finite return value.
-33. Real witness interop evidence now has its own explicit seam. The
+34. Real witness interop evidence now has its own explicit seam. The
     `interop-witness` lane uses temp-copied KERIpy witness configs with
     randomized localhost ports instead of fixed-port demos, readiness probes
     KERIpy witnesses through controller/witness OOBIs rather than `/health`,
@@ -260,6 +271,12 @@ Use this file to:
     if KLI/KERIpy witness-set replacement under the explicit harness becomes a
     required control claim, add it as its own scenario instead of silently
     broadening the current control test.
+12. Keep KERI test-lane ownership explicit as mailbox/runtime work grows. If a
+    mixed-speed file adds new cases, update the source annotations and lane
+    audit in the same change set so `test:quality` stays truthful by default.
+    Do not quietly reintroduce repeated subprocess launches or repeated cold
+    store setup in the older app-stateful files when a shared in-file baseline
+    would prove the same behavior more honestly.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 

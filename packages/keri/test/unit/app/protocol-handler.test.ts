@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { assertEquals } from "jsr:@std/assert";
 import { Ilks } from "../../../../cesr/mod.ts";
 import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";

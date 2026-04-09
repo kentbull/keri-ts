@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";

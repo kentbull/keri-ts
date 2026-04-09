@@ -4,7 +4,10 @@ name: PR Stage Gate
 # Flow:
 # 1. `static-checks` rejects formatting, lint, and deterministic quality drift.
 # 2. The KERI test surface is split by real isolation boundaries:
-#    - `keri-fast-tests` for parallel-safe DB/light checks
+#    - `keri-db-fast-tests` for parallel-safe DB coverage
+#    - `keri-core-fast-tests` for the still-heavy core KEL/query/reply unit lane
+#    - `keri-app-fast-tests` for tiny app/help/server checks
+#    - `keri-runtime-medium-tests` for representative runtime coverage
 #    - `keri-app-stateful-*` for stateful CLI flows that mutate process globals
 #    - `keri-interop-*` for the slow KERIpy/LMDB v1 parity paths
 # 3. `cesr-tests` keeps the CESR package's fast unit surface independent so
@@ -112,9 +115,9 @@ jobs:
           CESR_TS_BUILD_METADATA: ""
         run: deno task quality:check
 
-  # Fast KERI lanes: DB-core tests can use Deno module parallelism, while the
-  # tiny console-mutating app/integration files are still isolated by file.
-  keri-fast-tests:
+  # Parallel-safe DB coverage stays isolated so the cheapest deterministic gate
+  # finishes quickly even when heavier KERI lanes are busy.
+  keri-db-fast-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -151,10 +154,135 @@ jobs:
           EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
         run: bash scripts/ci/assert-environment.sh
 
-      - name: run fast KERI test lanes
-        # This lane uses the grouped runner to combine the parallel-safe DB
-        # bucket with the tiny isolated app/integration files.
-        run: deno task test:quality:keri:fast
+      - name: run fast KERI DB lane
+        run: deno task test:quality:keri:db-fast
+
+  # Core KEL/query/reply unit coverage is logically "fast" compared with
+  # interop/runtime hosting, but it is still too heavy to hide inside one
+  # umbrella fast job.
+  keri-core-fast-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run KERI core fast lane
+        run: deno task test:quality:keri:core-fast
+
+  # Tiny app/help/server checks stay together so we do not pay per-job overhead
+  # for slices that already finish quickly on their own.
+  keri-app-fast-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run KERI app fast bundle
+        run: deno task test:quality:keri:app-fast
+
+  # Representative runtime coverage is intentionally on the default path, but
+  # it should not delay the DB/core/app feedback lanes.
+  keri-runtime-medium-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run KERI runtime medium lane
+        run: deno task test:quality:keri:runtime-medium
 
   # Stateful CLI flows are slower and mutate console/HOME or persisted stores,
   # so we isolate them by file and split them into two balanced jobs.
@@ -653,7 +781,10 @@ jobs:
     if: ${{ always() }}
     needs:
       - static-checks
-      - keri-fast-tests
+      - keri-db-fast-tests
+      - keri-core-fast-tests
+      - keri-app-fast-tests
+      - keri-runtime-medium-tests
       - keri-app-stateful-a-tests
       - keri-app-stateful-b-tests
       - keri-interop-parity-tests
@@ -669,7 +800,10 @@ jobs:
         # disappearing when an upstream job aborts early.
         env:
           STATIC_CHECKS: ${{ needs.static-checks.result }}
-          KERI_FAST_TESTS: ${{ needs.keri-fast-tests.result }}
+          KERI_DB_FAST_TESTS: ${{ needs.keri-db-fast-tests.result }}
+          KERI_CORE_FAST_TESTS: ${{ needs.keri-core-fast-tests.result }}
+          KERI_APP_FAST_TESTS: ${{ needs.keri-app-fast-tests.result }}
+          KERI_RUNTIME_MEDIUM_TESTS: ${{ needs.keri-runtime-medium-tests.result }}
           KERI_APP_STATEFUL_A_TESTS: ${{ needs.keri-app-stateful-a-tests.result }}
           KERI_APP_STATEFUL_B_TESTS: ${{ needs.keri-app-stateful-b-tests.result }}
           KERI_INTEROP_PARITY_TESTS: ${{ needs.keri-interop-parity-tests.result }}
@@ -679,7 +813,10 @@ jobs:
           PACKAGE_SMOKE: ${{ needs.package-smoke.result }}
         run: |
           echo "static-checks=${STATIC_CHECKS}"
-          echo "keri-fast-tests=${KERI_FAST_TESTS}"
+          echo "keri-db-fast-tests=${KERI_DB_FAST_TESTS}"
+          echo "keri-core-fast-tests=${KERI_CORE_FAST_TESTS}"
+          echo "keri-app-fast-tests=${KERI_APP_FAST_TESTS}"
+          echo "keri-runtime-medium-tests=${KERI_RUNTIME_MEDIUM_TESTS}"
           echo "keri-app-stateful-a-tests=${KERI_APP_STATEFUL_A_TESTS}"
           echo "keri-app-stateful-b-tests=${KERI_APP_STATEFUL_B_TESTS}"
           echo "keri-interop-parity-tests=${KERI_INTEROP_PARITY_TESTS}"
@@ -688,7 +825,10 @@ jobs:
           echo "cesr-tests=${CESR_TESTS}"
           echo "package-smoke=${PACKAGE_SMOKE}"
           [[ "${STATIC_CHECKS}" == "success" ]]
-          [[ "${KERI_FAST_TESTS}" == "success" ]]
+          [[ "${KERI_DB_FAST_TESTS}" == "success" ]]
+          [[ "${KERI_CORE_FAST_TESTS}" == "success" ]]
+          [[ "${KERI_APP_FAST_TESTS}" == "success" ]]
+          [[ "${KERI_RUNTIME_MEDIUM_TESTS}" == "success" ]]
           [[ "${KERI_APP_STATEFUL_A_TESTS}" == "success" ]]
           [[ "${KERI_APP_STATEFUL_B_TESTS}" == "success" ]]
           [[ "${KERI_INTEROP_PARITY_TESTS}" == "success" ]]

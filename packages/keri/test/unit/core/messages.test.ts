@@ -1,3 +1,5 @@
+// @file-test-lane core-fast
+
 import { assertEquals } from "jsr:@std/assert";
 import { Ilks } from "../../../../cesr/mod.ts";
 import { makeReceiptSerder } from "../../../src/core/messages.ts";

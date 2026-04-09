@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { run } from "effection";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";

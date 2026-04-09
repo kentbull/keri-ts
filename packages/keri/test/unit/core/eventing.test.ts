@@ -1,3 +1,5 @@
+// @file-test-lane core-fast
+
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";

@@ -13,20 +13,48 @@
 - Move mailbox-heavy cross-host flows and full Gate E coverage into explicit
   slow lanes instead of letting them dominate normal local and PR runs.
 
+## Execution Status (2026-04-08)
+
+- Landed:
+  - authoritative runner now lives in `scripts/ci/run-keri-test-group.ts`
+  - `scripts/ci/run-keri-test-group.sh` is now only a thin wrapper
+  - `test:quality`, `test:slow`, and `test` now share one explicit lane map
+  - lane audit now checks every discovered KERI test case is assigned exactly
+    once
+  - lane ownership is now source-owned through `@file-test-lane` and
+    `@test-lane` annotations in the KERI test files
+  - mixed-speed files are split by exact test-name ownership
+  - default path now includes Gate D and excludes Gate E
+  - older stateful files now reuse local setup instead of paying repeated cold
+    starts for every happy-path assertion
+  - `cli.test.ts` now keeps CLI-entrypoint parsing on subprocess tests but runs
+    setup-heavy command semantics in process
+  - `habbing.test.ts` now shares one Habery across rotate, inception-variant,
+    and receipt-helper scenario groups
+  - `list-aid.test.ts` and `incept.test.ts` now reuse initialized stores for
+    multi-assertion happy-path coverage
+  - grouped verification passed for `app-stateful-a`, `app-stateful-b`, and
+    lane audit in a stable post-restart environment
+- Follow-on, not part of this landed KERI tranche:
+  - deeper perf work only if later profiling shows a new dominant local pain
+    point
+  - CESR slow-file splitting after KERI is no longer the active bottleneck
+- Important correction:
+  - compat LMDB rebuild remains job/local setup owned. The runner should audit
+    and orchestrate lanes, not silently rebuild native dependencies.
+
 ## Repo-Grounded State (2026-04-08)
 
 - Recent branch history is mailbox-heavy. The current branch includes mailbox
   ingress, mailbox polling and timeout work, multipart CESR mailbox add, and
   mailbox architecture documentation.
-- The active grouped KERI runner still lives in `scripts/ci/run-keri-test-group.sh`
-  and is still the source of truth for `packages/keri/deno.json` tasks.
-- That runner covers only 30 of 53 KERI test files. Twenty-three files are not
-  represented in the normal grouped path, so the current grouped path is not a
-  truthful view of the actual suite.
-- The omitted files include the recent mailbox and runtime work:
-  `mailbox-runtime.test.ts`, `gate-e-runtime.test.ts`,
-  `challenge-runtime.test.ts`, `forwarding.test.ts`,
-  `agent-cli.test.ts`, and `db/mailboxing.test.ts`.
+- The repo currently contains 61 KERI `*.test.ts` files and 360 named
+  `Deno.test(...)` cases.
+- The old grouped shell runner covered only 31 of those 61 files, so the old
+  default path was materially incomplete.
+- The omitted surface was larger than the original draft plan claimed. Missing
+  ownership included the recent mailbox/runtime files, witness/runtime files,
+  core KEL/query/reply coverage, and `db/mailboxing.test.ts`.
 - `interop-kli-tufa.test.ts` is now one of the biggest costs at roughly 85 to
   94 seconds wall clock. The expensive part is the mailbox scenarios, not the
   basic parity scenario.
@@ -38,22 +66,25 @@
   `challenge-runtime.test.ts` about 16 seconds,
   `forwarding.test.ts` about 16 seconds,
   and `agent-cli.test.ts` about 17 seconds.
-- The older app-stateful tests are still slow and still matter:
-  `habbing.test.ts` is about 63 seconds,
-  `incept.test.ts` about 14 seconds,
-  `cli.test.ts` about 9 seconds,
-  `list-aid.test.ts` about 5 seconds,
-  and `export.test.ts` about 4 seconds.
-- The current shell runner re-execs itself per subgroup. On macOS that causes
-  repeated `deno task setup` work, which inflates local wall clock beyond the
-  actual test cost.
-- `packages/keri/test/utils.ts` already has `ensureCompatLmdbBuild`, so some
-  setup caching exists in TypeScript. The shell-layer repetition is now
-  duplicate overhead.
+- The older app-stateful tests are still worth watching, but the worst repeated
+  setup churn is no longer blind duplication:
+  `habbing.test.ts` is now about 66 seconds after grouping related scenarios,
+  `incept.test.ts` about 12 seconds,
+  `cli.test.ts` about 10 seconds,
+  `list-aid.test.ts` about 2 seconds,
+  `export.test.ts` about 2 seconds,
+  and `compat-list-aid.test.ts` about 2 seconds.
+- Compat LMDB setup is already job/local setup owned. The truthful fix here is
+  lane ownership and orchestration, not runner-hidden rebuild work.
 - `db/mailboxing.test.ts` is fast, about 1 second wall clock and about 50ms
   test time, so it is a lane-classification problem, not a test-speed problem.
 - CESR still has slow exhaustive and fuzz-heavy files, but KERI mailbox/runtime
   and interop are now the dominant default-path problem.
+- The repo now has an authoritative lane runner with one source-discovered lane
+  map, explicit `quality` vs `slow` ownership, and lane audit enforcement.
+- Mixed-speed files still stay physically mixed where that is cheaper to
+  maintain, but lane ownership now lives with the tests themselves through
+  source annotations instead of external runner-only manifests.
 
 ## Verdict
 
@@ -77,9 +108,10 @@
 
 - Replace the current recursive subgroup shell behavior with one authoritative
   KERI runner that:
-  - assigns every `packages/keri/test/**/*.test.ts` file to exactly one lane
-  - performs compat LMDB setup once per top-level invocation
+  - assigns every discovered KERI test case to exactly one lane
   - runs groups without re-execing the entire script per subgroup
+- Keep compat LMDB setup outside the runner. Validate ownership honestly, but
+  do not hide native rebuild work inside the harness.
 - Add a lane-audit check that fails if any KERI test file is unassigned or
   assigned more than once.
 - Keep task shape simple:
@@ -118,6 +150,34 @@
   - mailbox-specific interop
   - Gate E bootstrap and mailbox-heavy cross-host flows
 
+### Landed Ownership Shape
+
+- `db-fast`
+  - DB core and wrapper files, now including `db/mailboxing.test.ts`
+- `core-fast`
+  - KEL/query/reply/core unit files that were previously omitted entirely
+- `app-fast`
+  - small integration/unit files plus the `agent-cli` help slice and forwarding
+    alias-resolution slice
+- `server`
+  - `server.test.ts` on the truthful default path
+- `runtime-medium`
+  - representative mailbox/runtime/query coverage, plus the direct
+    sign-query-rotate integration
+- `runtime-slow`
+  - agent reopen/startup, mailbox-heavy runtime flows, full Gate E convergence,
+    and witness runtime hosting
+- `interop-parity`
+  - basic KERIpy/TUFA parity slice from `interop-kli-tufa.test.ts`
+- `interop-witness`
+  - witness interop plus local witness CLI integration coverage
+- `interop-gates-b`
+  - Gate B ready scenarios
+- `interop-gates-c`
+  - matrix assertion plus Gates C and D
+- `interop-mailbox-slow`
+  - mailbox interop slices plus Gate E
+
 ## File-Level Plan For Non-Fast Tests
 
 ### Mixed-Speed Files To Split First
@@ -150,24 +210,31 @@
 ### Older Stateful Files To Simplify After Lane Split
 
 - `habbing.test.ts`
-  - keep one full reopen/signing smoke
-  - reuse habery setup within the file for smaller assertions
-  - default helpers to the lightest valid config and only enable signator or
-    config when required
+  - landed:
+    - kept the reopen/signing smoke
+    - grouped rotate, inception-variant, and receipt-helper assertions around
+      shared Habery instances
 - `incept.test.ts`
-  - keep one real `init -> incept` smoke
-  - start other happy-path cases from an already initialized store
-  - keep pure validation failures as direct unit tests
+  - landed:
+    - kept one real `init -> incept` store setup
+    - ran multiple happy-path variants from already initialized stores
+    - kept the alias validation failure as a direct unit test
 - `cli.test.ts`
-  - keep one subprocess smoke for entrypoint behavior and one for debug/loglevel
-  - convert option and validation checks to in-process command tests
+  - landed:
+    - kept subprocess coverage for commander/entrypoint and debug/loglevel
+      behavior
+    - converted setup-heavy init/incept/sign/verify/rotate semantics to
+      in-process command tests
 - `list-aid.test.ts`
-  - create one initialized baseline store per file and reuse it
+  - landed:
+    - one initialized store now covers the empty-list and reopened-list/aid
+      assertions
 - `export.test.ts`
-  - start from an initialized plus incepted baseline
-  - keep one real export end-to-end smoke
+  - landed:
+    - one initialized plus incepted baseline still covers the real export smoke
 - `compat-list-aid.test.ts`
-  - build the compat store once per file and reuse it for read-only assertions
+  - landed:
+    - the compat store remains one build per file for the read-only assertions
 
 ### Files To Reclassify Immediately
 

@@ -1,3 +1,5 @@
+// @file-test-lane core-fast
+
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { b, DigDex, Diger, SerderKERI, Verfer } from "../../../../cesr/mod.ts";

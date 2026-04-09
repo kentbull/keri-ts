@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { ValidationError } from "../../../src/core/errors.ts";

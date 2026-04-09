@@ -1,3 +1,5 @@
+// @file-test-lane app-stateful-a
+
 import { run } from "effection";
 import { assertEquals, assertInstanceOf, assertNotEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { Cigar, Counter, CtrDexV1, SerderKERI, Siger, smell, Verfer } from "../../../../cesr/mod.ts";
@@ -8,14 +10,14 @@ import * as parsering from "../../../src/app/parsering.ts";
 import { makeExchangeSerder } from "../../../src/core/messages.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
-Deno.test("Hab.rotate advances accepted key state and appends a new KEL event", async () => {
+Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-rotate-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
-      const hab = hby.makeHab("alice", undefined, {
+      const acceptedHab = hby.makeHab("alice", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
@@ -23,34 +25,22 @@ Deno.test("Hab.rotate advances accepted key state and appends a new KEL event", 
         nsith: "1",
         toad: 0,
       });
-      const priorKey = hab.kever?.verfers[0]?.qb64 ?? "";
-      const priorSaid = hab.kever?.said ?? "";
+      const priorKey = acceptedHab.kever?.verfers[0]?.qb64 ?? "";
+      const priorSaid = acceptedHab.kever?.said ?? "";
 
-      const msg = hab.rotate({ ncount: 1, nsith: "1" });
-      const nextState = hby.db.getState(hab.pre);
-      const nextKever = hab.kever;
+      const msg = acceptedHab.rotate({ ncount: 1, nsith: "1" });
+      const nextState = hby.db.getState(acceptedHab.pre);
+      const nextKever = acceptedHab.kever;
 
       assertEquals(nextKever?.sn, 1);
       assertEquals(nextState?.s, "1");
       assertNotEquals(nextState?.d, priorSaid);
       assertNotEquals(nextState?.k?.[0], priorKey);
-      assertEquals(hby.db.kels.getLast(hab.pre, 1), nextState?.d);
-      assertEquals(hby.db.getFel(hab.pre, 1), nextState?.d);
+      assertEquals(hby.db.kels.getLast(acceptedHab.pre, 1), nextState?.d);
+      assertEquals(hby.db.getFel(acceptedHab.pre, 1), nextState?.d);
       assertEquals(msg.length > 0, true);
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
 
-Deno.test("Hab.rotate rolls keeper progression back when the rotation event is invalid", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `habery-rotate-rollback-${crypto.randomUUID()}`,
-      temp: true,
-    });
-    try {
-      const hab = hby.makeHab("alice", undefined, {
+      const rollbackHab = hby.makeHab("bob", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
@@ -58,10 +48,10 @@ Deno.test("Hab.rotate rolls keeper progression back when the rotation event is i
         nsith: "1",
         toad: 0,
       });
-      const before = hby.ks.getSits(hab.pre);
+      const before = hby.ks.getSits(rollbackHab.pre);
 
       try {
-        hab.rotate({ isith: "2", ncount: 1, nsith: "1" });
+        rollbackHab.rotate({ isith: "2", ncount: 1, nsith: "1" });
         throw new Error("Expected invalid rotation to throw.");
       } catch (error) {
         assertEquals(
@@ -70,11 +60,11 @@ Deno.test("Hab.rotate rolls keeper progression back when the rotation event is i
         );
       }
 
-      const after = hby.ks.getSits(hab.pre);
+      const after = hby.ks.getSits(rollbackHab.pre);
       assertEquals(after?.old.pubs, before?.old.pubs);
       assertEquals(after?.new.pubs, before?.new.pubs);
       assertEquals(after?.nxt.pubs, before?.nxt.pubs);
-      assertEquals(hab.kever?.sn, 0);
+      assertEquals(rollbackHab.kever?.sn, 0);
     } finally {
       yield* hby.close(true);
     }
@@ -446,93 +436,8 @@ Deno.test("Hab endorse matches KERIpy EXN pipelining modes", async () => {
   });
 });
 
-Deno.test("Habery inception keeps non-transferable prefix equal to the signing key", async () => {
-  const name = `habery-nontrans-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-    });
-    try {
-      const hab = hby.makeHab("bob", undefined, {
-        transferable: false,
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      const state = hby.db.getState(hab.pre);
-      assertEquals(hab.pre, state?.k?.[0]);
-      assertEquals(hab.pre.startsWith("B"), true);
-      assertEquals(state?.n ?? [], []);
-      assertEquals(state?.b ?? [], []);
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-Deno.test("Habery inception keeps non-transferable ECDSA prefixes equal to the signing key", async () => {
-  const name = `habery-nontrans-r1-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-    });
-    try {
-      const hab = hby.makeHab("bob-r1", undefined, {
-        transferable: false,
-        icode: "Q",
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      const state = hby.db.getState(hab.pre);
-
-      assertEquals(hab.pre, state?.k?.[0]);
-      assertEquals(hab.pre.startsWith("1AAI"), true);
-      assertEquals(state?.n ?? [], []);
-      assertEquals(state?.b ?? [], []);
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-Deno.test("Habery inception honors digestive prefix codex overrides for i", async () => {
-  const name = `habery-sha2-prefix-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-    });
-    try {
-      const hab = hby.makeHab("carol", undefined, {
-        code: "I",
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const state = hby.db.getState(hab.pre);
-      assertEquals(hab.pre.startsWith("I"), true);
-      assertEquals(state?.d?.startsWith("E"), true);
-      assertEquals(hab.pre === state?.k?.[0], false);
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-Deno.test("Habery inception persists weighted and nested threshold state", async () => {
-  const name = `habery-weighted-${crypto.randomUUID()}`;
+Deno.test("Habery inception reuses one Habery across prefix and threshold variants", async () => {
+  const name = `habery-inception-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const nested = [{ "1": ["1/2", "1/2"] }];
 
@@ -542,6 +447,45 @@ Deno.test("Habery inception persists weighted and nested threshold state", async
       headDirPath,
     });
     try {
+      const nonTransferableHab = hby.makeHab("bob", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const nonTransferableState = hby.db.getState(nonTransferableHab.pre);
+      assertEquals(nonTransferableHab.pre, nonTransferableState?.k?.[0]);
+      assertEquals(nonTransferableHab.pre.startsWith("B"), true);
+      assertEquals(nonTransferableState?.n ?? [], []);
+      assertEquals(nonTransferableState?.b ?? [], []);
+
+      const ecdsaHab = hby.makeHab("bob-r1", undefined, {
+        transferable: false,
+        icode: "Q",
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const ecdsaState = hby.db.getState(ecdsaHab.pre);
+      assertEquals(ecdsaHab.pre, ecdsaState?.k?.[0]);
+      assertEquals(ecdsaHab.pre.startsWith("1AAI"), true);
+      assertEquals(ecdsaState?.n ?? [], []);
+      assertEquals(ecdsaState?.b ?? [], []);
+
+      const digestiveHab = hby.makeHab("carol", undefined, {
+        code: "I",
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const digestiveState = hby.db.getState(digestiveHab.pre);
+      assertEquals(digestiveHab.pre.startsWith("I"), true);
+      assertEquals(digestiveState?.d?.startsWith("E"), true);
+      assertEquals(digestiveHab.pre === digestiveState?.k?.[0], false);
+
       const hab = hby.makeHab("weighted", undefined, {
         transferable: true,
         icount: 2,
@@ -619,8 +563,8 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
   });
 });
 
-Deno.test("Hab witness helper emits receipt bytes but skips own-event local witness storage", async () => {
-  const name = `habery-witness-receipts-${crypto.randomUUID()}`;
+Deno.test("Hab receipt helpers reuse one Habery across witness and receipt variants", async () => {
+  const name = `habery-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
   await run(function*() {
@@ -635,7 +579,7 @@ Deno.test("Hab witness helper emits receipt bytes but skips own-event local witn
         isith: "1",
         toad: 0,
       });
-      const controller = hby.makeHab("ctrl", undefined, {
+      const witnessController = hby.makeHab("ctrl-wit", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
@@ -644,44 +588,27 @@ Deno.test("Hab witness helper emits receipt bytes but skips own-event local witn
         wits: [witness.pre],
         toad: 1,
       });
-      const event = hby.db.getEvtSerder(
-        controller.pre,
-        controller.kever?.said ?? "",
+      const witnessEvent = hby.db.getEvtSerder(
+        witnessController.pre,
+        witnessController.kever?.said ?? "",
       );
-      if (!event?.said) {
-        throw new Error("Expected accepted controller inception event.");
+      if (!witnessEvent?.said) {
+        throw new Error("Expected accepted witness controller inception event.");
       }
-
-      const witnessMsg = witness.witness(event);
-
+      const witnessMsg = witness.witness(witnessEvent);
       assertEquals(witnessMsg.length > 0, true);
       assertEquals(
-        hby.db.wigs.get([controller.pre, event.said]).length,
+        hby.db.wigs.get([witnessController.pre, witnessEvent.said]).length,
         0,
       );
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
 
-Deno.test("Hab non-transferable receipt helper emits receipt bytes but skips own-event local receipt stores", async () => {
-  const name = `habery-nontrans-receipts-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-    });
-    try {
       const receiptor = hby.makeHab("receiptor", undefined, {
         transferable: false,
         icount: 1,
         isith: "1",
         toad: 0,
       });
-      const controller = hby.makeHab("ctrl", undefined, {
+      const receiptController = hby.makeHab("ctrl-rct", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
@@ -689,37 +616,20 @@ Deno.test("Hab non-transferable receipt helper emits receipt bytes but skips own
         nsith: "1",
         toad: 0,
       });
-      const event = hby.db.getEvtSerder(
-        controller.pre,
-        controller.kever?.said ?? "",
+      const receiptEvent = hby.db.getEvtSerder(
+        receiptController.pre,
+        receiptController.kever?.said ?? "",
       );
-      if (!event?.said) {
-        throw new Error("Expected accepted controller inception event.");
+      if (!receiptEvent?.said) {
+        throw new Error("Expected accepted non-transferable receipt event.");
       }
-
-      const receiptMsg = receiptor.receipt(event);
-
-      assertEquals(receiptMsg.length > 0, true);
+      const nonTransferableReceiptMsg = receiptor.receipt(receiptEvent);
+      assertEquals(nonTransferableReceiptMsg.length > 0, true);
       assertEquals(
-        hby.db.rcts.get([controller.pre, event.said]).length,
+        hby.db.rcts.get([receiptController.pre, receiptEvent.said]).length,
         0,
       );
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
 
-Deno.test("Hab transferable receipt helper emits receipt bytes but drops own-event local receipts under non-lax Habery semantics", async () => {
-  const name = `habery-validator-receipts-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-    });
-    try {
       const validator = hby.makeHab("val", undefined, {
         transferable: true,
         icount: 1,
@@ -744,9 +654,9 @@ Deno.test("Hab transferable receipt helper emits receipt bytes but drops own-eve
         throw new Error("Expected accepted controller inception event.");
       }
 
-      const receiptMsg = validator.receipt(event);
+      const transferableReceiptMsg = validator.receipt(event);
 
-      assertEquals(receiptMsg.length > 0, true);
+      assertEquals(transferableReceiptMsg.length > 0, true);
       assertEquals(hby.db.vrcs.get([controller.pre, event.said]).length, 0);
     } finally {
       yield* hby.close();
