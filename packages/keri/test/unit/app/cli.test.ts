@@ -1,12 +1,16 @@
 // @file-test-lane app-stateful-a
 
-import { run } from "effection";
+import { type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
+import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { mailboxStartCommand } from "../../../src/app/cli/mailbox.ts";
-import { assertOperationThrows, createMockArgs } from "../../../test/utils.ts";
+import { rotateCommand } from "../../../src/app/cli/rotate.ts";
+import { signCommand } from "../../../src/app/cli/sign.ts";
+import { verifyCommand } from "../../../src/app/cli/verify.ts";
+import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
 
 interface CmdResult {
   code: number;
@@ -54,15 +58,29 @@ function runTufaIncept(args: string[]): Promise<CmdResult> {
   return runTufa(["incept", ...args]);
 }
 
-Deno.test("CLI - init command with valid arguments", async () => {
-  const res = await runTufaInit([
-    "--name",
-    `testkeystore-${crypto.randomUUID()}`,
-    "--temp",
-    "--nopasscode",
-  ]);
+async function captureCommand(operation: Operation<void>): Promise<CmdResult> {
+  const harness = new CLITestHarness();
+  harness.captureOutput();
+  try {
+    await run(() => operation);
+    return {
+      code: 0,
+      stdout: harness.getOutput().join("\n"),
+      stderr: harness.getErrors().join("\n"),
+    };
+  } finally {
+    harness.restoreOutput();
+  }
+}
 
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+Deno.test("CLI - init command with valid arguments", async () => {
+  await run(() =>
+    initCommand({
+      name: `testkeystore-${crypto.randomUUID()}`,
+      temp: true,
+      nopasscode: true,
+    })
+  );
 });
 
 Deno.test("CLI - init command requires name", async () => {
@@ -222,99 +240,85 @@ Deno.test("CLI - init command with help flag", async () => {
 
 Deno.test("CLI - init command with all options", async () => {
   const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
-  const res = await runTufaInit([
-    "--name",
-    `fulltest-${crypto.randomUUID()}`,
-    "--base",
-    "/custom/base",
-    "--temp",
-    "--salt",
-    "0AAwMTIzNDU2Nzg5YWJjZGVm",
-    "--config-dir",
-    configDir,
-    "--config-file",
-    "custom.json",
-    "--passcode",
-    "testpasscode123456789012",
-    "--nopasscode",
-  ]);
-
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  await run(() =>
+    initCommand({
+      name: `fulltest-${crypto.randomUUID()}`,
+      base: "/custom/base",
+      temp: true,
+      salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      configDir,
+      configFile: "custom.json",
+      passcode: "testpasscode123456789012",
+      nopasscode: true,
+    })
+  );
 });
 
 Deno.test("CLI - init command with custom salt", async () => {
-  const res = await runTufaInit([
-    "--name",
-    `salttest-${crypto.randomUUID()}`,
-    "--temp",
-    "--salt",
-    "0AAwMTIzNDU2Nzg5YWJjZGVm",
-    "--nopasscode",
-  ]);
-
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  await run(() =>
+    initCommand({
+      name: `salttest-${crypto.randomUUID()}`,
+      temp: true,
+      salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
+      nopasscode: true,
+    })
+  );
 });
 
 Deno.test("CLI - init command with config overrides", async () => {
   const configDir = `/tmp/tufa-config-${crypto.randomUUID()}`;
-  const res = await runTufaInit([
-    "--name",
-    `configtest-${crypto.randomUUID()}`,
-    "--temp",
-    "--config-dir",
-    configDir,
-    "--config-file",
-    "custom-config.json",
-    "--nopasscode",
-  ]);
-
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  await run(() =>
+    initCommand({
+      name: `configtest-${crypto.randomUUID()}`,
+      temp: true,
+      configDir,
+      configFile: "custom-config.json",
+      nopasscode: true,
+    })
+  );
 });
 
 Deno.test("CLI - init command honors custom head directory", async () => {
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  const res = await runTufaInit([
-    "--name",
-    `headtest-${crypto.randomUUID()}`,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-  ]);
+  const name = `headtest-${crypto.randomUUID()}`;
 
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-  assertStringIncludes(res.stdout, headDirPath);
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+    })
+  );
+
+  assertExists(Deno.statSync(`${headDirPath}/keri/ks/${name}`));
+  assertExists(Deno.statSync(`${headDirPath}/keri/db/${name}`));
 });
 
 Deno.test("CLI - init --outboxer creates the Tufa outbox sidecar", async () => {
   const name = `outbox-init-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  const res = await runTufaInit([
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-    "--outboxer",
-  ]);
-
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+      outboxer: true,
+    })
+  );
   assertExists(Deno.statSync(`${headDirPath}/keri/obx/${name}`));
 });
 
 Deno.test("CLI - init stores the configured CESR body mode", async () => {
   const name = `cesr-mode-init-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  const res = await runTufaInit([
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-    "--cesr-body-mode",
-    "body",
-  ]);
-
-  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+      cesrBodyMode: "body",
+    })
+  );
 
   await run(function*() {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
@@ -333,17 +337,12 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
 Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async () => {
   const name = `outbox-disabled-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  const init = await runTufaInit([
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-  ]);
-  assertEquals(
-    init.code,
-    0,
-    `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+    })
   );
 
   await assertOperationThrows(
@@ -363,17 +362,12 @@ Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async
 Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores", async () => {
   const name = `cesr-mode-default-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  const init = await runTufaInit([
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-  ]);
-  assertEquals(
-    init.code,
-    0,
-    `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+    })
   );
 
   await run(function*() {
@@ -426,38 +420,25 @@ Deno.test("CLI - incept command accepts explicit config-dir and config-file over
   Deno.mkdirSync(configDir, { recursive: true });
   Deno.writeTextFileSync(`${configDir}/bootstrap.json`, "{}\n");
 
-  const init = await runTufaInit([
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-  ]);
-  assertEquals(
-    init.code,
-    0,
-    `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`,
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+    })
   );
 
-  const incept = await runTufaIncept([
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--config-dir",
-    configDir,
-    "--config-file",
-    "bootstrap",
-    "--alias",
-    "alice",
-    "--transferable",
-  ]);
-
-  assertEquals(
-    incept.code,
-    0,
-    `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`,
+  const incept = await captureCommand(
+    inceptCommand({
+      name,
+      headDirPath,
+      configDir,
+      configFile: "bootstrap",
+      alias: "alice",
+      transferable: true,
+    }),
   );
+  assertEquals(incept.code, 0, `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`);
   assertStringIncludes(incept.stdout, "Prefix");
 });
 
@@ -519,94 +500,65 @@ Deno.test("CLI - sign, verify, and rotate commands work for one persistent singl
   const alias = "alice";
   const message = "cli sign verify rotate";
 
-  const init = await runTufa([
-    "init",
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--nopasscode",
-  ]);
-  assertEquals(init.code, 0, `stdout:\n${init.stdout}\nstderr:\n${init.stderr}`);
+  await run(() =>
+    initCommand({
+      name,
+      headDirPath,
+      nopasscode: true,
+    })
+  );
 
-  const incept = await runTufa([
-    "incept",
-    "--name",
-    name,
-    "--head-dir",
-    headDirPath,
-    "--alias",
-    alias,
-    "--transferable",
-    "--isith",
-    "1",
-    "--icount",
-    "1",
-    "--nsith",
-    "1",
-    "--ncount",
-    "1",
-    "--toad",
-    "0",
-  ]);
+  const incept = await captureCommand(
+    inceptCommand({
+      name,
+      headDirPath,
+      alias,
+      transferable: true,
+      isith: "1",
+      icount: 1,
+      nsith: "1",
+      ncount: 1,
+      toad: 0,
+    }),
+  );
   assertEquals(incept.code, 0, `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`);
   const prefix = extractPrefixLine(incept.stdout);
 
-  const sign = await runTufa([
-    "sign",
-    "--name",
+  const sign = await captureCommand(signCommand({
     name,
-    "--head-dir",
     headDirPath,
-    "--alias",
     alias,
-    "--text",
-    message,
-  ]);
+    text: message,
+  }));
   assertEquals(sign.code, 0, `stdout:\n${sign.stdout}\nstderr:\n${sign.stderr}`);
   const signature = extractRawSignature(sign.stdout);
 
-  const verify = await runTufa([
-    "verify",
-    "--name",
+  const verify = await captureCommand(verifyCommand({
     name,
-    "--head-dir",
     headDirPath,
-    "--prefix",
     prefix,
-    "--text",
-    message,
-    "--signature",
-    signature,
-  ]);
+    text: message,
+    signature: [signature],
+  }));
   assertEquals(verify.code, 0, `stdout:\n${verify.stdout}\nstderr:\n${verify.stderr}`);
   assertStringIncludes(verify.stdout, "Signature 1 is valid.");
 
-  const rotate = await runTufa([
-    "rotate",
-    "--name",
+  const rotate = await captureCommand(rotateCommand({
     name,
-    "--head-dir",
     headDirPath,
-    "--alias",
     alias,
-  ]);
+  }));
   assertEquals(rotate.code, 0, `stdout:\n${rotate.stdout}\nstderr:\n${rotate.stderr}`);
   assertStringIncludes(rotate.stdout, `Prefix  ${prefix}`);
   assertStringIncludes(rotate.stdout, "New Sequence No.  1");
   assertStringIncludes(rotate.stdout, "Public key 1");
 
-  const rotatedSign = await runTufa([
-    "sign",
-    "--name",
+  const rotatedSign = await captureCommand(signCommand({
     name,
-    "--head-dir",
     headDirPath,
-    "--alias",
     alias,
-    "--text",
-    message,
-  ]);
+    text: message,
+  }));
   assertEquals(
     rotatedSign.code,
     0,

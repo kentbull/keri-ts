@@ -142,8 +142,10 @@ Use this file to:
     `scripts/ci/run-keri-test-group.ts` is now the authoritative lane map,
     `test:quality` is the honest default path, `test:slow` is the explicit
     mailbox-heavy path, and lane audit should fail if any discovered KERI test
-    case is missing or double-owned. Keep compat LMDB rebuild as job/local
-    setup, not hidden harness behavior.
+    case is missing or double-owned. The current truthful inventory is 61 KERI
+    `*.test.ts` files and 360 named tests, with older stateful app files now
+    simplified around local setup reuse and in-process command assertions.
+    Keep compat LMDB rebuild as job/local setup, not hidden harness behavior.
 24. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
 25. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
@@ -269,6 +271,9 @@ Use this file to:
 12. Keep KERI test-lane ownership explicit as mailbox/runtime work grows. If a
     mixed-speed file adds new cases, update the source annotations and lane
     audit in the same change set so `test:quality` stays truthful by default.
+    Do not quietly reintroduce repeated subprocess launches or repeated cold
+    store setup in the older app-stateful files when a shared in-file baseline
+    would prove the same behavior more honestly.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 

@@ -25,9 +25,20 @@
     `@test-lane` annotations in the KERI test files
   - mixed-speed files are split by exact test-name ownership
   - default path now includes Gate D and excludes Gate E
-- Still pending:
-  - timing-guided simplification of the older stateful files
-  - deeper perf work after timing can be rerun in a stable local environment
+  - older stateful files now reuse local setup instead of paying repeated cold
+    starts for every happy-path assertion
+  - `cli.test.ts` now keeps CLI-entrypoint parsing on subprocess tests but runs
+    setup-heavy command semantics in process
+  - `habbing.test.ts` now shares one Habery across rotate, inception-variant,
+    and receipt-helper scenario groups
+  - `list-aid.test.ts` and `incept.test.ts` now reuse initialized stores for
+    multi-assertion happy-path coverage
+  - grouped verification passed for `app-stateful-a`, `app-stateful-b`, and
+    lane audit in a stable post-restart environment
+- Follow-on, not part of this landed KERI tranche:
+  - deeper perf work only if later profiling shows a new dominant local pain
+    point
+  - CESR slow-file splitting after KERI is no longer the active bottleneck
 - Important correction:
   - compat LMDB rebuild remains job/local setup owned. The runner should audit
     and orchestrate lanes, not silently rebuild native dependencies.
@@ -37,7 +48,7 @@
 - Recent branch history is mailbox-heavy. The current branch includes mailbox
   ingress, mailbox polling and timeout work, multipart CESR mailbox add, and
   mailbox architecture documentation.
-- The repo currently contains 61 KERI `*.test.ts` files and 370 named
+- The repo currently contains 61 KERI `*.test.ts` files and 360 named
   `Deno.test(...)` cases.
 - The old grouped shell runner covered only 31 of those 61 files, so the old
   default path was materially incomplete.
@@ -55,22 +66,25 @@
   `challenge-runtime.test.ts` about 16 seconds,
   `forwarding.test.ts` about 16 seconds,
   and `agent-cli.test.ts` about 17 seconds.
-- The older app-stateful tests are still slow and still matter:
-  `habbing.test.ts` is about 63 seconds,
-  `incept.test.ts` about 14 seconds,
-  `cli.test.ts` about 9 seconds,
-  `list-aid.test.ts` about 5 seconds,
-  and `export.test.ts` about 4 seconds.
+- The older app-stateful tests are still worth watching, but the worst repeated
+  setup churn is no longer blind duplication:
+  `habbing.test.ts` is now about 66 seconds after grouping related scenarios,
+  `incept.test.ts` about 12 seconds,
+  `cli.test.ts` about 10 seconds,
+  `list-aid.test.ts` about 2 seconds,
+  `export.test.ts` about 2 seconds,
+  and `compat-list-aid.test.ts` about 2 seconds.
 - Compat LMDB setup is already job/local setup owned. The truthful fix here is
   lane ownership and orchestration, not runner-hidden rebuild work.
 - `db/mailboxing.test.ts` is fast, about 1 second wall clock and about 50ms
   test time, so it is a lane-classification problem, not a test-speed problem.
 - CESR still has slow exhaustive and fuzz-heavy files, but KERI mailbox/runtime
   and interop are now the dominant default-path problem.
-- The repo now has an authoritative lane runner with one manifest-backed map,
-  explicit `quality` vs `slow` ownership, and lane audit enforcement.
-- Mixed-speed files are currently split by exact test names in the runner
-  instead of by immediate physical file surgery.
+- The repo now has an authoritative lane runner with one source-discovered lane
+  map, explicit `quality` vs `slow` ownership, and lane audit enforcement.
+- Mixed-speed files still stay physically mixed where that is cheaper to
+  maintain, but lane ownership now lives with the tests themselves through
+  source annotations instead of external runner-only manifests.
 
 ## Verdict
 
@@ -196,24 +210,31 @@
 ### Older Stateful Files To Simplify After Lane Split
 
 - `habbing.test.ts`
-  - keep one full reopen/signing smoke
-  - reuse habery setup within the file for smaller assertions
-  - default helpers to the lightest valid config and only enable signator or
-    config when required
+  - landed:
+    - kept the reopen/signing smoke
+    - grouped rotate, inception-variant, and receipt-helper assertions around
+      shared Habery instances
 - `incept.test.ts`
-  - keep one real `init -> incept` smoke
-  - start other happy-path cases from an already initialized store
-  - keep pure validation failures as direct unit tests
+  - landed:
+    - kept one real `init -> incept` store setup
+    - ran multiple happy-path variants from already initialized stores
+    - kept the alias validation failure as a direct unit test
 - `cli.test.ts`
-  - keep one subprocess smoke for entrypoint behavior and one for debug/loglevel
-  - convert option and validation checks to in-process command tests
+  - landed:
+    - kept subprocess coverage for commander/entrypoint and debug/loglevel
+      behavior
+    - converted setup-heavy init/incept/sign/verify/rotate semantics to
+      in-process command tests
 - `list-aid.test.ts`
-  - create one initialized baseline store per file and reuse it
+  - landed:
+    - one initialized store now covers the empty-list and reopened-list/aid
+      assertions
 - `export.test.ts`
-  - start from an initialized plus incepted baseline
-  - keep one real export end-to-end smoke
+  - landed:
+    - one initialized plus incepted baseline still covers the real export smoke
 - `compat-list-aid.test.ts`
-  - build the compat store once per file and reuse it for read-only assertions
+  - landed:
+    - the compat store remains one build per file for the read-only assertions
 
 ### Files To Reclassify Immediately
 

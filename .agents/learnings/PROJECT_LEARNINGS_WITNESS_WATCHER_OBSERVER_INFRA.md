@@ -62,6 +62,7 @@ deployment, CI, and interoperability operations.
     from source-owned `@file-test-lane` and `@test-lane` annotations,
     `test:quality` vs `test:slow` is the durable default/slow split, and lane
     audit should fail if any discovered test case is unassigned or double-owned.
+    The current maintained inventory is 61 KERI test files and 360 named tests.
     Keep compat LMDB rebuild out of the runner itself; the harness should audit
     and execute, while job/local setup owns native-addon preparation.
 
@@ -203,3 +204,18 @@ deployment, CI, and interoperability operations.
   silently dropping coverage.
 - Compat LMDB rebuild remains job/local setup owned. The runner's job is honest
   ownership and execution, not hidden bootstrap magic.
+
+### 2026-04-08 - Older Stateful KERI Tests Now Reuse Local Setup
+
+- The next durable optimization step after truthful lane ownership was not a
+  global fixture framework. It was local reuse inside the older app-stateful
+  files.
+- `cli.test.ts` now keeps commander/debug behavior on subprocess seams, but the
+  setup-heavy init/incept/sign/verify/rotate command semantics run in process.
+- `habbing.test.ts`, `incept.test.ts`, and `list-aid.test.ts` now group related
+  assertions around shared initialized stores or shared Habery instances so the
+  suite stops paying repeated cold-start cost for every happy-path assertion.
+- The measurable result on the landed machine state was modest but real:
+  `cli.test.ts` fell from about 14s to about 10s and `habbing.test.ts` from
+  about 75s to about 66s, while the grouped `app-stateful-a` and
+  `app-stateful-b` lanes still passed.
