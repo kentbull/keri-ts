@@ -167,6 +167,7 @@ Deno.test("app/protocol-handler - ambiguous hosted paths stay explicit for OOBI 
   const oobiRoute = classifyProtocolRoute(
     makeContext({
       pathname: "/oobi/EAID/controller",
+      options: { hostedPrefixes: ["EAID", "EOTHER"] },
       hosted: ambiguousHosted,
       oobi: parseOobiRouteRequest("/oobi/EAID/controller"),
     }),
