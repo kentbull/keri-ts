@@ -196,7 +196,7 @@ async function initAndInceptStore(
   }
 }
 
-// @test-lane app-fast
+// @test-lane app-fast-parallel
 Deno.test("CLI - agent help advertises -p for port and -P for passcode", async () => {
   const help = await runTufa(["agent", "--help"]);
   const text = `${help.stdout}\n${help.stderr}`;

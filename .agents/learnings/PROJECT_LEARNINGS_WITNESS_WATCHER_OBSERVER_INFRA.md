@@ -68,6 +68,12 @@ deployment, CI, and interoperability operations.
     The current maintained inventory is 61 KERI test files and 360 named tests.
     Keep compat LMDB rebuild out of the runner itself; the harness should audit
     and execute, while job/local setup owns native-addon preparation.
+16. Parallelism policy is now explicit too. `db-fast`, `core-fast`, and the
+    whole-file-safe slice of `app-fast` run with capped auto-detected workers,
+    while `server`, `runtime-*`, `app-stateful-*`, and `interop-*` stay serial
+    until their fixed-port, global-state, or persisted-store assumptions are
+    refactored away. Override worker count with `KERI_TEST_JOBS` or
+    `CESR_TEST_JOBS`, with `DENO_JOBS` as the shared fallback.
 
 ## Use This Doc For
 
@@ -94,11 +100,14 @@ deployment, CI, and interoperability operations.
 5. Keep the KERI lane metadata current when mailbox/runtime/interop files gain
    new tests. Updating the test file without updating annotations or lane audit
    is now a topology regression.
-6. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
+6. Keep runtime/server lanes serial until the tests stop depending on fixed
+   ports, process-global state, or shared stores. More workers are not a fix
+   for poor isolation.
+7. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
    required control path, prove it in its own scenario instead of silently
    expanding the stable-control test that currently covers repeated
    same-witness rotations.
-7. When infra-role protocol work deepens, add it here as durable operational
+8. When infra-role protocol work deepens, add it here as durable operational
    rules rather than as workflow-by-workflow diary entries.
 
 ## Milestone Rollup
@@ -233,3 +242,18 @@ deployment, CI, and interoperability operations.
   enough that the slowest lane is visible. When one lane materially dominates,
   give it its own job instead of keeping an aggregate umbrella just because the
   tests are still on the default path.
+
+### 2026-04-09 - Parallelism Needs Capped Defaults And Honest Isolation
+
+- After the CI fanout split, the next durable speed win was inside the runner:
+  keep `db-fast` and `core-fast` parallel, split `app-fast` into
+  `app-fast-parallel` vs `app-fast-isolated`, and leave `server`,
+  `runtime-*`, `app-stateful-*`, and `interop-*` serial until their
+  isolation assumptions change.
+- Default worker selection should be explicit and inspectable. KERI parallel
+  lanes now honor `KERI_TEST_JOBS`, then `DENO_JOBS`, otherwise auto-detect
+  CPUs and cap per lane; CESR does the same with `CESR_TEST_JOBS` and an
+  8-worker cap.
+- Durable rule: use source-owned lane metadata to encode the true isolation
+  boundary. Do not keep fragile side manifests of "safe" test names in the
+  runner just to force more parallelism.

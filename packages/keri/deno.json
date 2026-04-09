@@ -27,6 +27,8 @@
     "test:quality:db-fast": "bash ../../scripts/ci/run-keri-test-group.sh db-fast",
     "test:quality:core-fast": "bash ../../scripts/ci/run-keri-test-group.sh core-fast",
     "test:quality:app-fast": "bash ../../scripts/ci/run-keri-test-group.sh app-fast",
+    "test:quality:app-fast-parallel": "bash ../../scripts/ci/run-keri-test-group.sh app-fast-parallel",
+    "test:quality:app-fast-isolated": "bash ../../scripts/ci/run-keri-test-group.sh app-fast-isolated",
     "test:quality:app-light": "bash ../../scripts/ci/run-keri-test-group.sh app-fast",
     "test:quality:server": "bash ../../scripts/ci/run-keri-test-group.sh server",
     "test:quality:runtime-medium": "bash ../../scripts/ci/run-keri-test-group.sh runtime-medium",

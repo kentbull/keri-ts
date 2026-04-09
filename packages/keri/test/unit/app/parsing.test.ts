@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 import { assertEquals } from "jsr:@std/assert";
 import { parseExnDataItems } from "../../../src/app/cli/common/parsing.ts";

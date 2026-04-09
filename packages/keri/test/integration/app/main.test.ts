@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 import { run } from "effection";
 import { tufa } from "../../../src/app/cli/cli.ts";

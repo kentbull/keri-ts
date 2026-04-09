@@ -140,7 +140,11 @@ Use this file to:
     mutate globals or persisted stores need stronger isolation. In CI, do not
     hide a heavy lane under a broad "fast" umbrella job name once its wall
     clock stops being fast; split DB, core, app/server, and representative
-    runtime lanes into separate jobs so the slowest bucket is explicit.
+    runtime lanes into separate jobs so the slowest bucket is explicit. Inside
+    the runner, default parallelism should be capped auto-detect, not
+    uncapped fanout: KERI parallel lanes now honor `KERI_TEST_JOBS`, then
+    `DENO_JOBS`, otherwise auto-detect CPUs and cap by lane; CESR follows the
+    same pattern with `CESR_TEST_JOBS`.
 23. The KERI test runner must stay truthful as runtime and interop files grow.
     `scripts/ci/run-keri-test-group.ts` is now the authoritative lane map,
     `test:quality` is the honest default path, `test:slow` is the explicit
@@ -148,7 +152,10 @@ Use this file to:
     case is missing or double-owned. The current truthful inventory is 61 KERI
     `*.test.ts` files and 360 named tests, with older stateful app files now
     simplified around local setup reuse and in-process command assertions.
-    Keep compat LMDB rebuild as job/local setup, not hidden harness behavior.
+    `app-fast` is now a public alias over `app-fast-parallel` and
+    `app-fast-isolated`, so source-owned lane metadata still reflects the real
+    isolation boundary. Keep compat LMDB rebuild as job/local setup, not hidden
+    harness behavior.
 24. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
 25. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,

@@ -13,7 +13,7 @@
 - Move mailbox-heavy cross-host flows and full Gate E coverage into explicit
   slow lanes instead of letting them dominate normal local and PR runs.
 
-## Execution Status (2026-04-08)
+## Execution Status (2026-04-09)
 
 - Landed:
   - authoritative runner now lives in `scripts/ci/run-keri-test-group.ts`
@@ -35,10 +35,18 @@
     multi-assertion happy-path coverage
   - grouped verification passed for `app-stateful-a`, `app-stateful-b`, and
     lane audit in a stable post-restart environment
+  - `app-fast` is now a public alias over `app-fast-parallel` and
+    `app-fast-isolated`, so whole-file-safe app tests can use
+    `deno test --parallel` without dragging `console`/`HOME` mutators into the
+    same lane
+  - KERI parallel lanes now log capped auto-detected worker counts and honor
+    `KERI_TEST_JOBS` first, then `DENO_JOBS`
+  - CESR now runs through a tiny wrapper that uses `deno test --parallel` with
+    capped auto-detected jobs and a package-local `CESR_TEST_JOBS` override
 - Follow-on, not part of this landed KERI tranche:
   - deeper perf work only if later profiling shows a new dominant local pain
     point
-  - CESR slow-file splitting after KERI is no longer the active bottleneck
+  - runtime/server parallelism after fixed-port and global-state refactors
 - Important correction:
   - compat LMDB rebuild remains job/local setup owned. The runner should audit
     and orchestrate lanes, not silently rebuild native dependencies.
@@ -85,6 +93,9 @@
 - Mixed-speed files still stay physically mixed where that is cheaper to
   maintain, but lane ownership now lives with the tests themselves through
   source annotations instead of external runner-only manifests.
+- Immediate parallel-safe coverage is now broader than before:
+  KERI `db-fast`, `core-fast`, and most of `app-fast`, plus the CESR package,
+  all run with capped auto-detected module parallelism by default.
 
 ## Verdict
 
@@ -157,8 +168,13 @@
 - `core-fast`
   - KEL/query/reply/core unit files that were previously omitted entirely
 - `app-fast`
-  - small integration/unit files plus the `agent-cli` help slice and forwarding
-    alias-resolution slice
+  - public alias over `app-fast-parallel` and `app-fast-isolated`
+- `app-fast-parallel`
+  - small whole-file-safe integration/unit files plus the `agent-cli` help
+    slice and forwarding alias-resolution slice
+- `app-fast-isolated`
+  - `console`/`HOME` mutating CLI surfaces such as `annotate`, `benchmark`,
+    and the output-capturing `version` test file
 - `server`
   - `server.test.ts` on the truthful default path
 - `runtime-medium`
