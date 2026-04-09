@@ -1,5 +1,5 @@
+import { type Operation } from "effection";
 import { Command, Option } from "npm:commander@^10.0.1";
-import { type Operation } from "npm:effection@^3.6.0";
 import { DISPLAY_VERSION } from "../../../keri/src/app/version.ts";
 import { AppError } from "../../../keri/src/core/errors.ts";
 import { LOG_LEVELS, type LogLevel, setLogLevel } from "../../../keri/src/core/logger.ts";

@@ -60,7 +60,8 @@
     "cbor-x": "npm:cbor-x@^1.6.0",
     "cbor-x/decode": "npm:cbor-x@^1.6.0/decode",
     "cbor-x/encode": "npm:cbor-x@^1.6.0/encode",
-    "cesr-ts": "./packages/cesr/mod.ts"
+    "cesr-ts": "./packages/cesr/mod.ts",
+    "effection": "npm:effection@^3.6.0"
   },
   "nodeModulesDir": "auto",
   "compilerOptions": {

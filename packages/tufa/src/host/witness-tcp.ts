@@ -1,5 +1,5 @@
+import { action, type Operation } from "effection";
 import { createServer, type Server, type Socket } from "node:net";
-import { action, type Operation } from "npm:effection@^3.6.0";
 import { concatBytes } from "../../../cesr/mod.ts";
 import { type AgentRuntime, type Hab, processWitnessIngress } from "../../../keri/runtime.ts";
 

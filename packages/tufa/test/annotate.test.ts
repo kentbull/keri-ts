@@ -1,7 +1,7 @@
 // @file-test-lane app-fast-isolated
 
+import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { run } from "npm:effection@^3.6.0";
 import { tufa } from "../src/cli/cli.ts";
 
 const ESC = String.fromCharCode(0x1b);

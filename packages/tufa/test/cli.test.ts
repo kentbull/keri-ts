@@ -1,7 +1,7 @@
 // @file-test-lane app-fast-isolated
 
+import { run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
-import { run } from "npm:effection@^3.6.0";
 import { DISPLAY_VERSION } from "../../keri/src/app/version.ts";
 import { ValidationError } from "../../keri/src/core/errors.ts";
 import { tufa } from "../src/cli/cli.ts";

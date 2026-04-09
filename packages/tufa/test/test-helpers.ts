@@ -1,4 +1,4 @@
-import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
+import { action, type Operation, spawn, type Task } from "effection";
 import type { AgentRuntime } from "../../keri/runtime.ts";
 import { type RuntimeHttpHostOptions, startServer } from "../src/host/http-server.ts";
 

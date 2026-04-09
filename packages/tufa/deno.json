@@ -18,7 +18,8 @@
     "test:integration:server": "deno test -A test/integration/server.test.ts"
   },
   "imports": {
-    "@deno/dnt": "jsr:@deno/dnt@^0.42.3"
+    "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
+    "effection": "npm:effection@^3.6.0"
   },
   "compilerOptions": {
     "lib": [

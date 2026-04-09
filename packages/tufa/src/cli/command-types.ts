@@ -1,4 +1,4 @@
-import type { Operation } from "npm:effection@^3.6.0";
+import type { Operation } from "effection";
 
 /** Basic K/V args for command dispatch. */
 export type CommandArgs = Record<string, unknown>;

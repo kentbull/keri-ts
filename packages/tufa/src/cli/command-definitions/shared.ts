@@ -4,7 +4,7 @@
  * `tufa` keeps help/version startup light by delaying heavy imports until one
  * command is actually selected.
  */
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, type Operation } from "effection";
 import type { CommandArgs, CommandHandler } from "../command-types.ts";
 
 /** Shape used for lazily imported command modules before handler extraction. */

@@ -6,8 +6,8 @@
  * seams over the runtime and databaser contracts documented elsewhere; the goal
  * here is to keep the operational flow obvious.
  */
+import { action, type Operation } from "effection";
 import { join } from "jsr:@std/path";
-import { action, type Operation } from "npm:effection@^3.6.0";
 import { concatBytes } from "../../../cesr/mod.ts";
 import {
   buildCesrRequest,

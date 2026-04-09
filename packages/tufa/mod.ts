@@ -1,4 +1,4 @@
-import { run } from "npm:effection@^3.6.0";
+import { run } from "effection";
 import { reportCliFailure, tufa } from "./src/cli/cli.ts";
 
 /**

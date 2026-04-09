@@ -1,5 +1,5 @@
+import type { Operation } from "effection";
 import { join } from "jsr:@std/path";
-import type { Operation } from "npm:effection@^3.6.0";
 import {
   type Configer,
   createAgentRuntime,

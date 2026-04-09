@@ -1,4 +1,4 @@
-import type { Operation } from "npm:effection@^3.6.0";
+import type { Operation } from "effection";
 import type { Hab, Habery } from "../../../keri/runtime.ts";
 import { runHostKernel } from "./kernel.ts";
 
