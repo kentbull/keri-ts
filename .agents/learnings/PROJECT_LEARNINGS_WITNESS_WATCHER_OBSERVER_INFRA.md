@@ -7,35 +7,54 @@ deployment, CI, and interoperability operations.
 
 ## Current State
 
-1. This file currently carries more CI/release/runtime-interop memory than
-   role-specific witness/watcher/observer protocol behavior. That is honest:
-   infra work has recently been dominated by build, cache, and interop
-   reproducibility seams.
-2. Infra work should inherit the same DB ordering and duplicate-semantics model
+1. Witness interop now has a real explicit-harness test seam, not just local
+   `tufa` witness coverage or fixed-port KERIpy demos. The dedicated
+   `interop-witness` lane boots real KERIpy witnesses from temp-copied config
+   files with randomized localhost ports so receipt/query behavior is exercised
+   against actual KERIpy witness processes.
+2. Explicit KERIpy witness hosts should be treated as OOBI-served services, not
+   `/health`-served services. `kli witness start` does not expose the same
+   health endpoint contract as `tufa` hosts, so readiness should probe the
+   controller or witness OOBI URL instead of assuming `/health`.
+3. Witness-node discovery needs both controller and witness OOBIs. Resolving
+   only the witness OOBI is not enough for stable HTTP receipt/query interop,
+   because controllers also need the location/end-role material carried through
+   the controller OOBI path.
+4. The currently proved witness matrix is:
+   - `tufa` controller with only KERIpy witnesses, including successful
+     cut/add witness rotation and full receipt convergence.
+   - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
+     witnessed rotations while keeping the witness set stable.
+   - `tufa` controller with a mixed `tufa` + KERIpy witness set, including
+     cross-implementation witness replacement and receipt convergence.
+5. The 6-witness KERIpy soak is intentionally a manual/nightly seam, not a
+   default CI requirement. Keep it ignored by default and document the explicit
+   opt-in command.
+6. Infra work should inherit the same DB ordering and duplicate-semantics model
    as the rest of the project; mailbox and receipt behavior are not exempt from
    the shared DB architecture contract.
-3. Formatting policy is `dprint`, and CI/release paths should enforce
+7. Formatting policy is `dprint`, and CI/release paths should enforce
    `deno task fmt:check`.
-4. `master` now has a dedicated PR stage gate that runs formatting, lint, and
+8. `master` now has a dedicated PR stage gate that runs formatting, lint, and
    quality/test coverage against a pinned KERIpy CLI so GitHub Actions matches
    local expectations more closely.
-5. Runtime version generation is deterministic during checks: build metadata is
+9. Runtime version generation is deterministic during checks: build metadata is
    empty by default and CI artifact steps must opt into stamped metadata
    explicitly.
-6. KERIpy interop depends on exact LMDB-js behavior, not just an npm version:
-   keep `lmdb` pinned to `3.4.4`, preserve `LMDB_DATA_V1=true`, and rebuild the
-   native addon in the compatible way rather than assuming runner defaults are
-   safe.
-7. The LMDB v1-compatible rebuild path should rebuild the native addon directly
-   instead of using the published package's `npm rebuild ... --build-from-source`
-   path, which expects a JS build toolchain CI may not provide.
-8. Cache topology is part of correctness. Shared bootstrap caches are useful,
-   but LMDB-v1-sensitive interop jobs need their own cache boundary so a
-   non-interop job cannot accidentally suppress the required rebuild.
-9. CI feedback should follow isolation boundaries, not folder names: static
-   checks, interop-sensitive jobs, smoke paths, and slower lanes should be split
-   so failures localize quickly without breaking branch-protection stability.
-10. Exact env pins, action SHAs, environment assertions, and saved artifacts are
+10. KERIpy interop depends on exact LMDB-js behavior, not just an npm version:
+    keep `lmdb` pinned to `3.4.4`, preserve `LMDB_DATA_V1=true`, and rebuild the
+    native addon in the compatible way rather than assuming runner defaults are
+    safe.
+11. The LMDB v1-compatible rebuild path should rebuild the native addon directly
+    instead of using the published package's `npm rebuild ... --build-from-source`
+    path, which expects a JS build toolchain CI may not provide.
+12. Cache topology is part of correctness. Shared bootstrap caches are useful,
+    but LMDB-v1-sensitive interop jobs need their own cache boundary so a
+    non-interop job cannot accidentally suppress the required rebuild.
+13. CI feedback should follow isolation boundaries, not folder names: static
+    checks, interop-sensitive jobs, smoke paths, and slower lanes should be split
+    so failures localize quickly without breaking branch-protection stability.
+14. Exact env pins, action SHAs, environment assertions, and saved artifacts are
     part of reproducibility for a native-addon library repo, not optional
     polish.
 
@@ -53,11 +72,19 @@ deployment, CI, and interoperability operations.
 
 ## Current Follow-Ups
 
-1. Keep CI and release workflows honest about LMDB v1 rebuild requirements and
+1. Keep the explicit KERIpy witness harness on temp-copied randomized configs.
+   Do not regress to fixed-port `kli witness demo` for default CI coverage.
+2. Preserve the controller-plus-witness OOBI resolution rule for witness hosts
+   whenever new interop or bootstrap helpers are added.
+3. Keep CI and release workflows honest about LMDB v1 rebuild requirements and
    KERIpy pins whenever bootstrap logic changes.
-2. Preserve split-job feedback topology and isolation-aware test grouping rather
+4. Preserve split-job feedback topology and isolation-aware test grouping rather
    than collapsing everything back into one giant lane.
-3. When infra-role protocol work deepens, add it here as durable operational
+5. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
+   required control path, prove it in its own scenario instead of silently
+   expanding the stable-control test that currently covers repeated
+   same-witness rotations.
+6. When infra-role protocol work deepens, add it here as durable operational
    rules rather than as workflow-by-workflow diary entries.
 
 ## Milestone Rollup
@@ -105,3 +132,20 @@ deployment, CI, and interoperability operations.
 - Operationally, treat mailbox topic ownership (`dest` vs subject prefix) as a
   correctness boundary, not a storage detail. The wrong bucket silently turns
   "query succeeded" into stale remote state.
+
+### 2026-04-08 - Real KERIpy Witness Interop Needs An Explicit Harness
+
+- The durable witness-interop seam is now a dedicated `interop-witness` test
+  lane backed by a shared helper module and an explicit `KeriPyWitnessHarness`.
+  That harness should copy reference witness configs into a temp config root,
+  rewrite `curls` to randomized localhost ports, initialize each witness in an
+  isolated temp home/base, and start long-lived KERIpy witnesses from the
+  local-source Python package.
+- Readiness for explicit KERIpy witness hosts should be OOBI-based, not
+  `/health`-based.
+- Controllers must resolve both controller and witness OOBIs for witness nodes
+  so receipt/query endpoint discovery is present in both `tufa` and KLI flows.
+- The stable proved matrix now includes all-KERIpy-witness `tufa` flows, mixed
+  `tufa` + KERIpy witness flows, and an all-KERIpy KLI control case across
+  multiple same-witness rotations. Keep the 6-witness soak manual/ignored by
+  default.

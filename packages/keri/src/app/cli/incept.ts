@@ -10,6 +10,7 @@ import {
 } from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import type { Habery } from "../habbing.ts";
+import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
 
@@ -98,9 +99,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   if (inceptArgs.endpoint) {
-    throw new ValidationError(
-      "Witness endpoint receipting is not available in single-sig local phase",
-    );
+    // supported below
   }
   if (inceptArgs.proxy) {
     throw new ValidationError(
@@ -164,6 +163,17 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         data: opts.data ?? [],
         delpre: opts.delpre,
       });
+
+      if (hab.kever?.wits.length) {
+        if (inceptArgs.endpoint) {
+          const receiptor = new Receiptor(hby);
+          yield* receiptor.receipt(hab.pre, { sn: 0 });
+        } else {
+          const witDoer = new WitnessReceiptor(hby);
+          yield* witDoer.submit(hab.pre, { sn: 0 });
+        }
+      }
+
       const state = hby.db.getState(hab.pre);
 
       console.log(`Prefix  ${hab.pre}`);

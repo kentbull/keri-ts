@@ -68,6 +68,35 @@ export class Reactor {
   }
 
   /**
+   * Parse and dispatch one already-collected CESR/KERI byte chunk immediately.
+   *
+   * This keeps the parser lifecycle owned by `Reactor` while letting higher
+   * level hosts choose whether one ingress source should be treated as local or
+   * remote without creating a second parser/router stack.
+   */
+  processChunk(
+    chunk: Uint8Array,
+    { local = this.local }: { local?: boolean } = {},
+  ): void {
+    for (
+      const envelope of envelopesFromFrames(
+        this.parser.feed(chunk),
+        local,
+      )
+    ) {
+      const decision = dispatchEnvelope(
+        envelope,
+        this.revery,
+        this.kevery,
+        this.exchanger,
+      );
+      if (decision?.kind === "unverified") {
+        continue;
+      }
+    }
+  }
+
+  /**
    * Drain one bounded message-processing pass.
    *
    * This mirrors the KERIpy pattern where a doer owns the long-lived loop but
@@ -79,22 +108,7 @@ export class Reactor {
       if (!chunk) {
         continue;
       }
-      for (
-        const envelope of envelopesFromFrames(
-          this.parser.feed(chunk),
-          this.local,
-        )
-      ) {
-        const decision = dispatchEnvelope(
-          envelope,
-          this.revery,
-          this.kevery,
-          this.exchanger,
-        );
-        if (decision?.kind === "unverified") {
-          continue;
-        }
-      }
+      this.processChunk(chunk);
     }
   }
 

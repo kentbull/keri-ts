@@ -29,6 +29,7 @@
     "test:quality:keri:app-stateful-a": "cd packages/keri && deno task test:quality:app-stateful-a",
     "test:quality:keri:app-stateful-b": "cd packages/keri && deno task test:quality:app-stateful-b",
     "test:quality:keri:interop-parity": "cd packages/keri && deno task test:quality:interop-parity",
+    "test:quality:keri:interop-witness": "cd packages/keri && deno task test:quality:interop-witness",
     "test:quality:keri:interop-gates-b": "cd packages/keri && deno task test:quality:interop-gates-b",
     "test:quality:keri:interop-gates-c": "cd packages/keri && deno task test:quality:interop-gates-c",
     "test:integration:server": "cd packages/keri && deno task test:integration:server",

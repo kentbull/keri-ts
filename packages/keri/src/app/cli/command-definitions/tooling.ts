@@ -131,11 +131,4 @@ function registerExperimentalCmds(
     .action(() => {
       dispatch({ name: "interact", args: {} });
     });
-
-  experimentalCommand
-    .command("witness")
-    .description("Start a witness server (placeholder)")
-    .action(() => {
-      dispatch({ name: "witness", args: {} });
-    });
 }

@@ -187,11 +187,15 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
 export function settleRuntimeIngress(
   runtime: AgentRuntime,
   messages: Iterable<Uint8Array>,
+  {
+    local,
+  }: {
+    local?: boolean;
+  } = {},
 ): void {
   for (const message of messages) {
-    runtime.reactor.ingest(message);
+    runtime.reactor.processChunk(message, { local });
   }
-  runtime.reactor.processOnce();
   runtime.reactor.processEscrowsOnce();
 }
 

@@ -23,6 +23,7 @@ deno task test:quality:app-stateful-b
 
 # Interop lanes
 deno task test:quality:interop-parity
+deno task test:quality:interop-witness
 deno task test:quality:interop-gates-b
 deno task test:quality:interop-gates-c
 
@@ -48,5 +49,8 @@ deno task test:integration:server
     stores run one file at a time.
   - Interop tests are split into their own lanes because they are the slowest
     tests and require pinned KERIpy plus LMDB v1 compatibility in CI.
+  - `interop-witness` is the dedicated witness receipting parity lane. It uses
+    explicit randomized KERIpy witness processes instead of the fixed-port
+    `kli witness demo` topology.
 - Maintainer-focused testing and release flows are documented in
   `MAINTAINER-README.md`.

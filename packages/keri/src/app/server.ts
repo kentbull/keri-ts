@@ -29,6 +29,7 @@ import {
 } from "./cesr-http.ts";
 import type { Hab } from "./habbing.ts";
 import { endpointBasePath, fetchEndpointUrls, hostedEndpointPathMatches, preferredUrl } from "./mailboxing.ts";
+import { witnessQueryGet, witnessReceiptGet, witnessReceiptPost } from "./witnessing.ts";
 
 /** Minimal shutdown/wait contract shared by Deno and Node server hosts. */
 interface RunningServer {
@@ -66,6 +67,8 @@ export interface RuntimeServerOptions {
    * this process. When omitted, all local prefixes remain visible.
    */
   hostedPrefixes?: readonly string[];
+  /** Optional hosted witness habitat that enables `/receipts` and `/query`. */
+  witnessHab?: Hab;
 }
 
 /**
@@ -122,6 +125,86 @@ function createProtocolHandler(
             mailboxAdmin.endpoint.eid,
             options.serviceHab,
           );
+        }
+      }
+
+      if (runtime && options.witnessHab) {
+        const hosted = resolveHostedEndpoint(
+          runtime,
+          url.pathname,
+          "",
+          options.hostedPrefixes,
+        );
+        if (hosted.kind === "ambiguous") {
+          return new Response("Ambiguous hosted endpoint path", {
+            status: 409,
+            headers: { "Content-Type": "text/plain" },
+          });
+        }
+        const relativePath = hosted.relativePath ?? normalizeHostedPath(url.pathname);
+        if ((req.method === "POST" || req.method === "PUT") && relativePath === "/receipts") {
+          const bytes = await readRequiredCesrRequestBytes(req);
+          if (!bytes) {
+            return new Response("Unacceptable content type.", {
+              status: 406,
+              headers: { "Content-Type": "text/plain" },
+            });
+          }
+          const result = witnessReceiptPost(runtime, options.witnessHab, bytes);
+          if (result.kind === "accepted") {
+            return new Response(result.body.slice().buffer, {
+              status: result.status,
+              headers: { "Content-Type": "application/cesr" },
+            });
+          }
+          if (result.kind === "escrow") {
+            return new Response(null, {
+              status: result.status,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response(result.message, {
+            status: result.status,
+            headers: { "Content-Type": "text/plain" },
+          });
+        }
+        if (req.method === "GET" && relativePath === "/receipts") {
+          const snText = url.searchParams.get("sn");
+          const sn = snText === null ? null : Number.parseInt(snText, 10);
+          const result = witnessReceiptGet(options.witnessHab, {
+            pre: url.searchParams.get("pre"),
+            sn: Number.isNaN(sn ?? NaN) ? null : sn,
+            said: url.searchParams.get("said"),
+          });
+          if (result.kind === "accepted") {
+            return new Response(result.body.slice().buffer, {
+              status: result.status,
+              headers: { "Content-Type": "application/cesr" },
+            });
+          }
+          return new Response(result.message, {
+            status: result.status,
+            headers: { "Content-Type": "text/plain" },
+          });
+        }
+        if (req.method === "GET" && relativePath === "/query") {
+          const snText = url.searchParams.get("sn");
+          const sn = snText === null ? null : Number.parseInt(snText, 10);
+          const result = witnessQueryGet(options.witnessHab, {
+            typ: url.searchParams.get("typ"),
+            pre: url.searchParams.get("pre"),
+            sn: Number.isNaN(sn ?? NaN) ? null : sn,
+          });
+          if (result.kind === "accepted") {
+            return new Response(result.body.slice().buffer, {
+              status: result.status,
+              headers: { "Content-Type": "application/cesr" },
+            });
+          }
+          return new Response(result.message, {
+            status: result.status,
+            headers: { "Content-Type": "text/plain" },
+          });
         }
       }
 

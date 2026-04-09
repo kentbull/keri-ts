@@ -203,6 +203,20 @@ Use this file to:
     callers can preserve per-source ingestion boundaries explicitly, while
     long-lived `pollDo()` stays sink-based because concurrent workers do not
     have a natural finite return value.
+33. Real witness interop evidence now has its own explicit seam. The
+    `interop-witness` lane uses temp-copied KERIpy witness configs with
+    randomized localhost ports instead of fixed-port demos, readiness probes
+    KERIpy witnesses through controller/witness OOBIs rather than `/health`,
+    and witness-host discovery resolves both controller and witness OOBIs so
+    endpoint/location state is present for receipt/query flows. The currently
+    proved matrix is:
+    - `tufa` controller with only KERIpy witnesses, including witness-set
+      replacement.
+    - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
+      witnessed same-witness rotations.
+    - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
+      cross-implementation replacement.
+      Keep the 6-witness KERIpy soak manual/ignored by default.
 
 ## Current Follow-Ups
 
@@ -241,6 +255,11 @@ Use this file to:
     identities such as signatory/AEID-related identities should not leak into
     ordinary user-facing host startup just because they exist in the local
     keystore.
+11. Keep the witness interop matrix honest about what is actually proved.
+    Stable CI coverage now includes the three practical witness scenarios above;
+    if KLI/KERIpy witness-set replacement under the explicit harness becomes a
+    required control claim, add it as its own scenario instead of silently
+    broadening the current control test.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 
