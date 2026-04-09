@@ -51,7 +51,10 @@ docker run --rm \
   "${DOCKER_ARGS[@]}" \
   "${SMOKE_NODE_IMAGE}" /bin/sh -lc "
 set -eu
-npm install -g ${INSTALL_TARGETS[*]} >/dev/null
+WORK_DIR=\$(mktemp -d)
+cd \"\$WORK_DIR\"
+npm init -y >/dev/null 2>&1
+npm install ${INSTALL_TARGETS[*]} >/dev/null
 echo \"Node runtime: \$(node --version), npm: \$(npm --version)\" >&2
 node --input-type=module - <<'EOF'
 import * as keri from 'keri-ts';

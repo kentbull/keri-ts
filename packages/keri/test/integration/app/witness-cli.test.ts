@@ -822,7 +822,7 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
         const witnessHbys = [witness1Hby, witness2Hby, witness3Hby];
         const expectedSaids: string[] = [];
 
-        function assertFullyWitnessedEverywhere(sn: number): string {
+        const assertFullyWitnessedEverywhere = (sn: number): string => {
           const controllerSaid = controllerHby.db.kels.getLast(
             controllerPre,
             sn,
@@ -851,7 +851,7 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
           }
 
           return controllerSaid;
-        }
+        };
 
         const finalState = controllerHby.db.getState(controllerPre);
         assertEquals(finalState?.s, "6");
