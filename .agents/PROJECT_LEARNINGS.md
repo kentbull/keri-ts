@@ -203,6 +203,20 @@ Use this file to:
     callers can preserve per-source ingestion boundaries explicitly, while
     long-lived `pollDo()` stays sink-based because concurrent workers do not
     have a natural finite return value.
+33. Real witness interop evidence now has its own explicit seam. The
+    `interop-witness` lane uses temp-copied KERIpy witness configs with
+    randomized localhost ports instead of fixed-port demos, readiness probes
+    KERIpy witnesses through controller/witness OOBIs rather than `/health`,
+    and witness-host discovery resolves both controller and witness OOBIs so
+    endpoint/location state is present for receipt/query flows. The currently
+    proved matrix is:
+    - `tufa` controller with only KERIpy witnesses, including witness-set
+      replacement.
+    - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
+      witnessed same-witness rotations.
+    - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
+      cross-implementation replacement.
+      Keep the 6-witness KERIpy soak manual/ignored by default.
 
 ## Current Follow-Ups
 
@@ -241,6 +255,11 @@ Use this file to:
     identities such as signatory/AEID-related identities should not leak into
     ordinary user-facing host startup just because they exist in the local
     keystore.
+11. Keep the witness interop matrix honest about what is actually proved.
+    Stable CI coverage now includes the three practical witness scenarios above;
+    if KLI/KERIpy witness-set replacement under the explicit harness becomes a
+    required control claim, add it as its own scenario instead of silently
+    broadening the current control test.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 
@@ -366,3 +385,34 @@ Then do task: <TASK>.
 - Why it matters: the false mental model was "rotate is just another CLI wrapper like sign/verify." It is not. Without a habitat-level rotate seam, the CLI either duplicates keeper/KEL invariants or quietly gets rollback wrong.
 - Next: if multisig/group parity work starts, do not extend the single-sig CLI directly. Re-open the habitat/manager ownership boundary first.
 - Verification: local unit/integration/interop coverage passed for single-sig sign -> query -> rotate parity.
+
+### 2026-04-08 - KLI Controller vs Tufa Witness Replacement Parity Landed In The Host Layer
+
+- Substance: the durable fix for KLI-driven witness replacement parity was to
+  route hosted witness root-path HTTP ingress through the witness-local ingress
+  seam. That closed the remaining KLI controller replacement gaps against both
+  all-`tufa` witness sets and mixed `tufa` + KERIpy witness sets.
+- Why it matters: the bad mental model was "receipt-core is probably still
+  wrong." It wasn’t. The real gap lived in host/runtime semantics for ordinary
+  witness HTTP ingress during catchup/fanout, which only shows up in
+  cross-implementation replacement paths.
+- Next: keep only the 6-witness soak ignored. The normal witness addition and
+  replacement matrix should remain default CI coverage.
+- Verification: local `interop-witness`, `interop-kli-tufa`, witness-runtime,
+  and `deno check` passed with KLI replacement scenarios enabled.
+
+### 2026-04-08 - Protocol Routing Was Split Out Of The Transport Host
+
+- Substance: `server.ts` now owns only Deno/Node host adaptation and lifecycle,
+  while request classification and route dispatch live in
+  `protocol-handler.ts`; hosted-endpoint tie-break resolution now lives beside
+  the mailbox endpoint helpers instead of inside the host file.
+- Why it matters: the wrong mental model was "HTTP route policy belongs in the
+  HTTP host file." That made witness/mailbox/OOBI precedence opaque and turned
+  parity fixes into unreadable conditionals.
+- Next: keep route precedence and ingress-mode policy explicit through the pure
+  protocol-handler tests instead of letting ad hoc booleans creep back into the
+  host adapters.
+- Verification: local protocol-handler, witness-runtime, mailbox-runtime,
+  server integration, `interop-witness`, `interop-kli-tufa`, and `deno check`
+  passed after the refactor.

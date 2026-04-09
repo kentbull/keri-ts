@@ -13,6 +13,8 @@
  */
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { makeNowIso8601 } from "../../time/mod.ts";
+import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import {
   loadRotateFileOptions,
@@ -107,21 +109,45 @@ function difference(left: readonly string[], right: readonly string[]): string[]
  * parity in cases where the underlying runtime orchestration is still absent.
  */
 function assertUnsupportedAdvancedFlows(args: RotateArgs, delegated: boolean): void {
-  if (args.endpoint) {
-    throw new ValidationError(
-      "Witness receipt-endpoint rotation flow is not yet available in tufa.",
-    );
-  }
-  if (args.authenticate || (args.code?.length ?? 0) > 0 || args.codeTime) {
-    throw new ValidationError(
-      "Witness authentication-code rotation flow is not yet available in tufa.",
-    );
-  }
   if (args.proxy || delegated) {
     throw new ValidationError(
       "Delegation-assisted rotation flow is not yet available in tufa.",
     );
   }
+}
+
+function resolveWitnessAuths(
+  witnesses: readonly string[],
+  codes: readonly string[],
+  codeTime?: string,
+  promptMissing = false,
+): WitnessAuthMap {
+  const timestamp = codeTime ?? makeNowIso8601();
+  const auths: WitnessAuthMap = {};
+  for (const entry of codes) {
+    const separator = entry.indexOf(":");
+    if (separator <= 0 || separator >= entry.length - 1) {
+      throw new ValidationError(
+        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
+      );
+    }
+    const witness = entry.slice(0, separator);
+    const code = entry.slice(separator + 1);
+    auths[witness] = `${code}#${timestamp}`;
+  }
+  if (promptMissing) {
+    for (const witness of witnesses) {
+      if (auths[witness]) {
+        continue;
+      }
+      const code = prompt(`Entire code for ${witness}: `);
+      if (!code) {
+        throw new ValidationError(`Missing witness code for ${witness}.`);
+      }
+      auths[witness] = `${code}#${makeNowIso8601()}`;
+    }
+  }
+  return auths;
 }
 
 /**
@@ -211,6 +237,28 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         adds,
         data: options.data ?? [],
       });
+
+      if (hab.kever?.wits.length) {
+        const auths = resolveWitnessAuths(
+          hab.kever.wits,
+          rotateArgs.code ?? [],
+          rotateArgs.codeTime,
+          rotateArgs.authenticate ?? false,
+        );
+        if (rotateArgs.endpoint) {
+          const receiptor = new Receiptor(hby);
+          yield* receiptor.receipt(hab.pre, {
+            sn: hab.kever.sn,
+            auths,
+          });
+        } else {
+          const witDoer = new WitnessReceiptor(hby);
+          yield* witDoer.submit(hab.pre, {
+            sn: hab.kever.sn,
+            auths,
+          });
+        }
+      }
 
       const state = hby.db.getState(hab.pre);
       console.log(`Prefix  ${hab.pre}`);

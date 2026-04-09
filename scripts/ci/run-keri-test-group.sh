@@ -26,21 +26,6 @@ fi
 
 cd "${PACKAGE_DIR}"
 
-ensure_lmdb_setup() {
-  if [[ -n "${KERI_LMDB_SETUP_DONE:-}" ]]; then
-    return
-  fi
-
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    echo "==> Rebuilding patched LMDB-js for Deno on macOS"
-    deno task setup
-  fi
-
-  export KERI_LMDB_SETUP_DONE=1
-}
-
-ensure_lmdb_setup
-
 COMMON_ARGS=(deno test --allow-all --unstable-ffi)
 DB_FAST_ARGS=(deno test --allow-all)
 
@@ -68,6 +53,7 @@ run_quality_groups() {
   "$0" app-stateful-a
   "$0" app-stateful-b
   "$0" interop-parity
+  "$0" interop-witness
   "$0" interop-gates-b
   "$0" interop-gates-c
 }
@@ -122,6 +108,9 @@ case "${GROUP}" in
     ;;
   interop-parity)
     run_isolated_files test/integration/app/interop-kli-tufa.test.ts
+    ;;
+  interop-witness)
+    run_isolated_files test/integration/app/interop-witness-kli-tufa.test.ts
     ;;
   interop-gates-b)
     echo "==> Running interop gate scenarios for Gate B"

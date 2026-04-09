@@ -71,6 +71,14 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["list", lazyCommand(() => import("../list.ts"), "listCommand")],
     ["aid", lazyCommand(() => import("../aid.ts"), "aidCommand")],
     ["agent", lazyCommand(() => import("../agent.ts"), "agentCommand")],
+    [
+      "witness.start",
+      lazyCommand(() => import("../witness.ts"), "witnessStartCommand"),
+    ],
+    [
+      "witness.submit",
+      lazyCommand(() => import("../witness.ts"), "witnessSubmitCommand"),
+    ],
     ["ends.add", lazyCommand(() => import("../ends.ts"), "endsAddCommand")],
     ["loc.add", lazyCommand(() => import("../loc.ts"), "locAddCommand")],
     [
@@ -88,7 +96,6 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ],
     ["db.dump", lazyCommand(() => import("../db-dump.ts"), "dumpEvts")],
     ["interact", interactCommand],
-    ["witness", witnessCommand],
   ]);
 }
 
@@ -96,10 +103,4 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
 // deno-lint-ignore require-yield
 function* interactCommand(_args: CommandArgs): Operation<void> {
   console.log("tufa experimental interact command - coming soon!");
-}
-
-/** Placeholder handler for the future experimental witness command surface. */
-// deno-lint-ignore require-yield
-function* witnessCommand(_args: CommandArgs): Operation<void> {
-  console.log("tufa experimental witness command - coming soon!");
 }

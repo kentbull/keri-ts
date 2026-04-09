@@ -15,7 +15,8 @@
     "version:generate": "deno run -A ../../scripts/generate_versions.ts --only keri",
     "version:check": "deno task manifest:check && deno run -A ../../scripts/generate_versions.ts --check --only keri",
     "build:npm": "deno task version:generate && deno run -A scripts/build_npm.ts",
-    "setup": "bash scripts/setup_lmdb_v1.sh",
+    "setup": "deno task setup:compat-lmdb",
+    "setup:compat-lmdb": "bash scripts/setup_lmdb_v1.sh",
     "start": "deno run --allow-all --unstable-ffi mod.ts",
     "dev": "deno run --allow-all --unstable-ffi --watch mod.ts",
     "tufa": "deno run --allow-all --unstable-ffi mod.ts",
@@ -26,6 +27,7 @@
     "test:quality:app-stateful-a": "bash ../../scripts/ci/run-keri-test-group.sh app-stateful-a",
     "test:quality:app-stateful-b": "bash ../../scripts/ci/run-keri-test-group.sh app-stateful-b",
     "test:quality:interop-parity": "bash ../../scripts/ci/run-keri-test-group.sh interop-parity",
+    "test:quality:interop-witness": "bash ../../scripts/ci/run-keri-test-group.sh interop-witness",
     "test:quality:interop-gates-b": "bash ../../scripts/ci/run-keri-test-group.sh interop-gates-b",
     "test:quality:interop-gates-c": "bash ../../scripts/ci/run-keri-test-group.sh interop-gates-c",
     "test:integration:server": "bash ../../scripts/ci/run-keri-test-group.sh server"

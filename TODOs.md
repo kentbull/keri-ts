@@ -55,6 +55,7 @@ Things to come back and do at some point:
 
 - explicit v2 support
 - mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow
+- a clean HTTP routing layer. Feels kind of ugly, could benefit from a framework or lib
 
 ## Review Queue
 

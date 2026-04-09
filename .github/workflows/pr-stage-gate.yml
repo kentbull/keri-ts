@@ -229,6 +229,27 @@ jobs:
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: restore compat LMDB node_modules cache
+        id: compat-node-modules-cache
+        # Compat tests should consume a prepared LMDB v1-compatible addon from
+        # job setup, not rebuild it ad hoc from inside the test harness.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: rebuild LMDB-js with data v1 compatibility
+        if: steps.compat-node-modules-cache.outputs.cache-hit != 'true'
+        run: |
+          cd packages/keri
+          deno task setup:compat-lmdb
+
       - name: assert environment
         env:
           EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
@@ -283,17 +304,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: rebuild LMDB-js with data v1 compatibility
         # Only the interop node_modules cache proves the native addon was
         # rebuilt for KERIpy-compatible LMDB v1 semantics.
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
-          deno task setup
-
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          deno task setup:compat-lmdb
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
@@ -365,17 +386,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: rebuild LMDB-js with data v1 compatibility
         # Only the interop node_modules cache proves the native addon was
         # rebuilt for KERIpy-compatible LMDB v1 semantics.
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
-          deno task setup
-
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          deno task setup:compat-lmdb
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
@@ -447,17 +468,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: rebuild LMDB-js with data v1 compatibility
         # Only the interop node_modules cache proves the native addon was
         # rebuilt for KERIpy-compatible LMDB v1 semantics.
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: |
           cd packages/keri
-          deno task setup
-
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          deno task setup:compat-lmdb
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
@@ -586,11 +607,21 @@ jobs:
           TARBALL="$(npm pack --silent | tail -n 1)"
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
+      - name: smoke test keri-ts tarball in Node glibc
+        id: smoke-glibc
+        continue-on-error: true
+        env:
+          SMOKE_NODE_IMAGE: node:bookworm-slim
+        run: |
+          bash scripts/smoke-test-keri-npm.sh \
+            "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}" \
+            "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}"
+
       - name: smoke test keri-ts tarball in Node Alpine
-        # Alpine gives us a lean install/runtime check against the packed
-        # artifact, and the script also wires in the freshly built `cesr-ts`
-        # tarball so we do not accidentally smoke-test against npm registry
-        # state.
+        id: smoke-alpine
+        continue-on-error: true
+        env:
+          SMOKE_NODE_IMAGE: node:alpine
         run: |
           bash scripts/smoke-test-keri-npm.sh \
             "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}" \
@@ -599,6 +630,7 @@ jobs:
       - name: upload npm tarballs
         # Keep the exact built artifacts for inspection/debugging when smoke or
         # later release work fails.
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: npm-tarballs-pr-${{ github.event.pull_request.number }}
@@ -607,6 +639,13 @@ jobs:
             packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: assert smoke matrix results
+        run: |
+          echo "glibc=${{ steps.smoke-glibc.outcome }}"
+          echo "alpine=${{ steps.smoke-alpine.outcome }}"
+          [[ "${{ steps.smoke-glibc.outcome }}" == "success" ]]
+          [[ "${{ steps.smoke-alpine.outcome }}" == "success" ]]
 
   # Aggregate branch-protection target. We keep this tiny on purpose so branch
   # protection can require one stable check name while the real work fans out.

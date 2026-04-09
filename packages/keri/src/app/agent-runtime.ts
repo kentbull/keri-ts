@@ -183,15 +183,33 @@ export function enqueueOobi(runtime: AgentRuntime, job: OobiJob): void {
  *
  * This is the shared ingress-settlement seam for mailbox-delivered batches and
  * HTTP request payloads that should advance parser and escrow state together.
+ *
+ * Maintainer mental model:
+ * - this helper is intentionally route-policy-free
+ * - callers decide whether a message should be treated as `local` or ordinary
+ *   remote ingress before calling it
+ * - once called, it always does the same two things: feed the parser and run
+ *   one escrow replay turn
+ *
+ * Why `local` matters:
+ * - `local` is not an HTTP transport detail
+ * - it is a parser/runtime semantic switch used when the host is acting as the
+ *   local controller or local witness for the received message
+ * - witness hosting relies on that distinction so accepted witness-targeted
+ *   events emit witness cues rather than ordinary remote receipt cues
  */
 export function settleRuntimeIngress(
   runtime: AgentRuntime,
   messages: Iterable<Uint8Array>,
+  {
+    local,
+  }: {
+    local?: boolean;
+  } = {},
 ): void {
   for (const message of messages) {
-    runtime.reactor.ingest(message);
+    runtime.reactor.processChunk(message, { local });
   }
-  runtime.reactor.processOnce();
   runtime.reactor.processEscrowsOnce();
 }
 

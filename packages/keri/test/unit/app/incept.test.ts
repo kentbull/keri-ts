@@ -39,15 +39,32 @@ Deno.test("CLI - incept command requires alias", async () => {
   );
 });
 
-Deno.test("CLI - incept command blocks witness endpoint mode in single-sig phase", async () => {
-  await assertOperationThrows(
-    inceptCommand({
-      name: "test",
-      alias: "alice",
-      endpoint: true,
-    }),
-    "Witness endpoint receipting is not available in single-sig local phase",
-  );
+Deno.test("CLI - incept command accepts witness endpoint mode when no witnesses are configured", async () => {
+  const name = `incept-endpoint-${crypto.randomUUID()}`;
+  await run(() => initCommand({ name, temp: true, nopasscode: true }));
+
+  const harness = new CLITestHarness();
+  harness.captureOutput();
+  try {
+    await run(() =>
+      inceptCommand({
+        name,
+        temp: true,
+        alias: "alice",
+        endpoint: true,
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      })
+    );
+    const output = harness.getOutput().join("\n");
+    assertStringIncludes(output, "Prefix");
+  } finally {
+    harness.restoreOutput();
+  }
 });
 
 Deno.test("CLI - incept command works with custom head directory", async () => {
