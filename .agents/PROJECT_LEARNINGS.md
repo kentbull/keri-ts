@@ -137,7 +137,10 @@ Use this file to:
     rebuild requirements.
 22. Test parallelization should follow isolation boundaries, not folder names.
     DB-core suites can parallelize more freely; CLI/app/interop suites that
-    mutate globals or persisted stores need stronger isolation.
+    mutate globals or persisted stores need stronger isolation. In CI, do not
+    hide a heavy lane under a broad "fast" umbrella job name once its wall
+    clock stops being fast; split DB, core, app/server, and representative
+    runtime lanes into separate jobs so the slowest bucket is explicit.
 23. The KERI test runner must stay truthful as runtime and interop files grow.
     `scripts/ci/run-keri-test-group.ts` is now the authoritative lane map,
     `test:quality` is the honest default path, `test:slow` is the explicit

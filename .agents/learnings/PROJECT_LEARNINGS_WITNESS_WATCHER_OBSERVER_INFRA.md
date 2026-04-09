@@ -54,6 +54,9 @@ deployment, CI, and interoperability operations.
 13. CI feedback should follow isolation boundaries, not folder names: static
     checks, interop-sensitive jobs, smoke paths, and slower lanes should be split
     so failures localize quickly without breaking branch-protection stability.
+    That now includes KERI lane fanout inside the default path itself: DB,
+    core, app/server, runtime-medium, stateful app, and interop jobs should be
+    separate when their wall clocks diverge materially.
 14. Exact env pins, action SHAs, environment assertions, and saved artifacts are
     part of reproducibility for a native-addon library repo, not optional
     polish.
@@ -219,3 +222,14 @@ deployment, CI, and interoperability operations.
   `cli.test.ts` fell from about 14s to about 10s and `habbing.test.ts` from
   about 75s to about 66s, while the grouped `app-stateful-a` and
   `app-stateful-b` lanes still passed.
+
+### 2026-04-09 - The Old "Fast" CI Bucket Was Too Broad
+
+- Splitting source-owned test lanes was necessary but not sufficient. The first
+  CI fanout still hid `db-fast`, `core-fast`, `app-fast`/`server`, and
+  `runtime-medium` behind one `keri-fast-tests` job, which made "fast" a bad
+  label once `core-fast` became the longest-running default-path bucket.
+- Durable rule: CI job names should describe real wall-clock behavior closely
+  enough that the slowest lane is visible. When one lane materially dominates,
+  give it its own job instead of keeping an aggregate umbrella just because the
+  tests are still on the default path.
