@@ -1,11 +1,7 @@
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../../../cesr/mod.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
@@ -353,6 +349,111 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
         assertEquals(response.status, 400);
         const body = yield* textOp(response);
         assertStringIncludes(body, "is not an authorized witness");
+      } finally {
+        yield* waitForTaskHalt(serverTask);
+        yield* runtime.close();
+      }
+    } finally {
+      yield* providerHby.close();
+      yield* sourceHby.close();
+    }
+  });
+});
+
+Deno.test("Witness runtime accepts root-path catchup before synchronous receipting", async () => {
+  const sourceName = `witness-root-catchup-source-${crypto.randomUUID()}`;
+  const providerName = `witness-root-catchup-provider-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-witness-root-catchup-src-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-witness-root-catchup-provider-${crypto.randomUUID()}`;
+  const port = randomPort();
+  const hostUrl = `http://127.0.0.1:${port}`;
+
+  await run(function*() {
+    const sourceHby = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDirPath,
+      skipConfig: true,
+    });
+    const providerHby = yield* createHabery({
+      name: providerName,
+      headDirPath: providerHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const witness = providerHby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = sourceHby.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const inception = [...sourceHby.db.clonePreIter(controller.pre, 0)][0];
+      assertExists(inception);
+      controller.rotate({
+        ncount: 1,
+        nsith: "1",
+      });
+      const rotation = [...sourceHby.db.clonePreIter(controller.pre, 1)][0];
+      const latest = sourceHby.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      assertExists(rotation);
+      assertExists(latest?.said);
+
+      yield* seedWitnessHostState(providerHby, witness, hostUrl);
+      const runtime = yield* createAgentRuntime(providerHby, {
+        mode: "both",
+        enableMailboxStore: true,
+      });
+      const serverTask = yield* spawn(function*() {
+        yield* startServer(port, undefined, runtime, {
+          hostname: "127.0.0.1",
+          hostedPrefixes: [witness.pre],
+          serviceHab: witness,
+          witnessHab: witness,
+        });
+      });
+
+      try {
+        yield* waitForServer(port);
+
+        const catchupRequest = buildCesrRequest(inception, {
+          destination: witness.pre,
+        });
+        const catchupResponse = yield* fetchOp(hostUrl, {
+          method: "POST",
+          headers: catchupRequest.headers,
+          body: catchupRequest.body,
+        });
+        assertEquals(catchupResponse.status, 204);
+        yield* textOp(catchupResponse);
+        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);
+
+        const receiptRequest = buildCesrRequest(rotation, {
+          destination: witness.pre,
+        });
+        const receiptResponse = yield* fetchOp(`${hostUrl}/receipts`, {
+          method: "POST",
+          headers: receiptRequest.headers,
+          body: receiptRequest.body,
+        });
+        assertEquals(receiptResponse.status, 200);
+        const receiptBytes = yield* bytesOp(receiptResponse);
+        assertEquals(receiptBytes.length > 0, true);
+        assertEquals(providerHby.db.getKever(controller.pre)?.sn, 1);
+        assertEquals(
+          providerHby.db.wigs.get(dgKey(controller.pre, latest.said)).length,
+          1,
+        );
       } finally {
         yield* waitForTaskHalt(serverTask);
         yield* runtime.close();

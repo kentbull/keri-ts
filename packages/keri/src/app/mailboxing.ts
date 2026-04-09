@@ -222,6 +222,24 @@ export interface HostedEndpointPathMatch extends HostedEndpoint {
   relativePath: string;
 }
 
+/**
+ * One hosted-route lookup result used by HTTP route classifiers.
+ *
+ * Resolution policy:
+ * - no matching hosted endpoint returns `kind: "none"`
+ * - one longest-base-path match returns `kind: "one"`
+ * - ties on the longest base path stay explicit as `kind: "ambiguous"`
+ *
+ * The route layer depends on ambiguity staying first-class. Returning `null`
+ * here would force later code to guess whether "not found" and "matched more
+ * than one hosted AID" mean the same thing. They do not.
+ */
+export interface HostedRouteResolution {
+  kind: "none" | "one" | "ambiguous";
+  endpoint: HostedEndpointPathMatch | null;
+  relativePath: string | null;
+}
+
 /** Normalize one optional hosted-prefix filter into a membership set. */
 function hostedPrefixFilter(
   eids?: Iterable<string>,
@@ -325,6 +343,47 @@ export function hostedEndpointPathMatches(
   }
 
   return matches.sort((left, right) => right.basePath.length - left.basePath.length);
+}
+
+/**
+ * Resolve one hosted route using longest-base-path semantics.
+ *
+ * Callers may optionally require an exact relative resource suffix such as
+ * `/mailboxes` or `/` while still preserving ambiguity as an explicit result.
+ *
+ * This is the shared answer to "which hosted local AID did this request path
+ * hit?" Keeping it here means `protocol-handler.ts` can reason in terms of
+ * explicit route matches while `server.ts` stays out of endpoint-selection
+ * policy entirely.
+ */
+export function resolveHostedEndpointPath(
+  hby: Habery,
+  pathname: string,
+  resourceSuffix = "",
+  eids?: Iterable<string>,
+): HostedRouteResolution {
+  const matches = hostedEndpointPathMatches(hby, pathname, eids)
+    .filter((match) =>
+      resourceSuffix.length === 0
+        ? true
+        : match.relativePath === normalizePath(resourceSuffix)
+    );
+  if (matches.length === 0) {
+    return { kind: "none", endpoint: null, relativePath: null };
+  }
+
+  const longest = matches[0]!.basePath.length;
+  const narrowed = matches.filter((match) => match.basePath.length === longest);
+  if (narrowed.length > 1) {
+    return { kind: "ambiguous", endpoint: null, relativePath: null };
+  }
+
+  const endpoint = narrowed[0]!;
+  return {
+    kind: "one",
+    endpoint,
+    relativePath: endpoint.relativePath,
+  };
 }
 
 /**

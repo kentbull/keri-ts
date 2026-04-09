@@ -266,9 +266,24 @@ function drainWitnessCues(
 /**
  * Parse and settle one inbound witness-host payload.
  *
+ * This is the witness-host counterpart to generic runtime ingress.
+ *
+ * Responsibilities:
+ * - settle one inbound CESR payload with the correct witness-local semantics
+ * - immediately drain the resulting cues through the hosted witness habitat
+ * - return those cue emissions so the caller can make any request-scoped
+ *   response decision
+ *
  * `local=true` is the crucial switch for the witness receipt path: accepted
  * events that list the hosted witness emit `witness` cues instead of ordinary
  * `receipt` cues.
+ *
+ * Durable routing rule:
+ * - TCP witness ingress, witness `/receipts`, and ordinary HTTP root ingress
+ *   that targets the hosted witness AID should all reach this seam when the
+ *   host is acting as that witness
+ * - generic runtime ingress should remain separate for mailbox streaming,
+ *   `/ksn` replay publication, and other non-witness-root policies
  */
 export function processWitnessIngress(
   runtime: AgentRuntime,

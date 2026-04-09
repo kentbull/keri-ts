@@ -517,6 +517,19 @@ runtime ownership semantics.
   all remote mailboxes through one `processOnce()` loop. Bounded command-local
   helpers still stay sequential and budgeted on purpose.
 
+### 2026-04-08 - Transport Hosting And Protocol Routing Need Separate Ownership
+
+- The shared HTTP host became maintainable only after splitting ownership:
+  `server.ts` should own Deno/Node startup, request bridging, and shutdown,
+  while protocol request classification and dispatch live in
+  `protocol-handler.ts`.
+- Hosted endpoint tie-break policy (`longest base path wins`, `ties are ambiguous`) belongs next to the mailbox endpoint helpers, not hidden inside
+  one host file. Route classifiers should consume that decision rather than
+  re-deriving it inline.
+- Durable rule: witness-root local ingress is a phase-two CESR ingress decision,
+  not a surprise boolean buried inside generic POST handling. Keep witness,
+  mailbox, OOBI, and generic ingress precedence explicit and directly tested.
+
 ### 2026-04-03 - DB Audit And Record-Model Cleanup Closed The Old Missing-Surface Story
 
 - Re-audited the DB parity matrix against current source.

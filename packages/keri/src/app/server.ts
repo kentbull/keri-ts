@@ -1,40 +1,24 @@
 /**
- * Shared HTTP hosting for protocol, mailbox, and OOBI routes.
+ * Shared HTTP host adapters for protocol routing.
  *
- * This module intentionally centralizes externally visible route semantics so
- * the Deno and Node hosts expose the same mailbox and OOBI behavior.
+ * This module owns transport startup, Node/Web request bridging, and shutdown
+ * lifecycle. Path semantics live in `protocol-handler.ts` so Deno/Node hosting
+ * stays separate from mailbox, witness, and OOBI request policy.
  *
- * Mailbox-specific responsibilities:
- * - resolve hosted mailbox endpoints by advertised base path
- * - accept mailbox admin requests on `POST <hosted-base-path>/mailboxes`
- * - ingest mailbox queries and return `mbx` SSE streams
- * - carry request-scoped hosted mailbox identity into `/fwd` handling
+ * Maintainer rule:
+ * - if the question is "how do we listen, bridge requests, or stop cleanly?"
+ *   it belongs here
+ * - if the question is "which protocol surface should handle this request?"
+ *   it belongs in `protocol-handler.ts`
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { concatBytes, Ilks } from "../../../cesr/mod.ts";
-import type { CueEmission } from "../core/cues.ts";
-import { ValidationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
-import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
-import { Roles } from "../core/roles.ts";
-import { type AgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
-import {
-  type CesrStreamInspection,
-  inspectCesrRequest,
-  readMailboxAdminRequest,
-  readRequiredCesrRequestBytes,
-} from "./cesr-http.ts";
+import type { AgentRuntime } from "./agent-runtime.ts";
 import type { Hab } from "./habbing.ts";
-import { endpointBasePath, fetchEndpointUrls, hostedEndpointPathMatches, preferredUrl } from "./mailboxing.ts";
-import {
-  processWitnessIngress,
-  witnessQueryGet,
-  witnessReceiptGet,
-  witnessReceiptPost,
-} from "./witnessing.ts";
+import { createProtocolHandler, type ProtocolHandler } from "./protocol-handler.ts";
 
 /** Minimal shutdown/wait contract shared by Deno and Node server hosts. */
 interface RunningServer {
@@ -46,9 +30,6 @@ interface ServerHost {
   readonly server: RunningServer;
   close(): void;
 }
-
-type ProtocolHandler = (req: Request) => Promise<Response>;
-
 /** Host-agnostic server startup inputs used by both runtime adapters. */
 interface ServerOptions {
   port: number;
@@ -58,21 +39,41 @@ interface ServerOptions {
   onError: (error: unknown) => Response;
 }
 
-/** Runtime-hosting options that scope one long-lived protocol host. */
+/**
+ * Runtime-hosting options that scope one long-lived protocol host.
+ *
+ * These inputs intentionally describe *hosting policy*, not HTTP route
+ * semantics. `protocol-handler.ts` consumes them to decide which locally hosted
+ * AIDs and protocol surfaces are visible through this listener.
+ */
 export interface RuntimeServerOptions {
   /** Concrete local listen host passed to the HTTP server implementation. */
   hostname?: string;
   /**
    * Local habitat used to interpret runtime-owned cue semantics for inbound
    * request processing.
+   *
+   * Typical use:
+   * - a mailbox or agent-style host may need one designated service habitat to
+   *   turn runtime cues into wire emissions and mailbox side effects
    */
   serviceHab?: Hab;
   /**
    * Optional subset of local prefixes whose advertised endpoints are hosted by
    * this process. When omitted, all local prefixes remain visible.
+   *
+   * This is the explicit answer to "which local AIDs are reachable through this
+   * one listener?" It does not create multiple servers; it filters hosted
+   * identity exposure within one server.
    */
   hostedPrefixes?: readonly string[];
-  /** Optional hosted witness habitat that enables `/receipts` and `/query`. */
+  /**
+   * Optional hosted witness habitat that enables witness-specific surfaces such
+   * as `/receipts` and `/query`.
+   *
+   * When present, `protocol-handler.ts` may also route ordinary hosted witness
+   * root ingress through the witness-local settlement seam for KERIpy parity.
+   */
   witnessHab?: Hab;
 }
 
@@ -85,606 +86,6 @@ export interface RuntimeServerOptions {
  */
 function hasDenoServe(): boolean {
   return typeof Deno.serve === "function";
-}
-
-/**
- * Build the protocol request handler shared by both the Deno and Node hosts.
- *
- * Maintainer boundary:
- * - keep all route semantics here so Deno and Node serve the exact same API
- * - keep host/runtime adaptation out of this function
- * - return a plain promise-backed handler because both `Deno.serve()` and the
- *   Node adapter expect ordinary async request callbacks, not Effection ops
- */
-function createProtocolHandler(
-  runtime?: AgentRuntime,
-  options: RuntimeServerOptions = {},
-): ProtocolHandler {
-  return async (req: Request): Promise<Response> => {
-    try {
-      const url = new URL(req.url);
-      if (url.pathname === "/health") {
-        return new Response("ok", {
-          status: 200,
-          headers: { "Content-Type": "text/plain" },
-        });
-      }
-
-      if (runtime && req.method === "POST") {
-        const mailboxAdmin = resolveHostedEndpoint(
-          runtime,
-          url.pathname,
-          "/mailboxes",
-          options.hostedPrefixes,
-        );
-        if (mailboxAdmin.kind === "ambiguous") {
-          return new Response("Ambiguous mailbox endpoint path", {
-            status: 409,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-        if (mailboxAdmin.endpoint) {
-          return await handleMailboxAdmin(
-            runtime,
-            req,
-            mailboxAdmin.endpoint.eid,
-            options.serviceHab,
-          );
-        }
-      }
-
-      if (runtime && options.witnessHab) {
-        const hosted = resolveHostedEndpoint(
-          runtime,
-          url.pathname,
-          "",
-          options.hostedPrefixes,
-        );
-        if (hosted.kind === "ambiguous") {
-          return new Response("Ambiguous hosted endpoint path", {
-            status: 409,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-        const relativePath = hosted.relativePath ?? normalizeHostedPath(url.pathname);
-        if ((req.method === "POST" || req.method === "PUT") && relativePath === "/receipts") {
-          const bytes = await readRequiredCesrRequestBytes(req);
-          if (!bytes) {
-            return new Response("Unacceptable content type.", {
-              status: 406,
-              headers: { "Content-Type": "text/plain" },
-            });
-          }
-          const result = witnessReceiptPost(runtime, options.witnessHab, bytes);
-          if (result.kind === "accepted") {
-            return new Response(result.body.slice().buffer, {
-              status: result.status,
-              headers: { "Content-Type": "application/cesr" },
-            });
-          }
-          if (result.kind === "escrow") {
-            return new Response(null, {
-              status: result.status,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-          return new Response(result.message, {
-            status: result.status,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-        if (req.method === "GET" && relativePath === "/receipts") {
-          const snText = url.searchParams.get("sn");
-          const sn = snText === null ? null : Number.parseInt(snText, 10);
-          const result = witnessReceiptGet(options.witnessHab, {
-            pre: url.searchParams.get("pre"),
-            sn: Number.isNaN(sn ?? NaN) ? null : sn,
-            said: url.searchParams.get("said"),
-          });
-          if (result.kind === "accepted") {
-            return new Response(result.body.slice().buffer, {
-              status: result.status,
-              headers: { "Content-Type": "application/cesr" },
-            });
-          }
-          return new Response(result.message, {
-            status: result.status,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-        if (req.method === "GET" && relativePath === "/query") {
-          const snText = url.searchParams.get("sn");
-          const sn = snText === null ? null : Number.parseInt(snText, 10);
-          const result = witnessQueryGet(options.witnessHab, {
-            typ: url.searchParams.get("typ"),
-            pre: url.searchParams.get("pre"),
-            sn: Number.isNaN(sn ?? NaN) ? null : sn,
-          });
-          if (result.kind === "accepted") {
-            return new Response(result.body.slice().buffer, {
-              status: result.status,
-              headers: { "Content-Type": "application/cesr" },
-            });
-          }
-          return new Response(result.message, {
-            status: result.status,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-      }
-
-      if (runtime) {
-        const hosted = resolveHostedEndpoint(
-          runtime,
-          url.pathname,
-          "",
-          options.hostedPrefixes,
-        );
-        const oobiPath = hosted.relativePath
-          ?? normalizeHostedPath(url.pathname);
-        const parts = oobiPath.split("/").filter((part) => part.length > 0);
-        let aid: string | undefined;
-        let role: string | undefined;
-        let eid: string | undefined;
-        let isOobiRequest = false;
-
-        if (
-          parts.length >= 4
-          && parts[0] === ".well-known"
-          && parts[1] === "keri"
-          && parts[2] === "oobi"
-        ) {
-          isOobiRequest = true;
-          aid = parts[3];
-          role = Roles.controller;
-        } else if (parts[0] === "oobi") {
-          isOobiRequest = true;
-          aid = parts[1];
-          role = parts[2];
-          eid = parts[3];
-          if (!aid) {
-            aid = defaultOobiAid(runtime, options.serviceHab, options.hostedPrefixes);
-          }
-        }
-
-        if (isOobiRequest) {
-          if (!aid) {
-            return new Response("no blind oobi for this node", {
-              status: 404,
-              headers: { "Content-Type": "text/plain" },
-            });
-          }
-          const speakerAid = selectOobiSpeaker(
-            runtime,
-            hosted,
-            aid,
-            eid,
-            options.hostedPrefixes,
-          );
-          const hab = speakerAid ? runtime.hby.habs.get(speakerAid) : undefined;
-          if (!hab) {
-            if (hosted.kind === "ambiguous") {
-              return new Response("Ambiguous hosted endpoint path", {
-                status: 409,
-                headers: { "Content-Type": "text/plain" },
-              });
-            }
-            return new Response("Not Found", {
-              status: 404,
-              headers: { "Content-Type": "text/plain" },
-            });
-          }
-          const msgs = hab.replyToOobi(aid, role, eid ? [eid] : []);
-          if (msgs.length === 0) {
-            return new Response("Not Found", {
-              status: 404,
-              headers: { "Content-Type": "text/plain" },
-            });
-          }
-          const body = msgs.slice().buffer as ArrayBuffer;
-          return new Response(new Blob([body]), {
-            status: 200,
-            headers: {
-              "Content-Type": "application/cesr",
-              "KERI-AID": aid,
-              "Oobi-Aid": aid,
-            },
-          });
-        }
-      }
-
-      if (runtime && (req.method === "POST" || req.method === "PUT")) {
-        const hosted = resolveHostedEndpoint(
-          runtime,
-          url.pathname,
-          "/",
-          options.hostedPrefixes,
-        );
-        if (hosted.kind === "ambiguous") {
-          return new Response("Ambiguous hosted endpoint path", {
-            status: 409,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-        const bytes = await readRequiredCesrRequestBytes(req);
-        if (!bytes) {
-          return new Response("Unacceptable content type.", {
-            status: 406,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-        const serder = inspectCesrRequest(bytes);
-        if (!serder) {
-          return new Response("Invalid CESR request", {
-            status: 400,
-            headers: { "Content-Type": "text/plain" },
-          });
-        }
-
-        const witnessHab = options.witnessHab;
-        const witnessRootIngress = !!witnessHab
-          && hosted.kind === "one"
-          && hosted.endpoint?.eid === witnessHab.pre
-          && serder.ilk !== Ilks.qry
-          && serder.ilk !== Ilks.exn;
-        const emissions = witnessRootIngress
-          ? processWitnessIngress(runtime, witnessHab!, bytes, {
-            local: true,
-          })
-          : processRuntimeRequest(
-            runtime,
-            bytes,
-            hosted.endpoint?.eid ?? null,
-            options.serviceHab,
-          );
-
-        if (serder.ilk === Ilks.qry && serder.route === "mbx") {
-          const query = serder.ked?.q as Record<string, unknown> | undefined;
-          const pre = typeof query?.i === "string" ? query.i : null;
-          if (!pre) {
-            return new Response("Mailbox query is missing i", {
-              status: 400,
-              headers: { "Content-Type": "text/plain" },
-            });
-          }
-
-          return new Response(
-            runtime.mailboxDirector.streamMailbox(
-              pre,
-              normalizeMbxTopicCursor(query?.topics),
-            ),
-            {
-              status: 200,
-              headers: {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "close",
-              },
-            },
-          );
-        }
-
-        if (serder.ilk === Ilks.qry && serder.route === "ksn") {
-          const query = serder.ked?.q as Record<string, unknown> | undefined;
-          const pre = typeof query?.i === "string" ? query.i : null;
-          if (pre) {
-            publishQueryCatchupReplay(runtime, emissions, pre);
-          }
-        }
-
-        return new Response(null, {
-          status: 204,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      return new Response("Not Found", {
-        status: 404,
-        headers: { "Content-Type": "text/plain" },
-      });
-    } catch (error) {
-      return new Response(String(error), { status: 500 });
-    }
-  };
-}
-
-function defaultOobiAid(
-  runtime: AgentRuntime,
-  serviceHab?: Hab,
-  hostedPrefixes?: readonly string[],
-): string | undefined {
-  if (serviceHab?.pre) {
-    return serviceHab.pre;
-  }
-  if (hostedPrefixes?.length === 1) {
-    const candidate = hostedPrefixes[0];
-    if (candidate && runtime.hby.habs.has(candidate)) {
-      return candidate;
-    }
-  }
-  if (runtime.hby.habs.size === 1) {
-    return runtime.hby.habs.keys().next().value as string | undefined;
-  }
-  return undefined;
-}
-
-function resolveHostedEndpoint(
-  runtime: AgentRuntime,
-  pathname: string,
-  resourceSuffix = "",
-  hostedPrefixes?: readonly string[],
-): {
-  kind: "none" | "one" | "ambiguous";
-  endpoint: { eid: string; url: string; basePath: string } | null;
-  relativePath: string | null;
-} {
-  const matches = hostedEndpointPathMatches(
-    runtime.hby,
-    pathname,
-    hostedPrefixes,
-  )
-    .filter((match) =>
-      resourceSuffix.length === 0
-        ? true
-        : match.relativePath === normalizeHostedPath(resourceSuffix)
-    );
-  if (matches.length === 0) {
-    return { kind: "none", endpoint: null, relativePath: null };
-  }
-  const longest = matches[0]!.basePath.length;
-  const narrowed = matches.filter((match) => match.basePath.length === longest);
-  if (narrowed.length > 1) {
-    return { kind: "ambiguous", endpoint: null, relativePath: null };
-  }
-  const endpoint = narrowed[0]!;
-  return {
-    kind: "one",
-    endpoint,
-    relativePath: endpoint.relativePath,
-  };
-}
-
-/**
- * Normalize request paths used for hosted endpoint and OOBI base-path matching.
- */
-function normalizeHostedPath(pathname: string): string {
-  const trimmed = pathname.trim();
-  if (trimmed.length === 0 || trimmed === "/") {
-    return "/";
-  }
-  const normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  return normalized.replace(/\/+$/, "") || "/";
-}
-
-/**
- * Choose which local habitat should answer an OOBI request.
- *
- * Preference order:
- * - the requested AID itself when locally controlled
- * - the explicit endpoint AID when it is locally controlled
- * - the hosted endpoint matched from the request path
- */
-function selectOobiSpeaker(
-  runtime: AgentRuntime,
-  hosted: {
-    kind: "none" | "one" | "ambiguous";
-    endpoint: { eid: string; url: string; basePath: string } | null;
-  },
-  aid: string,
-  eid?: string,
-  hostedPrefixes?: readonly string[],
-): string | undefined {
-  const hostedSet = hostedPrefixes ? new Set(hostedPrefixes) : null;
-  const hostedCandidate = (candidate?: string): string | undefined => {
-    if (!candidate || !runtime.hby.habs.has(candidate)) {
-      return undefined;
-    }
-    if (hostedSet && !hostedSet.has(candidate)) {
-      return undefined;
-    }
-    return candidate;
-  };
-  const rootHostedCandidate = (candidate?: string): string | undefined => {
-    if (!candidate || !runtime.hby.habs.has(candidate)) {
-      return undefined;
-    }
-    if (hostedSet && !hostedSet.has(candidate)) {
-      return undefined;
-    }
-    const preferred = preferredUrl(fetchEndpointUrls(runtime.hby, candidate));
-    if (!preferred || endpointBasePath(preferred) !== "/") {
-      return undefined;
-    }
-    return candidate;
-  };
-
-  if (hostedSet) {
-    if (hosted.kind === "ambiguous") {
-      return undefined;
-    }
-    if (hosted.kind === "one") {
-      const hostedAid = hosted.endpoint?.eid;
-      if (
-        hostedAid
-        && runtime.hby.habs.has(hostedAid)
-        && (aid === hostedAid || eid === hostedAid)
-      ) {
-        return hostedAid;
-      }
-      return undefined;
-    }
-    return hostedCandidate(aid)
-      ?? hostedCandidate(eid)
-      ?? rootHostedCandidate(aid)
-      ?? rootHostedCandidate(eid);
-  }
-
-  if (runtime.hby.habs.has(aid)) {
-    return aid;
-  }
-  if (eid && runtime.hby.habs.has(eid)) {
-    return eid;
-  }
-  return hosted.endpoint?.eid ?? undefined;
-}
-
-/**
- * Handle mailbox add/remove authorization requests for one hosted mailbox AID.
- *
- * Contract:
- * - request body is either one `application/cesr` stream or one
- *   `multipart/form-data` request carrying `kel`, optional `delkel`, and `rpy`
- * - both request shapes normalize to one mailbox authorization CESR stream
- * - that stream ends in the mailbox authorization `rpy`
- *
- * Acceptance rule:
- * - the `eid` inside the signed reply must match the mailbox AID hosted at the
- *   addressed endpoint path
- */
-async function handleMailboxAdmin(
-  runtime: AgentRuntime,
-  req: Request,
-  mailboxAid: string,
-  serviceHab?: Hab,
-): Promise<Response> {
-  let mailboxRequest;
-  try {
-    mailboxRequest = await readMailboxAdminRequest(req);
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      return new Response(error.message, {
-        status: 400,
-        headers: { "Content-Type": "text/plain" },
-      });
-    }
-    return new Response(String(error), {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-  if (!mailboxRequest) {
-    return new Response("Unacceptable content type.", {
-      status: 406,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-
-  const { bytes, inspection } = mailboxRequest;
-  const validation = validateMailboxAuthorizationReply(inspection, mailboxAid);
-  if (validation instanceof Response) {
-    return validation;
-  }
-
-  const { cid, role, expected } = validation;
-  processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
-
-  const acceptance = confirmMailboxAuthorization(runtime, cid, mailboxAid, expected);
-  if (acceptance instanceof Response) {
-    return acceptance;
-  }
-
-  return new Response(
-    JSON.stringify({
-      cid,
-      role,
-      eid: mailboxAid,
-      allowed: expected,
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    },
-  );
-}
-
-function validateMailboxAuthorizationReply(
-  inspection: CesrStreamInspection,
-  mailboxAid: string,
-): Response | { cid: string; role: string; expected: boolean } {
-  const serder = inspection.terminal;
-  if (!serder) {
-    return new Response("Mailbox authorization stream is required", {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-  if (serder.ilk !== Ilks.rpy) {
-    return new Response("Mailbox authorization stream must end in rpy", {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-
-  const route = serder.route ?? "";
-  if (route !== "/end/role/add" && route !== "/end/role/cut") {
-    return new Response("Unsupported mailbox authorization route", {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-
-  const data = serder.ked?.a as Record<string, unknown> | undefined;
-  const cid = typeof data?.cid === "string" ? data.cid : null;
-  const role = typeof data?.role === "string" ? data.role : null;
-  const eid = typeof data?.eid === "string" ? data.eid : null;
-  if (!cid || !role || !eid) {
-    return new Response("Mailbox authorization reply is missing cid/role/eid", {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-  if (role !== Roles.mailbox) {
-    return new Response("Mailbox authorization reply must use role=mailbox", {
-      status: 400,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-  if (eid !== mailboxAid) {
-    return new Response(
-      "Mailbox authorization target does not match hosted mailbox",
-      {
-        status: 403,
-        headers: { "Content-Type": "text/plain" },
-      },
-    );
-  }
-  return { cid, role, expected: route === "/end/role/add" };
-}
-
-function confirmMailboxAuthorization(
-  runtime: AgentRuntime,
-  cid: string,
-  mailboxAid: string,
-  expected: boolean,
-): Response | null {
-  const end = runtime.hby.db.ends.get([cid, Roles.mailbox, mailboxAid]);
-  const accepted = expected ? !!end?.allowed : !!end && !end.allowed;
-  if (!accepted) {
-    return new Response("Mailbox authorization reply was not accepted", {
-      status: 403,
-      headers: { "Content-Type": "text/plain" },
-    });
-  }
-  return null;
-}
-
-/**
- * Ingest one mailbox-related request payload through the shared runtime.
- *
- * The request-scoped mailbox AID is set for the duration of parsing and cue
- * handling so `/fwd` authorization can be evaluated against the mailbox that
- * actually received the request.
- */
-function processRuntimeRequest(
-  runtime: AgentRuntime,
-  bytes: Uint8Array,
-  mailboxAid: string | null,
-  serviceHab?: Hab,
-): CueEmission[] {
-  runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
-    settleRuntimeIngress(runtime, [bytes]);
-  });
-  return drainRuntimeCues(runtime, serviceHab);
 }
 
 /**
@@ -891,6 +292,11 @@ function openNodeServerHost(
  *
  * This keeps host-construction side effects separate from the `server.finished`
  * wait path so the promise boundary is explicit and local.
+ *
+ * Important invariant:
+ * - this function should not grow request-routing policy again
+ * - its only protocol-aware step is wiring the already-built
+ *   `createProtocolHandler(...)` into the chosen transport host
  */
 function openServerHost(
   port: number,
@@ -959,6 +365,12 @@ function* waitForServerFinished(
  * - the returned Effection operation blocks until the underlying `Deno.serve`
  *   instance stops
  * - halting the operation aborts the server and removes signal handlers
+ *
+ * Architectural role:
+ * - this is the outermost composition point for a long-lived protocol host
+ * - it does not know mailbox, witness, or OOBI precedence itself
+ * - that separation is what keeps Node/Deno transport code reviewable and lets
+ *   protocol behavior evolve without re-threading host adapters
  */
 export function* startServer(
   port: number = 8000,
@@ -972,80 +384,4 @@ export function* startServer(
   } finally {
     host.close();
   }
-}
-
-/**
- * Drain runtime cues through one service habitat and mailbox side effects.
- *
- * Ownership split:
- * - `Hab.processCuesIter(...)` remains the cue-to-wire interpreter
- * - the server owns any mailbox publication side effects needed before HTTP
- *   responses are finalized
- */
-function drainRuntimeCues(
-  runtime: AgentRuntime,
-  serviceHab?: Hab,
-): CueEmission[] {
-  const habitats = [...runtime.hby.habs.values()];
-  const hab = serviceHab
-    ?? (habitats.length === 1 ? habitats[0] ?? null : null);
-  if (!hab) {
-    return [];
-  }
-
-  const emissions: CueEmission[] = [];
-  for (const emission of hab.processCuesIter(runtime.cues)) {
-    runtime.mailboxDirector.handleEmission(emission);
-    emissions.push(emission);
-  }
-  return emissions;
-}
-
-/**
- * Publish one replay catch-up payload after a successful `/ksn` style reply.
- *
- * Why this exists:
- * - a key-state notice can prove the remote controller is ahead of local state
- *   while still leaving local verification stale
- * - publishing replay material onto the mailbox lets a later query/poll turn
- *   converge local accepted state without treating the initial `/ksn` reply as
- *   fatal or "final enough"
- */
-function publishQueryCatchupReplay(
-  runtime: AgentRuntime,
-  emissions: CueEmission[],
-  pre: string,
-): void {
-  let destination: string | null = null;
-  for (const emission of emissions) {
-    if (emission.kind !== "wire" || emission.cue.kin !== "reply") {
-      continue;
-    }
-    if (emission.cue.route !== "/ksn" || typeof emission.cue.dest !== "string") {
-      continue;
-    }
-    destination = emission.cue.dest;
-    break;
-  }
-  if (!destination) {
-    return;
-  }
-
-  const kever = runtime.hby.db.getKever(pre);
-  // Publish the whole known KEL prefix stream so a mailbox consumer that just
-  // learned "remote state is newer" can catch local accepted state up enough
-  // for signature verification and later KSN acceptance to succeed.
-  const parts = [...runtime.hby.db.clonePreIter(pre, 0)];
-  if (kever?.delpre) {
-    parts.push(...runtime.hby.db.cloneDelegation(kever));
-  }
-  if (parts.length === 0) {
-    return;
-  }
-
-  runtime.mailboxDirector.publish(
-    destination,
-    "/replay",
-    Uint8Array.from(concatBytes(...parts)),
-  );
 }

@@ -1358,274 +1358,274 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
 });
 
 Deno.test("Interop witness: KLI controller mixed Tufa/KERIpy witness replacement converges fully", async () => {
-    const ctx = await createInteropContext();
-    const controllerName = `kli-mixed-repl-${crypto.randomUUID().slice(0, 8)}`;
-    const controllerAlias = "controller";
-    const base = `kli-mixed-repl-base-${crypto.randomUUID().slice(0, 8)}`;
-    const keriPyHarness = await startKeriPyWitnessHarness(ctx, {
-      aliases: ["wan", "wil"],
-    });
-    const tufaHarness = await startTufaWitnessHarness(ctx, {
-      aliases: ["twan", "twil"],
-    });
+  const ctx = await createInteropContext();
+  const controllerName = `kli-mixed-repl-${crypto.randomUUID().slice(0, 8)}`;
+  const controllerAlias = "controller";
+  const base = `kli-mixed-repl-base-${crypto.randomUUID().slice(0, 8)}`;
+  const keriPyHarness = await startKeriPyWitnessHarness(ctx, {
+    aliases: ["wan", "wil"],
+  });
+  const tufaHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["twan", "twil"],
+  });
 
-    try {
-      const initialWitnesses = [
-        keriPyHarness.node("wan"),
-        keriPyHarness.node("wil"),
-        tufaHarness.node("twan"),
-      ] as const;
-      const replacementWitness = tufaHarness.node("twil");
+  try {
+    const initialWitnesses = [
+      keriPyHarness.node("wan"),
+      keriPyHarness.node("wil"),
+      tufaHarness.node("twan"),
+    ] as const;
+    const replacementWitness = tufaHarness.node("twil");
 
-      await requireSuccess(
-        "kli init mixed replacement controller",
-        runCmd(
-          ctx.kliCommand,
-          [
-            "init",
-            "--name",
-            controllerName,
-            "--base",
-            base,
-            "--passcode",
-            PASSCODE,
-            "--salt",
-            SALT,
-          ],
-          ctx.env,
-        ),
-      );
-      await resolveWitnessesForKli(
+    await requireSuccess(
+      "kli init mixed replacement controller",
+      runCmd(
         ctx.kliCommand,
+        [
+          "init",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--salt",
+          SALT,
+        ],
         ctx.env,
-        controllerName,
-        base,
-        [...initialWitnesses, replacementWitness],
-      );
+      ),
+    );
+    await resolveWitnessesForKli(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      [...initialWitnesses, replacementWitness],
+    );
 
-      const incepted = await requireSuccess(
-        "kli incept mixed replacement witnesses",
-        runCmdWithTimeout(
-          ctx.kliCommand,
-          [
-            "incept",
-            "--name",
-            controllerName,
-            "--base",
-            base,
-            "--passcode",
-            PASSCODE,
-            "--alias",
-            controllerAlias,
-            "--transferable",
-            "--icount",
-            "1",
-            "--isith",
-            "1",
-            "--ncount",
-            "1",
-            "--nsith",
-            "1",
-            "--toad",
-            "3",
-            "--receipt-endpoint",
-            "--wits",
-            initialWitnesses[0]!.pre,
-            "--wits",
-            initialWitnesses[1]!.pre,
-            "--wits",
-            initialWitnesses[2]!.pre,
-          ],
-          ctx.env,
-          30_000,
-        ),
-      );
-      const controllerPre = extractPrefix(incepted.stdout);
+    const incepted = await requireSuccess(
+      "kli incept mixed replacement witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "incept",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--transferable",
+          "--icount",
+          "1",
+          "--isith",
+          "1",
+          "--ncount",
+          "1",
+          "--nsith",
+          "1",
+          "--toad",
+          "3",
+          "--receipt-endpoint",
+          "--wits",
+          initialWitnesses[0]!.pre,
+          "--wits",
+          initialWitnesses[1]!.pre,
+          "--wits",
+          initialWitnesses[2]!.pre,
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    const controllerPre = extractPrefix(incepted.stdout);
 
-      await requireSuccess(
-        "kli rotate mixed replacement witnesses",
-        runCmdWithTimeout(
-          ctx.kliCommand,
-          [
-            "rotate",
-            "--name",
-            controllerName,
-            "--base",
-            base,
-            "--passcode",
-            PASSCODE,
-            "--alias",
-            controllerAlias,
-            "--receipt-endpoint",
-            "--witness-cut",
-            keriPyHarness.node("wil").pre,
-            "--witness-add",
-            replacementWitness.pre,
-            "--toad",
-            "3",
-          ],
-          ctx.env,
-          30_000,
-        ),
-      );
+    await requireSuccess(
+      "kli rotate mixed replacement witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "rotate",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--receipt-endpoint",
+          "--witness-cut",
+          keriPyHarness.node("wil").pre,
+          "--witness-add",
+          replacementWitness.pre,
+          "--toad",
+          "3",
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
 
-      await convergeKliControllerStore(ctx, {
-        name: controllerName,
-        base,
-        alias: controllerAlias,
-        controllerPre,
-        sn: 0,
-        expectedWitnessCount: 3,
-        allowQuery: true,
-      });
-      await convergeKliControllerStore(ctx, {
-        name: controllerName,
-        base,
-        alias: controllerAlias,
-        controllerPre,
-        sn: 1,
-        expectedWitnessCount: 3,
-        allowQuery: true,
-        attempts: 6,
-      });
-    } finally {
-      await Promise.all([keriPyHarness.close(), tufaHarness.close()]);
-    }
+    await convergeKliControllerStore(ctx, {
+      name: controllerName,
+      base,
+      alias: controllerAlias,
+      controllerPre,
+      sn: 0,
+      expectedWitnessCount: 3,
+      allowQuery: true,
+    });
+    await convergeKliControllerStore(ctx, {
+      name: controllerName,
+      base,
+      alias: controllerAlias,
+      controllerPre,
+      sn: 1,
+      expectedWitnessCount: 3,
+      allowQuery: true,
+      attempts: 6,
+    });
+  } finally {
+    await Promise.all([keriPyHarness.close(), tufaHarness.close()]);
+  }
 });
 
 Deno.test("Interop witness: KLI controller reaches full replacement convergence using only Tufa witnesses", async () => {
-    const ctx = await createInteropContext();
-    const controllerName = `kli-tufa-replace-${crypto.randomUUID().slice(0, 8)}`;
-    const controllerAlias = "controller";
-    const base = `kli-tufa-replace-${crypto.randomUUID().slice(0, 8)}`;
-    const tufaHarness = await startTufaWitnessHarness(ctx, {
-      aliases: ["twan", "twil", "twes", "twit"],
+  const ctx = await createInteropContext();
+  const controllerName = `kli-tufa-replace-${crypto.randomUUID().slice(0, 8)}`;
+  const controllerAlias = "controller";
+  const base = `kli-tufa-replace-${crypto.randomUUID().slice(0, 8)}`;
+  const tufaHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["twan", "twil", "twes", "twit"],
+  });
+
+  try {
+    const initialWitnesses = tufaHarness.activeWitnesses(3);
+    const replacementWitness = tufaHarness.node("twit");
+
+    await requireSuccess(
+      "kli init all-tufa replacement controller",
+      runCmd(
+        ctx.kliCommand,
+        [
+          "init",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--salt",
+          SALT,
+        ],
+        ctx.env,
+      ),
+    );
+    await resolveWitnessesForKli(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      [...initialWitnesses, replacementWitness],
+    );
+
+    const incepted = await requireSuccess(
+      "kli incept all-tufa replacement witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "incept",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--transferable",
+          "--icount",
+          "1",
+          "--isith",
+          "1",
+          "--ncount",
+          "1",
+          "--nsith",
+          "1",
+          "--toad",
+          "3",
+          "--receipt-endpoint",
+          "--wits",
+          initialWitnesses[0]!.pre,
+          "--wits",
+          initialWitnesses[1]!.pre,
+          "--wits",
+          initialWitnesses[2]!.pre,
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    const controllerPre = extractPrefix(incepted.stdout);
+    await submitKliWitnessReceipts(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      controllerAlias,
+    );
+
+    await requireSuccess(
+      "kli rotate all-tufa replacement witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "rotate",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--receipt-endpoint",
+          "--witness-cut",
+          initialWitnesses[2]!.pre,
+          "--witness-add",
+          replacementWitness.pre,
+          "--toad",
+          "3",
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    await convergeKliControllerStore(ctx, {
+      name: controllerName,
+      base,
+      alias: controllerAlias,
+      controllerPre,
+      sn: 0,
+      expectedWitnessCount: 3,
+      allowQuery: true,
     });
-
-    try {
-      const initialWitnesses = tufaHarness.activeWitnesses(3);
-      const replacementWitness = tufaHarness.node("twit");
-
-      await requireSuccess(
-        "kli init all-tufa replacement controller",
-        runCmd(
-          ctx.kliCommand,
-          [
-            "init",
-            "--name",
-            controllerName,
-            "--base",
-            base,
-            "--passcode",
-            PASSCODE,
-            "--salt",
-            SALT,
-          ],
-          ctx.env,
-        ),
-      );
-      await resolveWitnessesForKli(
-        ctx.kliCommand,
-        ctx.env,
-        controllerName,
-        base,
-        [...initialWitnesses, replacementWitness],
-      );
-
-      const incepted = await requireSuccess(
-        "kli incept all-tufa replacement witnesses",
-        runCmdWithTimeout(
-          ctx.kliCommand,
-          [
-            "incept",
-            "--name",
-            controllerName,
-            "--base",
-            base,
-            "--passcode",
-            PASSCODE,
-            "--alias",
-            controllerAlias,
-            "--transferable",
-            "--icount",
-            "1",
-            "--isith",
-            "1",
-            "--ncount",
-            "1",
-            "--nsith",
-            "1",
-            "--toad",
-            "3",
-            "--receipt-endpoint",
-            "--wits",
-            initialWitnesses[0]!.pre,
-            "--wits",
-            initialWitnesses[1]!.pre,
-            "--wits",
-            initialWitnesses[2]!.pre,
-          ],
-          ctx.env,
-          30_000,
-        ),
-      );
-      const controllerPre = extractPrefix(incepted.stdout);
-      await submitKliWitnessReceipts(
-        ctx.kliCommand,
-        ctx.env,
-        controllerName,
-        base,
-        controllerAlias,
-      );
-
-      await requireSuccess(
-        "kli rotate all-tufa replacement witnesses",
-        runCmdWithTimeout(
-          ctx.kliCommand,
-          [
-            "rotate",
-            "--name",
-            controllerName,
-            "--base",
-            base,
-            "--passcode",
-            PASSCODE,
-            "--alias",
-            controllerAlias,
-            "--receipt-endpoint",
-            "--witness-cut",
-            initialWitnesses[2]!.pre,
-            "--witness-add",
-            replacementWitness.pre,
-            "--toad",
-            "3",
-          ],
-          ctx.env,
-          30_000,
-        ),
-      );
-      await convergeKliControllerStore(ctx, {
-        name: controllerName,
-        base,
-        alias: controllerAlias,
-        controllerPre,
-        sn: 0,
-        expectedWitnessCount: 3,
-        allowQuery: true,
-      });
-      await convergeKliControllerStore(ctx, {
-        name: controllerName,
-        base,
-        alias: controllerAlias,
-        controllerPre,
-        sn: 1,
-        expectedWitnessCount: 3,
-        allowQuery: true,
-        attempts: 6,
-      });
-    } finally {
-      await tufaHarness.close();
-    }
+    await convergeKliControllerStore(ctx, {
+      name: controllerName,
+      base,
+      alias: controllerAlias,
+      controllerPre,
+      sn: 1,
+      expectedWitnessCount: 3,
+      allowQuery: true,
+      attempts: 6,
+    });
+  } finally {
+    await tufaHarness.close();
+  }
 });
 
 Deno.test({

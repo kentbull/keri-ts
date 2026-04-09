@@ -400,3 +400,19 @@ Then do task: <TASK>.
   replacement matrix should remain default CI coverage.
 - Verification: local `interop-witness`, `interop-kli-tufa`, witness-runtime,
   and `deno check` passed with KLI replacement scenarios enabled.
+
+### 2026-04-08 - Protocol Routing Was Split Out Of The Transport Host
+
+- Substance: `server.ts` now owns only Deno/Node host adaptation and lifecycle,
+  while request classification and route dispatch live in
+  `protocol-handler.ts`; hosted-endpoint tie-break resolution now lives beside
+  the mailbox endpoint helpers instead of inside the host file.
+- Why it matters: the wrong mental model was "HTTP route policy belongs in the
+  HTTP host file." That made witness/mailbox/OOBI precedence opaque and turned
+  parity fixes into unreadable conditionals.
+- Next: keep route precedence and ingress-mode policy explicit through the pure
+  protocol-handler tests instead of letting ad hoc booleans creep back into the
+  host adapters.
+- Verification: local protocol-handler, witness-runtime, mailbox-runtime,
+  server integration, `interop-witness`, `interop-kli-tufa`, and `deno check`
+  passed after the refactor.
