@@ -8,6 +8,8 @@
 
 /** Raw delegated event mailbox topic used for delegation approval flows. */
 export const DELEGATE_MAILBOX_TOPIC = "/delegate";
+/** Peer OOBI request mailbox topic used by KERIpy `/oobis` EXNs. */
+export const OOBI_MAILBOX_TOPIC = "/oobi";
 /**
  * Configured mailbox topic names for one poll or subscription setup.
  *

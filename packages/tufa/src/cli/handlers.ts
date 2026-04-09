@@ -78,6 +78,34 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
         "oobiResolveCommand",
       ),
     ],
+    [
+      "oobi.request",
+      lazyCommand(
+        () => import("keri-ts/runtime"),
+        "oobiRequestCommand",
+      ),
+    ],
+    [
+      "notifications.list",
+      lazyCommand(
+        () => import("keri-ts/runtime"),
+        "notificationsListCommand",
+      ),
+    ],
+    [
+      "notifications.mark-read",
+      lazyCommand(
+        () => import("keri-ts/runtime"),
+        "notificationsMarkReadCommand",
+      ),
+    ],
+    [
+      "notifications.remove",
+      lazyCommand(
+        () => import("keri-ts/runtime"),
+        "notificationsRemoveCommand",
+      ),
+    ],
     ["annotate", lazyCommand(() => import("keri-ts/runtime"), "annotateCommand")],
     [
       "benchmark.cesr",

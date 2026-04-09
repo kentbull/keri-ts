@@ -12,5 +12,7 @@ export * from "./cue-runtime.ts";
 export * from "./exchanging.ts";
 export * from "./habbing.ts";
 export * from "./keeping.ts";
+export * from "./notifying.ts";
 export * from "./oobiery.ts";
 export * from "./reactor.ts";
+export * from "./signaling.ts";

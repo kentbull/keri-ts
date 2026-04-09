@@ -15,6 +15,7 @@
 import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
+import { DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../core/messages.ts";
 import { Roles } from "../core/roles.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
@@ -136,6 +137,7 @@ export class Poster {
       modifiers?: Record<string, unknown>;
       date?: string;
       dig?: string;
+      embeds?: Record<string, Uint8Array>;
       delivery?: ExchangeDeliveryPreference;
     },
   ): Operation<ExchangeSendResult> {
@@ -147,14 +149,31 @@ export class Poster {
       );
     }
 
-    const serder = makeExchangeSerder(args.route, args.payload, {
-      sender: hab.pre,
-      recipient,
-      modifiers: args.modifiers,
-      stamp: args.date,
-      dig: args.dig,
-    });
-    const message = hab.endorse(serder, { pipelined: false });
+    const embedded = args.embeds ?? {};
+    const hasEmbeds = Object.keys(embedded).length > 0;
+    const { serder, attachments } = hasEmbeds
+      ? makeEmbeddedExchangeMessage(args.route, args.payload, {
+        sender: hab.pre,
+        recipient,
+        modifiers: args.modifiers,
+        stamp: args.date,
+        dig: args.dig,
+        embeds: embedded,
+      })
+      : {
+        serder: makeExchangeSerder(args.route, args.payload, {
+          sender: hab.pre,
+          recipient,
+          modifiers: args.modifiers,
+          stamp: args.date,
+          dig: args.dig,
+        }),
+        attachments: new Uint8Array(),
+      };
+    const message = concatBytes(
+      hab.endorse(serder, { pipelined: false }),
+      attachments,
+    );
     const deliveries: string[] = [];
     const queued: string[] = [];
     const delivery = args.delivery ?? "auto";
@@ -821,6 +840,12 @@ function buildForwardedDelivery(
 
 /** Derive the default mailbox topic from the first non-empty route segment. */
 function defaultTopicForRoute(route: string): string {
+  if (route.startsWith("/delegate")) {
+    return DELEGATE_MAILBOX_TOPIC;
+  }
+  if (route === "/oobis") {
+    return OOBI_MAILBOX_TOPIC;
+  }
   const trimmed = route.replace(/^\/+/, "");
   return trimmed.split("/")[0] ?? "";
 }
@@ -1219,6 +1244,7 @@ export function* sendExchangeMessage(
     modifiers?: Record<string, unknown>;
     date?: string;
     dig?: string;
+    embeds?: Record<string, Uint8Array>;
     delivery?: ExchangeDeliveryPreference;
   },
 ): Operation<ExchangeSendResult> {

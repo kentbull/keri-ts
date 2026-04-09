@@ -24,7 +24,12 @@ export { initCommand } from "../app/cli/init.ts";
 export { interactCommand } from "../app/cli/interact.ts";
 export { listCommand } from "../app/cli/list.ts";
 export { locAddCommand } from "../app/cli/loc.ts";
-export { oobiGenerateCommand, oobiResolveCommand } from "../app/cli/oobi.ts";
+export {
+  notificationsListCommand,
+  notificationsMarkReadCommand,
+  notificationsRemoveCommand,
+} from "../app/cli/notifications.ts";
+export { oobiGenerateCommand, oobiRequestCommand, oobiResolveCommand } from "../app/cli/oobi.ts";
 export { queryCommand } from "../app/cli/query.ts";
 export { rotateCommand } from "../app/cli/rotate.ts";
 export { signCommand } from "../app/cli/sign.ts";
@@ -39,6 +44,7 @@ export * from "../app/httping.ts";
 export * from "../app/keeping.ts";
 export * from "../app/mailbox-director.ts";
 export * from "../app/mailboxing.ts";
+export * from "../app/notifying.ts";
 export * from "../app/oobiery.ts";
 export * from "../app/organizing.ts";
 export * from "../app/parsering.ts";
@@ -46,6 +52,7 @@ export * from "../app/protocol-host-policy.ts";
 export * from "../app/querying.ts";
 export * from "../app/reactor.ts";
 export * from "../app/runtime-turn.ts";
+export * from "../app/signaling.ts";
 export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
 export {
   processWitnessIngress,

@@ -14,7 +14,8 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
-import { createAgentRuntime, processRuntimeTurn } from "../agent-runtime.ts";
+import { createAgentRuntime, processRuntimeTurn, processRuntimeUntil } from "../agent-runtime.ts";
+import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import type { Habery } from "../habbing.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
@@ -217,12 +218,6 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
 
-      if (rotateArgs.proxy) {
-        throw new ValidationError(
-          "Delegation proxy flow is not available in single-sig local phase",
-        );
-      }
-
       let cuts = [...(options.witsCut ?? [])];
       let adds = [...(options.witsAdd ?? [])];
       if ((options.wits?.length ?? 0) > 0) {
@@ -269,20 +264,36 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
 
       let delegationPhase: string | null = null;
       if (kever.delpre !== null && hab.kever) {
+        const communicationHab = resolveDelegationCommunicationHab(
+          hby,
+          rotateArgs.proxy,
+        );
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         try {
-          runtime.delegating.beginLatest(hab.pre, hab.kever.sn);
-          for (let turn = 0; turn < 8; turn += 1) {
-            yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
-            delegationPhase = delegationWorkflowPhase(
-              hby,
-              hab.pre,
-              hab.kever.sn.toString(16),
+          runtime.delegating.beginLatest(hab.pre, hab.kever.sn, {
+            communicationHab,
+          });
+          const snh = hab.kever.sn.toString(16);
+          if (communicationHab) {
+            yield* processRuntimeUntil(
+              runtime,
+              () => !runtime.delegating.workflowStatus(hab.pre, snh).proxyDependent,
+              { hab, maxTurns: 128, pollMailbox: true },
             );
-            if (delegationPhase !== "waitingWitnessReceipts") {
-              break;
+          } else {
+            for (let turn = 0; turn < 8; turn += 1) {
+              yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
+              delegationPhase = delegationWorkflowPhase(
+                hby,
+                hab.pre,
+                snh,
+              );
+              if (delegationPhase !== "waitingWitnessReceipts") {
+                break;
+              }
             }
           }
+          delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
         } finally {
           yield* runtime.close();
         }

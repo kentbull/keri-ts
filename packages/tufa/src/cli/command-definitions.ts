@@ -13,6 +13,7 @@ import { registerIdentityCmds } from "./command-definitions/identity.ts";
 import { registerLifecycleCmds } from "./command-definitions/lifecycle.ts";
 import { registerMailboxCmds } from "./command-definitions/mailbox.ts";
 import { registerMessagingCmds } from "./command-definitions/messaging.ts";
+import { registerNotificationCmds } from "./command-definitions/notifications.ts";
 import { registerToolingCmds } from "./command-definitions/tooling.ts";
 import { registerWitnessCmds } from "./command-definitions/witness.ts";
 import type { CommandDispatch } from "./command-types.ts";
@@ -27,6 +28,7 @@ export function registerCmds(
   registerChallengeCmds(program, dispatch);
   registerMessagingCmds(program, dispatch);
   registerEndpointCmds(program, dispatch);
+  registerNotificationCmds(program, dispatch);
   registerMailboxCmds(program, dispatch);
   registerWitnessCmds(program, dispatch);
   registerToolingCmds(program, dispatch);

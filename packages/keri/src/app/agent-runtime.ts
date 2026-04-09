@@ -5,18 +5,21 @@ import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts
 import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
+import type { Noter } from "../db/noting.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
-import { SingleSigDelegationCoordinator } from "./delegating.ts";
+import { loadDelegationHandlers, SingleSigDelegationCoordinator } from "./delegating.ts";
 import { ForwardHandler, type MailboxPollBatch, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
-import { isWellKnownOobiUrl, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
+import { Notifier, openNoterForHabery } from "./notifying.ts";
+import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import { Signaler } from "./signaling.ts";
 
 /**
  * Shared runtime host mode.
@@ -49,6 +52,9 @@ export interface AgentRuntime {
   hby: Habery;
   mode: AgentMode;
   mailboxer: Mailboxer | null;
+  noter: Noter | null;
+  notifier: Notifier | null;
+  signaler: Signaler | null;
   cues: Deck<AgentCue>;
   reactor: Reactor;
   oobiery: Oobiery;
@@ -71,6 +77,9 @@ export interface AgentRuntime {
 export interface AgentRuntimeOptions {
   mode?: AgentMode;
   mailboxer?: Mailboxer;
+  noter?: Noter;
+  signaler?: Signaler;
+  notifier?: Notifier;
   enableMailboxStore?: boolean;
 }
 
@@ -114,9 +123,22 @@ export function* createAgentRuntime(
   const mailboxer = options.mailboxer
     ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
+  const signaler = options.signaler
+    ?? options.notifier?.signaler
+    ?? (hby.signator ? new Signaler() : null);
+  const noter = options.noter
+    ?? options.notifier?.noter
+    ?? (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
+  const ownsNoter = options.noter === undefined
+    && options.notifier === undefined
+    && noter !== null;
+  const notifier = options.notifier
+    ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
   const cues = new Deck<AgentCue>();
   const reactor = new Reactor(hby, { cues });
   loadChallengeHandlers(hby.db, reactor.exchanger);
+  loadDelegationHandlers(hby, reactor.exchanger, notifier);
+  loadOobiHandlers(hby, reactor.exchanger, notifier);
   const mailboxDirector = new MailboxDirector(
     hby,
     mailboxer ? { mailboxer } : {},
@@ -145,6 +167,9 @@ export function* createAgentRuntime(
     hby,
     mode,
     mailboxer,
+    noter,
+    notifier,
+    signaler,
     cues,
     reactor,
     oobiery,
@@ -155,6 +180,9 @@ export function* createAgentRuntime(
     delegating,
     querying,
     *close(): Operation<void> {
+      if (ownsNoter && noter?.opened) {
+        yield* noter.close();
+      }
       if (ownsMailboxer && mailboxer?.opened) {
         yield* mailboxer.close();
       }
@@ -288,6 +316,7 @@ export function* processRuntimeTurn(
   yield* runtime.authenticator.processOnce();
   yield* runtime.poster.processPending();
   yield* runtime.delegating.processAllOnce();
+  runtime.signaler?.processOnce();
   if (options.pollMailbox ?? true) {
     yield* processMailboxTurn(runtime, { hab: options.hab });
   }
@@ -470,6 +499,13 @@ export function* runAgentRuntime(
     yield* spawn(function*() {
       yield* runtime.authenticator.authDo();
     }),
+    ...(runtime.signaler
+      ? [
+        yield* spawn(function*() {
+          yield* runtime.signaler!.signalDo();
+        }),
+      ]
+      : []),
     yield* spawn(function*() {
       while (true) {
         yield* runtime.poster.processPending();

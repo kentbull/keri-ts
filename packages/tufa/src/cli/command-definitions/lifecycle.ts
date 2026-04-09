@@ -172,6 +172,7 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
       [],
     )
     .option("-di, --delpre <prefix>", "Delegator AID for delegated identifiers")
+    .option("--proxy <alias>", "Alias for delegation communication proxy")
     .option(
       "--receipt-endpoint",
       "Attempt to connect to witness receipt endpoint for witness receipts.",
@@ -199,6 +200,7 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
           estOnly: options.estOnly || false,
           data: options.data || [],
           delpre: options.delpre,
+          proxy: options.proxy,
           endpoint: options.receiptEndpoint || false,
         },
       });

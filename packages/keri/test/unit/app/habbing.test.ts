@@ -8,6 +8,7 @@ import {
   assertNotEquals,
   assertRejects,
   assertStrictEquals,
+  assertStringIncludes,
   assertThrows,
 } from "jsr:@std/assert";
 import {
@@ -23,7 +24,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
-import { SingleSigDelegationCoordinator } from "../../../src/app/delegating.ts";
+import { DELEGATE_REQUEST_ROUTE, SingleSigDelegationCoordinator } from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
@@ -209,10 +210,115 @@ Deno.test("Hab.interact preserves hex-width boundaries across successive accepte
   });
 });
 
-Deno.test("SingleSigDelegationCoordinator advances delegated inception and pins approval seals", async () => {
+Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated inception and pins approval seals", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const proxy = hby.makeHab("proxy", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = hby.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+
+      const sent: Array<
+        {
+          sender: string;
+          recipient: string;
+          topic?: string;
+          message: Uint8Array;
+        }
+      > = [];
+      const poster = {
+        *sendBytes(
+          hab: { pre: string },
+          args: { recipient: string; topic?: string; message: Uint8Array },
+        ) {
+          sent.push({
+            sender: hab.pre,
+            recipient: args.recipient,
+            topic: args.topic,
+            message: args.message,
+          });
+          return { deliveries: ["mock"], queued: [] };
+        },
+      } as unknown as Poster;
+      const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
+
+      const started = coordinator.beginLatest(delegate.pre, 0, {
+        communicationHab: proxy,
+      });
+      assertEquals(started.pre, delegate.pre);
+      const initial = yield* coordinator.processAllOnce();
+      assertEquals(initial[0]?.kind, "advance");
+      assertEquals(
+        initial[0] && "to" in initial[0] ? initial[0].to : null,
+        "waitingDelegatorAnchor",
+      );
+      assertEquals(
+        sent.map(({ sender, recipient, topic }) => ({
+          sender,
+          recipient,
+          topic,
+        })),
+        [
+          { sender: proxy.pre, recipient: delegator.pre, topic: "/delegate" },
+          { sender: proxy.pre, recipient: delegator.pre, topic: "/delegate" },
+        ],
+      );
+      const request = new SerderKERI({ raw: sent[0]!.message });
+      assertEquals(request.route, DELEGATE_REQUEST_ROUTE);
+      assertEquals(request.pre, proxy.pre);
+      assertEquals(request.ked?.a, { delpre: delegator.pre });
+      const event = new SerderKERI({ raw: sent[1]!.message });
+      assertEquals(event.pre, delegate.pre);
+      assertEquals(event.ilk, "dip");
+
+      assertExists(delegate.kever?.said);
+      delegator.interact({
+        data: [{
+          i: delegate.pre,
+          s: "0",
+          d: delegate.kever.said,
+        }],
+      });
+
+      const completed = yield* coordinator.processAllOnce();
+      assertEquals(completed[0]?.kind, "complete");
+      assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
+      assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("SingleSigDelegationCoordinator fails delegated inception without an explicit proxy", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegate-requires-proxy-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
@@ -234,38 +340,97 @@ Deno.test("SingleSigDelegationCoordinator advances delegated inception and pins 
         delpre: delegator.pre,
       });
 
-      const sent: Array<{ recipient: string; topic?: string }> = [];
+      const poster = {
+        *sendBytes() {
+          throw new Error(
+            "delegated inception should not send without a proxy",
+          );
+        },
+      } as unknown as Poster;
+      const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
+
+      coordinator.beginLatest(delegate.pre, 0);
+      const initial = yield* coordinator.processAllOnce();
+      assertEquals(initial[0]?.kind, "fail");
+      assertStringIncludes(
+        initial[0]?.reason ?? "",
+        "requires --proxy <alias>",
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("SingleSigDelegationCoordinator uses the delegate habitat for delegated rotation by default", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegate-rotation-default-sender-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = hby.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+      delegator.interact({
+        data: [{
+          i: delegate.pre,
+          s: "0",
+          d: delegate.kever!.said,
+        }],
+      });
+      const approving = hby.db.getEvtSerder(
+        delegator.pre,
+        delegator.kever!.said,
+      );
+      assertExists(approving?.sner);
+      hby.db.aess.pin(dgKey(delegate.pre, delegate.kever!.said!), [
+        approving.sner,
+        new Diger({ qb64: approving.said! }),
+      ]);
+      delegate.rotate({ data: [{ step: "rot" }] });
+
+      const sent: Array<
+        { sender: string; recipient: string; message: Uint8Array }
+      > = [];
       const poster = {
         *sendBytes(
-          _hab: unknown,
-          args: { recipient: string; topic?: string },
+          hab: { pre: string },
+          args: { recipient: string; message: Uint8Array },
         ) {
-          sent.push({ recipient: args.recipient, topic: args.topic });
+          sent.push({
+            sender: hab.pre,
+            recipient: args.recipient,
+            message: args.message,
+          });
           return { deliveries: ["mock"], queued: [] };
         },
       } as unknown as Poster;
       const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
 
-      const started = coordinator.beginLatest(delegate.pre, 0);
-      assertEquals(started.pre, delegate.pre);
+      coordinator.beginLatest(delegate.pre, delegate.kever!.sn);
       const initial = yield* coordinator.processAllOnce();
       assertEquals(initial[0]?.kind, "advance");
-      assertEquals(initial[0] && "to" in initial[0] ? initial[0].to : null, "waitingDelegatorAnchor");
-      assertEquals(sent, [{ recipient: delegator.pre, topic: "/delegate" }]);
-
-      assertExists(delegate.kever?.said);
-      delegator.interact({
-        data: [{
-          i: delegate.pre,
-          s: "0",
-          d: delegate.kever.said,
-        }],
-      });
-
-      const completed = yield* coordinator.processAllOnce();
-      assertEquals(completed[0]?.kind, "complete");
-      assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
-      assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
+      assertEquals(sent[0]?.sender, delegate.pre);
+      assertEquals(
+        new SerderKERI({ raw: sent[0]!.message }).route,
+        DELEGATE_REQUEST_ROUTE,
+      );
+      assertEquals(new SerderKERI({ raw: sent[1]!.message }).ilk, "drt");
     } finally {
       yield* hby.close(true);
     }
@@ -308,7 +473,10 @@ Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approve
         }],
       });
       assertExists(delegator.kever?.said);
-      const approving = hby.db.getEvtSerder(delegator.pre, delegator.kever.said);
+      const approving = hby.db.getEvtSerder(
+        delegator.pre,
+        delegator.kever.said,
+      );
       assertExists(approving?.sner);
       hby.db.aess.pin(dgKey(delegate.pre, delegate.kever.said), [
         approving.sner,

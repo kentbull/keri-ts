@@ -149,4 +149,46 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+
+  oobi
+    .command("request")
+    .description("Send one peer OOBI request EXN to a remote recipient")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption("-a, --alias <alias>", "Local sender alias")
+    .requiredOption("-r, --recipient <recipient>", "Recipient alias or prefix")
+    .requiredOption("-u, --url <url>", "Requested remote OOBI URL")
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .option(
+      "--outboxer",
+      "Enable the tufa-local durable outbox sidecar for this send",
+      false,
+    )
+    .option(
+      "--cesr-body-mode <mode>",
+      "CESR HTTP transport mode: header (default) or body",
+      "header",
+    )
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "oobi.request",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          recipient: options.recipient,
+          url: options.url,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+          outboxer: options.outboxer || false,
+          cesrBodyMode: options.cesrBodyMode,
+        },
+      });
+    });
 }

@@ -11,7 +11,9 @@
  */
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { SerderKERI } from "../../../../cesr/mod.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import {
@@ -21,6 +23,9 @@ import {
   updateMailboxRemoteCursor,
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
+import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
+import { makeExchangeSerder } from "../../../src/core/messages.ts";
+import { EndpointRoles } from "../../../src/core/roles.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
@@ -234,6 +239,79 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
       if (mailboxer?.opened) {
         yield* mailboxer.close();
       }
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Proves mailbox-first EXN delivery preserves embedded CESR payloads on the wire. */
+// @test-lane app-fast-parallel
+Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-style EXNs", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `poster-embeds-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      try {
+        ingestKeriBytes(runtime, recipient.makeLocScheme("http://127.0.0.1:9123", recipient.pre, "http"));
+        ingestKeriBytes(runtime, recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true));
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const said = sender.kever?.said;
+        if (!said) {
+          throw new Error("Sender inception said is missing.");
+        }
+        const fn = hby.db.getFelFn(sender.pre, said);
+        if (fn === null) {
+          throw new Error("Sender first-seen ordinal is missing.");
+        }
+        const evt = hby.db.cloneEvtMsg(sender.pre, fn, said);
+        const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
+
+        const { serder } = yield* poster.sendExchange(sender, {
+          recipient: recipient.pre,
+          route: DELEGATE_REQUEST_ROUTE,
+          payload: { delpre: recipient.pre },
+          embeds: { evt },
+        });
+
+        assertEquals(serder.route, DELEGATE_REQUEST_ROUTE);
+        const stored = runtime.mailboxer?.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
+        ) ?? [];
+        assertEquals(stored.length, 1);
+        const delivered = new SerderKERI({ raw: stored[0]! });
+        assertEquals(delivered.route, DELEGATE_REQUEST_ROUTE);
+        assertEquals(delivered.ked?.a, { delpre: recipient.pre });
+        assertEquals(
+          ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["i"],
+          sender.pre,
+        );
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
       yield* hby.close(true);
     }
   });

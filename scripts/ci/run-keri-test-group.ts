@@ -9,7 +9,6 @@ interface LaneConfig {
   parallelFullFiles?: boolean;
   maxFilesPerRun?: number;
   maxJobs?: number;
-  requiresCompatLmdb?: boolean;
 }
 
 interface GroupDefinition {
@@ -78,27 +77,22 @@ const laneConfigs: Record<string, LaneConfig> = {
   "app-stateful-b": {
     description: "Older persistence and compat-open tests on the default path.",
     allowAll: true,
-    requiresCompatLmdb: true,
   },
   "interop-parity": {
     description: "Representative KERIpy/TUFA parity coverage.",
     allowAll: true,
-    requiresCompatLmdb: true,
   },
   "interop-witness": {
     description: "Witness interop and witness CLI coverage.",
     allowAll: true,
-    requiresCompatLmdb: true,
   },
   "interop-gates-b": {
     description: "Gate B ready scenarios.",
     allowAll: true,
-    requiresCompatLmdb: true,
   },
   "interop-gates-c": {
     description: "Gate C plus Gate D ready scenarios.",
     allowAll: true,
-    requiresCompatLmdb: true,
   },
   "runtime-slow": {
     description: "Mailbox-heavy runtime, agent reopen, and witness runtime coverage.",
@@ -107,7 +101,6 @@ const laneConfigs: Record<string, LaneConfig> = {
   "interop-mailbox-slow": {
     description: "Mailbox-heavy interop and Gate E coverage.",
     allowAll: true,
-    requiresCompatLmdb: true,
   },
 };
 
@@ -449,31 +442,6 @@ async function runDenoTest(
   }
 }
 
-function compatLmdbBinaryPath(): URL {
-  return new URL("../../node_modules/lmdb/build/Release/lmdb.node", import.meta.url);
-}
-
-async function ensureCompatLmdbPrepared(laneName: string): Promise<void> {
-  try {
-    const stat = await Deno.stat(compatLmdbBinaryPath());
-    if (stat.isFile) {
-      return;
-    }
-  } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) {
-      throw error;
-    }
-  }
-
-  console.log(
-    `==> Lane ${laneName} requires compat LMDB; bootstrapping missing native addon via deno task setup:compat-lmdb`,
-  );
-  await runDenoTest(
-    ["task", "setup:compat-lmdb"],
-    `${laneName} compat LMDB setup`,
-  );
-}
-
 function baseTestArgs(config: LaneConfig): string[] {
   const args = ["test"];
   if (config.allowAll) {
@@ -489,10 +457,6 @@ async function runLane(
   const config = laneConfigs[laneName];
   const shape = shapes[laneName];
   console.log(`==> Lane ${laneName}: ${config.description}`);
-
-  if (config.requiresCompatLmdb) {
-    await ensureCompatLmdbPrepared(laneName);
-  }
 
   if (config.parallelFullFiles && shape.fullFiles.length > 0) {
     const jobs = resolveParallelJobs(config);

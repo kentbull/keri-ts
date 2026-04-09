@@ -610,3 +610,20 @@ runtime ownership semantics.
   requester mailbox alongside the normal `/ksn` reply. Without that, the stale
   querier could see the new key state notice but never learn the signer state
   needed to verify it.
+
+### 2026-04-09 - Delegation Proxy Parity Depends On Two Separate Delivery Surfaces
+
+- Single-sig delegated inception/rotation needs both:
+  - raw delegated event delivery on mailbox topic `"/delegate"` for KEL
+    correctness and approval
+  - the advisory `"/delegate/request"` EXN for controller notification
+- The bad shortcut was to treat the EXN as the whole flow. It is not. KERIpy’s
+  `Anchorer` sends the EXN for UI/controller visibility and the raw delegated
+  event bytes for actual protocol state advancement.
+- `keri-ts` also needs the KERIpy mailbox-topic exceptions, not a naive
+  route-name mapping. In particular:
+  - `"/delegate/request"` uses mailbox topic `"/delegate"`
+  - `"/oobis"` uses mailbox topic `"/oobi"`
+- Durable rule: when porting routed sideband behavior from KERIpy, check
+  whether the route name and mailbox topic are intentionally different before
+  deriving topic names from the route string.

@@ -67,5 +67,8 @@ deno task test:quality
   by default. Override with `KERI_TEST_JOBS` or `DENO_JOBS` when you need a
   different worker count locally or in CI. `test:quality:core-fast-parallel`
   splits that worker budget across the two core slices and runs them together.
+- Compat-dependent tests still require a prepared LMDB v1-compatible addon.
+  CI does that during job setup. For local runs, prepare it explicitly with
+  `deno task setup:compat-lmdb` before running compat or interop-heavy tests.
 - Maintainer-focused testing and release flows are documented in
   `MAINTAINER-README.md`.

@@ -567,3 +567,21 @@ Then do task: <TASK>.
   coverage, witness receipt-convergence coverage, and a successful
   `PATH="/opt/homebrew/bin:$PATH" deno task build:npm` in `packages/tufa`
   passed; generated npm handlers now point at the real `interact` command body.
+
+### 2026-04-09 - Delegation And Peer OOBI Notifications Belong In `Notifier`, Not New Cue Kinds
+
+- Substance: KERIpy’s host-visible delegation and peer-OOBI request surfaces
+  are not cue kinds. They flow through `Noter` + `Notifier` with transient
+  `Signaler` pings on `"/notification"`. `keri-ts` now mirrors that model:
+  `"/delegate/request"` and `"/oobis"` write signed notices, while the actual
+  delegated KEL bytes still travel separately over mailbox/raw CESR paths.
+- Why it matters: the bad mental model was "if the host needs to see it, it
+  probably wants a new cue kind." That would have duplicated KERIpy behavior in
+  the wrong layer and mixed UI/controller notification concerns into runtime
+  convergence semantics.
+- Durable rule: use cues for protocol/runtime progress, use
+  `Notifier`/`Noter`/`Signaler` for durable controller notifications.
+  Delegation/OOBI request routes are the reference examples.
+- Verification: local focused `deno test -A` coverage for notifier behavior,
+  delegation/OOBI notice handlers, notification CLI round-trips, forwarding
+  embedded EXN delivery, and `db dump noter.*` all passed.
