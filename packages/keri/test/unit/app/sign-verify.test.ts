@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 import { run } from "effection";
 import { assertEquals, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";

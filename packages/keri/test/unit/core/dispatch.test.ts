@@ -1,4 +1,4 @@
-// @file-test-lane core-fast
+// @file-test-lane core-fast-b
 
 import { run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";

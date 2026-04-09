@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-isolated
 
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";

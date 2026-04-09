@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 /**
  * CESR-over-HTTP transport contract tests.

@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 import { assertEquals } from "jsr:@std/assert";
 import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";

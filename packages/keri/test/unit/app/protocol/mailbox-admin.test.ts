@@ -1,4 +1,4 @@
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../../cesr/mod.ts";

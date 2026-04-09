@@ -138,17 +138,37 @@ Use this file to:
 22. Test parallelization should follow isolation boundaries, not folder names.
     DB-core suites can parallelize more freely; CLI/app/interop suites that
     mutate globals or persisted stores need stronger isolation. In CI, do not
-    hide a heavy lane under a broad "fast" umbrella job name once its wall
-    clock stops being fast; split DB, core, app/server, and representative
-    runtime lanes into separate jobs so the slowest bucket is explicit.
+    hide a heavy lane under a broad "fast" umbrella job name once its wall clock
+    stops being fast; split DB, core, app/server, and representative runtime
+    lanes into separate jobs so the slowest bucket is explicit. Inside the
+    runner, default parallelism should be capped auto-detect, not uncapped
+    fanout: KERI parallel lanes now honor `KERI_TEST_JOBS`, then `DENO_JOBS`,
+    otherwise auto-detect CPUs and cap by lane; CESR follows the same pattern
+    with `CESR_TEST_JOBS`. One oversized parallel lane can still hide a serial
+    bottleneck if the runner has to batch it internally, so the core unit slice
+    now stays split as `core-fast-a` and `core-fast-b`, with `core-fast` only a
+    compatibility alias. When the real safe parallel boundary is the module
+    rather than the individual `Deno.test(...)`, split the file physically
+    instead of carrying a growing pile of per-test lane overrides. The shared
+    helper pattern for that rewrite is now: ephemeral static host, ephemeral
+    runtime host, and truthful `onListen` actual-port reporting.
 23. The KERI test runner must stay truthful as runtime and interop files grow.
     `scripts/ci/run-keri-test-group.ts` is now the authoritative lane map,
     `test:quality` is the honest default path, `test:slow` is the explicit
     mailbox-heavy path, and lane audit should fail if any discovered KERI test
-    case is missing or double-owned. The current truthful inventory is 61 KERI
+    case is missing or double-owned. The current truthful inventory is 66 KERI
     `*.test.ts` files and 360 named tests, with older stateful app files now
     simplified around local setup reuse and in-process command assertions.
-    Keep compat LMDB rebuild as job/local setup, not hidden harness behavior.
+    `core-fast` is now a public alias over `core-fast-a` and `core-fast-b`, and
+    `app-fast` is a public alias over `app-fast-parallel` and
+    `app-fast-isolated`. The runtime-heavy phase now follows the same principle
+    with physical splits such as `challenge-generate` /
+    `challenge-direct-runtime` / `challenge-mailbox-runtime`,
+    `gate-e-local-state`, `mailbox-poller-runtime`, and `mailbox-runtime-slow`.
+    CI has to follow those splits too: if meaningful coverage moves out of
+    `runtime-medium`, add an explicit `runtime-slow` job or PR coverage
+    silently regresses. Keep compat LMDB rebuild as job/local setup, not hidden
+    harness behavior.
 24. Gates B, C, and D are closed enough to treat local visibility, compat-store
     visibility, and encrypted keeper semantics as established foundations.
 25. Gate E now has a real shared runtime, mailbox/OOBI/query/receipt slice,
@@ -217,8 +237,8 @@ Use this file to:
 34. Real witness interop evidence now has its own explicit seam. The
     `interop-witness` lane uses temp-copied KERIpy witness configs with
     randomized localhost ports instead of fixed-port demos, readiness probes
-    KERIpy witnesses through controller/witness OOBIs rather than `/health`,
-    and witness-host discovery resolves both controller and witness OOBIs so
+    KERIpy witnesses through controller/witness OOBIs rather than `/health`, and
+    witness-host discovery resolves both controller and witness OOBIs so
     endpoint/location state is present for receipt/query flows. The currently
     proved matrix is:
     - `tufa` controller with only KERIpy witnesses, including witness-set
@@ -226,8 +246,8 @@ Use this file to:
     - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
       witnessed same-witness rotations.
     - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
-      cross-implementation replacement.
-      Keep the 6-witness KERIpy soak manual/ignored by default.
+      cross-implementation replacement. Keep the 6-witness KERIpy soak
+      manual/ignored by default.
 
 ## Current Follow-Ups
 
@@ -266,17 +286,17 @@ Use this file to:
     identities such as signatory/AEID-related identities should not leak into
     ordinary user-facing host startup just because they exist in the local
     keystore.
-11. Keep the witness interop matrix honest about what is actually proved.
-    Stable CI coverage now includes the three practical witness scenarios above;
-    if KLI/KERIpy witness-set replacement under the explicit harness becomes a
+11. Keep the witness interop matrix honest about what is actually proved. Stable
+    CI coverage now includes the three practical witness scenarios above; if
+    KLI/KERIpy witness-set replacement under the explicit harness becomes a
     required control claim, add it as its own scenario instead of silently
     broadening the current control test.
 12. Keep KERI test-lane ownership explicit as mailbox/runtime work grows. If a
     mixed-speed file adds new cases, update the source annotations and lane
-    audit in the same change set so `test:quality` stays truthful by default.
-    Do not quietly reintroduce repeated subprocess launches or repeated cold
-    store setup in the older app-stateful files when a shared in-file baseline
-    would prove the same behavior more honestly.
+    audit in the same change set so `test:quality` stays truthful by default. Do
+    not quietly reintroduce repeated subprocess launches or repeated cold store
+    setup in the older app-stateful files when a shared in-file baseline would
+    prove the same behavior more honestly.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 
@@ -398,10 +418,17 @@ Then do task: <TASK>.
 
 ### 2026-04-07 - Sign/Verify/Query/Rotate Parity Landed On Two Different Critical Paths
 
-- Substance: `tufa sign` and `tufa verify` were mostly CLI-orchestration ports over existing habitat/manager crypto seams, but `tufa rotate` needed a real `Hab.rotate(...)` ownership seam so keeper progression, event construction, local acceptance, and rollback all stay coupled the same way KERIpy expects.
-- Why it matters: the false mental model was "rotate is just another CLI wrapper like sign/verify." It is not. Without a habitat-level rotate seam, the CLI either duplicates keeper/KEL invariants or quietly gets rollback wrong.
-- Next: if multisig/group parity work starts, do not extend the single-sig CLI directly. Re-open the habitat/manager ownership boundary first.
-- Verification: local unit/integration/interop coverage passed for single-sig sign -> query -> rotate parity.
+- Substance: `tufa sign` and `tufa verify` were mostly CLI-orchestration ports
+  over existing habitat/manager crypto seams, but `tufa rotate` needed a real
+  `Hab.rotate(...)` ownership seam so keeper progression, event construction,
+  local acceptance, and rollback all stay coupled the same way KERIpy expects.
+- Why it matters: the false mental model was "rotate is just another CLI wrapper
+  like sign/verify." It is not. Without a habitat-level rotate seam, the CLI
+  either duplicates keeper/KEL invariants or quietly gets rollback wrong.
+- Next: if multisig/group parity work starts, do not extend the single-sig CLI
+  directly. Re-open the habitat/manager ownership boundary first.
+- Verification: local unit/integration/interop coverage passed for single-sig
+  sign -> query -> rotate parity.
 
 ### 2026-04-08 - KLI Controller vs Tufa Witness Replacement Parity Landed In The Host Layer
 
@@ -421,15 +448,15 @@ Then do task: <TASK>.
 ### 2026-04-08 - Protocol Routing Was Split Out Of The Transport Host
 
 - Substance: `server.ts` now owns only Deno/Node host adaptation and lifecycle,
-  while request classification and route dispatch live in
-  `protocol-handler.ts`; hosted-endpoint tie-break resolution now lives beside
-  the mailbox endpoint helpers instead of inside the host file.
+  while request classification and route dispatch live in `protocol-handler.ts`;
+  hosted-endpoint tie-break resolution now lives beside the mailbox endpoint
+  helpers instead of inside the host file.
 - Why it matters: the wrong mental model was "HTTP route policy belongs in the
   HTTP host file." That made witness/mailbox/OOBI precedence opaque and turned
   parity fixes into unreadable conditionals.
 - Next: keep route precedence and ingress-mode policy explicit through the pure
   protocol-handler tests instead of letting ad hoc booleans creep back into the
   host adapters.
-- Verification: local protocol-handler, witness-runtime, mailbox-runtime,
-  server integration, `interop-witness`, `interop-kli-tufa`, and `deno check`
-  passed after the refactor.
+- Verification: local protocol-handler, witness-runtime, mailbox-runtime, server
+  integration, `interop-witness`, `interop-kli-tufa`, and `deno check` passed
+  after the refactor.

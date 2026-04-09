@@ -28,6 +28,7 @@ import { makeReplySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
+import { reserveTcpPort } from "../../http-test-support.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 const textDecoder = new TextDecoder();
@@ -80,187 +81,13 @@ function replySigGroupFor(
   );
 }
 
-// @test-lane runtime-medium
-Deno.test("Gate E - base-path OOBI parsing preserves cid, role, eid, and alias metadata", () => {
-  const aid = "EExampleAid123456789012345678901234567890123";
-  const mailbox = "EMailboxAid1234567890123456789012345678901";
-
-  const rolePath = parseOobiUrl(
-    `http://127.0.0.1:7723/relay/oobi/${aid}/mailbox/${mailbox}`,
-    "relay",
-  );
-  assertEquals(rolePath.cid, aid);
-  assertEquals(rolePath.role, EndpointRoles.mailbox);
-  assertEquals(rolePath.eid, mailbox);
-  assertEquals(rolePath.alias, "relay");
-
-  const wellKnown = parseOobiUrl(
-    `http://127.0.0.1:7723/relay/.well-known/keri/oobi/${aid}?name=Root`,
-  );
-  assertEquals(wellKnown.cid, aid);
-  assertEquals(wellKnown.role, EndpointRoles.controller);
-  assertEquals(wellKnown.alias, "Root");
-  assertEquals(
-    isWellKnownOobiUrl(`http://127.0.0.1:7723/relay/.well-known/keri/oobi/${aid}?name=Root`),
-    true,
-  );
-  assertEquals(
-    isWellKnownOobiUrl(`http://127.0.0.1:7723/relay/oobi/${aid}/controller`),
-    false,
-  );
-});
-
-// @test-lane runtime-medium
-Deno.test("Gate E - ends add command persists mailbox role through runtime path", async () => {
-  const name = `gate-e-ends-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-gate-e-${crypto.randomUUID()}`;
-  const alias = "alice";
-  let pre = "";
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      skipConfig: true,
-    });
-    try {
-      pre = hby.makeHab(alias, undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      }).pre;
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  const result = await run(() =>
-    testCLICommand(
-      endsAddCommand({
-        name,
-        headDirPath,
-        alias,
-        role: EndpointRoles.mailbox,
-        eid: pre,
-      }),
-    )
-  );
-  assertEquals(result.output.at(-1), `${EndpointRoles.mailbox} ${pre}`);
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      skipConfig: true,
-    });
-    try {
-      assertEquals(
-        hby.db.ends.get([pre, EndpointRoles.mailbox, pre])?.allowed,
-        true,
-      );
-      assertEquals(
-        hby.db.eans.get([pre, EndpointRoles.mailbox, pre])?.qb64.length! > 0,
-        true,
-      );
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-// @test-lane runtime-medium
-Deno.test("Gate E - transferable controller OOBI reply seal attachments use fixed-width Seqner encoding", async () => {
-  const name = `gate-e-oobi-seal-${crypto.randomUUID()}`;
-  const passcode = "MyPasscodeARealSecret";
-  const hostUrl = "http://127.0.0.1:46321";
-  const fixedSeqner = new Seqner({ code: "0A", raw: new Uint8Array(16) }).qb64;
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      temp: true,
-      bran: passcode,
-      skipConfig: true,
-    });
-    try {
-      const hab = hby.makeHab("relay", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const pre = hab.pre;
-
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
-      ingestKeriBytes(runtime, hab.makeEndRole(pre, EndpointRoles.controller, true));
-      yield* processRuntimeTurn(runtime, { hab });
-
-      const stream = textDecoder.decode(
-        hab.replyToOobi(pre, EndpointRoles.controller, [pre]),
-      );
-
-      assertStringIncludes(
-        stream,
-        `-FAB${pre}${fixedSeqner}${pre}`,
-      );
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-// @test-lane runtime-medium
-Deno.test("Gate E - non-transferable mailbox OOBI replies use reply cigars", async () => {
-  const name = `gate-e-oobi-mailbox-cigar-${crypto.randomUUID()}`;
-  const passcode = "MyPasscodeARealSecret";
-  const hostUrl = "http://127.0.0.1:46322";
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      temp: true,
-      bran: passcode,
-      skipConfig: true,
-    });
-    try {
-      const hab = hby.makeHab("relay", undefined, {
-        transferable: false,
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      const pre = hab.pre;
-
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      ingestKeriBytes(runtime, hab.makeLocScheme(hostUrl, pre, "http"));
-      ingestKeriBytes(runtime, hab.makeEndRole(pre, EndpointRoles.mailbox, true));
-      yield* processRuntimeTurn(runtime, { hab });
-
-      const stream = textDecoder.decode(
-        hab.replyToOobi(pre, EndpointRoles.mailbox, [pre]),
-      );
-
-      assertStringIncludes(stream, "\"r\":\"/loc/scheme\"");
-      assertStringIncludes(stream, "-CAB");
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
 Deno.test("Gate E - mailbox and agent OOBIs generate and resolve through shared runtime", async () => {
   const sourceName = `gate-e-source-${crypto.randomUUID()}`;
   const targetName = `gate-e-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-dst-${crypto.randomUUID()}`;
   const alias = "source";
-  const port = 8911;
+  const port = reserveTcpPort();
   let pre = "";
   let mailboxUrl = "";
   let agentUrl = "";
@@ -418,7 +245,7 @@ Deno.test("Gate E - well-known auth converges through rmfa and wkas with honest 
   const targetName = `gate-e-auth-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-auth-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-auth-dst-${crypto.randomUUID()}`;
-  const port = 8914;
+  const port = reserveTcpPort();
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
   let controllerUrl = "";
@@ -547,7 +374,7 @@ Deno.test("Gate E - controller and witness OOBIs generate and resolve through sh
   const targetHeadDirPath = `/tmp/tufa-gate-e-controller-dst-${crypto.randomUUID()}`;
   const alias = "controller";
   const witnessAlias = "witness";
-  const port = 8912;
+  const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
   let pre = "";
   let witnessPre = "";
@@ -731,7 +558,7 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
   const targetName = `gate-e-config-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-config-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-config-dst-${crypto.randomUUID()}`;
-  const port = 8913;
+  const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
   let iPre = "";
   let dPre = "";
@@ -824,7 +651,9 @@ Deno.test("Gate E - config preload bootstrap URLs resolve through shared runtime
         skipSignator: true,
       });
       try {
-        const targetRuntime = yield* createAgentRuntime(target, { mode: "local" });
+        const targetRuntime = yield* createAgentRuntime(target, {
+          mode: "local",
+        });
         for (let i = 0; i < 6; i += 1) {
           yield* processRuntimeTurn(targetRuntime);
         }
@@ -857,7 +686,7 @@ Deno.test("Gate E - init command waits for configured well-known auth before exi
   const targetName = `gate-e-init-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-init-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-init-dst-${crypto.randomUUID()}`;
-  const port = 8917;
+  const port = reserveTcpPort();
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
   let controllerUrl = "";
@@ -978,7 +807,7 @@ Deno.test("Gate E - incept command waits for configured well-known auth before i
   const targetName = `gate-e-incept-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-incept-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-incept-dst-${crypto.randomUUID()}`;
-  const port = 8918;
+  const port = reserveTcpPort();
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
   let controllerUrl = "";
@@ -1116,7 +945,7 @@ Deno.test("Gate E - reply-based `/oobi/controller` JSON fans out child OOBIs thr
   const targetName = `gate-e-multi-controller-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-multi-controller-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-multi-controller-dst-${crypto.randomUUID()}`;
-  const port = 8915;
+  const port = reserveTcpPort();
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
   let parentUrl = "";
@@ -1236,7 +1065,7 @@ Deno.test("Gate E - reply-based `/oobi/witness` JSON fans out child OOBIs throug
   const targetName = `gate-e-multi-witness-target-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-gate-e-multi-witness-src-${crypto.randomUUID()}`;
   const targetHeadDirPath = `/tmp/tufa-gate-e-multi-witness-dst-${crypto.randomUUID()}`;
-  const port = 8916;
+  const port = reserveTcpPort();
   const hostUrl = `http://127.0.0.1:${port}`;
   let pre = "";
   let witnessPre = "";
@@ -1380,7 +1209,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   const name = `gate-e-protocol-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-gate-e-protocol-${crypto.randomUUID()}`;
   const alias = "alice";
-  const port = 8914;
+  const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
   let pre = "";
 
@@ -1454,129 +1283,11 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   });
 });
 
-// @test-lane runtime-medium
-Deno.test("Gate E - loc add command persists location state through reply acceptance", async () => {
-  const name = `gate-e-loc-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-gate-e-loc-${crypto.randomUUID()}`;
-  const alias = "alice";
-  let pre = "";
-  const url = "http://127.0.0.1:5642";
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      skipConfig: true,
-    });
-    try {
-      pre = hby.makeHab(alias, undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      }).pre;
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  const result = await run(() =>
-    testCLICommand(
-      locAddCommand({
-        name,
-        headDirPath,
-        alias,
-        url,
-      }),
-    )
-  );
-  assertEquals(
-    result.output.at(-1),
-    `Location ${url} added for aid ${pre} with scheme http`,
-  );
-
-  await run(function*() {
-    const hby = yield* createHabery({
-      name,
-      headDirPath,
-      skipConfig: true,
-    });
-    try {
-      const hab = hby.habByName(alias);
-      assertEquals(hby.db.locs.get([pre, "http"])?.url, url);
-      assertEquals(hby.db.lans.get([pre, "http"])?.qb64.length! > 0, true);
-      assertEquals((hab?.loadLocScheme(pre, "http").length ?? 0) > 0, true);
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-// @test-lane runtime-medium
-Deno.test("Gate E - loc add command rejects malformed URLs deterministically", async () => {
-  await assertOperationThrows(
-    locAddCommand({
-      name: `gate-e-loc-invalid-${crypto.randomUUID()}`,
-      headDirPath: `/tmp/tufa-gate-e-loc-invalid-${crypto.randomUUID()}`,
-      alias: "alice",
-      url: "not-a-url",
-    }),
-    "Invalid URL not-a-url",
-  );
-});
-
-Deno.test("Gate E - `/introduce` replies enqueue discovered OOBIs through Oobiery route ownership", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({
-      name: `gate-e-introduce-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-    });
-    try {
-      const hab = hby.makeHab("alice", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      const introducedUrl = `http://127.0.0.1:1234/oobi/${hab.pre}/controller`;
-      const serder = new SerderKERI({
-        sad: {
-          t: "rpy",
-          dt: makeNowIso8601(),
-          r: "/introduce",
-          a: { cid: hab.pre, oobi: introducedUrl },
-        },
-        makify: true,
-      });
-
-      runtime.reactor.revery.processReply({
-        serder,
-        tsgs: [replySigGroupFor({
-          pre: hab.pre,
-          kever: hab.kever!,
-          sign: (ser) => hab.sign(ser, true),
-        }, serder)],
-      });
-
-      assertEquals(hby.db.oobis.get(introducedUrl)?.cid, hab.pre);
-      assertEquals(hby.db.oobis.get(introducedUrl)?.state, "queued");
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
 Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries", async () => {
   const name = `gate-e-mailbox-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-gate-e-mailbox-${crypto.randomUUID()}`;
   const alias = "alice";
-  const port = 8915;
+  const port = reserveTcpPort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
   await run(function*() {

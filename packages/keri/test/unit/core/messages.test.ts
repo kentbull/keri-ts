@@ -1,4 +1,4 @@
-// @file-test-lane core-fast
+// @file-test-lane core-fast-a
 
 import { assertEquals } from "jsr:@std/assert";
 import { Ilks } from "../../../../cesr/mod.ts";

@@ -30,6 +30,14 @@ export function* fetchOp(url: string, init?: RequestInit): Operation<Response> {
   });
 }
 
+/** Await one Promise inside the Effection task tree. */
+export function* promiseOp<T>(promise: Promise<T>): Operation<T> {
+  return yield* action((resolve, reject) => {
+    promise.then(resolve).catch(reject);
+    return () => {};
+  });
+}
+
 /** Wrap `Response.text()` as an Effection operation for test assertions. */
 export function* textOp(response: Response): Operation<string> {
   return yield* action((resolve, reject) => {
@@ -83,7 +91,10 @@ export function* waitForServer(
 }
 
 /** Halt a spawned task and wait briefly for cleanup to settle in tests. */
-export function* waitForTaskHalt(task: Task<void>, settleMs = 50): Operation<void> {
+export function* waitForTaskHalt(
+  task: Task<void>,
+  settleMs = 50,
+): Operation<void> {
   yield* task.halt();
   yield* sleepOp(settleMs);
 }

@@ -24,7 +24,7 @@ import { persistResolvedContact } from "../../../src/app/organizing.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
-// @test-lane app-fast
+// @test-lane app-fast-parallel
 Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -65,7 +65,7 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
 });
 
 /** Proves KERIpy-shaped alias failure messages for missing and ambiguous contacts. */
-// @test-lane app-fast
+// @test-lane app-fast-parallel
 Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
   await run(function*() {
     const hby = yield* createHabery({

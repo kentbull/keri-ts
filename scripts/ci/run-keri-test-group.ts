@@ -8,6 +8,7 @@ interface LaneConfig {
   allowAll?: boolean;
   parallelFullFiles?: boolean;
   maxFilesPerRun?: number;
+  maxJobs?: number;
 }
 
 interface GroupDefinition {
@@ -38,15 +39,31 @@ const laneConfigs: Record<string, LaneConfig> = {
     allowAll: true,
     parallelFullFiles: true,
     maxFilesPerRun: 8,
+    maxJobs: 8,
   },
-  "core-fast": {
-    description: "Core KEL/query/reply unit coverage.",
+  "core-fast-a": {
+    description: "Core eventing/receipt/foundation unit coverage.",
     allowAll: true,
     parallelFullFiles: true,
     maxFilesPerRun: 6,
+    maxJobs: 6,
   },
-  "app-fast": {
-    description: "Light app, protocol, and CLI help coverage.",
+  "core-fast-b": {
+    description: "Core kever/query/routing unit coverage.",
+    allowAll: true,
+    parallelFullFiles: true,
+    maxFilesPerRun: 5,
+    maxJobs: 6,
+  },
+  "app-fast-parallel": {
+    description: "Parallel-safe app, protocol, and CLI help coverage.",
+    allowAll: true,
+    parallelFullFiles: true,
+    maxFilesPerRun: 6,
+    maxJobs: 4,
+  },
+  "app-fast-isolated": {
+    description: "Global-state app coverage that still mutates console or HOME.",
     allowAll: true,
   },
   server: {
@@ -92,12 +109,28 @@ const laneConfigs: Record<string, LaneConfig> = {
 };
 
 const groupDefinitions: Record<string, GroupDefinition> = {
+  "core-fast": {
+    description: "Public core-fast alias over the two balanced core slices.",
+    lanes: [
+      "core-fast-a",
+      "core-fast-b",
+    ],
+  },
+  "app-fast": {
+    description: "Public app-fast alias over parallel-safe and isolated app slices.",
+    lanes: [
+      "app-fast-parallel",
+      "app-fast-isolated",
+    ],
+  },
   quality: {
     description: "Truthful default path with representative runtime and interop coverage.",
     lanes: [
       "db-fast",
-      "core-fast",
-      "app-fast",
+      "core-fast-a",
+      "core-fast-b",
+      "app-fast-parallel",
+      "app-fast-isolated",
       "server",
       "runtime-medium",
       "app-stateful-a",
@@ -119,8 +152,10 @@ const groupDefinitions: Record<string, GroupDefinition> = {
     description: "All KERI tests: default path plus explicit slow lanes.",
     lanes: [
       "db-fast",
-      "core-fast",
-      "app-fast",
+      "core-fast-a",
+      "core-fast-b",
+      "app-fast-parallel",
+      "app-fast-isolated",
       "server",
       "runtime-medium",
       "app-stateful-a",
@@ -341,11 +376,68 @@ function chunk<T>(values: T[], size: number): T[][] {
   return chunks;
 }
 
-async function runDenoTest(args: string[], label: string): Promise<void> {
+interface ParallelJobResolution {
+  available: number;
+  cap: number | null;
+  chosen: number;
+  source: "KERI_TEST_JOBS" | "DENO_JOBS" | "auto";
+}
+
+function parsePositiveIntEnv(key: string): number | null {
+  const value = Deno.env.get(key);
+  if (value === undefined || value.trim() === "") {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${key} must be a positive integer when set, got "${value}".`);
+  }
+
+  return parsed;
+}
+
+function resolveParallelJobs(config: LaneConfig): ParallelJobResolution {
+  const available = Math.max(navigator.hardwareConcurrency || 1, 1);
+  const keriJobs = parsePositiveIntEnv("KERI_TEST_JOBS");
+  if (keriJobs !== null) {
+    return {
+      available,
+      cap: config.maxJobs ?? null,
+      chosen: keriJobs,
+      source: "KERI_TEST_JOBS",
+    };
+  }
+
+  const denoJobs = parsePositiveIntEnv("DENO_JOBS");
+  if (denoJobs !== null) {
+    return {
+      available,
+      cap: config.maxJobs ?? null,
+      chosen: denoJobs,
+      source: "DENO_JOBS",
+    };
+  }
+
+  const cap = config.maxJobs ?? available;
+  return {
+    available,
+    cap,
+    chosen: Math.min(available, cap),
+    source: "auto",
+  };
+}
+
+async function runDenoTest(
+  args: string[],
+  label: string,
+  env?: Record<string, string>,
+): Promise<void> {
   console.log(`==> ${label}`);
   const child = new Deno.Command("deno", {
     args,
     cwd: fromFileUrl(packageDir),
+    env,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -373,11 +465,19 @@ async function runLane(
   console.log(`==> Lane ${laneName}: ${config.description}`);
 
   if (config.parallelFullFiles && shape.fullFiles.length > 0) {
+    const jobs = resolveParallelJobs(config);
+    console.log(
+      `==> Lane ${laneName} parallel jobs: available=${jobs.available} chosen=${jobs.chosen} cap=${
+        jobs.cap ?? "none"
+      } source=${jobs.source}`,
+    );
+    const env = { DENO_JOBS: `${jobs.chosen}` };
     const batchSize = config.maxFilesPerRun ?? shape.fullFiles.length;
     for (const [index, batch] of chunk(shape.fullFiles, batchSize).entries()) {
       await runDenoTest(
         [...baseTestArgs(config), "--parallel", ...batch],
         `${laneName} full files batch ${index + 1}`,
+        env,
       );
     }
   } else {

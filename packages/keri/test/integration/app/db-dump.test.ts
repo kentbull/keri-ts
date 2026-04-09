@@ -5,7 +5,7 @@
  * shortest path to understanding protocol, mailbox, and outbox state. These
  * tests keep that debugging seam honest.
  */
-// @file-test-lane app-fast
+// @file-test-lane app-fast-parallel
 
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";

@@ -277,7 +277,11 @@ function openNodeServerHost(
   });
 
   server.listen(options.port, options.hostname, () => {
-    options.onListen({ port: options.port });
+    const address = server.address();
+    const port = typeof address === "object" && address !== null
+      ? address.port
+      : options.port;
+    options.onListen({ port });
   });
 
   return {
