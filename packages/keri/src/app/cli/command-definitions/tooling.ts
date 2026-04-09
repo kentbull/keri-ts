@@ -9,10 +9,12 @@ export function registerToolingCmds(
 ): void {
   registerBenchmarkCmds(program, dispatch);
   registerDbCmds(program, dispatch);
-  registerExperimentalCmds(program, dispatch);
 }
 
-function registerBenchmarkCmds(program: Command, dispatch: CommandDispatch): void {
+function registerBenchmarkCmds(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
   const benchmarkCommand = program.command("benchmark").description(
     "Benchmark operations",
   );
@@ -114,21 +116,5 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
           limit: options.limit,
         },
       });
-    });
-}
-
-function registerExperimentalCmds(
-  program: Command,
-  dispatch: CommandDispatch,
-): void {
-  const experimentalCommand = program
-    .command("experimental")
-    .description("Experimental or placeholder commands");
-
-  experimentalCommand
-    .command("interact")
-    .description("Create an interaction event (placeholder)")
-    .action(() => {
-      dispatch({ name: "interact", args: {} });
     });
 }

@@ -6,6 +6,7 @@ import { tufa } from "../../../src/app/cli/cli.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
+import { interactCommand } from "../../../src/app/cli/interact.ts";
 import { mailboxStartCommand } from "../../../src/app/cli/mailbox.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
@@ -438,7 +439,11 @@ Deno.test("CLI - incept command accepts explicit config-dir and config-file over
       transferable: true,
     }),
   );
-  assertEquals(incept.code, 0, `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`);
+  assertEquals(
+    incept.code,
+    0,
+    `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`,
+  );
   assertStringIncludes(incept.stdout, "Prefix");
 });
 
@@ -494,7 +499,7 @@ Deno.test("CLI - exchange send rejects removed legacy flags", async () => {
   assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
 });
 
-Deno.test("CLI - sign, verify, and rotate commands work for one persistent single-sig store", async () => {
+Deno.test("CLI - sign, verify, rotate, and interact commands work for one persistent single-sig store", async () => {
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-cli-sign-" });
   const name = `cli-sign-${crypto.randomUUID()}`;
   const alias = "alice";
@@ -521,7 +526,11 @@ Deno.test("CLI - sign, verify, and rotate commands work for one persistent singl
       toad: 0,
     }),
   );
-  assertEquals(incept.code, 0, `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`);
+  assertEquals(
+    incept.code,
+    0,
+    `stdout:\n${incept.stdout}\nstderr:\n${incept.stderr}`,
+  );
   const prefix = extractPrefixLine(incept.stdout);
 
   const sign = await captureCommand(signCommand({
@@ -530,7 +539,11 @@ Deno.test("CLI - sign, verify, and rotate commands work for one persistent singl
     alias,
     text: message,
   }));
-  assertEquals(sign.code, 0, `stdout:\n${sign.stdout}\nstderr:\n${sign.stderr}`);
+  assertEquals(
+    sign.code,
+    0,
+    `stdout:\n${sign.stdout}\nstderr:\n${sign.stderr}`,
+  );
   const signature = extractRawSignature(sign.stdout);
 
   const verify = await captureCommand(verifyCommand({
@@ -540,7 +553,11 @@ Deno.test("CLI - sign, verify, and rotate commands work for one persistent singl
     text: message,
     signature: [signature],
   }));
-  assertEquals(verify.code, 0, `stdout:\n${verify.stdout}\nstderr:\n${verify.stderr}`);
+  assertEquals(
+    verify.code,
+    0,
+    `stdout:\n${verify.stdout}\nstderr:\n${verify.stderr}`,
+  );
   assertStringIncludes(verify.stdout, "Signature 1 is valid.");
 
   const rotate = await captureCommand(rotateCommand({
@@ -548,10 +565,29 @@ Deno.test("CLI - sign, verify, and rotate commands work for one persistent singl
     headDirPath,
     alias,
   }));
-  assertEquals(rotate.code, 0, `stdout:\n${rotate.stdout}\nstderr:\n${rotate.stderr}`);
+  assertEquals(
+    rotate.code,
+    0,
+    `stdout:\n${rotate.stdout}\nstderr:\n${rotate.stderr}`,
+  );
   assertStringIncludes(rotate.stdout, `Prefix  ${prefix}`);
   assertStringIncludes(rotate.stdout, "New Sequence No.  1");
   assertStringIncludes(rotate.stdout, "Public key 1");
+
+  const interact = await captureCommand(interactCommand({
+    name,
+    headDirPath,
+    alias,
+    data: ["{\"anchor\":\"acdc\"}"],
+  }));
+  assertEquals(
+    interact.code,
+    0,
+    `stdout:\n${interact.stdout}\nstderr:\n${interact.stderr}`,
+  );
+  assertStringIncludes(interact.stdout, `Prefix  ${prefix}`);
+  assertStringIncludes(interact.stdout, "New Sequence No.  2");
+  assertStringIncludes(interact.stdout, "Public key 1");
 
   const rotatedSign = await captureCommand(signCommand({
     name,

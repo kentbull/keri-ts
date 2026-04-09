@@ -19,6 +19,7 @@ export function registerLifecycleCmds(
   registerInitCmd(program, dispatch);
   registerInceptCmd(program, dispatch);
   registerRotateCmd(program, dispatch);
+  registerInteractCmd(program, dispatch);
   registerAgentCmd(program, dispatch);
 }
 
@@ -325,6 +326,75 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
           cuts: options.witnessCut || [],
           witnessAdd: options.witnessAdd || [],
           data: options.data || [],
+        },
+      });
+    });
+}
+
+/** Register the single-sig interaction command surface. */
+function registerInteractCmd(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
+  program
+    .command("interact")
+    .description("Create and publish an interaction event")
+    .requiredOption("-n, --name <name>", "Keystore name")
+    .requiredOption(
+      "-a, --alias <alias>",
+      "Human readable alias for the identifier prefix",
+    )
+    .option("-b, --base <base>", "Optional base path prefix")
+    .option("--compat", "Use KERIpy compatibility-mode path layout")
+    .option(
+      "--head-dir <dir>",
+      "Directory override for database and keystore root (default fallback: ~/.tufa)",
+    )
+    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+    .option(
+      "-d, --data <data>",
+      "Anchor data, '@' allowed",
+      (value: string, prev: string[] = []) => {
+        prev.push(value);
+        return prev;
+      },
+      [],
+    )
+    .option(
+      "--receipt-endpoint",
+      "Attempt to connect to witness receipt endpoint for witness receipts.",
+      false,
+    )
+    .option(
+      "-z, --authenticate",
+      "Prompt the controller for authentication codes for each witness",
+      false,
+    )
+    .option(
+      "--code <code>",
+      "<Witness AID>:<code> formatted witness auth codes",
+      (value: string, prev: string[] = []) => {
+        prev.push(value);
+        return prev;
+      },
+      [],
+    )
+    .option("--code-time <time>", "Time the witness codes were captured.")
+    .action((options: Record<string, unknown>) => {
+      dispatch({
+        name: "interact",
+        args: {
+          name: options.name,
+          alias: options.alias,
+          base: options.base,
+          compat: options.compat || false,
+          headDirPath: options.headDir,
+          passcode: options.passcode,
+          data: options.data || [],
+          endpoint: options.receiptEndpoint || false,
+          authenticate: options.authenticate || false,
+          code: options.code || [],
+          codeTime: options.codeTime,
         },
       });
     });

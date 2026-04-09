@@ -5,8 +5,7 @@
  * actions emit these names, and the main CLI runtime uses them to resolve the
  * right generator-based command handler.
  */
-import type { Operation } from "npm:effection@^3.6.0";
-import type { CommandArgs, CommandHandler } from "../command-types.ts";
+import type { CommandHandler } from "../command-types.ts";
 import { lazyCommand } from "./shared.ts";
 
 /**
@@ -20,6 +19,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["init", lazyCommand(() => import("../init.ts"), "initCommand")],
     ["incept", lazyCommand(() => import("../incept.ts"), "inceptCommand")],
     ["rotate", lazyCommand(() => import("../rotate.ts"), "rotateCommand")],
+    [
+      "interact",
+      lazyCommand(() => import("../interact.ts"), "interactCommand"),
+    ],
     ["sign", lazyCommand(() => import("../sign.ts"), "signCommand")],
     ["verify", lazyCommand(() => import("../verify.ts"), "verifyCommand")],
     ["query", lazyCommand(() => import("../query.ts"), "queryCommand")],
@@ -89,18 +92,14 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       "oobi.resolve",
       lazyCommand(() => import("../oobi.ts"), "oobiResolveCommand"),
     ],
-    ["annotate", lazyCommand(() => import("../annotate.ts"), "annotateCommand")],
+    [
+      "annotate",
+      lazyCommand(() => import("../annotate.ts"), "annotateCommand"),
+    ],
     [
       "benchmark.cesr",
       lazyCommand(() => import("../benchmark.ts"), "benchmarkCommand"),
     ],
     ["db.dump", lazyCommand(() => import("../db-dump.ts"), "dumpEvts")],
-    ["interact", interactCommand],
   ]);
-}
-
-/** Placeholder handler for the future experimental interact command surface. */
-// deno-lint-ignore require-yield
-function* interactCommand(_args: CommandArgs): Operation<void> {
-  console.log("tufa experimental interact command - coming soon!");
 }

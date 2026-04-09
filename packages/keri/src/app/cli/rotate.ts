@@ -3,12 +3,12 @@
  *
  * KERIpy correspondence:
  * - mirrors the single-sig `kli rotate` command surface and merge semantics
- * - keeps the CLI/output mental model aligned even though `keri-ts` does not
- *   yet implement KERIpy's advanced witness-auth and delegation follow-on flows
+ * - keeps the CLI/output mental model aligned while preserving explicit
+ *   TypeScript-native orchestration instead of KERIpy's doer stack
  *
  * Current scope:
  * - local rotation event construction and acceptance
- * - witness replacement/cut/add math
+ * - witness replacement/cut/add math plus witness-auth/receipt convergence
  * - KLI-compatible success output
  */
 import { type Operation, spawn } from "npm:effection@^3.6.0";
@@ -97,7 +97,10 @@ function mergeWithFile(args: RotateArgs): RotateFileOptions {
 }
 
 /** Return items present in `left` but absent from `right` while preserving order. */
-function difference(left: readonly string[], right: readonly string[]): string[] {
+function difference(
+  left: readonly string[],
+  right: readonly string[],
+): string[] {
   const rightSet = new Set(right);
   return left.filter((value) => !rightSet.has(value));
 }
@@ -108,7 +111,10 @@ function difference(left: readonly string[], right: readonly string[]): string[]
  * This guard is intentionally front-loaded so the command does not imply full
  * parity in cases where the underlying runtime orchestration is still absent.
  */
-function assertUnsupportedAdvancedFlows(args: RotateArgs, delegated: boolean): void {
+function assertUnsupportedAdvancedFlows(
+  args: RotateArgs,
+  delegated: boolean,
+): void {
   if (args.proxy || delegated) {
     throw new ValidationError(
       "Delegation-assisted rotation flow is not yet available in tufa.",

@@ -121,7 +121,11 @@ async function resolveWitnessesForTufa(
   headDirPath: string,
   env: Record<string, string>,
   repoRoot: string,
-  witnesses: readonly { alias: string; controllerOobi?: string; witnessOobi?: string }[],
+  witnesses: readonly {
+    alias: string;
+    controllerOobi?: string;
+    witnessOobi?: string;
+  }[],
 ): Promise<void> {
   for (const witness of witnesses) {
     const urls = [witness.controllerOobi, witness.witnessOobi].filter(
@@ -158,7 +162,11 @@ async function resolveWitnessesForKli(
   env: Record<string, string>,
   name: string,
   base: string,
-  witnesses: readonly { alias: string; controllerOobi?: string; witnessOobi?: string }[],
+  witnesses: readonly {
+    alias: string;
+    controllerOobi?: string;
+    witnessOobi?: string;
+  }[],
 ): Promise<void> {
   for (const witness of witnesses) {
     const urls = [witness.controllerOobi, witness.witnessOobi].filter(
@@ -271,7 +279,13 @@ async function dumpTufaDbTargets(
   repoRoot: string,
   prefix?: string,
 ): Promise<string> {
-  const targets = ["baser.kels", "baser.wigs", "baser.states", "baser.locs", "baser.ends"];
+  const targets = [
+    "baser.kels",
+    "baser.wigs",
+    "baser.states",
+    "baser.locs",
+    "baser.ends",
+  ];
   const sections: string[] = [];
   for (const target of targets) {
     const args = [
@@ -288,7 +302,9 @@ async function dumpTufaDbTargets(
       "20",
     ];
     const result = await runTufaWithTimeout(args, env, repoRoot, 20_000);
-    sections.push(`## ${target}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+    sections.push(
+      `## ${target}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    );
   }
   return sections.join("\n\n");
 }
@@ -386,7 +402,12 @@ async function assertKliControllerStore(
         bran: PASSCODE,
       },
       (hby) => {
-        said = assertFullyWitnessed(hby, controllerPre, sn, expectedWitnessCount);
+        said = assertFullyWitnessed(
+          hby,
+          controllerPre,
+          sn,
+          expectedWitnessCount,
+        );
       },
     )
   );
@@ -455,7 +476,9 @@ async function convergeKliControllerStore(
 
 Deno.test("Interop witness: tufa controller completes fully witnessed inception and rotations using only KERIpy witnesses", async () => {
   const ctx = await createInteropContext();
-  const headDirPath = await Deno.makeTempDir({ prefix: "tufa-keripy-witnesses-" });
+  const headDirPath = await Deno.makeTempDir({
+    prefix: "tufa-keripy-witnesses-",
+  });
   const controllerName = `tufa-wit-ctrl-${crypto.randomUUID().slice(0, 8)}`;
   const controllerAlias = "controller";
   const harness = await startKeriPyWitnessHarness(ctx, {
@@ -565,9 +588,31 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
       ),
     );
 
+    await requireSuccess(
+      "tufa interact with keripy witnesses",
+      runTufaWithTimeout(
+        [
+          "interact",
+          "--name",
+          controllerName,
+          "--head-dir",
+          headDirPath,
+          "--alias",
+          controllerAlias,
+          "--receipt-endpoint",
+          "--data",
+          "{\"anchor\":\"acdc\"}",
+        ],
+        ctx.env,
+        ctx.repoRoot,
+        30_000,
+      ),
+    );
+
     let inceptionSaid = "";
     let firstRotationSaid = "";
     let secondRotationSaid = "";
+    let interactionSaid = "";
     await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
@@ -576,30 +621,122 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
         skipSignator: true,
       });
       try {
-        inceptionSaid = assertFullyWitnessed(controllerHby, controllerPre, 0, 3);
-        firstRotationSaid = assertFullyWitnessed(controllerHby, controllerPre, 1, 3);
-        secondRotationSaid = assertFullyWitnessed(controllerHby, controllerPre, 2, 3);
+        inceptionSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          0,
+          3,
+        );
+        firstRotationSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          1,
+          3,
+        );
+        secondRotationSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          2,
+          3,
+        );
+        interactionSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          3,
+          3,
+        );
       } finally {
         yield* controllerHby.close();
       }
     });
 
     const finalWitnesses = ["wan", "wil", "wit"] as const;
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 0, 3);
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 1, 3);
-    await assertKeriPyWitnessStores(ctx, harness, finalWitnesses, controllerPre, 2, 3);
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil", "wes"],
+      controllerPre,
+      0,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil", "wes"],
+      controllerPre,
+      1,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      finalWitnesses,
+      controllerPre,
+      2,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      finalWitnesses,
+      controllerPre,
+      3,
+      3,
+    );
 
     for (const witness of initialWitnesses) {
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        0,
+        inceptionSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        inceptionSaid,
+        0,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        1,
+        firstRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        firstRotationSaid,
+        1,
+      );
     }
 
     for (const alias of finalWitnesses) {
       const witness = harness.node(alias);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        2,
+        secondRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        secondRotationSaid,
+        2,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        3,
+        interactionSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        interactionSaid,
+        3,
+      );
     }
   } finally {
     await harness.close();
@@ -754,17 +891,68 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
       allowQuery: true,
     });
 
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 0, 3);
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 1, 3);
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 2, 3);
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil", "wes"],
+      controllerPre,
+      0,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil", "wes"],
+      controllerPre,
+      1,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil", "wes"],
+      controllerPre,
+      2,
+      3,
+    );
 
     for (const witness of harness.activeWitnesses(3)) {
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        0,
+        inceptionSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        inceptionSaid,
+        0,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        1,
+        firstRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        firstRotationSaid,
+        1,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        2,
+        secondRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        secondRotationSaid,
+        2,
+      );
     }
   } finally {
     await harness.close();
@@ -923,7 +1111,10 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         controllerPre,
       );
       const witnessDump = await dumpTufaDbTargets(
-        { name: activeWitnesses[0]!.name, headDirPath: tufaHarness.headDirPath },
+        {
+          name: activeWitnesses[0]!.name,
+          headDirPath: tufaHarness.headDirPath,
+        },
         ctx.env,
         ctx.repoRoot,
         controllerPre,
@@ -936,9 +1127,27 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
     }
 
     try {
-      await assertTufaWitnessStores(tufaHarness.headDirPath, activeWitnesses, controllerPre, 0, 3);
-      await assertTufaWitnessStores(tufaHarness.headDirPath, activeWitnesses, controllerPre, 1, 3);
-      await assertTufaWitnessStores(tufaHarness.headDirPath, activeWitnesses, controllerPre, 2, 3);
+      await assertTufaWitnessStores(
+        tufaHarness.headDirPath,
+        activeWitnesses,
+        controllerPre,
+        0,
+        3,
+      );
+      await assertTufaWitnessStores(
+        tufaHarness.headDirPath,
+        activeWitnesses,
+        controllerPre,
+        1,
+        3,
+      );
+      await assertTufaWitnessStores(
+        tufaHarness.headDirPath,
+        activeWitnesses,
+        controllerPre,
+        2,
+        3,
+      );
     } catch (error) {
       const controllerDump = await dumpTufaDbTargets(
         { name: controllerName, base, compat: true },
@@ -947,7 +1156,10 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         controllerPre,
       );
       const witnessDump = await dumpTufaDbTargets(
-        { name: activeWitnesses[0]!.name, headDirPath: tufaHarness.headDirPath },
+        {
+          name: activeWitnesses[0]!.name,
+          headDirPath: tufaHarness.headDirPath,
+        },
         ctx.env,
         ctx.repoRoot,
         controllerPre,
@@ -960,12 +1172,42 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
     }
 
     for (const witness of activeWitnesses) {
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        0,
+        inceptionSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        inceptionSaid,
+        0,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        1,
+        firstRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        firstRotationSaid,
+        1,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        2,
+        secondRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        secondRotationSaid,
+        2,
+      );
     }
   } finally {
     await tufaHarness.close();
@@ -974,7 +1216,9 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
 
 Deno.test("Interop witness: tufa controller completes fully witnessed rotations with mixed Tufa and KERIpy witnesses", async () => {
   const ctx = await createInteropContext();
-  const headDirPath = await Deno.makeTempDir({ prefix: "tufa-mixed-witnesses-" });
+  const headDirPath = await Deno.makeTempDir({
+    prefix: "tufa-mixed-witnesses-",
+  });
   const controllerName = `tufa-mixed-ctrl-${crypto.randomUUID().slice(0, 8)}`;
   const controllerAlias = "controller";
   const harness = await startKeriPyWitnessHarness(ctx, {
@@ -1091,20 +1335,61 @@ Deno.test("Interop witness: tufa controller completes fully witnessed rotations 
         skipSignator: true,
       });
       try {
-        inceptionSaid = assertFullyWitnessed(controllerHby, controllerPre, 0, 3);
-        firstRotationSaid = assertFullyWitnessed(controllerHby, controllerPre, 1, 3);
-        secondRotationSaid = assertFullyWitnessed(controllerHby, controllerPre, 2, 3);
+        inceptionSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          0,
+          3,
+        );
+        firstRotationSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          1,
+          3,
+        );
+        secondRotationSaid = assertFullyWitnessed(
+          controllerHby,
+          controllerPre,
+          2,
+          3,
+        );
       } finally {
         yield* controllerHby.close();
       }
     });
 
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil"], controllerPre, 0, 3);
-    await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil"], controllerPre, 1, 3);
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil"],
+      controllerPre,
+      0,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      harness,
+      ["wan", "wil"],
+      controllerPre,
+      1,
+      3,
+    );
     await assertKeriPyWitnessStores(ctx, harness, ["wan"], controllerPre, 2, 3);
 
-    await assertTufaWitnessStores(headDirPath, [tufaWitness1], controllerPre, 0, 3);
-    await assertTufaWitnessStores(headDirPath, [tufaWitness1], controllerPre, 1, 3);
+    await assertTufaWitnessStores(
+      headDirPath,
+      [tufaWitness1],
+      controllerPre,
+      0,
+      3,
+    );
+    await assertTufaWitnessStores(
+      headDirPath,
+      [tufaWitness1],
+      controllerPre,
+      1,
+      3,
+    );
     await assertTufaWitnessStores(
       headDirPath,
       [tufaWitness1, tufaWitness2],
@@ -1113,16 +1398,48 @@ Deno.test("Interop witness: tufa controller completes fully witnessed rotations 
       3,
     );
 
-    for (const witness of [harness.node("wan"), harness.node("wil"), tufaWitness1]) {
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
+    for (
+      const witness of [harness.node("wan"), harness.node("wil"), tufaWitness1]
+    ) {
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        0,
+        inceptionSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        inceptionSaid,
+        0,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        1,
+        firstRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        firstRotationSaid,
+        1,
+      );
     }
 
     for (const witness of [harness.node("wan"), tufaWitness1, tufaWitness2]) {
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        2,
+        secondRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        secondRotationSaid,
+        2,
+      );
     }
   } finally {
     await Promise.all([harness.close(), tufaHarness.close()]);
@@ -1306,7 +1623,10 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
         controllerPre,
       );
       const tufaDump = await dumpTufaDbTargets(
-        { name: tufaHarness.node("twan").name, headDirPath: tufaHarness.headDirPath },
+        {
+          name: tufaHarness.node("twan").name,
+          headDirPath: tufaHarness.headDirPath,
+        },
         ctx.env,
         ctx.repoRoot,
         controllerPre,
@@ -1318,14 +1638,53 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
       );
     }
 
-    await assertKeriPyWitnessStores(ctx, keriPyHarness, ["wan", "wil"], controllerPre, 0, 3);
-    await assertKeriPyWitnessStores(ctx, keriPyHarness, ["wan", "wil"], controllerPre, 1, 3);
-    await assertKeriPyWitnessStores(ctx, keriPyHarness, ["wan", "wil"], controllerPre, 2, 3);
+    await assertKeriPyWitnessStores(
+      ctx,
+      keriPyHarness,
+      ["wan", "wil"],
+      controllerPre,
+      0,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      keriPyHarness,
+      ["wan", "wil"],
+      controllerPre,
+      1,
+      3,
+    );
+    await assertKeriPyWitnessStores(
+      ctx,
+      keriPyHarness,
+      ["wan", "wil"],
+      controllerPre,
+      2,
+      3,
+    );
 
     try {
-      await assertTufaWitnessStores(tufaHarness.headDirPath, [tufaHarness.node("twan")], controllerPre, 0, 3);
-      await assertTufaWitnessStores(tufaHarness.headDirPath, [tufaHarness.node("twan")], controllerPre, 1, 3);
-      await assertTufaWitnessStores(tufaHarness.headDirPath, [tufaHarness.node("twan")], controllerPre, 2, 3);
+      await assertTufaWitnessStores(
+        tufaHarness.headDirPath,
+        [tufaHarness.node("twan")],
+        controllerPre,
+        0,
+        3,
+      );
+      await assertTufaWitnessStores(
+        tufaHarness.headDirPath,
+        [tufaHarness.node("twan")],
+        controllerPre,
+        1,
+        3,
+      );
+      await assertTufaWitnessStores(
+        tufaHarness.headDirPath,
+        [tufaHarness.node("twan")],
+        controllerPre,
+        2,
+        3,
+      );
     } catch (error) {
       const controllerDump = await dumpTufaDbTargets(
         { name: controllerName, base, compat: true },
@@ -1334,7 +1693,10 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
         controllerPre,
       );
       const tufaDump = await dumpTufaDbTargets(
-        { name: tufaHarness.node("twan").name, headDirPath: tufaHarness.headDirPath },
+        {
+          name: tufaHarness.node("twan").name,
+          headDirPath: tufaHarness.headDirPath,
+        },
         ctx.env,
         ctx.repoRoot,
         controllerPre,
@@ -1347,12 +1709,42 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
     }
 
     for (const witness of inceptionWitnesses) {
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
-      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
-      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        0,
+        inceptionSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        inceptionSaid,
+        0,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        1,
+        firstRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        firstRotationSaid,
+        1,
+      );
+      await assertWitnessKelVisible(
+        witness.httpOrigin,
+        controllerPre,
+        2,
+        secondRotationSaid,
+      );
+      await assertWitnessReceiptVisible(
+        witness.httpOrigin,
+        controllerPre,
+        secondRotationSaid,
+        2,
+      );
     }
   } finally {
     await Promise.all([keriPyHarness.close(), tufaHarness.close()]);

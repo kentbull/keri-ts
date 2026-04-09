@@ -66,8 +66,8 @@ runtime ownership semantics.
     for that state-machine/orchestrator split and should guide future
     `Tever`/`Tevery`-style ports as well.
 18. Accepted identifier state should live on `Kever` / `Baser`, not on ad hoc
-    habitat projections. Local inception needs to flow through the same `Kevery`
-    acceptance path used for remote processing.
+    habitat projections. Local inception and local interaction need to flow
+    through the same `Kevery` acceptance path used for remote processing.
 19. Weighted threshold parity is end to end: `Tholder` owns threshold semantics,
     structured `kt` / `nt` payloads are allowed in serder/state storage, and
     both `Kever` and `Revery` should rely on `tholder.satisfy(...)` instead of
@@ -211,27 +211,30 @@ runtime ownership semantics.
    continuation behavior now that runtime-composed shared mailbox storage,
    habery-owned remote mailbox cursors, and the broader query/reply
    correspondence slice are landed.
-3. Promote high-value DB `Partial` rows with real row-level evidence instead of
+3. Keep later TEL/ACDC anchor work on the real `Hab.interact(...)` seam rather
+   than reintroducing test-local `ixn` builders or parser-coupled event
+   routing.
+4. Promote high-value DB `Partial` rows with real row-level evidence instead of
    symbol-existence optimism.
-4. Keep the new maintainer docs current when query/watcher or escrow-decision
+5. Keep the new maintainer docs current when query/watcher or escrow-decision
    behavior changes; docs drift here is a real regression. Treat
    `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md` as the primary
    explainer when cue ownership or host wiring changes.
-5. Keep DB/runtime worklists concise and execution-oriented; when the docs start
+6. Keep DB/runtime worklists concise and execution-oriented; when the docs start
    reading like archives again, compact them.
-6. Keep `tufa agent` smoke coverage honest at the packaged boundary. Help text
+7. Keep `tufa agent` smoke coverage honest at the packaged boundary. Help text
    alone is not enough; the tarball path should prove real host startup.
-7. Keep Gate E E2E coverage CLI-first: plain JSON config files and protocol
+8. Keep Gate E E2E coverage CLI-first: plain JSON config files and protocol
    routes are fair game, arbitrary `deno eval` LMDB inspection or default-path
    config seeding are not. For exchange/challenge flows, keep host lifecycles
    explicit so the script does not smuggle in concurrent single-store access as
    an accidental dependency.
-8. Keep host-prefix selection work explicit. When touching `agent`,
+9. Keep host-prefix selection work explicit. When touching `agent`,
    `mailbox start`, or server route filtering, reason from "which local
    identities are intentionally hostable" rather than "which Habs exist."
-9. When interop behavior seems ambiguous, compare targeted DB state before and
-   after the operation with `tufa db dump` on both the `tufa` and KERIpy
-   keystores before inventing new explanations.
+10. When interop behavior seems ambiguous, compare targeted DB state before and
+    after the operation with `tufa db dump` on both the `tufa` and KERIpy
+    keystores before inventing new explanations.
 
 ### 2026-04-06 - Host Selection And AEID Mental Models Needed Sharpening
 

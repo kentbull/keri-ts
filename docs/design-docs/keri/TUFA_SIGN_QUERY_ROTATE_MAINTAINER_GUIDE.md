@@ -1,16 +1,16 @@
-# Tufa Sign / Query / Rotate Maintainer Guide
+# Tufa Sign / Query / Rotate / Interact Maintainer Guide
 
 ## Purpose
 
 This document is the maintainer-oriented map for the `tufa sign`, `tufa verify`,
-`tufa query`, and `tufa rotate` parity slice. It explains the mental model we
-borrow from KERIpy, the places where `keri-ts` is intentionally different, and
-the invariants that make the current interop proof honest.
+`tufa query`, `tufa rotate`, and `tufa interact` parity slice. It explains the
+mental model we borrow from KERIpy, the places where `keri-ts` is intentionally
+different, and the invariants that make the current interop proof honest.
 
 This guide is deliberately narrower than a general `Hab`/runtime guide. It is
 about the parity path that starts with a locally controlled single-sig
-identifier, rotates it, and then proves that another store must query before it
-can verify signatures from the newly active key state.
+identifier, rotates or interacts it, and then proves that another store must
+query before it can verify signatures from the newly active key state.
 
 ## Module Map
 
@@ -21,11 +21,15 @@ can verify signatures from the newly active key state.
 - `packages/keri/src/app/cli/query.ts`
   - Bounded command runtime that drives query continuations, transport, mailbox
     polling, and optional catch-up replay fallback before printing state.
+- `packages/keri/src/app/cli/interact.ts`
+  - CLI surface for authoring one local `ixn` and optionally converging witness
+    receipts.
 - `packages/keri/src/app/querying.ts`
   - Query correspondence layer: `KeyStateNoticer`, `LogQuerier`,
     `SeqNoQuerier`, `AnchorQuerier`, and `QueryCoordinator`.
 - `packages/keri/src/app/habbing.ts`
-  - `Hab.rotate(...)`, event builders, local acceptance, and keeper rollback.
+  - `Hab.rotate(...)`, `Hab.interact(...)`, event builders, local acceptance,
+    and keeper rollback.
 - `packages/keri/src/app/reactor.ts`
   - Parser ingress plus escrow retry seam for recoverable reply failures.
 - `packages/keri/src/app/server.ts`
@@ -39,6 +43,7 @@ The closest KERIpy reference points are:
 - `keri.cli.commands.verify`
 - `keri.cli.commands.query`
 - `keri.cli.commands.rotate`
+- `keri.cli.commands.interact`
 - `keri.app.querying`
 - `keri.app.habbing`
 - `keri.core.routing`
@@ -54,6 +59,8 @@ What stays the same:
   state before printing external state.
 - `rotate` advances local keeper state, emits a rotation event, accepts it
   locally, and only then considers the new keys authoritative.
+- `interact` authors one `ixn`, accepts it locally, and then optionally
+  converges witness receipts over the already-existing receiptor helpers.
 - unverifiable replies are recoverable work when they are escrow-worthy, not
   necessarily fatal protocol corruption.
 
@@ -123,6 +130,28 @@ That ordering matters. If old keys were erased or new keys were treated as
 authoritative before local acceptance, the interop story would become a local
 storage trick instead of a truthful accepted-state transition.
 
+## Interact Flow
+
+`Hab.interact(...)` is intentionally simpler than rotation:
+
+1. read current accepted state.
+2. build an `ixn` with `{ t, d, i, s, p, a }` from current prefix, prior SAID,
+   next sequence number, and committed anchor data.
+3. sign with the current accepted controller keys.
+4. accept the event locally through `Kevery`.
+5. optionally converge witness receipts through `Receiptor` or
+   `WitnessReceiptor`.
+
+The important negative rule is just as important as the positive one:
+
+- do not port KERIpy's doer stack or exception-flow shape here.
+- do not invent a delegated publication/proxy branch for `interact`.
+
+KERIpy `kli interact` does not run the delegated-rotation publication path. In
+`keri-ts`, delegated single-sig `ixn` is just another local event that is
+validated through the accepted-state machine and then receipted like other
+events.
+
 ## Failure Before Query, Success After Query
 
 The interop proof is meant to demonstrate one real protocol fact:
@@ -150,19 +179,14 @@ Maintainer reading of the test:
 
 ## Unsupported Advanced Rotate Flows
 
-Current `tufa rotate` parity is intentionally incomplete for these KERIpy
-behaviors:
+Current `tufa rotate` parity is intentionally incomplete only for the delegated
+publication/proxy flow. Witness receipt-endpoint and witness authentication-code
+flows are now real for `rotate`, `interact`, and `witness submit`.
 
-- witness receipt-endpoint flow
-- witness authentication-code flow
-- delegation-assisted/proxy publication flow
+The remaining rule is:
 
-The CLI still exposes the KLI-shaped flags because parser/help parity is a real
-contract, but the command rejects these flows explicitly rather than pretending
-to support them.
-
-Do not document these as implemented until the runtime orchestration exists and
-interop evidence proves the behavior.
+- do not document delegated publication/proxy follow-on behavior as implemented
+  until the runtime orchestration exists and interop evidence proves it.
 
 ## Maintainer Rules of Thumb
 
@@ -172,5 +196,8 @@ interop evidence proves the behavior.
   machinery instead of side-channel state mutation.
 - If you change `rotate`, ask whether keeper rollback and stale-key erasure
   still happen in the right order.
+- If you change `interact`, ask whether local `ixn` authoring still lands on
+  `Hab.interact(...)`, local `Kevery` acceptance, and the shared witness
+  receipting seam instead of splitting those responsibilities again.
 - If you change reply handling, ask whether recoverable `/ksn` work still
   behaves like escrow/retry work instead of fatal ingress corruption.
