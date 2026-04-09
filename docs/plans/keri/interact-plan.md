@@ -1,11 +1,13 @@
 # Port Single-Sig `tufa interact`
 
 ## Summary
+
 - Verdict: `keri-ts` already has the hard state-machine substance for `ixn`. The real missing seam is local authoring plus CLI and witness orchestration.
 - Verdict: The wrong port would be to copy KERIpy's doer topology. Port the behavior instead: author `ixn`, accept it locally through typed decisions, optionally converge witness receipts, then print KLI-shaped output.
 - Verdict: KERIpy `kli interact` has witness/auth branches, but no proxy or delegator-publication branch. Treating `interact` like delegated `rotate` would be a false parity model.
 
 ## Current State
+
 - `ixn` validation is already implemented in `packages/keri/src/core/kever.ts` via `evaluateInteraction(...)`, including `estOnly`, sequence, prior-digest, threshold, and witness checks.
 - Event orchestration is already implemented in `packages/keri/src/core/eventing.ts` via `Kevery.decideEvent()/applyDecision()` with typed `accept`, `duplicate`, `escrow`, and `reject`.
 - CESR parsing is already decoupled from routing, so no parser architecture work is needed for `interact`.
@@ -18,6 +20,7 @@
 - Some rotate/incept comments still understate witness maturity, so docs need a truth pass while this lands.
 
 ## KERIpy Trace
+
 - `kli interact` flows `cli/commands/interact.py` -> `InteractDoer.interactDo()` -> `hab.interact(data=...)` -> `eventing.interact(pre,dig,sn,data)` -> sign -> `messagize(...)` -> `kvy.processEvent(...)` -> print output.
 - After local acceptance, KERIpy chooses `Receiptor.receipt(...)` for `--receipt-endpoint` or `WitnessReceiptor` for full convergence. That is the operator-facing behavior to preserve.
 - KERIpy also starts `MailboxDirector`, but that is Python runtime scaffolding, not the essence of `interact`. In `keri-ts`, the existing witness helpers already own the needed ingress and receipt settling.
@@ -25,6 +28,7 @@
 - Delegation nuance: KERIpy treats `ixn` as non-delegable for source-seal persistence. There is no `--proxy`, no `Anchorer`, and no delegator-post step in `kli interact`.
 
 ## Approach
+
 - Add a real top-level `tufa interact` command in `packages/keri/src/app/cli/command-definitions/lifecycle.ts` and `packages/keri/src/app/cli/command-definitions/handlers.ts`, and retire or repoint the experimental placeholder in `packages/keri/src/app/cli/command-definitions/tooling.ts`.
 - Implement `Hab.interact({ data?: unknown[] }): Uint8Array` in `packages/keri/src/app/habbing.ts` beside `Hab.rotate(...)`.
 - Add internal `makeInteractRaw(pre, priorSaid, sn, data)` in `packages/keri/src/app/habbing.ts` using the exact KERIpy SAD shape `{ t: "ixn", i, s, p, a }` and `sn >= 1`.
@@ -37,6 +41,7 @@
 - Update the maintainer doc to cover interact and anchor semantics, explicitly calling out that later ACDC work depends on exact `a`-seal authoring and anchor-query behavior, not on copying Python doers.
 
 ## Test Plan
+
 - Unit: `Hab.interact(...)` increments `sn`, updates `p` and `d`, appends the event to `kels.` and `fels.`, and returns a non-empty attached event message.
 - Unit: interaction `data` survives exact round-trip in `serder.ked.a`, including seal-shaped entries used later by TEL and ACDC anchoring.
 - Unit: `estOnly` AIDs reject local `ixn` and leave accepted state unchanged.
@@ -45,6 +50,7 @@
 - Integration: extend witness CLI and KERIpy-witness interop suites so `tufa interact` reaches full receipt convergence and includes at least one anchor-carrying `ixn` scenario.
 
 ## Assumptions
+
 - Scope is single-sig local Habs only; multisig and prebuilt partial-signature interact flows stay out of this slice.
 - "Full parity" here means full KERIpy `kli interact` parity, not rotate-style delegation proxy parity.
 - No ADR update is needed unless implementation uncovers a real architecture gap; ADR-0003, ADR-0004, ADR-0005, ADR-0008, ADR-0009, and ADR-0010 already describe the intended ownership model.

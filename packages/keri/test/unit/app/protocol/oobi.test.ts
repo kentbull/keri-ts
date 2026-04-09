@@ -1,9 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
-import {
-  defaultOobiAid,
-  selectResponderHab,
-} from "../../../../src/app/protocol/endpoints/oobi.ts";
+import { defaultOobiAid, selectResponderHab } from "../../../../src/app/protocol/endpoints/oobi.ts";
 
 Deno.test("app/protocol/oobi - default blind OOBI aid prefers service hab, then hosted singleton, then lone local hab", () => {
   const serviceRuntime = {
