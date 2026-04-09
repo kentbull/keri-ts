@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { SerderKERI, type Siger } from "../../../../cesr/mod.ts";

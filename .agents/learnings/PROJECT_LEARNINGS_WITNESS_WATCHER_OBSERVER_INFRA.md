@@ -57,6 +57,13 @@ deployment, CI, and interoperability operations.
 14. Exact env pins, action SHAs, environment assertions, and saved artifacts are
     part of reproducibility for a native-addon library repo, not optional
     polish.
+15. KERI test topology is now an explicit repo contract, not an informal shell
+    convention. `scripts/ci/run-keri-test-group.ts` discovers lane membership
+    from source-owned `@file-test-lane` and `@test-lane` annotations,
+    `test:quality` vs `test:slow` is the durable default/slow split, and lane
+    audit should fail if any discovered test case is unassigned or double-owned.
+    Keep compat LMDB rebuild out of the runner itself; the harness should audit
+    and execute, while job/local setup owns native-addon preparation.
 
 ## Use This Doc For
 
@@ -80,11 +87,14 @@ deployment, CI, and interoperability operations.
    KERIpy pins whenever bootstrap logic changes.
 4. Preserve split-job feedback topology and isolation-aware test grouping rather
    than collapsing everything back into one giant lane.
-5. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
+5. Keep the KERI lane metadata current when mailbox/runtime/interop files gain
+   new tests. Updating the test file without updating annotations or lane audit
+   is now a topology regression.
+6. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
    required control path, prove it in its own scenario instead of silently
    expanding the stable-control test that currently covers repeated
    same-witness rotations.
-6. When infra-role protocol work deepens, add it here as durable operational
+7. When infra-role protocol work deepens, add it here as durable operational
    rules rather than as workflow-by-workflow diary entries.
 
 ## Milestone Rollup
@@ -181,3 +191,15 @@ deployment, CI, and interoperability operations.
 - The only witness interop seam that should remain ignored by default is the
   explicit 6-witness soak. Do not reintroduce ignored parity tests for the
   normal controller/witness replacement matrix.
+
+### 2026-04-08 - KERI Test Topology Became A Maintained Contract
+
+- The old grouped KERI shell runner had drifted badly enough that only 31 of 61
+  KERI test files were on the normal grouped path. The durable fix was one
+  authoritative lane runner plus source-owned lane annotations in the tests.
+- `test:quality` is now the truthful default path, `test:slow` is the explicit
+  mailbox-heavy/runtime-heavy path, and lane audit checks every discovered test
+  case so mixed-speed files can be split by exact source annotations without
+  silently dropping coverage.
+- Compat LMDB rebuild remains job/local setup owned. The runner's job is honest
+  ownership and execution, not hidden bootstrap magic.

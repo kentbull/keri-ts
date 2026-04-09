@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";

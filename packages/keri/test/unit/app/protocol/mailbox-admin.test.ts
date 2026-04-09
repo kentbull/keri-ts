@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../../cesr/mod.ts";
 import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";

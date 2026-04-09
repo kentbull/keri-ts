@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { b, Cipher, parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";

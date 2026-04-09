@@ -1,3 +1,5 @@
+// @file-test-lane app-stateful-a
+
 import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";

@@ -1,3 +1,5 @@
+// @file-test-lane interop-gates-c
+
 import { action, type Operation, run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { t } from "../../../../cesr/mod.ts";
@@ -1734,6 +1736,7 @@ Deno.test("Interop gate harness matrix covers Gate A-G", () => {
   assertEquals([...gates].sort(), ["A", "B", "C", "D", "E", "F", "G"]);
 });
 
+// @test-lane interop-gates-b
 Deno.test(
   "Interop gate harness ready scenario: B-INIT-INCEPT-EXPORT-PARITY",
   async () => {
@@ -1741,6 +1744,7 @@ Deno.test(
   },
 );
 
+// @test-lane interop-gates-b
 Deno.test(
   "Interop gate harness ready scenario: B-LIST-AID-VISIBILITY",
   async () => {
@@ -1762,6 +1766,7 @@ Deno.test(
   },
 );
 
+// @test-lane interop-mailbox-slow
 Deno.test(
   "Interop gate harness ready scenario: E-ENDS-OOBI-BOOTSTRAP",
   async () => {

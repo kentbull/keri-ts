@@ -1,3 +1,5 @@
+// @file-test-lane runtime-medium
+
 /**
  * Mailbox runtime end-to-end unit scenarios.
  *
@@ -1105,6 +1107,7 @@ function* postMailboxAdminMultipart(
   });
 }
 
+// @test-lane runtime-slow
 Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add/cut state", async () => {
   const providerName = `mailbox-admin-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-controller-${crypto.randomUUID()}`;
@@ -1318,6 +1321,7 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
   });
 });
 
+// @test-lane runtime-slow
 Deno.test("mailbox admin rejects unsupported content types and invalid raw or multipart replies", async () => {
   const providerName = `mailbox-admin-invalid-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
@@ -2082,6 +2086,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
  * - update topic cursor state
  * - remove mailbox
  */
+// @test-lane runtime-slow
 Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote mailbox host", async () => {
   const providerName = `mailbox-provider-${crypto.randomUUID()}`;
   const clientName = `mailbox-client-${crypto.randomUUID()}`;
@@ -2242,6 +2247,7 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
  * Proves that `challenge verify` is mailbox-driven, not just local DB polling,
  * and that provider routes work through canonical root mailbox/OOBI endpoints.
  */
+// @test-lane runtime-slow
 Deno.test("challenge verify polls a remote mailbox provider through root mailbox OOBI and mailbox admin routes", async () => {
   const providerName = `mailbox-base-provider-${crypto.randomUUID()}`;
   const bobName = `mailbox-base-bob-${crypto.randomUUID()}`;
@@ -2434,6 +2440,7 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
  * A mailbox host must not store forwarded traffic until the recipient has
  * authorized that mailbox provider.
  */
+// @test-lane runtime-slow
 Deno.test("mailbox host only stores forwarded payloads after mailbox authorization", async () => {
   const providerName = `mailbox-auth-provider-${crypto.randomUUID()}`;
   const senderName = `mailbox-auth-sender-${crypto.randomUUID()}`;

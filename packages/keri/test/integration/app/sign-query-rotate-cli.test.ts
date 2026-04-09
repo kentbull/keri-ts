@@ -1,3 +1,5 @@
+// @file-test-lane runtime-medium
+
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { t } from "../../../../cesr/mod.ts";
 

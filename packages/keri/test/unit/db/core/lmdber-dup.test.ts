@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { assertEquals } from "jsr:@std/assert";
 import { b, t } from "../../../../../cesr/mod.ts";
 import { onItemsAsText, pairsAsText, valuesAsText, withTempLMDBer } from "./lmdber-test-utils.ts";

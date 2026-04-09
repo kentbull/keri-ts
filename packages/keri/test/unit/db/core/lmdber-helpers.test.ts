@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { clearDatabaserDir, createLMDBer, openLMDB } from "../../../../src/db/core/lmdber.ts";

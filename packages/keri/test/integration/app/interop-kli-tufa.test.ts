@@ -1,3 +1,5 @@
+// @file-test-lane interop-parity
+
 /**
  * Cross-implementation CLI and mailbox interoperability tests.
  *
@@ -619,6 +621,7 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
  * - Tufa resolves the resulting mailbox OOBI
  * - Tufa delivers `/challenge` traffic that KLI later polls and verifies
  */
+// @test-lane interop-mailbox-slow
 Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli challenge verify polls it", async () => {
   const ctx = await createInteropContext();
   const base = `interop-mailbox-kli-${crypto.randomUUID().slice(0, 8)}`;
@@ -1252,6 +1255,7 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
  * - mailbox-forwarded `/challenge` traffic lands in KERIpy mailbox storage and
  *   is later polled back into Tufa verification flow
  */
+// @test-lane interop-mailbox-slow
 Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host", async () => {
   const ctx = await createInteropContext();
   const pythonCommand = await resolvePythonCommand(ctx.env, ctx.kliCommand);

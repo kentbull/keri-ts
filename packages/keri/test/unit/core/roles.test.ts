@@ -1,3 +1,5 @@
+// @file-test-lane core-fast
+
 import { assertEquals } from "jsr:@std/assert";
 import { EndpointRoles, isEndpointRole, isRole, Roles } from "../../../src/core/roles.ts";
 import { isScheme, Schemes } from "../../../src/core/schemes.ts";

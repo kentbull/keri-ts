@@ -5,6 +5,8 @@
  * shortest path to understanding protocol, mailbox, and outbox state. These
  * tests keep that debugging seam honest.
  */
+// @file-test-lane app-fast
+
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../cesr/mod.ts";

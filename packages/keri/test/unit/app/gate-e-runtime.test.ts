@@ -1,3 +1,5 @@
+// @file-test-lane runtime-slow
+
 import { run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { Diger, Prefixer, Seqner, SerderKERI } from "../../../../cesr/mod.ts";
@@ -78,6 +80,7 @@ function replySigGroupFor(
   );
 }
 
+// @test-lane runtime-medium
 Deno.test("Gate E - base-path OOBI parsing preserves cid, role, eid, and alias metadata", () => {
   const aid = "EExampleAid123456789012345678901234567890123";
   const mailbox = "EMailboxAid1234567890123456789012345678901";
@@ -107,6 +110,7 @@ Deno.test("Gate E - base-path OOBI parsing preserves cid, role, eid, and alias m
   );
 });
 
+// @test-lane runtime-medium
 Deno.test("Gate E - ends add command persists mailbox role through runtime path", async () => {
   const name = `gate-e-ends-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-gate-e-${crypto.randomUUID()}`;
@@ -167,6 +171,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   });
 });
 
+// @test-lane runtime-medium
 Deno.test("Gate E - transferable controller OOBI reply seal attachments use fixed-width Seqner encoding", async () => {
   const name = `gate-e-oobi-seal-${crypto.randomUUID()}`;
   const passcode = "MyPasscodeARealSecret";
@@ -210,6 +215,7 @@ Deno.test("Gate E - transferable controller OOBI reply seal attachments use fixe
   });
 });
 
+// @test-lane runtime-medium
 Deno.test("Gate E - non-transferable mailbox OOBI replies use reply cigars", async () => {
   const name = `gate-e-oobi-mailbox-cigar-${crypto.randomUUID()}`;
   const passcode = "MyPasscodeARealSecret";
@@ -1448,6 +1454,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   });
 });
 
+// @test-lane runtime-medium
 Deno.test("Gate E - loc add command persists location state through reply acceptance", async () => {
   const name = `gate-e-loc-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-gate-e-loc-${crypto.randomUUID()}`;
@@ -1507,6 +1514,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
   });
 });
 
+// @test-lane runtime-medium
 Deno.test("Gate E - loc add command rejects malformed URLs deterministically", async () => {
   await assertOperationThrows(
     locAddCommand({

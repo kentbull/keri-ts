@@ -1,3 +1,5 @@
+// @file-test-lane db-fast
+
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Signer } from "../../../../cesr/mod.ts";

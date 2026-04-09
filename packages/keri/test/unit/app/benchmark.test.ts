@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { tufa } from "../../../src/app/cli/cli.ts";

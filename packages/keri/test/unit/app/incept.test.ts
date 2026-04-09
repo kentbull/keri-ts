@@ -1,3 +1,5 @@
+// @file-test-lane app-stateful-a
+
 import { run } from "effection";
 import { assertStringIncludes } from "jsr:@std/assert";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";

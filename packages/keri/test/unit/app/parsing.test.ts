@@ -1,3 +1,5 @@
+// @file-test-lane app-fast
+
 import { assertEquals } from "jsr:@std/assert";
 import { parseExnDataItems } from "../../../src/app/cli/common/parsing.ts";
 
