@@ -26,21 +26,6 @@ fi
 
 cd "${PACKAGE_DIR}"
 
-ensure_lmdb_setup() {
-  if [[ -n "${KERI_LMDB_SETUP_DONE:-}" ]]; then
-    return
-  fi
-
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    echo "==> Rebuilding patched LMDB-js for Deno on macOS"
-    deno task setup
-  fi
-
-  export KERI_LMDB_SETUP_DONE=1
-}
-
-ensure_lmdb_setup
-
 COMMON_ARGS=(deno test --allow-all --unstable-ffi)
 DB_FAST_ARGS=(deno test --allow-all)
 

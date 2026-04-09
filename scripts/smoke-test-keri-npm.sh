@@ -64,14 +64,30 @@ if (( ${#DOCKER_CESR_MOUNT[@]} > 0 )); then
   DOCKER_ARGS+=("${DOCKER_CESR_MOUNT[@]}")
 fi
 
-echo "Running Docker smoke test with ${TARBALL_NAME}"
+SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
+
+echo "Running Docker smoke test with ${TARBALL_NAME} on ${SMOKE_NODE_IMAGE}"
 # Use an isolated container so we validate the packed artifact's real install
 # and CLI behavior, not the source tree or maintainer machine state.
 docker run --rm \
   "${DOCKER_ARGS[@]}" \
-  node:alpine /bin/ash -lc "
+  "${SMOKE_NODE_IMAGE}" /bin/sh -lc "
 set -eu
+log_agent() {
+  echo '--- /tmp/tufa-agent.log ---' >&2
+  if [ -f /tmp/tufa-agent.log ]; then
+    if [ -s /tmp/tufa-agent.log ]; then
+      cat /tmp/tufa-agent.log >&2
+    else
+      echo '<empty>' >&2
+    fi
+  else
+    echo '<missing>' >&2
+  fi
+  echo '--- end /tmp/tufa-agent.log ---' >&2
+}
 npm install -g ${INSTALL_TARGETS} >/dev/null
+echo \"Node runtime: \$(node --version), npm: \$(npm --version)\" >&2
 V1=\$(tufa version | tr -d '\r')
 V2=\$(tufa --version | tr -d '\r')
 if [ \"\$V1\" != \"\$V2\" ]; then
@@ -90,8 +106,12 @@ tufa incept --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" --passcode \"\$PASSCODE\
 tufa agent --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" -p \"\$PORT\" -P \"\$PASSCODE\" >/tmp/tufa-agent.log 2>&1 &
 AGENT_PID=\$!
 cleanup() {
+  status=\$?
   kill \"\$AGENT_PID\" >/dev/null 2>&1 || true
   wait \"\$AGENT_PID\" 2>/dev/null || true
+  if [ \"\$status\" -ne 0 ]; then
+    log_agent
+  fi
 }
 trap cleanup EXIT
 TUFA_SMOKE_PORT=\"\$PORT\" node --input-type=module -e '
@@ -114,8 +134,18 @@ TUFA_SMOKE_PORT=\"\$PORT\" node --input-type=module -e '
   }
 
   process.stderr.write(\"Health probe failed: \" + lastStatus + \"\\n\");
-  process.stderr.write(await readFile(\"/tmp/tufa-agent.log\", \"utf8\"));
+  try {
+    const log = await readFile(\"/tmp/tufa-agent.log\", \"utf8\");
+    process.stderr.write(\"--- /tmp/tufa-agent.log ---\\n\");
+    process.stderr.write(log.length > 0 ? log : \"<empty>\\n\");
+    if (!log.endsWith(\"\\n\")) {
+      process.stderr.write(\"\\n\");
+    }
+    process.stderr.write(\"--- end /tmp/tufa-agent.log ---\\n\");
+  } catch (error) {
+    process.stderr.write(\"Unable to read /tmp/tufa-agent.log: \" + String(error) + \"\\n\");
+  }
   process.exit(1);
 ' >/dev/null
-echo \"Smoke test passed for tufa \$V1\"
+echo \"Smoke test passed for tufa \$V1 on ${SMOKE_NODE_IMAGE}\"
 "
