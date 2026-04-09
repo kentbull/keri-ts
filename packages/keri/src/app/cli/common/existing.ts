@@ -5,6 +5,7 @@ import { type CesrBodyMode, cesrBodyModeFromGlobal, normalizeCesrBodyMode } from
 import type { Configer } from "../../configing.ts";
 import { createHabery, Habery } from "../../habbing.ts";
 
+/** Low-level habery-open knobs shared by CLI startup helpers. */
 interface OpenHaberyOptions {
   compat?: boolean;
   readonly?: boolean;
@@ -15,6 +16,7 @@ interface OpenHaberyOptions {
   cesrBodyMode?: CesrBodyMode;
 }
 
+/** Result of "open if present, create if absent" CLI startup behavior. */
 export interface EnsuredHabery {
   hby: Habery;
   created: boolean;
@@ -129,6 +131,8 @@ export function* setupHby(
       const message = error instanceof Error ? error.message : String(error);
       console.log(message);
       console.log("Valid passcode required, try again...");
+      // Match the long-standing CLI operator contract: retry interactively
+      // instead of failing immediately on the first decrypt/auth attempt.
       passcode = prompt("Passcode: ") ?? undefined;
     }
   }

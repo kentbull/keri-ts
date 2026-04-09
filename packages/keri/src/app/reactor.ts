@@ -85,12 +85,15 @@ export class Reactor {
           this.local,
         )
       ) {
-        dispatchEnvelope(
+        const decision = dispatchEnvelope(
           envelope,
           this.revery,
           this.kevery,
           this.exchanger,
         );
+        if (decision?.kind === "unverified") {
+          continue;
+        }
       }
     }
   }

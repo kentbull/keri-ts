@@ -1,3 +1,17 @@
+/**
+ * Habitat and shared-environment primitives for local KERI operation.
+ *
+ * KERIpy correspondence:
+ * - this module is the closest analogue to `keri.app.habbing`
+ * - `Hab` owns local identifier behavior while `Habery` owns the shared
+ *   keeper/database/router/parser environment
+ *
+ * `keri-ts` difference:
+ * - parser ingress uses the CESR frame/envelope pipeline instead of KERIpy's
+ *   monolithic `Parser`
+ * - local bootstrap replies and events still flow through the same accepted
+ *   state machinery instead of being written directly to persistent state
+ */
 import { type Operation } from "npm:effection@^3.6.0";
 import {
   Cigar,
@@ -15,6 +29,7 @@ import {
   Seqner,
   SerderKERI,
   Siger,
+  Tholder,
   type ThresholdSith,
   type Tier,
   Tiers,
@@ -32,9 +47,10 @@ import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
+import { deriveRotatedWitnessSet } from "../core/witnesses.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
-import { createKeeper, Keeper } from "../db/keeping.ts";
+import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
 import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
@@ -104,6 +120,40 @@ const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
  */
 function defaultThreshold(count: number, min: number): string {
   return `${Math.max(min, Math.ceil(count / 2)).toString(16)}`;
+}
+
+/**
+ * Derive a KERI-style ample witness threshold.
+ *
+ * KERIpy correspondence:
+ * - mirrors the intent of KERIpy's `ample()` helper used when witness
+ *   membership changes and the operator did not pin an explicit `toad`
+ */
+function ample(count: number, faults?: number, weak = true): number {
+  const n = Math.max(0, count);
+  if (faults === undefined) {
+    const f1 = Math.max(1, Math.floor(Math.max(0, n - 1) / 3));
+    const f2 = Math.max(1, Math.ceil(Math.max(0, n - 1) / 3));
+    if (weak) {
+      return Math.min(
+        n,
+        Math.ceil((n + f1 + 1) / 2),
+        Math.ceil((n + f2 + 1) / 2),
+      );
+    }
+    return Math.min(
+      n,
+      Math.max(0, n - f1, Math.ceil((n + f1 + 1) / 2)),
+    );
+  }
+
+  const f = Math.max(0, faults);
+  const m1 = Math.ceil((n + f + 1) / 2);
+  const m2 = Math.max(0, n - f);
+  if (m2 < m1 && n > 0) {
+    throw new ValidationError(`Invalid faults ${faults} for witness count ${count}.`);
+  }
+  return weak ? Math.min(n, m1, m2) : Math.min(n, Math.max(m1, m2));
 }
 
 function loadConfigUrls(value: unknown): string[] {
@@ -321,6 +371,26 @@ function buildReceiptMessage(args: {
   return concatMessageWithAttachmentGroup(args.serder.raw, attachments);
 }
 
+/** Build one fully attached KEL event wire message with indexed controller signatures. */
+function buildEventMessage(
+  serder: SerderKERI,
+  sigers: readonly Siger[],
+): Uint8Array {
+  return concatMessageWithAttachmentGroup(
+    serder.raw,
+    sigers.length > 0
+      ? [
+        new Counter({
+          code: CtrDexV1.ControllerIdxSigs,
+          count: sigers.length,
+          version: KERI_V1,
+        }).qb64b,
+        ...sigers.map((siger) => siger.qb64b),
+      ]
+      : [],
+  );
+}
+
 /**
  * KERIpy emits reply/query/receipt attachments in one counted attachment group.
  *
@@ -485,6 +555,96 @@ function makeInceptRaw(
     sad: ked,
     makify: true,
     saids,
+  });
+}
+
+/**
+ * Build one rotation/delegated-rotation serder from current and next key material.
+ *
+ * Validation stays aligned with KERIpy's rotation builder:
+ * - current and next thresholds must fit the provided key counts
+ * - witness cut/add math must be coherent against the current witness set
+ * - default toad follows KERIpy's `ample()` rule only when witness membership changes
+ */
+function makeRotateRaw(
+  pre: string,
+  priorSaid: string,
+  sn: number,
+  keys: string[],
+  ndigs: string[],
+  args: {
+    delegated?: boolean;
+    currentWits: string[];
+    isith?: ThresholdSith;
+    nsith?: ThresholdSith;
+    toad?: number;
+    cuts?: string[];
+    adds?: string[];
+    data?: unknown[];
+  },
+): SerderKERI {
+  if (sn < 1) {
+    throw new ValidationError(`Invalid rotation sequence number ${sn}.`);
+  }
+
+  const tholder = new Tholder({
+    sith: args.isith ?? defaultThreshold(keys.length, 1),
+  });
+  if (tholder.num !== null && tholder.num < 1n) {
+    throw new ValidationError(`Invalid current threshold ${String(args.isith ?? "")}.`);
+  }
+  if (tholder.size > keys.length) {
+    throw new ValidationError(`Invalid current threshold for ${keys.length} keys.`);
+  }
+
+  const ntholder = new Tholder({
+    sith: args.nsith ?? defaultThreshold(ndigs.length, 0),
+  });
+  if (ntholder.num !== null && ntholder.num < 0n) {
+    throw new ValidationError(`Invalid next threshold ${String(args.nsith ?? "")}.`);
+  }
+  if (ntholder.size > ndigs.length) {
+    throw new ValidationError(`Invalid next threshold for ${ndigs.length} next keys.`);
+  }
+
+  const cuts = [...(args.cuts ?? [])];
+  const adds = [...(args.adds ?? [])];
+  const derived = deriveRotatedWitnessSet(args.currentWits, cuts, adds);
+  if (derived.kind === "reject") {
+    throw new ValidationError(
+      `Invalid witness cut/add combination: ${derived.reason}.`,
+    );
+  }
+
+  const toad = args.toad ?? (cuts.length === 0 && adds.length === 0
+    ? parseInt(defaultThreshold(args.currentWits.length, 0), 16)
+    : ample(derived.value.wits.length));
+  if (derived.value.wits.length === 0 && toad !== 0) {
+    throw new ValidationError(`Invalid toad ${toad} for empty witness set.`);
+  }
+  if (derived.value.wits.length > 0 && (toad < 1 || toad > derived.value.wits.length)) {
+    throw new ValidationError(
+      `Invalid toad ${toad} for witness count ${derived.value.wits.length}.`,
+    );
+  }
+
+  return new SerderKERI({
+    sad: {
+      t: args.delegated ? Ilks.drt : Ilks.rot,
+      d: "",
+      i: pre,
+      s: sn.toString(16),
+      p: priorSaid,
+      kt: tholder.sith,
+      k: keys,
+      nt: ntholder.sith,
+      n: ndigs,
+      bt: toad.toString(16),
+      br: cuts,
+      ba: adds,
+      a: [...(args.data ?? [])],
+    },
+    makify: true,
   });
 }
 
@@ -769,6 +929,105 @@ export class Hab {
       if (!hidden) {
         this.db.prefixes.delete(pre);
       }
+      throw error;
+    }
+  }
+
+  /**
+   * Rotate this habitat through the shared accepted-state path.
+   *
+   * KERIpy correspondence:
+   * - advances keeper state first via `Manager.replay()` or `Manager.rotate()`
+   * - rolls keeper state back if local `Kevery` acceptance rejects the event
+   * - erases stale old private keys only after successful acceptance
+   */
+  rotate(args: {
+    isith?: ThresholdSith;
+    nsith?: ThresholdSith;
+    ncount?: number;
+    toad?: number;
+    cuts?: string[];
+    adds?: string[];
+    data?: unknown[];
+  } = {}): Uint8Array {
+    if (!this.pre) {
+      throw new ValidationError("Rotation requires a local habitat prefix.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+
+    const priorSit = this.ks.getSits(this.pre);
+    if (!priorSit) {
+      throw new ValidationError(`Missing keeper state for ${this.pre}.`);
+    }
+
+    const defaultCount = args.ncount ?? kever.ndigers.length;
+    let verfers: Verfer[];
+    let digers: Diger[];
+    try {
+      // Prefer replayed pre-rotated material when keeper state already has it,
+      // matching the operator expectation that an earlier pre-rotation is
+      // consumed before brand-new next keys are generated.
+      [verfers, digers] = this.mgr.replay({
+        pre: this.pre,
+        erase: false,
+      });
+    } catch (error) {
+      if (!(error instanceof RangeError)) {
+        throw error;
+      }
+      [verfers, digers] = this.mgr.rotate({
+        pre: this.pre,
+        ncount: defaultCount,
+        temp: this.ks.temp,
+        erase: false,
+      });
+    }
+
+    const currentSith = args.isith ?? kever.ntholder?.sith;
+    const nextSith = args.nsith ?? currentSith;
+    const preservedToad = args.toad
+      ?? ((args.cuts?.length ?? 0) === 0 && (args.adds?.length ?? 0) === 0
+        ? Number(kever.toader.num)
+        : undefined);
+    const keys = verfers.map((verfer) => verfer.qb64);
+    const ndigs = digers.map((diger) => diger.qb64);
+
+    try {
+      const serder = makeRotateRaw(
+        this.pre,
+        kever.serder.said ?? kever.said,
+        kever.sn + 1,
+        keys,
+        ndigs,
+        {
+          delegated: kever.delpre !== null,
+          currentWits: [...kever.wits],
+          isith: currentSith,
+          nsith: nextSith,
+          toad: preservedToad,
+          cuts: args.cuts,
+          adds: args.adds,
+          data: args.data,
+        },
+      );
+      const sigers = this.mgr.sign(serder.raw, keys, true) as Siger[];
+      this.acceptLocally(serder, sigers);
+
+      // Old private keys become stale only after local accepted state advances.
+      // That ordering is what makes the interop "verify fails before query,
+      // succeeds after query" story honest instead of a local-storage trick.
+      for (const pub of new PreSit(priorSit).old.pubs) {
+        this.ks.pris.rem(pub);
+      }
+
+      return buildEventMessage(serder, sigers);
+    } catch (error) {
+      // Roll keeper state back if the event was not accepted locally. The
+      // accepted-state machine, not keeper progression alone, defines success.
+      this.ks.pinSits(this.pre, new PreSit(priorSit));
       throw error;
     }
   }

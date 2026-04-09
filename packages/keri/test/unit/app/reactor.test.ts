@@ -424,3 +424,59 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
     }
   });
 });
+
+Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escrow instead of aborting ingress", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `reactor-ksn-source-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const remote = yield* createHabery({
+      name: `reactor-ksn-remote-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const alice = source.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const icp = [...source.db.clonePreIter(alice.pre, 0)][0];
+      assertExists(icp);
+
+      alice.rotate();
+      const rotatedReply = alice.reply(
+        `/ksn/${alice.pre}`,
+        alice.kever!.state().asDict(),
+      );
+
+      const reactor = new Reactor(remote);
+      reactor.ingest(icp);
+      reactor.processOnce();
+      while (!reactor.cues.empty) {
+        reactor.cues.pull();
+      }
+
+      reactor.ingest(rotatedReply);
+      reactor.processOnce();
+
+      assertEquals(remote.db.rpes.cnt(), 1);
+      const cue = reactor.cues.pull();
+      assertExists(cue);
+      assertEquals(cue.kin, "query");
+      if (cue.kin !== "query") {
+        throw new Error("Expected reply escrow to enqueue a follow-on query cue.");
+      }
+      assertEquals(cue.pre, alice.pre);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});

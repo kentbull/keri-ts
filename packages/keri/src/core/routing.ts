@@ -4,7 +4,7 @@ import { encodeDateTimeToDater } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
 import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
-import { UnverifiedReplyError, ValidationError } from "./errors.ts";
+import { ValidationError } from "./errors.ts";
 import {
   acceptEscrow,
   dropEscrow,
@@ -14,6 +14,34 @@ import {
 } from "./kever-decisions.ts";
 import type { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
+
+/** Live reply outcome for one reply that was accepted this pass. */
+export interface ReplyAccept {
+  kind: "accept";
+}
+
+/** Live reply outcome for one well-formed reply that is not yet accepted. */
+export interface ReplyUnverified {
+  kind: "unverified";
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+/** Typed live reply result used instead of exception-shaped control flow. */
+export type ReplyProcessDecision = ReplyAccept | ReplyUnverified;
+
+/** Builder for one accepted live reply decision. */
+export function acceptReplyDecision(): ReplyAccept {
+  return { kind: "accept" };
+}
+
+/** Builder for one unverified live reply decision. */
+export function unverifiedReplyDecision(
+  message: string,
+  context?: Record<string, unknown>,
+): ReplyUnverified {
+  return { kind: "unverified", message, context };
+}
 
 /** Return true when a reply signer has usable threshold material for its key set. */
 function hasValidReplyThreshold(
@@ -212,7 +240,7 @@ export class Router {
     diger: Diger;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     const route = args.serder.route;
     if (!route) {
       throw new ValidationError("Reply message is missing route 'r'.");
@@ -241,8 +269,16 @@ export class Router {
           );
         }
       }
-      fn.call(candidate.resource, { ...args, route, ...params });
-      return;
+      const decision = fn.call(candidate.resource, { ...args, route, ...params });
+      if (
+        !decision || typeof decision !== "object"
+        || (decision.kind !== "accept" && decision.kind !== "unverified")
+      ) {
+        throw new ValidationError(
+          `Reply route ${route} did not return a valid reply decision.`,
+        );
+      }
+      return decision as ReplyProcessDecision;
     }
 
     throw new ValidationError(
@@ -323,7 +359,7 @@ export class Revery {
     serder: SerderKERI;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     if (!args.serder.verify()) {
       throw new ValidationError(
         `Invalid said for reply msg=${JSON.stringify(args.serder.ked)}.`,
@@ -333,7 +369,7 @@ export class Revery {
     if (!said) {
       throw new ValidationError("Reply message is missing SAID.");
     }
-    this.rtr.dispatch({
+    return this.rtr.dispatch({
       ...args,
       diger: new Diger({ qb64: said }),
     });
@@ -362,7 +398,7 @@ export class Revery {
     osaider?: Diger | null;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): boolean {
+  }): ReplyProcessDecision {
     const daterText = args.serder.ked?.dt;
     if (typeof daterText !== "string") {
       throw new ValidationError("Reply message is missing 'dt'.");
@@ -389,7 +425,7 @@ export class Revery {
         cigar,
       });
       this.removeReply(args.osaider ?? null);
-      return true;
+      return acceptReplyDecision();
     }
 
     const oldTsgs = args.osaider
@@ -491,7 +527,7 @@ export class Revery {
           sigers: verified,
         });
         this.removeReply(args.osaider ?? null);
-        return true;
+        return acceptReplyDecision();
       }
 
       this.escrowReply({
@@ -506,7 +542,10 @@ export class Revery {
       });
     }
 
-    return false;
+    return unverifiedReplyDecision(
+      `Reply ${args.saider.qb64} at route ${args.route} was not accepted.`,
+      { said: args.saider.qb64, route: args.route, aid: args.aid },
+    );
   }
 
   /**
@@ -611,8 +650,8 @@ export class Revery {
    * - reload stored reply + signatures by SAID
    * - drop incomplete or stale escrow entries
    * - rerun normal reply processing
-   * - keep escrow only when verification is still blocked by an
-   *   `UnverifiedReplyError`
+   * - keep escrow only when verification is still blocked by a recoverable
+   *   live reply `unverified` decision
    */
   /**
    * Process escrowed reply messages.
@@ -649,7 +688,7 @@ export class Revery {
    * Replay one escrowed transferable reply through the normal verification path.
    *
    * Typed replay decisions make the Gate E control flow explicit:
-   * - `keep` mirrors recoverable `UnverifiedReplyError`
+   * - `keep` mirrors recoverable live `unverified` reply outcomes
    * - `drop` mirrors stale/corrupt escrow rows that should be removed
    * - `accept` mirrors successful reply verification on replay
    *
@@ -662,7 +701,7 @@ export class Revery {
    * - load and validate the escrow artifacts
    * - reject stale or malformed rows
    * - replay through `processReply()` exactly as if the reply re-arrived
-   * - map recoverable reply verification failures into `keep`
+   * - map recoverable live reply `unverified` decisions into `keep`
    */
   public reprocessEscrowedReply(
     diger: Diger,
@@ -688,15 +727,19 @@ export class Revery {
       });
     }
     try {
-      this.processReply({ serder, tsgs });
-      return acceptEscrow();
-    } catch (error) {
-      if (error instanceof UnverifiedReplyError) {
+      const decision = this.processReply({ serder, tsgs });
+      if (decision.kind === "unverified") {
         return keepEscrow("unverifiedReply", {
-          message: error.message,
-          context: { said: diger.qb64, route: serder.route },
+          message: decision.message,
+          context: {
+            said: diger.qb64,
+            route: serder.route,
+            ...(decision.context ?? {}),
+          },
         });
       }
+      return acceptEscrow();
+    } catch (error) {
       return dropEscrow("processingError", {
         message: error instanceof Error ? error.message : String(error),
         context: { said: diger.qb64, route: serder.route },
@@ -785,7 +828,7 @@ export class BasicReplyRouteHandler {
     action?: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     const allowed = args.route.startsWith("/end/role/add")
       ? true
       : args.route.startsWith("/end/role/cut")
@@ -819,7 +862,7 @@ export class BasicReplyRouteHandler {
     if (osaider && osaider.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const accepted = this.rvy.acceptReply({
+    const decision = this.rvy.acceptReply({
       serder: args.serder,
       saider: args.diger,
       route: "/end/role",
@@ -828,13 +871,15 @@ export class BasicReplyRouteHandler {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (!accepted) {
-      throw new UnverifiedReplyError(
+    if (decision.kind === "unverified") {
+      return unverifiedReplyDecision(
         `Unverified end role reply = ${args.serder.said} role = ${role}`,
+        { role, cid, eid, route: args.route },
       );
     }
 
     this.updateEnd(keys, args.diger, allowed);
+    return acceptReplyDecision();
   }
 
   /**
@@ -854,7 +899,7 @@ export class BasicReplyRouteHandler {
     route: string;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
-  }): void {
+  }): ReplyProcessDecision {
     if (!args.route.startsWith("/loc/scheme")) {
       throw new ValidationError(
         `Unsupported route=${args.route} in reply message.`,
@@ -885,7 +930,7 @@ export class BasicReplyRouteHandler {
     if (osaider && osaider.qb64 === args.diger.qb64) {
       osaider = null;
     }
-    const accepted = this.rvy.acceptReply({
+    const decision = this.rvy.acceptReply({
       serder: args.serder,
       saider: args.diger,
       route: "/loc/scheme",
@@ -894,12 +939,14 @@ export class BasicReplyRouteHandler {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    if (!accepted) {
-      throw new UnverifiedReplyError(
+    if (decision.kind === "unverified") {
+      return unverifiedReplyDecision(
         `Unverified loc scheme reply URL=${url} SAID=${args.serder.said}`,
+        { eid, scheme, url, route: args.route },
       );
     }
 
     this.updateLoc(keys, args.diger, url);
+    return acceptReplyDecision();
   }
 }

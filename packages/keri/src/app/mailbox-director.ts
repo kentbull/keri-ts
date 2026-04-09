@@ -114,6 +114,11 @@ export class MailboxDirector implements CueSink {
    * - `reply`/`replay` wire emissions are persisted into mailbox topics
    * - `stream` transport cues are retained so the HTTP host can correlate
    *   mailbox queries with later server-sent-event responses
+   *
+   * Query catch-up implication:
+   * - replay material published after a successful `ksn` reply uses this same
+   *   persistence seam, so mailbox convergence and fresh-key verification do
+   *   not need a separate storage path
    */
   *send(emission: CueEmission): Operation<void> {
     this.handleEmission(emission);
@@ -335,9 +340,9 @@ export class MailboxDirector implements CueSink {
   private preForCue(cue: AgentCue): string | null {
     switch (cue.kin) {
       case "replay":
-        return cue.pre ?? null;
+        return cue.dest ?? cue.pre ?? null;
       case "reply":
-        return replyMailboxPre(cue);
+        return cue.dest ?? replyMailboxPre(cue);
       case "receipt":
       case "witness":
         return cue.serder.pre ?? null;

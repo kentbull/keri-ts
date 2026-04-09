@@ -27,8 +27,7 @@
     "npm:effection@^3.6.0": "3.6.1",
     "npm:libsodium-wrappers@0.7.15": "0.7.15",
     "npm:libsodium-wrappers@0.8.2": "0.8.2",
-    "npm:lmdb@*": "3.5.3",
-    "npm:lmdb@2.6.8-v1": "2.6.8-v1"
+    "npm:lmdb@*": "3.5.3"
   },
   "jsr": {
     "@david/code-block-writer@13.0.3": {
@@ -168,50 +167,25 @@
     "@harperfast/extended-iterable@1.0.3": {
       "integrity": "sha512-sSAYhQca3rDWtQUHSAPeO7axFIUJOI6hn1gjRC5APVE1a90tuyT8f5WIgRsFhhWA7htNkju2veB9eWL6YHi/Lw=="
     },
-    "@lmdb/lmdb-darwin-arm64@2.6.8-v1": {
-      "integrity": "sha512-5Eo04kLLsLLfMykh003ZjoBPYr8enAP/abYsPM4fjABSk+KDism2R/7Ams7/5PWGsfmeDcA1DvYteDjpHYHkxg==",
-      "os": ["darwin"],
-      "cpu": ["arm64"]
-    },
     "@lmdb/lmdb-darwin-arm64@3.5.3": {
       "integrity": "sha512-Ob379nnG6FpfVi9WUVupUVsMFa0+jbkelilrBAdJgNlg6dDtXKeTi+pzL+G3f1z3SNdXXWUAL5N8LTp7szXEVw==",
       "os": ["darwin"],
       "cpu": ["arm64"]
-    },
-    "@lmdb/lmdb-darwin-x64@2.6.8-v1": {
-      "integrity": "sha512-/FcnH7lX81lCv+b6P/PPItQGZofM1mQe2d73+5uTf3El5VvD/C4jG9WEWfl973C5yiHVvCvFaDZJzFDNDVmlOQ==",
-      "os": ["darwin"],
-      "cpu": ["x64"]
     },
     "@lmdb/lmdb-darwin-x64@3.5.3": {
       "integrity": "sha512-fbKZ6gonDCWENiXiRoDC4KdBBXi2rlDr1uYj/SErpIAHuTfnLo0Il1hvmbDLeiCPLaPjbXlvcMiR3vLnrNnWMw==",
       "os": ["darwin"],
       "cpu": ["x64"]
     },
-    "@lmdb/lmdb-linux-arm64@2.6.8-v1": {
-      "integrity": "sha512-JE5oEGpGSvQbyLUVUevHPB4Vtn9Uuby+QVoYj5ztASWnGphFqlGarbzL3Dq2IDQ6LoE2vmw8/9CbafcwPlSKdw==",
-      "os": ["linux"],
-      "cpu": ["arm64"]
-    },
     "@lmdb/lmdb-linux-arm64@3.5.3": {
       "integrity": "sha512-VYWkuWS8uQSyszMe5KGVJPD3YSkaXVrUz/6hbg3zkBvhfOTyrIVMN9M3cZjpU4yxVRBmGViZ5kgjoKz7n3sw2w==",
       "os": ["linux"],
       "cpu": ["arm64"]
     },
-    "@lmdb/lmdb-linux-arm@2.6.8-v1": {
-      "integrity": "sha512-CMxXbLZw7Ls3ggveS7ETPVfDj16fS9ObL2BVFimAKTYaGg+EQmIhFDOKIi+/iPw+HJPGhJRRypzBgy+47qaxWg==",
-      "os": ["linux"],
-      "cpu": ["arm"]
-    },
     "@lmdb/lmdb-linux-arm@3.5.3": {
       "integrity": "sha512-A80EUIRBiKA+0iMc5DxT2u8msgY+K05Lok133IKb3eJVlJkmJie4+LM0MjNyV+mREnu8UwhlNFupSikPy/eTPw==",
       "os": ["linux"],
       "cpu": ["arm"]
-    },
-    "@lmdb/lmdb-linux-x64@2.6.8-v1": {
-      "integrity": "sha512-JB/FWRuA0cyWh9Mchm2a9LtNHztAI6n4/cTaLLiNFRKEoF53kBRzvdOx41VA2N0a0EsGtQ1WHEeUsMuNjbhdOg==",
-      "os": ["linux"],
-      "cpu": ["x64"]
     },
     "@lmdb/lmdb-linux-x64@3.5.3": {
       "integrity": "sha512-JAeG8rJaL1klzg+VKyRqp0wPSbuPo1ZuNmO/IBRs8QRrSIPxF9r3r1TcIVVRLaaJmI0+2KOjbFRjtvFWFH6cMQ==",
@@ -222,11 +196,6 @@
       "integrity": "sha512-9QdgjU5VW0MJ3wy94h4fQ+cNkxeJ0KasjvisOhLuvlCep2KSOzr1i65Js3ElHBRQX8N+jVD8/+LWIM7flfGZ4w==",
       "os": ["win32"],
       "cpu": ["arm64"]
-    },
-    "@lmdb/lmdb-win32-x64@2.6.8-v1": {
-      "integrity": "sha512-Oy4Jlq0NoZxMlcSqmLd43xg4McOALXAgXz+P3dK+sZVLCXR8uW+hH7f7zAtERAE2+7ryRnC8KioAPP3uZvV1Ww==",
-      "os": ["win32"],
-      "cpu": ["x64"]
     },
     "@lmdb/lmdb-win32-x64@3.5.3": {
       "integrity": "sha512-0nd13c9ypIDkdsJbHv1PMvk6MZrwHLQP05AXZdxvv8lklxRrZxPK2d8nSo8HLoMXyLt0hA2yQ3fydQaSRrkz0g==",
@@ -376,26 +345,6 @@
     "libsodium@0.8.2": {
       "integrity": "sha512-TsnGYMoZtpweT+kR+lOv5TVsnJ/9U0FZOsLFzFOMWmxqOAYXjX3fsrPAW+i1LthgDKXJnI9A8dWEanT1tnJKIw=="
     },
-    "lmdb@2.6.8-v1": {
-      "integrity": "sha512-RMPVkbLacBYLY3aMfxpWDzuX6lOwoa2FTgppsqivvpmCeYquwYxI39NuCHanwjGhJFyCP3BBVpvCzL4Rbp61jw==",
-      "dependencies": [
-        "msgpackr@1.7.2",
-        "node-addon-api@4.3.0",
-        "node-gyp-build-optional-packages@5.0.3",
-        "ordered-binary",
-        "weak-lru-cache"
-      ],
-      "optionalDependencies": [
-        "@lmdb/lmdb-darwin-arm64@2.6.8-v1",
-        "@lmdb/lmdb-darwin-x64@2.6.8-v1",
-        "@lmdb/lmdb-linux-arm@2.6.8-v1",
-        "@lmdb/lmdb-linux-arm64@2.6.8-v1",
-        "@lmdb/lmdb-linux-x64@2.6.8-v1",
-        "@lmdb/lmdb-win32-x64@2.6.8-v1"
-      ],
-      "scripts": true,
-      "bin": true
-    },
     "lmdb@3.5.3": {
       "integrity": "sha512-6A0iRKOv/N62P1vU8qhBr32tHQIY6pQMe8b6zqI4VLELqV8fWHUMdnfNjMR+Kyh7ZeRCo8PDzAnW2g+SJSoP1A==",
       "dependencies": [
@@ -517,8 +466,7 @@
           "npm:@msgpack/msgpack@^3.1.2",
           "npm:cbor-x@^1.6.0",
           "npm:commander@^10.0.1",
-          "npm:effection@^3.6.0",
-          "npm:lmdb@*"
+          "npm:effection@^3.6.0"
         ]
       }
     }

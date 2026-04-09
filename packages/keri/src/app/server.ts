@@ -14,8 +14,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { Ilks } from "../../../cesr/mod.ts";
-import { UnverifiedReplyError, ValidationError } from "../core/errors.ts";
+import { concatBytes, Ilks } from "../../../cesr/mod.ts";
+import type { CueEmission } from "../core/cues.ts";
+import { ValidationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { normalizeMbxTopicCursor } from "../core/mailbox-topics.ts";
 import { Roles } from "../core/roles.ts";
@@ -232,7 +233,7 @@ function createProtocolHandler(
           });
         }
 
-        processRuntimeRequest(
+        const emissions = processRuntimeRequest(
           runtime,
           bytes,
           hosted.endpoint?.eid ?? null,
@@ -263,6 +264,14 @@ function createProtocolHandler(
               },
             },
           );
+        }
+
+        if (serder.ilk === Ilks.qry && serder.route === "ksn") {
+          const query = serder.ked?.q as Record<string, unknown> | undefined;
+          const pre = typeof query?.i === "string" ? query.i : null;
+          if (pre) {
+            publishQueryCatchupReplay(runtime, emissions, pre);
+          }
         }
 
         return new Response(null, {
@@ -469,26 +478,11 @@ async function handleMailboxAdmin(
   }
 
   const { cid, role, expected } = validation;
-  let ingestRejected = false;
-  try {
-    processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
-  } catch (error) {
-    if (error instanceof UnverifiedReplyError) {
-      ingestRejected = true;
-    } else {
-      throw error;
-    }
-  }
+  processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
 
   const acceptance = confirmMailboxAuthorization(runtime, cid, mailboxAid, expected);
   if (acceptance instanceof Response) {
     return acceptance;
-  }
-  if (ingestRejected) {
-    return new Response("Mailbox authorization reply was not accepted", {
-      status: 403,
-      headers: { "Content-Type": "text/plain" },
-    });
   }
 
   return new Response(
@@ -588,11 +582,11 @@ function processRuntimeRequest(
   bytes: Uint8Array,
   mailboxAid: string | null,
   serviceHab?: Hab,
-): void {
+): CueEmission[] {
   runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
     settleRuntimeIngress(runtime, [bytes]);
-    drainRuntimeCues(runtime, serviceHab);
   });
+  return drainRuntimeCues(runtime, serviceHab);
 }
 
 /**
@@ -882,18 +876,78 @@ export function* startServer(
   }
 }
 
+/**
+ * Drain runtime cues through one service habitat and mailbox side effects.
+ *
+ * Ownership split:
+ * - `Hab.processCuesIter(...)` remains the cue-to-wire interpreter
+ * - the server owns any mailbox publication side effects needed before HTTP
+ *   responses are finalized
+ */
 function drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab?: Hab,
-): void {
+): CueEmission[] {
   const habitats = [...runtime.hby.habs.values()];
   const hab = serviceHab
     ?? (habitats.length === 1 ? habitats[0] ?? null : null);
   if (!hab) {
+    return [];
+  }
+
+  const emissions: CueEmission[] = [];
+  for (const emission of hab.processCuesIter(runtime.cues)) {
+    runtime.mailboxDirector.handleEmission(emission);
+    emissions.push(emission);
+  }
+  return emissions;
+}
+
+/**
+ * Publish one replay catch-up payload after a successful `/ksn` style reply.
+ *
+ * Why this exists:
+ * - a key-state notice can prove the remote controller is ahead of local state
+ *   while still leaving local verification stale
+ * - publishing replay material onto the mailbox lets a later query/poll turn
+ *   converge local accepted state without treating the initial `/ksn` reply as
+ *   fatal or "final enough"
+ */
+function publishQueryCatchupReplay(
+  runtime: AgentRuntime,
+  emissions: CueEmission[],
+  pre: string,
+): void {
+  let destination: string | null = null;
+  for (const emission of emissions) {
+    if (emission.kind !== "wire" || emission.cue.kin !== "reply") {
+      continue;
+    }
+    if (emission.cue.route !== "/ksn" || typeof emission.cue.dest !== "string") {
+      continue;
+    }
+    destination = emission.cue.dest;
+    break;
+  }
+  if (!destination) {
     return;
   }
 
-  for (const emission of hab.processCuesIter(runtime.cues)) {
-    runtime.mailboxDirector.handleEmission(emission);
+  const kever = runtime.hby.db.getKever(pre);
+  // Publish the whole known KEL prefix stream so a mailbox consumer that just
+  // learned "remote state is newer" can catch local accepted state up enough
+  // for signature verification and later KSN acceptance to succeed.
+  const parts = [...runtime.hby.db.clonePreIter(pre, 0)];
+  if (kever?.delpre) {
+    parts.push(...runtime.hby.db.cloneDelegation(kever));
   }
+  if (parts.length === 0) {
+    return;
+  }
+
+  runtime.mailboxDirector.publish(
+    destination,
+    "/replay",
+    Uint8Array.from(concatBytes(...parts)),
+  );
 }

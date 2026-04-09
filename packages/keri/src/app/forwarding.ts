@@ -714,7 +714,12 @@ function defaultTopicForRoute(route: string): string {
   return trimmed.split("/")[0] ?? "";
 }
 
-/** Public helper for deriving mailbox topic defaults from one EXN route. */
+/**
+ * Public helper for deriving mailbox topic defaults from one EXN route.
+ *
+ * This stays exported because CLI and runtime call sites both need one shared
+ * answer for "which mailbox topic should this route land in by default?"
+ */
 export function mailboxTopicForRoute(route: string): string {
   return defaultTopicForRoute(route);
 }
@@ -1064,7 +1069,7 @@ function positiveTimeoutMs(
  * Body-mode policy:
  * - send the whole provided payload in the request body
  */
-function* postCesrMessage(
+export function* postCesrMessage(
   url: string,
   body: Uint8Array,
   bodyMode: "header" | "body",
