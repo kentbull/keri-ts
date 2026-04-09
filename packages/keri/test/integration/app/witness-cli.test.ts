@@ -614,3 +614,286 @@ Deno.test("CLI integration - receipt-endpoint rotation and interaction converge 
     await Promise.all(children.map((child) => stopChild(child)));
   }
 });
+
+Deno.test("CLI integration - successive rotate and interact events stay fully witnessed across three witnesses", async () => {
+  const headDirPath = await Deno.makeTempDir({
+    prefix: "tufa-witness-long-chain-",
+  });
+  const witness1Name = `wit1-${crypto.randomUUID()}`;
+  const witness2Name = `wit2-${crypto.randomUUID()}`;
+  const witness3Name = `wit3-${crypto.randomUUID()}`;
+  const controllerName = `ctrl-${crypto.randomUUID()}`;
+  const controllerAlias = "controller";
+
+  const witness1Pre = await createWitnessIdentity(
+    witness1Name,
+    "wit1",
+    headDirPath,
+  );
+  const witness2Pre = await createWitnessIdentity(
+    witness2Name,
+    "wit2",
+    headDirPath,
+  );
+  const witness3Pre = await createWitnessIdentity(
+    witness3Name,
+    "wit3",
+    headDirPath,
+  );
+  await initController(controllerName, headDirPath);
+
+  const ports = [
+    { http: randomPort(), tcp: randomPort() },
+    { http: randomPort(), tcp: randomPort() },
+    { http: randomPort(), tcp: randomPort() },
+  ];
+  const children = [
+    startWitnessHost(
+      witness1Name,
+      "wit1",
+      headDirPath,
+      ports[0]!.http,
+      ports[0]!.tcp,
+    ),
+    startWitnessHost(
+      witness2Name,
+      "wit2",
+      headDirPath,
+      ports[1]!.http,
+      ports[1]!.tcp,
+    ),
+    startWitnessHost(
+      witness3Name,
+      "wit3",
+      headDirPath,
+      ports[2]!.http,
+      ports[2]!.tcp,
+    ),
+  ];
+
+  try {
+    await Promise.all(ports.map(({ http }) => waitForHealth(http)));
+
+    await resolveOobi(
+      controllerName,
+      headDirPath,
+      `http://127.0.0.1:${ports[0]!.http}/oobi/${witness1Pre}/witness/${witness1Pre}`,
+    );
+    await resolveOobi(
+      controllerName,
+      headDirPath,
+      `http://127.0.0.1:${ports[1]!.http}/oobi/${witness2Pre}/witness/${witness2Pre}`,
+    );
+    await resolveOobi(
+      controllerName,
+      headDirPath,
+      `http://127.0.0.1:${ports[2]!.http}/oobi/${witness3Pre}/witness/${witness3Pre}`,
+    );
+
+    const incepted = await requireSuccess(
+      "controller incept with three witnesses",
+      runTufa([
+        "incept",
+        "--name",
+        controllerName,
+        "--head-dir",
+        headDirPath,
+        "--alias",
+        controllerAlias,
+        "--transferable",
+        "--icount",
+        "1",
+        "--isith",
+        "1",
+        "--ncount",
+        "1",
+        "--nsith",
+        "1",
+        "--wits",
+        witness1Pre,
+        "--wits",
+        witness2Pre,
+        "--wits",
+        witness3Pre,
+        "--toad",
+        "2",
+        "--receipt-endpoint",
+      ]),
+    );
+    const controllerPre = extractPrefix(incepted.stdout);
+
+    const steps = [
+      {
+        kind: "rotate",
+        label: "controller rotate step 1",
+        expectedSn: 1,
+        args: ["--receipt-endpoint", "--toad", "2"],
+      },
+      {
+        kind: "interact",
+        label: "controller interact step 1",
+        expectedSn: 2,
+        args: [
+          "--receipt-endpoint",
+          "--data",
+          "{\"anchor\":\"step-1\"}",
+        ],
+      },
+      {
+        kind: "rotate",
+        label: "controller rotate step 2",
+        expectedSn: 3,
+        args: ["--receipt-endpoint", "--toad", "2"],
+      },
+      {
+        kind: "interact",
+        label: "controller interact step 2",
+        expectedSn: 4,
+        args: [
+          "--receipt-endpoint",
+          "--data",
+          "{\"anchor\":\"step-2\"}",
+        ],
+      },
+      {
+        kind: "rotate",
+        label: "controller rotate step 3",
+        expectedSn: 5,
+        args: ["--receipt-endpoint", "--toad", "2"],
+      },
+      {
+        kind: "interact",
+        label: "controller interact step 3",
+        expectedSn: 6,
+        args: [
+          "--receipt-endpoint",
+          "--data",
+          "{\"anchor\":\"step-3\"}",
+        ],
+      },
+    ] as const;
+
+    for (const step of steps) {
+      const result = await requireSuccess(
+        step.label,
+        runTufa([
+          step.kind,
+          "--name",
+          controllerName,
+          "--head-dir",
+          headDirPath,
+          "--alias",
+          controllerAlias,
+          ...step.args,
+        ]),
+      );
+      assertStringIncludes(
+        result.stdout,
+        `New Sequence No.  ${step.expectedSn}`,
+      );
+    }
+
+    await run(function*() {
+      const controllerHby = yield* createHabery({
+        name: controllerName,
+        headDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      const witness1Hby = yield* createHabery({
+        name: witness1Name,
+        headDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      const witness2Hby = yield* createHabery({
+        name: witness2Name,
+        headDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      const witness3Hby = yield* createHabery({
+        name: witness3Name,
+        headDirPath,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      try {
+        const witnessHbys = [witness1Hby, witness2Hby, witness3Hby];
+        const expectedSaids: string[] = [];
+
+        function assertFullyWitnessedEverywhere(sn: number): string {
+          const controllerSaid = controllerHby.db.kels.getLast(
+            controllerPre,
+            sn,
+          );
+          assertExists(controllerSaid);
+          assertEquals(
+            controllerHby.db.getFel(controllerPre, sn),
+            controllerSaid,
+          );
+          assertEquals(
+            controllerHby.db.wigs.get(dgKey(controllerPre, controllerSaid))
+              .length,
+            3,
+          );
+
+          for (const hby of witnessHbys) {
+            assertEquals(
+              hby.db.kels.getLast(controllerPre, sn),
+              controllerSaid,
+            );
+            assertEquals(hby.db.getFel(controllerPre, sn), controllerSaid);
+            assertEquals(
+              hby.db.wigs.get(dgKey(controllerPre, controllerSaid)).length,
+              3,
+            );
+          }
+
+          return controllerSaid;
+        }
+
+        const finalState = controllerHby.db.getState(controllerPre);
+        assertEquals(finalState?.s, "6");
+        assertEquals(finalState?.bt, "2");
+        assertEquals(finalState?.b, [witness1Pre, witness2Pre, witness3Pre]);
+        assertEquals(controllerHby.db.getKever(controllerPre)?.sn, 6);
+        for (const hby of witnessHbys) {
+          assertEquals(hby.db.getKever(controllerPre)?.sn, 6);
+        }
+
+        for (let sn = 0; sn <= 6; sn += 1) {
+          expectedSaids.push(assertFullyWitnessedEverywhere(sn));
+        }
+
+        const ilks = expectedSaids.map((said) => {
+          const event = controllerHby.db.getEvtSerder(controllerPre, said);
+          assertExists(event);
+          return event.ked?.["t"];
+        });
+        assertEquals(ilks, ["icp", "rot", "ixn", "rot", "ixn", "rot", "ixn"]);
+
+        for (
+          const [sn, anchor] of [
+            [2, "step-1"],
+            [4, "step-2"],
+            [6, "step-3"],
+          ] as const
+        ) {
+          const said = expectedSaids[sn];
+          assertExists(said);
+          const event = controllerHby.db.getEvtSerder(controllerPre, said);
+          assertExists(event);
+          assertEquals(event.ked?.["a"], [{ anchor }]);
+        }
+      } finally {
+        yield* witness3Hby.close();
+        yield* witness2Hby.close();
+        yield* witness1Hby.close();
+        yield* controllerHby.close();
+      }
+    });
+  } finally {
+    await Promise.all(children.map((child) => stopChild(child)));
+  }
+});

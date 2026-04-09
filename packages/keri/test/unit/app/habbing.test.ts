@@ -3,6 +3,7 @@
 import { run } from "effection";
 import {
   assertEquals,
+  assertExists,
   assertInstanceOf,
   assertNotEquals,
   assertRejects,
@@ -138,6 +139,58 @@ Deno.test("Hab.interact advances accepted state, preserves keys, and commits anc
         "was not accepted",
       );
       assertEquals(estOnlyHab.kever?.sn, 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Hab.interact preserves hex-width boundaries across successive accepted events", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-interact-hex-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const acceptedHab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      for (let step = 1; step <= 256; step += 1) {
+        const msg = acceptedHab.interact({ data: [{ step }] });
+        assertEquals(msg.length > 0, true);
+      }
+
+      const finalState = hby.db.getState(acceptedHab.pre);
+      assertEquals(acceptedHab.kever?.sn, 256);
+      assertEquals(finalState?.s, "100");
+
+      for (
+        const [sn, expectedHex] of [
+          [15, "f"],
+          [16, "10"],
+          [255, "ff"],
+          [256, "100"],
+        ] as const
+      ) {
+        const said = hby.db.kels.getLast(acceptedHab.pre, sn);
+        assertExists(said);
+        assertEquals(hby.db.getFel(acceptedHab.pre, sn), said);
+
+        const event = hby.db.getEvtSerder(acceptedHab.pre, said);
+        assertExists(event);
+        assertInstanceOf(event, SerderKERI);
+        assertEquals(event.ked?.["s"], expectedHex);
+
+        if (sn === 256) {
+          assertEquals(event.ked?.["a"], [{ step: 256 }]);
+        }
+      }
     } finally {
       yield* hby.close(true);
     }
