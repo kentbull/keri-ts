@@ -1,11 +1,7 @@
 // @file-test-lane interop-witness
 
 import { run } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -27,9 +23,7 @@ function randomPort(): number {
 }
 
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((candidate) =>
-    candidate.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((candidate) => candidate.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -281,12 +275,9 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
     await waitForHealth(witness1Port);
     await waitForHealth(witness2Port);
 
-    const witness1WitnessOobi =
-      `http://127.0.0.1:${witness1Port}/oobi/${witness1Pre}/witness/${witness1Pre}`;
-    const witness2WitnessOobi =
-      `http://127.0.0.1:${witness2Port}/oobi/${witness2Pre}/witness/${witness2Pre}`;
-    const witness1MailboxOobi =
-      `http://127.0.0.1:${witness1Port}/oobi/${witness1Pre}/mailbox/${witness1Pre}`;
+    const witness1WitnessOobi = `http://127.0.0.1:${witness1Port}/oobi/${witness1Pre}/witness/${witness1Pre}`;
+    const witness2WitnessOobi = `http://127.0.0.1:${witness2Port}/oobi/${witness2Pre}/witness/${witness2Pre}`;
+    const witness1MailboxOobi = `http://127.0.0.1:${witness1Port}/oobi/${witness1Pre}/mailbox/${witness1Pre}`;
 
     const mailboxOobiResponse = await fetch(witness1MailboxOobi);
     try {
@@ -376,7 +367,7 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
     );
     assertStringIncludes(mailboxListed.stdout, witness1Pre);
 
-    await run(function* () {
+    await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,
@@ -485,23 +476,17 @@ Deno.test("CLI integration - receipt-endpoint rotation and interaction converge 
     await resolveOobi(
       controllerName,
       headDirPath,
-      `http://127.0.0.1:${
-        ports[0]!.http
-      }/oobi/${witness1Pre}/witness/${witness1Pre}`,
+      `http://127.0.0.1:${ports[0]!.http}/oobi/${witness1Pre}/witness/${witness1Pre}`,
     );
     await resolveOobi(
       controllerName,
       headDirPath,
-      `http://127.0.0.1:${
-        ports[1]!.http
-      }/oobi/${witness2Pre}/witness/${witness2Pre}`,
+      `http://127.0.0.1:${ports[1]!.http}/oobi/${witness2Pre}/witness/${witness2Pre}`,
     );
     await resolveOobi(
       controllerName,
       headDirPath,
-      `http://127.0.0.1:${
-        ports[2]!.http
-      }/oobi/${witness3Pre}/witness/${witness3Pre}`,
+      `http://127.0.0.1:${ports[2]!.http}/oobi/${witness3Pre}/witness/${witness3Pre}`,
     );
 
     const incepted = await requireSuccess(
@@ -564,11 +549,11 @@ Deno.test("CLI integration - receipt-endpoint rotation and interaction converge 
         controllerAlias,
         "--receipt-endpoint",
         "--data",
-        '{"anchor":"acdc"}',
+        "{\"anchor\":\"acdc\"}",
       ]),
     );
 
-    await run(function* () {
+    await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,

@@ -584,7 +584,7 @@ Deno.test("CLI - sign, verify, rotate, and interact commands work for one persis
     name,
     headDirPath,
     alias,
-    data: ['{"anchor":"acdc"}'],
+    data: ["{\"anchor\":\"acdc\"}"],
   }));
   assertEquals(
     interact.code,

@@ -549,3 +549,21 @@ Then do task: <TASK>.
   reintroducing per-file subprocess glue that points back at `keri/mod.ts`.
 - Verification: local targeted `agent-cli` and unit `cli.test.ts` help tests
   passed after repointing stale helpers and removing raw `"deno"` launches.
+
+### 2026-04-09 - `tufa` CLI Source Changes Require Regenerating `packages/tufa/npm/**`
+
+- Substance: the published `tufa` package surface can drift from live source if
+  `packages/tufa/npm/**` is not rebuilt after CLI command changes. That bit us
+  on `interact`: live `packages/tufa/src/**` had the real top-level command,
+  while generated npm handlers still advertised the old placeholder command.
+- Why it matters: the bad mental model was "if `packages/tufa/mod.ts` works, the
+  published `tufa` package must also be correct." That is false whenever
+  checked-in generated npm output lags behind source.
+- Next: after Tufa CLI/parser/handler changes, rebuild `packages/tufa/npm/**`
+  and verify the generated tree no longer contains stale placeholder/help text.
+  In this environment, `deno task build:npm` may also need Node/npm explicitly
+  on `PATH`.
+- Verification: local `packages/tufa/test/cli.test.ts`, `keri` interact unit
+  coverage, witness receipt-convergence coverage, and a successful
+  `PATH="/opt/homebrew/bin:$PATH" deno task build:npm` in `packages/tufa`
+  passed; generated npm handlers now point at the real `interact` command body.
