@@ -48,6 +48,7 @@ interface ChallengeVerifyArgs {
   compat?: boolean;
   outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
+  pollDelayMs?: number;
 }
 
 /** Implement `tufa challenge generate`. */
@@ -160,6 +161,7 @@ export function* challengeVerifyCommand(
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
+    pollDelayMs: args.pollDelayMs ? Number(args.pollDelayMs) : undefined,
   };
 
   if (!commandArgs.name) {
@@ -209,6 +211,7 @@ export function* challengeVerifyCommand(
     runtime.mailboxDirector.topics.clear();
     runtime.mailboxDirector.registerTopic("/challenge");
     const timeoutMs = Math.max(1, commandArgs.timeout ?? 10) * 1000;
+    const pollDelayMs = Math.max(1, commandArgs.pollDelayMs ?? 250);
     const deadline = Date.now() + timeoutMs;
     let match = findVerifiedChallengeResponse(hby.db, signer, words);
 
@@ -216,7 +219,7 @@ export function* challengeVerifyCommand(
       yield* processMailboxTurn(runtime);
       match = findVerifiedChallengeResponse(hby.db, signer, words);
       if (!match && Date.now() < deadline) {
-        yield* sleep(250);
+        yield* sleep(pollDelayMs);
       }
     }
 

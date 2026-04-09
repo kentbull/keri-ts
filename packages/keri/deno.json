@@ -32,6 +32,7 @@
     "test:quality:app-light": "bash ../../scripts/ci/run-keri-test-group.sh app-fast",
     "test:quality:server": "bash ../../scripts/ci/run-keri-test-group.sh server",
     "test:quality:runtime-medium": "bash ../../scripts/ci/run-keri-test-group.sh runtime-medium",
+    "test:quality:runtime-slow": "bash ../../scripts/ci/run-keri-test-group.sh runtime-slow",
     "test:quality:app-stateful-a": "bash ../../scripts/ci/run-keri-test-group.sh app-stateful-a",
     "test:quality:app-stateful-b": "bash ../../scripts/ci/run-keri-test-group.sh app-stateful-b",
     "test:quality:interop-parity": "bash ../../scripts/ci/run-keri-test-group.sh interop-parity",

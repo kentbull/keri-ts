@@ -4,6 +4,7 @@ import { type Operation, run, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { startServer } from "../../../src/app/server.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
+import { startTestServer } from "../../runtime-test-hosts.ts";
 
 /**
  * Integration test for startServer function
@@ -41,30 +42,22 @@ import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection
  */
 
 Deno.test("Integration: Server - startServer with HTTP requests", async () => {
-  const testPort = 8001; // Use a different port to avoid conflicts
-
   await run(function*(): Operation<void> {
-    // Spawn the server as a background task
-    // This creates a child task in the Effection task tree
-    // The spawn() function returns a Task that can be halted or awaited
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(testPort);
-    });
-
-    // Wait for server to be ready
-    // This polls the server until it responds, demonstrating how to wait
-    // for async operations in Effection
-    yield* waitForServer(testPort, { host: "localhost", maxAttempts: 10 });
+    const { address, task: serverTask } = yield* startTestServer();
 
     try {
       // Test 1: health endpoint
-      const response1 = yield* fetchOp(`http://localhost:${testPort}/health`);
+      const response1 = yield* fetchOp(
+        `http://${address.hostname}:${address.port}/health`,
+      );
       assertEquals(response1.status, 200);
       const text1 = yield* textOp(response1);
       assertEquals(text1, "ok");
 
       // Test 2: 404 for unknown endpoint
-      const response2 = yield* fetchOp(`http://localhost:${testPort}/unknown`);
+      const response2 = yield* fetchOp(
+        `http://${address.hostname}:${address.port}/unknown`,
+      );
       assertEquals(response2.status, 404);
       yield* textOp(response2);
     } finally {
@@ -79,30 +72,30 @@ Deno.test("Integration: Server - startServer with HTTP requests", async () => {
  * Test demonstrating concurrent requests against /health
  */
 Deno.test("Integration: Server - startServer with concurrent requests", async () => {
-  const testPort = 8002;
-
   await run(function*(): Operation<void> {
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(testPort);
-    });
-
-    yield* waitForServer(testPort, { host: "localhost", maxAttempts: 10 });
+    const { address, task: serverTask } = yield* startTestServer();
 
     try {
       // Spawn multiple concurrent fetch operations
       // Each spawn creates a child task that runs concurrently
       const request1 = yield* spawn(function*() {
-        const res = yield* fetchOp(`http://localhost:${testPort}/health`);
+        const res = yield* fetchOp(
+          `http://${address.hostname}:${address.port}/health`,
+        );
         return yield* textOp(res);
       });
 
       const request2 = yield* spawn(function*() {
-        const res = yield* fetchOp(`http://localhost:${testPort}/health`);
+        const res = yield* fetchOp(
+          `http://${address.hostname}:${address.port}/health`,
+        );
         return yield* textOp(res);
       });
 
       const request3 = yield* spawn(function*() {
-        const res = yield* fetchOp(`http://localhost:${testPort}/health`);
+        const res = yield* fetchOp(
+          `http://${address.hostname}:${address.port}/health`,
+        );
         return yield* textOp(res);
       });
 
@@ -127,26 +120,22 @@ Deno.test("Integration: Server - startServer with concurrent requests", async ()
  * Test demonstrating error handling in Effection task tree
  */
 Deno.test("Integration: Server - startServer error handling", async () => {
-  const testPort = 8003;
-
   await run(function*(): Operation<void> {
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(testPort);
-    });
-
-    yield* waitForServer(testPort, { host: "localhost", maxAttempts: 10 });
+    const { address, task: serverTask } = yield* startTestServer();
 
     try {
       // Test that errors propagate correctly through the task tree
       const response = yield* fetchOp(
-        `http://localhost:${testPort}/nonexistent`,
+        `http://${address.hostname}:${address.port}/nonexistent`,
       );
       assertEquals(response.status, 404);
       // Consume the response body to avoid leaks
       yield* textOp(response);
 
       // Test that the server continues to work after an error
-      const response2 = yield* fetchOp(`http://localhost:${testPort}/health`);
+      const response2 = yield* fetchOp(
+        `http://${address.hostname}:${address.port}/health`,
+      );
       assertEquals(response2.status, 200);
       const text = yield* textOp(response2);
       assertEquals(text, "ok");

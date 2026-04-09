@@ -2,6 +2,7 @@
 
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { t } from "../../../../cesr/mod.ts";
+import { reserveTcpPort } from "../../http-test-support.ts";
 
 interface CmdResult {
   code: number;
@@ -211,7 +212,7 @@ Deno.test("CLI - agent starts unencrypted stores with -n before or after port fl
   const alias = "test1";
   await initAndInceptStore({ name, headDirPath, alias });
 
-  const firstPort = 18110;
+  const firstPort = reserveTcpPort();
   const firstChild = await startTufaAgent(
     ["agent", "-n", name, "--head-dir", headDirPath, "-p", `${firstPort}`],
     firstPort,
@@ -224,7 +225,7 @@ Deno.test("CLI - agent starts unencrypted stores with -n before or after port fl
     await stopChild(firstChild);
   }
 
-  const secondPort = 18111;
+  const secondPort = reserveTcpPort();
   const secondChild = await startTufaAgent(
     ["agent", "--port", `${secondPort}`, "-n", name, "--head-dir", headDirPath],
     secondPort,
@@ -245,7 +246,7 @@ Deno.test("CLI - agent reopens encrypted stores with -P and --passcode", async (
   const passcode = "MyPasscodeARealSecret";
   await initAndInceptStore({ name, headDirPath, alias, passcode });
 
-  const firstPort = 18120;
+  const firstPort = reserveTcpPort();
   const firstChild = await startTufaAgent(
     [
       "agent",
@@ -268,7 +269,7 @@ Deno.test("CLI - agent reopens encrypted stores with -P and --passcode", async (
     await stopChild(firstChild);
   }
 
-  const secondPort = 18121;
+  const secondPort = reserveTcpPort();
   const secondChild = await startTufaAgent(
     [
       "agent",

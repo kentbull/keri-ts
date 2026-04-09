@@ -21,8 +21,8 @@ deployment, CI, and interoperability operations.
    because controllers also need the location/end-role material carried through
    the controller OOBI path.
 4. The currently proved witness matrix is:
-   - `tufa` controller with only KERIpy witnesses, including successful
-     cut/add witness rotation and full receipt convergence.
+   - `tufa` controller with only KERIpy witnesses, including successful cut/add
+     witness rotation and full receipt convergence.
    - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
      witnessed rotations while keeping the witness set stable.
    - `tufa` controller with a mixed `tufa` + KERIpy witness set, including
@@ -46,17 +46,18 @@ deployment, CI, and interoperability operations.
     native addon in the compatible way rather than assuming runner defaults are
     safe.
 11. The LMDB v1-compatible rebuild path should rebuild the native addon directly
-    instead of using the published package's `npm rebuild ... --build-from-source`
-    path, which expects a JS build toolchain CI may not provide.
+    instead of using the published package's
+    `npm rebuild ... --build-from-source` path, which expects a JS build
+    toolchain CI may not provide.
 12. Cache topology is part of correctness. Shared bootstrap caches are useful,
     but LMDB-v1-sensitive interop jobs need their own cache boundary so a
     non-interop job cannot accidentally suppress the required rebuild.
 13. CI feedback should follow isolation boundaries, not folder names: static
-    checks, interop-sensitive jobs, smoke paths, and slower lanes should be split
-    so failures localize quickly without breaking branch-protection stability.
-    That now includes KERI lane fanout inside the default path itself: DB,
-    core, app/server, runtime-medium, stateful app, and interop jobs should be
-    separate when their wall clocks diverge materially.
+    checks, interop-sensitive jobs, smoke paths, and slower lanes should be
+    split so failures localize quickly without breaking branch-protection
+    stability. That now includes KERI lane fanout inside the default path
+    itself: DB, core, app/server, runtime-medium, stateful app, and interop jobs
+    should be separate when their wall clocks diverge materially.
 14. Exact env pins, action SHAs, environment assertions, and saved artifacts are
     part of reproducibility for a native-addon library repo, not optional
     polish.
@@ -65,7 +66,7 @@ deployment, CI, and interoperability operations.
     from source-owned `@file-test-lane` and `@test-lane` annotations,
     `test:quality` vs `test:slow` is the durable default/slow split, and lane
     audit should fail if any discovered test case is unassigned or double-owned.
-    The current maintained inventory is 61 KERI test files and 360 named tests.
+    The current maintained inventory is 66 KERI test files and 360 named tests.
     Keep compat LMDB rebuild out of the runner itself; the harness should audit
     and execute, while job/local setup owns native-addon preparation.
 16. Parallelism policy is now explicit too. `db-fast`, `core-fast`, and the
@@ -73,7 +74,16 @@ deployment, CI, and interoperability operations.
     while `server`, `runtime-*`, `app-stateful-*`, and `interop-*` stay serial
     until their fixed-port, global-state, or persisted-store assumptions are
     refactored away. Override worker count with `KERI_TEST_JOBS` or
-    `CESR_TEST_JOBS`, with `DENO_JOBS` as the shared fallback.
+    `CESR_TEST_JOBS`, with `DENO_JOBS` as the shared fallback. The phase-2
+    runtime split now follows a stronger rule too: once a mixed file contains a
+    pure module-safe slice and a listener-backed/mailbox-heavy slice, prefer
+    physical file splits such as `challenge-generate`,
+    `challenge-direct-runtime`, `challenge-mailbox-runtime`,
+    `gate-e-local-state`, `mailbox-poller-runtime`, and `mailbox-runtime-slow`
+    over permanent per-test lane escape hatches. CI must mirror that move: once
+    default-path coverage is extracted into `runtime-slow`, PR workflows need a
+    dedicated runtime-slow job instead of assuming `runtime-medium` still covers
+    it.
 
 ## Use This Doc For
 
@@ -101,12 +111,14 @@ deployment, CI, and interoperability operations.
    new tests. Updating the test file without updating annotations or lane audit
    is now a topology regression.
 6. Keep runtime/server lanes serial until the tests stop depending on fixed
-   ports, process-global state, or shared stores. More workers are not a fix
-   for poor isolation.
+   ports, process-global state, or shared stores. More workers are not a fix for
+   poor isolation. The current safe rewrite seam is shared ephemeral-port
+   helpers plus truthful host-reported port capture, not more random fixed-port
+   literals.
 7. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
    required control path, prove it in its own scenario instead of silently
-   expanding the stable-control test that currently covers repeated
-   same-witness rotations.
+   expanding the stable-control test that currently covers repeated same-witness
+   rotations.
 8. When infra-role protocol work deepens, add it here as durable operational
    rules rather than as workflow-by-workflow diary entries.
 
@@ -150,8 +162,8 @@ deployment, CI, and interoperability operations.
 - Durable rule: for controller `ksn` queries without witnesses, mailbox
   compatibility is not enough by itself. The requester may need replay material
   quickly enough to verify the signer state behind the reply. In practice that
-  means the host must preserve the mailbox publication path for `/reply` and
-  may also need to bridge replay catch-up for cross-implementation clients.
+  means the host must preserve the mailbox publication path for `/reply` and may
+  also need to bridge replay catch-up for cross-implementation clients.
 - Operationally, treat mailbox topic ownership (`dest` vs subject prefix) as a
   correctness boundary, not a storage detail. The wrong bucket silently turns
   "query succeeded" into stale remote state.
@@ -177,19 +189,19 @@ deployment, CI, and interoperability operations.
 
 - The fastest way to separate controller-store convergence bugs from
   witness-store convergence bugs is to dump both sides with `tufa db dump`
-  instead of guessing from CLI success alone. For compat-mode KLI/KERIpy
-  stores, dump `baser.kels`, `baser.wigs`, and `baser.states` first.
-- The mixed KLI-controller replacement investigation showed why this matters:
-  a controller can have the final event while both the controller and a `tufa`
+  instead of guessing from CLI success alone. For compat-mode KLI/KERIpy stores,
+  dump `baser.kels`, `baser.wigs`, and `baser.states` first.
+- The mixed KLI-controller replacement investigation showed why this matters: a
+  controller can have the final event while both the controller and a `tufa`
   witness still lack the full active receipt set. That instantly rules out
   "controller fetch only" and points at the receipt/fanout path instead.
 
 ### 2026-04-08 - Hosted Witness Root HTTP Ingress Must Use Witness Semantics
 
-- The durable host fix for KLI-driven replacement parity was in the shared
-  HTTP host, not in the low-level receipt-core. Generic POST/PUT requests to a
-  hosted witness base path must be processed through the witness-local ingress
-  seam, just like TCP witness ingress and `/receipts`.
+- The durable host fix for KLI-driven replacement parity was in the shared HTTP
+  host, not in the low-level receipt-core. Generic POST/PUT requests to a hosted
+  witness base path must be processed through the witness-local ingress seam,
+  just like TCP witness ingress and `/receipts`.
 - Keep mailbox `qry/mbx`, `/fwd`, `/receipts`, and `/query` behavior on their
   existing paths. The correction is specifically for ordinary witness root-path
   event/reply traffic on the hosted witness AID.
@@ -247,13 +259,34 @@ deployment, CI, and interoperability operations.
 
 - After the CI fanout split, the next durable speed win was inside the runner:
   keep `db-fast` and `core-fast` parallel, split `app-fast` into
-  `app-fast-parallel` vs `app-fast-isolated`, and leave `server`,
-  `runtime-*`, `app-stateful-*`, and `interop-*` serial until their
-  isolation assumptions change.
+  `app-fast-parallel` vs `app-fast-isolated`, and leave `server`, `runtime-*`,
+  `app-stateful-*`, and `interop-*` serial until their isolation assumptions
+  change.
 - Default worker selection should be explicit and inspectable. KERI parallel
-  lanes now honor `KERI_TEST_JOBS`, then `DENO_JOBS`, otherwise auto-detect
-  CPUs and cap per lane; CESR does the same with `CESR_TEST_JOBS` and an
-  8-worker cap.
+  lanes now honor `KERI_TEST_JOBS`, then `DENO_JOBS`, otherwise auto-detect CPUs
+  and cap per lane; CESR does the same with `CESR_TEST_JOBS` and an 8-worker
+  cap.
 - Durable rule: use source-owned lane metadata to encode the true isolation
   boundary. Do not keep fragile side manifests of "safe" test names in the
   runner just to force more parallelism.
+
+### 2026-04-09 - Runtime File Splits Beat Long-Lived Slow-Test Escape Hatches
+
+- The next durable runtime optimization step was not "turn on more workers" for
+  `runtime-*`. It was to physically split mixed files where the safe parallel
+  boundary was clearly the module.
+- `challenge-runtime.test.ts` is now three files: `challenge-generate.test.ts`,
+  `challenge-direct-runtime.test.ts`, and `challenge-mailbox-runtime.test.ts`.
+- Pure Gate E local-state cases now live in `gate-e-local-state.test.ts`, while
+  hosted/runtime Gate E flows stay in `gate-e-runtime.test.ts`.
+- Mailbox poller/local-batch semantics now live in
+  `mailbox-poller-runtime.test.ts`, and the slow mailbox admin/CLI/challenge/
+  authorization flows now live in `mailbox-runtime-slow.test.ts`, leaving the
+  remaining `mailbox-runtime.test.ts` file medium-owned.
+- The shared host rewrite seam is now explicit: `startStaticHttpHost(...)` for
+  lightweight OOBI/mailbox fixtures, `startTestServer(...)` for runtime-backed
+  hosts, and truthful actual-port reporting through
+  `startServer(..., { onListen })`, including the Node fallback.
+- When a remaining hosted runtime test still cannot use the fully actual-port
+  seam yet, the minimum acceptable fallback is reserving an ephemeral TCP port.
+  Do not keep hard-coded localhost ports in active test files.

@@ -34,6 +34,7 @@
     "test:quality:keri:app-fast-parallel": "cd packages/keri && deno task test:quality:app-fast-parallel",
     "test:quality:keri:app-fast-isolated": "cd packages/keri && deno task test:quality:app-fast-isolated",
     "test:quality:keri:runtime-medium": "cd packages/keri && deno task test:quality:runtime-medium",
+    "test:quality:keri:runtime-slow": "cd packages/keri && deno task test:quality:runtime-slow",
     "test:quality:keri:app-stateful-a": "cd packages/keri && deno task test:quality:app-stateful-a",
     "test:quality:keri:app-stateful-b": "cd packages/keri && deno task test:quality:app-stateful-b",
     "test:quality:keri:interop-parity": "cd packages/keri && deno task test:quality:interop-parity",

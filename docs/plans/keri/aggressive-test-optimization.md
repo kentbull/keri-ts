@@ -33,8 +33,8 @@
     and receipt-helper scenario groups
   - `list-aid.test.ts` and `incept.test.ts` now reuse initialized stores for
     multi-assertion happy-path coverage
-  - grouped verification passed for `app-stateful-a`, `app-stateful-b`, and
-    lane audit in a stable post-restart environment
+  - grouped verification passed for `app-stateful-a`, `app-stateful-b`, and lane
+    audit in a stable post-restart environment
   - `app-fast` is now a public alias over `app-fast-parallel` and
     `app-fast-isolated`, so whole-file-safe app tests can use
     `deno test --parallel` without dragging `console`/`HOME` mutators into the
@@ -43,6 +43,24 @@
     `KERI_TEST_JOBS` first, then `DENO_JOBS`
   - CESR now runs through a tiny wrapper that uses `deno test --parallel` with
     capped auto-detected jobs and a package-local `CESR_TEST_JOBS` override
+  - shared runtime-test helpers now cover ephemeral static hosts, ephemeral
+    runtime hosts, and truthful Node fallback `onListen` port reporting so
+    listener-backed tests can stop depending on fixed literals
+  - `challenge-runtime.test.ts` is now physically split into
+    `challenge-generate.test.ts`, `challenge-direct-runtime.test.ts`, and
+    `challenge-mailbox-runtime.test.ts`
+  - pure Gate E local-state coverage now lives in `gate-e-local-state.test.ts`,
+    while the remaining hosted/runtime Gate E flows stay in
+    `gate-e-runtime.test.ts`
+  - mailbox poller/local-batch semantics now live in
+    `mailbox-poller-runtime.test.ts`, and the mailbox slow-path flows were moved
+    out of `mailbox-runtime.test.ts` into `mailbox-runtime-slow.test.ts` so the
+    medium file no longer depends on slow-lane per-test overrides
+  - remaining Gate E hosted tests now reserve ephemeral ports instead of sharing
+    fixed localhost literals across the file
+  - PR CI now includes an explicit `keri-runtime-slow-tests` job so moving
+    mailbox-heavy runtime coverage out of `runtime-medium` does not silently
+    reduce the checked surface
 - Follow-on, not part of this landed KERI tranche:
   - deeper perf work only if later profiling shows a new dominant local pain
     point
@@ -56,46 +74,47 @@
 - Recent branch history is mailbox-heavy. The current branch includes mailbox
   ingress, mailbox polling and timeout work, multipart CESR mailbox add, and
   mailbox architecture documentation.
-- The repo currently contains 61 KERI `*.test.ts` files and 360 named
+- The repo currently contains 66 KERI `*.test.ts` files and 360 named
   `Deno.test(...)` cases.
 - The old grouped shell runner covered only 31 of those 61 files, so the old
   default path was materially incomplete.
 - The omitted surface was larger than the original draft plan claimed. Missing
   ownership included the recent mailbox/runtime files, witness/runtime files,
   core KEL/query/reply coverage, and `db/mailboxing.test.ts`.
-- `interop-kli-tufa.test.ts` is now one of the biggest costs at roughly 85 to
-  94 seconds wall clock. The expensive part is the mailbox scenarios, not the
-  basic parity scenario.
+- `interop-kli-tufa.test.ts` is now one of the biggest costs at roughly 85 to 94
+  seconds wall clock. The expensive part is the mailbox scenarios, not the basic
+  parity scenario.
 - `interop-gates-harness.test.ts` now has ready B, C, D, and E scenarios, but
   the grouped runner still only exercises B and C.
-- The new mailbox/runtime tests are materially expensive:
-  `gate-e-runtime.test.ts` is about 70 seconds,
-  `mailbox-runtime.test.ts` about 30 seconds,
-  `challenge-runtime.test.ts` about 16 seconds,
-  `forwarding.test.ts` about 16 seconds,
-  and `agent-cli.test.ts` about 17 seconds.
+- The new mailbox/runtime tests are materially expensive, but the mixed files
+  are now more truthful about where that cost lives: `gate-e-runtime.test.ts`
+  remains one of the dominant hosted-runtime files,
+  `mailbox-runtime-slow.test.ts` is about 51 seconds on the current machine,
+  `mailbox-runtime.test.ts` about 29 seconds, `challenge-direct-runtime.test.ts`
+  and `challenge-mailbox-runtime.test.ts` now own the heavier challenge flows,
+  `forwarding.test.ts` is about 16 seconds, and `agent-cli.test.ts` about 17
+  seconds.
 - The older app-stateful tests are still worth watching, but the worst repeated
-  setup churn is no longer blind duplication:
-  `habbing.test.ts` is now about 66 seconds after grouping related scenarios,
-  `incept.test.ts` about 12 seconds,
-  `cli.test.ts` about 10 seconds,
-  `list-aid.test.ts` about 2 seconds,
-  `export.test.ts` about 2 seconds,
-  and `compat-list-aid.test.ts` about 2 seconds.
+  setup churn is no longer blind duplication: `habbing.test.ts` is now about 66
+  seconds after grouping related scenarios, `incept.test.ts` about 12 seconds,
+  `cli.test.ts` about 10 seconds, `list-aid.test.ts` about 2 seconds,
+  `export.test.ts` about 2 seconds, and `compat-list-aid.test.ts` about 2
+  seconds.
 - Compat LMDB setup is already job/local setup owned. The truthful fix here is
   lane ownership and orchestration, not runner-hidden rebuild work.
-- `db/mailboxing.test.ts` is fast, about 1 second wall clock and about 50ms
-  test time, so it is a lane-classification problem, not a test-speed problem.
+- `db/mailboxing.test.ts` is fast, about 1 second wall clock and about 50ms test
+  time, so it is a lane-classification problem, not a test-speed problem.
 - CESR still has slow exhaustive and fuzz-heavy files, but KERI mailbox/runtime
   and interop are now the dominant default-path problem.
 - The repo now has an authoritative lane runner with one source-discovered lane
   map, explicit `quality` vs `slow` ownership, and lane audit enforcement.
-- Mixed-speed files still stay physically mixed where that is cheaper to
-  maintain, but lane ownership now lives with the tests themselves through
-  source annotations instead of external runner-only manifests.
-- Immediate parallel-safe coverage is now broader than before:
-  KERI `db-fast`, `core-fast`, and most of `app-fast`, plus the CESR package,
-  all run with capped auto-detected module parallelism by default.
+- The durable split rule is now more specific: when a runtime file mixes pure
+  assertions with listener-backed or mailbox-heavy flows, prefer physically
+  splitting the file at the module boundary instead of accumulating long-lived
+  per-test lane overrides.
+- Immediate parallel-safe coverage is now broader than before: KERI `db-fast`,
+  `core-fast`, and most of `app-fast`, plus the CESR package, all run with
+  capped auto-detected module parallelism by default.
 
 ## Verdict
 
@@ -121,8 +140,8 @@
   KERI runner that:
   - assigns every discovered KERI test case to exactly one lane
   - runs groups without re-execing the entire script per subgroup
-- Keep compat LMDB setup outside the runner. Validate ownership honestly, but
-  do not hide native rebuild work inside the harness.
+- Keep compat LMDB setup outside the runner. Validate ownership honestly, but do
+  not hide native rebuild work inside the harness.
 - Add a lane-audit check that fails if any KERI test file is unassigned or
   assigned more than once.
 - Keep task shape simple:
@@ -170,11 +189,11 @@
 - `app-fast`
   - public alias over `app-fast-parallel` and `app-fast-isolated`
 - `app-fast-parallel`
-  - small whole-file-safe integration/unit files plus the `agent-cli` help
-    slice and forwarding alias-resolution slice
+  - small whole-file-safe integration/unit files plus the `agent-cli` help slice
+    and forwarding alias-resolution slice
 - `app-fast-isolated`
-  - `console`/`HOME` mutating CLI surfaces such as `annotate`, `benchmark`,
-    and the output-capturing `version` test file
+  - `console`/`HOME` mutating CLI surfaces such as `annotate`, `benchmark`, and
+    the output-capturing `version` test file
 - `server`
   - `server.test.ts` on the truthful default path
 - `runtime-medium`
