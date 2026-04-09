@@ -1,8 +1,11 @@
 import { Ilks, type SerderKERI } from "../../../../../cesr/mod.ts";
-import { normalizeMbxTopicCursor } from "../../../core/mailbox-topics.ts";
-import { inspectCesrRequest, readRequiredCesrRequestBytes } from "../../cesr-http.ts";
-import type { HostedRouteResolution } from "../../mailboxing.ts";
-import { processWitnessIngress } from "../../witnessing.ts";
+import {
+  type HostedRouteResolution,
+  inspectCesrRequest,
+  processWitnessIngress,
+  readRequiredCesrRequestBytes,
+} from "../../../../../keri/runtime.ts";
+import { normalizeMbxTopicCursor } from "../../../../../keri/src/core/mailbox-topics.ts";
 import { jsonNoContentResponse, textResponse } from "../responses.ts";
 import { processRuntimeRequest, publishQueryCatchupReplay } from "../runtime-bridge.ts";
 import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
@@ -43,7 +46,7 @@ export function classifyCesrIngressRoute(
   serder: Pick<SerderKERI, "ilk" | "route" | "ked">,
 ): CesrIngressRoute {
   const mailboxAid = hosted.kind === "one" ? hosted.endpoint?.eid ?? null : null;
-  const witnessHab = context.options.witnessHab;
+  const witnessHab = context.policy.witnessHab;
 
   if (
     witnessHab
@@ -108,7 +111,7 @@ export async function handleGenericCesrIngress(
         runtime,
         bytes,
         ingressRoute.mailboxAid,
-        context.options.serviceHab,
+        context.policy.serviceHab,
       );
       return jsonNoContentResponse();
     case "mailboxQueryStream":
@@ -116,7 +119,7 @@ export async function handleGenericCesrIngress(
         runtime,
         bytes,
         ingressRoute.mailboxAid,
-        context.options.serviceHab,
+        context.policy.serviceHab,
       );
       if (!ingressRoute.pre) {
         return textResponse("Mailbox query is missing i", 400);
@@ -141,7 +144,7 @@ export async function handleGenericCesrIngress(
           runtime,
           bytes,
           ingressRoute.mailboxAid,
-          context.options.serviceHab,
+          context.policy.serviceHab,
         );
         if (ingressRoute.pre) {
           publishQueryCatchupReplay(runtime, emissions, ingressRoute.pre);

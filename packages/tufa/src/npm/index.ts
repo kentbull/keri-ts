@@ -8,4 +8,4 @@ export {
   CliExitError,
   reportCliFailure,
   tufa,
-} from "../../../keri/src/app/cli/cli.ts";
+} from "../cli/cli.ts";

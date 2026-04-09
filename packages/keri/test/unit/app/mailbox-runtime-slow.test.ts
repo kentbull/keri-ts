@@ -4,23 +4,23 @@ import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import {
+  mailboxAddCommand,
+  mailboxDebugCommand,
+  mailboxListCommand,
+  mailboxRemoveCommand,
+  mailboxUpdateCommand,
+} from "../../../../tufa/src/cli/mailbox.ts";
+import { startServer } from "../../../../tufa/src/host/http-server.ts";
+import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
-import {
-  mailboxAddCommand,
-  mailboxDebugCommand,
-  mailboxListCommand,
-  mailboxRemoveCommand,
-  mailboxUpdateCommand,
-} from "../../../src/app/cli/mailbox.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { startServer } from "../../../src/app/server.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";

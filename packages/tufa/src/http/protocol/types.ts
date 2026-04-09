@@ -1,7 +1,4 @@
-import type { AgentRuntime } from "../agent-runtime.ts";
-import type { Hab } from "../habbing.ts";
-import type { HostedRouteResolution } from "../mailboxing.ts";
-import type { RuntimeServerOptions } from "../server.ts";
+import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "../../../../keri/runtime.ts";
 
 /** Shared request handler contract consumed by both Deno and Node hosts. */
 export type ProtocolHandler = (req: Request) => Promise<Response>;
@@ -21,7 +18,7 @@ export interface ProtocolRequestContext {
   readonly pathname: string;
   readonly method: string;
   readonly runtime?: AgentRuntime;
-  readonly options: RuntimeServerOptions;
+  readonly policy: ProtocolHostPolicy;
   readonly hosted: HostedRouteResolution | null;
   readonly mailboxAdmin: HostedRouteResolution | null;
   readonly genericIngress: HostedRouteResolution | null;

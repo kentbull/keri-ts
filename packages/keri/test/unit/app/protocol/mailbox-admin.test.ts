@@ -2,12 +2,12 @@
 
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../../cesr/mod.ts";
-import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
-import type { CesrStreamInspection } from "../../../../src/app/cesr-http.ts";
 import {
   confirmMailboxAuthorization,
   validateMailboxAuthorizationReply,
-} from "../../../../src/app/protocol/endpoints/mailbox-admin.ts";
+} from "../../../../../tufa/src/http/protocol/endpoints/mailbox-admin.ts";
+import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
+import type { CesrStreamInspection } from "../../../../src/app/cesr-http.ts";
 
 function inspectionFor(
   route: string,

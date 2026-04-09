@@ -2,16 +2,16 @@
 
 import { assertEquals } from "jsr:@std/assert";
 import { Ilks } from "../../../../cesr/mod.ts";
-import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
-import type { Hab } from "../../../src/app/habbing.ts";
-import type { HostedRouteResolution } from "../../../src/app/mailboxing.ts";
 import {
   classifyCesrIngressRoute,
   classifyProtocolRoute,
   parseOobiRouteRequest,
   type ProtocolRequestContext,
-} from "../../../src/app/protocol-handler.ts";
-import type { RuntimeServerOptions } from "../../../src/app/server.ts";
+} from "../../../../tufa/src/http/protocol-handler.ts";
+import type { ProtocolHostPolicy } from "../../../runtime.ts";
+import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
+import type { Hab } from "../../../src/app/habbing.ts";
+import type { HostedRouteResolution } from "../../../src/app/mailboxing.ts";
 
 const NONE_HOSTED: HostedRouteResolution = {
   kind: "none",
@@ -41,7 +41,7 @@ function makeContext(
     pathname = "/",
     method = "GET",
     runtime = {} as AgentRuntime,
-    options = {},
+    policy = {},
     hosted = NONE_HOSTED,
     mailboxAdmin = NONE_HOSTED,
     genericIngress = NONE_HOSTED,
@@ -55,7 +55,7 @@ function makeContext(
     pathname,
     method,
     runtime,
-    options,
+    policy,
     hosted,
     mailboxAdmin,
     genericIngress,
@@ -102,13 +102,13 @@ Deno.test("app/protocol-handler - mailbox admin path classification preserves ex
 
 Deno.test("app/protocol-handler - witness receipts and query routes win before generic ingress", () => {
   const witnessHab = { pre: "EWIT" } as Hab;
-  const options: RuntimeServerOptions = { witnessHab };
+  const policy: ProtocolHostPolicy = { witnessHab };
 
   const receiptRoute = classifyProtocolRoute(
     makeContext({
       pathname: "/receipts",
       method: "POST",
-      options,
+      policy,
       hosted: oneHosted("/receipts", witnessHab.pre),
       genericIngress: oneHosted("/", witnessHab.pre),
     }),
@@ -119,7 +119,7 @@ Deno.test("app/protocol-handler - witness receipts and query routes win before g
     makeContext({
       pathname: "/query",
       method: "GET",
-      options,
+      policy,
       hosted: oneHosted("/query", witnessHab.pre),
       genericIngress: oneHosted("/", witnessHab.pre),
     }),
@@ -157,7 +157,7 @@ Deno.test("app/protocol-handler - ambiguous hosted paths stay explicit for OOBI 
   const witnessRoute = classifyProtocolRoute(
     makeContext({
       pathname: "/foo",
-      options: { witnessHab: { pre: "EWIT" } as Hab },
+      policy: { witnessHab: { pre: "EWIT" } as Hab },
       hosted: ambiguousHosted,
     }),
   );
@@ -169,7 +169,7 @@ Deno.test("app/protocol-handler - ambiguous hosted paths stay explicit for OOBI 
   const oobiRoute = classifyProtocolRoute(
     makeContext({
       pathname: "/oobi/EAID/controller",
-      options: { hostedPrefixes: ["EAID", "EOTHER"] },
+      policy: { hostedPrefixes: ["EAID", "EOTHER"] },
       hosted: ambiguousHosted,
       oobi: parseOobiRouteRequest("/oobi/EAID/controller"),
     }),
@@ -184,7 +184,7 @@ Deno.test("app/protocol-handler - classifies witness-local and runtime ingress m
   const witnessHab = { pre: "EWIT" } as Hab;
   const context = makeContext({
     method: "POST",
-    options: { witnessHab },
+    policy: { witnessHab },
   });
   const witnessHosted = oneHosted("/", witnessHab.pre);
 

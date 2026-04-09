@@ -2,7 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { tufa } from "../../../src/app/cli/cli.ts";
+import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { DISPLAY_VERSION } from "../../../src/app/version.ts";
 
 Deno.test("CLI - tufa version command prints display version", async () => {

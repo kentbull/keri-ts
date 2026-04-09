@@ -2,7 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { tufa } from "../../../src/app/cli/cli.ts";
+import { tufa } from "../../../../tufa/src/cli/cli.ts";
 
 Deno.test("CLI - tufa benchmark cesr reads stream file and prints metrics", async () => {
   const dir = await Deno.makeTempDir();

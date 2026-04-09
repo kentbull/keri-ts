@@ -2,7 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { tufa } from "../../../src/app/cli/cli.ts";
+import { tufa } from "../../../../tufa/src/cli/cli.ts";
 
 const ESC = String.fromCharCode(0x1b);
 

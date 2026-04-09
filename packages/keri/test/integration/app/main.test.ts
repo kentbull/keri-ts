@@ -1,7 +1,7 @@
 // @file-test-lane app-fast-parallel
 
 import { run } from "effection";
-import { tufa } from "../../../src/app/cli/cli.ts";
+import { tufa } from "../../../../tufa/src/cli/cli.ts";
 
 /**
  * Integration tests for the main CLI entry point

@@ -14,6 +14,16 @@
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
+import { agentCommand } from "../../../../tufa/src/cli/agent.ts";
+import {
+  mailboxAddCommand,
+  mailboxDebugCommand,
+  mailboxListCommand,
+  mailboxRemoveCommand,
+  mailboxStartCommand,
+  mailboxUpdateCommand,
+} from "../../../../tufa/src/cli/mailbox.ts";
+import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
@@ -22,25 +32,15 @@ import {
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
-import { agentCommand } from "../../../src/app/cli/agent.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
-import {
-  mailboxAddCommand,
-  mailboxDebugCommand,
-  mailboxListCommand,
-  mailboxRemoveCommand,
-  mailboxStartCommand,
-  mailboxUpdateCommand,
-} from "../../../src/app/cli/mailbox.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { MailboxPoller } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { fetchEndpointUrls, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { startServer } from "../../../src/app/server.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";

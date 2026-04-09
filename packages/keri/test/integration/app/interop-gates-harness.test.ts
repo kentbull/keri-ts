@@ -124,7 +124,9 @@ async function resolveKliCommand(env: Record<string, string>): Promise<string> {
   }
 
   throw new Error(
-    `kli is required for interop tests but could not be resolved. Tried: ${candidates.join(", ")}`,
+    `kli is required for interop tests but could not be resolved. Tried: ${
+      candidates.join(", ")
+    }`,
   );
 }
 
@@ -135,7 +137,9 @@ async function resolveKliCommand(env: Record<string, string>): Promise<string> {
  * re-implementing line parsing at each call site.
  */
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
+  const line = output.split(/\r?\n/).find((line) =>
+    line.trim().startsWith("Prefix")
+  );
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -174,7 +178,7 @@ function normalizeCesr(text: string): string {
 function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith("{\"v\":\"KERI"))
+    .filter((line) => line.trim().startsWith('{"v":"KERI'))
     .join("\n");
 }
 
@@ -212,18 +216,20 @@ function extractLastNonEmptyLine(output: string): string {
 }
 
 /**
- * Resolves the package root used when invoking the local `tufa` CLI entrypoint.
+ * Resolves the workspace root used when invoking the local `tufa` CLI
+ * entrypoint.
  */
 function packageRoot(): string {
-  return new URL("../../../", import.meta.url).pathname;
+  return new URL("../../../../../", import.meta.url).pathname;
 }
 
 /**
  * Executes the local `tufa` CLI from source rather than an installed binary.
  *
  * Interop tests compare installed KERIpy tooling to the in-repo implementation
- * under development, so they intentionally run `deno run mod.ts ...` in the
- * package root instead of assuming a globally installed `tufa`.
+ * under development, so they intentionally run
+ * `deno run packages/tufa/mod.ts ...` in the workspace root instead of
+ * assuming a globally installed `tufa`.
  */
 async function runTufa(
   args: string[],
@@ -231,8 +237,8 @@ async function runTufa(
   cwd: string,
 ): Promise<CmdResult> {
   return await runCmd(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     env,
     cwd,
   );
@@ -276,7 +282,7 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 
   try {
-    const out = await new Deno.Command("deno", {
+    const out = await new Deno.Command(Deno.execPath(), {
       args: ["info", "--json"],
       stdout: "piped",
       stderr: "null",
@@ -369,7 +375,7 @@ function* inspectHabery(
       HOME: ctx.env.HOME,
       DENO_DIR: ctx.env.DENO_DIR,
     },
-    function*() {
+    function* () {
       const hby = yield* createHabery(args);
       try {
         inspect(hby);
@@ -436,8 +442,14 @@ function spawnTufaProcess(
   args: string[],
   ctx: ScenarioContext,
 ): SpawnedChild {
-  return new Deno.Command("deno", {
-    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+  return new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-all",
+      "--unstable-ffi",
+      "packages/tufa/mod.ts",
+      ...args,
+    ],
     env: ctx.env,
     cwd: ctx.packageRoot,
     stdout: "piped",
@@ -1485,7 +1497,7 @@ async function runGateEBootstrapParity(
   const tufaMailboxUrl = extractLastNonEmptyLine(tufaOobi.stdout);
   assertEquals(tufaMailboxUrl, kliMailboxUrl);
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     yield* withTufaAgent(
       ctx,
       [
@@ -1500,7 +1512,7 @@ async function runGateEBootstrapParity(
         String(port),
       ],
       port,
-      function*() {
+      function* () {
         const kliTargetInit = yield* promiseOp(() =>
           runCmd(ctx.kliCommand, [
             "init",
@@ -1640,14 +1652,16 @@ const GATE_SCENARIOS: GateScenario[] = [
     state: "pending",
     requiredTufaCommands: [],
     expectedOutputShape: "DB and escrow readiness evidence",
-    blockedReason: "Tracks DB-layer parity artifacts and escrow work, not a single CLI command.",
+    blockedReason:
+      "Tracks DB-layer parity artifacts and escrow work, not a single CLI command.",
   },
   {
     id: "B-INIT-INCEPT-EXPORT-PARITY",
     gate: "B",
     state: "ready",
     requiredTufaCommands: ["init", "incept", "export"],
-    expectedOutputShape: "Prefix line parity and normalized exported KEL stream parity.",
+    expectedOutputShape:
+      "Prefix line parity and normalized exported KEL stream parity.",
     run: runInitInceptExportParity,
   },
   {
@@ -1663,7 +1677,8 @@ const GATE_SCENARIOS: GateScenario[] = [
     gate: "C",
     state: "ready",
     requiredTufaCommands: ["list", "aid"],
-    expectedOutputShape: "kli-created store visible through tufa compatibility mode",
+    expectedOutputShape:
+      "kli-created store visible through tufa compatibility mode",
     run: runKliCompatStoreOpen,
   },
   {
@@ -1679,7 +1694,8 @@ const GATE_SCENARIOS: GateScenario[] = [
     gate: "E",
     state: "ready",
     requiredTufaCommands: ["ends", "loc", "oobi", "agent"],
-    expectedOutputShape: "loc add + ends add + mailbox OOBI generate/resolve parity against KERIpy",
+    expectedOutputShape:
+      "loc add + ends add + mailbox OOBI generate/resolve parity against KERIpy",
     run: runGateEBootstrapParity,
   },
   {
@@ -1703,7 +1719,9 @@ const GATE_SCENARIOS: GateScenario[] = [
 ];
 
 function readyScenario(id: string): GateScenario {
-  const scenario = GATE_SCENARIOS.find((scenario) => scenario.id === id && scenario.state === "ready");
+  const scenario = GATE_SCENARIOS.find((scenario) =>
+    scenario.id === id && scenario.state === "ready"
+  );
   if (!scenario) {
     throw new Error(`Expected ready interop scenario '${id}' to exist.`);
   }

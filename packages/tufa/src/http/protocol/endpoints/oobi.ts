@@ -1,7 +1,11 @@
-import { Roles } from "../../../core/roles.ts";
-import type { AgentRuntime } from "../../agent-runtime.ts";
-import type { Hab } from "../../habbing.ts";
-import { endpointBasePath, fetchEndpointUrls, preferredUrl } from "../../mailboxing.ts";
+import {
+  type AgentRuntime,
+  endpointBasePath,
+  fetchEndpointUrls,
+  type Hab,
+  preferredUrl,
+} from "../../../../../keri/runtime.ts";
+import { Roles } from "../../../../../keri/src/core/roles.ts";
 import { textResponse } from "../responses.ts";
 import type { OobiRouteRequest, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
@@ -43,7 +47,7 @@ export function classifyOobiRoute(
   if (!context.runtime || !context.oobi) {
     return null;
   }
-  if (context.hosted?.kind === "ambiguous" && context.options.hostedPrefixes) {
+  if (context.hosted?.kind === "ambiguous" && context.policy.hostedPrefixes) {
     return {
       kind: "ambiguousHostedPath",
       message: "Ambiguous hosted endpoint path",
@@ -60,8 +64,8 @@ export function handleOobiRoute(
   const runtime = context.runtime!;
   const aid = request.aid ?? defaultOobiAid(
     runtime,
-    context.options.serviceHab,
-    context.options.hostedPrefixes,
+    context.policy.serviceHab,
+    context.policy.hostedPrefixes,
   );
   if (!aid) {
     return textResponse("no blind oobi for this node", 404);
@@ -77,11 +81,11 @@ export function handleOobiRoute(
     hosted,
     aid,
     request.eid,
-    context.options.hostedPrefixes,
+    context.policy.hostedPrefixes,
   );
   const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
   if (!hab) {
-    if (hosted.kind === "ambiguous" && context.options.hostedPrefixes) {
+    if (hosted.kind === "ambiguous" && context.policy.hostedPrefixes) {
       return textResponse("Ambiguous hosted endpoint path", 409);
     }
     return textResponse("Not Found", 404);

@@ -1,14 +1,20 @@
-import { type Operation, spawn } from "npm:effection@^3.6.0";
-import { ValidationError } from "../../core/errors.ts";
-import { consoleLogger } from "../../core/logger.ts";
-import { EndpointRoles } from "../../core/roles.ts";
-import { Schemes } from "../../core/schemes.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn, runAgentRuntime } from "../agent-runtime.ts";
-import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
-import { type Configer, createConfiger } from "../configing.ts";
-import type { Hab, Habery } from "../habbing.ts";
-import { startServer } from "../server.ts";
-import { setupHby } from "./common/existing.ts";
+import type { Operation } from "npm:effection@^3.6.0";
+import {
+  type CesrBodyMode,
+  type Configer,
+  createAgentRuntime,
+  createConfiger,
+  type Hab,
+  type Habery,
+  ingestKeriBytes,
+  normalizeCesrBodyMode,
+  processRuntimeTurn,
+} from "../../../keri/runtime.ts";
+import { setupHby } from "../../../keri/src/app/cli/common/existing.ts";
+import { ValidationError } from "../../../keri/src/core/errors.ts";
+import { EndpointRoles } from "../../../keri/src/core/roles.ts";
+import { Schemes } from "../../../keri/src/core/schemes.ts";
+import { runHostKernel } from "../host/kernel.ts";
 
 /** Parsed arguments for the long-lived `tufa agent` host command. */
 interface AgentArgs {
@@ -46,41 +52,24 @@ export function* runIndirectHost(
   hby: Habery,
   options: IndirectHostOptions,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
   const seedHabs = options.seedHabs ?? [options.serviceHab];
   const hostedPrefixes = options.hostedPrefixes
     ?? seedHabs.map((hab) => hab.pre);
-
-  for (const hab of seedHabs) {
-    yield* processRuntimeTurn(runtime, {
-      hab,
-      sink: runtime.mailboxDirector,
-      pollMailbox: false,
-    });
-  }
-
-  const runtimeTask = yield* spawn(function*() {
-    yield* runAgentRuntime(runtime, {
-      hab: options.serviceHab,
-      sink: runtime.mailboxDirector,
-    });
+  yield* runHostKernel(hby, {
+    runtimeMode: "indirect",
+    serviceHab: options.serviceHab,
+    seedHabs,
+    hostedPrefixes,
+    http: {
+      port: options.port,
+      hostname: options.listenHost,
+      onListen: options.onListen,
+    },
+    protocolPolicy: {
+      serviceHab: options.serviceHab,
+      hostedPrefixes,
+    },
   });
-  try {
-    yield* startServer(
-      options.port,
-      consoleLogger,
-      runtime,
-      {
-        hostname: options.listenHost,
-        hostedPrefixes,
-        serviceHab: options.serviceHab,
-        onListen: options.onListen,
-      },
-    );
-  } finally {
-    yield* runtimeTask.halt();
-    yield* runtime.close();
-  }
 }
 
 function configuredControllerState(hab: Hab): boolean {

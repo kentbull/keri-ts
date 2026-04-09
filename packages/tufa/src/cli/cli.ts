@@ -1,10 +1,11 @@
 import { Command, Option } from "npm:commander@^10.0.1";
 import { type Operation } from "npm:effection@^3.6.0";
-import { AppError } from "../../core/errors.ts";
-import { LOG_LEVELS, type LogLevel, setLogLevel } from "../../core/logger.ts";
-import { DISPLAY_VERSION } from "../version.ts";
-import { createCmdHandlers, registerCmds } from "./command-definitions.ts";
-import { CommandHandler, type CommandSelection } from "./command-types.ts";
+import { registerCmds } from "../../../keri/src/app/cli/command-definitions.ts";
+import { type CommandHandler, type CommandSelection } from "../../../keri/src/app/cli/command-types.ts";
+import { DISPLAY_VERSION } from "../../../keri/src/app/version.ts";
+import { AppError } from "../../../keri/src/core/errors.ts";
+import { LOG_LEVELS, type LogLevel, setLogLevel } from "../../../keri/src/core/logger.ts";
+import { createCmdHandlers } from "./handlers.ts";
 
 /** Structured handled CLI exit used to suppress fatal-stack reporting. */
 export class CliExitError extends Error {
@@ -20,10 +21,7 @@ export class CliExitError extends Error {
   }
 }
 
-/**
- * Create the CLI program with action handlers that signal command execution.
- * Command declaration is delegated to focused command modules.
- */
+/** Create the CLI program with action handlers that signal command execution. */
 function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
   program.name("tufa").version(DISPLAY_VERSION).description(
@@ -41,17 +39,12 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
     false,
   );
 
-  // Prevent Commander from exiting automatically so we can run Effection operations
   program.exitOverride();
-
   registerCmds(program, onCommand);
-
   return program;
 }
 
 function parseCLIArgs(program: Command, args: string[]): void {
-  // Commander expects full argv or args array.
-  // In Deno, Deno.args gives us the arguments without executable info.
   const argsToParse = args.length > 0 ? args : Deno.args;
   program.parse(argsToParse, { from: "user" });
 }
@@ -112,20 +105,15 @@ function* runCmd(
     return;
   }
 
-  // Execute command operation within Effection's structured concurrency.
   yield* handler(selection.args);
 }
 
-/**
- * Main CLI operation - runs within Effection's structured concurrency
- * This is the outermost runtime, not JavaScript's event loop
- */
+/** Main Tufa CLI operation run inside Effection. */
 export function* tufa(args: string[] = []): Operation<void> {
   const dispatch: { selection?: CommandSelection } = {};
   const debugError = debugErrorRequested(args);
   setLogLevel("warn");
 
-  // Use Commander.js for all command parsing
   const program = createCLIProgram((next) => {
     dispatch.selection = next;
   });
@@ -164,12 +152,7 @@ export function* tufa(args: string[] = []): Operation<void> {
   }
 }
 
-/**
- * Convert one top-level CLI error into the correct process exit code.
- *
- * Handled CLI exits should not surface a fatal stack trace, while unexpected
- * failures still must remain diagnosable.
- */
+/** Convert one top-level CLI error into the correct process exit code. */
 export function reportCliFailure(error: unknown): number {
   if (error instanceof CliExitError) {
     if (error.debugError && error.originalError) {

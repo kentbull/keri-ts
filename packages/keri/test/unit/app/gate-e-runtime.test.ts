@@ -3,6 +3,7 @@
 import { run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { Diger, Prefixer, Seqner, SerderKERI } from "../../../../cesr/mod.ts";
+import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
   createAgentRuntime,
   enqueueOobi,
@@ -22,7 +23,6 @@ import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oo
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
-import { startServer } from "../../../src/app/server.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { makeReplySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";

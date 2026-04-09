@@ -87,6 +87,12 @@ deployment, CI, and interoperability operations.
     per-test lane escape hatches. CI must mirror that move: once default-path
     coverage is extracted into `runtime-slow`, PR workflows need a dedicated
     runtime-slow job instead of assuming `runtime-medium` still covers it.
+17. The active host boundary now lives in `packages/tufa`: the shared host
+    kernel, the Hono HTTP edge, the active Deno/Node HTTP listeners, and the
+    active witness TCP listener are `tufa`-owned. Infra and interop work should
+    target that edge, not rebuild new dependencies on the older
+    `packages/keri/src/app/server.ts` path. The old `keri` listener copies have
+    now been removed, so new infra work should assume that boundary is final.
 
 ## Use This Doc For
 
@@ -124,6 +130,9 @@ deployment, CI, and interoperability operations.
    rotations.
 8. When infra-role protocol work deepens, add it here as durable operational
    rules rather than as workflow-by-workflow diary entries.
+9. Keep new host/integration tests pointed at `packages/tufa` entrypoints and
+   host modules so package-boundary drift is caught where users actually run
+   the code.
 
 ## Milestone Rollup
 

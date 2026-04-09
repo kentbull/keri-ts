@@ -22,6 +22,7 @@ export * from "../app/mailboxing.ts";
 export * from "../app/oobiery.ts";
 export * from "../app/organizing.ts";
 export * from "../app/parsering.ts";
+export * from "../app/protocol-host-policy.ts";
 export * from "../app/querying.ts";
 export * from "../app/reactor.ts";
 export * from "../app/runtime-turn.ts";

@@ -21,9 +21,15 @@ internal-only implementation areas so refactors can preserve stable contracts.
   - Explicit LMDB-backed persistence surface for `keri-ts`.
 - `packages/tufa/**`
   - CLI/application package boundary.
+- `packages/tufa/src/host/**`
+  - Active shared host kernel plus Deno/Node/TCP listener ownership.
+- `packages/tufa/src/http/**`
+  - Active Hono shell and HTTP route composition ownership.
+- `packages/tufa/src/cli/**`
+  - Active CLI runtime plus long-lived host command ownership.
 - `packages/keri/src/**`
-  - Core, runtime, and DB implementation for `keri-ts`; some app-owned source
-    still lives here temporarily during the split.
+  - Core, runtime, DB, and the remaining non-host command implementations for
+    `keri-ts`.
 - `packages/cesr/**`
   - Reusable CESR library package (parser, primitives, annotations).
 
@@ -44,6 +50,12 @@ internal-only implementation areas so refactors can preserve stable contracts.
   - Runnable CLI entrypoint under Effection.
 - `packages/tufa`
   - Application package that owns the `tufa` binary boundary.
+- `packages/tufa/src/host/*`
+  - Internal shared host kernel and listener adapters.
+- `packages/tufa/src/http/*`
+  - Internal Hono edge and protocol-route composition.
+- `packages/tufa/src/cli/*`
+  - Internal CLI runtime and active long-lived host commands.
 
 ### CESR Package
 
@@ -58,13 +70,9 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `packages/keri/src/db/core/*`
   - LMDB/path internals and key encoding details.
 - `packages/keri/src/app/cli/*`
-  - Transitional source location for CLI wiring/parsing and terminal I/O
-    behavior; package ownership has moved to `tufa`.
-- `packages/keri/src/app/server.ts`
-  - Transitional host adapter location; package ownership has moved to `tufa`.
-- `packages/keri/src/app/protocol-handler.ts`
-  - Transitional protocol-route composition location; package ownership has
-    moved to `tufa`.
+  - Transitional source location for the remaining non-host command
+    implementations and command-definition helpers; the active runnable CLI and
+    long-lived host commands live in `packages/tufa/src/cli/*`.
 - `packages/cesr/src/tables/*.generated.ts`
   - Generated code tables.
 - `packages/cesr/scripts/*`

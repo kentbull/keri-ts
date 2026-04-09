@@ -154,7 +154,9 @@ export async function runCmdWithTimeout(
     await child.status.catch(() => undefined);
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
     throw new Error(
-      `Command timed out after ${timeoutMs}ms: ${command} ${args.join(" ")}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      `Command timed out after ${timeoutMs}ms: ${command} ${
+        args.join(" ")
+      }\nstdout:\n${stdout}\nstderr:\n${stderr}`,
     );
   }
 
@@ -226,13 +228,17 @@ export async function resolveKliCommand(
   }
 
   throw new Error(
-    `kli is required for interop tests but could not be resolved. Tried: ${candidates.join(", ")}`,
+    `kli is required for interop tests but could not be resolved. Tried: ${
+      candidates.join(", ")
+    }`,
   );
 }
 
 /** Parse the human-readable `Prefix` line emitted by both CLIs. */
 export function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
+  const line = output.split(/\r?\n/).find((line) =>
+    line.trim().startsWith("Prefix")
+  );
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -242,7 +248,9 @@ export function extractPrefix(output: string): string {
 
 /** Parse the raw qb64 signature from numbered KLI/Tufa sign output. */
 export function extractRawSignature(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
+  const line = output.split(/\r?\n/).find((line) =>
+    /^\d+\.\s+/.test(line.trim())
+  );
   if (!line) {
     throw new Error(`Unable to parse signature from output:\n${output}`);
   }
@@ -270,7 +278,7 @@ export function normalizeCesr(text: string): string {
 export function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith("{\"v\":\"KERI"))
+    .filter((line) => line.trim().startsWith('{"v":"KERI'))
     .join("\n");
 }
 
@@ -284,7 +292,7 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 
   try {
-    const out = await new Deno.Command("deno", {
+    const out = await new Deno.Command(Deno.execPath(), {
       args: ["info", "--json"],
       stdout: "piped",
       stderr: "null",
@@ -301,9 +309,12 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 }
 
-/** Resolve the package root used for `deno run mod.ts ...` test invocations. */
+/**
+ * Resolve the workspace root used for `deno run packages/tufa/mod.ts ...`
+ * test invocations.
+ */
 export function packageRoot(): string {
-  return new URL("../../../", import.meta.url).pathname;
+  return workspaceRoot();
 }
 
 /** Resolve the `keri-ts` workspace root. */
@@ -323,13 +334,19 @@ export function keripySourceRoot(): string {
 
 /** Resolve the checked-in KERIpy witness config directory. */
 export function keripyWitnessConfigSourceRoot(): string {
-  return new URL("../../../../../../keripy/scripts/keri/cf/main/", import.meta.url)
+  return new URL(
+    "../../../../../../keripy/scripts/keri/cf/main/",
+    import.meta.url,
+  )
     .pathname;
 }
 
 /** Resolve the checked-in KERIpy witness inception sample file. */
 export function keripyWitnessSamplePath(): string {
-  return new URL("../../../../../../keripy/scripts/demo/data/wil-witness-sample.json", import.meta.url)
+  return new URL(
+    "../../../../../../keripy/scripts/demo/data/wil-witness-sample.json",
+    import.meta.url,
+  )
     .pathname;
 }
 
@@ -410,8 +427,14 @@ async function waitForKeriPyWitnessReady(
   } catch (witnessError) {
     throw new Error(
       `KERIpy witness OOBIs never became ready.\ncontroller: ${
-        controllerError instanceof Error ? controllerError.message : String(controllerError)
-      }\nwitness: ${witnessError instanceof Error ? witnessError.message : String(witnessError)}`,
+        controllerError instanceof Error
+          ? controllerError.message
+          : String(controllerError)
+      }\nwitness: ${
+        witnessError instanceof Error
+          ? witnessError.message
+          : String(witnessError)
+      }`,
     );
   }
 }
@@ -502,7 +525,9 @@ export async function withStartedChild<T>(
   } catch (error) {
     const details = await stopChild(child);
     throw new Error(
-      `Failed to start host on port ${port}: ${error instanceof Error ? error.message : String(error)}\n${details}`,
+      `Failed to start host on port ${port}: ${
+        error instanceof Error ? error.message : String(error)
+      }\n${details}`,
     );
   }
 
@@ -523,7 +548,8 @@ export async function resolvePythonCommand(
   const probeEnv = pyenvProbeEnv(env);
   if (kliCommand.includes("/")) {
     try {
-      const first = (await Deno.readTextFile(kliCommand)).split(/\r?\n/, 1)[0] ?? "";
+      const first =
+        (await Deno.readTextFile(kliCommand)).split(/\r?\n/, 1)[0] ?? "";
       if (first.startsWith("#!")) {
         const parts = first.slice(2).trim().split(/\s+/);
         const python = parts.at(-1);
@@ -556,8 +582,8 @@ export async function runTufa(
   cwd: string,
 ): Promise<CmdResult> {
   return await runCmd(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     env,
     cwd,
   );
@@ -571,8 +597,8 @@ export async function runTufaWithTimeout(
   timeoutMs = 20_000,
 ): Promise<CmdResult> {
   return await runCmdWithTimeout(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     env,
     timeoutMs,
     cwd,
@@ -593,7 +619,7 @@ export async function createInteropContext(): Promise<InteropContext> {
   return {
     home,
     env,
-    repoRoot: packageRoot(),
+    repoRoot: workspaceRoot(),
     kliCommand: await resolveKliCommand(env),
   };
 }
@@ -658,7 +684,7 @@ export function* inspectCompatHabery(
       HOME: ctx.env.HOME,
       DENO_DIR: ctx.env.DENO_DIR,
     },
-    function*() {
+    function* () {
       const hby = yield* createHabery(args);
       try {
         inspect(hby);
@@ -748,7 +774,9 @@ async function writeKeriPyWitnessConfig(
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   const node = parsed[alias];
   if (!node || typeof node !== "object") {
-    throw new Error(`Witness config ${sourcePath} is missing alias '${alias}'.`);
+    throw new Error(
+      `Witness config ${sourcePath} is missing alias '${alias}'.`,
+    );
   }
 
   parsed[alias] = {
@@ -826,8 +854,11 @@ export async function startKeriPyWitnessHarness(
 ): Promise<KeriPyWitnessHarness> {
   const aliases = options.aliases ?? DEFAULT_KERIPY_WITNESS_ALIASES;
   const home = await Deno.makeTempDir({ prefix: "keripy-witness-home-" });
-  const configRoot = await Deno.makeTempDir({ prefix: "keripy-witness-config-" });
-  const base = options.base ?? `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
+  const configRoot = await Deno.makeTempDir({
+    prefix: "keripy-witness-config-",
+  });
+  const base = options.base ??
+    `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
   const env = {
     ...ctx.env,
     HOME: home,
@@ -893,12 +924,16 @@ export async function startKeriPyWitnessHarness(
     const details = await Promise.all(
       children.map((child, index) =>
         stopChild(child).then((output) =>
-          output.length > 0 ? `# ${nodes[index]?.alias}\n${output}` : `# ${nodes[index]?.alias}\n<no output>`
+          output.length > 0
+            ? `# ${nodes[index]?.alias}\n${output}`
+            : `# ${nodes[index]?.alias}\n<no output>`
         )
       ),
     );
     throw new Error(
-      `${error instanceof Error ? error.message : String(error)}\n${details.join("\n\n")}`,
+      `${error instanceof Error ? error.message : String(error)}\n${
+        details.join("\n\n")
+      }`,
     );
   }
 
@@ -1110,7 +1145,9 @@ export async function startTufaWitnessHarness(
       ),
     );
     throw new Error(
-      `${error instanceof Error ? error.message : String(error)}\n${details.join("\n\n")}`,
+      `${error instanceof Error ? error.message : String(error)}\n${
+        details.join("\n\n")
+      }`,
     );
   }
 

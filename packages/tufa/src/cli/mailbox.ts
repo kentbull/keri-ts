@@ -8,19 +8,27 @@
  */
 import { join } from "jsr:@std/path";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { concatBytes } from "../../../../cesr/mod.ts";
-import { ValidationError } from "../../core/errors.ts";
-import { TopicsRecord } from "../../core/records.ts";
-import { EndpointRoles, Roles } from "../../core/roles.ts";
-import { makeNowIso8601 } from "../../time/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
-import { buildCesrRequest, buildCesrStreamRequest, type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
-import type { Habery } from "../habbing.ts";
-import { fetchResponseHandle } from "../httping.ts";
-import { fetchEndpointUrls, preferredUrl } from "../mailboxing.ts";
-import { Organizer } from "../organizing.ts";
+import { concatBytes } from "../../../cesr/mod.ts";
+import {
+  buildCesrRequest,
+  buildCesrStreamRequest,
+  type CesrBodyMode,
+  createAgentRuntime,
+  fetchEndpointUrls,
+  fetchResponseHandle,
+  type Habery,
+  ingestKeriBytes,
+  normalizeCesrBodyMode,
+  Organizer,
+  preferredUrl,
+  processRuntimeTurn,
+} from "../../../keri/runtime.ts";
+import { ensureHby, setupHby } from "../../../keri/src/app/cli/common/existing.ts";
+import { ValidationError } from "../../../keri/src/core/errors.ts";
+import { TopicsRecord } from "../../../keri/src/core/records.ts";
+import { EndpointRoles, Roles } from "../../../keri/src/core/roles.ts";
+import { makeNowIso8601 } from "../../../keri/src/time/mod.ts";
 import { runIndirectHost } from "./agent.ts";
-import { ensureHby, setupHby } from "./common/existing.ts";
 
 interface MailboxBaseArgs {
   name?: string;

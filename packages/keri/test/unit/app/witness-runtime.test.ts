@@ -3,12 +3,13 @@
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../../../cesr/mod.ts";
+import { startServer } from "../../../../tufa/src/host/http-server.ts";
+import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
-import { startServer } from "../../../src/app/server.ts";
-import { Receiptor, startWitnessTcpServer } from "../../../src/app/witnessing.ts";
+import { Receiptor } from "../../../src/app/witnessing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { Schemes } from "../../../src/core/schemes.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";

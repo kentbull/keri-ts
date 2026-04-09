@@ -1,7 +1,6 @@
 import { concatBytes } from "../../../../cesr/mod.ts";
-import type { CueEmission } from "../../core/cues.ts";
-import { type AgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
-import type { Hab } from "../habbing.ts";
+import { type AgentRuntime, type Hab, settleRuntimeIngress } from "../../../../keri/runtime.ts";
+import type { CueEmission } from "../../../../keri/src/core/cues.ts";
 
 /**
  * Ingest one mailbox-aware request payload through the shared runtime.

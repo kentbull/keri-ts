@@ -3,10 +3,10 @@
  *
  * This module intentionally stays small: it builds request context, applies
  * explicit route precedence, and dispatches to endpoint modules. Transport
- * setup lives in `server.ts`, while endpoint-specific HTTP semantics live
- * under `app/protocol/`.
+ * setup lives under `tufa/src/host`, while endpoint-specific HTTP semantics
+ * live under `tufa/src/http/protocol`.
  */
-import type { AgentRuntime } from "./agent-runtime.ts";
+import type { AgentRuntime, ProtocolHostPolicy } from "../../../keri/runtime.ts";
 import { buildProtocolRequestContext } from "./protocol/context.ts";
 import {
   classifyCesrIngressRoute,
@@ -23,7 +23,6 @@ import {
   handleWitnessReceiptPost,
 } from "./protocol/endpoints/witness-http.ts";
 import type { ProtocolHandler, ProtocolRequestContext, ProtocolRoute } from "./protocol/types.ts";
-import type { RuntimeServerOptions } from "./server.ts";
 
 export { buildProtocolRequestContext } from "./protocol/context.ts";
 export { classifyCesrIngressRoute } from "./protocol/endpoints/generic-cesr-ingress.ts";
@@ -39,11 +38,11 @@ export type {
 /** Build the shared protocol handler used by the Deno and Node HTTP hosts. */
 export function createProtocolHandler(
   runtime?: AgentRuntime,
-  options: RuntimeServerOptions = {},
+  policy: ProtocolHostPolicy = {},
 ): ProtocolHandler {
   return async (req: Request): Promise<Response> => {
     try {
-      const context = buildProtocolRequestContext(req, runtime, options);
+      const context = buildProtocolRequestContext(req, runtime, policy);
       const route = classifyProtocolRoute(context);
       return await dispatchProtocolRoute(context, route);
     } catch (error) {
@@ -82,7 +81,7 @@ async function dispatchProtocolRoute(
         context.runtime!,
         context.req,
         route.mailboxAid,
-        context.options.serviceHab,
+        context.policy.serviceHab,
       );
     case "witnessReceiptsPost":
       return await handleWitnessReceiptPost(

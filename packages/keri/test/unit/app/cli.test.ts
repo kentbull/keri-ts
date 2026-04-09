@@ -1,17 +1,25 @@
 // @file-test-lane app-stateful-a
 
 import { type Operation, run } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { tufa } from "../../../src/app/cli/cli.ts";
+import {
+  assertEquals,
+  assertExists,
+  assertStringIncludes,
+} from "jsr:@std/assert";
+import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
-import { mailboxStartCommand } from "../../../src/app/cli/mailbox.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
-import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
+import {
+  assertOperationThrows,
+  CLITestHarness,
+  createMockArgs,
+} from "../../../test/utils.ts";
 
 interface CmdResult {
   code: number;
@@ -20,7 +28,9 @@ interface CmdResult {
 }
 
 function extractPrefixLine(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
+  const line = output.split(/\r?\n/).find((line) =>
+    line.trim().startsWith("Prefix")
+  );
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -28,7 +38,9 @@ function extractPrefixLine(output: string): string {
 }
 
 function extractRawSignature(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
+  const line = output.split(/\r?\n/).find((line) =>
+    /^\d+\.\s+/.test(line.trim())
+  );
   if (!line) {
     throw new Error(`Unable to parse signature output:\n${output}`);
   }
@@ -36,9 +48,15 @@ function extractRawSignature(output: string): string {
 }
 
 async function runTufa(args: string[]): Promise<CmdResult> {
-  const repoRoot = new URL("../../../", import.meta.url);
+  const repoRoot = new URL("../../../../../", import.meta.url);
   const out = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    args: [
+      "run",
+      "--allow-all",
+      "--unstable-ffi",
+      "packages/tufa/mod.ts",
+      ...args,
+    ],
     cwd: repoRoot,
     stdout: "piped",
     stderr: "piped",
@@ -321,7 +339,7 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
     })
   );
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -347,7 +365,7 @@ Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async
   );
 
   await assertOperationThrows(
-    (function*() {
+    (function* () {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
         readonly: true,
         skipConfig: true,
@@ -371,7 +389,7 @@ Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores"
     })
   );
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -578,7 +596,7 @@ Deno.test("CLI - sign, verify, rotate, and interact commands work for one persis
     name,
     headDirPath,
     alias,
-    data: ["{\"anchor\":\"acdc\"}"],
+    data: ['{"anchor":"acdc"}'],
   }));
   assertEquals(
     interact.code,

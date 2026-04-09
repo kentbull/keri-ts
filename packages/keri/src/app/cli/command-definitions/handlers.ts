@@ -46,42 +46,9 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       "exn.send",
       lazyCommand(() => import("../exchange.ts"), "exchangeSendCommand"),
     ],
-    [
-      "mailbox.start",
-      lazyCommand(() => import("../mailbox.ts"), "mailboxStartCommand"),
-    ],
-    [
-      "mailbox.add",
-      lazyCommand(() => import("../mailbox.ts"), "mailboxAddCommand"),
-    ],
-    [
-      "mailbox.remove",
-      lazyCommand(() => import("../mailbox.ts"), "mailboxRemoveCommand"),
-    ],
-    [
-      "mailbox.list",
-      lazyCommand(() => import("../mailbox.ts"), "mailboxListCommand"),
-    ],
-    [
-      "mailbox.update",
-      lazyCommand(() => import("../mailbox.ts"), "mailboxUpdateCommand"),
-    ],
-    [
-      "mailbox.debug",
-      lazyCommand(() => import("../mailbox.ts"), "mailboxDebugCommand"),
-    ],
     ["export", lazyCommand(() => import("../export.ts"), "exportCommand")],
     ["list", lazyCommand(() => import("../list.ts"), "listCommand")],
     ["aid", lazyCommand(() => import("../aid.ts"), "aidCommand")],
-    ["agent", lazyCommand(() => import("../agent.ts"), "agentCommand")],
-    [
-      "witness.start",
-      lazyCommand(() => import("../witness.ts"), "witnessStartCommand"),
-    ],
-    [
-      "witness.submit",
-      lazyCommand(() => import("../witness.ts"), "witnessSubmitCommand"),
-    ],
     ["ends.add", lazyCommand(() => import("../ends.ts"), "endsAddCommand")],
     ["loc.add", lazyCommand(() => import("../loc.ts"), "locAddCommand")],
     [

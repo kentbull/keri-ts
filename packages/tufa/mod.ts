@@ -1,5 +1,5 @@
 import { run } from "npm:effection@^3.6.0";
-import { reportCliFailure, tufa } from "../keri/src/app/cli/cli.ts";
+import { reportCliFailure, tufa } from "./src/cli/cli.ts";
 
 /**
  * `tufa` application entrypoint.

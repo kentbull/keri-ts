@@ -1,9 +1,12 @@
 import { Ilks } from "../../../../../cesr/mod.ts";
-import { ValidationError } from "../../../core/errors.ts";
-import { Roles } from "../../../core/roles.ts";
-import type { AgentRuntime } from "../../agent-runtime.ts";
-import { type CesrStreamInspection, readMailboxAdminRequest } from "../../cesr-http.ts";
-import type { Hab } from "../../habbing.ts";
+import {
+  type AgentRuntime,
+  type CesrStreamInspection,
+  type Hab,
+  readMailboxAdminRequest,
+} from "../../../../../keri/runtime.ts";
+import { ValidationError } from "../../../../../keri/src/core/errors.ts";
+import { Roles } from "../../../../../keri/src/core/roles.ts";
 import { textResponse } from "../responses.ts";
 import { processRuntimeRequest } from "../runtime-bridge.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";

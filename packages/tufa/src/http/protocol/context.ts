@@ -1,6 +1,5 @@
-import type { AgentRuntime } from "../agent-runtime.ts";
-import { resolveHostedEndpointPath } from "../mailboxing.ts";
-import type { RuntimeServerOptions } from "../server.ts";
+import type { AgentRuntime, ProtocolHostPolicy } from "../../../../keri/runtime.ts";
+import { resolveHostedEndpointPath } from "../../../../keri/runtime.ts";
 import { parseOobiRouteRequest } from "./endpoints/oobi.ts";
 import type { ProtocolRequestContext } from "./types.ts";
 
@@ -8,18 +7,18 @@ import type { ProtocolRequestContext } from "./types.ts";
 export function buildProtocolRequestContext(
   req: Request,
   runtime?: AgentRuntime,
-  options: RuntimeServerOptions = {},
+  policy: ProtocolHostPolicy = {},
 ): ProtocolRequestContext {
   const url = new URL(req.url);
   const pathname = normalizeProtocolPath(url.pathname);
   const hosted = runtime
-    ? resolveHostedEndpointPath(runtime.hby, pathname, "", options.hostedPrefixes)
+    ? resolveHostedEndpointPath(runtime.hby, pathname, "", policy.hostedPrefixes)
     : null;
   const mailboxAdmin = runtime
-    ? resolveHostedEndpointPath(runtime.hby, pathname, "/mailboxes", options.hostedPrefixes)
+    ? resolveHostedEndpointPath(runtime.hby, pathname, "/mailboxes", policy.hostedPrefixes)
     : null;
   const genericIngress = runtime
-    ? resolveHostedEndpointPath(runtime.hby, pathname, "/", options.hostedPrefixes)
+    ? resolveHostedEndpointPath(runtime.hby, pathname, "/", policy.hostedPrefixes)
     : null;
   const oobiPath = hosted?.relativePath ?? pathname;
 
@@ -29,7 +28,7 @@ export function buildProtocolRequestContext(
     pathname,
     method: req.method,
     runtime,
-    options,
+    policy,
     hosted,
     mailboxAdmin,
     genericIngress,

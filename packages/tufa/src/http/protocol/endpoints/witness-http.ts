@@ -1,8 +1,11 @@
-import { ValidationError } from "../../../core/errors.ts";
-import type { AgentRuntime } from "../../agent-runtime.ts";
-import { readRequiredCesrRequestBytes } from "../../cesr-http.ts";
-import { type Hab } from "../../habbing.ts";
-import { processWitnessIngress, witnessQueryGet, witnessReceiptGet, witnessReceiptPost } from "../../witnessing.ts";
+import {
+  type AgentRuntime,
+  type Hab,
+  readRequiredCesrRequestBytes,
+  witnessQueryGet,
+  witnessReceiptGet,
+  witnessReceiptPost,
+} from "../../../../../keri/runtime.ts";
 import { cesrResponse, textResponse } from "../responses.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
@@ -10,7 +13,7 @@ import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 export function classifyWitnessHttpRoute(
   context: ProtocolRequestContext,
 ): ProtocolRoute | null {
-  if (!context.runtime || !context.options.witnessHab) {
+  if (!context.runtime || !context.policy.witnessHab) {
     return null;
   }
   if (context.hosted?.kind === "ambiguous") {
@@ -22,13 +25,13 @@ export function classifyWitnessHttpRoute(
 
   const relativePath = context.hosted?.relativePath ?? context.pathname;
   if ((context.method === "POST" || context.method === "PUT") && relativePath === "/receipts") {
-    return { kind: "witnessReceiptsPost", witnessHab: context.options.witnessHab };
+    return { kind: "witnessReceiptsPost", witnessHab: context.policy.witnessHab };
   }
   if (context.method === "GET" && relativePath === "/receipts") {
-    return { kind: "witnessReceiptsGet", witnessHab: context.options.witnessHab };
+    return { kind: "witnessReceiptsGet", witnessHab: context.policy.witnessHab };
   }
   if (context.method === "GET" && relativePath === "/query") {
-    return { kind: "witnessQueryGet", witnessHab: context.options.witnessHab };
+    return { kind: "witnessQueryGet", witnessHab: context.policy.witnessHab };
   }
   return null;
 }

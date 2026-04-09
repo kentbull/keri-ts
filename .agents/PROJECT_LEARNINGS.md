@@ -262,6 +262,18 @@ Use this file to:
     non-browser-safe runtime and LMDB surfaces. Do not reopen the old mental
     model where `keri-ts` root is both app and library just because some
     app-owned source still lives under `packages/keri/src/app/**`.
+36. Stage 2-3 of the package split are now active in code too: `tufa` owns the
+    shared host kernel, the thin Hono HTTP edge, the active Deno/Node HTTP
+    host adapters, the active witness TCP listener, and the active CLI runtime.
+    The durable route-policy seam is `ProtocolHostPolicy` on the explicit
+    `keri-ts/runtime` surface. Keep Hono and listener startup out of `keri-ts`,
+    and prefer testing the active `tufa` edge rather than the older
+    `packages/keri/src/app/server.ts` / `protocol-handler.ts` internals.
+37. The legacy `keri` copies of the host edge are now intentionally removed,
+    not merely unused. `packages/keri/src/app/server.ts`,
+    `protocol-handler.ts`, the old `protocol/**` tree, and the old long-lived
+    host CLI files are gone. Future cleanup should continue from that state
+    rather than resurrecting compatibility wrappers inside `keri-ts`.
 
 ## Current Follow-Ups
 
@@ -311,10 +323,11 @@ Use this file to:
     not quietly reintroduce repeated subprocess launches or repeated cold store
     setup in the older app-stateful files when a shared in-file baseline would
     prove the same behavior more honestly.
-13. Continue the package split by moving remaining physical CLI/server source
-    ownership out of `packages/keri/src/app/**` over time, but do not regress
-    the already-landed contract that `keri-ts` root is library-only and `tufa`
-    is the runnable application package.
+13. Continue the package split by moving remaining non-host CLI wiring and
+    command-definition ownership out of `packages/keri/src/app/**` over time,
+    but do not regress the already-landed contract that `keri-ts` root is
+    library-only and `tufa` owns the active host kernel, HTTP edge, and
+    runnable CLI.
 
 ## 2026-04-04 - Escrow Replay Control Flow Should Be Explicit
 

@@ -12,9 +12,9 @@ interface CmdResult {
 
 type SpawnedChild = Deno.ChildProcess;
 
-/** Resolve the package root so subprocesses always run the in-repo `tufa`. */
+/** Resolve the workspace root so subprocesses always run the in-repo `tufa`. */
 function packageRoot(): string {
-  return new URL("../../../", import.meta.url).pathname;
+  return new URL("../../../../../", import.meta.url).pathname;
 }
 
 /** Resolve the shared single-sig inception fixture used by these agent tests. */
@@ -53,8 +53,8 @@ async function runCmd(
 /** Execute the local Deno-source `tufa` entrypoint from the package root. */
 async function runTufa(args: string[]): Promise<CmdResult> {
   return await runCmd(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     packageRoot(),
   );
 }
@@ -114,8 +114,14 @@ async function startTufaAgent(
   args: string[],
   port: number,
 ): Promise<SpawnedChild> {
-  const child = new Deno.Command("deno", {
-    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+  const child = new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-all",
+      "--unstable-ffi",
+      "packages/tufa/mod.ts",
+      ...args,
+    ],
     cwd: packageRoot(),
     stdout: "piped",
     stderr: "piped",

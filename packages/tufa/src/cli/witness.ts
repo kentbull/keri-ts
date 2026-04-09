@@ -1,17 +1,25 @@
 import { join } from "jsr:@std/path";
-import { type Operation, spawn } from "npm:effection@^3.6.0";
-import { ValidationError } from "../../core/errors.ts";
-import { consoleLogger } from "../../core/logger.ts";
-import { EndpointRoles } from "../../core/roles.ts";
-import { type Scheme, Schemes } from "../../core/schemes.ts";
-import { makeNowIso8601 } from "../../time/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn, runAgentRuntime } from "../agent-runtime.ts";
-import { type Configer, createConfiger } from "../configing.ts";
-import type { Hab, Habery } from "../habbing.ts";
-import { fetchEndpointUrls } from "../mailboxing.ts";
-import { startServer } from "../server.ts";
-import { Receiptor, startWitnessTcpServer, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { ensureHby, setupHby } from "./common/existing.ts";
+import type { Operation } from "npm:effection@^3.6.0";
+import {
+  type Configer,
+  createAgentRuntime,
+  createConfiger,
+  fetchEndpointUrls,
+  type Hab,
+  type Habery,
+  ingestKeriBytes,
+  processRuntimeTurn,
+  Receiptor,
+  type WitnessAuthMap,
+  WitnessReceiptor,
+} from "../../../keri/runtime.ts";
+import { ensureHby, setupHby } from "../../../keri/src/app/cli/common/existing.ts";
+import { ValidationError } from "../../../keri/src/core/errors.ts";
+import { EndpointRoles } from "../../../keri/src/core/roles.ts";
+import { type Scheme, Schemes } from "../../../keri/src/core/schemes.ts";
+import { makeNowIso8601 } from "../../../keri/src/time/mod.ts";
+import { runHostKernel } from "../host/kernel.ts";
+import { startWitnessTcpServer } from "../host/witness-tcp.ts";
 
 interface WitnessBaseArgs {
   name?: string;
@@ -201,43 +209,31 @@ export function* runWitnessHost(
     tcpListenHost: string;
   },
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, {
-    mode: "both",
+  yield* runHostKernel(hby, {
+    runtimeMode: "both",
     enableMailboxStore: true,
-  });
-  yield* processRuntimeTurn(runtime, {
-    hab: serviceHab,
-    sink: runtime.mailboxDirector,
-    pollMailbox: false,
-  });
-
-  const runtimeTask = yield* spawn(function*() {
-    yield* runAgentRuntime(runtime, {
-      hab: serviceHab,
-      sink: runtime.mailboxDirector,
-    });
-  });
-  const tcpTask = yield* spawn(function*() {
-    yield* startWitnessTcpServer(
-      tcpPort,
-      tcpListenHost,
-      runtime,
-      serviceHab,
-    );
-  });
-
-  try {
-    yield* startServer(httpPort, consoleLogger, runtime, {
+    serviceHab,
+    seedHabs: [serviceHab],
+    hostedPrefixes: [serviceHab.pre],
+    http: {
+      port: httpPort,
       hostname: httpListenHost,
-      hostedPrefixes: [serviceHab.pre],
+    },
+    protocolPolicy: {
       serviceHab,
+      hostedPrefixes: [serviceHab.pre],
       witnessHab: serviceHab,
-    });
-  } finally {
-    yield* tcpTask.halt();
-    yield* runtimeTask.halt();
-    yield* runtime.close();
-  }
+    },
+    companionHosts: [
+      ({ runtime }) =>
+        startWitnessTcpServer(
+          tcpPort,
+          tcpListenHost,
+          runtime,
+          serviceHab,
+        ),
+    ],
+  });
 }
 
 function parseWitnessStartArgs(args: Record<string, unknown>): WitnessStartArgs {

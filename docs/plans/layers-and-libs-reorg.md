@@ -142,6 +142,7 @@ application developers.
 
 ### Stage 1. Freeze boundaries and define package seams
 
+- status: completed
 - define what must leave `keri-ts`
 - identify server-only and CLI-only exports
 - decide the future public surfaces of `keri-ts` and `tufa`
@@ -149,6 +150,7 @@ application developers.
 
 ### Stage 2. Extract the shared host kernel
 
+- status: completed
 - move shared hosting and runtime lifecycle concerns out of `keri-ts` server
   glue into a reusable kernel design
 - define the kernel API around Effection lifecycle and runtime hosting
@@ -156,6 +158,8 @@ application developers.
 
 ### Stage 3. Introduce `tufa`
 
+- status: completed for the active host edge; remaining physical cleanup is
+  now substantially complete
 - create the new package
 - move server hosting code there
 - keep the internal role behavior initially parity-preserving
@@ -180,6 +184,7 @@ application developers.
 
 ### Stage 6. Complete `tufa` application ownership
 
+- status: partially complete
 - move remaining CLI entrypoints and command registration into `tufa`
 - make the shared host kernel and role servers `tufa`-owned
 - remove remaining application ownership from `keri-ts`
