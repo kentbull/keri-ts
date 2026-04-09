@@ -137,12 +137,60 @@ function buildDetachedReceiptMessage(
   );
 }
 
+/**
+ * Build one KERIpy-style endpoint `rct` message without an attachment-group
+ * wrapper.
+ *
+ * KERIpy's witness `/receipts` endpoints return `rct + counter + material`
+ * directly. KLI's receiptor depends on that exact shape when it re-fans the
+ * returned receipt material out to the other witnesses.
+ */
+function buildEndpointDetachedReceiptMessage(
+  serder: SerderKERI,
+  {
+    wigers = [],
+    cigars = [],
+  }: {
+    wigers?: readonly Siger[];
+    cigars?: readonly Cigar[];
+  },
+): Uint8Array {
+  const parts: Uint8Array[] = [serder.raw];
+  if (wigers.length > 0) {
+    parts.push(
+      new Counter({
+        code: CtrDexV1.WitnessIdxSigs,
+        count: wigers.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...wigers.map((wiger) => wiger.qb64b),
+    );
+  }
+  if (cigars.length > 0) {
+    parts.push(
+      new Counter({
+        code: CtrDexV1.NonTransReceiptCouples,
+        count: cigars.length,
+        version: KERI_V1,
+      }).qb64b,
+      ...cigars.flatMap((cigar) => {
+        const verfer = cigar.verfer;
+        if (!verfer) {
+          throw new ValidationError("Endpoint receipt couple is missing verifier context.");
+        }
+        return [verfer.qb64b, cigar.qb64b];
+      }),
+    );
+  }
+  return concatBytes(...parts);
+}
+
 /** Build one attached `rct` message carrying witness indexed signatures. */
 function buildWitnessReceiptMessage(
   serder: SerderKERI,
   wigers: readonly Siger[],
 ): Uint8Array {
-  return buildDetachedReceiptMessage(serder, { wigers });
+  return buildEndpointDetachedReceiptMessage(serder, { wigers });
 }
 
 /** Parse one CESR message and recover its detached receipt attachments. */
@@ -260,30 +308,23 @@ function witnessReceiptEligibility(
   serder: SerderKERI,
 ): { kind: "accept"; accepted: SerderKERI } | { kind: "escrow" } | { kind: "reject"; message: string } {
   const pre = serder.pre;
-  const sn = serder.sn;
   const said = serder.said;
-  if (!pre || sn === null || !said) {
+  if (!pre || said === null) {
     return { kind: "reject", message: "Receipted event must expose pre, sn, and said." };
   }
 
-  const acceptedSaid = serviceHab.db.kels.getLast(pre, sn);
-  if (acceptedSaid !== said) {
+  const kever = serviceHab.db.getKever(pre);
+  if (!kever) {
     return { kind: "escrow" };
   }
-  const accepted = serviceHab.db.getEvtSerder(pre, said);
-  if (!accepted) {
-    return { kind: "escrow" };
-  }
-
-  const wits = acceptedEventWitnesses(serviceHab.db, accepted);
-  if (!wits || !wits.includes(serviceHab.pre)) {
+  if (!kever.wits.includes(serviceHab.pre)) {
     return {
       kind: "reject",
-      message: `${serviceHab.pre} is not an authorized witness for ${pre}:${said}.`,
+      message: `${serviceHab.pre} is not an authorized witness for ${pre}:${said}: wits=${JSON.stringify(kever.wits)}.`,
     };
   }
 
-  return { kind: "accept", accepted };
+  return { kind: "accept", accepted: serder };
 }
 
 /** Handle the synchronous witness receipt POST policy. */
@@ -321,7 +362,11 @@ export function witnessReceiptPost(
     return { kind: "escrow", status: 202 };
   }
 
-  const body = serviceHab.receipt(eligibility.accepted);
+  const inspected = inspectReceiptMessage(serviceHab.receipt(eligibility.accepted));
+  const body = buildEndpointDetachedReceiptMessage(inspected.serder, {
+    wigers: inspected.wigers,
+    cigars: inspected.cigars,
+  });
   return { kind: "accepted", status: 200, body };
 }
 

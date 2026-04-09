@@ -29,7 +29,12 @@ import {
 } from "./cesr-http.ts";
 import type { Hab } from "./habbing.ts";
 import { endpointBasePath, fetchEndpointUrls, hostedEndpointPathMatches, preferredUrl } from "./mailboxing.ts";
-import { witnessQueryGet, witnessReceiptGet, witnessReceiptPost } from "./witnessing.ts";
+import {
+  processWitnessIngress,
+  witnessQueryGet,
+  witnessReceiptGet,
+  witnessReceiptPost,
+} from "./witnessing.ts";
 
 /** Minimal shutdown/wait contract shared by Deno and Node server hosts. */
 interface RunningServer {
@@ -316,12 +321,22 @@ function createProtocolHandler(
           });
         }
 
-        const emissions = processRuntimeRequest(
-          runtime,
-          bytes,
-          hosted.endpoint?.eid ?? null,
-          options.serviceHab,
-        );
+        const witnessHab = options.witnessHab;
+        const witnessRootIngress = !!witnessHab
+          && hosted.kind === "one"
+          && hosted.endpoint?.eid === witnessHab.pre
+          && serder.ilk !== Ilks.qry
+          && serder.ilk !== Ilks.exn;
+        const emissions = witnessRootIngress
+          ? processWitnessIngress(runtime, witnessHab!, bytes, {
+            local: true,
+          })
+          : processRuntimeRequest(
+            runtime,
+            bytes,
+            hosted.endpoint?.eid ?? null,
+            options.serviceHab,
+          );
 
         if (serder.ilk === Ilks.qry && serder.route === "mbx") {
           const query = serder.ked?.q as Record<string, unknown> | undefined;

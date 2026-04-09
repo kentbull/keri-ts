@@ -385,3 +385,18 @@ Then do task: <TASK>.
 - Why it matters: the false mental model was "rotate is just another CLI wrapper like sign/verify." It is not. Without a habitat-level rotate seam, the CLI either duplicates keeper/KEL invariants or quietly gets rollback wrong.
 - Next: if multisig/group parity work starts, do not extend the single-sig CLI directly. Re-open the habitat/manager ownership boundary first.
 - Verification: local unit/integration/interop coverage passed for single-sig sign -> query -> rotate parity.
+
+### 2026-04-08 - KLI Controller vs Tufa Witness Replacement Parity Landed In The Host Layer
+
+- Substance: the durable fix for KLI-driven witness replacement parity was to
+  route hosted witness root-path HTTP ingress through the witness-local ingress
+  seam. That closed the remaining KLI controller replacement gaps against both
+  all-`tufa` witness sets and mixed `tufa` + KERIpy witness sets.
+- Why it matters: the bad mental model was "receipt-core is probably still
+  wrong." It wasn’t. The real gap lived in host/runtime semantics for ordinary
+  witness HTTP ingress during catchup/fanout, which only shows up in
+  cross-implementation replacement paths.
+- Next: keep only the 6-witness soak ignored. The normal witness addition and
+  replacement matrix should remain default CI coverage.
+- Verification: local `interop-witness`, `interop-kli-tufa`, witness-runtime,
+  and `deno check` passed with KLI replacement scenarios enabled.

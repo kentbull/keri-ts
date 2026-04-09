@@ -48,10 +48,29 @@ export interface KeriPyWitnessNode {
   witnessOobi: string;
 }
 
+/** One started Tufa witness process plus its advertised network state. */
+export interface TufaWitnessNode {
+  alias: string;
+  name: string;
+  pre: string;
+  httpPort: number;
+  tcpPort: number;
+  httpOrigin: string;
+  tcpUrl: string;
+  controllerOobi: string;
+  witnessOobi: string;
+}
+
 /** Options for the explicit KERIpy witness harness. */
 export interface KeriPyWitnessHarnessOptions {
   aliases?: readonly string[];
   base?: string;
+}
+
+/** Options for the explicit Tufa witness harness. */
+export interface TufaWitnessHarnessOptions {
+  aliases?: readonly string[];
+  headDirPath?: string;
 }
 
 /** Default KERIpy witness aliases shipped in the reference config set. */
@@ -62,6 +81,14 @@ const DEFAULT_KERIPY_WITNESS_ALIASES = [
   "wit",
   "wub",
   "wyz",
+] as const;
+
+/** Default Tufa witness aliases used by controller-symmetry interop tests. */
+const DEFAULT_TUFA_WITNESS_ALIASES = [
+  "twan",
+  "twil",
+  "twes",
+  "twit",
 ] as const;
 
 /**
@@ -884,4 +911,208 @@ export async function startKeriPyWitnessHarness(
     nodes,
     children,
   );
+}
+
+/**
+ * Explicit, randomized Tufa witness topology used by controller-symmetry
+ * interop tests.
+ */
+export class TufaWitnessHarness {
+  private closed = false;
+
+  constructor(
+    readonly headDirPath: string,
+    readonly env: Record<string, string>,
+    readonly nodes: readonly TufaWitnessNode[],
+    private readonly children: readonly SpawnedChild[],
+  ) {}
+
+  /** Return one witness by alias or fail loudly if the harness was miswired. */
+  node(alias: string): TufaWitnessNode {
+    const node = this.nodes.find((candidate) => candidate.alias === alias);
+    if (!node) {
+      throw new Error(`Unknown Tufa witness alias '${alias}'.`);
+    }
+    return node;
+  }
+
+  /** Return the first `count` witnesses in deterministic alias order. */
+  activeWitnesses(count: number): readonly TufaWitnessNode[] {
+    if (count < 0 || count > this.nodes.length) {
+      throw new Error(
+        `Requested ${count} active witnesses from a harness with ${this.nodes.length}.`,
+      );
+    }
+    return this.nodes.slice(0, count);
+  }
+
+  /** Stop all witness hosts exactly once. */
+  async close(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    await Promise.all(this.children.map((child) => stopChild(child)));
+  }
+}
+
+/** Initialize one unencrypted Tufa store. */
+async function initTufaStore(
+  name: string,
+  headDirPath: string,
+  env: Record<string, string>,
+  repoRoot: string,
+): Promise<void> {
+  await requireSuccess(
+    `${name} init`,
+    runTufa(
+      [
+        "init",
+        "--name",
+        name,
+        "--head-dir",
+        headDirPath,
+        "--nopasscode",
+      ],
+      env,
+      repoRoot,
+    ),
+  );
+}
+
+/** Incept one non-transferable Tufa witness identity. */
+async function inceptTufaWitnessIdentity(
+  name: string,
+  alias: string,
+  headDirPath: string,
+  env: Record<string, string>,
+  repoRoot: string,
+): Promise<string> {
+  const incepted = await requireSuccess(
+    `${name} incept`,
+    runTufa(
+      [
+        "incept",
+        "--name",
+        name,
+        "--head-dir",
+        headDirPath,
+        "--alias",
+        alias,
+        "--icount",
+        "1",
+        "--isith",
+        "1",
+        "--toad",
+        "0",
+      ],
+      env,
+      repoRoot,
+    ),
+  );
+  return extractPrefix(incepted.stdout);
+}
+
+/** Start one long-lived Tufa witness host. */
+function startTufaWitnessHost(
+  name: string,
+  alias: string,
+  headDirPath: string,
+  httpPort: number,
+  tcpPort: number,
+  env: Record<string, string>,
+  repoRoot: string,
+): SpawnedChild {
+  return spawnChild(
+    "deno",
+    [
+      "run",
+      "--allow-all",
+      "--unstable-ffi",
+      "mod.ts",
+      "witness",
+      "start",
+      "--name",
+      name,
+      "--head-dir",
+      headDirPath,
+      "--alias",
+      alias,
+      "--url",
+      `http://127.0.0.1:${httpPort}`,
+      "--tcp-url",
+      `tcp://127.0.0.1:${tcpPort}`,
+      "--listen-host",
+      "127.0.0.1",
+    ],
+    env,
+    repoRoot,
+  );
+}
+
+/** Start explicit Tufa witness hosts from isolated stores and random ports. */
+export async function startTufaWitnessHarness(
+  ctx: InteropContext,
+  options: TufaWitnessHarnessOptions = {},
+): Promise<TufaWitnessHarness> {
+  const aliases = options.aliases ?? DEFAULT_TUFA_WITNESS_ALIASES;
+  const headDirPath = options.headDirPath ?? await Deno.makeTempDir({
+    prefix: "tufa-witness-harness-",
+  });
+  const nodes: TufaWitnessNode[] = [];
+  const children: SpawnedChild[] = [];
+
+  try {
+    for (const alias of aliases) {
+      const name = `tufa-${alias}-${crypto.randomUUID().slice(0, 8)}`;
+      await initTufaStore(name, headDirPath, ctx.env, ctx.repoRoot);
+      const pre = await inceptTufaWitnessIdentity(
+        name,
+        alias,
+        headDirPath,
+        ctx.env,
+        ctx.repoRoot,
+      );
+      const httpPort = randomPort();
+      const tcpPort = randomPort();
+      const child = startTufaWitnessHost(
+        name,
+        alias,
+        headDirPath,
+        httpPort,
+        tcpPort,
+        ctx.env,
+        ctx.repoRoot,
+      );
+      await waitForHealth(httpPort);
+
+      nodes.push({
+        alias,
+        name,
+        pre,
+        httpPort,
+        tcpPort,
+        httpOrigin: `http://127.0.0.1:${httpPort}`,
+        tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
+        controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
+        witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
+      });
+      children.push(child);
+    }
+  } catch (error) {
+    const details = await Promise.all(
+      children.map((child, index) =>
+        stopChild(child).then((output) =>
+          output.length > 0
+            ? `# ${nodes[index]?.alias ?? aliases[index]}\n${output}`
+            : `# ${nodes[index]?.alias ?? aliases[index]}\n<no output>`
+        )
+      ),
+    );
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n${details.join("\n\n")}`,
+    );
+  }
+
+  return new TufaWitnessHarness(headDirPath, ctx.env, nodes, children);
 }

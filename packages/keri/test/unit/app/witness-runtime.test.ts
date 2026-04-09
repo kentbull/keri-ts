@@ -1,7 +1,11 @@
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";

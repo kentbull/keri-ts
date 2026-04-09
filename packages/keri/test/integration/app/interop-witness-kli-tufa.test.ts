@@ -15,29 +15,16 @@ import {
   requireSuccess,
   runCmd,
   runCmdWithTimeout,
-  runTufa,
   runTufaWithTimeout,
-  spawnChild,
   startKeriPyWitnessHarness,
-  stopChild,
-  waitForHealth,
+  startTufaWitnessHarness,
+  type TufaWitnessHarness,
 } from "./interop-test-helpers.ts";
 
 const PASSCODE = "MyPasscodeARealSecret";
 const SALT = "0AAwMTIzNDU2Nzg5YWJjZGVm";
 
-interface TufaWitnessHost {
-  name: string;
-  alias: string;
-  pre: string;
-  httpPort: number;
-  tcpPort: number;
-  httpOrigin: string;
-  controllerOobi: string;
-  witnessOobi: string;
-}
-
-/** Initialize one unencrypted Tufa store. */
+/** Initialize one unencrypted Tufa controller store. */
 async function initTufaStore(
   name: string,
   headDirPath: string,
@@ -46,7 +33,7 @@ async function initTufaStore(
 ): Promise<void> {
   await requireSuccess(
     `${name} init`,
-    runTufa(
+    runTufaWithTimeout(
       [
         "init",
         "--name",
@@ -57,113 +44,9 @@ async function initTufaStore(
       ],
       env,
       repoRoot,
+      20_000,
     ),
   );
-}
-
-/** Incept one non-transferable Tufa witness identity. */
-async function inceptTufaWitnessIdentity(
-  name: string,
-  alias: string,
-  headDirPath: string,
-  env: Record<string, string>,
-  repoRoot: string,
-): Promise<string> {
-  const incepted = await requireSuccess(
-    `${name} incept`,
-    runTufa(
-      [
-        "incept",
-        "--name",
-        name,
-        "--head-dir",
-        headDirPath,
-        "--alias",
-        alias,
-        "--icount",
-        "1",
-        "--isith",
-        "1",
-        "--toad",
-        "0",
-      ],
-      env,
-      repoRoot,
-    ),
-  );
-  return extractPrefix(incepted.stdout);
-}
-
-/** Start one long-lived Tufa witness host. */
-function startTufaWitnessHost(
-  name: string,
-  alias: string,
-  headDirPath: string,
-  httpPort: number,
-  tcpPort: number,
-  env: Record<string, string>,
-  repoRoot: string,
-) {
-  return spawnChild(
-    "deno",
-    [
-      "run",
-      "--allow-all",
-      "--unstable-ffi",
-      "mod.ts",
-      "witness",
-      "start",
-      "--name",
-      name,
-      "--head-dir",
-      headDirPath,
-      "--alias",
-      alias,
-      "--url",
-      `http://127.0.0.1:${httpPort}`,
-      "--tcp-url",
-      `tcp://127.0.0.1:${tcpPort}`,
-      "--listen-host",
-      "127.0.0.1",
-    ],
-    env,
-    repoRoot,
-  );
-}
-
-/** Create and start one Tufa witness host. */
-async function createStartedTufaWitnessHost(
-  name: string,
-  alias: string,
-  headDirPath: string,
-  env: Record<string, string>,
-  repoRoot: string,
-): Promise<TufaWitnessHost & { child: ReturnType<typeof spawnChild> }> {
-  await initTufaStore(name, headDirPath, env, repoRoot);
-  const pre = await inceptTufaWitnessIdentity(name, alias, headDirPath, env, repoRoot);
-  const httpPort = 20_000 + Math.floor(Math.random() * 20_000);
-  const tcpPort = 20_000 + Math.floor(Math.random() * 20_000);
-  const child = startTufaWitnessHost(
-    name,
-    alias,
-    headDirPath,
-    httpPort,
-    tcpPort,
-    env,
-    repoRoot,
-  );
-  await waitForHealth(httpPort);
-  return {
-    child,
-    name,
-    alias,
-    pre,
-    httpPort,
-    tcpPort,
-    httpOrigin: `http://127.0.0.1:${httpPort}`,
-    controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
-    witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
-  };
 }
 
 /** Require the latest establishment event to carry every expected witness receipt. */
@@ -369,6 +252,45 @@ async function queryKliPrefix(
   );
 }
 
+/** Dump targeted DB state via `tufa db dump` for interop debugging. */
+async function dumpTufaDbTargets(
+  {
+    name,
+    headDirPath,
+    base,
+    compat = false,
+  }: {
+    name: string;
+    headDirPath?: string;
+    base?: string;
+    compat?: boolean;
+  },
+  env: Record<string, string>,
+  repoRoot: string,
+  prefix?: string,
+): Promise<string> {
+  const targets = ["baser.kels", "baser.wigs", "baser.states", "baser.locs", "baser.ends"];
+  const sections: string[] = [];
+  for (const target of targets) {
+    const args = [
+      "db",
+      "dump",
+      target,
+      "--name",
+      name,
+      ...(base ? ["--base", base] : []),
+      ...(headDirPath ? ["--head-dir", headDirPath] : []),
+      ...(compat ? ["--compat"] : []),
+      ...(prefix ? ["--prefix", prefix] : []),
+      "--limit",
+      "20",
+    ];
+    const result = await runTufaWithTimeout(args, env, repoRoot, 20_000);
+    sections.push(`## ${target}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  }
+  return sections.join("\n\n");
+}
+
 /** Assert KERIpy witness stores converged on the controller event and receipts. */
 async function assertKeriPyWitnessStores(
   ctx: Awaited<ReturnType<typeof createInteropContext>>,
@@ -437,6 +359,96 @@ async function assertTufaWitnessStores(
       }
     }
   });
+}
+
+/** Assert one KLI controller store converged on the controller event and receipts. */
+async function assertKliControllerStore(
+  ctx: Awaited<ReturnType<typeof createInteropContext>>,
+  name: string,
+  base: string,
+  controllerPre: string,
+  sn: number,
+  expectedWitnessCount: number,
+): Promise<string> {
+  let said = "";
+  await run(() =>
+    inspectCompatHabery(
+      ctx,
+      {
+        name,
+        base,
+        compat: true,
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+        bran: PASSCODE,
+      },
+      (hby) => {
+        said = assertFullyWitnessed(hby, controllerPre, sn, expectedWitnessCount);
+      },
+    )
+  );
+  return said;
+}
+
+/** Drive a KLI controller store to full witness convergence for one event. */
+async function convergeKliControllerStore(
+  ctx: Awaited<ReturnType<typeof createInteropContext>>,
+  {
+    name,
+    base,
+    alias,
+    controllerPre,
+    sn,
+    expectedWitnessCount,
+    allowQuery = false,
+    attempts = 4,
+  }: {
+    name: string;
+    base: string;
+    alias: string;
+    controllerPre: string;
+    sn: number;
+    expectedWitnessCount: number;
+    allowQuery?: boolean;
+    attempts?: number;
+  },
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await submitKliWitnessReceipts(
+      ctx.kliCommand,
+      ctx.env,
+      name,
+      base,
+      alias,
+    );
+    if (allowQuery) {
+      await queryKliPrefix(
+        ctx.kliCommand,
+        ctx.env,
+        name,
+        base,
+        alias,
+        controllerPre,
+      );
+    }
+    try {
+      return await assertKliControllerStore(
+        ctx,
+        name,
+        base,
+        controllerPre,
+        sn,
+        expectedWitnessCount,
+      );
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  throw (lastError instanceof Error ? lastError : new Error(String(lastError)));
 }
 
 Deno.test("Interop witness: tufa controller completes fully witnessed inception and rotations using only KERIpy witnesses", async () => {
@@ -668,14 +680,6 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
       ),
     );
     const controllerPre = extractPrefix(incepted.stdout);
-    await submitKliWitnessReceipts(
-      ctx.kliCommand,
-      ctx.env,
-      controllerName,
-      base,
-      controllerAlias,
-    );
-
     await requireSuccess(
       "kli rotate same witnesses",
       runCmdWithTimeout(
@@ -698,14 +702,6 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         30_000,
       ),
     );
-    await submitKliWitnessReceipts(
-      ctx.kliCommand,
-      ctx.env,
-      controllerName,
-      base,
-      controllerAlias,
-    );
-
     await requireSuccess(
       "kli rotate same witnesses again",
       runCmdWithTimeout(
@@ -728,44 +724,33 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         30_000,
       ),
     );
-    await submitKliWitnessReceipts(
-      ctx.kliCommand,
-      ctx.env,
-      controllerName,
+    const inceptionSaid = await convergeKliControllerStore(ctx, {
+      name: controllerName,
       base,
-      controllerAlias,
-    );
-    await queryKliPrefix(
-      ctx.kliCommand,
-      ctx.env,
-      controllerName,
-      base,
-      controllerAlias,
+      alias: controllerAlias,
       controllerPre,
-    );
-
-    let inceptionSaid = "";
-    let firstRotationSaid = "";
-    let secondRotationSaid = "";
-    await run(() =>
-      inspectCompatHabery(
-        ctx,
-        {
-          name: controllerName,
-          base,
-          compat: true,
-          readonly: true,
-          skipConfig: true,
-          skipSignator: true,
-          bran: PASSCODE,
-        },
-        (hby) => {
-          inceptionSaid = assertFullyWitnessed(hby, controllerPre, 0, 3);
-          firstRotationSaid = assertFullyWitnessed(hby, controllerPre, 1, 3);
-          secondRotationSaid = assertFullyWitnessed(hby, controllerPre, 2, 3);
-        },
-      )
-    );
+      sn: 0,
+      expectedWitnessCount: 3,
+      allowQuery: true,
+    });
+    const firstRotationSaid = await convergeKliControllerStore(ctx, {
+      name: controllerName,
+      base,
+      alias: controllerAlias,
+      controllerPre,
+      sn: 1,
+      expectedWitnessCount: 3,
+      allowQuery: true,
+    });
+    const secondRotationSaid = await convergeKliControllerStore(ctx, {
+      name: controllerName,
+      base,
+      alias: controllerAlias,
+      controllerPre,
+      sn: 2,
+      expectedWitnessCount: 3,
+      allowQuery: true,
+    });
 
     await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 0, 3);
     await assertKeriPyWitnessStores(ctx, harness, ["wan", "wil", "wes"], controllerPre, 1, 3);
@@ -784,6 +769,207 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
   }
 });
 
+Deno.test("Interop witness: KLI controller completes fully witnessed inception and rotations using only Tufa witnesses", async () => {
+  const ctx = await createInteropContext();
+  const controllerName = `kli-tufa-only-${crypto.randomUUID().slice(0, 8)}`;
+  const controllerAlias = "controller";
+  const base = `kli-tufa-only-${crypto.randomUUID().slice(0, 8)}`;
+  const tufaHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["twan", "twil", "twes"],
+  });
+
+  try {
+    const activeWitnesses = tufaHarness.activeWitnesses(3);
+
+    await requireSuccess(
+      "kli init controller",
+      runCmd(
+        ctx.kliCommand,
+        [
+          "init",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--salt",
+          SALT,
+        ],
+        ctx.env,
+      ),
+    );
+    await resolveWitnessesForKli(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      activeWitnesses,
+    );
+
+    const incepted = await requireSuccess(
+      "kli incept with tufa witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "incept",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--transferable",
+          "--icount",
+          "1",
+          "--isith",
+          "1",
+          "--ncount",
+          "1",
+          "--nsith",
+          "1",
+          "--toad",
+          "3",
+          "--receipt-endpoint",
+          "--wits",
+          activeWitnesses[0]!.pre,
+          "--wits",
+          activeWitnesses[1]!.pre,
+          "--wits",
+          activeWitnesses[2]!.pre,
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    const controllerPre = extractPrefix(incepted.stdout);
+    await submitKliWitnessReceipts(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      controllerAlias,
+    );
+
+    for (let index = 0; index < 2; index++) {
+      await requireSuccess(
+        `kli rotate same tufa witnesses ${index + 1}`,
+        runCmdWithTimeout(
+          ctx.kliCommand,
+          [
+            "rotate",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--alias",
+            controllerAlias,
+            "--receipt-endpoint",
+            "--toad",
+            "3",
+          ],
+          ctx.env,
+          30_000,
+        ),
+      );
+      await submitKliWitnessReceipts(
+        ctx.kliCommand,
+        ctx.env,
+        controllerName,
+        base,
+        controllerAlias,
+      );
+    }
+
+    let inceptionSaid = "";
+    let firstRotationSaid = "";
+    let secondRotationSaid = "";
+    try {
+      inceptionSaid = await assertKliControllerStore(
+        ctx,
+        controllerName,
+        base,
+        controllerPre,
+        0,
+        3,
+      );
+      firstRotationSaid = await assertKliControllerStore(
+        ctx,
+        controllerName,
+        base,
+        controllerPre,
+        1,
+        3,
+      );
+      secondRotationSaid = await assertKliControllerStore(
+        ctx,
+        controllerName,
+        base,
+        controllerPre,
+        2,
+        3,
+      );
+    } catch (error) {
+      const controllerDump = await dumpTufaDbTargets(
+        { name: controllerName, base, compat: true },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      const witnessDump = await dumpTufaDbTargets(
+        { name: activeWitnesses[0]!.name, headDirPath: tufaHarness.headDirPath },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      throw new Error(
+        `${
+          error instanceof Error ? error.message : String(error)
+        }\n\n# KLI controller dump\n${controllerDump}\n\n# First Tufa witness dump\n${witnessDump}`,
+      );
+    }
+
+    try {
+      await assertTufaWitnessStores(tufaHarness.headDirPath, activeWitnesses, controllerPre, 0, 3);
+      await assertTufaWitnessStores(tufaHarness.headDirPath, activeWitnesses, controllerPre, 1, 3);
+      await assertTufaWitnessStores(tufaHarness.headDirPath, activeWitnesses, controllerPre, 2, 3);
+    } catch (error) {
+      const controllerDump = await dumpTufaDbTargets(
+        { name: controllerName, base, compat: true },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      const witnessDump = await dumpTufaDbTargets(
+        { name: activeWitnesses[0]!.name, headDirPath: tufaHarness.headDirPath },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      throw new Error(
+        `${
+          error instanceof Error ? error.message : String(error)
+        }\n\n# KLI controller dump\n${controllerDump}\n\n# First Tufa witness dump\n${witnessDump}`,
+      );
+    }
+
+    for (const witness of activeWitnesses) {
+      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
+      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
+      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
+      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
+      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
+      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+    }
+  } finally {
+    await tufaHarness.close();
+  }
+});
+
 Deno.test("Interop witness: tufa controller completes fully witnessed rotations with mixed Tufa and KERIpy witnesses", async () => {
   const ctx = await createInteropContext();
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-mixed-witnesses-" });
@@ -792,23 +978,14 @@ Deno.test("Interop witness: tufa controller completes fully witnessed rotations 
   const harness = await startKeriPyWitnessHarness(ctx, {
     aliases: ["wan", "wil"],
   });
-
-  const tufaWitness1 = await createStartedTufaWitnessHost(
-    `tufa-wit1-${crypto.randomUUID().slice(0, 8)}`,
-    "twit1",
+  const tufaHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["twit1", "twit2"],
     headDirPath,
-    ctx.env,
-    ctx.repoRoot,
-  );
-  const tufaWitness2 = await createStartedTufaWitnessHost(
-    `tufa-wit2-${crypto.randomUUID().slice(0, 8)}`,
-    "twit2",
-    headDirPath,
-    ctx.env,
-    ctx.repoRoot,
-  );
+  });
 
   try {
+    const tufaWitness1 = tufaHarness.node("twit1");
+    const tufaWitness2 = tufaHarness.node("twit2");
     await initTufaStore(controllerName, headDirPath, ctx.env, ctx.repoRoot);
     await resolveWitnessesForTufa(
       controllerName,
@@ -946,8 +1123,509 @@ Deno.test("Interop witness: tufa controller completes fully witnessed rotations 
       await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
     }
   } finally {
-    await Promise.all([harness.close(), stopChild(tufaWitness1.child), stopChild(tufaWitness2.child)]);
+    await Promise.all([harness.close(), tufaHarness.close()]);
   }
+});
+
+Deno.test("Interop witness: KLI controller completes fully witnessed rotations with mixed Tufa and KERIpy witnesses", async () => {
+  const ctx = await createInteropContext();
+  const controllerName = `kli-mixed-wit-${crypto.randomUUID().slice(0, 8)}`;
+  const controllerAlias = "controller";
+  const base = `kli-mixed-base-${crypto.randomUUID().slice(0, 8)}`;
+  const keriPyHarness = await startKeriPyWitnessHarness(ctx, {
+    aliases: ["wan", "wil"],
+  });
+  const tufaHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["twan", "twil"],
+  });
+
+  try {
+    const inceptionWitnesses = [
+      keriPyHarness.node("wan"),
+      keriPyHarness.node("wil"),
+      tufaHarness.node("twan"),
+    ] as const;
+
+    await requireSuccess(
+      "kli init mixed controller",
+      runCmd(
+        ctx.kliCommand,
+        [
+          "init",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--salt",
+          SALT,
+        ],
+        ctx.env,
+      ),
+    );
+    await resolveWitnessesForKli(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      [...inceptionWitnesses, tufaHarness.node("twil")],
+    );
+
+    const incepted = await requireSuccess(
+      "kli incept mixed witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "incept",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--transferable",
+          "--icount",
+          "1",
+          "--isith",
+          "1",
+          "--ncount",
+          "1",
+          "--nsith",
+          "1",
+          "--toad",
+          "3",
+          "--receipt-endpoint",
+          "--wits",
+          inceptionWitnesses[0]!.pre,
+          "--wits",
+          inceptionWitnesses[1]!.pre,
+          "--wits",
+          inceptionWitnesses[2]!.pre,
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    const controllerPre = extractPrefix(incepted.stdout);
+    await requireSuccess(
+      "kli rotate same mixed witnesses",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "rotate",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--receipt-endpoint",
+          "--toad",
+          "3",
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    await requireSuccess(
+      "kli rotate same mixed witnesses again",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "rotate",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--receipt-endpoint",
+          "--toad",
+          "3",
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    let inceptionSaid = "";
+    let firstRotationSaid = "";
+    let secondRotationSaid = "";
+    try {
+      inceptionSaid = await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 0,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+      });
+      firstRotationSaid = await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 1,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+      });
+      secondRotationSaid = await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 2,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+        attempts: 6,
+      });
+    } catch (error) {
+      const controllerDump = await dumpTufaDbTargets(
+        { name: controllerName, base, compat: true },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      const keriPyDump = await dumpTufaDbTargets(
+        {
+          name: keriPyHarness.node("wan").name,
+          base: keriPyHarness.base,
+          compat: true,
+        },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      const tufaDump = await dumpTufaDbTargets(
+        { name: tufaHarness.node("twan").name, headDirPath: tufaHarness.headDirPath },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      throw new Error(
+        `${
+          error instanceof Error ? error.message : String(error)
+        }\n\n# KLI controller dump\n${controllerDump}\n\n# KERIpy witness dump\n${keriPyDump}\n\n# First Tufa witness dump\n${tufaDump}`,
+      );
+    }
+
+    await assertKeriPyWitnessStores(ctx, keriPyHarness, ["wan", "wil"], controllerPre, 0, 3);
+    await assertKeriPyWitnessStores(ctx, keriPyHarness, ["wan", "wil"], controllerPre, 1, 3);
+    await assertKeriPyWitnessStores(ctx, keriPyHarness, ["wan", "wil"], controllerPre, 2, 3);
+
+    try {
+      await assertTufaWitnessStores(tufaHarness.headDirPath, [tufaHarness.node("twan")], controllerPre, 0, 3);
+      await assertTufaWitnessStores(tufaHarness.headDirPath, [tufaHarness.node("twan")], controllerPre, 1, 3);
+      await assertTufaWitnessStores(tufaHarness.headDirPath, [tufaHarness.node("twan")], controllerPre, 2, 3);
+    } catch (error) {
+      const controllerDump = await dumpTufaDbTargets(
+        { name: controllerName, base, compat: true },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      const tufaDump = await dumpTufaDbTargets(
+        { name: tufaHarness.node("twan").name, headDirPath: tufaHarness.headDirPath },
+        ctx.env,
+        ctx.repoRoot,
+        controllerPre,
+      );
+      throw new Error(
+        `${
+          error instanceof Error ? error.message : String(error)
+        }\n\n# KLI controller dump\n${controllerDump}\n\n# First Tufa witness dump\n${tufaDump}`,
+      );
+    }
+
+    for (const witness of inceptionWitnesses) {
+      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 0, inceptionSaid);
+      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, inceptionSaid, 0);
+      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 1, firstRotationSaid);
+      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, firstRotationSaid, 1);
+      await assertWitnessKelVisible(witness.httpOrigin, controllerPre, 2, secondRotationSaid);
+      await assertWitnessReceiptVisible(witness.httpOrigin, controllerPre, secondRotationSaid, 2);
+    }
+  } finally {
+    await Promise.all([keriPyHarness.close(), tufaHarness.close()]);
+  }
+});
+
+Deno.test("Interop witness: KLI controller mixed Tufa/KERIpy witness replacement converges fully", async () => {
+    const ctx = await createInteropContext();
+    const controllerName = `kli-mixed-repl-${crypto.randomUUID().slice(0, 8)}`;
+    const controllerAlias = "controller";
+    const base = `kli-mixed-repl-base-${crypto.randomUUID().slice(0, 8)}`;
+    const keriPyHarness = await startKeriPyWitnessHarness(ctx, {
+      aliases: ["wan", "wil"],
+    });
+    const tufaHarness = await startTufaWitnessHarness(ctx, {
+      aliases: ["twan", "twil"],
+    });
+
+    try {
+      const initialWitnesses = [
+        keriPyHarness.node("wan"),
+        keriPyHarness.node("wil"),
+        tufaHarness.node("twan"),
+      ] as const;
+      const replacementWitness = tufaHarness.node("twil");
+
+      await requireSuccess(
+        "kli init mixed replacement controller",
+        runCmd(
+          ctx.kliCommand,
+          [
+            "init",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--salt",
+            SALT,
+          ],
+          ctx.env,
+        ),
+      );
+      await resolveWitnessesForKli(
+        ctx.kliCommand,
+        ctx.env,
+        controllerName,
+        base,
+        [...initialWitnesses, replacementWitness],
+      );
+
+      const incepted = await requireSuccess(
+        "kli incept mixed replacement witnesses",
+        runCmdWithTimeout(
+          ctx.kliCommand,
+          [
+            "incept",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--alias",
+            controllerAlias,
+            "--transferable",
+            "--icount",
+            "1",
+            "--isith",
+            "1",
+            "--ncount",
+            "1",
+            "--nsith",
+            "1",
+            "--toad",
+            "3",
+            "--receipt-endpoint",
+            "--wits",
+            initialWitnesses[0]!.pre,
+            "--wits",
+            initialWitnesses[1]!.pre,
+            "--wits",
+            initialWitnesses[2]!.pre,
+          ],
+          ctx.env,
+          30_000,
+        ),
+      );
+      const controllerPre = extractPrefix(incepted.stdout);
+
+      await requireSuccess(
+        "kli rotate mixed replacement witnesses",
+        runCmdWithTimeout(
+          ctx.kliCommand,
+          [
+            "rotate",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--alias",
+            controllerAlias,
+            "--receipt-endpoint",
+            "--witness-cut",
+            keriPyHarness.node("wil").pre,
+            "--witness-add",
+            replacementWitness.pre,
+            "--toad",
+            "3",
+          ],
+          ctx.env,
+          30_000,
+        ),
+      );
+
+      await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 0,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+      });
+      await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 1,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+        attempts: 6,
+      });
+    } finally {
+      await Promise.all([keriPyHarness.close(), tufaHarness.close()]);
+    }
+});
+
+Deno.test("Interop witness: KLI controller reaches full replacement convergence using only Tufa witnesses", async () => {
+    const ctx = await createInteropContext();
+    const controllerName = `kli-tufa-replace-${crypto.randomUUID().slice(0, 8)}`;
+    const controllerAlias = "controller";
+    const base = `kli-tufa-replace-${crypto.randomUUID().slice(0, 8)}`;
+    const tufaHarness = await startTufaWitnessHarness(ctx, {
+      aliases: ["twan", "twil", "twes", "twit"],
+    });
+
+    try {
+      const initialWitnesses = tufaHarness.activeWitnesses(3);
+      const replacementWitness = tufaHarness.node("twit");
+
+      await requireSuccess(
+        "kli init all-tufa replacement controller",
+        runCmd(
+          ctx.kliCommand,
+          [
+            "init",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--salt",
+            SALT,
+          ],
+          ctx.env,
+        ),
+      );
+      await resolveWitnessesForKli(
+        ctx.kliCommand,
+        ctx.env,
+        controllerName,
+        base,
+        [...initialWitnesses, replacementWitness],
+      );
+
+      const incepted = await requireSuccess(
+        "kli incept all-tufa replacement witnesses",
+        runCmdWithTimeout(
+          ctx.kliCommand,
+          [
+            "incept",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--alias",
+            controllerAlias,
+            "--transferable",
+            "--icount",
+            "1",
+            "--isith",
+            "1",
+            "--ncount",
+            "1",
+            "--nsith",
+            "1",
+            "--toad",
+            "3",
+            "--receipt-endpoint",
+            "--wits",
+            initialWitnesses[0]!.pre,
+            "--wits",
+            initialWitnesses[1]!.pre,
+            "--wits",
+            initialWitnesses[2]!.pre,
+          ],
+          ctx.env,
+          30_000,
+        ),
+      );
+      const controllerPre = extractPrefix(incepted.stdout);
+      await submitKliWitnessReceipts(
+        ctx.kliCommand,
+        ctx.env,
+        controllerName,
+        base,
+        controllerAlias,
+      );
+
+      await requireSuccess(
+        "kli rotate all-tufa replacement witnesses",
+        runCmdWithTimeout(
+          ctx.kliCommand,
+          [
+            "rotate",
+            "--name",
+            controllerName,
+            "--base",
+            base,
+            "--passcode",
+            PASSCODE,
+            "--alias",
+            controllerAlias,
+            "--receipt-endpoint",
+            "--witness-cut",
+            initialWitnesses[2]!.pre,
+            "--witness-add",
+            replacementWitness.pre,
+            "--toad",
+            "3",
+          ],
+          ctx.env,
+          30_000,
+        ),
+      );
+      await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 0,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+      });
+      await convergeKliControllerStore(ctx, {
+        name: controllerName,
+        base,
+        alias: controllerAlias,
+        controllerPre,
+        sn: 1,
+        expectedWitnessCount: 3,
+        allowQuery: true,
+        attempts: 6,
+      });
+    } finally {
+      await tufaHarness.close();
+    }
 });
 
 Deno.test({

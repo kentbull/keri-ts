@@ -149,3 +149,35 @@ deployment, CI, and interoperability operations.
   `tufa` + KERIpy witness flows, and an all-KERIpy KLI control case across
   multiple same-witness rotations. Keep the 6-witness soak manual/ignored by
   default.
+
+### 2026-04-08 - Use `tufa db dump` To Localize Witness Interop Failures Fast
+
+- The fastest way to separate controller-store convergence bugs from
+  witness-store convergence bugs is to dump both sides with `tufa db dump`
+  instead of guessing from CLI success alone. For compat-mode KLI/KERIpy
+  stores, dump `baser.kels`, `baser.wigs`, and `baser.states` first.
+- The mixed KLI-controller replacement investigation showed why this matters:
+  a controller can have the final event while both the controller and a `tufa`
+  witness still lack the full active receipt set. That instantly rules out
+  "controller fetch only" and points at the receipt/fanout path instead.
+
+### 2026-04-08 - Hosted Witness Root HTTP Ingress Must Use Witness Semantics
+
+- The durable host fix for KLI-driven replacement parity was in the shared
+  HTTP host, not in the low-level receipt-core. Generic POST/PUT requests to a
+  hosted witness base path must be processed through the witness-local ingress
+  seam, just like TCP witness ingress and `/receipts`.
+- Keep mailbox `qry/mbx`, `/fwd`, `/receipts`, and `/query` behavior on their
+  existing paths. The correction is specifically for ordinary witness root-path
+  event/reply traffic on the hosted witness AID.
+
+### 2026-04-08 - KLI Replacement Parity Is Now Proved, Not Just Same-Set Rotations
+
+- KLI/KERIpy controllers are now proved against all-`tufa` witness sets across
+  multiple same-set rotations and witness replacement.
+- KLI/KERIpy controllers are also now proved against mixed `tufa` + KERIpy
+  witness sets across multiple same-set rotations and cross-implementation
+  witness replacement.
+- The only witness interop seam that should remain ignored by default is the
+  explicit 6-witness soak. Do not reintroduce ignored parity tests for the
+  normal controller/witness replacement matrix.
