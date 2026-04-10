@@ -1,13 +1,11 @@
-import { run, type Operation } from "npm:effection@^3.6.0";
-import {
-  type AgentRuntime,
-  createAgentRuntime,
-  processRuntimeUntil,
-} from "../../../src/app/agent-runtime.ts";
+import { type Operation, run } from "npm:effection@^3.6.0";
+import { type AgentRuntime, createAgentRuntime, processRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import {
+  type CmdResult,
   extractLastNonEmptyLine,
   inspectCompatHabery,
+  type InteropContext,
   localKeriPySourceEnv,
   readChildOutput,
   requireSuccess,
@@ -16,10 +14,8 @@ import {
   runTufa,
   runTufaWithTimeout,
   spawnChild,
-  stopChild,
-  type CmdResult,
-  type InteropContext,
   type SpawnedChild,
+  stopChild,
 } from "./interop-test-helpers.ts";
 
 export const INTEROP_PASSCODE = "MyPasscodeARealSecret";
@@ -923,9 +919,7 @@ export async function inspectCompatKeverSn(
 }
 
 function extractPrefixLine(output: string): string {
-  const line = output.split(/\r?\n/).find((entry) =>
-    entry.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((entry) => entry.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -955,9 +949,7 @@ async function waitForChildHealth(
     }
     const status = await Promise.race([
       child.status.then((value) => value.code),
-      new Promise<number | null>((resolve) =>
-        setTimeout(() => resolve(null), 150)
-      ),
+      new Promise<number | null>((resolve) => setTimeout(() => resolve(null), 150)),
     ]);
     if (typeof status === "number") {
       throw new Error(

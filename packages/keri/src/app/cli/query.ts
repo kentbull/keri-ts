@@ -15,12 +15,7 @@
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import {
-  createAgentRuntime,
-  processRuntimeTurn,
-  runtimeHasPendingWork,
-  runtimeTurn,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
 import { queryTransportSink } from "../query-transport.ts";

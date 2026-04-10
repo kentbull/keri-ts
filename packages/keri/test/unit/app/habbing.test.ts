@@ -28,9 +28,9 @@ import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts
 import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
+import type { QueryCoordinator } from "../../../src/app/querying.ts";
 import { makeExchangeSerder } from "../../../src/core/messages.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import type { QueryCoordinator } from "../../../src/app/querying.ts";
 
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
   await run(function*() {

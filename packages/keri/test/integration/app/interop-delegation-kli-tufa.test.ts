@@ -12,12 +12,7 @@
  * - witness OOBIs for witness-backed delegate inception/rotation
  * - Tufa `Notifier` visibility before `delegate confirm`
  */
-import {
-  assert,
-  assertEquals,
-  assertStringIncludes,
-} from "jsr:@std/assert";
-import { stopChild } from "./interop-test-helpers.ts";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   addKliHostedRoute,
   addKliMailbox,
@@ -25,10 +20,10 @@ import {
   addTufaMailbox,
   generateKliMailboxOobi,
   generateTufaMailboxOobi,
-  initKliStore,
-  initTufaStore,
   inceptKliAlias,
   inceptTufaAlias,
+  initKliStore,
+  initTufaStore,
   inspectCompatKeverSn,
   inspectTufaHabery,
   INTEROP_PASSCODE,
@@ -41,6 +36,7 @@ import {
   startTufaAgentHost,
   waitForChildSuccess,
 } from "./interop-delegation-helpers.ts";
+import { stopChild } from "./interop-test-helpers.ts";
 import {
   createInteropContext,
   extractPrefix,
@@ -248,8 +244,7 @@ Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and
       base,
       headDirPath: tufaHeadDir,
       passcode: INTEROP_PASSCODE,
-      url:
-        `${delegatorWitness.httpOrigin}/oobi/${delegatorPre}/witness/${delegatorWitness.pre}`,
+      url: `${delegatorWitness.httpOrigin}/oobi/${delegatorPre}/witness/${delegatorWitness.pre}`,
       alias: `${delegatorAlias}-${delegatorWitness.alias}`,
     });
 
@@ -632,8 +627,7 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
         passcode: INTEROP_PASSCODE,
         alias: delegatorAlias,
       },
-      ({ hby, runtime }) =>
-        (runtime.notifier?.count() ?? 0) >= 1 && hby.db.delegables.cnt() >= 1,
+      ({ hby, runtime }) => (runtime.notifier?.count() ?? 0) >= 1 && hby.db.delegables.cnt() >= 1,
       { maxTurns: 160 },
     );
 
@@ -648,8 +642,8 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
     });
     const dipNotice = notificationsAfterDip.notices.find((notice) =>
       notice.attrs["r"] === "/delegate/request"
-        && notice.attrs["src"] === proxyPre
-        && notice.attrs["delpre"] === delegatorPre
+      && notice.attrs["src"] === proxyPre
+      && notice.attrs["delpre"] === delegatorPre
     );
     assert(dipNotice);
     assertEquals(
@@ -727,8 +721,7 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
         passcode: INTEROP_PASSCODE,
         alias: delegatorAlias,
       },
-      ({ hby, runtime }) =>
-        (runtime.notifier?.count() ?? 0) >= 2 && hby.db.delegables.cnt() >= 1,
+      ({ hby, runtime }) => (runtime.notifier?.count() ?? 0) >= 2 && hby.db.delegables.cnt() >= 1,
       { maxTurns: 160 },
     );
 
@@ -743,8 +736,8 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
     });
     const drtNotice = notificationsAfterDrt.notices.find((notice) =>
       notice.attrs["r"] === "/delegate/request"
-        && notice.attrs["src"] === proxyPre
-        && (notice.attrs["ked"] as Record<string, unknown>)["t"] === "drt"
+      && notice.attrs["src"] === proxyPre
+      && (notice.attrs["ked"] as Record<string, unknown>)["t"] === "drt"
     );
     assert(drtNotice);
 

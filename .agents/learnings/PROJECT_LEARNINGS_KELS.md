@@ -80,8 +80,7 @@ and KERIpy interoperability.
 26. Honest CLI/bootstrap tests must use explicit file-path flags such as
     `--config-dir` / `--config-file` rather than hidden default-path mutation.
 27. End-to-end controller-to-controller coverage must respect single-store
-    ownership. Do not run CLI commands against the same store a live `tufa
-    agent` is currently hosting.
+    ownership. Do not run CLI commands against the same store a live `tufa agent` is currently hosting.
 28. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
     selectors over ad hoc LMDB scripts or whole-store dumps.
 29. The host mental model is one listener/runtime per Habery or command

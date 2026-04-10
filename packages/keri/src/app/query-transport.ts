@@ -6,8 +6,8 @@ import type { AgentRuntime } from "./agent-runtime.ts";
 import { ingestKeriBytes } from "./agent-runtime.ts";
 import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
 import type { CueSink } from "./cue-runtime.ts";
-import { fetchResponseHandle } from "./httping.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { fetchResponseHandle } from "./httping.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 
 /**
@@ -26,9 +26,7 @@ function resolveQueryDestinationUrl(
 ): string | null {
   const ends = hab.endsFor(queriedPre);
   for (const role of [Roles.controller, Roles.agent, Roles.witness]) {
-    const endpoint = flattenRoleUrls(ends[role]).find((entry) =>
-      entry.eid === destination
-    );
+    const endpoint = flattenRoleUrls(ends[role]).find((entry) => entry.eid === destination);
     if (endpoint) {
       return endpoint.url;
     }
@@ -46,9 +44,7 @@ function* readResponseBytes(response: Response): Operation<Uint8Array> {
   const buffer = yield* action<ArrayBuffer>((resolve, reject) => {
     response.arrayBuffer()
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
     return () => {};
   });
   return new Uint8Array(buffer);

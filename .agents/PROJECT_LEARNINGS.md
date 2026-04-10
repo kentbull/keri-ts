@@ -17,7 +17,7 @@ should stay short enough to reread at session start.
 ## Topic Learnings Index
 
 | Topic                          | File                                                                    | Scope                                                                    |
-|--------------------------------|-------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| ------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | CESR Parser                    | `.agents/learnings/PROJECT_LEARNINGS_CESR.md`                           | Parser architecture, primitive/serder parity, native handling            |
 | Crypto Suite                   | `.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md`                   | Primitive semantics, signer/verifier ownership, encryption behavior      |
 | KELs                           | `.agents/learnings/PROJECT_LEARNINGS_KELS.md`                           | DB parity, state transitions, runtime/cue/reply ownership, interop gates |

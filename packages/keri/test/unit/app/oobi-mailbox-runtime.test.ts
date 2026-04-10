@@ -10,25 +10,16 @@ import {
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { exchangeSendCommand } from "../../../src/app/cli/exchange.ts";
-import {
-  oobiGenerateCommand,
-  oobiResolveCommand,
-} from "../../../src/app/cli/oobi.ts";
+import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { OOBI_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
-import {
-  controllerOobiResponse,
-  startStaticHttpHost,
-} from "../../http-test-support.ts";
+import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
 import { startTestServer } from "../../runtime-test-hosts.ts";
 import { testCLICommand } from "../../utils.ts";
-import {
-  seedHostedIdentifier,
-  seedLocalIdentifier,
-} from "./challenge-runtime-support.ts";
+import { seedHostedIdentifier, seedLocalIdentifier } from "./challenge-runtime-support.ts";
 
 async function seedMailboxProvider(
   name: string,
@@ -37,7 +28,7 @@ async function seedMailboxProvider(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -62,12 +53,9 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
   const providerName = `oobi-indirect-provider-${crypto.randomUUID()}`;
   const recipientName = `oobi-indirect-recipient-${crypto.randomUUID()}`;
   const senderName = `oobi-indirect-sender-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-oobi-indirect-provider-${crypto.randomUUID()}`;
-  const recipientHeadDirPath =
-    `/tmp/tufa-oobi-indirect-recipient-${crypto.randomUUID()}`;
-  const senderHeadDirPath =
-    `/tmp/tufa-oobi-indirect-sender-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-oobi-indirect-provider-${crypto.randomUUID()}`;
+  const recipientHeadDirPath = `/tmp/tufa-oobi-indirect-recipient-${crypto.randomUUID()}`;
+  const senderHeadDirPath = `/tmp/tufa-oobi-indirect-sender-${crypto.randomUUID()}`;
 
   const providerPre = await seedMailboxProvider(
     providerName,
@@ -93,11 +81,10 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
     senderHost.origin,
   );
   const senderPre = sender.pre;
-  const requestedOobi =
-    `https://resolver.example/oobi/${senderPre}/controller?name=Requested`;
+  const requestedOobi = `https://resolver.example/oobi/${senderPre}/controller?name=Requested`;
 
   try {
-    await run(function* (): Operation<void> {
+    await run(function*(): Operation<void> {
       const providerHby = yield* createHabery({
         name: providerName,
         headDirPath: providerHeadDirPath,
@@ -115,7 +102,7 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
       }
-      const runtimeTask = yield* spawn(function* () {
+      const runtimeTask = yield* spawn(function*() {
         yield* runAgentRuntime(runtime, { hab });
       });
       const { address, task: serverTask } = yield* startTestServer(runtime);
