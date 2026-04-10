@@ -475,6 +475,26 @@ export function loadOobiHandlers(
   exchanger.addHandler(new OobiRequestHandler(hby, notifier));
 }
 
+/**
+ * Peer-to-peer OOBI request handler for `/oobis` exchange messages.
+ *
+ * KERIpy correspondence:
+ * - this is the local analogue of `keri.app.oobiing.OobiRequestHandler`
+ * - the Python handler does two things only: accept an EXN carrying an OOBI
+ *   URL, and convert that request into local controller-visible state
+ * - specifically, it pins an `oobis.` record so the resolver can fetch it
+ *   later, and it emits a notifier entry so operator-facing surfaces can show
+ *   that someone asked us to resolve or inspect an OOBI
+ *
+ * Local `keri-ts` adaptation:
+ * - verification stays lightweight and route-local: we only require a string
+ *   `oobi` payload with an `http:` or `https:` scheme
+ * - durable follow-on work still belongs to `Oobiery` itself; this handler is
+ *   just the exchange ingress seam that translates an EXN into queued resolver
+ *   state
+ * - unlike KERIpy's DoDoer-centric runtime, the queued record is later
+ *   advanced by the shared `AgentRuntime` turn that owns OOBI processing
+ */
 export class OobiRequestHandler implements ExchangeRouteHandler {
   static readonly resource = OOBI_REQUEST_ROUTE;
   readonly resource = OobiRequestHandler.resource;

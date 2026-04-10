@@ -204,6 +204,25 @@ export function loadDelegationHandlers(
   exchanger.addHandler(new DelegateRequestHandler(hby, notifier));
 }
 
+/**
+ * Peer-to-peer delegation request handler for `/delegate/request` exchange messages.
+ *
+ * KERIpy correspondence:
+ * - this is the local analogue of `keri.app.delegating.DelegateRequestHandler`
+ * - the Python handler exists to translate an incoming delegation request EXN
+ *   into controller-facing notification data for the local delegator
+ * - it does not approve the delegated event itself; approval still happens
+ *   later when the local controller anchors the embedded event in its own KEL
+ *
+ * Local `keri-ts` adaptation:
+ * - the handler accepts an EXN that carries `delpre` in the payload and the
+ *   delegated event bytes in the `evt` embed
+ * - if `delpre` does not belong to a local habitat, the message is ignored
+ *   because there is no local delegator controller for the request
+ * - on success, the handler only emits notifier state; durable delegation
+ *   workflow progression remains the responsibility of `Anchorer` and the
+ *   normal event-parsing/approval path
+ */
 export class DelegateRequestHandler implements ExchangeRouteHandler {
   static readonly resource = DELEGATE_REQUEST_ROUTE;
   readonly resource = DelegateRequestHandler.resource;
@@ -261,6 +280,39 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
   }
 }
 
+/**
+ * Delegation workflow coordinator for delegated inception and rotation events.
+ *
+ * KERIpy correspondence:
+ * - this class ports the protocol role of `keri.app.delegating.Anchorer`
+ * - the Python `Anchorer` is a `DoDoer` that drives three escrow phases:
+ *   waiting for delegate witness receipts, waiting for the delegator's anchor,
+ *   and, when needed, waiting for post-approval witness publication
+ * - it is the component that turns "delegated event exists locally" into
+ *   "delegated event has been presented to the delegator, approved, and
+ *   finalized for local completion"
+ *
+ * Local `keri-ts` adaptation:
+ * - this class is not a long-lived DoDoer; it is a deterministic workflow
+ *   component run by the shared `AgentRuntime` turn
+ * - protocol state still lives in the same durable escrow families used by the
+ *   rest of the runtime:
+ *   - `dpwe.` for waiting on delegate witness receipts
+ *   - `dune.` for waiting on the delegator's authorizing anchor
+ *   - `dpub.` for waiting on witness republication after approval
+ *   - `cdel.` for completed delegation workflows
+ * - outbound correspondence is delegated to `Poster`, anchor discovery is
+ *   delegated to `QueryCoordinator`, and forced witness republication uses
+ *   `WitnessReceiptor`
+ *
+ * Maintainer mental model:
+ * - `Anchorer` owns workflow progression, not generic cue delivery and not
+ *   low-level event parsing
+ * - each call to `processAllOnce()` advances the durable escrows at most one
+ *   phase per workflow based on currently known local state
+ * - approval becomes authoritative only when the delegator's sealing event is
+ *   learned locally and pinned into `aess.`
+ */
 export class Anchorer {
   readonly hby: Habery;
   readonly poster: Poster;
