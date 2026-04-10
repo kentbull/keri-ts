@@ -94,6 +94,10 @@ const laneConfigs: Record<string, LaneConfig> = {
     description: "Gate C plus Gate D ready scenarios.",
     allowAll: true,
   },
+  "interop-delegation": {
+    description: "Cross-implementation delegated inception and rotation scenarios.",
+    allowAll: true,
+  },
   "runtime-slow": {
     description: "Mailbox-heavy runtime, agent reopen, and witness runtime coverage.",
     allowAll: true,
@@ -139,6 +143,7 @@ const groupDefinitions: Record<string, GroupDefinition> = {
   slow: {
     description: "Explicit slow mailbox/runtime/interop coverage.",
     lanes: [
+      "interop-delegation",
       "runtime-slow",
       "interop-mailbox-slow",
     ],
@@ -158,6 +163,7 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "interop-witness",
       "interop-gates-b",
       "interop-gates-c",
+      "interop-delegation",
       "runtime-slow",
       "interop-mailbox-slow",
     ],

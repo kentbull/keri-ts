@@ -28,7 +28,7 @@ Deno.test("tufa/runtime-bridge - replay cues are forwarded through poster instea
       habs: new Map([["EWIT", serviceHab]]),
     },
     cues: [],
-    responder: {
+    respondant: {
       *sendWithHab(current: CueEmission, hab: { pre: string }) {
         handled.push({
           emission: current,

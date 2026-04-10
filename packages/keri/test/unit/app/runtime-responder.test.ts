@@ -197,7 +197,7 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
         return;
       },
     },
-    responder: {
+    respondant: {
       *sendWithHab(current: CueEmission, hab: { pre: string }) {
         handled.push({ emission: current, hab: hab.pre });
       },
