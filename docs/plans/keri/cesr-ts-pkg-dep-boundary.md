@@ -132,7 +132,7 @@ That means:
 ### Runtime Validation
 
 - The local reinstall workflow installs both tarballs successfully.
-- `scripts/smoke-test-keri-npm.sh` passes when both tarballs are supplied.
+- `scripts/smoke-test-tufa-npm.sh` passes when both tarballs are supplied.
 - Running installed `tufa` from the packed artifact no longer produces
   `ERR_MODULE_NOT_FOUND` for CESR-owned runtime packages.
 

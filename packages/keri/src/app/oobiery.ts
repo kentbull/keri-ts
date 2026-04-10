@@ -4,14 +4,20 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
+import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { exchange } from "../core/protocol-exchanging.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
-import type { Habery } from "./habbing.ts";
+import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
+import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
+import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+
+export const OOBI_REQUEST_ROUTE = "/oobis";
 
 /**
  * Runtime-tracked OOBI resolution job.
@@ -461,6 +467,110 @@ export class Oobiery {
   }
 }
 
+export function loadOobiHandlers(
+  hby: Habery,
+  exchanger: Exchanger,
+  notifier: Notifier | null = null,
+): void {
+  exchanger.addHandler(new OobiRequestHandler(hby, notifier));
+}
+
+/**
+ * Peer-to-peer OOBI request handler for `/oobis` exchange messages.
+ *
+ * KERIpy correspondence:
+ * - this is the local analogue of `keri.app.oobiing.OobiRequestHandler`
+ * - the Python handler does two things only: accept an EXN carrying an OOBI
+ *   URL, and convert that request into local controller-visible state
+ * - specifically, it pins an `oobis.` record so the resolver can fetch it
+ *   later, and it emits a notifier entry so operator-facing surfaces can show
+ *   that someone asked us to resolve or inspect an OOBI
+ *
+ * Local `keri-ts` adaptation:
+ * - verification stays lightweight and route-local: we only require a string
+ *   `oobi` payload with an `http:` or `https:` scheme
+ * - durable follow-on work still belongs to `Oobiery` itself; this handler is
+ *   just the exchange ingress seam that translates an EXN into queued resolver
+ *   state
+ * - unlike KERIpy's DoDoer-centric runtime, the queued record is later
+ *   advanced by the shared `AgentRuntime` turn that owns OOBI processing
+ */
+export class OobiRequestHandler implements ExchangeRouteHandler {
+  static readonly resource = OOBI_REQUEST_ROUTE;
+  readonly resource = OobiRequestHandler.resource;
+  readonly hby: Habery;
+  readonly notifier: Notifier | null;
+
+  constructor(
+    hby: Habery,
+    notifier: Notifier | null = null,
+  ) {
+    this.hby = hby;
+    this.notifier = notifier;
+  }
+
+  verify(args: {
+    serder: SerderKERI;
+  }): boolean {
+    const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
+    if (typeof payload?.["oobi"] !== "string") {
+      return false;
+    }
+    try {
+      const parsed = new URL(payload.oobi);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  handle(args: {
+    serder: SerderKERI;
+  }): void {
+    const src = args.serder.pre;
+    const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
+    const oobi = typeof payload?.["oobi"] === "string" ? payload.oobi : null;
+    if (!src || !oobi) {
+      return;
+    }
+
+    const alias = new URL(oobi).searchParams.get("name");
+    this.hby.db.oobis.pin(oobi, {
+      date: new Date().toISOString(),
+      state: "queued",
+      oobialias: alias,
+    });
+
+    if (!this.notifier) {
+      return;
+    }
+
+    const attrs: Record<string, unknown> = {
+      r: "/oobi",
+      src,
+      oobi,
+    };
+    if (alias) {
+      attrs["oobialias"] = alias;
+    }
+    this.notifier.add(attrs);
+  }
+}
+
+export function oobiRequestExn(
+  hab: Hab,
+  dest: string,
+  oobi: string,
+): SerderKERI {
+  return exchange(
+    OOBI_REQUEST_ROUTE,
+    { dest, oobi },
+    {
+      sender: hab.pre,
+    },
+  )[0];
+}
+
 /**
  * Parse one OOBI URL into its role/cid/eid metadata projection.
  *
@@ -525,6 +635,8 @@ function findPathSequence(parts: string[], sequence: string[]): number {
 function queueKindFor(url: string): OobiQueueKind {
   return isWellKnownOobiUrl(url) ? "woobi" : "oobis";
 }
+
+export { OOBI_MAILBOX_TOPIC };
 
 /**
  * Fetch one OOBI URL under Effection cancellation control.

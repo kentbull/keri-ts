@@ -2,12 +2,12 @@
 
 import { type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { tufa } from "../../../src/app/cli/cli.ts";
+import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
-import { mailboxStartCommand } from "../../../src/app/cli/mailbox.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
@@ -36,9 +36,15 @@ function extractRawSignature(output: string): string {
 }
 
 async function runTufa(args: string[]): Promise<CmdResult> {
-  const repoRoot = new URL("../../../", import.meta.url);
+  const repoRoot = new URL("../../../../../", import.meta.url);
   const out = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    args: [
+      "run",
+      "--allow-all",
+      "--unstable-ffi",
+      "packages/tufa/mod.ts",
+      ...args,
+    ],
     cwd: repoRoot,
     stdout: "piped",
     stderr: "piped",

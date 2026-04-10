@@ -66,10 +66,6 @@ const laneConfigs: Record<string, LaneConfig> = {
     description: "Global-state app coverage that still mutates console or HOME.",
     allowAll: true,
   },
-  server: {
-    description: "Dedicated server integration coverage.",
-    allowAll: true,
-  },
   "runtime-medium": {
     description: "Representative runtime coverage kept on the default path.",
     allowAll: true,
@@ -96,6 +92,10 @@ const laneConfigs: Record<string, LaneConfig> = {
   },
   "interop-gates-c": {
     description: "Gate C plus Gate D ready scenarios.",
+    allowAll: true,
+  },
+  "interop-delegation": {
+    description: "Cross-implementation delegated inception and rotation scenarios.",
     allowAll: true,
   },
   "runtime-slow": {
@@ -131,7 +131,6 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "core-fast-b",
       "app-fast-parallel",
       "app-fast-isolated",
-      "server",
       "runtime-medium",
       "app-stateful-a",
       "app-stateful-b",
@@ -144,6 +143,7 @@ const groupDefinitions: Record<string, GroupDefinition> = {
   slow: {
     description: "Explicit slow mailbox/runtime/interop coverage.",
     lanes: [
+      "interop-delegation",
       "runtime-slow",
       "interop-mailbox-slow",
     ],
@@ -156,7 +156,6 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "core-fast-b",
       "app-fast-parallel",
       "app-fast-isolated",
-      "server",
       "runtime-medium",
       "app-stateful-a",
       "app-stateful-b",
@@ -164,6 +163,7 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "interop-witness",
       "interop-gates-b",
       "interop-gates-c",
+      "interop-delegation",
       "runtime-slow",
       "interop-mailbox-slow",
     ],

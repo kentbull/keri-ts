@@ -15,8 +15,11 @@
 import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
-import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../core/messages.ts";
+import type { Kever } from "../core/kever.ts";
+import { DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
+import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
@@ -25,6 +28,7 @@ import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
+import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
 import {
   directDeliveryEndpoints,
   firstSortedEndpoint,
@@ -38,9 +42,6 @@ import {
 import { Organizer } from "./organizing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** Shared encoder for mailbox SSE parsing. */
-const textEncoder = new TextEncoder();
-
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
 export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
 
@@ -51,13 +52,20 @@ export interface ExchangeSendResult {
   queued: string[];
 }
 
+/** Result summary for one raw CESR delivery attempt. */
+export interface RawCesrSendResult {
+  deliveries: string[];
+  queued: string[];
+}
+
 /**
  * Mailbox-first postman for outbound EXN transport.
  *
  * Responsibilities:
  * - resolve recipient aliases against organizer/contact state
  * - route to all currently authorized recipient mailbox endpoints when present
- * - fall back to direct controller/agent endpoints only when no mailbox exists
+ * - fall back to direct controller/agent endpoints, then one witness endpoint,
+ *   when no mailbox exists
  * - persist sender-side mailbox retry state per mailbox endpoint
  */
 export class Poster {
@@ -113,6 +121,7 @@ export class Poster {
    * Default policy:
    * - if recipient mailboxes exist, broadcast to all mailbox endpoints
    * - if no mailbox exists, send directly to controller/agent endpoints
+   * - if no direct endpoints exist, fall back to one witness endpoint
    * - failed mailbox deliveries are queued durably for retry
    *
    * Current `keri-ts` difference:
@@ -127,9 +136,11 @@ export class Poster {
       route: string;
       payload: Record<string, unknown>;
       topic?: string;
+      exchangeRecipient?: string | null;
       modifiers?: Record<string, unknown>;
       date?: string;
       dig?: string;
+      embeds?: Record<string, Uint8Array>;
       delivery?: ExchangeDeliveryPreference;
     },
   ): Operation<ExchangeSendResult> {
@@ -141,14 +152,22 @@ export class Poster {
       );
     }
 
-    const serder = makeExchangeSerder(args.route, args.payload, {
+    const embedded = args.embeds ?? {};
+    const exchangeRecipient = args.exchangeRecipient === null
+      ? undefined
+      : args.exchangeRecipient ?? recipient;
+    const [serder, attachments] = exchange(args.route, args.payload, {
       sender: hab.pre,
-      recipient,
+      recipient: exchangeRecipient,
       modifiers: args.modifiers,
       stamp: args.date,
       dig: args.dig,
+      embeds: Object.keys(embedded).length > 0 ? embedded : undefined,
     });
-    const message = hab.endorse(serder, { pipelined: false });
+    const message = concatBytes(
+      hab.endorse(serder, { pipelined: false }),
+      attachments,
+    );
     const deliveries: string[] = [];
     const queued: string[] = [];
     const delivery = args.delivery ?? "auto";
@@ -208,30 +227,156 @@ export class Poster {
       return { serder, deliveries, queued };
     }
 
-    if (delivery === "indirect") {
-      throw new ValidationError(
-        `No authorized mailbox endpoints are configured for ${recipient}.`,
-      );
+    const directEndpoints = directDeliveryEndpoints(hab, recipient);
+    if (directEndpoints.length > 0) {
+      for (const endpoint of directEndpoints) {
+        yield* postCesrMessage(
+          endpoint.url,
+          message,
+          this.hby.cesrBodyMode,
+          endpoint.eid,
+        );
+        deliveries.push(endpoint.url);
+      }
+      return { serder, deliveries, queued };
+    }
+
+    if (delivery !== "direct") {
+      const witnessEndpoint = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      if (witnessEndpoint) {
+        yield* this.deliverWitnessTarget(
+          hab,
+          recipient,
+          topic,
+          message,
+          witnessEndpoint,
+        );
+        deliveries.push(witnessEndpoint.url);
+        return { serder, deliveries, queued };
+      }
+    }
+
+    throw new ValidationError(
+      `No end roles for ${recipient} to send evt=${serder.said ?? "<unknown>"}`,
+    );
+  }
+
+  /**
+   * Send one raw CESR message through the same mailbox-first transport policy.
+   *
+   * This is used by delegation workflows where correctness depends on the
+   * actual KEL bytes reaching the delegator or delegate, not on an EXN wrapper.
+   */
+  *sendBytes(
+    hab: Hab,
+    args: {
+      recipient: string;
+      message: Uint8Array;
+      topic?: string;
+      delivery?: ExchangeDeliveryPreference;
+    },
+  ): Operation<RawCesrSendResult> {
+    const recipient = this.resolveRecipient(args.recipient);
+    const topic = args.topic ?? "";
+    const deliveries: string[] = [];
+    const queued: string[] = [];
+    const delivery = args.delivery ?? "auto";
+    const mailboxEndpoints = delivery === "direct"
+      ? []
+      : mailboxDeliveryEndpoints(hab, recipient);
+
+    if (mailboxEndpoints.length > 0) {
+      if (topic.length === 0) {
+        throw new ValidationError(
+          `Mailbox delivery requires an explicit topic for ${recipient}.`,
+        );
+      }
+
+      const failed = new Map<string, string>();
+      for (const endpoint of mailboxEndpoints) {
+        try {
+          yield* this.deliverMailboxTarget(
+            hab,
+            recipient,
+            topic,
+            args.message,
+            endpoint,
+          );
+          deliveries.push(endpoint.url);
+        } catch (error) {
+          failed.set(
+            endpoint.eid,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+
+      if (failed.size > 0) {
+        if (this.outboxer.enabled) {
+          const said = crypto.randomUUID();
+          this.outboxer.queueMessage(
+            said,
+            args.message,
+            {
+              sender: hab.pre,
+              recipient,
+              topic,
+              createdAt: makeNowIso8601(),
+            },
+            failed.keys(),
+          );
+          const attemptedAt = makeNowIso8601();
+          for (const [eid, error] of failed.entries()) {
+            this.outboxer.markFailed(said, eid, attemptedAt, error);
+            queued.push(`outbox:${eid}`);
+          }
+        } else if (deliveries.length === 0) {
+          throw new ValidationError(
+            `CESR delivery failed for ${recipient}: ${[...failed.values()].join("; ")}`,
+          );
+        }
+      }
+
+      return { deliveries, queued };
     }
 
     const directEndpoints = directDeliveryEndpoints(hab, recipient);
-    if (directEndpoints.length === 0) {
-      throw new ValidationError(
-        `No end roles for ${recipient} to send evt=${serder.said ?? "<unknown>"}`,
-      );
+    if (directEndpoints.length > 0) {
+      for (const endpoint of directEndpoints) {
+        yield* postCesrMessage(
+          endpoint.url,
+          args.message,
+          this.hby.cesrBodyMode,
+          endpoint.eid,
+        );
+        deliveries.push(endpoint.url);
+      }
+      return { deliveries, queued };
     }
 
-    for (const endpoint of directEndpoints) {
-      yield* postCesrMessage(
-        endpoint.url,
-        message,
-        this.hby.cesrBodyMode,
-        endpoint.eid,
-      );
-      deliveries.push(endpoint.url);
+    if (delivery !== "direct") {
+      if (topic.length === 0) {
+        throw new ValidationError(
+          `Witness fallback delivery requires an explicit topic for ${recipient}.`,
+        );
+      }
+      const witnessEndpoint = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      if (witnessEndpoint) {
+        yield* this.deliverWitnessTarget(
+          hab,
+          recipient,
+          topic,
+          args.message,
+          witnessEndpoint,
+        );
+        deliveries.push(witnessEndpoint.url);
+        return { deliveries, queued };
+      }
     }
 
-    return { serder, deliveries, queued };
+    throw new ValidationError(
+      `No end roles for ${recipient} to send raw CESR payload.`,
+    );
   }
 
   /**
@@ -314,6 +459,36 @@ export class Poster {
     message: Uint8Array,
     endpoint: { eid: string; url: string },
   ): Operation<void> {
+    yield* this.deliverForwardedTarget(hab, recipient, topic, message, endpoint);
+  }
+
+  /**
+   * Deliver one message using the recipient's witness as a store-and-forward
+   * fallback when no mailbox or direct endpoint exists.
+   */
+  private *deliverWitnessTarget(
+    hab: Hab,
+    recipient: string,
+    topic: string,
+    message: Uint8Array,
+    endpoint: { eid: string; url: string },
+  ): Operation<void> {
+    yield* this.deliverForwardedTarget(hab, recipient, topic, message, endpoint);
+  }
+
+  /**
+   * Deliver one `/fwd`-wrapped payload to a mailbox or witness endpoint.
+   *
+   * Local hosted targets store directly in `Mailboxer`; remote targets receive
+   * KERIpy-style introduction material ahead of the forwarded payload.
+   */
+  private *deliverForwardedTarget(
+    hab: Hab,
+    recipient: string,
+    topic: string,
+    message: Uint8Array,
+    endpoint: { eid: string; url: string },
+  ): Operation<void> {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
       this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
@@ -329,7 +504,7 @@ export class Poster {
     });
     yield* postCesrMessage(
       endpoint.url,
-      concatBytes(hab.replyEndRole(hab.pre), forwarded),
+      concatBytes(introduce(hab, endpoint.eid), forwarded),
       this.hby.cesrBodyMode,
       endpoint.eid,
     );
@@ -379,8 +554,16 @@ export class ForwardHandler implements ExchangeRouteHandler {
   }
 
   /**
-   * Store one forwarded mailbox payload when the addressed mailbox is
-   * authorized for the recipient.
+   * Store one forwarded payload when the receiving host is allowed to act as
+   * the recipient's async correspondence store.
+   *
+   * Accepted host shapes:
+   * - explicit mailbox provider authorized in `ends.`
+   * - recipient witness host from the accepted KEL witness set
+   * - recipient agent host authorized in `ends.`
+   *
+   * Controller endpoints stay excluded here because they are direct
+   * correspondence destinations, not store-and-forward hosts.
    */
   handle(args: {
     serder: SerderKERI;
@@ -391,20 +574,58 @@ export class ForwardHandler implements ExchangeRouteHandler {
     const topic = typeof modifiers?.topic === "string" ? modifiers.topic : null;
     const forwarded = extractForwardedMessage(args.serder, args.attachments);
     const mailboxAid = this.mailboxDirector.currentMailboxAid();
-    if (!recipient || !topic || !forwarded || !mailboxAid) {
+    if (!recipient || !topic || !forwarded) {
       return;
     }
 
-    const end = this.mailboxDirector.hby.db.ends.get([
-      recipient,
-      Roles.mailbox,
-      mailboxAid,
-    ]);
-    if (!(end?.allowed || end?.enabled)) {
+    const hby = this.mailboxDirector.hby;
+    const recipientKever = hby.db.getKever(recipient);
+    if (!recipientKever) {
+      return;
+    }
+
+    if (mailboxAid) {
+      if (!hostCanStoreForwardRecipient(hby, recipient, recipientKever, mailboxAid)) {
+        return;
+      }
+    } else if (!hasLocalStoreForwardHost(hby, recipient, recipientKever)) {
       return;
     }
     this.mailboxDirector.publish(recipient, topic, forwarded);
   }
+}
+
+function hostCanStoreForwardRecipient(
+  hby: Habery,
+  recipient: string,
+  recipientKever: Kever,
+  hostAid: string,
+): boolean {
+  if (recipientKever.wits.includes(hostAid)) {
+    return true;
+  }
+
+  for (const role of [Roles.mailbox, Roles.agent]) {
+    const end = hby.db.ends.get([recipient, role, hostAid]);
+    if (end?.allowed || end?.enabled) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasLocalStoreForwardHost(
+  hby: Habery,
+  recipient: string,
+  recipientKever: Kever,
+): boolean {
+  for (const hostAid of hby.db.prefixes) {
+    if (hostCanStoreForwardRecipient(hby, recipient, recipientKever, hostAid)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -696,7 +917,7 @@ function buildForwardedDelivery(
     message: Uint8Array;
   },
 ): Uint8Array {
-  const { serder, attachments } = makeEmbeddedExchangeMessage(
+  const [serder, attachments] = exchange(
     "/fwd",
     {},
     {
@@ -708,8 +929,76 @@ function buildForwardedDelivery(
   return concatBytes(hab.endorse(serder, { pipelined: false }), attachments);
 }
 
+/**
+ * Return the KERIpy-style introduction stream for one remote endpoint.
+ *
+ * This bootstrap material is intentionally broader than a bare endpoint reply:
+ * - sender KEL replay
+ * - delegation chain when present
+ * - endpoint/location replies for later correspondence
+ *
+ * It is only sent when local DB state does not already show a receipt from the
+ * remote endpoint for the sender's latest event.
+ */
+export function introduce(
+  hab: Hab,
+  remote: string,
+): Uint8Array {
+  const kever = hab.kever;
+  if (!kever) {
+    return new Uint8Array();
+  }
+  if (kever.wits.includes(remote)) {
+    return new Uint8Array();
+  }
+
+  const latestSaid = kever.serder.said;
+  if (!latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)) {
+    return new Uint8Array();
+  }
+
+  const messages: Uint8Array[] = [];
+  for (const msg of hab.db.clonePreIter(hab.pre)) {
+    messages.push(msg);
+  }
+  for (const msg of hab.db.cloneDelegation(kever)) {
+    messages.push(msg);
+  }
+  const endpoints = hab.replyEndRole(hab.pre);
+  if (endpoints.length > 0) {
+    messages.push(endpoints);
+  }
+  return concatBytes(...messages);
+}
+
+function remoteAlreadyReceiptedLatestEvent(
+  hab: Hab,
+  remote: string,
+  said: string,
+): boolean {
+  const keys = [
+    dgKey(hab.pre, said),
+    dgKey(remote, said),
+  ];
+  for (const key of keys) {
+    if (hab.db.vrcs.get(key).some(([prefixer]) => prefixer.qb64 === remote)) {
+      return true;
+    }
+    if (hab.db.rcts.get(key).some(([prefixer]) => prefixer.qb64.startsWith(remote))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Derive the default mailbox topic from the first non-empty route segment. */
 function defaultTopicForRoute(route: string): string {
+  if (route.startsWith("/delegate")) {
+    return DELEGATE_MAILBOX_TOPIC;
+  }
+  if (route === "/oobis") {
+    return OOBI_MAILBOX_TOPIC;
+  }
   const trimmed = route.replace(/^\/+/, "");
   return trimmed.split("/")[0] ?? "";
 }
@@ -770,12 +1059,6 @@ function forwardedAttachmentForPath(
   return raw.slice(offset + pather.fullSize);
 }
 
-interface MailboxMessage {
-  idx: number;
-  msg: Uint8Array;
-  topic: string;
-}
-
 /** Explicit mailbox polling timeout policy for one runtime poller. */
 export interface MailboxPollingTimeoutPolicy {
   /** Abort the HTTP request when no response headers arrive before this deadline. */
@@ -813,7 +1096,7 @@ function* fetchMailboxMessages(
   topics: Record<string, number>,
   bodyMode: "header" | "body",
   timeouts: MailboxFetchTimeoutPolicy,
-): Operation<MailboxMessage[]> {
+): Operation<MailboxSseMessage[]> {
   const query = hab.query(hab.pre, src, { topics }, "mbx");
   const handle = yield* fetchMailboxQueryResponse(
     url,
@@ -832,7 +1115,7 @@ function* fetchMailboxMessages(
     return [];
   }
 
-  const text = yield* readSseBody(
+  const text = yield* readMailboxSseBody(
     response,
     controller,
     {
@@ -874,141 +1157,6 @@ function* fetchMailboxQueryResponse(
     headers: request.headers,
     body: request.body,
   }, { timeoutMs });
-}
-
-/**
- * Read one mailbox SSE response without waiting for the server to close it.
- *
- * KERIpy mailbox queries keep the stream open for long-poll behavior, so
- * `keri-ts` callers stop on an explicit read budget and idle detection instead
- * of waiting for remote EOF with `response.text()`.
- */
-function* readSseBody(
-  response: Response,
-  controller: AbortController,
-  {
-    idleTimeoutMs = MailboxPoller.ReadIdleTimeoutMs,
-    maxDurationMs = MailboxPoller.DefaultTimeoutPolicy.maxPollDurationMs,
-  }: {
-    idleTimeoutMs?: number;
-    maxDurationMs?: number;
-  } = {},
-): Operation<string> {
-  const body = response.body;
-  if (!body) {
-    return "";
-  }
-
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let text = "";
-  const deadline = Date.now() + maxDurationMs;
-  const timedOut = Symbol("timedOut");
-
-  try {
-    while (Date.now() < deadline) {
-      const remaining = Math.max(
-        1,
-        Math.min(idleTimeoutMs, deadline - Date.now()),
-      );
-      const next = yield* action<
-        ReadableStreamReadResult<Uint8Array> | typeof timedOut
-      >((resolve, reject) => {
-        let settled = false;
-        const timeoutId = setTimeout(() => {
-          settled = true;
-          resolve(timedOut);
-        }, remaining);
-
-        reader.read().then((result) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timeoutId);
-          resolve(result);
-        }).catch((error) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timeoutId);
-          reject(error);
-        });
-
-        return () => {
-          clearTimeout(timeoutId);
-        };
-      });
-
-      if (next === timedOut) {
-        if (
-          parseMailboxSse(text).length > 0
-          || Date.now() + idleTimeoutMs >= deadline
-        ) {
-          controller.abort();
-          break;
-        }
-        continue;
-      }
-
-      const { value, done } = next as ReadableStreamReadResult<Uint8Array>;
-      if (done) {
-        break;
-      }
-      if (value && value.length > 0) {
-        text += decoder.decode(value, { stream: true });
-      }
-    }
-  } catch (error) {
-    if (!(error instanceof DOMException && error.name === "AbortError")) {
-      throw error;
-    }
-  } finally {
-    yield* action<void>((resolve) => {
-      void reader.cancel().catch(() => {
-        // Ignore cleanup failures from already-aborted SSE streams.
-      }).finally(() => resolve(undefined));
-      return () => {};
-    });
-  }
-
-  text += decoder.decode();
-  return text;
-}
-
-/** Parse mailbox SSE text into `(topic, idx, payload)` tuples. */
-function parseMailboxSse(text: string): MailboxMessage[] {
-  const messages: MailboxMessage[] = [];
-
-  for (const block of text.split("\n\n")) {
-    if (block.trim().length === 0) {
-      continue;
-    }
-    let idx = -1;
-    let topic = "";
-    const dataLines: string[] = [];
-    for (const line of block.split("\n")) {
-      if (line.startsWith("id:")) {
-        idx = Number(line.slice(3).trim());
-      } else if (line.startsWith("event:")) {
-        topic = line.slice(6).trim();
-      } else if (line.startsWith("data:")) {
-        dataLines.push(line.slice(5).trimStart());
-      }
-    }
-
-    if (idx < 0 || topic.length === 0 || dataLines.length === 0) {
-      continue;
-    }
-    messages.push({
-      idx,
-      topic,
-      msg: textEncoder.encode(dataLines.join("\n")),
-    });
-  }
-
-  return messages;
 }
 
 function normalizeMailboxPollingTimeoutPolicy(
@@ -1108,6 +1256,7 @@ export function* sendExchangeMessage(
     modifiers?: Record<string, unknown>;
     date?: string;
     dig?: string;
+    embeds?: Record<string, Uint8Array>;
     delivery?: ExchangeDeliveryPreference;
   },
 ): Operation<ExchangeSendResult> {

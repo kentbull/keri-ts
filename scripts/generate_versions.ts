@@ -10,7 +10,7 @@
  */
 
 interface GenerateTarget {
-  name: "keri" | "cesr";
+  name: "keri" | "cesr" | "tufa";
   packagePath: URL;
   outputPath: URL;
   envOverrideKey: string;
@@ -33,6 +33,12 @@ const TARGETS: GenerateTarget[] = [
     outputPath: new URL("../packages/cesr/src/version.ts", import.meta.url),
     envOverrideKey: "CESR_TS_BUILD_METADATA",
   },
+  {
+    name: "tufa",
+    packagePath: new URL("../packages/tufa/package.json", import.meta.url),
+    outputPath: new URL("../packages/tufa/src/version.ts", import.meta.url),
+    envOverrideKey: "TUFA_BUILD_METADATA",
+  },
 ];
 
 const SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -40,7 +46,7 @@ const BUILD_METADATA_REGEX = /^[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*$/;
 
 function parseArgs(args: string[]) {
   let check = false;
-  let only: "all" | "keri" | "cesr" = "all";
+  let only: "all" | "keri" | "cesr" | "tufa" = "all";
   let ciBuildMetadata = false;
 
   for (let i = 0; i < args.length; i++) {
@@ -57,8 +63,8 @@ function parseArgs(args: string[]) {
 
     if (arg === "--only") {
       const next = args[i + 1];
-      if (next !== "keri" && next !== "cesr") {
-        throw new Error("--only must be 'keri' or 'cesr'");
+      if (next !== "keri" && next !== "cesr" && next !== "tufa") {
+        throw new Error("--only must be 'keri', 'cesr', or 'tufa'");
       }
       only = next;
       i++;

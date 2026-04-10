@@ -46,6 +46,7 @@ export interface KeriPyWitnessNode {
   tcpUrl: string;
   controllerOobi: string;
   witnessOobi: string;
+  mailboxOobi: string;
 }
 
 /** One started Tufa witness process plus its advertised network state. */
@@ -59,6 +60,7 @@ export interface TufaWitnessNode {
   tcpUrl: string;
   controllerOobi: string;
   witnessOobi: string;
+  mailboxOobi: string;
 }
 
 /** Options for the explicit KERIpy witness harness. */
@@ -284,7 +286,7 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 
   try {
-    const out = await new Deno.Command("deno", {
+    const out = await new Deno.Command(Deno.execPath(), {
       args: ["info", "--json"],
       stdout: "piped",
       stderr: "null",
@@ -301,9 +303,17 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 }
 
-/** Resolve the package root used for `deno run mod.ts ...` test invocations. */
+/**
+ * Resolve the workspace root used for `deno run packages/tufa/mod.ts ...`
+ * test invocations.
+ *
+ * Historical note:
+ * - many older tests called this the "package root" because `keri/mod.ts`
+ *   used to be the CLI entrypoint
+ * - after the package split, the real runnable entrypoint lives in `tufa`
+ */
 export function packageRoot(): string {
-  return new URL("../../../", import.meta.url).pathname;
+  return workspaceRoot();
 }
 
 /** Resolve the `keri-ts` workspace root. */
@@ -323,13 +333,19 @@ export function keripySourceRoot(): string {
 
 /** Resolve the checked-in KERIpy witness config directory. */
 export function keripyWitnessConfigSourceRoot(): string {
-  return new URL("../../../../../../keripy/scripts/keri/cf/main/", import.meta.url)
+  return new URL(
+    "../../../../../../keripy/scripts/keri/cf/main/",
+    import.meta.url,
+  )
     .pathname;
 }
 
 /** Resolve the checked-in KERIpy witness inception sample file. */
 export function keripyWitnessSamplePath(): string {
-  return new URL("../../../../../../keripy/scripts/demo/data/wil-witness-sample.json", import.meta.url)
+  return new URL(
+    "../../../../../../keripy/scripts/demo/data/wil-witness-sample.json",
+    import.meta.url,
+  )
     .pathname;
 }
 
@@ -410,8 +426,14 @@ async function waitForKeriPyWitnessReady(
   } catch (witnessError) {
     throw new Error(
       `KERIpy witness OOBIs never became ready.\ncontroller: ${
-        controllerError instanceof Error ? controllerError.message : String(controllerError)
-      }\nwitness: ${witnessError instanceof Error ? witnessError.message : String(witnessError)}`,
+        controllerError instanceof Error
+          ? controllerError.message
+          : String(controllerError)
+      }\nwitness: ${
+        witnessError instanceof Error
+          ? witnessError.message
+          : String(witnessError)
+      }`,
     );
   }
 }
@@ -452,9 +474,28 @@ export function spawnChild(
 
 /** Read buffered stdout and stderr from one spawned subprocess. */
 export async function readChildOutput(child: SpawnedChild): Promise<string> {
+  const readStream = async (
+    stream: ReadableStream<Uint8Array> | undefined,
+  ): Promise<string> => {
+    if (!stream) {
+      return "";
+    }
+    try {
+      return await new Response(stream).text();
+    } catch (error) {
+      if (
+        error instanceof TypeError
+        && error.message.includes("ReadableStream is locked or disturbed")
+      ) {
+        return "";
+      }
+      throw error;
+    }
+  };
+
   const [stdout, stderr] = await Promise.all([
-    child.stdout ? new Response(child.stdout).text() : Promise.resolve(""),
-    child.stderr ? new Response(child.stderr).text() : Promise.resolve(""),
+    readStream(child.stdout),
+    readStream(child.stderr),
   ]);
   return `${stdout}\n${stderr}`.trim();
 }
@@ -556,8 +597,8 @@ export async function runTufa(
   cwd: string,
 ): Promise<CmdResult> {
   return await runCmd(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     env,
     cwd,
   );
@@ -571,8 +612,8 @@ export async function runTufaWithTimeout(
   timeoutMs = 20_000,
 ): Promise<CmdResult> {
   return await runCmdWithTimeout(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     env,
     timeoutMs,
     cwd,
@@ -593,7 +634,7 @@ export async function createInteropContext(): Promise<InteropContext> {
   return {
     home,
     env,
-    repoRoot: packageRoot(),
+    repoRoot: workspaceRoot(),
     kliCommand: await resolveKliCommand(env),
   };
 }
@@ -748,7 +789,9 @@ async function writeKeriPyWitnessConfig(
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   const node = parsed[alias];
   if (!node || typeof node !== "object") {
-    throw new Error(`Witness config ${sourcePath} is missing alias '${alias}'.`);
+    throw new Error(
+      `Witness config ${sourcePath} is missing alias '${alias}'.`,
+    );
   }
 
   parsed[alias] = {
@@ -826,8 +869,11 @@ export async function startKeriPyWitnessHarness(
 ): Promise<KeriPyWitnessHarness> {
   const aliases = options.aliases ?? DEFAULT_KERIPY_WITNESS_ALIASES;
   const home = await Deno.makeTempDir({ prefix: "keripy-witness-home-" });
-  const configRoot = await Deno.makeTempDir({ prefix: "keripy-witness-config-" });
-  const base = options.base ?? `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
+  const configRoot = await Deno.makeTempDir({
+    prefix: "keripy-witness-config-",
+  });
+  const base = options.base
+    ?? `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
   const env = {
     ...ctx.env,
     HOME: home,
@@ -856,6 +902,7 @@ export async function startKeriPyWitnessHarness(
       tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
       controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
       witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
+      mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
     });
   }
 
@@ -893,7 +940,9 @@ export async function startKeriPyWitnessHarness(
     const details = await Promise.all(
       children.map((child, index) =>
         stopChild(child).then((output) =>
-          output.length > 0 ? `# ${nodes[index]?.alias}\n${output}` : `# ${nodes[index]?.alias}\n<no output>`
+          output.length > 0
+            ? `# ${nodes[index]?.alias}\n${output}`
+            : `# ${nodes[index]?.alias}\n<no output>`
         )
       ),
     );
@@ -1096,6 +1145,7 @@ export async function startTufaWitnessHarness(
         tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
         controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
         witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
+        mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
       });
       children.push(child);
     }

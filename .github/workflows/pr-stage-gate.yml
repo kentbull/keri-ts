@@ -7,7 +7,8 @@ name: PR Stage Gate
 #    - `keri-db-fast-tests` for parallel-safe DB coverage
 #    - `keri-core-fast-a-tests` and `keri-core-fast-b-tests` for the split core
 #      KEL/query/reply unit lanes
-#    - `keri-app-fast-tests` for tiny app/help/server checks
+#    - `keri-app-fast-tests` for tiny app/help checks
+#    - `tufa-tests` for Tufa-owned CLI/server/host package-surface checks
 #    - `keri-runtime-medium-tests` for representative runtime coverage
 #    - `keri-runtime-slow-tests` for mailbox-heavy runtime flows extracted out
 #      of the representative lane
@@ -15,8 +16,9 @@ name: PR Stage Gate
 #    - `keri-interop-*` for the slow KERIpy/LMDB v1 parity paths
 # 3. `cesr-tests` keeps the CESR package's fast unit surface independent so
 #    regressions fail quickly without waiting on interop-heavy jobs.
-# 4. `package-smoke` proves the built npm artifacts are installable and usable,
-#    which catches publish-time breakage that normal tests can miss.
+# 4. `package-smoke` proves the built `keri-ts` and `tufa` npm artifacts are
+#    installable and usable, which catches publish-time breakage that normal
+#    tests can miss.
 # 5. `stage-gate` is the single stable branch-protection target; it fails if
 #    any of the parallel jobs fail.
 
@@ -243,8 +245,8 @@ jobs:
       - name: run KERI core fast B lane
         run: deno task test:quality:keri:core-fast-b
 
-  # Tiny app/help/server checks stay together so we do not pay per-job overhead
-  # for slices that already finish quickly on their own.
+  # Tiny app/help checks stay together so we do not pay per-job overhead for
+  # slices that already finish quickly on their own.
   keri-app-fast-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -284,6 +286,49 @@ jobs:
 
       - name: run KERI app fast bundle
         run: deno task test:quality:keri:app-fast
+
+  # Tufa now owns the package-surface CLI/server/host boundary, so PR CI needs
+  # an explicit package-local lane instead of pretending KERI app tests cover
+  # the active runnable surface.
+  tufa-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deps-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/tufa/deno.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: run Tufa package test suite
+        run: deno task test:quality:tufa
 
   # Representative runtime coverage is intentionally on the default path, but
   # it should not delay the DB/core/app feedback lanes.
@@ -764,7 +809,8 @@ jobs:
         run: deno task test:cesr
 
   # Packaging smoke is a different failure class from source tests: it proves
-  # that the built npm artifacts can actually be installed and executed.
+  # that the built npm artifacts can actually be installed and exercised as the
+  # published package boundaries, not merely as source-tree code.
   package-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -803,7 +849,7 @@ jobs:
         run: bash scripts/ci/assert-environment.sh
 
       - name: build npm packages
-        # Build both tarball candidates first so the smoke test validates the
+        # Build all tarball candidates first so the smoke test validates the
         # exact artifacts this PR would ship, not the source tree alone.
         run: deno task npm:build:all
 
@@ -821,8 +867,15 @@ jobs:
           TARBALL="$(npm pack --silent | tail -n 1)"
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
+      - name: pack tufa npm tarball
+        id: pack-tufa
+        run: |
+          cd packages/tufa/npm
+          TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
       - name: smoke test keri-ts tarball in Node glibc
-        id: smoke-glibc
+        id: smoke-keri-glibc
         continue-on-error: true
         env:
           SMOKE_NODE_IMAGE: node:bookworm-slim
@@ -832,7 +885,7 @@ jobs:
             "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}"
 
       - name: smoke test keri-ts tarball in Node Alpine
-        id: smoke-alpine
+        id: smoke-keri-alpine
         continue-on-error: true
         env:
           SMOKE_NODE_IMAGE: node:alpine
@@ -840,6 +893,28 @@ jobs:
           bash scripts/smoke-test-keri-npm.sh \
             "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}" \
             "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}"
+
+      - name: smoke test tufa tarball in Node glibc
+        id: smoke-tufa-glibc
+        continue-on-error: true
+        env:
+          SMOKE_NODE_IMAGE: node:bookworm-slim
+        run: |
+          bash scripts/smoke-test-tufa-npm.sh \
+            "packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}" \
+            "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}" \
+            "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}"
+
+      - name: smoke test tufa tarball in Node Alpine
+        id: smoke-tufa-alpine
+        continue-on-error: true
+        env:
+          SMOKE_NODE_IMAGE: node:alpine
+        run: |
+          bash scripts/smoke-test-tufa-npm.sh \
+            "packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}" \
+            "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}" \
+            "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}"
 
       - name: upload npm tarballs
         # Keep the exact built artifacts for inspection/debugging when smoke or
@@ -851,15 +926,20 @@ jobs:
           path: |
             packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}
             packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}
+            packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}
           if-no-files-found: error
           retention-days: 14
 
       - name: assert smoke matrix results
         run: |
-          echo "glibc=${{ steps.smoke-glibc.outcome }}"
-          echo "alpine=${{ steps.smoke-alpine.outcome }}"
-          [[ "${{ steps.smoke-glibc.outcome }}" == "success" ]]
-          [[ "${{ steps.smoke-alpine.outcome }}" == "success" ]]
+          echo "keri-glibc=${{ steps.smoke-keri-glibc.outcome }}"
+          echo "keri-alpine=${{ steps.smoke-keri-alpine.outcome }}"
+          echo "tufa-glibc=${{ steps.smoke-tufa-glibc.outcome }}"
+          echo "tufa-alpine=${{ steps.smoke-tufa-alpine.outcome }}"
+          [[ "${{ steps.smoke-keri-glibc.outcome }}" == "success" ]]
+          [[ "${{ steps.smoke-keri-alpine.outcome }}" == "success" ]]
+          [[ "${{ steps.smoke-tufa-glibc.outcome }}" == "success" ]]
+          [[ "${{ steps.smoke-tufa-alpine.outcome }}" == "success" ]]
 
   # Aggregate branch-protection target. We keep this tiny on purpose so branch
   # protection can require one stable check name while the real work fans out.
@@ -871,6 +951,7 @@ jobs:
       - keri-core-fast-a-tests
       - keri-core-fast-b-tests
       - keri-app-fast-tests
+      - tufa-tests
       - keri-runtime-medium-tests
       - keri-runtime-slow-tests
       - keri-app-stateful-a-tests
@@ -892,6 +973,7 @@ jobs:
           KERI_CORE_FAST_A_TESTS: ${{ needs.keri-core-fast-a-tests.result }}
           KERI_CORE_FAST_B_TESTS: ${{ needs.keri-core-fast-b-tests.result }}
           KERI_APP_FAST_TESTS: ${{ needs.keri-app-fast-tests.result }}
+          TUFA_TESTS: ${{ needs.tufa-tests.result }}
           KERI_RUNTIME_MEDIUM_TESTS: ${{ needs.keri-runtime-medium-tests.result }}
           KERI_RUNTIME_SLOW_TESTS: ${{ needs.keri-runtime-slow-tests.result }}
           KERI_APP_STATEFUL_A_TESTS: ${{ needs.keri-app-stateful-a-tests.result }}
@@ -907,6 +989,7 @@ jobs:
           echo "keri-core-fast-a-tests=${KERI_CORE_FAST_A_TESTS}"
           echo "keri-core-fast-b-tests=${KERI_CORE_FAST_B_TESTS}"
           echo "keri-app-fast-tests=${KERI_APP_FAST_TESTS}"
+          echo "tufa-tests=${TUFA_TESTS}"
           echo "keri-runtime-medium-tests=${KERI_RUNTIME_MEDIUM_TESTS}"
           echo "keri-runtime-slow-tests=${KERI_RUNTIME_SLOW_TESTS}"
           echo "keri-app-stateful-a-tests=${KERI_APP_STATEFUL_A_TESTS}"
@@ -921,6 +1004,7 @@ jobs:
           [[ "${KERI_CORE_FAST_A_TESTS}" == "success" ]]
           [[ "${KERI_CORE_FAST_B_TESTS}" == "success" ]]
           [[ "${KERI_APP_FAST_TESTS}" == "success" ]]
+          [[ "${TUFA_TESTS}" == "success" ]]
           [[ "${KERI_RUNTIME_MEDIUM_TESTS}" == "success" ]]
           [[ "${KERI_RUNTIME_SLOW_TESTS}" == "success" ]]
           [[ "${KERI_APP_STATEFUL_A_TESTS}" == "success" ]]

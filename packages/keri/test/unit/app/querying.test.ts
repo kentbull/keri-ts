@@ -81,6 +81,23 @@ function seedControllerEndpoint(
   hby.db.ends.pin([pre, Roles.controller, pre], { allowed: true });
 }
 
+function seedMailboxEndpoint(
+  hby: {
+    db: {
+      locs: { pin(keys: [string, string], value: { url: string }): void };
+      ends: {
+        pin(keys: [string, string, string], value: { allowed: boolean }): void;
+      };
+    };
+  },
+  recipientPre: string,
+  mailboxPre: string,
+  url = "http://127.0.0.1:7723",
+): void {
+  hby.db.locs.pin([mailboxPre, "http"], { url });
+  hby.db.ends.pin([recipientPre, Roles.mailbox, mailboxPre], { allowed: true });
+}
+
 interface CueRecord {
   kind: string;
   kin: string;
@@ -248,6 +265,64 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when the targe
         kin: "query",
         serder: null,
       });
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Query coordinator emits mailbox-delivered queries when only a mailbox endpoint is known for the target", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `querying-mailbox-only-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const requester = hby.makeHab("requester", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const subject = hby.makeHab("subject", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const mailbox = hby.makeHab("mailbox", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      seedMailboxEndpoint(hby, subject.pre, mailbox.pre);
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      runtime.cues.push({
+        kin: "query",
+        pre: subject.pre,
+        q: { pre: subject.pre },
+      });
+
+      const emissions: CueRecord[] = [];
+      yield* processRuntimeTurn(runtime, {
+        hab: requester,
+        sink: captureSink(emissions),
+      });
+
+      assertEquals(emissions.length, 1);
+      assertEquals(emissions[0]?.kind, "wire");
+      assertEquals(emissions[0]?.kin, "query");
+      assertEquals(emissions[0]?.serder?.route, "logs");
+      assertEquals(
+        (emissions[0]?.serder?.ked?.q as Record<string, unknown>).src,
+        subject.pre,
+      );
     } finally {
       yield* hby.close(true);
     }

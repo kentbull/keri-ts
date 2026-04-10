@@ -1068,6 +1068,41 @@ export class Baser {
     return null;
   }
 
+  /**
+   * Find the first fully witnessed last-accepted event in `pre`'s KEL that carries `seal`.
+   *
+   * KERIpy correspondence:
+   * - mirrors `Baser.fetchLastSealingEventByEventSeal(...)`
+   * - only searches the last accepted event at each sequence number, excluding
+   *   superseded/disputed alternatives still retained in `kels.`
+   */
+  fetchLastSealingEventByEventSeal(
+    pre: string,
+    seal: unknown,
+    sn = 0,
+  ): SerderKERI | null {
+    const target = normalizeEventSeal(seal);
+    if (!target) {
+      return null;
+    }
+
+    for (const [ordinal, said] of this.getKelItemIter(pre)) {
+      if (ordinal < sn) {
+        continue;
+      }
+      const serder = this.getEvtSerder(pre, said);
+      if (!serder) {
+        continue;
+      }
+      for (const current of serder.eventSeals) {
+        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
+          return serder;
+        }
+      }
+    }
+    return null;
+  }
+
   /** Append one digest to the first-seen event log for a prefix and return the assigned ordinal. */
   appendFel(pre: string, said: string): number {
     return this.fels.appendOn(pre, said);

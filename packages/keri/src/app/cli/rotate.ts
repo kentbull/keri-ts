@@ -14,6 +14,9 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
+import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
+import { resolveDelegationCommunicationHab } from "../delegating.ts";
+import { queryTransportSink } from "../query-transport.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import {
@@ -103,23 +106,6 @@ function difference(
 ): string[] {
   const rightSet = new Set(right);
   return left.filter((value) => !rightSet.has(value));
-}
-
-/**
- * Reject KERIpy rotate flows that `keri-ts` has not ported yet.
- *
- * This guard is intentionally front-loaded so the command does not imply full
- * parity in cases where the underlying runtime orchestration is still absent.
- */
-function assertUnsupportedAdvancedFlows(
-  args: RotateArgs,
-  delegated: boolean,
-): void {
-  if (args.proxy || delegated) {
-    throw new ValidationError(
-      "Delegation-assisted rotation flow is not yet available in tufa.",
-    );
-  }
 }
 
 function resolveWitnessAuths(
@@ -220,8 +206,6 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
 
-      assertUnsupportedAdvancedFlows(rotateArgs, kever.delpre !== null);
-
       let cuts = [...(options.witsCut ?? [])];
       let adds = [...(options.witsAdd ?? [])];
       if ((options.wits?.length ?? 0) > 0) {
@@ -266,11 +250,38 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         }
       }
 
+      let delegationPhase: string | null = null;
+      if (kever.delpre !== null && hab.kever) {
+        const communicationHab = resolveDelegationCommunicationHab(
+          hby,
+          rotateArgs.proxy,
+        );
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        try {
+          runtime.delegating.beginLatest(hab.pre, hab.kever.sn, {
+            communicationHab,
+          });
+          const snh = hab.kever.sn.toString(16);
+          const sink = queryTransportSink(runtime, hby, communicationHab ?? hab);
+          yield* processRuntimeUntil(
+            runtime,
+            () => runtime.delegating.complete(hab.pre, hab.kever!.sn),
+            { hab, sink, maxTurns: 512, pollMailbox: true },
+          );
+          delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
+        } finally {
+          yield* runtime.close();
+        }
+      }
+
       const state = hby.db.getState(hab.pre);
       console.log(`Prefix  ${hab.pre}`);
       console.log(`New Sequence No.  ${hab.kever?.sn ?? state?.s ?? ""}`);
       for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
+      }
+      if (delegationPhase) {
+        console.log(`Delegation status  ${delegationPhase}`);
       }
     } finally {
       yield* hby.close();

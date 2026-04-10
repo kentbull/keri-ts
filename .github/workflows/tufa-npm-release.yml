@@ -1,0 +1,141 @@
+name: Tufa npm release
+
+on:
+  push:
+    tags:
+      - "tufa-v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to npm"
+        required: true
+        default: "false"
+
+env:
+  DENO_DIR: ${{ github.workspace }}/.deno-cache
+  DENO_VERSION: "2.7.11"
+  NODE_VERSION: "25.9.0"
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v5
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: publishing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: restore Deno dependency cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.DENO_DIR }}
+            node_modules
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+        run: bash scripts/ci/assert-environment.sh
+
+      - name: check formatting
+        run: deno task fmt:check
+
+      - name: read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/tufa/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: ensure tag matches package version
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#tufa-v}"
+          PKG_VERSION="${{ steps.package.outputs.version }}"
+          if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
+            echo "Tag version (${TAG_VERSION}) does not match packages/tufa/package.json version (${PKG_VERSION})."
+            exit 1
+          fi
+
+      - name: test quality gate
+        run: deno task test:quality:tufa
+
+      - name: build npm packages
+        env:
+          BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
+        run: |
+          deno task version:generate:ci
+          cd packages/cesr
+          deno run -A scripts/build_npm.ts
+          cd ../keri
+          deno run -A scripts/build_npm.ts
+          cd ../tufa
+          deno run -A scripts/build_npm.ts
+
+      - name: verify dependent package versions are published
+        shell: bash
+        run: |
+          KERI_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['keri-ts']")
+          CESR_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['cesr-ts']")
+          echo "Checking keri-ts@${KERI_DEP} and cesr-ts@${CESR_DEP}"
+          npm view "keri-ts@${KERI_DEP}" version >/dev/null
+          npm view "cesr-ts@${CESR_DEP}" version >/dev/null
+
+      - name: npm pack dry run
+        id: pack
+        shell: bash
+        run: |
+          cd packages/cesr/npm
+          CESR_TARBALL="$(npm pack --silent | tail -n 1)"
+          cd ../../keri/npm
+          KERI_TARBALL="$(npm pack --silent | tail -n 1)"
+          cd ../../tufa/npm
+          TUFA_TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "cesr_tarball=${CESR_TARBALL}" >> "$GITHUB_OUTPUT"
+          echo "keri_tarball=${KERI_TARBALL}" >> "$GITHUB_OUTPUT"
+          echo "tufa_tarball=${TUFA_TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: smoke test tufa in node alpine
+        run: |
+          bash scripts/smoke-test-tufa-npm.sh \
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa_tarball }}" \
+            "packages/cesr/npm/${{ steps.pack.outputs.cesr_tarball }}" \
+            "packages/keri/npm/${{ steps.pack.outputs.keri_tarball }}"
+
+      - name: upload npm tarballs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tufa-npm-${{ steps.package.outputs.version }}
+          path: |
+            packages/tufa/npm/${{ steps.pack.outputs.tufa_tarball }}
+            packages/keri/npm/${{ steps.pack.outputs.keri_tarball }}
+            packages/cesr/npm/${{ steps.pack.outputs.cesr_tarball }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: publish to npm
+        if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/tufa/npm
+          npm publish --provenance --access public

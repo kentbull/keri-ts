@@ -8,29 +8,68 @@ internal-only implementation areas so refactors can preserve stable contracts.
 ## Relevant ADRs
 
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+- `docs/adr/adr-0011-three-package-architecture.md`
 
 ## Top-Level Boundaries
 
+- Dependency graph:
+  - `tufa -> keri-ts -> cesr-ts`
 - `mod.ts`
-  - Runtime entry point for CLI execution under Effection.
-  - Not a library export surface.
-- `src/**`
-  - Application + database runtime concerns for `keri-ts` CLI/server.
+  - Repo-root runner for the `tufa` application package.
+- `packages/keri/mod.ts`
+  - Browser-safe default library surface for `keri-ts`.
+- `packages/keri/runtime.ts`
+  - Explicit non-browser-safe runtime surface for `keri-ts`.
+- `packages/keri/db.ts`
+  - Explicit LMDB-backed persistence surface for `keri-ts`.
+- `packages/tufa/**`
+  - CLI/application package boundary.
+- `packages/tufa/src/host/**`
+  - Active shared host kernel plus Deno/Node/TCP listener ownership.
+- `packages/tufa/src/http/**`
+  - Active Hono shell, Stage 4 middleware policy, and HTTP route composition
+    ownership.
+- `packages/tufa/src/roles/**`
+  - Active mailbox and witness role-host composition ownership.
+- `packages/tufa/src/cli/**`
+  - Active CLI runtime, command tree, dispatch plumbing, and long-lived host
+    command ownership.
+- `packages/keri/src/**`
+  - Core, runtime, DB, and the remaining non-host command implementations for
+    `keri-ts`.
 - `packages/cesr/**`
   - Reusable CESR library package (parser, primitives, annotations).
-- `src/cesr/**`
-  - Compatibility bridge re-exporting CESR package APIs into app namespace.
 
 ## Public API Surfaces (Current)
 
-### App/Runtime
+### `keri-ts`
 
-- `src/app/index.ts`
-  - Exports CLI and server symbols.
-- `src/app/cli/index.ts`
-  - Exports `kli` and `initCommand`.
-- `src/db/index.ts`
-  - Exports `Baser` and DB abstractions from `src/db/basing.ts`.
+- `packages/keri/mod.ts`
+  - Narrow browser-safe default library surface. This is one of exactly three
+    supported `keri-ts` entrypoints.
+- `packages/keri/runtime.ts`
+  - Explicit runtime surface for runtime/file/network concerns. This is one of
+    exactly three supported `keri-ts` entrypoints.
+- `packages/keri/db.ts`
+  - Explicit LMDB-backed persistence surface. This is one of exactly three
+    supported `keri-ts` entrypoints.
+
+### `tufa`
+
+- `packages/tufa/mod.ts`
+  - Runnable CLI entrypoint under Effection.
+- `packages/tufa`
+  - Application package that owns the `tufa` binary boundary.
+- `packages/tufa/src/host/*`
+  - Internal shared host kernel and listener adapters.
+- `packages/tufa/src/http/*`
+  - Internal Hono edge, app policy middleware/error mapping, and protocol-route
+    composition.
+- `packages/tufa/src/roles/*`
+  - Internal mailbox/witness role-host composition over the shared kernel.
+- `packages/tufa/src/cli/*`
+  - Internal CLI runtime, command registration, dispatch helpers, and active
+    long-lived host commands.
 
 ### CESR Package
 
@@ -42,10 +81,17 @@ internal-only implementation areas so refactors can preserve stable contracts.
 
 ## Internal-Only Zones (Should Not Be Required by Typical Consumers)
 
-- `src/db/core/*`
+- `packages/keri/src/db/core/*`
   - LMDB/path internals and key encoding details.
-- `src/app/cli/*` (except exported command interfaces)
-  - CLI wiring/parsing and terminal I/O behavior.
+- `packages/keri/src/app/cli/*`
+  - Transitional source location for the remaining reusable non-host command
+    implementation bodies only; the active runnable CLI, command tree, dispatch
+    plumbing, and long-lived host commands live in `packages/tufa/src/cli/*`.
+- `packages/tufa/test/*`
+  - Canonical package-surface CLI, server, host, and HTTP edge validation.
+- `packages/keri/test/*`
+  - Canonical library/runtime/DB/protocol validation, even when some tests use
+    Tufa helpers as scaffolding.
 - `packages/cesr/src/tables/*.generated.ts`
   - Generated code tables.
 - `packages/cesr/scripts/*`
@@ -57,11 +103,12 @@ internal-only implementation areas so refactors can preserve stable contracts.
 
 ### Application Stack
 
-1. CLI/Server composition (`src/app/**`)
-2. Domain services (`src/app/keeping.ts`, `src/db/basing.ts`, event processors)
+1. Application composition (`packages/tufa/**`)
+2. Domain/runtime services (`packages/keri/src/app/**`,
+   `packages/keri/src/db/**`)
    - `Manager` orchestrates creators, keeper state, AEID policy, and replay.
    - concrete signing/verification should stay on CESR primitives.
-3. Infrastructure adapters (`src/db/core/**`)
+3. Infrastructure adapters (`packages/keri/src/db/core/**`)
 
 ### CESR Stack
 
@@ -86,16 +133,23 @@ internal-only implementation areas so refactors can preserve stable contracts.
 
 ## Cross-Cutting Concerns
 
-- Error model: currently mixed (`ParserError` typed in CESR, generic `Error`
-  elsewhere).
-- Logging: currently direct `console.*` in core and app layers.
+- Error model:
+  - CESR still owns its typed parser errors.
+  - `packages/tufa/src/http/*` now owns app-level HTTP error mapping for
+    unhandled transport-edge failures.
+- Logging:
+  - `packages/tufa/src/http/*` now uses injected `Logger` middleware for request
+    logging and edge-failure reporting.
+  - core and runtime layers still mostly use the shared console-backed logger.
 - Config/runtime flags: spread between task definitions and module constants.
 
 ## Refactor Invariants
 
 - Do not break `deno task kli ...` and `deno task cesr:annotate ...` UX.
 - Keep CESR parser behavior and fixture/test parity stable.
-- Treat `packages/cesr/mod.ts` and app exports as compatibility boundaries.
+- Treat `packages/cesr/mod.ts`, `packages/keri/mod.ts`,
+  `packages/keri/runtime.ts`, and `packages/keri/db.ts` as compatibility
+  boundaries.
 - Keep KEL/reply/runtime verification primitive-driven: higher layers should
   call `Verfer.verify()`, and higher-layer signing should flow through
   `Signer.sign()` or `Manager` orchestration rather than importing concrete
@@ -119,6 +173,6 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - Human-readable stream output:
   - `packages/cesr/src/annotate`
 - Runtime persistence/LMDB:
-  - `src/db/core`, `src/db/basing.ts`
+  - `packages/keri/src/db/core`, `packages/keri/src/db/basing.ts`
 - CLI/server orchestration:
-  - `src/app/**`
+  - `packages/tufa/**`

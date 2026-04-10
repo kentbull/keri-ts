@@ -9,7 +9,9 @@ import {
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
 import { type Configer, createConfiger } from "../configing.ts";
+import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import type { Habery } from "../habbing.ts";
+import { queryTransportSink } from "../query-transport.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
@@ -101,12 +103,6 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   if (inceptArgs.endpoint) {
     // supported below
   }
-  if (inceptArgs.proxy) {
-    throw new ValidationError(
-      "Delegation proxy flow is not available in single-sig local phase",
-    );
-  }
-
   const opts = mergeWithFile(inceptArgs);
 
   const cues = createQueue<{ kin: string; pre?: string; mode: string }, void>();
@@ -174,11 +170,42 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         }
       }
 
+      let delegationPhase: string | null = null;
+      if (opts.delpre) {
+        const communicationHab = resolveDelegationCommunicationHab(
+          hby,
+          inceptArgs.proxy,
+        );
+        if (!communicationHab) {
+          throw new ValidationError(
+            `Delegated inception for ${hab.pre} requires --proxy <alias>.`,
+          );
+        }
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        try {
+          runtime.delegating.beginLatest(hab.pre, 0, {
+            communicationHab,
+          });
+          const sink = queryTransportSink(runtime, hby, communicationHab);
+          yield* processRuntimeUntil(
+            runtime,
+            () => runtime.delegating.complete(hab.pre, 0),
+            { hab, sink, maxTurns: 512, pollMailbox: true },
+          );
+          delegationPhase = runtime.delegating.workflowStatus(hab.pre, "0").phase;
+        } finally {
+          yield* runtime.close();
+        }
+      }
+
       const state = hby.db.getState(hab.pre);
 
       console.log(`Prefix  ${hab.pre}`);
       for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
+      }
+      if (delegationPhase) {
+        console.log(`Delegation status  ${delegationPhase}`);
       }
       console.log("");
       cues.add({ kin: "incept", pre: hab.pre, mode: "native" });

@@ -52,7 +52,7 @@ import {
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
-import { makeReplySerder } from "./messages.ts";
+import { reply as replyEvent } from "./protocol-eventing.ts";
 import { KeyStateRecord, ObservedRecord } from "./records.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "./routing.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
@@ -277,7 +277,11 @@ export class Kevery {
           return dropQuery("invalidLogsGate");
         }
 
-        const kever = this.kevers.get(pre);
+        // Query targets may be remote accepted identifiers that exist only in
+        // durable `states.` after a reopen. Use the read-through DB accessor so
+        // witness/query replay works for reopened remote state, not just local
+        // habitats already hot in the in-memory cache.
+        const kever = this.db.getKever(pre);
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -312,7 +316,7 @@ export class Kevery {
         }]);
       }
       case "ksn": {
-        const kever = this.kevers.get(pre);
+        const kever = this.db.getKever(pre);
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -322,13 +326,13 @@ export class Kevery {
         return acceptQuery([{
           kin: "reply",
           route: "/ksn",
-          serder: makeReplySerder(`/ksn/${src}`, kever.state().asDict()),
+          serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
           src,
           dest,
         }]);
       }
       case "mbx": {
-        if (!this.kevers.has(pre)) {
+        if (!this.db.getKever(pre)) {
           return escrowQuery("missingKever");
         }
         return acceptQuery([{

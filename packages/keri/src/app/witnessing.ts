@@ -3,17 +3,18 @@
  *
  * This module ports the missing operational slice around already-landed
  * receipt-core behavior:
- * - witness HTTP/TCP host ingress
+ * - witness receipt/query decision helpers
+ * - witness-local ingress processing
  * - synchronous witness receipt endpoints
  * - controller-side witness submission, catchup, and receipt fanout
  *
  * Architectural rules:
  * - normal receipt/escrow decisions stay in `Kevery` and friends
  * - parser/router ownership stays inside the shared runtime/parser seams
- * - this module coordinates transports and host policies without coupling
- *   route handlers directly to parser internals
+ * - concrete listener ownership lives in `tufa`; this module stays on the
+ *   protocol/runtime side of that boundary
  */
-import { createConnection, createServer, type Server, type Socket } from "node:net";
+import { createConnection } from "node:net";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import {
   Cigar,
@@ -27,7 +28,7 @@ import {
 } from "../../../cesr/mod.ts";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
-import { makeReceiptSerder } from "../core/messages.ts";
+import { receipt as receiptEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
@@ -114,7 +115,9 @@ function buildDetachedReceiptMessage(
       ...cigars.flatMap((cigar) => {
         const verfer = cigar.verfer;
         if (!verfer) {
-          throw new ValidationError("Detached non-transferable receipt is missing verifier context.");
+          throw new ValidationError(
+            "Detached non-transferable receipt is missing verifier context.",
+          );
         }
         return [verfer.qb64b, cigar.qb64b];
       }),
@@ -123,7 +126,9 @@ function buildDetachedReceiptMessage(
   const atc = concatBytes(...attachments);
 
   if (atc.length % 4 !== 0) {
-    throw new ValidationError("Witness receipt attachment group is not quadlet aligned.");
+    throw new ValidationError(
+      "Witness receipt attachment group is not quadlet aligned.",
+    );
   }
 
   return concatBytes(
@@ -176,7 +181,9 @@ function buildEndpointDetachedReceiptMessage(
       ...cigars.flatMap((cigar) => {
         const verfer = cigar.verfer;
         if (!verfer) {
-          throw new ValidationError("Endpoint receipt couple is missing verifier context.");
+          throw new ValidationError(
+            "Endpoint receipt couple is missing verifier context.",
+          );
         }
         return [verfer.qb64b, cigar.qb64b];
       }),
@@ -246,10 +253,15 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
  * handlers can inspect witness/receipt wire emissions before the outer runtime
  * loop sees them.
  */
-function drainWitnessCues(
+function* drainWitnessCues(
   runtime: AgentRuntime,
   serviceHab?: Hab,
-): CueEmission[] {
+  {
+    deliver = true,
+  }: {
+    deliver?: boolean;
+  } = {},
+): Operation<CueEmission[]> {
   const hab = cueHab(runtime, serviceHab);
   if (!hab) {
     return [];
@@ -257,7 +269,9 @@ function drainWitnessCues(
 
   const emissions: CueEmission[] = [];
   for (const emission of hab.processCuesIter(runtime.cues)) {
-    runtime.mailboxDirector.handleEmission(emission);
+    if (deliver) {
+      yield* runtime.respondant.sendWithHab(emission, hab);
+    }
     emissions.push(emission);
   }
   return emissions;
@@ -285,14 +299,20 @@ function drainWitnessCues(
  * - generic runtime ingress should remain separate for mailbox streaming,
  *   `/ksn` replay publication, and other non-witness-root policies
  */
-export function processWitnessIngress(
+export function* processWitnessIngress(
   runtime: AgentRuntime,
   serviceHab: Hab,
   bytes: Uint8Array,
-  { local = false }: { local?: boolean } = {},
-): CueEmission[] {
+  {
+    local = false,
+    deliver = true,
+  }: {
+    local?: boolean;
+    deliver?: boolean;
+  } = {},
+): Operation<CueEmission[]> {
   settleRuntimeIngress(runtime, [bytes], { local });
-  return drainWitnessCues(runtime, serviceHab);
+  return yield* drainWitnessCues(runtime, serviceHab, { deliver });
 }
 
 /** Resolve the authoritative witness list for one accepted event. */
@@ -321,11 +341,17 @@ function acceptedEventWitnesses(
 function witnessReceiptEligibility(
   serviceHab: Hab,
   serder: SerderKERI,
-): { kind: "accept"; accepted: SerderKERI } | { kind: "escrow" } | { kind: "reject"; message: string } {
+): { kind: "accept"; accepted: SerderKERI } | { kind: "escrow" } | {
+  kind: "reject";
+  message: string;
+} {
   const pre = serder.pre;
   const said = serder.said;
   if (!pre || said === null) {
-    return { kind: "reject", message: "Receipted event must expose pre, sn, and said." };
+    return {
+      kind: "reject",
+      message: "Receipted event must expose pre, sn, and said.",
+    };
   }
 
   const kever = serviceHab.db.getKever(pre);
@@ -343,11 +369,11 @@ function witnessReceiptEligibility(
 }
 
 /** Handle the synchronous witness receipt POST policy. */
-export function witnessReceiptPost(
+export function* witnessReceiptPost(
   runtime: AgentRuntime,
   serviceHab: Hab,
   bytes: Uint8Array,
-): WitnessReceiptPostResult {
+): Operation<WitnessReceiptPostResult> {
   const serder = inspectCesrRequest(bytes);
   if (!serder) {
     return { kind: "reject", status: 400, message: "Invalid CESR request" };
@@ -366,8 +392,9 @@ export function witnessReceiptPost(
     };
   }
 
-  processWitnessIngress(runtime, serviceHab, bytes, {
+  yield* processWitnessIngress(runtime, serviceHab, bytes, {
     local: true,
+    deliver: false,
   });
   const eligibility = witnessReceiptEligibility(serviceHab, serder);
   if (eligibility.kind === "reject") {
@@ -377,7 +404,9 @@ export function witnessReceiptPost(
     return { kind: "escrow", status: 202 };
   }
 
-  const inspected = inspectReceiptMessage(serviceHab.receipt(eligibility.accepted));
+  const inspected = inspectReceiptMessage(
+    serviceHab.receipt(eligibility.accepted),
+  );
   const body = buildEndpointDetachedReceiptMessage(inspected.serder, {
     wigers: inspected.wigers,
     cigars: inspected.cigars,
@@ -436,7 +465,7 @@ export function witnessReceiptGet(
     };
   }
 
-  const reserder = makeReceiptSerder(pre, serder.sn ?? 0, said);
+  const reserder = receiptEvent(pre, serder.sn ?? 0, said);
   const body = buildWitnessReceiptMessage(
     reserder,
     serviceHab.db.wigs.get(dgKey(pre, said)),
@@ -568,11 +597,15 @@ function ownEventMessage(
 ): { serder: SerderKERI; message: Uint8Array } {
   const said = hby.db.kels.getLast(pre, sn);
   if (!said) {
-    throw new ValidationError(`Missing accepted event at ${pre}:${sn.toString(16)}.`);
+    throw new ValidationError(
+      `Missing accepted event at ${pre}:${sn.toString(16)}.`,
+    );
   }
   const serder = hby.db.getEvtSerder(pre, said);
   if (!serder) {
-    throw new ValidationError(`Missing accepted event body for ${pre}:${said}.`);
+    throw new ValidationError(
+      `Missing accepted event body for ${pre}:${said}.`,
+    );
   }
   const fn = hby.db.getFelFn(pre, said);
   if (fn === null) {
@@ -582,7 +615,7 @@ function ownEventMessage(
 }
 
 /** Post one generic witness message using HTTP or TCP according to known URLs. */
-function* sendWitnessMessage(
+export function* sendWitnessMessage(
   hab: Hab,
   witness: string,
   bytes: Uint8Array,
@@ -634,7 +667,9 @@ function* sendTcpWitnessMessage(
   }
   const port = parsed.port.length > 0 ? Number(parsed.port) : NaN;
   if (!Number.isFinite(port)) {
-    throw new ValidationError(`Witness TCP URL is missing a valid port: ${url}`);
+    throw new ValidationError(
+      `Witness TCP URL is missing a valid port: ${url}`,
+    );
   }
 
   yield* action<void>((resolve, reject) => {
@@ -852,7 +887,9 @@ export class Receiptor {
       const statuses: Record<string, number> = {};
       const said = serder.said;
       if (!said) {
-        throw new ValidationError("Local event must expose a SAID before witness receipting.");
+        throw new ValidationError(
+          "Local event must expose a SAID before witness receipting.",
+        );
       }
 
       for (const witness of witnesses) {
@@ -869,7 +906,13 @@ export class Receiptor {
           auths[witness],
         );
         if (response.kind === "escrow") {
-          response = yield* pollWitnessReceipt(hab, witness, pre, eventSn, said);
+          response = yield* pollWitnessReceipt(
+            hab,
+            witness,
+            pre,
+            eventSn,
+            said,
+          );
         }
         statuses[witness] = response.status;
         if (response.kind !== "accepted") {
@@ -892,8 +935,12 @@ export class Receiptor {
         const complements = [...receiptGroups.entries()]
           .filter(([current]) => current !== witness)
           .map(([, evidence]) => evidence);
-        const otherWigers = complements.flatMap((evidence) => [...evidence.wigers]);
-        const otherCigars = complements.flatMap((evidence) => [...evidence.cigars]);
+        const otherWigers = complements.flatMap((
+          evidence,
+        ) => [...evidence.wigers]);
+        const otherCigars = complements.flatMap((
+          evidence,
+        ) => [...evidence.cigars]);
         if (otherWigers.length === 0 && otherCigars.length === 0) {
           continue;
         }
@@ -903,7 +950,8 @@ export class Receiptor {
         if (
           serder.ilk === Ilks.icp
           || serder.ilk === Ilks.dip
-          || ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) && serder.adds.includes(witness))
+          || ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt)
+            && serder.adds.includes(witness))
         ) {
           const schemes = witnessSchemeReplies(hab, introWitnesses);
           if (schemes.length > 0) {
@@ -912,7 +960,7 @@ export class Receiptor {
         }
         parts.push(
           buildDetachedReceiptMessage(
-            makeReceiptSerder(pre, eventSn, said),
+            receiptEvent(pre, eventSn, said),
             {
               wigers: otherWigers,
               cigars: otherCigars,
@@ -1044,88 +1092,5 @@ export class WitnessReceiptor {
       return { witnesses: [...kever.wits], statuses };
     }
     return yield* this.receiptor.receipt(pre, { sn: eventSn, auths });
-  }
-}
-
-/** Minimal close/wait contract for the TCP witness server. */
-interface RunningWitnessTcpServer {
-  readonly finished: Promise<void>;
-  close(): void;
-}
-
-/** Read the whole inbound TCP payload before handing it to the runtime. */
-async function readSocketBytes(socket: Socket): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = [];
-  await new Promise<void>((resolve, reject) => {
-    socket.on("data", (chunk) => {
-      chunks.push(new Uint8Array(chunk));
-    });
-    socket.once("end", resolve);
-    socket.once("error", reject);
-    socket.once("close", () => resolve());
-  });
-  return chunks.length === 0 ? new Uint8Array() : concatBytes(...chunks);
-}
-
-/** Process one accepted TCP witness connection. */
-async function handleWitnessSocket(
-  socket: Socket,
-  runtime: AgentRuntime,
-  serviceHab: Hab,
-): Promise<void> {
-  try {
-    const bytes = await readSocketBytes(socket);
-    if (bytes.length > 0) {
-      processWitnessIngress(runtime, serviceHab, bytes, { local: true });
-    }
-  } finally {
-    socket.destroy();
-  }
-}
-
-/** Open one raw TCP witness ingress host. */
-function openWitnessTcpServer(
-  port: number,
-  hostname: string,
-  runtime: AgentRuntime,
-  serviceHab: Hab,
-): RunningWitnessTcpServer {
-  const server: Server = createServer((socket) => {
-    void handleWitnessSocket(socket, runtime, serviceHab).catch(() => {
-      socket.destroy();
-    });
-  });
-
-  const finished = new Promise<void>((resolve, reject) => {
-    server.once("close", resolve);
-    server.once("error", reject);
-  });
-  server.listen(port, hostname);
-
-  return {
-    finished,
-    close() {
-      if (server.listening) {
-        server.close();
-      }
-    },
-  };
-}
-
-/** Adapt the TCP server promise lifecycle into Effection. */
-export function* startWitnessTcpServer(
-  port: number,
-  hostname: string,
-  runtime: AgentRuntime,
-  serviceHab: Hab,
-): Operation<void> {
-  const server = openWitnessTcpServer(port, hostname, runtime, serviceHab);
-  try {
-    yield* action((resolve, reject) => {
-      server.finished.then(resolve).catch(reject);
-      return () => {};
-    });
-  } finally {
-    server.close();
   }
 }

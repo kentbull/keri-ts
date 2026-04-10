@@ -49,6 +49,7 @@ Two false mental models cause repeated bugs:
 
 - a cue deck is not "just a transport queue"
 - mailbox storage and mailbox query response are not the same path
+- mailbox storage is not the respondant path
 
 ## Shared Terms
 
@@ -96,7 +97,9 @@ explicit:
 - `processCuesOnce()` and `cueDo()` drain interpreted `CueEmission` values into
   a host-facing `CueSink`
 - `QueryCoordinator` owns incomplete `query` cue correspondence
-- `MailboxDirector` owns mailbox-specific transport and storage side effects
+- `Respondant` owns non-`stream` cue delivery such as `reply`, `replay`,
+  `receipt`, and `witness`
+- `MailboxDirector` owns mailbox-specific storage and `stream` cue correlation
 - `Habery.kevery` still has its own local cue deck for local habitat processing
   outside a long-lived runtime host
 
@@ -107,18 +110,20 @@ Important code seams:
 - `packages/keri/src/app/cue-runtime.ts`
 - `packages/keri/src/app/habbing.ts`
 - `packages/keri/src/app/querying.ts`
+- `packages/keri/src/app/respondant.ts`
 - `packages/keri/src/app/mailbox-director.ts`
 
 ## Scope And Ownership
 
-| Concern                      | KERIpy                                                                      | `keri-ts`                                                             | Why it matters                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Shared runtime cue deck      | Shared deck passed into hosted stacks such as witness and mailbox hosts     | `AgentRuntime.cues` created in `createAgentRuntime()`                 | Cross-component signals must be visible to every host component that depends on them          |
-| Habery-local cue scope       | Local habitat processing can occur outside hosted doers                     | `Habery.kevery` owns a separate local cue deck                        | Local processing must not depend on a long-lived runtime existing                             |
-| Habitat-owned interpretation | `BaseHab.processCuesIter()`                                                 | `Hab.processCuesIter()`                                               | Protocol message construction stays near the local controller state that can honestly sign it |
-| Host delivery                | `cueDo()`-style doers route cues to responders, query handlers, or noticers | `processCuesOnce()` / `cueDo()` deliver `CueEmission`s to a `CueSink` | Host-specific transport work should not be hidden inside protocol processors                  |
-| Query correspondence         | Query doers and `WitnessInquisitor` own follow-on `qry` work                | `QueryCoordinator` owns incomplete `query` cues and continuations     | Incomplete `query` cues are policy work, not near-wire messages                               |
-| Mailbox query transport      | `MailboxStart.cueDo()` and `HttpEnd.qrycues` bridge `stream` cues into SSE  | `MailboxDirector` retains `stream` cues and serves mailbox streams    | Mailbox polling depends on cue routing, not just mailbox storage                              |
+| Concern                      | KERIpy                                                                          | `keri-ts`                                                             | Why it matters                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Shared runtime cue deck      | Shared deck passed into hosted stacks such as witness and mailbox hosts         | `AgentRuntime.cues` created in `createAgentRuntime()`                 | Cross-component signals must be visible to every host component that depends on them          |
+| Habery-local cue scope       | Local habitat processing can occur outside hosted doers                         | `Habery.kevery` owns a separate local cue deck                        | Local processing must not depend on a long-lived runtime existing                             |
+| Habitat-owned interpretation | `BaseHab.processCuesIter()`                                                     | `Hab.processCuesIter()`                                               | Protocol message construction stays near the local controller state that can honestly sign it |
+| Host delivery                | `cueDo()`-style doers route cues to responders, query handlers, or noticers     | `processCuesOnce()` / `cueDo()` deliver `CueEmission`s to a `CueSink` | Host-specific transport work should not be hidden inside protocol processors                  |
+| Query correspondence         | Query doers and `WitnessInquisitor` own follow-on `qry` work                    | `QueryCoordinator` owns incomplete `query` cues and continuations     | Incomplete `query` cues are policy work, not near-wire messages                               |
+| Respondant delivery          | `Respondant` / `Postman` forward non-`stream` cue results to resolved endpoints | `Respondant` forwards non-`stream` wire emissions via `Poster`        | Outbound correspondence must stay separate from mailbox storage                               |
+| Mailbox query transport      | `MailboxStart.cueDo()` and `HttpEnd.qrycues` bridge `stream` cues into SSE      | `MailboxDirector` retains `stream` cues and serves mailbox streams    | Mailbox polling depends on cue routing, not just mailbox storage                              |
 
 ## Critical Producer And Consumer Inventory
 
@@ -128,11 +133,11 @@ an exhaustive list of every future cue family.
 | Cue kind                                     | Typical producers in KERIpy                                    | Typical producers in `keri-ts`                       | Main consumers in KERIpy                                             | Main consumers in `keri-ts`                   | Meaning                                       |
 | -------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
 | `query`                                      | `routing.py`, `eventing.py`, `peer/exchanging.py`, query doers | `Revery`, `Kever`, `Kevery`, `Exchanger`             | `BaseHab.processCuesIter()`, query doers, witness/mailbox host logic | `QueryCoordinator`, `Hab.processCuesIter()`   | Ask for one key-state or route-specific query |
-| `reply`                                      | `Kevery.processQuery()` and reply-owning routes                | `Kevery.processQuery()` and KEL-owned reply handlers | `BaseHab.processCuesIter()`, `Respondant`                            | `Hab.processCuesIter()`, `MailboxDirector`    | Emit one signed reply message                 |
-| `replay`                                     | `Kevery.processQuery("logs")`                                  | `Kevery.processQuery("logs")`                        | `BaseHab.processCuesIter()`, host responders                         | `Hab.processCuesIter()`, `MailboxDirector`    | Emit one replay byte stream                   |
+| `reply`                                      | `Kevery.processQuery()` and reply-owning routes                | `Kevery.processQuery()` and KEL-owned reply handlers | `BaseHab.processCuesIter()`, `Respondant`                            | `Hab.processCuesIter()`, `Respondant`         | Emit one signed reply message                 |
+| `replay`                                     | `Kevery.processQuery("logs")`                                  | `Kevery.processQuery("logs")`                        | `BaseHab.processCuesIter()`, host responders                         | `Hab.processCuesIter()`, `Respondant`         | Emit one replay byte stream                   |
 | `stream`                                     | `Kevery.processQuery("mbx")`                                   | `Kevery.processQuery("mbx")`                         | `MailboxStart.cueDo()`, `HttpEnd.qrycues`, `QryRpyMailboxIterable`   | `MailboxDirector`, HTTP server mailbox routes | Start or correlate mailbox streaming work     |
 | `keyStateSaved`                              | `Kevery` after accepted key-state updates                      | `Kevery` after accepted `/ksn` or key-state updates  | `KeyStateNoticer`, `LogQuerier`                                      | `QueryCoordinator` continuations              | Notify that local key state advanced          |
-| `receipt` / `witness`                        | event-processing acceptance paths                              | event-processing acceptance paths                    | `BaseHab.processCuesIter()`                                          | `Hab.processCuesIter()`, `MailboxDirector`    | Emit receipt-family follow-on wire work       |
+| `receipt` / `witness`                        | event-processing acceptance paths                              | event-processing acceptance paths                    | `BaseHab.processCuesIter()`, `Respondant`                            | `Hab.processCuesIter()`, `Respondant`         | Emit receipt-family follow-on wire work       |
 | `notice` / `invalid`                         | query or event-processing branches                             | query or event-processing branches                   | host loggers/responders                                              | host sinks/tests/diagnostics                  | Notify runtime of non-wire outcomes           |
 | `oobiQueued` / `oobiResolved` / `oobiFailed` | OOBI subsystem                                                 | `Oobiery`                                            | host/doer observers                                                  | host sinks, runtime convergence logic         | Surface durable OOBI lifecycle changes        |
 
@@ -164,6 +169,8 @@ Maintainer conclusion:
 - `Mailboxer` provides the payload bytes
 - if shared cue wiring is broken, mailbox storage can still succeed while `mbx`
   queries hang
+- `Mailboxer` is not the general cue responder; it only serves the mailbox
+  payload side once a `stream` cue has been routed there
 
 #### `keri-ts`
 
@@ -183,6 +190,42 @@ Maintainer conclusion:
 - `stream` is still a transport request, not the payload
 - mailbox storage and mailbox query response remain separate even though they
   cooperate through one runtime
+
+### 1.5. Non-`stream` cue delivery is respondant work, not mailbox work
+
+This is the architectural lesson that caused the delegation/query interop bug.
+
+#### KERIpy
+
+1. `Kevery.processQuery("logs")` or reply-owning routes emit `replay` / `reply`
+   cues.
+2. `BaseHab.processCuesIter()` materializes those cues into CESR byte streams.
+3. `Respondant` / `Postman` forward those byte streams to the recipient's
+   resolved endpoints.
+4. If the recipient uses mailbox endpoints, the forwarded payload is then stored
+   and later discovered through mailbox polling.
+
+Maintainer conclusion:
+
+- `Mailboxer` stores forwarded payloads
+- `Respondant` decides that the payload should be delivered at all
+- confusing those two roles collapses storage into delivery and breaks
+  requester-side expectations
+
+#### `keri-ts`
+
+1. `Hab.processCuesIter()` interprets `reply`, `replay`, `receipt`, and
+   `witness` cues into `wire` emissions.
+2. `Respondant` forwards those `wire` emissions via `Poster`.
+3. `MailboxDirector` only participates when the resolved destination is a
+   mailbox flow or when a `stream` cue starts mailbox query transport.
+
+Maintainer conclusion:
+
+- if behavior smells like KERIpy `Respondant`, it belongs in
+  `packages/keri/src/app/respondant.ts`
+- `MailboxDirector` must not treat generic non-`stream` cues as implicit local
+  mailbox writes
 
 ### 2. Missing signer state or blocked reply verification -> `query` cue -> correspondence -> outbound `qry`
 

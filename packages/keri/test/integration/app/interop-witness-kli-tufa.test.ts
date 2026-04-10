@@ -1214,6 +1214,103 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
   }
 });
 
+Deno.test("Interop witness: KLI controller completes default witness-mode inception using one Tufa witness", async () => {
+  const ctx = await createInteropContext();
+  const controllerName = `kli-tufa-default-${crypto.randomUUID().slice(0, 8)}`;
+  const controllerAlias = "controller";
+  const base = `kli-tufa-default-${crypto.randomUUID().slice(0, 8)}`;
+  const tufaHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["twil"],
+  });
+
+  try {
+    const witness = tufaHarness.node("twil");
+
+    await requireSuccess(
+      "kli init controller",
+      runCmd(
+        ctx.kliCommand,
+        [
+          "init",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--salt",
+          SALT,
+        ],
+        ctx.env,
+      ),
+    );
+    await resolveWitnessesForKli(
+      ctx.kliCommand,
+      ctx.env,
+      controllerName,
+      base,
+      [witness],
+    );
+
+    const incepted = await requireSuccess(
+      "kli incept with default witness mode against tufa witness",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          "incept",
+          "--name",
+          controllerName,
+          "--base",
+          base,
+          "--passcode",
+          PASSCODE,
+          "--alias",
+          controllerAlias,
+          "--transferable",
+          "--icount",
+          "1",
+          "--isith",
+          "1",
+          "--ncount",
+          "1",
+          "--nsith",
+          "1",
+          "--toad",
+          "1",
+          "--wits",
+          witness.pre,
+        ],
+        ctx.env,
+        30_000,
+      ),
+    );
+    const controllerPre = extractPrefix(incepted.stdout);
+    const said = await assertKliControllerStore(
+      ctx,
+      controllerName,
+      base,
+      controllerPre,
+      0,
+      1,
+    );
+    await assertTufaWitnessStores(
+      tufaHarness.headDirPath,
+      [witness],
+      controllerPre,
+      0,
+      1,
+    );
+    await assertWitnessReceiptVisible(
+      witness.httpOrigin,
+      controllerPre,
+      said,
+      0,
+    );
+  } finally {
+    await tufaHarness.close();
+  }
+});
+
 Deno.test("Interop witness: tufa controller completes fully witnessed rotations with mixed Tufa and KERIpy witnesses", async () => {
   const ctx = await createInteropContext();
   const headDirPath = await Deno.makeTempDir({
