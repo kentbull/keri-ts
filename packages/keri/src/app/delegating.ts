@@ -543,6 +543,11 @@ export class Anchorer {
       message,
       topic: DELEGATE_MAILBOX_TOPIC,
     });
+    // KERIpy issues the first delegator-witness anchor query in the same
+    // publish phase that forwards the delegation request and raw event bytes.
+    // Keep that ordering here so delegate-side approval discovery does not
+    // depend on a later escrow pass happening "soon enough" by accident.
+    this.queueDelegatorWitnessQueryNow(serder, communicationHab);
     this.hby.db.dpwe.rem(keys);
     this.hby.db.dune.pin(keys, serder);
     return {
@@ -660,6 +665,40 @@ export class Anchorer {
     );
   }
 
+  private queueDelegatorWitnessQueryNow(
+    serder: SerderKERI,
+    communicationHab: Hab,
+  ): void {
+    const id = workflowId(serder);
+    const delpre = delegatedWorkflowDelpre(this.hby, serder);
+    if (!delpre) {
+      throw new ValidationError(
+        `Delegation workflow ${id} is missing a delegator prefix.`,
+      );
+    }
+    const delegator = this.hby.db.getKever(delpre);
+    if (!delegator) {
+      return;
+    }
+
+    const witness = firstSorted(delegator.wits);
+    if (!witness || !preferredWitnessQueryUrl(communicationHab, witness)) {
+      return;
+    }
+
+    this.querying.enqueue({
+      pre: delpre,
+      route: "logs",
+      query: { fn: "0", s: "0", a: eventAnchor(serder) },
+      hab: communicationHab,
+      wits: [witness],
+    });
+    // Mark that an immediate publication-time query was already sent so the
+    // first unanchored escrow retry pass starts the backoff window instead of
+    // immediately enqueueing the same query again.
+    this.anchorQueryRetryPasses.set(id, -1);
+  }
+
   private retryDelegatorWitnessQuery(
     serder: SerderKERI,
     communicationHab: Hab,
@@ -684,11 +723,24 @@ export class Anchorer {
       return `Delegator anchor has not been learned locally yet and witness ${witness} has no HTTP endpoint known locally.`;
     }
 
-    const pass = this.anchorQueryRetryPasses.get(id) ?? 0;
-    this.anchorQueryRetryPasses.set(id, pass + 1);
-    if (pass % DELEGATION_ANCHOR_QUERY_RETRY_PASSES !== 0) {
+    const pass = this.anchorQueryRetryPasses.get(id);
+    if (pass === undefined) {
+      this.querying.enqueue({
+        pre: delpre,
+        route: "logs",
+        query: { fn: "0", s: "0", a: eventAnchor(serder) },
+        hab: communicationHab,
+        wits: [witness],
+      });
+      this.anchorQueryRetryPasses.set(id, 0);
+      return `Delegator anchor has not been learned locally yet; queried delegator witness ${witness}.`;
+    }
+
+    const nextPass = pass + 1;
+    if (nextPass < DELEGATION_ANCHOR_QUERY_RETRY_PASSES) {
+      this.anchorQueryRetryPasses.set(id, nextPass);
       const remaining = DELEGATION_ANCHOR_QUERY_RETRY_PASSES
-        - (pass % DELEGATION_ANCHOR_QUERY_RETRY_PASSES);
+        - nextPass;
       return `Delegator anchor has not been learned locally yet; next delegator witness query retry in ${remaining} pass(es).`;
     }
 
@@ -699,6 +751,7 @@ export class Anchorer {
       hab: communicationHab,
       wits: [witness],
     });
+    this.anchorQueryRetryPasses.set(id, 0);
     return `Delegator anchor has not been learned locally yet; queried delegator witness ${witness}.`;
   }
 

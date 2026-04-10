@@ -12,7 +12,14 @@
  *   full CESR payload is sent in the body instead of splitting attachments into
  *   the header
  */
-import { type CesrMessage, createParser, parseSerder, SerderKERI, type Smellage } from "../../../cesr/mod.ts";
+import {
+  concatBytes,
+  type CesrMessage,
+  createParser,
+  parseSerder,
+  SerderKERI,
+  type Smellage,
+} from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 
 /** Mailbox HTTP framing modes supported by `keri-ts`. */
@@ -22,6 +29,8 @@ export type CesrBodyMode = "header" | "body";
 export const DEFAULT_CESR_BODY_MODE: CesrBodyMode = "header";
 /** CESR HTTP content type used by mailbox and exchange endpoints. */
 export const CESR_CONTENT_TYPE = "application/cesr";
+/** KERIpy's legacy-but-authoritative CESR HTTP media type. */
+export const KERIPY_CESR_JSON_CONTENT_TYPE = "application/cesr+json";
 /** Multipart form content type retained for mailbox-admin compatibility. */
 export const MULTIPART_CONTENT_TYPE = "multipart/form-data";
 /** Header that carries detached CESR attachments in header mode. */
@@ -34,7 +43,9 @@ const textDecoder = new TextDecoder();
 
 /** Return true when one HTTP content type names CESR payload framing. */
 export function isCesrContentType(value: string | null | undefined): boolean {
-  return value?.split(";")[0]?.trim()?.toLowerCase() === CESR_CONTENT_TYPE;
+  const normalized = value?.split(";")[0]?.trim()?.toLowerCase();
+  return normalized === CESR_CONTENT_TYPE
+    || normalized === KERIPY_CESR_JSON_CONTENT_TYPE;
 }
 
 /** Return true when one HTTP content type names multipart form media. */
@@ -164,23 +175,23 @@ export function splitCesrStream(message: Uint8Array): Uint8Array[] {
     return [];
   }
 
+  const parser = createParser({
+    framed: false,
+    attachmentDispatchMode: "compat",
+  });
+  const frames = [...parser.feed(message), ...parser.flush()];
   const parts: Uint8Array[] = [];
-  let offset = 0;
 
-  while (offset < message.length) {
-    const current = message.slice(offset);
-    const serder = new SerderKERI({ raw: current });
-    let end = offset + serder.size;
-
-    // Current mailbox/exchange HTTP traffic is JSON-framed, so the next event
-    // begins at `{` and any intervening bytes belong to the current event's
-    // attachment stream.
-    while (end < message.length && message[end] !== 0x7b) {
-      end += 1;
+  for (const frame of frames) {
+    if (frame.type === "error") {
+      throw frame.error;
     }
-
-    parts.push(message.slice(offset, end));
-    offset = end;
+    parts.push(
+      concatBytes(
+        frame.frame.body.raw,
+        ...frame.frame.attachments.map((attachment) => attachment.raw),
+      ),
+    );
   }
 
   return parts;

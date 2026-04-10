@@ -9,6 +9,7 @@
  */
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
+import { concatBytes } from "../../../../cesr/mod.ts";
 import {
   buildCesrRequest,
   buildCesrStreamRequest,
@@ -21,6 +22,7 @@ import {
   splitCesrStream,
 } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { makeEmbeddedExchangeMessage } from "../../../src/core/messages.ts";
 
 /** Proves KERIpy-style header framing for one mailbox/query request. */
 Deno.test("CESR HTTP - header mode splits attachments into the CESR header", async () => {
@@ -158,6 +160,48 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
   assertEquals(parts, [reply, query]);
 });
 
+/** Proves `/fwd` traffic carrying replay bytes is kept as one CESR request. */
+Deno.test("CESR HTTP - header mode does not split a forwarded exn across embedded replay bytes", async () => {
+  let forwarded!: Uint8Array;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `cesr-forwarded-replay-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const replay = [...hby.db.clonePreIter(hab.pre)];
+      const { serder, attachments } = makeEmbeddedExchangeMessage(
+        "/fwd",
+        {},
+        {
+          sender: hab.pre,
+          modifiers: { pre: hab.pre, topic: "/replay" },
+          embeds: { evt: concatBytes(...replay) },
+        },
+      );
+      forwarded = concatBytes(
+        hab.endorse(serder, { pipelined: false }),
+        attachments,
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+
+  assertEquals(splitCesrStream(forwarded), [forwarded]);
+});
+
 /** Proves raw CESR stream helpers keep multi-message mailbox admin bodies intact. */
 Deno.test("CESR HTTP - stream request helper preserves a raw multi-message CESR body", async () => {
   let stream!: Uint8Array;
@@ -244,9 +288,14 @@ Deno.test("CESR HTTP - terminal message inspection returns the final message in 
 });
 
 /** Proves CESR content type matching ignores charset noise but rejects other types. */
-Deno.test("CESR HTTP - content type matching only accepts application/cesr", () => {
+Deno.test("CESR HTTP - content type matching accepts both Tufa and KERIpy CESR media types", () => {
   assertEquals(isCesrContentType("application/cesr"), true);
   assertEquals(isCesrContentType("application/cesr; charset=utf-8"), true);
+  assertEquals(isCesrContentType("application/cesr+json"), true);
+  assertEquals(
+    isCesrContentType("application/cesr+json; charset=utf-8"),
+    true,
+  );
   assertEquals(isCesrContentType("text/plain"), false);
   assertEquals(isCesrContentType(null), false);
 });
@@ -272,4 +321,16 @@ Deno.test("CESR HTTP - required ingress helper only accepts CESR-framed requests
     }),
   );
   assertEquals(cesr, message);
+
+  const keripyCesr = await readRequiredCesrRequestBytes(
+    new Request("http://example.test", {
+      method: "POST",
+      headers: {
+        ...request.headers,
+        "Content-Type": "application/cesr+json",
+      },
+      body: request.body,
+    }),
+  );
+  assertEquals(keripyCesr, message);
 });

@@ -26,9 +26,11 @@ import { fetchResponseHandle } from "../../../src/app/httping.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { queryTransportSink } from "../../../src/app/query-transport.ts";
+import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { makeReplySerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { reserveTcpPort } from "../../http-test-support.ts";
@@ -1617,6 +1619,137 @@ Deno.test("Gate E - witness anchor logs queries forward `/replay` to a separate 
       yield* relayHby.close(true);
       yield* witnessHby.close(true);
       yield* proxyHby.close(true);
+    }
+  });
+});
+
+Deno.test("Gate E - reopened witness `logs` queries replay remote accepted KEL state via read-through `getKever`", async () => {
+  const witnessName = `gate-e-reopen-witness-${crypto.randomUUID()}`;
+  const subjectName = `gate-e-reopen-subject-${crypto.randomUUID()}`;
+  const requesterName = `gate-e-reopen-requester-${crypto.randomUUID()}`;
+  const witnessHeadDirPath = `/tmp/tufa-gate-e-reopen-witness-${crypto.randomUUID()}`;
+  const subjectHeadDirPath = `/tmp/tufa-gate-e-reopen-subject-${crypto.randomUUID()}`;
+  const requesterHeadDirPath = `/tmp/tufa-gate-e-reopen-requester-${crypto.randomUUID()}`;
+  let witnessPre = "";
+  let subjectPre = "";
+  let subjectSaid = "";
+  let queryBytes = new Uint8Array();
+
+  await run(function*() {
+    const witnessHby = yield* createHabery({
+      name: witnessName,
+      headDirPath: witnessHeadDirPath,
+      skipConfig: true,
+    });
+    const subjectHby = yield* createHabery({
+      name: subjectName,
+      headDirPath: subjectHeadDirPath,
+      skipConfig: true,
+    });
+    const requesterHby = yield* createHabery({
+      name: requesterName,
+      headDirPath: requesterHeadDirPath,
+      skipConfig: true,
+    });
+
+    try {
+      const witness = witnessHby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const requester = requesterHby.makeHab("requester", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const subject = subjectHby.makeHab("subject", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+
+      witnessPre = witness.pre;
+      subjectPre = subject.pre;
+      subjectSaid = subject.kever?.said ?? "";
+      queryBytes = new Uint8Array(
+        requester.query(subject.pre, requester.pre, { fn: "0", s: "0" }, "logs"),
+      );
+
+      const runtime = yield* createAgentRuntime(witnessHby, { mode: "indirect" });
+      try {
+        const message = [...subjectHby.db.clonePreIter(subject.pre, 0)][0];
+        assertExists(message);
+        const result = yield* witnessReceiptPost(runtime, witness, message);
+        assertEquals(result.kind, "accepted");
+        assertEquals(
+          witnessHby.db.wigs.get(dgKey(subject.pre, subjectSaid)).length,
+          1,
+        );
+        assertExists(witnessHby.db.getState(subject.pre));
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* requesterHby.close(true);
+      yield* subjectHby.close(true);
+      yield* witnessHby.close();
+    }
+  });
+
+  await run(function*() {
+    const witnessHby = yield* createHabery({
+      name: witnessName,
+      headDirPath: witnessHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const witness = witnessHby.habByName("witness");
+      assertExists(witness);
+      assertExists(witnessHby.db.getState(subjectPre));
+      assertEquals(witnessHby.db.kevers.has(subjectPre), false);
+
+      const runtime = yield* createAgentRuntime(witnessHby, { mode: "indirect" });
+      const emissions: Array<{ kind: string; kin: string; msgs: number; dest: string | null }> = [];
+      try {
+        ingestKeriBytes(runtime, queryBytes);
+        yield* processRuntimeTurn(runtime, {
+          hab: witness,
+          pollMailbox: false,
+          sink: {
+            *send(emission) {
+              emissions.push({
+                kind: emission.kind,
+                kin: emission.cue.kin,
+                msgs: emission.msgs.length,
+                dest: emission.cue.kin === "replay" ? emission.cue.dest ?? null : null,
+              });
+            },
+          },
+        });
+
+        assertEquals(
+          emissions.some((emission) =>
+            emission.kind === "wire"
+            && emission.kin === "replay"
+            && emission.msgs > 0
+          ),
+          true,
+        );
+        assertEquals(witnessHby.db.kevers.has(subjectPre), true);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* witnessHby.close(true);
     }
   });
 });

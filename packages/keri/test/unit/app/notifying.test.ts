@@ -144,7 +144,6 @@ Deno.test("DelegateRequestHandler writes notices only for local delegators", asy
         { delpre: delegator.pre },
         {
           sender: proxy.pre,
-          recipient: delegator.pre,
           embeds: { evt },
         },
       );
@@ -160,6 +159,7 @@ Deno.test("DelegateRequestHandler writes notices only for local delegators", asy
         (notices[0]!.attrs["ked"] as Record<string, unknown>)["i"],
         proxy.pre,
       );
+      assertEquals(serder.ked?.rp, "");
 
       const remoteSerder = makeExchangeSerder(
         DELEGATE_REQUEST_ROUTE,

@@ -29,7 +29,10 @@ import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
-import { makeExchangeSerder } from "../../../src/core/messages.ts";
+import {
+  makeEmbeddedExchangeMessage,
+  makeExchangeSerder,
+} from "../../../src/core/messages.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
@@ -279,17 +282,31 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
             route: string;
             payload: Record<string, unknown>;
             topic?: string;
+            embeds?: Record<string, Uint8Array>;
           },
         ) {
-          const serder = makeExchangeSerder(args.route, args.payload, {
-            sender: hab.pre,
-            recipient: args.recipient,
-          });
+          const embedded = args.embeds ?? {};
+          const { serder, attachments } = Object.keys(embedded).length > 0
+            ? makeEmbeddedExchangeMessage(args.route, args.payload, {
+              sender: hab.pre,
+              recipient: args.recipient,
+              embeds: embedded,
+            })
+            : {
+              serder: makeExchangeSerder(args.route, args.payload, {
+                sender: hab.pre,
+                recipient: args.recipient,
+              }),
+              attachments: new Uint8Array(),
+            };
           sent.push({
             sender: hab.pre,
             recipient: args.recipient,
             topic: args.topic,
-            message: hab.endorse(serder, { pipelined: false }),
+            message: concatBytes(
+              hab.endorse(serder, { pipelined: false }),
+              attachments,
+            ),
           });
           return { deliveries: ["mock"], queued: [] };
         },
@@ -353,6 +370,14 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       assertEquals(request.route, DELEGATE_REQUEST_ROUTE);
       assertEquals(request.pre, proxy.pre);
       assertEquals(request.ked?.a, { delpre: delegator.pre });
+      assertEquals(
+        (request.ked?.e as Record<string, Record<string, unknown>>)?.evt?.["i"],
+        delegate.pre,
+      );
+      assertEquals(
+        (request.ked?.e as Record<string, Record<string, unknown>>)?.evt?.["t"],
+        "dip",
+      );
       const event = new SerderKERI({ raw: sent[1]!.message });
       assertEquals(event.pre, delegate.pre);
       assertEquals(event.ilk, "dip");
