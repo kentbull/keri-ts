@@ -17,7 +17,7 @@ import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
 import { DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
-import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../core/messages.ts";
+import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
@@ -27,8 +27,8 @@ import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
-import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
+import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
 import {
   directDeliveryEndpoints,
   firstSortedEndpoint,
@@ -136,6 +136,7 @@ export class Poster {
       route: string;
       payload: Record<string, unknown>;
       topic?: string;
+      exchangeRecipient?: string | null;
       modifiers?: Record<string, unknown>;
       date?: string;
       dig?: string;
@@ -152,26 +153,17 @@ export class Poster {
     }
 
     const embedded = args.embeds ?? {};
-    const hasEmbeds = Object.keys(embedded).length > 0;
-    const { serder, attachments } = hasEmbeds
-      ? makeEmbeddedExchangeMessage(args.route, args.payload, {
-        sender: hab.pre,
-        recipient,
-        modifiers: args.modifiers,
-        stamp: args.date,
-        dig: args.dig,
-        embeds: embedded,
-      })
-      : {
-        serder: makeExchangeSerder(args.route, args.payload, {
-          sender: hab.pre,
-          recipient,
-          modifiers: args.modifiers,
-          stamp: args.date,
-          dig: args.dig,
-        }),
-        attachments: new Uint8Array(),
-      };
+    const exchangeRecipient = args.exchangeRecipient === null
+      ? undefined
+      : args.exchangeRecipient ?? recipient;
+    const [serder, attachments] = exchange(args.route, args.payload, {
+      sender: hab.pre,
+      recipient: exchangeRecipient,
+      modifiers: args.modifiers,
+      stamp: args.date,
+      dig: args.dig,
+      embeds: Object.keys(embedded).length > 0 ? embedded : undefined,
+    });
     const message = concatBytes(
       hab.endorse(serder, { pipelined: false }),
       attachments,
@@ -925,7 +917,7 @@ function buildForwardedDelivery(
     message: Uint8Array;
   },
 ): Uint8Array {
-  const { serder, attachments } = makeEmbeddedExchangeMessage(
+  const [serder, attachments] = exchange(
     "/fwd",
     {},
     {

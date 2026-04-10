@@ -2,7 +2,7 @@
 
 import { assertEquals } from "jsr:@std/assert";
 import { Ilks } from "../../../../cesr/mod.ts";
-import { makeReceiptSerder } from "../../../src/core/messages.ts";
+import { receipt as makeReceiptSerder } from "../../../src/core/protocol-eventing.ts";
 
 Deno.test("core/messages - makeReceiptSerder builds the canonical `rct` serder", () => {
   const pre = "BCuDiSPCTq-qBBFDHkhf1_kmysrH8KSsFvoaOSgEbx-X";

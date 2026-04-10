@@ -5,7 +5,7 @@ import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
-import { makeExchangeSerder } from "../core/messages.ts";
+import { exchange } from "../core/protocol-exchanging.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
@@ -562,14 +562,13 @@ export function oobiRequestExn(
   dest: string,
   oobi: string,
 ): SerderKERI {
-  return makeExchangeSerder(
+  return exchange(
     OOBI_REQUEST_ROUTE,
     { dest, oobi },
     {
       sender: hab.pre,
-      recipient: dest,
     },
-  );
+  )[0];
 }
 
 /**

@@ -52,7 +52,7 @@ import {
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
-import { makeReplySerder } from "./messages.ts";
+import { reply as replyEvent } from "./protocol-eventing.ts";
 import { KeyStateRecord, ObservedRecord } from "./records.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "./routing.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
@@ -326,7 +326,7 @@ export class Kevery {
         return acceptQuery([{
           kin: "reply",
           route: "/ksn",
-          serder: makeReplySerder(`/ksn/${src}`, kever.state().asDict()),
+          serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
           src,
           dest,
         }]);

@@ -2,14 +2,10 @@
 
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
 import { processWitnessIngress } from "../../../src/app/witnessing.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
 

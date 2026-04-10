@@ -3,11 +3,7 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -247,17 +243,20 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
     signal: controller.signal,
   }, async (request) => {
     bodies.push(await readCesrRequestBytes(request));
-    return new Response(new ReadableStream<Uint8Array>({
-      start(stream) {
-        stream.enqueue(encoder.encode("retry: 5000\n\n"));
-        stream.enqueue(encoder.encode("id: 0\nevent: /replay\nretry: 5000\ndata: "));
-        stream.enqueue(replay);
-        stream.enqueue(encoder.encode("\n\n"));
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(encoder.encode("retry: 5000\n\n"));
+          stream.enqueue(encoder.encode("id: 0\nevent: /replay\nretry: 5000\ndata: "));
+          stream.enqueue(replay);
+          stream.enqueue(encoder.encode("\n\n"));
+        },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
       },
-    }), {
-      status: 200,
-      headers: { "Content-Type": "text/event-stream" },
-    });
+    );
   });
 
   try {

@@ -533,8 +533,7 @@ failure.
 - KERIpy:
   yes, via `postman.send(... topic="delegate" ...)`.
 - Tufa:
-  yes, via `poster.sendExchange(... route="/delegate/request",
-  topic="/delegate" ...)`.
+  yes, via `poster.sendExchange(... route="/delegate/request", topic="/delegate" ...)`.
 - Status:
   aligned after the recent publication-path fix.
 
@@ -548,6 +547,7 @@ failure.
   aligned in structure.
 
 ### 5. Issue the first delegator-witness anchor query immediately in the same
+
 publication phase
 
 - KERIpy:
@@ -603,6 +603,7 @@ publication phase
   not the current suspect on the Tufa side.
 
 ### 10. Delegator locally accepts the forwarded delegated event into the pending
+
 approval path
 
 - KERIpy->KERIpy expectation:

@@ -13,8 +13,8 @@
  *   the header
  */
 import {
-  concatBytes,
   type CesrMessage,
+  concatBytes,
   createParser,
   parseSerder,
   SerderKERI,

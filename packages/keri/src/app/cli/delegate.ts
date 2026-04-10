@@ -1,7 +1,7 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../../cesr/mod.ts";
-import { ValidationError } from "../../core/errors.ts";
 import type { CueEmission } from "../../core/cues.ts";
+import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, processRuntimeTurn, processRuntimeUntil } from "../agent-runtime.ts";

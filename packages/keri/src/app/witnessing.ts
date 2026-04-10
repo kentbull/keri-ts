@@ -28,7 +28,7 @@ import {
 } from "../../../cesr/mod.ts";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
-import { makeReceiptSerder } from "../core/messages.ts";
+import { receipt as receiptEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
@@ -465,7 +465,7 @@ export function witnessReceiptGet(
     };
   }
 
-  const reserder = makeReceiptSerder(pre, serder.sn ?? 0, said);
+  const reserder = receiptEvent(pre, serder.sn ?? 0, said);
   const body = buildWitnessReceiptMessage(
     reserder,
     serviceHab.db.wigs.get(dgKey(pre, said)),
@@ -960,7 +960,7 @@ export class Receiptor {
         }
         parts.push(
           buildDetachedReceiptMessage(
-            makeReceiptSerder(pre, eventSn, said),
+            receiptEvent(pre, eventSn, said),
             {
               wigers: otherWigers,
               cigars: otherCigars,

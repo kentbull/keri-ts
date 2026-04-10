@@ -42,7 +42,7 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { fetchEndpointUrls, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
-import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
@@ -52,6 +52,23 @@ import { CLITestHarness, testCLICommand } from "../../utils.ts";
 /** Return a random localhost port for ephemeral mailbox and OOBI hosts. */
 function randomPort(): number {
   return reserveTcpPort();
+}
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
+
+function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  const [serder, attachments] = exchangeMessage(route, payload, args);
+  return { serder, attachments };
 }
 
 /**

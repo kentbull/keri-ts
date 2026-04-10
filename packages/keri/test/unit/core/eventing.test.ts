@@ -18,7 +18,7 @@ import { saltySigner } from "../../../src/app/keeping.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
-import { makeReceiptSerder } from "../../../src/core/messages.ts";
+import { receipt as makeReceiptSerder } from "../../../src/core/protocol-eventing.ts";
 import { dgKey, snKey } from "../../../src/db/core/keys.ts";
 import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
 

@@ -22,7 +22,16 @@ import {
   splitCesrStream,
 } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { makeEmbeddedExchangeMessage } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
+
+function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  const [serder, attachments] = exchangeMessage(route, payload, args);
+  return { serder, attachments };
+}
 
 /** Proves KERIpy-style header framing for one mailbox/query request. */
 Deno.test("CESR HTTP - header mode splits attachments into the CESR header", async () => {

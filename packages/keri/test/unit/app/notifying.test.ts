@@ -6,9 +6,26 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { DELEGATE_REQUEST_ROUTE, DelegateRequestHandler } from "../../../src/app/delegating.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { notice, Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
-import { OOBI_REQUEST_ROUTE, OobiRequestHandler } from "../../../src/app/oobiery.ts";
+import { OOBI_REQUEST_ROUTE, oobiRequestExn, OobiRequestHandler } from "../../../src/app/oobiery.ts";
 import { Signal, Signaler } from "../../../src/app/signaling.ts";
-import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
+
+function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  const [serder, attachments] = exchangeMessage(route, payload, args);
+  return { serder, attachments };
+}
 
 function inceptionMessage(hby: Habery, pre: string, said: string): Uint8Array {
   const fn = hby.db.getFelFn(pre, said);
@@ -200,14 +217,7 @@ Deno.test("OobiRequestHandler queues oobis and writes controller notices", async
         toad: 0,
       });
       const oobi = "https://example.test/oobi/EA/controller?name=Remote";
-      const serder = makeExchangeSerder(
-        OOBI_REQUEST_ROUTE,
-        { dest: "EB", oobi },
-        {
-          sender: sender.pre,
-          recipient: "EB",
-        },
-      );
+      const serder = oobiRequestExn(sender, "EB", oobi);
 
       const handler = new OobiRequestHandler(hby, notifier);
       assertEquals(handler.verify({ serder }), true);
@@ -218,6 +228,7 @@ Deno.test("OobiRequestHandler queues oobis and writes controller notices", async
       assertEquals(notices.length, 1);
       assertEquals(notices[0]!.attrs["r"], "/oobi");
       assertEquals(notices[0]!.attrs["src"], sender.pre);
+      assertEquals(serder.ked?.rp, "");
       assertEquals(notices[0]!.attrs["oobi"], oobi);
       assertEquals(notices[0]!.attrs["oobialias"], "Remote");
     } finally {

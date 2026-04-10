@@ -25,9 +25,26 @@ import {
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
 import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
-import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
+
+function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  const [serder, attachments] = exchangeMessage(route, payload, args);
+  return { serder, attachments };
+}
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
 // @test-lane app-fast-parallel
@@ -292,18 +309,21 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
 
         const { serder } = yield* poster.sendExchange(sender, {
           recipient: recipient.pre,
+          exchangeRecipient: null,
           route: DELEGATE_REQUEST_ROUTE,
           payload: { delpre: recipient.pre },
           embeds: { evt },
         });
 
         assertEquals(serder.route, DELEGATE_REQUEST_ROUTE);
+        assertEquals(serder.ked?.rp, "");
         const stored = runtime.mailboxer?.getTopicMsgs(
           mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
         ) ?? [];
         assertEquals(stored.length, 1);
         const delivered = new SerderKERI({ raw: stored[0]! });
         assertEquals(delivered.route, DELEGATE_REQUEST_ROUTE);
+        assertEquals(delivered.ked?.rp, "");
         assertEquals(delivered.ked?.a, { delpre: recipient.pre });
         assertEquals(
           ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["i"],

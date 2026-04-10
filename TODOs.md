@@ -56,8 +56,8 @@ Things to come back and do at some point:
 - explicit v2 support
 - mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow
 - a clean HTTP routing layer. Feels kind of ugly, could benefit from a framework or lib
-- using mailboxes with delegation doesn't seem to work. Revisit this after reviewing and comparing 
-  all of the mailbox code. Remember that the difference between SSE streaming and 
+- using mailboxes with delegation doesn't seem to work. Revisit this after reviewing and comparing
+  all of the mailbox code. Remember that the difference between SSE streaming and
   request response with status codes seems to really matter.
 
 ## Review Queue

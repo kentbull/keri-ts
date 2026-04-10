@@ -531,6 +531,7 @@ export class Anchorer {
     const message = eventMessage(this.hby, serder);
     yield* this.poster.sendExchange(communicationHab, {
       recipient: delpre,
+      exchangeRecipient: null,
       route: DELEGATE_REQUEST_ROUTE,
       payload: {
         delpre,

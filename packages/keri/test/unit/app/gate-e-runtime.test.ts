@@ -28,7 +28,7 @@ import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { queryTransportSink } from "../../../src/app/query-transport.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { makeReplySerder } from "../../../src/core/messages.ts";
+import { reply as makeReplySerder } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";

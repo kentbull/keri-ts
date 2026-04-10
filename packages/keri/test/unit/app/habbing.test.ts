@@ -29,11 +29,25 @@ import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
-import {
-  makeEmbeddedExchangeMessage,
-  makeExchangeSerder,
-} from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
+
+function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  const [serder, attachments] = exchangeMessage(route, payload, args);
+  return { serder, attachments };
+}
 
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
   await run(function*() {
@@ -282,20 +296,24 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
             route: string;
             payload: Record<string, unknown>;
             topic?: string;
+            exchangeRecipient?: string | null;
             embeds?: Record<string, Uint8Array>;
           },
         ) {
           const embedded = args.embeds ?? {};
+          const exchangeRecipient = args.exchangeRecipient === null
+            ? undefined
+            : args.exchangeRecipient ?? args.recipient;
           const { serder, attachments } = Object.keys(embedded).length > 0
             ? makeEmbeddedExchangeMessage(args.route, args.payload, {
               sender: hab.pre,
-              recipient: args.recipient,
+              recipient: exchangeRecipient,
               embeds: embedded,
             })
             : {
               serder: makeExchangeSerder(args.route, args.payload, {
                 sender: hab.pre,
-                recipient: args.recipient,
+                recipient: exchangeRecipient,
               }),
               attachments: new Uint8Array(),
             };
@@ -369,6 +387,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       const request = new SerderKERI({ raw: sent[0]!.message });
       assertEquals(request.route, DELEGATE_REQUEST_ROUTE);
       assertEquals(request.pre, proxy.pre);
+      assertEquals(request.ked?.rp, "");
       assertEquals(request.ked?.a, { delpre: delegator.pre });
       assertEquals(
         (request.ked?.e as Record<string, Record<string, unknown>>)?.evt?.["i"],

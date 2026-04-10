@@ -8,7 +8,7 @@ import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
-import { makeQuerySerder, makeReplySerder } from "../../../src/core/messages.ts";
+import { query as makeQuerySerder, reply as makeReplySerder } from "../../../src/core/protocol-eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";

@@ -8,8 +8,66 @@ import { loadChallengeHandlers } from "../../../src/app/challenging.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { makeExchangeSerder } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
+
+Deno.test("exchange mirrors KERIpy v1 recipient projection rules and changes SAIDs accordingly", () => {
+  const recipient = "EBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+  const sender = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  const withRecipient = exchangeMessage(
+    "/test",
+    { words: ["able", "baker"] },
+    {
+      sender,
+      recipient,
+      stamp: "2026-04-10T00:00:00.000000+00:00",
+    },
+  )[0];
+  const withoutRecipient = exchangeMessage(
+    "/test",
+    { words: ["able", "baker"] },
+    {
+      sender,
+      stamp: "2026-04-10T00:00:00.000000+00:00",
+    },
+  )[0];
+
+  assertEquals(withRecipient.ked?.rp, recipient);
+  assertEquals(
+    Object.keys(withRecipient.ked ?? {}),
+    ["v", "t", "d", "i", "rp", "p", "dt", "r", "q", "a", "e"],
+  );
+  assertEquals(
+    Object.keys((withRecipient.ked?.a as Record<string, unknown>) ?? {}),
+    ["i", "words"],
+  );
+  assertEquals(
+    (withRecipient.ked?.a as Record<string, unknown>)["i"],
+    recipient,
+  );
+  assertEquals(withoutRecipient.ked?.rp, "");
+  assertEquals(
+    Object.keys(withoutRecipient.ked ?? {}),
+    ["v", "t", "d", "i", "rp", "p", "dt", "r", "q", "a", "e"],
+  );
+  assertEquals(
+    Object.keys((withoutRecipient.ked?.a as Record<string, unknown>) ?? {}),
+    ["words"],
+  );
+  assertEquals(
+    (withoutRecipient.ked?.a as Record<string, unknown>)["i"],
+    undefined,
+  );
+  assertEquals(withRecipient.said === withoutRecipient.said, false);
+});
 
 Deno.test("Exchanger accepts signed challenge responses and records exchange state", async () => {
   await run(function*() {
