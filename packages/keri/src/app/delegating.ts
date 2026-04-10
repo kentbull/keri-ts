@@ -7,6 +7,7 @@ import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exch
 import { type Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
+import type { QueryCoordinator } from "./querying.ts";
 import { WitnessReceiptor } from "./witnessing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";
@@ -46,6 +47,12 @@ export type DelegationWorkflowResult =
     phase: DelegationPhase;
     reason: string;
   };
+
+export interface DelegationWorkflowStatus {
+  phase: DelegationPhase | null;
+  proxyDependent: boolean;
+  complete: boolean;
+}
 
 function eventKey(serder: SerderKERI): [string, string] {
   const pre = serder.pre;
@@ -148,11 +155,23 @@ function eventMessage(hby: Habery, serder: SerderKERI): Uint8Array {
   return hby.db.cloneEvtMsg(pre, fn, said);
 }
 
+function delegatedWorkflowDelpre(
+  hby: Habery,
+  serder: SerderKERI,
+  hab?: Hab,
+): string | null {
+  if (serder.delpre) {
+    return serder.delpre;
+  }
+  return (hab ?? workflowHab(hby, serder)).kever?.delpre ?? null;
+}
+
 function approvingEvent(
   hby: Habery,
   serder: SerderKERI,
+  hab?: Hab,
 ): SerderKERI | null {
-  const delpre = serder.delpre;
+  const delpre = delegatedWorkflowDelpre(hby, serder, hab);
   return delpre
     ? hby.db.fetchAllSealingEventByEventSeal(delpre, eventAnchor(serder))
     : null;
@@ -242,17 +261,20 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
   }
 }
 
-export class SingleSigDelegationCoordinator {
+export class Anchorer {
   readonly hby: Habery;
   readonly poster: Poster;
+  readonly querying: QueryCoordinator;
   readonly communicationHabPins = new Map<string, string>();
+  readonly anchorQueryPins = new Set<string>();
 
   constructor(
     hby: Habery,
-    { poster }: { poster: Poster },
+    { poster, querying }: { poster: Poster; querying: QueryCoordinator },
   ) {
     this.hby = hby;
     this.poster = poster;
+    this.querying = querying;
   }
 
   begin(
@@ -264,6 +286,7 @@ export class SingleSigDelegationCoordinator {
     this.hby.db.dpwe.pin(key, serder);
     this.hby.db.dune.rem(key);
     this.hby.db.dpub.rem(key);
+    this.anchorQueryPins.delete(id);
     if (options.communicationHab) {
       this.communicationHabPins.set(id, options.communicationHab.pre);
     } else {
@@ -300,17 +323,15 @@ export class SingleSigDelegationCoordinator {
   workflowStatus(
     pre: string,
     snh: string,
-  ): {
-    phase: DelegationPhase | null;
-    proxyDependent: boolean;
-  } {
+  ): DelegationWorkflowStatus {
     const key: [string, string] = [pre, snh];
     const serder = this.hby.db.dpwe.get(key)
       ?? this.hby.db.dune.get(key)
       ?? this.hby.db.dpub.get(key)
       ?? null;
+    const completed = this.complete(pre, snh);
     if (!serder) {
-      return { phase: null, proxyDependent: false };
+      return { phase: null, proxyDependent: false, complete: completed };
     }
 
     const phase = this.hby.db.dpwe.get(key)
@@ -323,9 +344,27 @@ export class SingleSigDelegationCoordinator {
     const pinned = this.communicationHabPins.get(workflowId(serder));
     return {
       phase,
-      proxyDependent: phase === "waitingWitnessReceipts"
-        && ((serder.sn ?? 0) === 0 || (typeof pinned === "string" && pinned.length > 0)),
+      proxyDependent: typeof pinned === "string" && pinned.length > 0,
+      complete: completed,
     };
+  }
+
+  complete(pre: string, sn: number | string): boolean {
+    const snNum = typeof sn === "number" ? sn : parseInt(sn, 16);
+    if (!Number.isInteger(snNum) || snNum < 0) {
+      return false;
+    }
+    const said = this.hby.db.kels.getLast(pre, snNum);
+    if (!said) {
+      return false;
+    }
+    for (const entry of this.hby.db.cdel.getTopItemIter(pre)) {
+      const diger = entry[entry.length - 1] as Diger;
+      if (diger.qb64 === said) {
+        return true;
+      }
+    }
+    return false;
   }
 
   *processAllOnce(): Operation<DelegationWorkflowResult[]> {
@@ -348,17 +387,6 @@ export class SingleSigDelegationCoordinator {
     const pre = serder.pre ?? "<unknown>";
     const said = serder.said ?? "<unknown>";
     const key = eventKey(serder);
-    const delpre = serder.delpre;
-    if (!delpre) {
-      this.hby.db.dpwe.rem(key);
-      return {
-        kind: "fail",
-        pre,
-        said,
-        phase: "waitingWitnessReceipts",
-        reason: "Delegated workflow event does not carry a delegator prefix.",
-      };
-    }
 
     let hab: Hab;
     try {
@@ -372,6 +400,19 @@ export class SingleSigDelegationCoordinator {
         said,
         phase: "waitingWitnessReceipts",
         reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const delpre = delegatedWorkflowDelpre(this.hby, serder, hab);
+    if (!delpre) {
+      this.hby.db.dpwe.rem(key);
+      this.clearWorkflowPins(serder);
+      return {
+        kind: "fail",
+        pre,
+        said,
+        phase: "waitingWitnessReceipts",
+        reason: "Delegated workflow event does not carry a delegator prefix.",
       };
     }
 
@@ -416,9 +457,9 @@ export class SingleSigDelegationCoordinator {
       message,
       topic: DELEGATE_MAILBOX_TOPIC,
     });
+    this.ensureAnchorQuery(serder, communicationHab);
     this.hby.db.dpwe.rem(key);
     this.hby.db.dune.pin(key, serder);
-    this.communicationHabPins.delete(workflowId(serder));
     return {
       kind: "advance",
       pre,
@@ -436,20 +477,6 @@ export class SingleSigDelegationCoordinator {
     const said = serder.said ?? "<unknown>";
     const key = eventKey(serder);
 
-    const delegating = approvingEvent(this.hby, serder);
-    if (!delegating) {
-      return {
-        kind: "keep",
-        pre,
-        said,
-        phase: "waitingDelegatorAnchor",
-        reason: "Delegator anchor has not been learned locally yet.",
-      };
-    }
-
-    pinAuthorizingSeal(this.hby, serder, delegating);
-    this.hby.db.dune.rem(key);
-
     let hab: Hab;
     try {
       hab = workflowHab(this.hby, serder);
@@ -463,9 +490,34 @@ export class SingleSigDelegationCoordinator {
       };
     }
 
+    const delegating = approvingEvent(this.hby, serder, hab);
+    if (!delegating) {
+      try {
+        this.ensureAnchorQuery(serder);
+      } catch (error) {
+        return {
+          kind: "fail",
+          pre,
+          said,
+          phase: "waitingDelegatorAnchor",
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+      return {
+        kind: "keep",
+        pre,
+        said,
+        phase: "waitingDelegatorAnchor",
+        reason: "Delegator anchor has not been learned locally yet.",
+      };
+    }
+
+    pinAuthorizingSeal(this.hby, serder, delegating);
+    this.hby.db.dune.rem(key);
+
     if ((hab.kever?.wits.length ?? 0) === 0) {
       this.hby.db.cdel.appendOn(pre, completionDiger(serder));
-      this.communicationHabPins.delete(workflowId(serder));
+      this.clearWorkflowPins(serder);
       return {
         kind: "complete",
         pre,
@@ -497,7 +549,7 @@ export class SingleSigDelegationCoordinator {
     yield* receiptor.submit(pre, { sn: serder.sn ?? undefined });
     this.hby.db.dpub.rem(key);
     this.hby.db.cdel.appendOn(pre, completionDiger(serder));
-    this.communicationHabPins.delete(workflowId(serder));
+    this.clearWorkflowPins(serder);
     return {
       kind: "complete",
       pre,
@@ -525,5 +577,30 @@ export class SingleSigDelegationCoordinator {
     throw new ValidationError(
       `Delegated inception for ${hab.pre} requires --proxy <alias> to send delegation requests.`,
     );
+  }
+
+  private ensureAnchorQuery(
+    serder: SerderKERI,
+    communicationHab?: Hab,
+  ): void {
+    const id = workflowId(serder);
+    if (this.anchorQueryPins.has(id)) {
+      return;
+    }
+    const delpre = delegatedWorkflowDelpre(this.hby, serder);
+    if (!delpre) {
+      throw new ValidationError(
+        `Delegation workflow ${id} is missing a delegator prefix.`,
+      );
+    }
+    const sender = communicationHab ?? this.communicationHab(serder);
+    this.querying.watchAnchor(delpre, eventAnchor(serder), { hab: sender });
+    this.anchorQueryPins.add(id);
+  }
+
+  private clearWorkflowPins(serder: SerderKERI): void {
+    const id = workflowId(serder);
+    this.communicationHabPins.delete(id);
+    this.anchorQueryPins.delete(id);
   }
 }

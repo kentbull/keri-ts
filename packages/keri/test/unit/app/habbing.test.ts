@@ -24,12 +24,13 @@ import {
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
-import { DELEGATE_REQUEST_ROUTE, SingleSigDelegationCoordinator } from "../../../src/app/delegating.ts";
+import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import { makeExchangeSerder } from "../../../src/core/messages.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import type { QueryCoordinator } from "../../../src/app/querying.ts";
 
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
   await run(function*() {
@@ -210,7 +211,7 @@ Deno.test("Hab.interact preserves hex-width boundaries across successive accepte
   });
 });
 
-Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated inception and pins approval seals", async () => {
+Deno.test("Anchorer uses the proxy habitat for delegated inception, registers the anchor query, and pins approval seals", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-${crypto.randomUUID()}`,
@@ -251,7 +252,35 @@ Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated i
           message: Uint8Array;
         }
       > = [];
+      const watched: Array<
+        {
+          pre: string;
+          anchor: Record<string, unknown>;
+          hab: string | null;
+        }
+      > = [];
       const poster = {
+        *sendExchange(
+          hab: { pre: string; endorse: (serder: SerderKERI, options?: { pipelined?: boolean }) => Uint8Array },
+          args: {
+            recipient: string;
+            route: string;
+            payload: Record<string, unknown>;
+            topic?: string;
+          },
+        ) {
+          const serder = makeExchangeSerder(args.route, args.payload, {
+            sender: hab.pre,
+            recipient: args.recipient,
+          });
+          sent.push({
+            sender: hab.pre,
+            recipient: args.recipient,
+            topic: args.topic,
+            message: hab.endorse(serder, { pipelined: false }),
+          });
+          return { deliveries: ["mock"], queued: [] };
+        },
         *sendBytes(
           hab: { pre: string },
           args: { recipient: string; topic?: string; message: Uint8Array },
@@ -265,7 +294,21 @@ Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated i
           return { deliveries: ["mock"], queued: [] };
         },
       } as unknown as Poster;
-      const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
+      const querying = {
+        watchAnchor(
+          pre: string,
+          anchor: Record<string, unknown>,
+          options: { hab?: { pre: string } } = {},
+        ) {
+          watched.push({
+            pre,
+            anchor,
+            hab: options.hab?.pre ?? null,
+          });
+          return { done: false };
+        },
+      } as unknown as QueryCoordinator;
+      const coordinator = new Anchorer(hby, { poster, querying });
 
       const started = coordinator.beginLatest(delegate.pre, 0, {
         communicationHab: proxy,
@@ -277,6 +320,7 @@ Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated i
         initial[0] && "to" in initial[0] ? initial[0].to : null,
         "waitingDelegatorAnchor",
       );
+      assertEquals(coordinator.workflowStatus(delegate.pre, "0").proxyDependent, true);
       assertEquals(
         sent.map(({ sender, recipient, topic }) => ({
           sender,
@@ -295,6 +339,11 @@ Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated i
       const event = new SerderKERI({ raw: sent[1]!.message });
       assertEquals(event.pre, delegate.pre);
       assertEquals(event.ilk, "dip");
+      assertEquals(watched, [{
+        pre: delegator.pre,
+        anchor: { i: delegate.pre, s: "0", d: delegate.kever!.said! },
+        hab: proxy.pre,
+      }]);
 
       assertExists(delegate.kever?.said);
       delegator.interact({
@@ -309,13 +358,14 @@ Deno.test("SingleSigDelegationCoordinator uses the proxy habitat for delegated i
       assertEquals(completed[0]?.kind, "complete");
       assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
       assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
+      assertEquals(coordinator.complete(delegate.pre, 0), true);
     } finally {
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("SingleSigDelegationCoordinator fails delegated inception without an explicit proxy", async () => {
+Deno.test("Anchorer fails delegated inception without an explicit proxy", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-requires-proxy-${crypto.randomUUID()}`,
@@ -341,13 +391,23 @@ Deno.test("SingleSigDelegationCoordinator fails delegated inception without an e
       });
 
       const poster = {
+        *sendExchange() {
+          throw new Error(
+            "delegated inception should not send without a proxy",
+          );
+        },
         *sendBytes() {
           throw new Error(
             "delegated inception should not send without a proxy",
           );
         },
       } as unknown as Poster;
-      const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
+      const querying = {
+        watchAnchor() {
+          throw new Error("delegated inception should not query without a proxy");
+        },
+      } as unknown as QueryCoordinator;
+      const coordinator = new Anchorer(hby, { poster, querying });
 
       coordinator.beginLatest(delegate.pre, 0);
       const initial = yield* coordinator.processAllOnce();
@@ -362,7 +422,7 @@ Deno.test("SingleSigDelegationCoordinator fails delegated inception without an e
   });
 });
 
-Deno.test("SingleSigDelegationCoordinator uses the delegate habitat for delegated rotation by default", async () => {
+Deno.test("Anchorer uses the delegate habitat for delegated rotation by default", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-rotation-default-sender-${crypto.randomUUID()}`,
@@ -407,7 +467,29 @@ Deno.test("SingleSigDelegationCoordinator uses the delegate habitat for delegate
       const sent: Array<
         { sender: string; recipient: string; message: Uint8Array }
       > = [];
+      const watched: Array<
+        { pre: string; anchor: Record<string, unknown>; hab: string | null }
+      > = [];
       const poster = {
+        *sendExchange(
+          hab: { pre: string; endorse: (serder: SerderKERI, options?: { pipelined?: boolean }) => Uint8Array },
+          args: {
+            recipient: string;
+            route: string;
+            payload: Record<string, unknown>;
+          },
+        ) {
+          const serder = makeExchangeSerder(args.route, args.payload, {
+            sender: hab.pre,
+            recipient: args.recipient,
+          });
+          sent.push({
+            sender: hab.pre,
+            recipient: args.recipient,
+            message: hab.endorse(serder, { pipelined: false }),
+          });
+          return { deliveries: ["mock"], queued: [] };
+        },
         *sendBytes(
           hab: { pre: string },
           args: { recipient: string; message: Uint8Array },
@@ -420,7 +502,17 @@ Deno.test("SingleSigDelegationCoordinator uses the delegate habitat for delegate
           return { deliveries: ["mock"], queued: [] };
         },
       } as unknown as Poster;
-      const coordinator = new SingleSigDelegationCoordinator(hby, { poster });
+      const querying = {
+        watchAnchor(
+          pre: string,
+          anchor: Record<string, unknown>,
+          options: { hab?: { pre: string } } = {},
+        ) {
+          watched.push({ pre, anchor, hab: options.hab?.pre ?? null });
+          return { done: false };
+        },
+      } as unknown as QueryCoordinator;
+      const coordinator = new Anchorer(hby, { poster, querying });
 
       coordinator.beginLatest(delegate.pre, delegate.kever!.sn);
       const initial = yield* coordinator.processAllOnce();
@@ -431,6 +523,15 @@ Deno.test("SingleSigDelegationCoordinator uses the delegate habitat for delegate
         DELEGATE_REQUEST_ROUTE,
       );
       assertEquals(new SerderKERI({ raw: sent[1]!.message }).ilk, "drt");
+      assertEquals(watched, [{
+        pre: delegator.pre,
+        anchor: {
+          i: delegate.pre,
+          s: delegate.kever!.sn.toString(16),
+          d: delegate.kever!.said!,
+        },
+        hab: delegate.pre,
+      }]);
     } finally {
       yield* hby.close(true);
     }

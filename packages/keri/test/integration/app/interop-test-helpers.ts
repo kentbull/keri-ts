@@ -472,9 +472,28 @@ export function spawnChild(
 
 /** Read buffered stdout and stderr from one spawned subprocess. */
 export async function readChildOutput(child: SpawnedChild): Promise<string> {
+  const readStream = async (
+    stream: ReadableStream<Uint8Array> | undefined,
+  ): Promise<string> => {
+    if (!stream) {
+      return "";
+    }
+    try {
+      return await new Response(stream).text();
+    } catch (error) {
+      if (
+        error instanceof TypeError
+        && error.message.includes("ReadableStream is locked or disturbed")
+      ) {
+        return "";
+      }
+      throw error;
+    }
+  };
+
   const [stdout, stderr] = await Promise.all([
-    child.stdout ? new Response(child.stdout).text() : Promise.resolve(""),
-    child.stderr ? new Response(child.stderr).text() : Promise.resolve(""),
+    readStream(child.stdout),
+    readStream(child.stderr),
   ]);
   return `${stdout}\n${stderr}`.trim();
 }

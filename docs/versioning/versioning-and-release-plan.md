@@ -2,279 +2,128 @@
 
 ## Summary
 
-Establish a production-grade, independent SemVer release system for keri-ts and
-cesr-ts using Changesets, remove hardcoded CLI version strings, and implement
-deterministic build metadata for CI artifacts so tufa version and tufa --version
-always report a consistent, current version string.
+Use one explicit version source per package, deterministic version generation
+for normal checks, Changesets for release intent, and CI that validates both
+library and runnable-package artifacts. The key boundary is now explicit:
+`keri-ts` is the library surface, `tufa` is the runnable host/CLI surface.
 
-Chosen decisions from this review:
+## Goals
 
-- Version model: Independent package versioning.
-- CI build metadata: Display-only suffix in CLI output (not npm package
-  version).
-- Release automation: Changesets.
-- tufa version output: `tufa <tufa-version> (keri-ts <keri-version>)`.
+1. One authoritative version source per published package
+2. Deterministic local/CI checks unless a release job opts into stamped build
+   metadata
+3. Consistent version reporting across library APIs, CLI output, and npm
+   artifacts
+4. Honest release automation that validates the packed artifacts users install
+5. Clear package ownership so `keri-ts` and `tufa` do not drift back into one
+   blurred release story
 
-———
+## Current Gaps
 
-## Goals and Success Criteria
+1. Version data can drift when package metadata, runtime reporting, and release
+   scripts are not derived from the same source.
+2. Runnable `tufa` smoke confidence can diverge from library confidence if only
+   Deno-source workflows are exercised.
+3. CI can become nondeterministic if ordinary checks inherit release-oriented
+   build metadata.
 
-1. tufa version and tufa --version return the exact same one-line value.
-2. Released artifacts show clean SemVer (x.y.z).
-3. CI-built artifacts automatically show x.y.z+build.<run>.<sha> (or equivalent)
-   in CLI output.
-4. SemVer bumping (patch/minor/major) is one-command/simple PR workflow.
-5. keri-ts and cesr-ts can release independently without forced lockstep bumps.
-6. Release process is reproducible and documented end-to-end.
+## Design
 
-———
+### Canonical Version Sources
 
-## Current-State Gaps (from repo inspection)
+1. Each published package owns its own package version.
+2. Runtime-facing version reporting should read from generated version modules,
+   not ad hoc package-file parsing at call sites.
+3. Library and CLI version surfaces should agree with the built artifact, not
+   just source-tree metadata.
 
-- src/app/cli/cli.ts hardcodes version as 0.0.2.
-- dnt build scripts set npm versions via env vars with fallback literals
-  (0.1.0).
-- Existing release workflows are tag/manual-driven, but no unified version
-  source used by runtime CLI output.
-- No formalized SemVer workflow metadata/changelog process across both packages.
+### Runtime Version Modules
 
-———
+1. Generate small version modules during build/release preparation.
+2. Ordinary checks should default to deterministic values with empty build
+   metadata.
+3. Release/artifact jobs may opt into stamped metadata explicitly.
 
-## Architecture & Source-of-Truth Design
+### CLI Wiring
 
-### 1) Canonical version sources
+1. CLI `--version` should read from the generated runtime version source.
+2. `tufa` version reporting should validate the runnable package boundary, not
+   only the source path.
 
-Use package manifests as the canonical version source:
+## Release Tooling
 
-- Root package (keri-ts) version in package.json (to be added/normalized for
-  Changesets).
-- CESR package version in packages/cesr/package.json (to be added/normalized).
+### Changesets
 
-deno.json version fields are treated as non-authoritative and synced for
-tooling/docs consistency by a build script.
+1. Use Changesets to record intended package bumps.
+2. Keep package versioning explicit and reviewable in PRs.
+3. Let release automation consume Changesets rather than deriving bump intent
+   from commit heuristics.
 
-### 2) Runtime version module
+### Tasks/Scripts
 
-Add generated runtime version modules:
-
-- src/app/version.ts for keri-ts / tufa
-- packages/cesr/src/version.ts for cesr-ts
-
-Each module exports:
-
-- PACKAGE_VERSION (SemVer, e.g. 0.4.2)
-- BUILD_METADATA (optional, e.g. build.1842.a1b2c3d)
-- DISPLAY_VERSION (PACKAGE_VERSION or PACKAGE_VERSION+BUILD_METADATA)
-
-Generation inputs:
-
-- package version from package manifest
-- CI env (GITHUB_RUN_NUMBER, short SHA), when present
-
-### 3) CLI wiring
-
-In src/app/cli/cli.ts:
-
-- Replace hardcoded .version("0.0.2") with DISPLAY_VERSION.
-- Add explicit version subcommand (tufa version) printing DISPLAY_VERSION.
-- Keep Commander --version/-V wired to same DISPLAY_VERSION.
-
-Output format (locked):
-
-- Plain single line, e.g. 0.4.2 or 0.4.2+build.1842.a1b2c3d.
-
-———
-
-## Release Tooling Plan (Changesets)
-
-### 4) Introduce Changesets
-
-Add:
-
-- .changeset/config.json
-- .changeset/README.md (short workflow guidance)
-- root dev dependency for @changesets/cli
-
-Policy:
-
-- Independent versioning for keri-ts and cesr-ts.
-- PRs that affect publishable behavior include a changeset file with bump type.
-- Changesets-generated changelog used as release notes base.
-
-### 5) Tasks/scripts (Deno-friendly wrappers)
-
-Add root deno.json tasks:
-
-- release:changeset -> create changeset (npx changeset)
-- release:version -> apply bumps/changelogs (npx changeset version)
-- release:publish -> publish (npx changeset publish) for Node-side registry
-  publishing pipelines
-- version:generate -> generate deterministic runtime version modules from
-  manifests without implicit CI metadata
-- version:generate:ci -> generate runtime version modules with explicit CI build
-  metadata for artifact builds
-- version:check -> verify generated files are in sync (CI guard)
-
-Also add CESR package task wrappers where useful, but centralize release
-orchestration at repo root.
-
-———
+1. Provide Deno-friendly wrappers for version generation, pack validation, and
+   release preparation.
+2. Keep version scripts small, deterministic, and package-aware.
+3. Avoid hidden coupling between version scripts and ambient CI variables.
 
 ## CI/CD Strategy
 
-### 6) PR CI checks
+### PR CI
 
-On PR:
+1. Validate formatting, lint, and default quality lanes.
+2. Validate version-module generation deterministically.
+3. Build and smoke the runnable `tufa` package when CLI/host surfaces change.
+4. Keep library checks and runnable-package checks separate enough that drift is
+   visible.
 
-- install pinned KERIpy CLI interop dependency before test jobs
-- run formatting, lint, static quality checks, and tests
-- validate changeset presence for publishable changes (policy job)
+### Release CI
 
-Current workflow shape:
+1. Consume approved Changesets.
+2. Generate stamped version metadata only in the release/artifact path.
+3. Build, pack, and validate the publishable artifacts before publishing.
+4. Publish only from the artifacts that passed those checks.
 
-- `PR Stage Gate` on pull requests targeting `master`
-- exact runtime pins: Deno `2.7.5`, Node `22.14.0`
-- pinned third-party GitHub Actions by commit SHA
-- split jobs: `static-checks`, `keri-tests`, `cesr-tests`, `package-smoke`
-- aggregate `stage-gate` job preserves a stable branch-protection target name
-- restore shared Deno/module cache and npm cache before Deno tasking
-- formatting/lint/static quality run in the static job
-- tests run in parallel KERI and CESR jobs
-- package smoke builds both npm packages, packs tarballs, smoke-installs
-  `keri-ts` with the just-built local `cesr-ts` tarball, and uploads the
-  tarballs as artifacts
-- pinned interop dependency:
-  `WebOfTrust/keripy@273784cb1702348c3888a09806cc37aea1877704`
-- interop cache: restore a KERIpy virtualenv keyed by the pinned Git SHA before
-  reinstalling
-- quality checks force empty build metadata so `version:check` is deterministic
-  across local and CI environments
-- release build steps opt into CI metadata explicitly via
-  `deno task version:generate:ci`
-- scheduled `macOS Compatibility` workflow reruns the interop, test, and
-  package-build smoke surface on `macos-latest`
+## Public Surface Rules
 
-### 7) Release CI
+1. `keri-ts` should expose the narrow library surface only.
+2. `tufa` owns the runnable CLI/host/runtime package surface.
+3. Do not let internal build paths or accidental exports leak into npm package
+   manifests.
 
-Use Changesets GitHub Action:
+## Validation
 
-- On merge to main, action opens/updates a “Version Packages” PR from pending
-  changesets.
-- Merging that PR creates tags and publishes packages (or creates publish-ready
-  commits depending on chosen mode).
-- Build step injects CI metadata into generated version modules before package
-  build so CLI in CI artifacts includes build suffix.
+### Unit
 
-For stable release publish:
+1. Version-module generation is deterministic.
+2. CLI version output matches generated runtime version data.
+3. Package manifests and generated modules agree.
 
-- npm package version remains plain SemVer (x.y.z), no build metadata in package
-  version field.
-- CLI display can still include build metadata on CI-built non-release
-  artifacts; release artifacts can omit it (configurable default: omit for
-  tagged release builds, include for non-tag CI builds).
+### Integration
 
-———
+1. Packed `tufa` artifact can start, report version, and pass basic smoke flows.
+2. Library package build and import surfaces stay aligned with the intended
+   entrypoints.
 
-## Public API / Interface Changes
+### Acceptance Criteria
 
-1. CLI behavior:
+1. One clear version source per package
+2. Deterministic checks by default
+3. Explicit release-only metadata stamping
+4. Runnable package smoke coverage for `tufa`
+5. No accidental public-surface drift between source and published artifacts
 
-- tufa --version -> prints DISPLAY_VERSION
-- tufa -V -> same
-- tufa version -> same single-line value
+## Rollout Order
 
-2. Internal version API:
+1. Lock package ownership and intended public entrypoints
+2. Add/generated version modules and wire runtime/CLI consumers to them
+3. Introduce Changesets
+4. Add PR checks for deterministic version validation
+5. Add packed-artifact smoke coverage for `tufa`
+6. Add release-only stamping and publish automation
 
-- New module src/app/version.ts (and CESR equivalent) exporting:
-  - PACKAGE_VERSION
-  - BUILD_METADATA
-  - DISPLAY_VERSION
+## Day-2 Rules
 
-3. Build/release interface:
-
-- New tasks in deno.json for version generation/check and release ops.
-- New Changesets config and workflow files.
-
-———
-
-## Testing & Validation Plan
-
-### Unit tests
-
-1. DISPLAY_VERSION formatting:
-
-- no build metadata -> x.y.z
-- with build metadata -> x.y.z+build...
-
-2. CLI tests:
-
-- tufa --version equals tufa version
-- single-line output format
-- no extra prose/no JSON default
-
-### Integration tests
-
-3. Build-time version propagation:
-
-- generated npm artifact reports expected version string in CLI.
-- CI-mode generation appends metadata deterministically with mocked env.
-
-4. Release dry-run checks:
-
-- changeset versioning updates only intended packages.
-- independent bump behavior validated (keri-ts only and cesr-ts only scenarios).
-
-### Acceptance criteria
-
-- No hardcoded version literals in CLI.
-- tufa always reports version consistent with packaged artifact.
-- patch/minor/major bump flow can be executed with documented steps and no
-  manual file editing.
-
-———
-
-## Rollout Steps (Implementation Order)
-
-1. Add package manifests and Changesets scaffolding.
-2. Implement version generation modules and wire cli.ts to DISPLAY_VERSION.
-3. Add tufa version subcommand.
-4. Add Deno tasks for version/release operations.
-5. Update GitHub workflows to Changesets-driven release flow and CI metadata
-   injection.
-6. Add tests.
-7. Update docs:
-
-- README install + version usage
-- RELEASE.md with exact bump/release commands
-
-———
-
-## Operational Release Process (Day-2 Usage)
-
-### Patch/minor/major bump flow
-
-1. Author change with corresponding changeset (release:changeset).
-2. Merge PR.
-3. Changesets action opens version PR.
-4. Review/merge version PR.
-5. CI publishes updated package(s) and tags.
-6. tufa version on installed latest shows new version immediately.
-
-### Build metadata behavior
-
-- Non-tag CI builds: show x.y.z+build.<run>.<sha>
-- Tagged release builds: default to x.y.z (or include metadata if policy
-  switched)
-
-———
-
-## Assumptions and Defaults
-
-- npm remains the publish target for both packages.
-- GitHub Actions remains CI/CD system.
-- We will add/manage package.json manifests needed by Changesets even though
-  Deno is primary dev runtime.
-- Build metadata is display-only and not part of published npm package version
-  semantics.
-- tufa version command remains human-readable plain text by default (no JSON
-  unless added later with explicit flag).
+1. Patch/minor/major intent is recorded through Changesets
+2. Build metadata is empty unless a release/artifact path opts into stamping
+3. When CLI or host behavior changes, validate the packed `tufa` artifact, not
+   only the source tree

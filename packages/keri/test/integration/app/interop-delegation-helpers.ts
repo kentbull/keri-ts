@@ -152,18 +152,23 @@ export async function initKliStore(
     salt?: string;
   },
 ): Promise<void> {
-  await requireSuccess(
+  await waitForEventuallySuccess(
     `${args.name} init`,
-    runCmd(ctx.kliCommand, [
-      "init",
-      "--name",
-      args.name,
-      "--base",
-      args.base,
-      "--passcode",
-      args.passcode,
-      ...(args.salt ? ["--salt", args.salt] : []),
-    ], ctx.env),
+    () =>
+      runCmd(ctx.kliCommand, [
+        "init",
+        "--name",
+        args.name,
+        "--base",
+        args.base,
+        "--passcode",
+        args.passcode,
+        ...(args.salt ? ["--salt", args.salt] : []),
+      ], ctx.env),
+    {
+      timeoutMs: 20_000,
+      intervalMs: 500,
+    },
   );
 }
 
@@ -175,6 +180,8 @@ export async function inceptKliAlias(
     passcode: string;
     alias: string;
     transferable?: boolean;
+    wits?: string[];
+    toad?: number;
   },
 ): Promise<string> {
   const result = await requireSuccess(
@@ -195,6 +202,12 @@ export async function inceptKliAlias(
           "1",
           "--isith",
           "1",
+          "--ncount",
+          "1",
+          "--nsith",
+          "1",
+          "--toad",
+          String(args.toad ?? 0),
         ]
         : [
           "--transferable",
@@ -207,8 +220,9 @@ export async function inceptKliAlias(
           "--ncount",
           "1",
           "--toad",
-          "0",
+          String(args.toad ?? 0),
         ]),
+      ...(args.wits?.flatMap((wit) => ["--wits", wit]) ?? []),
     ], ctx.env),
   );
   return extractPrefixLine(result.stdout);

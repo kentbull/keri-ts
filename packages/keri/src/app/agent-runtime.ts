@@ -9,7 +9,7 @@ import type { Noter } from "../db/noting.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
-import { loadDelegationHandlers, SingleSigDelegationCoordinator } from "./delegating.ts";
+import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
 import { ForwardHandler, type MailboxPollBatch, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
@@ -62,7 +62,7 @@ export interface AgentRuntime {
   mailboxDirector: MailboxDirector;
   mailboxPoller: MailboxPoller;
   poster: Poster;
-  delegating: SingleSigDelegationCoordinator;
+  delegating: Anchorer;
   querying: QueryCoordinator;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -158,11 +158,11 @@ export function* createAgentRuntime(
   const mailboxPoller = new MailboxPoller(hby, mailboxDirector);
   const poster = new Poster(hby, { mailboxer });
   mailboxDirector.registerTopic(DELEGATE_MAILBOX_TOPIC);
-  const delegating = new SingleSigDelegationCoordinator(hby, { poster });
+  const querying = new QueryCoordinator(hby);
+  const delegating = new Anchorer(hby, { poster, querying });
   const oobiery = new Oobiery(hby, reactor, { cues });
   oobiery.registerReplyRoutes(reactor.router);
   const authenticator = new Authenticator(hby);
-  const querying = new QueryCoordinator(hby);
   return {
     hby,
     mode,

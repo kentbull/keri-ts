@@ -11,6 +11,7 @@ import {
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import type { Habery } from "../habbing.ts";
+import { queryTransportSink } from "../query-transport.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
@@ -185,10 +186,11 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
           runtime.delegating.beginLatest(hab.pre, 0, {
             communicationHab,
           });
+          const sink = queryTransportSink(runtime, hby, communicationHab);
           yield* processRuntimeUntil(
             runtime,
-            () => !runtime.delegating.workflowStatus(hab.pre, "0").proxyDependent,
-            { hab, maxTurns: 128, pollMailbox: true },
+            () => runtime.delegating.complete(hab.pre, 0),
+            { hab, sink, maxTurns: 512, pollMailbox: true },
           );
           delegationPhase = runtime.delegating.workflowStatus(hab.pre, "0").phase;
         } finally {

@@ -14,9 +14,9 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
-import { createAgentRuntime, processRuntimeTurn, processRuntimeUntil } from "../agent-runtime.ts";
+import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
-import type { Habery } from "../habbing.ts";
+import { queryTransportSink } from "../query-transport.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import {
@@ -106,18 +106,6 @@ function difference(
 ): string[] {
   const rightSet = new Set(right);
   return left.filter((value) => !rightSet.has(value));
-}
-
-function delegationWorkflowPhase(
-  hby: Habery,
-  pre: string,
-  snh: string,
-): string | null {
-  const key: [string, string] = [pre, snh];
-  if (hby.db.dpwe.get(key)) return "waitingWitnessReceipts";
-  if (hby.db.dune.get(key)) return "waitingDelegatorAnchor";
-  if (hby.db.dpub.get(key)) return "waitingWitnessPublication";
-  return null;
 }
 
 function resolveWitnessAuths(
@@ -274,25 +262,12 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
             communicationHab,
           });
           const snh = hab.kever.sn.toString(16);
-          if (communicationHab) {
-            yield* processRuntimeUntil(
-              runtime,
-              () => !runtime.delegating.workflowStatus(hab.pre, snh).proxyDependent,
-              { hab, maxTurns: 128, pollMailbox: true },
-            );
-          } else {
-            for (let turn = 0; turn < 8; turn += 1) {
-              yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
-              delegationPhase = delegationWorkflowPhase(
-                hby,
-                hab.pre,
-                snh,
-              );
-              if (delegationPhase !== "waitingWitnessReceipts") {
-                break;
-              }
-            }
-          }
+          const sink = queryTransportSink(runtime, hby, communicationHab ?? hab);
+          yield* processRuntimeUntil(
+            runtime,
+            () => runtime.delegating.complete(hab.pre, hab.kever!.sn),
+            { hab, sink, maxTurns: 512, pollMailbox: true },
+          );
           delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
         } finally {
           yield* runtime.close();

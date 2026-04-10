@@ -657,6 +657,13 @@ export class QueryCoordinator implements CueSink {
       }
     }
 
+    if ((ends[Roles.mailbox] && Object.keys(ends[Roles.mailbox]).length > 0)
+      && this.hby.db.getKever(pre)) {
+      // Mailbox-only topologies still query the controller AID itself; the
+      // mailbox role affects delivery transport, not the attester identity.
+      return pre;
+    }
+
     return null;
   }
 }
