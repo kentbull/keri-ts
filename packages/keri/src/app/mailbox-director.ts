@@ -177,10 +177,12 @@ export class MailboxDirector {
       retryMs = 5000,
       pollIntervalMs = 50,
       idleTimeoutMs = 2000,
+      emitRetryHeader = true,
     }: {
       retryMs?: number;
       pollIntervalMs?: number;
-      idleTimeoutMs?: number;
+      idleTimeoutMs?: number | null;
+      emitRetryHeader?: boolean;
     } = {},
   ): ReadableStream<Uint8Array> {
     const cursors = { ...topicCursor };
@@ -206,7 +208,9 @@ export class MailboxDirector {
 
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
-        controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
+        if (emitRetryHeader) {
+          controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
+        }
 
         const close = () => {
           cleanup();
@@ -214,6 +218,9 @@ export class MailboxDirector {
         };
 
         const resetIdle = () => {
+          if (idleTimeoutMs === null) {
+            return;
+          }
           if (idleTimer !== null) {
             clearTimeout(idleTimer);
           }
@@ -244,8 +251,107 @@ export class MailboxDirector {
           pollTimer = setTimeout(poll, pollIntervalMs);
         };
 
-        resetIdle();
+        if (idleTimeoutMs !== null) {
+          resetIdle();
+        }
         poll();
+      },
+      cancel: () => {
+        cleanup();
+      },
+    });
+  }
+
+  /**
+   * Return a KERIpy-style long-lived SSE response for one posted `qry`.
+   *
+   * Correlation rule:
+   * - emit the initial `retry:` hint immediately
+   * - wait until a matching `stream` cue for the query SAID appears
+   * - once matched, proxy the normal mailbox iterable for that cue
+   *
+   * This mirrors KERIpy `QryRpyMailboxIterable` ownership closely: the HTTP
+   * route does not guess mailbox topics itself; it waits for mailbox query
+   * correlation to tell it what to stream.
+   */
+  streamQueryResponse(
+    said: string,
+    {
+      retryMs = 5000,
+      pollIntervalMs = 50,
+    }: {
+      retryMs?: number;
+      pollIntervalMs?: number;
+    } = {},
+  ): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    let closed = false;
+    let pollTimer: number | null = null;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+    const cleanup = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      if (pollTimer !== null) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      if (reader) {
+        void reader.cancel().catch(() => undefined);
+        reader = null;
+      }
+    };
+
+    return new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
+
+        const pumpMailbox = () => {
+          if (!reader || closed) {
+            return;
+          }
+          void reader.read().then(({ value, done }) => {
+            if (closed || done) {
+              return;
+            }
+            if (value && value.length > 0) {
+              controller.enqueue(value);
+            }
+            pumpMailbox();
+          }).catch((error) => {
+            if (closed) {
+              return;
+            }
+            cleanup();
+            controller.error(error);
+          });
+        };
+
+        const waitForCue = () => {
+          if (closed) {
+            return;
+          }
+          const cue = this.takeQueryCue(said);
+          if (!cue) {
+            pollTimer = setTimeout(waitForCue, pollIntervalMs);
+            return;
+          }
+          reader = this.streamMailbox(
+            cue.pre,
+            cue.topics,
+            {
+              retryMs,
+              pollIntervalMs,
+              idleTimeoutMs: null,
+              emitRetryHeader: false,
+            },
+          ).getReader();
+          pumpMailbox();
+        };
+
+        waitForCue();
       },
       cancel: () => {
         cleanup();
@@ -295,6 +401,25 @@ export class MailboxDirector {
     }
     this.queryCues.extend(kept);
     return found;
+  }
+
+  /** Remove and return the next queued `stream` cue for one query SAID. */
+  private takeQueryCue(said: string): StreamCue | null {
+    let match: StreamCue | null = null;
+    const kept: StreamCue[] = [];
+    while (!this.queryCues.empty) {
+      const cue = this.queryCues.pull();
+      if (!cue) {
+        continue;
+      }
+      if (!match && cue.serder.said === said) {
+        match = cue;
+        continue;
+      }
+      kept.push(cue);
+    }
+    this.queryCues.extend(kept);
+    return match;
   }
 
   /** Require provider mailbox storage for publication or mailbox serving. */

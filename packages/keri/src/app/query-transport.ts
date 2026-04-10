@@ -1,19 +1,26 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
+import { concatBytes } from "../../../cesr/mod.ts";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";
+import { Schemes } from "../core/schemes.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { ingestKeriBytes } from "./agent-runtime.ts";
 import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
 import type { CueSink } from "./cue-runtime.ts";
+import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { fetchResponseHandle } from "./httping.ts";
+import { parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 
 /**
  * Resolve the actual transport URL for one query destination AID.
  *
  * Transport policy:
+ * - explicit witness-targeted queries resolve directly from the witness AID's
+ *   `locs.` replies because KERIpy witness inquiries do not depend on the
+ *   queried controller advertising witness end roles
  * - prefer direct controller/agent/witness URLs when the chosen destination
  *   matches an advertised end role
  * - in mailbox-only topologies, allow queries addressed to the controller AID
@@ -23,7 +30,17 @@ function resolveQueryDestinationUrl(
   hab: Hab,
   queriedPre: string,
   destination: string,
+  {
+    explicitWitness = false,
+  }: {
+    explicitWitness?: boolean;
+  } = {},
 ): string | null {
+  if (explicitWitness) {
+    const urls = hab.fetchUrls(destination);
+    return urls[Schemes.https] ?? urls[Schemes.http] ?? null;
+  }
+
   const ends = hab.endsFor(queriedPre);
   for (const role of [Roles.controller, Roles.agent, Roles.witness]) {
     const endpoint = flattenRoleUrls(ends[role]).find((entry) => entry.eid === destination);
@@ -66,7 +83,7 @@ function* postQueryMessage(
       bodyMode,
       destination,
     });
-    const { response } = yield* fetchResponseHandle(url, {
+    const { response, controller } = yield* fetchResponseHandle(url, {
       method: "POST",
       headers: request.headers,
       body: request.body,
@@ -75,6 +92,19 @@ function* postQueryMessage(
       throw new ValidationError(
         `Query delivery to ${url} failed with HTTP ${response.status}.`,
       );
+    }
+    const contentType = response.headers.get("Content-Type")?.toLowerCase() ?? "";
+    if (contentType.startsWith("text/event-stream")) {
+      const text = yield* readMailboxSseBody(response, controller, {
+        idleTimeoutMs: 500,
+        maxDurationMs: 5_000,
+      });
+      for (const message of parseMailboxSse(text)) {
+        if (message.msg.length > 0) {
+          ingestKeriBytes(runtime, message.msg);
+        }
+      }
+      continue;
     }
     const bytes = yield* readResponseBytes(response);
     if (bytes.length > 0) {
@@ -108,13 +138,21 @@ export function queryTransportSink(
         return;
       }
 
-      const url = resolveQueryDestinationUrl(hab, queriedPre, destination);
+      const url = resolveQueryDestinationUrl(hab, queriedPre, destination, {
+        explicitWitness: emission.cue.wits?.includes(destination) ?? false,
+      });
       if (!url) {
         throw new ValidationError(
           `No endpoint URL found for query destination ${destination}.`,
         );
       }
-      yield* postQueryMessage(runtime, url, message, hby.cesrBodyMode, destination);
+      yield* postQueryMessage(
+        runtime,
+        url,
+        concatBytes(introduce(hab, destination), message),
+        hby.cesrBodyMode,
+        destination,
+      );
     },
   };
 }

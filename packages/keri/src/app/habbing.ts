@@ -53,7 +53,7 @@ import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
 import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
+import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE, splitCesrStream } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
 import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
@@ -1672,7 +1672,7 @@ export class Hab {
           yield { cue, msgs: [this.witness(cue.serder)], kind: "wire" };
           break;
         case "replay":
-          yield { cue, msgs: [cue.msgs], kind: "wire" };
+          yield { cue, msgs: splitCesrStream(cue.msgs), kind: "wire" };
           break;
         case "reply":
           yield {

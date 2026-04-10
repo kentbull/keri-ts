@@ -3,12 +3,11 @@ import { run } from "effection";
 import {
   type HostedRouteResolution,
   inspectCesrRequest,
-  normalizeMbxTopicCursor,
   processWitnessIngress,
   readRequiredCesrRequestBytes,
 } from "keri-ts/runtime";
 import { jsonNoContentResponse, textResponse } from "../responses.ts";
-import { processRuntimeRequest, publishQueryCatchupReplay } from "../runtime-bridge.ts";
+import { processRuntimeRequest } from "../runtime-bridge.ts";
 import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
 const NONE_HOSTED_ROUTE: HostedRouteResolution = {
@@ -74,17 +73,27 @@ export function classifyCesrIngressRoute(
     };
   }
 
-  if (serder.ilk === Ilks.qry && serder.route === "ksn") {
-    const query = serder.ked?.q as Record<string, unknown> | undefined;
-    const pre = typeof query?.i === "string" ? query.i : null;
-    return {
-      kind: "runtimeIngressWithKsnReplay",
-      mailboxAid,
-      pre,
-    };
-  }
-
   return { kind: "runtimeIngress", mailboxAid };
+}
+
+function querySseResponse(
+  context: ProtocolRequestContext,
+  said: string | null,
+): Response {
+  if (!said) {
+    return textResponse("Query is missing said", 400);
+  }
+  return new Response(
+    context.runtime!.mailboxDirector.streamQueryResponse(said),
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "close",
+      },
+    },
+  );
 }
 
 /** Handle one generic POST/PUT CESR ingress request. */
@@ -132,40 +141,6 @@ export async function handleGenericCesrIngress(
           context.policy.serviceHab,
         );
       });
-      if (!ingressRoute.pre) {
-        return textResponse("Mailbox query is missing i", 400);
-      }
-      return new Response(
-        runtime.mailboxDirector.streamMailbox(
-          ingressRoute.pre,
-          normalizeMbxTopicCursor(ingressRoute.topics),
-        ),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "close",
-          },
-        },
-      );
-    case "runtimeIngressWithKsnReplay":
-      await run(function*() {
-        const current = yield* processRuntimeRequest(
-          runtime,
-          bytes,
-          ingressRoute.mailboxAid,
-          context.policy.serviceHab,
-        );
-        if (ingressRoute.pre) {
-          yield* publishQueryCatchupReplay(
-            runtime,
-            current,
-            ingressRoute.pre,
-            context.policy.serviceHab,
-          );
-        }
-      });
-      return jsonNoContentResponse();
+      return querySseResponse(context, serder.said ?? null);
   }
 }

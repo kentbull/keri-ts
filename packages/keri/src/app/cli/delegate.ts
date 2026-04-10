@@ -1,11 +1,12 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
-import { concatBytes, Diger, type SerderKERI } from "../../../../cesr/mod.ts";
+import { Diger, type SerderKERI } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { DELEGATE_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import type { CueEmission } from "../../core/cues.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, processRuntimeTurn, processRuntimeUntil } from "../agent-runtime.ts";
-import type { Habery } from "../habbing.ts";
+import type { Hab, Habery } from "../habbing.ts";
+import { queryTransportSink } from "../query-transport.ts";
 import { type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 
@@ -83,17 +84,51 @@ function anchorData(serder: SerderKERI): { i: string; s: string; d: string } {
   return { i: serder.pre, s: serder.snh, d: serder.said };
 }
 
-function fullDelegatorReplay(
+function delegateWitnesses(
   hby: Habery,
-  pre: string,
-): Uint8Array {
-  const parts: Uint8Array[] = [];
-  const kever = hby.db.getKever(pre);
-  if (kever) {
-    parts.push(...hby.db.cloneDelegation(kever));
+  serder: SerderKERI,
+): string[] {
+  if ((serder.sn ?? 0) === 0) {
+    return [...serder.backs];
   }
-  parts.push(...hby.db.clonePreIter(pre));
-  return parts.length === 0 ? new Uint8Array() : concatBytes(...parts);
+  if (!serder.pre) {
+    return [];
+  }
+  return [...(hby.db.getKever(serder.pre)?.wits ?? [])];
+}
+
+function delegateCommitted(
+  hby: Habery,
+  serder: SerderKERI,
+): boolean {
+  if (!serder.pre) {
+    return false;
+  }
+  const kever = hby.db.getKever(serder.pre);
+  return kever !== undefined && kever !== null && kever.sn >= (serder.sn ?? 0);
+}
+
+function delegateWitnessLogsQuery(
+  hab: Hab,
+  serder: SerderKERI,
+  witness: string,
+): CueEmission {
+  if (!serder.pre || !serder.snh) {
+    throw new ValidationError("Delegated event is missing pre or sn for query.");
+  }
+  const query = { fn: "0", s: serder.snh };
+  return {
+    kind: "wire",
+    cue: {
+      kin: "query",
+      pre: serder.pre,
+      src: witness,
+      route: "logs",
+      query,
+      wits: [witness],
+    },
+    msgs: [hab.query(serder.pre, witness, query, "logs")],
+  };
 }
 
 export function* delegateConfirmCommand(
@@ -145,10 +180,11 @@ export function* delegateConfirmCommand(
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       try {
+        const sink = queryTransportSink(runtime, hby, hab);
         yield* processRuntimeUntil(
           runtime,
           () => pendingDelegations(hby, hab.pre).length > 0,
-          { hab, maxTurns: 64, pollMailbox: true },
+          { hab, maxTurns: 64, pollMailbox: true, sink },
         );
 
         const pending = pendingDelegations(hby, hab.pre);
@@ -195,13 +231,30 @@ export function* delegateConfirmCommand(
             new Diger({ qb64: approving.said }),
           ]);
           hab.kvy.processEscrowDelegables();
-
-          yield* runtime.poster.sendBytes(hab, {
-            recipient: serder.pre,
-            message: fullDelegatorReplay(hby, hab.pre),
-            topic: DELEGATE_MAILBOX_TOPIC,
-          });
-          yield* processRuntimeTurn(runtime, { hab, pollMailbox: true });
+          const witnesses = delegateWitnesses(hby, serder).sort();
+          const selectedWitness = witnesses[0];
+          if (selectedWitness) {
+            yield* sink.send(
+              delegateWitnessLogsQuery(hab, serder, selectedWitness),
+            );
+            yield* processRuntimeUntil(
+              runtime,
+              () => delegateCommitted(hby, serder),
+              { hab, maxTurns: 128, pollMailbox: true, sink },
+            );
+          } else {
+            const querier = runtime.querying.watchSeqNo(
+              serder.pre,
+              serder.sn ?? 0,
+              { hab },
+            );
+            yield* processRuntimeUntil(
+              runtime,
+              () => querier.done,
+              { hab, maxTurns: 128, pollMailbox: true, sink },
+            );
+          }
+          yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
 
           if (serder.pre && serder.said) {
             const stillPending = hby.db.delegables.get([serder.pre]).includes(serder.said);

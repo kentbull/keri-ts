@@ -615,7 +615,7 @@ function ownEventMessage(
 }
 
 /** Post one generic witness message using HTTP or TCP according to known URLs. */
-function* sendWitnessMessage(
+export function* sendWitnessMessage(
   hab: Hab,
   witness: string,
   bytes: Uint8Array,

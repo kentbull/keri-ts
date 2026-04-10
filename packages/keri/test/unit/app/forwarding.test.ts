@@ -10,11 +10,12 @@
  * - shared mailbox storage and remote cursor progression
  */
 import { run } from "effection";
-import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { SerderKERI } from "../../../../cesr/mod.ts";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { concatBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { Poster } from "../../../src/app/forwarding.ts";
+import { ForwardHandler, introduce, Poster } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import {
   mailboxQueryTopics,
@@ -24,7 +25,7 @@ import {
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
 import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
-import { makeExchangeSerder } from "../../../src/core/messages.ts";
+import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
 
@@ -308,6 +309,436 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
           ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["i"],
           sender.pre,
         );
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Proves EXN delivery falls back to a hosted witness mailbox when no direct or mailbox endpoints exist. */
+// @test-lane app-fast-parallel
+Deno.test("Poster.sendExchange falls back to local witness mailbox storage", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `poster-local-witness-exn-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const witness = hby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      try {
+        ingestKeriBytes(
+          runtime,
+          witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http"),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
+        const { serder, deliveries } = yield* poster.sendExchange(sender, {
+          recipient: recipient.pre,
+          route: DELEGATE_REQUEST_ROUTE,
+          payload: { delpre: recipient.pre },
+        });
+
+        assertEquals(deliveries, ["http://127.0.0.1:9124"]);
+        assertEquals(serder.route, DELEGATE_REQUEST_ROUTE);
+        const stored = runtime.mailboxer?.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
+        ) ?? [];
+        assertEquals(stored.length, 1);
+        assertEquals(new SerderKERI({ raw: stored[0]! }).route, DELEGATE_REQUEST_ROUTE);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Proves raw CESR delivery falls back to one witness with KERIpy-style introduction plus `/fwd`. */
+// @test-lane app-fast-parallel
+Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus forwarded delivery", async () => {
+  const bodies: Uint8Array[] = [];
+  const controller = new AbortController();
+  const port = 9125;
+  const server = Deno.serve({
+    hostname: "127.0.0.1",
+    port,
+    signal: controller.signal,
+  }, async (request) => {
+    bodies.push(await readCesrRequestBytes(request));
+    return new Response(null, { status: 204 });
+  });
+
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: `poster-remote-witness-bytes-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+      });
+      const remoteHby = yield* createHabery({
+        name: `poster-remote-peer-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+      });
+
+      try {
+        const sender = hby.makeHab("sender", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+        });
+        const remoteWitness = remoteHby.makeHab("remote-witness", undefined, {
+          transferable: false,
+          icount: 1,
+          isith: "1",
+          toad: 0,
+        });
+        const recipient = hby.makeHab("recipient", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          wits: [remoteWitness.pre],
+          toad: 1,
+        });
+
+        const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+        try {
+          for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
+            ingestKeriBytes(runtime, msg);
+          }
+          ingestKeriBytes(
+            runtime,
+            remoteWitness.makeLocScheme(`http://127.0.0.1:${port}`, remoteWitness.pre, "http"),
+          );
+          yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+          const message = sender.query(recipient.pre, sender.pre, { s: "0" }, "logs");
+          const expectedIntro = splitCesrStream(introduce(sender, remoteWitness.pre));
+
+          const poster = new Poster(hby);
+          const result = yield* poster.sendBytes(sender, {
+            recipient: recipient.pre,
+            message,
+            topic: "/receipt",
+          });
+
+          assertEquals(result.deliveries, [`http://127.0.0.1:${port}`]);
+          assertEquals(bodies.slice(0, expectedIntro.length), expectedIntro);
+          assertEquals(bodies.length, expectedIntro.length + 1);
+
+          const delivered = new SerderKERI({ raw: bodies.at(-1)! });
+          assertEquals(delivered.route, "/fwd");
+          assertEquals(delivered.ked?.q, { pre: recipient.pre, topic: "/receipt" });
+          assertEquals(
+            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["r"],
+            "logs",
+          );
+          assertEquals(
+            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["q"],
+            { s: "0", i: recipient.pre, src: sender.pre },
+          );
+        } finally {
+          yield* runtime.close();
+        }
+      } finally {
+        yield* remoteHby.close(true);
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    controller.abort();
+    try {
+      await server.finished;
+    } catch {
+      // Abort-driven shutdown is expected here.
+    }
+  }
+});
+
+/** Proves KERIpy-style introduction carries all sender end-role replies. */
+// @test-lane app-fast-parallel
+Deno.test("introduce includes mailbox and witness end-role replies when both are known", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `introduce-end-roles-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [],
+        toad: 0,
+      });
+      const mailbox = hby.makeHab("mailbox", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const witness = hby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const remote = hby.makeHab("remote", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      try {
+        ingestKeriBytes(runtime, sender.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true));
+        ingestKeriBytes(runtime, sender.makeEndRole(witness.pre, EndpointRoles.witness, true));
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const intro = splitCesrStream(introduce(sender, remote.pre))
+          .map((msg) => new SerderKERI({ raw: msg }))
+          .filter((serder) => serder.ilk === "rpy")
+          .map((serder) => ({
+            route: serder.route,
+            role: (serder.ked?.a as Record<string, unknown> | undefined)?.role,
+            eid: (serder.ked?.a as Record<string, unknown> | undefined)?.eid,
+          }));
+
+        assertEquals(
+          intro.some((entry) =>
+            entry.route === "/end/role/add"
+            && entry.role === EndpointRoles.mailbox
+            && entry.eid === mailbox.pre
+          ),
+          true,
+        );
+        assertEquals(
+          intro.some((entry) =>
+            entry.route === "/end/role/add"
+            && entry.role === EndpointRoles.witness
+            && entry.eid === witness.pre
+          ),
+          true,
+        );
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Proves `direct` delivery mode stays strict and does not silently fall back to witnesses. */
+// @test-lane app-fast-parallel
+Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses", async () => {
+  const attempt = run(function*() {
+    const hby = yield* createHabery({
+      name: `poster-direct-strict-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const witness = hby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      try {
+        ingestKeriBytes(
+          runtime,
+          witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http"),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const poster = new Poster(hby);
+        yield* poster.sendBytes(sender, {
+          recipient: recipient.pre,
+          message: new Uint8Array([9]),
+          topic: "/receipt",
+          delivery: "direct",
+        });
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+
+  await assertRejects(
+    () => attempt,
+    Error,
+    "No end roles for",
+  );
+});
+
+/** Proves inbound `/fwd` storage accepts mailbox-like hosts but not controller-only hosts. */
+// @test-lane app-fast-parallel
+Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects controller-only hosts", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `forward-handler-host-types-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const mailboxHost = hby.makeHab("mailbox-host", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const agentHost = hby.makeHab("agent-host", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controllerHost = hby.makeHab("controller-host", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const witnessHost = hby.makeHab("witness-host", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witnessHost.pre],
+        toad: 1,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      try {
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(mailboxHost.pre, EndpointRoles.mailbox, true),
+        );
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(agentHost.pre, EndpointRoles.agent, true),
+        );
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(controllerHost.pre, EndpointRoles.controller, true),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const forwarded = sender.query(recipient.pre, sender.pre, { s: "0" }, "logs");
+        const wrapped = makeEmbeddedExchangeMessage("/fwd", {}, {
+          sender: sender.pre,
+          modifiers: { pre: recipient.pre, topic: "/receipt" },
+          embeds: { evt: forwarded },
+        });
+        const handler = new ForwardHandler(runtime.mailboxDirector);
+        const attachments = [{
+          raw: wrapped.attachments,
+          text: new TextDecoder().decode(wrapped.attachments),
+        }];
+        const countStored = () =>
+          runtime.mailboxer?.getTopicMsgs(
+            mailboxTopicKey(recipient.pre, "/receipt"),
+          ).length ?? 0;
+
+        runtime.mailboxDirector.withActiveMailboxAid(mailboxHost.pre, () => {
+          handler.handle({ serder: wrapped.serder, attachments });
+        });
+        assertEquals(countStored(), 1);
+
+        runtime.mailboxDirector.withActiveMailboxAid(agentHost.pre, () => {
+          handler.handle({ serder: wrapped.serder, attachments });
+        });
+        assertEquals(countStored(), 2);
+
+        runtime.mailboxDirector.withActiveMailboxAid(witnessHost.pre, () => {
+          handler.handle({ serder: wrapped.serder, attachments });
+        });
+        assertEquals(countStored(), 3);
+
+        runtime.mailboxDirector.withActiveMailboxAid(controllerHost.pre, () => {
+          handler.handle({ serder: wrapped.serder, attachments });
+        });
+        assertEquals(countStored(), 3);
       } finally {
         yield* runtime.close();
       }

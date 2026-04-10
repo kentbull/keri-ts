@@ -2,7 +2,14 @@
 
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../../../src/app/agent-runtime.ts";
+import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
 import { processWitnessIngress } from "../../../src/app/witnessing.ts";
 import type { CueEmission } from "../../../src/core/cues.ts";
 
@@ -220,4 +227,60 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
   assertEquals(emissions, [emission]);
   assertEquals(chunks, [{ bytes, local: true }]);
   assertEquals(handled, [{ emission, hab: "EWIT" }]);
+});
+
+Deno.test("app/runtime-responder - receipt cues for witness-only recipients land in the hosted witness mailbox store", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `runtime-respondant-witness-fallback-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const witness = hby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      try {
+        ingestKeriBytes(
+          runtime,
+          witness.makeLocScheme("http://127.0.0.1:9137", witness.pre, "http"),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const message = new Uint8Array([8, 8, 8]);
+        yield* runtime.respondant.sendWithHab(
+          {
+            kind: "wire",
+            cue: { kin: "receipt", serder: { pre: recipient.pre } as never },
+            msgs: [message],
+          },
+          witness,
+        );
+
+        const stored = runtime.mailboxer?.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, "/receipt"),
+        ) ?? [];
+        assertEquals(stored, [message]);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });

@@ -46,6 +46,7 @@ export interface KeriPyWitnessNode {
   tcpUrl: string;
   controllerOobi: string;
   witnessOobi: string;
+  mailboxOobi: string;
 }
 
 /** One started Tufa witness process plus its advertised network state. */
@@ -59,6 +60,7 @@ export interface TufaWitnessNode {
   tcpUrl: string;
   controllerOobi: string;
   witnessOobi: string;
+  mailboxOobi: string;
 }
 
 /** Options for the explicit KERIpy witness harness. */
@@ -900,6 +902,7 @@ export async function startKeriPyWitnessHarness(
       tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
       controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
       witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
+      mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
     });
   }
 
@@ -1142,6 +1145,7 @@ export async function startTufaWitnessHarness(
         tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
         controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
         witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
+        mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
       });
       children.push(child);
     }

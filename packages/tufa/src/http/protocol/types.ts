@@ -46,9 +46,4 @@ export type CesrIngressRoute =
     mailboxAid: string | null;
     pre: string | null;
     topics: unknown;
-  }
-  | {
-    kind: "runtimeIngressWithKsnReplay";
-    mailboxAid: string | null;
-    pre: string | null;
   };

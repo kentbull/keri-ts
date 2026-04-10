@@ -405,7 +405,7 @@ export class AnchorQuerier implements QueryContinuation {
     }
 
     if (
-      coordinator.hby.db.fetchAllSealingEventByEventSeal(this.pre, this.anchor)
+      coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)
     ) {
       this.done = true;
     }

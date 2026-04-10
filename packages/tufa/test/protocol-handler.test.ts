@@ -227,9 +227,8 @@ Deno.test("tufa/protocol-handler - classifies witness-local and runtime ingress 
       ked: { q: { i: "EDEST" } },
     }),
     {
-      kind: "runtimeIngressWithKsnReplay",
+      kind: "runtimeIngress",
       mailboxAid: witnessHab.pre,
-      pre: "EDEST",
     },
   );
 });

@@ -211,20 +211,30 @@ Deno.test("Hab.interact preserves hex-width boundaries across successive accepte
   });
 });
 
-Deno.test("Anchorer uses the proxy habitat for delegated inception, registers the anchor query, and pins approval seals", async () => {
+Deno.test("Anchorer uses the proxy habitat for delegated inception and retries witness-backed anchor queries from dune", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
+      const delegatorWitness = hby.makeHab("delegator-witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      hby.db.locs.pin([delegatorWitness.pre, "http"], {
+        url: "http://127.0.0.1:9451/",
+      });
       const delegator = hby.makeHab("delegator", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
         ncount: 1,
         nsith: "1",
-        toad: 0,
+        wits: [delegatorWitness.pre],
+        toad: 1,
       });
       const proxy = hby.makeHab("proxy", undefined, {
         transferable: true,
@@ -252,11 +262,13 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception, registers th
           message: Uint8Array;
         }
       > = [];
-      const watched: Array<
+      const queuedQueries: Array<
         {
           pre: string;
-          anchor: Record<string, unknown>;
+          route: string;
+          query: Record<string, unknown>;
           hab: string | null;
+          wits?: string[];
         }
       > = [];
       const poster = {
@@ -295,17 +307,22 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception, registers th
         },
       } as unknown as Poster;
       const querying = {
-        watchAnchor(
-          pre: string,
-          anchor: Record<string, unknown>,
-          options: { hab?: { pre: string } } = {},
+        enqueue(
+          request: {
+            pre: string;
+            route: string;
+            query: Record<string, unknown>;
+            hab?: { pre: string };
+            wits?: string[];
+          },
         ) {
-          watched.push({
-            pre,
-            anchor,
-            hab: options.hab?.pre ?? null,
+          queuedQueries.push({
+            pre: request.pre,
+            route: request.route,
+            query: request.query,
+            hab: request.hab?.pre ?? null,
+            wits: request.wits,
           });
-          return { done: false };
         },
       } as unknown as QueryCoordinator;
       const coordinator = new Anchorer(hby, { poster, querying });
@@ -339,11 +356,79 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception, registers th
       const event = new SerderKERI({ raw: sent[1]!.message });
       assertEquals(event.pre, delegate.pre);
       assertEquals(event.ilk, "dip");
-      assertEquals(watched, [{
+      assertEquals(queuedQueries, [{
         pre: delegator.pre,
-        anchor: { i: delegate.pre, s: "0", d: delegate.kever!.said! },
+        route: "logs",
+        query: { fn: "0", s: "0", a: { i: delegate.pre, s: "0", d: delegate.kever!.said! } },
         hab: proxy.pre,
+        wits: [delegatorWitness.pre],
       }]);
+
+      for (let i = 0; i < 7; i += 1) {
+        yield* coordinator.processAllOnce();
+      }
+      assertEquals(queuedQueries.length, 1);
+      yield* coordinator.processAllOnce();
+      assertEquals(queuedQueries.length, 2);
+      assertEquals(hby.db.dune.cnt(), 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Anchorer completes delegated inception once the delegator approval is locally discoverable", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegate-coordinator-complete-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const proxy = hby.makeHab("proxy", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = hby.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+
+      const poster = {
+        *sendExchange() {
+          return { deliveries: ["mock"], queued: [] };
+        },
+        *sendBytes() {
+          return { deliveries: ["mock"], queued: [] };
+        },
+      } as unknown as Poster;
+      const querying = {
+        enqueue() {
+          return;
+        },
+      } as unknown as QueryCoordinator;
+      const coordinator = new Anchorer(hby, { poster, querying });
+
+      coordinator.beginLatest(delegate.pre, 0, {
+        communicationHab: proxy,
+      });
+      yield* coordinator.processAllOnce();
 
       assertExists(delegate.kever?.said);
       delegator.interact({
@@ -358,6 +443,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception, registers th
       assertEquals(completed[0]?.kind, "complete");
       assertExists(hby.db.aess.get(dgKey(delegate.pre, delegate.kever.said)));
       assertEquals(hby.db.cdel.cntOn(delegate.pre), 1);
+      assertEquals(hby.db.dune.cnt(), 0);
       assertEquals(coordinator.complete(delegate.pre, 0), true);
     } finally {
       yield* hby.close(true);
@@ -422,20 +508,30 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
   });
 });
 
-Deno.test("Anchorer uses the delegate habitat for delegated rotation by default", async () => {
+Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues a witness-backed anchor query by default", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-rotation-default-sender-${crypto.randomUUID()}`,
       temp: true,
     });
     try {
+      const delegatorWitness = hby.makeHab("delegator-witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      hby.db.locs.pin([delegatorWitness.pre, "http"], {
+        url: "http://127.0.0.1:9452/",
+      });
       const delegator = hby.makeHab("delegator", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
         ncount: 1,
         nsith: "1",
-        toad: 0,
+        wits: [delegatorWitness.pre],
+        toad: 1,
       });
       const delegate = hby.makeHab("delegate", undefined, {
         transferable: true,
@@ -467,8 +563,14 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation by default"
       const sent: Array<
         { sender: string; recipient: string; message: Uint8Array }
       > = [];
-      const watched: Array<
-        { pre: string; anchor: Record<string, unknown>; hab: string | null }
+      const queuedQueries: Array<
+        {
+          pre: string;
+          route: string;
+          query: Record<string, unknown>;
+          hab: string | null;
+          wits?: string[];
+        }
       > = [];
       const poster = {
         *sendExchange(
@@ -503,13 +605,22 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation by default"
         },
       } as unknown as Poster;
       const querying = {
-        watchAnchor(
-          pre: string,
-          anchor: Record<string, unknown>,
-          options: { hab?: { pre: string } } = {},
+        enqueue(
+          request: {
+            pre: string;
+            route: string;
+            query: Record<string, unknown>;
+            hab?: { pre: string };
+            wits?: string[];
+          },
         ) {
-          watched.push({ pre, anchor, hab: options.hab?.pre ?? null });
-          return { done: false };
+          queuedQueries.push({
+            pre: request.pre,
+            route: request.route,
+            query: request.query,
+            hab: request.hab?.pre ?? null,
+            wits: request.wits,
+          });
         },
       } as unknown as QueryCoordinator;
       const coordinator = new Anchorer(hby, { poster, querying });
@@ -523,14 +634,20 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation by default"
         DELEGATE_REQUEST_ROUTE,
       );
       assertEquals(new SerderKERI({ raw: sent[1]!.message }).ilk, "drt");
-      assertEquals(watched, [{
+      assertEquals(queuedQueries, [{
         pre: delegator.pre,
-        anchor: {
-          i: delegate.pre,
-          s: delegate.kever!.sn.toString(16),
-          d: delegate.kever!.said!,
+        route: "logs",
+        query: {
+          fn: "0",
+          s: "0",
+          a: {
+            i: delegate.pre,
+            s: delegate.kever!.sn.toString(16),
+            d: delegate.kever!.said!,
+          },
         },
         hab: delegate.pre,
+        wits: [delegatorWitness.pre],
       }]);
     } finally {
       yield* hby.close(true);

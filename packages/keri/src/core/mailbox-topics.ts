@@ -10,6 +10,12 @@
 export const DELEGATE_MAILBOX_TOPIC = "/delegate";
 /** Peer OOBI request mailbox topic used by KERIpy `/oobis` EXNs. */
 export const OOBI_MAILBOX_TOPIC = "/oobi";
+/** Core receipt mailbox topic used for witness/controller correspondence. */
+export const RECEIPT_MAILBOX_TOPIC = "/receipt";
+/** Core replay mailbox topic used for witness-backed query/log replay. */
+export const REPLAY_MAILBOX_TOPIC = "/replay";
+/** Core reply mailbox topic used for query reply correspondence such as `/ksn`. */
+export const REPLY_MAILBOX_TOPIC = "/reply";
 /**
  * Configured mailbox topic names for one poll or subscription setup.
  *

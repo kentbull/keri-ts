@@ -2,7 +2,12 @@ import { type Operation, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
-import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import {
+  DELEGATE_MAILBOX_TOPIC,
+  RECEIPT_MAILBOX_TOPIC,
+  REPLAY_MAILBOX_TOPIC,
+  REPLY_MAILBOX_TOPIC,
+} from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
@@ -160,7 +165,16 @@ export function* createAgentRuntime(
     }
   }
   const mailboxPoller = new MailboxPoller(hby, mailboxDirector);
-  mailboxDirector.registerTopic(DELEGATE_MAILBOX_TOPIC);
+  for (
+    const topic of [
+      DELEGATE_MAILBOX_TOPIC,
+      RECEIPT_MAILBOX_TOPIC,
+      REPLAY_MAILBOX_TOPIC,
+      REPLY_MAILBOX_TOPIC,
+    ]
+  ) {
+    mailboxDirector.registerTopic(topic);
+  }
   const querying = new QueryCoordinator(hby);
   const delegating = new Anchorer(hby, { poster, querying });
   const oobiery = new Oobiery(hby, reactor, { cues });

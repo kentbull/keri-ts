@@ -4,17 +4,18 @@
  * Cross-implementation single-sig delegation matrix.
  *
  * Current executable rows:
- * - Tufa delegate -> KLI delegator, mailbox transport plus delegate witness OOBI, explicit proxy, `dip` + `drt`
- * - KLI delegate -> Tufa delegator, mailbox-only, explicit proxy, `dip` + `drt`
+ * - Tufa delegate -> KLI delegator, witness-mailbox transport plus
+ *   witness-backed delegator approval discovery, explicit proxy, `dip` + `drt`
+ * - KLI delegate -> Tufa delegator, witness-mailbox transport, explicit
+ *   proxy, `dip` + `drt`
  *
  * This file intentionally proves the real durable seams:
- * - mailbox OOBIs for delegated controller-to-controller transport
+ * - witness-hosted mailbox OOBIs for delegated controller-to-controller transport
  * - witness OOBIs for witness-backed delegate inception/rotation
  * - Tufa `Notifier` visibility before `delegate confirm`
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
-  addKliHostedRoute,
   addKliMailbox,
   addTufaHostedRoute,
   addTufaMailbox,
@@ -31,8 +32,6 @@ import {
   pumpTufaRuntimeUntil,
   resolveKliOobi,
   resolveTufaOobi,
-  setupTufaMailboxProvider,
-  startKliMailboxHost,
   startTufaAgentHost,
   waitForChildSuccess,
 } from "./interop-delegation-helpers.ts";
@@ -42,7 +41,6 @@ import {
   extractPrefix,
   randomPort,
   requireSuccess,
-  resolvePythonCommand,
   runCmd,
   runCmdWithTimeout,
   runTufaWithTimeout,
@@ -96,7 +94,7 @@ async function listTufaNotifications(args: {
   return JSON.parse(result.stdout) as NotificationList;
 }
 
-Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and rotated by a KLI delegator over mailbox transport", async () => {
+Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and rotated by a KLI delegator over witness-mailbox transport with witness-backed approval discovery", async () => {
   const ctx = await createInteropContext();
   let delegatedIncept: ReturnType<typeof spawnChild> | null = null;
   let delegatedRotate: ReturnType<typeof spawnChild> | null = null;
@@ -104,14 +102,6 @@ Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and
   let confirmDrt: ReturnType<typeof spawnChild> | null = null;
   const base = `interop-delegation-tufa-kli-${crypto.randomUUID().slice(0, 8)}`;
   const tufaHeadDir = `${ctx.home}/interop-delegation-tufa-kli-head`;
-  const provider = await setupTufaMailboxProvider(ctx, {
-    name: `tufa-relay-${crypto.randomUUID().slice(0, 8)}`,
-    base,
-    headDirPath: tufaHeadDir,
-    passcode: INTEROP_PASSCODE,
-    salt: INTEROP_SALT,
-    port: randomPort(),
-  });
   const delegateWitnessHarness = await startTufaWitnessHarness(ctx, {
     aliases: ["wan", "wil"],
   });
@@ -145,24 +135,24 @@ Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and
       name: delegatorName,
       base,
       passcode: INTEROP_PASSCODE,
-      oobi: provider.mailboxOobi,
-      alias: provider.alias,
+      oobi: delegatorWitness.mailboxOobi,
+      alias: delegatorWitness.alias,
     });
     const delegatorMailboxAdd = await addKliMailbox(ctx, {
       name: delegatorName,
       base,
       passcode: INTEROP_PASSCODE,
       alias: delegatorAlias,
-      mailbox: provider.alias,
+      mailbox: delegatorWitness.alias,
     });
-    assertStringIncludes(delegatorMailboxAdd.stdout, provider.pre);
+    assertStringIncludes(delegatorMailboxAdd.stdout, delegatorWitness.pre);
     const delegatorMailboxOobi = await generateKliMailboxOobi(ctx, {
       name: delegatorName,
       base,
       passcode: INTEROP_PASSCODE,
       alias: delegatorAlias,
     });
-    assertStringIncludes(delegatorMailboxOobi, provider.pre);
+    assertStringIncludes(delegatorMailboxOobi, delegatorWitness.pre);
 
     const delegateName = `tufa-delegate-${crypto.randomUUID().slice(0, 8)}`;
     const proxyAlias = "proxy";
@@ -174,45 +164,6 @@ Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and
       headDirPath: tufaHeadDir,
       passcode: INTEROP_PASSCODE,
       salt: INTEROP_SALT,
-    });
-    const proxyPre = await inceptTufaAlias(ctx, {
-      name: delegateName,
-      base,
-      headDirPath: tufaHeadDir,
-      passcode: INTEROP_PASSCODE,
-      alias: proxyAlias,
-    });
-    await resolveTufaOobi(ctx, {
-      name: delegateName,
-      base,
-      headDirPath: tufaHeadDir,
-      passcode: INTEROP_PASSCODE,
-      url: provider.mailboxOobi,
-      alias: provider.alias,
-    });
-    const proxyMailboxAdd = await addTufaMailbox(ctx, {
-      name: delegateName,
-      base,
-      headDirPath: tufaHeadDir,
-      passcode: INTEROP_PASSCODE,
-      alias: proxyAlias,
-      mailbox: provider.alias,
-    });
-    assertStringIncludes(proxyMailboxAdd.stdout, `added ${provider.pre}`);
-    const proxyMailboxOobi = await generateTufaMailboxOobi(ctx, {
-      name: delegateName,
-      base,
-      headDirPath: tufaHeadDir,
-      passcode: INTEROP_PASSCODE,
-      alias: proxyAlias,
-    });
-    assertStringIncludes(proxyMailboxOobi, provider.pre);
-    await resolveKliOobi(ctx, {
-      name: delegatorName,
-      base,
-      passcode: INTEROP_PASSCODE,
-      oobi: proxyMailboxOobi,
-      alias: proxyAlias,
     });
     for (const witness of delegateWitnesses) {
       await resolveTufaOobi(ctx, {
@@ -231,6 +182,50 @@ Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and
         alias: witness.alias,
       });
     }
+    // KERIpy `Anchorer` provisions the delegation communication proxy with the
+    // delegate's witness set so witness-driven `replay` responses have a real
+    // return path through the same witness+mailbox runtime.
+    const proxyPre = await inceptTufaAlias(ctx, {
+      name: delegateName,
+      base,
+      headDirPath: tufaHeadDir,
+      passcode: INTEROP_PASSCODE,
+      alias: proxyAlias,
+      wits: delegateWitnesses.map((witness) => witness.pre),
+      toad: 1,
+    });
+    await resolveTufaOobi(ctx, {
+      name: delegateName,
+      base,
+      headDirPath: tufaHeadDir,
+      passcode: INTEROP_PASSCODE,
+      url: delegateWitnesses[0]!.mailboxOobi,
+      alias: delegateWitnesses[0]!.alias,
+    });
+    const proxyMailboxAdd = await addTufaMailbox(ctx, {
+      name: delegateName,
+      base,
+      headDirPath: tufaHeadDir,
+      passcode: INTEROP_PASSCODE,
+      alias: proxyAlias,
+      mailbox: delegateWitnesses[0]!.alias,
+    });
+    assertStringIncludes(proxyMailboxAdd.stdout, `added ${delegateWitnesses[0]!.pre}`);
+    const proxyMailboxOobi = await generateTufaMailboxOobi(ctx, {
+      name: delegateName,
+      base,
+      headDirPath: tufaHeadDir,
+      passcode: INTEROP_PASSCODE,
+      alias: proxyAlias,
+    });
+    assertStringIncludes(proxyMailboxOobi, delegateWitnesses[0]!.pre);
+    await resolveKliOobi(ctx, {
+      name: delegatorName,
+      base,
+      passcode: INTEROP_PASSCODE,
+      oobi: proxyMailboxOobi,
+      alias: proxyAlias,
+    });
     await resolveTufaOobi(ctx, {
       name: delegateName,
       base,
@@ -422,24 +417,18 @@ Deno.test("Interop delegation: tufa delegate with explicit proxy is approved and
       await stopChild(delegatedIncept);
     }
     await delegateWitnessHarness.close();
-    await provider.close();
   }
 });
 
-Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is approved by a Tufa delegator over mailbox transport", async () => {
+Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is approved by a Tufa delegator over witness-mailbox transport", async () => {
   const ctx = await createInteropContext();
-  const pythonCommand = await resolvePythonCommand(ctx.env, ctx.kliCommand);
   const base = `interop-delegation-kli-tufa-${crypto.randomUUID().slice(0, 8)}`;
   const tufaHeadDir = `${ctx.home}/interop-delegation-kli-tufa-head`;
-  const provider = await setupTufaMailboxProvider(ctx, {
-    name: `tufa-relay-${crypto.randomUUID().slice(0, 8)}`,
-    base,
-    headDirPath: tufaHeadDir,
-    passcode: INTEROP_PASSCODE,
-    salt: INTEROP_SALT,
-    port: randomPort(),
+  const mailboxWitnessHarness = await startTufaWitnessHarness(ctx, {
+    aliases: ["mwan", "mwil"],
   });
-  let proxyHost: ReturnType<typeof spawnChild> | null = null;
+  const delegatorMailboxWitness = mailboxWitnessHarness.node("mwan");
+  const proxyMailboxWitness = mailboxWitnessHarness.node("mwil");
   let delegatorAgent: ReturnType<typeof spawnChild> | null = null;
   let delegatedIncept: ReturnType<typeof spawnChild> | null = null;
   let delegatedRotate: ReturnType<typeof spawnChild> | null = null;
@@ -484,8 +473,8 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
       base,
       headDirPath: tufaHeadDir,
       passcode: INTEROP_PASSCODE,
-      url: provider.mailboxOobi,
-      alias: provider.alias,
+      url: delegatorMailboxWitness.mailboxOobi,
+      alias: delegatorMailboxWitness.alias,
     });
     const delegatorMailboxAdd = await addTufaMailbox(ctx, {
       name: delegatorName,
@@ -493,9 +482,9 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
       headDirPath: tufaHeadDir,
       passcode: INTEROP_PASSCODE,
       alias: delegatorAlias,
-      mailbox: provider.alias,
+      mailbox: delegatorMailboxWitness.alias,
     });
-    assertStringIncludes(delegatorMailboxAdd.stdout, `added ${provider.pre}`);
+    assertStringIncludes(delegatorMailboxAdd.stdout, `added ${delegatorMailboxWitness.pre}`);
     const delegatorMailboxOobi = await generateTufaMailboxOobi(ctx, {
       name: delegatorName,
       base,
@@ -503,11 +492,10 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
       passcode: INTEROP_PASSCODE,
       alias: delegatorAlias,
     });
-    assertStringIncludes(delegatorMailboxOobi, provider.pre);
+    assertStringIncludes(delegatorMailboxOobi, delegatorMailboxWitness.pre);
 
     const delegateName = `kli-delegate-${crypto.randomUUID().slice(0, 8)}`;
     const proxyAlias = "proxy";
-    const proxyHostAlias = "host";
     const delegateAlias = "delegate";
     await initKliStore(ctx, {
       name: delegateName,
@@ -521,47 +509,28 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
       passcode: INTEROP_PASSCODE,
       alias: proxyAlias,
     });
-    const proxyHostPre = await inceptKliAlias(ctx, {
+    await resolveKliOobi(ctx, {
       name: delegateName,
       base,
       passcode: INTEROP_PASSCODE,
-      alias: proxyHostAlias,
-      transferable: false,
+      oobi: proxyMailboxWitness.mailboxOobi,
+      alias: proxyMailboxWitness.alias,
     });
-    const proxyPort = randomPort();
-    const proxyOrigin = `http://127.0.0.1:${proxyPort}`;
-    await addKliHostedRoute(ctx, {
-      name: delegateName,
-      base,
-      passcode: INTEROP_PASSCODE,
-      alias: proxyHostAlias,
-      url: proxyOrigin,
-      eid: proxyHostPre,
-      mailbox: true,
-    });
-    await addKliHostedRoute(ctx, {
+    const proxyMailboxAdd = await addKliMailbox(ctx, {
       name: delegateName,
       base,
       passcode: INTEROP_PASSCODE,
       alias: proxyAlias,
-      url: proxyOrigin,
-      eid: proxyPre,
-      mailbox: true,
+      mailbox: proxyMailboxWitness.alias,
     });
+    assertStringIncludes(proxyMailboxAdd.stdout, proxyMailboxWitness.pre);
     const proxyMailboxOobi = await generateKliMailboxOobi(ctx, {
       name: delegateName,
       base,
       passcode: INTEROP_PASSCODE,
       alias: proxyAlias,
     });
-    proxyHost = await startKliMailboxHost(ctx, {
-      pythonCommand,
-      name: delegateName,
-      base,
-      passcode: INTEROP_PASSCODE,
-      alias: proxyHostAlias,
-      port: proxyPort,
-    });
+    assertStringIncludes(proxyMailboxOobi, proxyMailboxWitness.pre);
 
     await resolveTufaOobi(ctx, {
       name: delegatorName,
@@ -571,14 +540,12 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
       url: proxyMailboxOobi,
       alias: proxyAlias,
     });
-    await stopChild(proxyHost);
-    proxyHost = null;
     await resolveKliOobi(ctx, {
       name: delegateName,
       base,
       passcode: INTEROP_PASSCODE,
-      oobi: provider.mailboxOobi,
-      alias: provider.alias,
+      oobi: delegatorMailboxWitness.mailboxOobi,
+      alias: delegatorMailboxWitness.alias,
     });
     await resolveKliOobi(ctx, {
       name: delegateName,
@@ -801,9 +768,6 @@ Deno.test("Interop delegation: kli delegate with explicit proxy notifies and is 
     if (delegatedIncept) {
       await stopChild(delegatedIncept);
     }
-    if (proxyHost) {
-      await stopChild(proxyHost);
-    }
-    await provider.close();
+    await mailboxWitnessHarness.close();
   }
 });

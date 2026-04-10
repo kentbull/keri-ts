@@ -91,6 +91,8 @@ export async function inceptTufaAlias(
     passcode: string;
     alias: string;
     transferable?: boolean;
+    wits?: string[];
+    toad?: number;
   },
 ): Promise<string> {
   const result = await requireSuccess(
@@ -121,7 +123,7 @@ export async function inceptTufaAlias(
             "--ncount",
             "1",
             "--toad",
-            "0",
+            String(args.toad ?? 0),
           ]),
         ...(args.transferable === false
           ? [
@@ -129,8 +131,15 @@ export async function inceptTufaAlias(
             "1",
             "--icount",
             "1",
+            "--ncount",
+            "1",
+            "--nsith",
+            "1",
+            "--toad",
+            String(args.toad ?? 0),
           ]
           : []),
+        ...(args.wits?.flatMap((wit) => ["--wits", wit]) ?? []),
       ],
       ctx.env,
       ctx.repoRoot,

@@ -2,15 +2,17 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
 import type { QueryCoordinator } from "./querying.ts";
-import { WitnessReceiptor } from "./witnessing.ts";
+import { sendWitnessMessage } from "./witnessing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";
+const DELEGATION_ANCHOR_QUERY_RETRY_PASSES = 8;
 
 export type DelegationPhase =
   | "waitingWitnessReceipts"
@@ -53,6 +55,14 @@ export interface DelegationWorkflowStatus {
   proxyDependent: boolean;
   complete: boolean;
 }
+
+type DelegationEscrowContext = [
+  keys: [string, string],
+  serder: SerderKERI,
+  pre: string,
+  said: string,
+  snh: string,
+];
 
 function eventKey(serder: SerderKERI): [string, string] {
   const pre = serder.pre;
@@ -104,6 +114,25 @@ function workflowSaid(serder: SerderKERI): string {
 function workflowId(serder: SerderKERI): string {
   const [pre, snh] = eventKey(serder);
   return `${pre}:${snh}`;
+}
+
+function firstSorted(values: readonly string[]): string | null {
+  return [...values].sort()[0] ?? null;
+}
+
+function escrowContext(
+  keys: [string, string],
+  serder: SerderKERI,
+): DelegationEscrowContext {
+  const pre = serder.pre;
+  const said = serder.said;
+  const snh = serder.snh;
+  if (!pre || !said || !snh) {
+    throw new ValidationError(
+      "Delegated workflow escrow entry requires pre, said, and sn.",
+    );
+  }
+  return [keys, serder, pre, said, snh];
 }
 
 function pinAuthorizingSeal(
@@ -173,8 +202,13 @@ function approvingEvent(
 ): SerderKERI | null {
   const delpre = delegatedWorkflowDelpre(hby, serder, hab);
   return delpre
-    ? hby.db.fetchAllSealingEventByEventSeal(delpre, eventAnchor(serder))
+    ? hby.db.fetchLastSealingEventByEventSeal(delpre, eventAnchor(serder))
     : null;
+}
+
+function preferredWitnessQueryUrl(hab: Hab, witness: string): string | null {
+  const urls = hab.fetchUrls(witness);
+  return urls[Schemes.https] ?? urls[Schemes.http] ?? null;
 }
 
 export function resolveDelegationCommunicationHab(
@@ -301,9 +335,11 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
  *   - `dune.` for waiting on the delegator's authorizing anchor
  *   - `dpub.` for waiting on witness republication after approval
  *   - `cdel.` for completed delegation workflows
- * - outbound correspondence is delegated to `Poster`, anchor discovery is
- *   delegated to `QueryCoordinator`, and forced witness republication uses
- *   `WitnessReceiptor`
+ * - outbound correspondence is delegated to `Poster`
+ * - delegation-specific anchor discovery stays explicit here and uses
+ *   `QueryCoordinator` only as the queued query-delivery seam
+ * - witness republication sends the resolved delegator chain directly to the
+ *   delegate's witnesses so the flow stays readable against KERIpy
  *
  * Maintainer mental model:
  * - `Anchorer` owns workflow progression, not generic cue delivery and not
@@ -318,7 +354,7 @@ export class Anchorer {
   readonly poster: Poster;
   readonly querying: QueryCoordinator;
   readonly communicationHabPins = new Map<string, string>();
-  readonly anchorQueryPins = new Set<string>();
+  readonly anchorQueryRetryPasses = new Map<string, number>();
 
   constructor(
     hby: Habery,
@@ -338,7 +374,7 @@ export class Anchorer {
     this.hby.db.dpwe.pin(key, serder);
     this.hby.db.dune.rem(key);
     this.hby.db.dpub.rem(key);
-    this.anchorQueryPins.delete(id);
+    this.anchorQueryRetryPasses.delete(id);
     if (options.communicationHab) {
       this.communicationHabPins.set(id, options.communicationHab.pre);
     } else {
@@ -421,30 +457,28 @@ export class Anchorer {
 
   *processAllOnce(): Operation<DelegationWorkflowResult[]> {
     const results: DelegationWorkflowResult[] = [];
-    for (const [, serder] of [...this.hby.db.dpwe.getTopItemIter()]) {
-      results.push(yield* this.processPartialWitnessEscrow(serder));
+    for (const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
+      results.push(yield* this.processPartialWitnessEscrow(escrowContext(keys, serder)));
     }
-    for (const [, serder] of [...this.hby.db.dune.getTopItemIter()]) {
-      results.push(yield* this.processUnanchoredEscrow(serder));
+    for (const [keys, serder] of [...this.hby.db.dune.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
+      results.push(yield* this.processUnanchoredEscrow(escrowContext(keys, serder)));
     }
-    for (const [, serder] of [...this.hby.db.dpub.getTopItemIter()]) {
-      results.push(yield* this.processWitnessPublication(serder));
+    for (const [keys, serder] of [...this.hby.db.dpub.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
+      results.push(yield* this.processWitnessPublication(escrowContext(keys, serder)));
     }
     return results;
   }
 
   private *processPartialWitnessEscrow(
-    serder: SerderKERI,
+    context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
-    const pre = serder.pre ?? "<unknown>";
-    const said = serder.said ?? "<unknown>";
-    const key = eventKey(serder);
+    const [keys, serder, pre, said] = context;
 
     let hab: Hab;
     try {
       hab = workflowHab(this.hby, serder);
     } catch (error) {
-      this.hby.db.dpwe.rem(key);
+      this.hby.db.dpwe.rem(keys);
       this.communicationHabPins.delete(workflowId(serder));
       return {
         kind: "fail",
@@ -457,7 +491,7 @@ export class Anchorer {
 
     const delpre = delegatedWorkflowDelpre(this.hby, serder, hab);
     if (!delpre) {
-      this.hby.db.dpwe.rem(key);
+      this.hby.db.dpwe.rem(keys);
       this.clearWorkflowPins(serder);
       return {
         kind: "fail",
@@ -509,9 +543,8 @@ export class Anchorer {
       message,
       topic: DELEGATE_MAILBOX_TOPIC,
     });
-    this.ensureAnchorQuery(serder, communicationHab);
-    this.hby.db.dpwe.rem(key);
-    this.hby.db.dune.pin(key, serder);
+    this.hby.db.dpwe.rem(keys);
+    this.hby.db.dune.pin(keys, serder);
     return {
       kind: "advance",
       pre,
@@ -523,11 +556,9 @@ export class Anchorer {
   }
 
   private *processUnanchoredEscrow(
-    serder: SerderKERI,
+    context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
-    const pre = serder.pre ?? "<unknown>";
-    const said = serder.said ?? "<unknown>";
-    const key = eventKey(serder);
+    const [keys, serder, pre, said] = context;
 
     let hab: Hab;
     try {
@@ -544,8 +575,9 @@ export class Anchorer {
 
     const delegating = approvingEvent(this.hby, serder, hab);
     if (!delegating) {
+      let communicationHab: Hab;
       try {
-        this.ensureAnchorQuery(serder);
+        communicationHab = this.communicationHab(serder, hab);
       } catch (error) {
         return {
           kind: "fail",
@@ -560,12 +592,12 @@ export class Anchorer {
         pre,
         said,
         phase: "waitingDelegatorAnchor",
-        reason: "Delegator anchor has not been learned locally yet.",
+        reason: this.retryDelegatorWitnessQuery(serder, communicationHab),
       };
     }
 
     pinAuthorizingSeal(this.hby, serder, delegating);
-    this.hby.db.dune.rem(key);
+    this.hby.db.dune.rem(keys);
 
     if ((hab.kever?.wits.length ?? 0) === 0) {
       this.hby.db.cdel.appendOn(pre, completionDiger(serder));
@@ -579,27 +611,24 @@ export class Anchorer {
       };
     }
 
-    this.hby.db.dpub.pin(key, serder);
+    yield* this.publishDelegator(pre);
+    this.hby.db.dpub.pin(keys, serder);
     return {
       kind: "advance",
       pre,
       said,
       from: "waitingDelegatorAnchor",
       to: "waitingWitnessPublication",
-      reason: "Delegator approval is anchored; republishing the witnessed delegated event.",
+      reason: "Delegator approval is anchored; published the delegation chain to delegate witnesses.",
     };
   }
 
   private *processWitnessPublication(
-    serder: SerderKERI,
+    context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
-    const pre = serder.pre ?? "<unknown>";
-    const said = serder.said ?? "<unknown>";
-    const key = eventKey(serder);
+    const [keys, serder, pre, said] = context;
 
-    const receiptor = new WitnessReceiptor(this.hby, { force: true });
-    yield* receiptor.submit(pre, { sn: serder.sn ?? undefined });
-    this.hby.db.dpub.rem(key);
+    this.hby.db.dpub.rem(keys);
     this.hby.db.cdel.appendOn(pre, completionDiger(serder));
     this.clearWorkflowPins(serder);
     return {
@@ -607,7 +636,7 @@ export class Anchorer {
       pre,
       said,
       phase: "waitingWitnessPublication",
-      reason: "Witness republication completed after delegator approval.",
+      reason: "Witness publication completed after delegator approval.",
     };
   }
 
@@ -631,28 +660,67 @@ export class Anchorer {
     );
   }
 
-  private ensureAnchorQuery(
+  private retryDelegatorWitnessQuery(
     serder: SerderKERI,
-    communicationHab?: Hab,
-  ): void {
+    communicationHab: Hab,
+  ): string {
     const id = workflowId(serder);
-    if (this.anchorQueryPins.has(id)) {
-      return;
-    }
     const delpre = delegatedWorkflowDelpre(this.hby, serder);
     if (!delpre) {
       throw new ValidationError(
         `Delegation workflow ${id} is missing a delegator prefix.`,
       );
     }
-    const sender = communicationHab ?? this.communicationHab(serder);
-    this.querying.watchAnchor(delpre, eventAnchor(serder), { hab: sender });
-    this.anchorQueryPins.add(id);
+    const delegator = this.hby.db.getKever(delpre);
+    if (!delegator) {
+      return "Delegator anchor has not been learned locally yet and the delegator KEL is not known locally.";
+    }
+
+    const witness = firstSorted(delegator.wits);
+    if (!witness) {
+      return "Delegator anchor has not been learned locally yet and no delegator witness is known locally.";
+    }
+    if (!preferredWitnessQueryUrl(communicationHab, witness)) {
+      return `Delegator anchor has not been learned locally yet and witness ${witness} has no HTTP endpoint known locally.`;
+    }
+
+    const pass = this.anchorQueryRetryPasses.get(id) ?? 0;
+    this.anchorQueryRetryPasses.set(id, pass + 1);
+    if (pass % DELEGATION_ANCHOR_QUERY_RETRY_PASSES !== 0) {
+      const remaining = DELEGATION_ANCHOR_QUERY_RETRY_PASSES
+        - (pass % DELEGATION_ANCHOR_QUERY_RETRY_PASSES);
+      return `Delegator anchor has not been learned locally yet; next delegator witness query retry in ${remaining} pass(es).`;
+    }
+
+    this.querying.enqueue({
+      pre: delpre,
+      route: "logs",
+      query: { fn: "0", s: "0", a: eventAnchor(serder) },
+      hab: communicationHab,
+      wits: [witness],
+    });
+    return `Delegator anchor has not been learned locally yet; queried delegator witness ${witness}.`;
   }
 
   private clearWorkflowPins(serder: SerderKERI): void {
     const id = workflowId(serder);
     this.communicationHabPins.delete(id);
-    this.anchorQueryPins.delete(id);
+    this.anchorQueryRetryPasses.delete(id);
+  }
+
+  private *publishDelegator(pre: string): Operation<void> {
+    const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
+    const kever = hab.kever;
+    if (!kever) {
+      throw new ValidationError(
+        `Delegation witness publication: missing accepted key state for ${pre}.`,
+      );
+    }
+
+    for (const msg of this.hby.db.cloneDelegation(kever)) {
+      for (const witness of kever.wits) {
+        yield* sendWitnessMessage(hab, witness, msg);
+      }
+    }
   }
 }
