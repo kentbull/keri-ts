@@ -18,6 +18,7 @@ import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
+import { Respondant } from "./respondant.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
 
@@ -60,6 +61,7 @@ export interface AgentRuntime {
   oobiery: Oobiery;
   authenticator: Authenticator;
   mailboxDirector: MailboxDirector;
+  respondant: Respondant;
   mailboxPoller: MailboxPoller;
   poster: Poster;
   delegating: Anchorer;
@@ -143,6 +145,8 @@ export function* createAgentRuntime(
     hby,
     mailboxer ? { mailboxer } : {},
   );
+  const poster = new Poster(hby, { mailboxer });
+  const responder = new Respondant(hby, { poster, mailboxDirector });
   if (mailboxer) {
     reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
   }
@@ -156,7 +160,6 @@ export function* createAgentRuntime(
     }
   }
   const mailboxPoller = new MailboxPoller(hby, mailboxDirector);
-  const poster = new Poster(hby, { mailboxer });
   mailboxDirector.registerTopic(DELEGATE_MAILBOX_TOPIC);
   const querying = new QueryCoordinator(hby);
   const delegating = new Anchorer(hby, { poster, querying });
@@ -175,6 +178,7 @@ export function* createAgentRuntime(
     oobiery,
     authenticator,
     mailboxDirector,
+    responder,
     mailboxPoller,
     poster,
     delegating,

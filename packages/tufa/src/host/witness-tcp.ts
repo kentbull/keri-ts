@@ -1,5 +1,5 @@
 import { concatBytes } from "cesr-ts";
-import { action, type Operation } from "effection";
+import { action, type Operation, run } from "effection";
 import { type AgentRuntime, type Hab, processWitnessIngress } from "keri-ts/runtime";
 import { createServer, type Server, type Socket } from "node:net";
 
@@ -31,7 +31,11 @@ async function handleWitnessSocket(
   try {
     const bytes = await readSocketBytes(socket);
     if (bytes.length > 0) {
-      processWitnessIngress(runtime, serviceHab, bytes, { local: true });
+      await run(function*() {
+        yield* processWitnessIngress(runtime, serviceHab, bytes, {
+          local: true,
+        });
+      });
     }
   } finally {
     socket.destroy();

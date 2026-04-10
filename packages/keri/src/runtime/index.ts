@@ -51,6 +51,7 @@ export * from "../app/parsering.ts";
 export * from "../app/protocol-host-policy.ts";
 export * from "../app/querying.ts";
 export * from "../app/reactor.ts";
+export * from "../app/respondant.ts";
 export * from "../app/runtime-turn.ts";
 export * from "../app/signaling.ts";
 export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";

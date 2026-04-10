@@ -8,16 +8,12 @@
  * Current `keri-ts` difference:
  * - one runtime host receives an explicit mailbox sidecar instead of
  *   discovering mailbox storage through `Habery`
- * - runtime cues are translated into mailbox publications through an explicit
- *   cue sink instead of HIO doer wiring
  */
-import type { Operation } from "npm:effection@^3.6.0";
-import type { AgentCue, CueEmission, ReplyCue, StreamCue } from "./../core/cues.ts";
+import type { StreamCue } from "./../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
-import type { CueSink } from "./cue-runtime.ts";
 import type { Habery } from "./habbing.ts";
 import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "./mailboxing.ts";
 
@@ -28,16 +24,17 @@ const textEncoder = new TextEncoder();
  * Mailbox topic director for one runtime host.
  *
  * Responsibilities:
- * - persist reply/replay/receipt-style wire emissions into durable topic stores
  * - retain mailbox stream requests so protocol hosts can answer `mbx` queries
  * - expose ordered topic iteration backed by the dedicated `Mailboxer` and
  *   durable remote cursor state in `tops.`
+ * - publish only explicitly forwarded mailbox payloads such as authorized
+ *   `/fwd` deliveries
  *
  * KERIpy correspondence:
- * - coordinates the storage/query slice around `Mailboxer`,
- *   `MailboxIterable`, and the runtime cue bridge
+ * - coordinates the storage/query slice around `Mailboxer` and
+ *   `MailboxIterable`
  */
-export class MailboxDirector implements CueSink {
+export class MailboxDirector {
   readonly hby: Habery;
   readonly mailboxer: Mailboxer | null;
   readonly queryCues: Deck<StreamCue>;
@@ -107,33 +104,9 @@ export class MailboxDirector implements CueSink {
     return [...this.topics];
   }
 
-  /**
-   * Consume one interpreted cue emission from the shared runtime.
-   *
-   * Storage policy:
-   * - `reply`/`replay` wire emissions are persisted into mailbox topics
-   * - `stream` transport cues are retained so the HTTP host can correlate
-   *   mailbox queries with later server-sent-event responses
-   *
-   * Query catch-up implication:
-   * - replay material published after a successful `ksn` reply uses this same
-   *   persistence seam, so mailbox convergence and fresh-key verification do
-   *   not need a separate storage path
-   */
-  *send(emission: CueEmission): Operation<void> {
-    this.handleEmission(emission);
-  }
-
-  /** Synchronously apply one cue emission outside the Effection sink boundary. */
-  handleEmission(emission: CueEmission): void {
-    if (emission.kind === "wire") {
-      this.storeWireEmission(emission.cue, emission.msgs);
-      return;
-    }
-
-    if (emission.kind === "transport" && emission.cue.kin === "stream") {
-      this.queryCues.push(emission.cue);
-    }
+  /** Retain one mailbox-query `stream` cue for later HTTP/SSE correlation. */
+  retainQueryCue(cue: StreamCue): void {
+    this.queryCues.push(cue);
   }
 
   /**
@@ -150,7 +123,9 @@ export class MailboxDirector implements CueSink {
 
   /** Return the latest stored publication index for one topic, or `-1`. */
   lastIndex(pre: string, topic: string): number {
-    const count = this.requireMailboxer().tpcs.cntOn(mailboxTopicKey(pre, topic));
+    const count = this.requireMailboxer().tpcs.cntOn(
+      mailboxTopicKey(pre, topic),
+    );
     return count > 0 ? count - 1 : -1;
   }
 
@@ -311,63 +286,6 @@ export class MailboxDirector implements CueSink {
     return found;
   }
 
-  /**
-   * Return the mailbox topic used for one runtime cue, if any.
-   *
-   * Only reply, replay, and receipt-style cues produce mailbox topic
-   * publications here.
-   */
-  private topicForCue(cue: AgentCue): string | null {
-    switch (cue.kin) {
-      case "replay":
-        return "/replay";
-      case "reply":
-        return "/reply";
-      case "receipt":
-      case "witness":
-        return "/receipt";
-      default:
-        return null;
-    }
-  }
-
-  /**
-   * Return the mailbox identifier bucket used for one runtime cue, if any.
-   *
-   * This is the controller prefix whose mailbox topic bucket receives the wire
-   * payload.
-   */
-  private preForCue(cue: AgentCue): string | null {
-    switch (cue.kin) {
-      case "replay":
-        return cue.dest ?? cue.pre ?? null;
-      case "reply":
-        return cue.dest ?? replyMailboxPre(cue);
-      case "receipt":
-      case "witness":
-        return cue.serder.pre ?? null;
-      default:
-        return null;
-    }
-  }
-
-  /**
-   * Persist any mailbox-relevant wire emission into the durable topic stores.
-   *
-   * Cue-to-topic mapping stays centralized here so mailbox publication policy
-   * remains consistent across runtime callers.
-   */
-  private storeWireEmission(cue: AgentCue, msgs: Uint8Array[]): void {
-    const topic = this.topicForCue(cue);
-    const pre = this.preForCue(cue);
-    if (!topic || !pre) {
-      return;
-    }
-    for (const msg of msgs) {
-      this.publish(pre, topic, msg);
-    }
-  }
-
   /** Require provider mailbox storage for publication or mailbox serving. */
   private requireMailboxer(): Mailboxer {
     if (!this.mailboxer) {
@@ -377,16 +295,4 @@ export class MailboxDirector implements CueSink {
     }
     return this.mailboxer;
   }
-}
-
-/**
- * Resolve which controller prefix owns a reply mailbox publication.
- *
- * Reply cues may carry their data explicitly or only inside the reply serder.
- */
-function replyMailboxPre(cue: ReplyCue): string | null {
-  const data = cue.data
-    ?? (cue.serder?.ked?.a as Record<string, unknown> | undefined);
-  const pre = data?.i;
-  return typeof pre === "string" ? pre : null;
 }

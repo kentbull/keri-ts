@@ -1,4 +1,5 @@
 import { Ilks, type SerderKERI } from "cesr-ts";
+import { run } from "effection";
 import {
   type HostedRouteResolution,
   inspectCesrRequest,
@@ -20,7 +21,9 @@ const NONE_HOSTED_ROUTE: HostedRouteResolution = {
 export function classifyGenericCesrIngressRoute(
   context: ProtocolRequestContext,
 ): ProtocolRoute | null {
-  if (!context.runtime || (context.method !== "POST" && context.method !== "PUT")) {
+  if (
+    !context.runtime || (context.method !== "POST" && context.method !== "PUT")
+  ) {
     return null;
   }
   if (context.genericIngress?.kind === "ambiguous") {
@@ -45,7 +48,9 @@ export function classifyCesrIngressRoute(
   hosted: HostedRouteResolution,
   serder: Pick<SerderKERI, "ilk" | "route" | "ked">,
 ): CesrIngressRoute {
-  const mailboxAid = hosted.kind === "one" ? hosted.endpoint?.eid ?? null : null;
+  const mailboxAid = hosted.kind === "one"
+    ? hosted.endpoint?.eid ?? null
+    : null;
   const witnessHab = context.policy.witnessHab;
 
   if (
@@ -102,25 +107,31 @@ export async function handleGenericCesrIngress(
 
   switch (ingressRoute.kind) {
     case "witnessLocalIngress":
-      processWitnessIngress(runtime, ingressRoute.witnessHab, bytes, {
-        local: true,
+      await run(function*() {
+        yield* processWitnessIngress(runtime, ingressRoute.witnessHab, bytes, {
+          local: true,
+        });
       });
       return jsonNoContentResponse();
     case "runtimeIngress":
-      processRuntimeRequest(
-        runtime,
-        bytes,
-        ingressRoute.mailboxAid,
-        context.policy.serviceHab,
-      );
+      await run(function*() {
+        yield* processRuntimeRequest(
+          runtime,
+          bytes,
+          ingressRoute.mailboxAid,
+          context.policy.serviceHab,
+        );
+      });
       return jsonNoContentResponse();
     case "mailboxQueryStream":
-      processRuntimeRequest(
-        runtime,
-        bytes,
-        ingressRoute.mailboxAid,
-        context.policy.serviceHab,
-      );
+      await run(function*() {
+        yield* processRuntimeRequest(
+          runtime,
+          bytes,
+          ingressRoute.mailboxAid,
+          context.policy.serviceHab,
+        );
+      });
       if (!ingressRoute.pre) {
         return textResponse("Mailbox query is missing i", 400);
       }
@@ -139,17 +150,22 @@ export async function handleGenericCesrIngress(
         },
       );
     case "runtimeIngressWithKsnReplay":
-      {
-        const emissions = processRuntimeRequest(
+      await run(function*() {
+        const current = yield* processRuntimeRequest(
           runtime,
           bytes,
           ingressRoute.mailboxAid,
           context.policy.serviceHab,
         );
         if (ingressRoute.pre) {
-          publishQueryCatchupReplay(runtime, emissions, ingressRoute.pre);
+          yield* publishQueryCatchupReplay(
+            runtime,
+            current,
+            ingressRoute.pre,
+            context.policy.serviceHab,
+          );
         }
-      }
+      });
       return jsonNoContentResponse();
   }
 }

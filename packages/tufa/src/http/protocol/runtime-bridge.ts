@@ -1,4 +1,5 @@
 import { concatBytes } from "cesr-ts";
+import type { Operation } from "effection";
 import { type AgentRuntime, type CueEmission, type Hab, settleRuntimeIngress } from "keri-ts/runtime";
 
 /**
@@ -8,16 +9,16 @@ import { type AgentRuntime, type CueEmission, type Hab, settleRuntimeIngress } f
  * cue handling so `/fwd` authorization can stay tied to the mailbox endpoint
  * that actually received the request.
  */
-export function processRuntimeRequest(
+export function* processRuntimeRequest(
   runtime: AgentRuntime,
   bytes: Uint8Array,
   mailboxAid: string | null,
   serviceHab?: Hab,
-): CueEmission[] {
+): Operation<CueEmission[]> {
   runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
     settleRuntimeIngress(runtime, [bytes]);
   });
-  return drainRuntimeCues(runtime, serviceHab);
+  return yield* drainRuntimeCues(runtime, serviceHab);
 }
 
 /**
@@ -27,10 +28,10 @@ export function processRuntimeRequest(
  * layer owns mailbox publication side effects needed before HTTP responses are
  * finalized.
  */
-export function drainRuntimeCues(
+export function* drainRuntimeCues(
   runtime: AgentRuntime,
   serviceHab?: Hab,
-): CueEmission[] {
+): Operation<CueEmission[]> {
   const habitats = [...runtime.hby.habs.values()];
   const hab = serviceHab
     ?? (habitats.length === 1 ? habitats[0] ?? null : null);
@@ -40,7 +41,7 @@ export function drainRuntimeCues(
 
   const emissions: CueEmission[] = [];
   for (const emission of hab.processCuesIter(runtime.cues)) {
-    runtime.mailboxDirector.handleEmission(emission);
+    yield* runtime.respondant.sendWithHab(emission, hab);
     emissions.push(emission);
   }
   return emissions;
@@ -53,20 +54,27 @@ export function drainRuntimeCues(
  * that the remote controller is ahead but still needs replay material quickly
  * enough to verify the new signer state.
  */
-export function publishQueryCatchupReplay(
+export function* publishQueryCatchupReplay(
   runtime: AgentRuntime,
   emissions: CueEmission[],
   pre: string,
-): void {
+  serviceHab?: Hab,
+): Operation<void> {
   let destination: string | null = null;
+  let sourceHab: Hab | null = serviceHab ?? null;
   for (const emission of emissions) {
     if (emission.kind !== "wire" || emission.cue.kin !== "reply") {
       continue;
     }
-    if (emission.cue.route !== "/ksn" || typeof emission.cue.dest !== "string") {
+    if (
+      emission.cue.route !== "/ksn" || typeof emission.cue.dest !== "string"
+    ) {
       continue;
     }
     destination = emission.cue.dest;
+    sourceHab = emission.cue.src
+      ? runtime.hby.habs.get(emission.cue.src) ?? serviceHab ?? null
+      : serviceHab ?? null;
     break;
   }
   if (!destination) {
@@ -82,9 +90,17 @@ export function publishQueryCatchupReplay(
     return;
   }
 
-  runtime.mailboxDirector.publish(
-    destination,
-    "/replay",
-    Uint8Array.from(concatBytes(...parts)),
-  );
+  const message = Uint8Array.from(concatBytes(...parts));
+  if (!sourceHab) {
+    return;
+  }
+  try {
+    yield* runtime.poster.sendBytes(sourceHab, {
+      recipient: destination,
+      topic: "/replay",
+      message,
+    });
+  } catch {
+    // Keep `/ksn` catch-up replay best-effort and let later polling converge.
+  }
 }

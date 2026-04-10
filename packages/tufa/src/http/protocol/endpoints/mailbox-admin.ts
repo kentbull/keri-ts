@@ -5,10 +5,10 @@ import {
   type Hab,
   readMailboxAdminRequest,
   Roles,
+  settleRuntimeIngress,
   ValidationError,
 } from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
-import { processRuntimeRequest } from "../runtime-bridge.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
 /** Classify mailbox-admin requests before witness or generic ingress routing. */
@@ -68,9 +68,14 @@ export async function handleMailboxAdmin(
   }
 
   const { cid, role, expected } = validation;
-  processRuntimeRequest(runtime, bytes, mailboxAid, serviceHab);
+  settleMailboxAdminIngress(runtime, bytes, mailboxAid);
 
-  const acceptance = confirmMailboxAuthorization(runtime, cid, mailboxAid, expected);
+  const acceptance = confirmMailboxAuthorization(
+    runtime,
+    cid,
+    mailboxAid,
+    expected,
+  );
   if (acceptance instanceof Response) {
     return acceptance;
   }
@@ -112,10 +117,16 @@ export function validateMailboxAuthorizationReply(
   const role = typeof data?.role === "string" ? data.role : null;
   const eid = typeof data?.eid === "string" ? data.eid : null;
   if (!cid || !role || !eid) {
-    return textResponse("Mailbox authorization reply is missing cid/role/eid", 400);
+    return textResponse(
+      "Mailbox authorization reply is missing cid/role/eid",
+      400,
+    );
   }
   if (role !== Roles.mailbox) {
-    return textResponse("Mailbox authorization reply must use role=mailbox", 400);
+    return textResponse(
+      "Mailbox authorization reply must use role=mailbox",
+      400,
+    );
   }
   if (eid !== mailboxAid) {
     return textResponse(
@@ -139,4 +150,15 @@ export function confirmMailboxAuthorization(
     return textResponse("Mailbox authorization reply was not accepted", 403);
   }
   return null;
+}
+
+/** Settle mailbox-admin CESR ingress without responder-side cue forwarding. */
+export function settleMailboxAdminIngress(
+  runtime: AgentRuntime,
+  bytes: Uint8Array,
+  mailboxAid: string,
+): void {
+  runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
+    settleRuntimeIngress(runtime, [bytes]);
+  });
 }

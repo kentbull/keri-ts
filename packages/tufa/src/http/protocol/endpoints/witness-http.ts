@@ -1,3 +1,4 @@
+import { run } from "effection";
 import {
   type AgentRuntime,
   type Hab,
@@ -24,11 +25,20 @@ export function classifyWitnessHttpRoute(
   }
 
   const relativePath = context.hosted?.relativePath ?? context.pathname;
-  if ((context.method === "POST" || context.method === "PUT") && relativePath === "/receipts") {
-    return { kind: "witnessReceiptsPost", witnessHab: context.policy.witnessHab };
+  if (
+    (context.method === "POST" || context.method === "PUT")
+    && relativePath === "/receipts"
+  ) {
+    return {
+      kind: "witnessReceiptsPost",
+      witnessHab: context.policy.witnessHab,
+    };
   }
   if (context.method === "GET" && relativePath === "/receipts") {
-    return { kind: "witnessReceiptsGet", witnessHab: context.policy.witnessHab };
+    return {
+      kind: "witnessReceiptsGet",
+      witnessHab: context.policy.witnessHab,
+    };
   }
   if (context.method === "GET" && relativePath === "/query") {
     return { kind: "witnessQueryGet", witnessHab: context.policy.witnessHab };
@@ -47,7 +57,9 @@ export async function handleWitnessReceiptPost(
     return textResponse("Unacceptable content type.", 406);
   }
 
-  const result = witnessReceiptPost(runtime, witnessHab, bytes);
+  const result = await run(function*() {
+    return yield* witnessReceiptPost(runtime, witnessHab, bytes);
+  });
   if (result.kind === "accepted") {
     return cesrResponse(result.body, result.status);
   }

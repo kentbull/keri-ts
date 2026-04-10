@@ -79,11 +79,12 @@ export function* runHostKernel(
     serviceHab: spec.protocolPolicy.serviceHab ?? spec.serviceHab,
     hostedPrefixes: spec.protocolPolicy.hostedPrefixes ?? hostedPrefixes,
   };
+  const sink = runtime.responder.forHab(spec.serviceHab);
 
   for (const hab of seedHabs) {
     yield* processRuntimeTurn(runtime, {
       hab,
-      sink: runtime.mailboxDirector,
+      sink,
       pollMailbox: false,
     });
   }
@@ -97,7 +98,7 @@ export function* runHostKernel(
   const runtimeTask = yield* spawn(function*() {
     yield* runAgentRuntime(runtime, {
       hab: spec.serviceHab,
-      sink: runtime.mailboxDirector,
+      sink,
     });
   });
   const companionTasks: Task<void>[] = [];
