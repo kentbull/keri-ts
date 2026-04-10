@@ -27,11 +27,20 @@ been sensitive to runtime drift.
 
 Local macOS note:
 
-- `packages/keri/scripts/setup_lmdb_v1.sh` also applies the repo's Deno cleanup
-  hook workaround before rebuilding `lmdb-js`
+- `packages/keri/scripts/setup_lmdb_v1.sh` rebuilds every discovered local
+  `lmdb` package tree that Node or Deno may actually load, including Deno's
+  `.deno/.../node_modules/lmdb` copy when present
+- this is an addon-provenance safeguard, not a global-install requirement:
+  Deno may resolve `npm:lmdb` from its shadow package tree under
+  `node_modules/.deno/...`, and that tree can otherwise keep using an optional
+  prebuilt native addon even after top-level `node_modules/lmdb` has been
+  rebuilt successfully
+- the script intentionally resolves `npm:lmdb` through Deno itself so the
+  runtime-selected package directory is materialized and rebuilt, not just the
+  package directory we assume should be used
 - `deno task test` triggers that rebuild automatically through the KERI test
   group runner on macOS
-- the cleanup-hook patch is the upstream candidate
+- the cleanup-hook source patch comes from the forked `lmdb-js` dependency
 - if the macOS data-v1 lock path still fails with `ENOSPC`, treat it as a host
   OS/resource-exhaustion problem to document separately, not as justification
   for weakening LMDB locking semantics in `keri-ts`

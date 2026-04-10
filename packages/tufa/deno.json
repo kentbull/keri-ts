@@ -5,6 +5,8 @@
     ".": "./mod.ts"
   },
   "tasks": {
+    "setup": "deno task setup:compat-lmdb",
+    "setup:compat-lmdb": "cd ../keri && deno task setup:compat-lmdb",
     "version:generate": "deno run -A ../../scripts/generate_versions.ts --only tufa",
     "version:check": "deno run -A ../../scripts/generate_versions.ts --check --only tufa",
     "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
