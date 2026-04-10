@@ -11,7 +11,17 @@ import type { MailboxDirector } from "./mailbox-director.ts";
  * KERIpy correspondence:
  * - this is the local analogue of `Respondant` for reply/replay/receipt-style
  *   cues
+ * - `BaseHab.processCuesIter()` interprets the cue; `Respondant` delivers the
+ *   resulting bytes
  * - mailbox-query `stream` cues stay with mailbox storage/query coordination
+ *
+ * Boundary rule:
+ * - this class owns non-`stream` cue delivery
+ * - `MailboxDirector` owns mailbox storage and `stream` cue correlation
+ * - if a future change starts treating generic `reply` / `replay` /
+ *   `receipt`-family cues as local mailbox writes, that change is regressing
+ *   back toward the bug where mailbox code was incorrectly acting like
+ *   KERIpy's `Respondant`
  */
 export class Respondant implements CueSink {
   readonly hby: Habery;

@@ -79,7 +79,7 @@ export function* runHostKernel(
     serviceHab: spec.protocolPolicy.serviceHab ?? spec.serviceHab,
     hostedPrefixes: spec.protocolPolicy.hostedPrefixes ?? hostedPrefixes,
   };
-  const sink = runtime.responder.forHab(spec.serviceHab);
+  const sink = runtime.respondant.forHab(spec.serviceHab);
 
   for (const hab of seedHabs) {
     yield* processRuntimeTurn(runtime, {

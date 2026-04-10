@@ -5,6 +5,12 @@
  * - gathers responsibilities that KERIpy spreads across `Mailboxer`,
  *   mailbox iterables, and indirect-mode query handling
  *
+ * Boundary rule:
+ * - this module is mailbox storage/query infrastructure, not the general
+ *   responder path
+ * - non-`stream` cue delivery such as `reply`, `replay`, `receipt`, and
+ *   `witness` belongs in `Respondant`
+ *
  * Current `keri-ts` difference:
  * - one runtime host receives an explicit mailbox sidecar instead of
  *   discovering mailbox storage through `Habery`
@@ -29,6 +35,11 @@ const textEncoder = new TextEncoder();
  *   durable remote cursor state in `tops.`
  * - publish only explicitly forwarded mailbox payloads such as authorized
  *   `/fwd` deliveries
+ *
+ * Non-responsibilities:
+ * - do not absorb generic non-`stream` cue emissions as implicit local mailbox
+ *   side effects
+ * - do not replace `Respondant` / `Poster` endpoint delivery
  *
  * KERIpy correspondence:
  * - coordinates the storage/query slice around `Mailboxer` and

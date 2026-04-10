@@ -1317,7 +1317,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
       );
       yield* processRuntimeTurn(runtime, {
         hab,
-        sink: runtime.responder.forHab(hab),
+        sink: runtime.respondant.forHab(hab),
       });
     } finally {
       yield* hby.close();
@@ -1335,7 +1335,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
-        sink: runtime.responder.forHab(hab),
+        sink: runtime.respondant.forHab(hab),
       });
     });
     const serverTask = yield* spawn(function*() {

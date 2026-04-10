@@ -146,7 +146,7 @@ export function* createAgentRuntime(
     mailboxer ? { mailboxer } : {},
   );
   const poster = new Poster(hby, { mailboxer });
-  const responder = new Respondant(hby, { poster, mailboxDirector });
+  const respondant = new Respondant(hby, { poster, mailboxDirector });
   if (mailboxer) {
     reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
   }
@@ -178,7 +178,7 @@ export function* createAgentRuntime(
     oobiery,
     authenticator,
     mailboxDirector,
-    responder,
+    respondant,
     mailboxPoller,
     poster,
     delegating,
