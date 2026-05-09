@@ -4,7 +4,11 @@ import type { CueEmission } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
-import { createAgentRuntime, processRuntimeTurn, processRuntimeUntil } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  processRuntimeTurn,
+  processRuntimeUntil,
+} from "../agent-runtime.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../query-transport.ts";
 import { type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
@@ -114,7 +118,9 @@ function delegateWitnessLogsQuery(
   witness: string,
 ): CueEmission {
   if (!serder.pre || !serder.snh) {
-    throw new ValidationError("Delegated event is missing pre or sn for query.");
+    throw new ValidationError(
+      "Delegated event is missing pre or sn for query.",
+    );
   }
   const query = { fn: "0", s: serder.snh };
   return {
@@ -147,6 +153,7 @@ export function* delegateConfirmCommand(
     code: args.code as string[] | undefined,
     codeTime: args.codeTime as string | undefined,
   };
+  const interactionApproval = confirmArgs.interact ?? false;
 
   if (!confirmArgs.name) {
     throw new ValidationError("Name is required and cannot be empty");
@@ -155,7 +162,7 @@ export function* delegateConfirmCommand(
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const hby = yield* setupHby(
       confirmArgs.name!,
       confirmArgs.base ?? "",
@@ -189,7 +196,9 @@ export function* delegateConfirmCommand(
 
         const pending = pendingDelegations(hby, hab.pre);
         if (pending.length === 0) {
-          throw new ValidationError(`No delegated events are awaiting approval for ${hab.pre}.`);
+          throw new ValidationError(
+            `No delegated events are awaiting approval for ${hab.pre}.`,
+          );
         }
         if (pending.length > 1 && !confirmArgs.auto) {
           throw new ValidationError(
@@ -207,7 +216,7 @@ export function* delegateConfirmCommand(
 
         for (const serder of selected) {
           const anchor = anchorData(serder);
-          if (confirmArgs.interact) {
+          if (interactionApproval) {
             hab.interact({ data: [anchor] });
           } else {
             hab.rotate({ data: [anchor] });
@@ -222,15 +231,13 @@ export function* delegateConfirmCommand(
           }
 
           const approving = hby.db.getEvtSerder(hab.pre, hab.kever!.said);
-          if (!approving?.sner || !approving.said || !serder.pre || !serder.said) {
-            throw new ValidationError("Approving event material is incomplete.");
+          if (
+            !approving?.sner || !approving.said || !serder.pre || !serder.said
+          ) {
+            throw new ValidationError(
+              "Approving event material is incomplete.",
+            );
           }
-
-          hby.db.aess.pin(dgKey(serder.pre, serder.said), [
-            approving.sner,
-            new Diger({ qb64: approving.said }),
-          ]);
-          hab.kvy.processEscrowDelegables();
           const witnesses = delegateWitnesses(hby, serder).sort();
           const selectedWitness = witnesses[0];
           if (selectedWitness) {
@@ -256,8 +263,19 @@ export function* delegateConfirmCommand(
           }
           yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
 
+          // Match KERIpy sequencing: only record the approving seal and retry
+          // delegated unescrow after the delegate event has been observed as
+          // locally committed through the witness-backed replay path.
+          hby.db.aess.pin(dgKey(serder.pre, serder.said), [
+            approving.sner,
+            new Diger({ qb64: approving.said }),
+          ]);
+          hab.kvy.processEscrowDelegables();
+
           if (serder.pre && serder.said) {
-            const stillPending = hby.db.delegables.get([serder.pre]).includes(serder.said);
+            const stillPending = hby.db.delegables.get([serder.pre]).includes(
+              serder.said,
+            );
             if (stillPending) {
               throw new ValidationError(
                 `Delegated event ${serder.said} remained in delegables escrow after approval.`,
@@ -266,9 +284,9 @@ export function* delegateConfirmCommand(
           }
 
           console.log(
-            `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${serder.pre ?? ""} using ${
-              confirmArgs.interact ? "ixn" : "rot"
-            }.`,
+            `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${
+              serder.pre ?? ""
+            } using ${interactionApproval ? "ixn" : "rot"}.`,
           );
         }
       } finally {

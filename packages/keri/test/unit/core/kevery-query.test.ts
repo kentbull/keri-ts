@@ -1040,6 +1040,45 @@ Deno.test("Kevery.processQuery replays logs from fn=0 when q.fn is omitted", asy
   });
 });
 
+Deno.test("Kevery.processQuery accepts KERIpy-style numeric logs ordinals", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-logs-qry-numeric-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kvy = new Kevery(hby.db, { local: true });
+
+      const serder = makeQuerySerder("logs", {
+        i: hab.pre,
+        src: hab.pre,
+        s: 0,
+        fn: 0,
+      });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      if (!cue || cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(cue.pre, hab.pre);
+      assertEquals(cue.dest, hab.pre);
+      assertEquals(cue.msgs.length > 0, true);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Kevery.processQuery replays logs from the requested first-seen ordinal", async () => {
   await run(function*() {
     const hby = yield* createHabery({

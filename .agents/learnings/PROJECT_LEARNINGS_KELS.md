@@ -68,40 +68,43 @@ and KERIpy interoperability.
     state via `db.getKever(...)`, not only the hot `db.kevers` cache, or
     reopened witnesses will falsely escrow remote accepted subjects as
     `missingKever` and fail to emit `/replay` or `/reply`.
-23. The remaining runtime gaps are narrower now: broader exchange/forwarding
+23. Delegator-side `delegate confirm` parity is sequencing-sensitive: do not pin
+    local `aess` or force delegated unescrow until the delegate event has been
+    observed as locally committed through the witness-backed confirm path.
+24. The remaining runtime gaps are narrower now: broader exchange/forwarding
     route breadth, the stale/timeout continuation tail, and the last high-value
     DB parity promotions.
-24. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
+25. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
     partially signed `exn` persistence, challenge flows are live, and mailbox
     forwarding/polling now sit on explicit shared provider storage plus durable
     `tops.` cursors.
-25. The mailbox mental model must stay explicit: provider mailbox storage is
+26. The mailbox mental model must stay explicit: provider mailbox storage is
     shared runtime-composed state above `Habery`, while remote topic cursors are
     durable habery state in `tops.`.
-26. `tufa agent` has two independent compatibility seams: CLI flag semantics
+27. `tufa agent` has two independent compatibility seams: CLI flag semantics
     and packaged Node runtime behavior. Release confidence requires smoke
     coverage against the packed artifact, not just Deno source runs.
-27. Honest CLI/bootstrap tests must use explicit file-path flags such as
+28. Honest CLI/bootstrap tests must use explicit file-path flags such as
     `--config-dir` / `--config-file` rather than hidden default-path mutation.
-28. End-to-end controller-to-controller coverage must respect single-store
+29. End-to-end controller-to-controller coverage must respect single-store
     ownership. Do not run CLI commands against the same store a live `tufa agent` is currently hosting.
-29. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
+30. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
     selectors over ad hoc LMDB scripts or whole-store dumps.
-30. The host mental model is one listener/runtime per Habery or command
+31. The host mental model is one listener/runtime per Habery or command
     invocation with explicit hosted-prefix filtering. A multi-AID bug is a
     selection/bootstrap bug, not one-listener-per-AID topology.
-31. AEID is keeper auth/encryption state, not an ordinary hosted or user-facing
+32. AEID is keeper auth/encryption state, not an ordinary hosted or user-facing
     AID. Treat signatory/AEID-related identities as non-user-facing by default.
-32. Endpoint-role capability and startup seeding are separate concerns. The
+33. Endpoint-role capability and startup seeding are separate concerns. The
     presence of `Roles.agent` in protocol code is not, by itself, a reason to
     auto-create self `agent` roles at startup.
-33. Alias-scoped config `dt` + `curls` is the canonical controller endpoint
+34. Alias-scoped config `dt` + `curls` is the canonical controller endpoint
     bootstrap path; localhost synthesis is a fallback only when config and
     accepted endpoint state are both missing.
-34. `MailboxPoller` now has an honest finite/infinite split: bounded
+35. `MailboxPoller` now has an honest finite/infinite split: bounded
     `processOnce()` returns typed batches, while long-lived `pollDo()` stays
     sink-based for concurrent workers.
-35. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
+36. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
     library/runtime surface, not the home of host composition, command
     registration, or transport middleware policy.
 

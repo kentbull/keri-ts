@@ -31,6 +31,10 @@ interface EscrowReplayCall {
   said: string;
 }
 
+interface EscrowReplayEnvelopeCall extends EscrowReplayCall {
+  eager: boolean | undefined;
+}
+
 function captureEscrowReplays(
   kvy: Kevery,
   run: () => void,
@@ -42,6 +46,35 @@ function captureEscrowReplays(
     "replayEscrowEntry",
     ((escrow: string, pre: string, on: number | null, said: string) => {
       calls.push({ escrow, pre, on, said });
+    }) as never,
+    () => {
+      run();
+      return calls;
+    },
+  );
+}
+
+function captureEscrowReplayEnvelopes(
+  kvy: Kevery,
+  run: () => void,
+): EscrowReplayEnvelopeCall[] {
+  const calls: EscrowReplayEnvelopeCall[] = [];
+  const target = kvy as unknown as Record<string, unknown>;
+  return withPatchedMethod(
+    target,
+    "decideEvent",
+    ((envelope: {
+      serder: { pre: string | null; said: string | null };
+      eager?: boolean;
+    }) => {
+      calls.push({
+        escrow: "captured",
+        pre: envelope.serder.pre ?? "",
+        on: null,
+        said: envelope.serder.said ?? "",
+        eager: envelope.eager,
+      });
+      return { kind: "reject", code: "unexpected" };
     }) as never,
     () => {
       run();
@@ -2169,6 +2202,82 @@ Deno.test("Kevery.processEscrowDelegables replays stored `delegables` entries th
       assertEquals(
         captureEscrowReplays(kvy, () => kvy.processEscrowDelegables()),
         [{ escrow: "delegables", pre: hab.pre, on: null, said: "Edel" }],
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery escrow replay only enables eager delegation lookup for KERIpy-style ordinal escrows", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-eager-escrow-replay-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kever = hab.kever;
+      assertExists(kever);
+      const said = kever.said;
+      if (!said) {
+        throw new Error("Expected accepted inception SAID for escrow replay test.");
+      }
+
+      hby.db.pses.addOn(hab.pre, 0, said);
+      hby.db.pwes.addOn(hab.pre, 0, said);
+      hby.db.pdes.addOn(hab.pre, 0, said);
+      hby.db.delegables.add([hab.pre], said);
+
+      const kvy = new Kevery(hby.db);
+      const init = (kvy as unknown as {
+        makeKeverEventInit(
+          envelope: {
+            serder: SerderKERI;
+            sigers: Siger[];
+            wigers: Siger[];
+            frcs: [];
+            sscs: [];
+            ssts: [];
+            local: boolean;
+            eager?: boolean;
+          },
+          local: boolean,
+        ): { eager?: boolean };
+      }).makeKeverEventInit({
+        serder: kever.serder,
+        sigers: [],
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+        eager: true,
+      }, false);
+      assertEquals(init.eager, true);
+
+      assertEquals(
+        captureEscrowReplayEnvelopes(kvy, () => kvy.processEscrowPartialSigs()),
+        [{ escrow: "captured", pre: hab.pre, on: null, said, eager: true }],
+      );
+      assertEquals(
+        captureEscrowReplayEnvelopes(kvy, () => kvy.processEscrowPartialWigs()),
+        [{ escrow: "captured", pre: hab.pre, on: null, said, eager: true }],
+      );
+      assertEquals(
+        captureEscrowReplayEnvelopes(kvy, () => kvy.processEscrowPartialDels()),
+        [{ escrow: "captured", pre: hab.pre, on: null, said, eager: true }],
+      );
+      assertEquals(
+        captureEscrowReplayEnvelopes(kvy, () => kvy.processEscrowDelegables()),
+        [{ escrow: "captured", pre: hab.pre, on: null, said, eager: false }],
       );
     } finally {
       yield* hby.close(true);

@@ -1,8 +1,14 @@
 // @file-test-lane app-stateful-a
 
 import { type Operation, run } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertStringIncludes,
+} from "jsr:@std/assert";
+import { Prefixer } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
 import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
@@ -11,7 +17,14 @@ import { interactCommand } from "../../../src/app/cli/interact.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
-import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
+import { delcept } from "../../../src/core/protocol-eventing.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
+import {
+  assertOperationThrows,
+  CLITestHarness,
+  createMockArgs,
+} from "../../../test/utils.ts";
 
 interface CmdResult {
   code: number;
@@ -20,7 +33,9 @@ interface CmdResult {
 }
 
 function extractPrefixLine(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
+  const line = output.split(/\r?\n/).find((line) =>
+    line.trim().startsWith("Prefix")
+  );
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -28,7 +43,9 @@ function extractPrefixLine(output: string): string {
 }
 
 function extractRawSignature(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
+  const line = output.split(/\r?\n/).find((line) =>
+    /^\d+\.\s+/.test(line.trim())
+  );
   if (!line) {
     throw new Error(`Unable to parse signature output:\n${output}`);
   }
@@ -327,7 +344,7 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
     })
   );
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -353,7 +370,7 @@ Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async
   );
 
   await assertOperationThrows(
-    (function*() {
+    (function* () {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
         readonly: true,
         skipConfig: true,
@@ -377,7 +394,7 @@ Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores"
     })
   );
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -389,6 +406,126 @@ Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores"
       yield* hby.close();
     }
   });
+});
+
+Deno.test("CLI - delegate confirm does not pin aess or accept the delegate before replay-backed commitment", async () => {
+  const name = `delegate-confirm-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
+  const witnessPort = 9300 + Math.floor(Math.random() * 1000);
+  const controller = new AbortController();
+  const server = Deno.serve({
+    hostname: "127.0.0.1",
+    port: witnessPort,
+    signal: controller.signal,
+  }, () => new Response(null, { status: 204 }));
+
+  let delegatePre = "";
+  let delegateSaid = "";
+
+  try {
+    await run(() =>
+      initCommand({
+        name,
+        headDirPath,
+        nopasscode: true,
+      })
+    );
+
+    await run(function* () {
+      const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+        skipConfig: true,
+      });
+      const templateHby = yield* createHabery({
+        name: `delegate-confirm-template-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+      });
+
+      try {
+        const witness = hby.makeHab("witness", undefined, {
+          transferable: false,
+          icount: 1,
+          isith: "1",
+          toad: 0,
+        });
+        hby.db.locs.pin([witness.pre, "http"], {
+          url: `http://127.0.0.1:${witnessPort}`,
+        });
+        const delegator = hby.makeHab("delegator", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+        });
+
+        const template = templateHby.makeHab("template", undefined, {
+          transferable: true,
+          icount: 1,
+          isith: "1",
+          ncount: 1,
+          nsith: "1",
+          toad: 0,
+        });
+        const dip = delcept(
+          [template.kever!.verfers[0]!.qb64],
+          delegator.pre,
+          {
+            ndigs: [template.kever!.ndigers[0]!.qb64],
+            wits: [witness.pre],
+            toad: 1,
+          },
+        );
+        if (!dip.pre || !dip.said) {
+          throw new Error(
+            "Expected delegated inception serder to include pre and said.",
+          );
+        }
+        delegatePre = dip.pre;
+        delegateSaid = dip.said;
+        hby.db.putEvtSerder(dip.pre, dip.said, dip.raw);
+        hby.db.sigs.put(dgKey(dip.pre, dip.said), template.sign(dip.raw, true));
+        hby.db.wigs.put(dgKey(dip.pre, dip.said), witness.sign(dip.raw, true));
+        hby.db.wits.put(dgKey(dip.pre, dip.said), [
+          new Prefixer({ qb64: witness.pre }),
+        ]);
+        hby.db.delegables.add([dip.pre], dip.said);
+      } finally {
+        yield* templateHby.close(true);
+        yield* hby.close();
+      }
+    });
+
+    await assertOperationThrows(
+      delegateConfirmCommand(createMockArgs({
+        name,
+        headDirPath,
+        alias: "delegator",
+      })),
+      "Runtime did not converge within 128 turns.",
+    );
+
+    await run(function* () {
+      const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
+        readonly: true,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      try {
+        assertEquals(Boolean(hby.db.getKever(delegatePre)), false);
+        assertEquals(
+          Boolean(hby.db.aess.get(dgKey(delegatePre, delegateSaid))),
+          false,
+        );
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    controller.abort();
+    await server.finished;
+  }
 });
 
 Deno.test("CLI - default loglevel suppresses debug LMDB traces", async () => {
@@ -584,7 +721,7 @@ Deno.test("CLI - sign, verify, rotate, and interact commands work for one persis
     name,
     headDirPath,
     alias,
-    data: ["{\"anchor\":\"acdc\"}"],
+    data: ['{"anchor":"acdc"}'],
   }));
   assertEquals(
     interact.code,
