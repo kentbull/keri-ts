@@ -8,7 +8,7 @@ import { MailboxPoller } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { makeExchangeSerder } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
 import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
 import {
@@ -18,6 +18,14 @@ import {
   seedLocalController,
   waitForCondition,
 } from "./mailbox-runtime-support.ts";
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
 
 /**
  * Proves the request-open timeout is separate from the SSE read duration.

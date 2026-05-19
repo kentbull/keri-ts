@@ -212,18 +212,20 @@ function extractLastNonEmptyLine(output: string): string {
 }
 
 /**
- * Resolves the package root used when invoking the local `tufa` CLI entrypoint.
+ * Resolves the workspace root used when invoking the local `tufa` CLI
+ * entrypoint.
  */
 function packageRoot(): string {
-  return new URL("../../../", import.meta.url).pathname;
+  return new URL("../../../../../", import.meta.url).pathname;
 }
 
 /**
  * Executes the local `tufa` CLI from source rather than an installed binary.
  *
  * Interop tests compare installed KERIpy tooling to the in-repo implementation
- * under development, so they intentionally run `deno run mod.ts ...` in the
- * package root instead of assuming a globally installed `tufa`.
+ * under development, so they intentionally run
+ * `deno run packages/tufa/mod.ts ...` in the workspace root instead of
+ * assuming a globally installed `tufa`.
  */
 async function runTufa(
   args: string[],
@@ -231,8 +233,8 @@ async function runTufa(
   cwd: string,
 ): Promise<CmdResult> {
   return await runCmd(
-    "deno",
-    ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+    Deno.execPath(),
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     env,
     cwd,
   );
@@ -276,7 +278,7 @@ async function detectDenoDir(): Promise<string | undefined> {
   }
 
   try {
-    const out = await new Deno.Command("deno", {
+    const out = await new Deno.Command(Deno.execPath(), {
       args: ["info", "--json"],
       stdout: "piped",
       stderr: "null",
@@ -436,8 +438,14 @@ function spawnTufaProcess(
   args: string[],
   ctx: ScenarioContext,
 ): SpawnedChild {
-  return new Deno.Command("deno", {
-    args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
+  return new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "--allow-all",
+      "--unstable-ffi",
+      "packages/tufa/mod.ts",
+      ...args,
+    ],
     env: ctx.env,
     cwd: ctx.packageRoot,
     stdout: "piped",

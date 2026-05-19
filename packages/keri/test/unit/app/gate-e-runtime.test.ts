@@ -1,8 +1,9 @@
 // @file-test-lane runtime-slow
 
-import { run, spawn } from "effection";
+import { action, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { Diger, Prefixer, Seqner, SerderKERI } from "../../../../cesr/mod.ts";
+import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
   createAgentRuntime,
   enqueueOobi,
@@ -21,11 +22,15 @@ import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { fetchResponseHandle } from "../../../src/app/httping.ts";
+import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "../../../src/app/oobiery.ts";
-import { startServer } from "../../../src/app/server.ts";
+import { queryTransportSink } from "../../../src/app/query-transport.ts";
+import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { makeReplySerder } from "../../../src/core/messages.ts";
+import { reply as makeReplySerder } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { reserveTcpPort } from "../../http-test-support.ts";
@@ -1283,7 +1288,7 @@ Deno.test("Gate E - tufa agent host stays protocol-only", async () => {
   });
 });
 
-Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries", async () => {
+Deno.test("Gate E - mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply` and `/replay` only through `mbx`", async () => {
   const name = `gate-e-mailbox-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-gate-e-mailbox-${crypto.randomUUID()}`;
   const alias = "alice";
@@ -1317,7 +1322,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
       );
       yield* processRuntimeTurn(runtime, {
         hab,
-        sink: runtime.mailboxDirector,
+        sink: runtime.respondant.forHab(hab),
       });
     } finally {
       yield* hby.close();
@@ -1335,7 +1340,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
-        sink: runtime.mailboxDirector,
+        sink: runtime.respondant.forHab(hab),
       });
     });
     const serverTask = yield* spawn(function*() {
@@ -1355,7 +1360,7 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
         body: textDecoder.decode(ksnQuery),
       });
       assertEquals(posted.status, 204);
-      yield* textOp(posted);
+      assertEquals(posted.headers.get("Content-Type"), "application/json");
 
       const mailboxQuery = hab.query(
         hab.pre,
@@ -1363,20 +1368,388 @@ Deno.test("Gate E - mailbox host streams stored reply topics for `mbx` queries",
         { topics: { "/reply": 0 } },
         "mbx",
       );
-      const streamed = yield* fetchOp(baseUrl, {
+      const { response: streamed, controller } = yield* fetchResponseHandle(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(mailboxQuery),
       });
       assertEquals(streamed.status, 200);
-      const body = yield* textOp(streamed);
+      const body = yield* readMailboxSseBody(streamed, controller, {
+        idleTimeoutMs: 500,
+        maxDurationMs: 5_000,
+      });
       assertStringIncludes(body, "event: /reply");
       assertStringIncludes(body, `/ksn/${hab.pre}`);
+
+      const logsQuery = hab.query(hab.pre, hab.pre, { s: "0", fn: "0" }, "logs");
+      const logsPosted = yield* fetchOp(baseUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/cesr" },
+        body: textDecoder.decode(logsQuery),
+      });
+      assertEquals(logsPosted.status, 204);
+      assertEquals(logsPosted.headers.get("Content-Type"), "application/json");
+
+      const replayQuery = hab.query(
+        hab.pre,
+        hab.pre,
+        { topics: { "/replay": 0 } },
+        "mbx",
+      );
+      const { response: replayStream, controller: replayController } = yield* fetchResponseHandle(baseUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/cesr" },
+        body: textDecoder.decode(replayQuery),
+      });
+      assertEquals(replayStream.status, 200);
+      const replayBody = yield* readMailboxSseBody(replayStream, replayController, {
+        idleTimeoutMs: 500,
+        maxDurationMs: 5_000,
+      });
+      assertStringIncludes(replayBody, "event: /replay");
+      assertStringIncludes(replayBody, hab.pre);
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
       yield* runtime.close();
       yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Gate E - witness anchor logs queries forward `/replay` to a separate relay mailbox", async () => {
+  const witnessPort = reserveTcpPort();
+  const relayPort = reserveTcpPort();
+  const witnessUrl = `http://127.0.0.1:${witnessPort}`;
+  const relayUrl = `http://127.0.0.1:${relayPort}`;
+
+  await run(function*() {
+    const proxyHby = yield* createHabery({
+      name: `gate-e-proxy-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const witnessHby = yield* createHabery({
+      name: `gate-e-witness-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const relayHby = yield* createHabery({
+      name: `gate-e-relay-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    const proxy = proxyHby.makeHab("proxy", undefined, {
+      transferable: true,
+      icount: 1,
+      isith: "1",
+      ncount: 1,
+      nsith: "1",
+      toad: 0,
+    });
+    const delegate = proxyHby.makeHab("delegate", undefined, {
+      transferable: true,
+      icount: 1,
+      isith: "1",
+      ncount: 1,
+      nsith: "1",
+      toad: 0,
+    });
+    const witness = witnessHby.makeHab("witness", undefined, {
+      transferable: false,
+      icount: 1,
+      isith: "1",
+      toad: 0,
+    });
+    const delegator = witnessHby.makeHab("delegator", undefined, {
+      transferable: true,
+      icount: 1,
+      isith: "1",
+      ncount: 1,
+      nsith: "1",
+      toad: 0,
+    });
+    const relay = relayHby.makeHab("relay", undefined, {
+      transferable: true,
+      icount: 1,
+      isith: "1",
+      ncount: 1,
+      nsith: "1",
+      toad: 0,
+    });
+
+    const seal = {
+      i: delegate.pre,
+      s: "0",
+      d: delegate.kever?.said ?? "",
+    };
+    delegator.interact({ data: [seal] });
+
+    const proxyMailboxAuth = proxy.makeEndRole(
+      relay.pre,
+      EndpointRoles.mailbox,
+      true,
+    );
+    const relayLoc = relay.makeLocScheme(relayUrl, relay.pre, "http");
+    const witnessLoc = witness.makeLocScheme(witnessUrl, witness.pre, "http");
+
+    const proxyRuntime = yield* createAgentRuntime(proxyHby, { mode: "local" });
+    const witnessRuntime = yield* createAgentRuntime(witnessHby, {
+      mode: "indirect",
+    });
+    const relayRuntime = yield* createAgentRuntime(relayHby, {
+      mode: "indirect",
+    });
+
+    const witnessSink = witnessRuntime.respondant.forHab(witness);
+    const relaySink = relayRuntime.respondant.forHab(relay);
+    const witnessRuntimeTask = yield* spawn(function*() {
+      yield* runAgentRuntime(witnessRuntime, { hab: witness, sink: witnessSink });
+    });
+    const relayRuntimeTask = yield* spawn(function*() {
+      yield* runAgentRuntime(relayRuntime, { hab: relay, sink: relaySink });
+    });
+    const witnessServerTask = yield* spawn(function*() {
+      yield* startServer(witnessPort, undefined, witnessRuntime, {
+        serviceHab: witness,
+        hostedPrefixes: [witness.pre],
+      });
+    });
+    const relayServerTask = yield* spawn(function*() {
+      yield* startServer(relayPort, undefined, relayRuntime, {
+        serviceHab: relay,
+        hostedPrefixes: [relay.pre],
+      });
+    });
+
+    try {
+      for (const msg of relayHby.db.clonePreIter(relay.pre)) {
+        ingestKeriBytes(proxyRuntime, msg);
+      }
+      ingestKeriBytes(proxyRuntime, proxyMailboxAuth);
+      ingestKeriBytes(proxyRuntime, relayLoc);
+      ingestKeriBytes(proxyRuntime, witnessLoc);
+      yield* processRuntimeTurn(proxyRuntime, { hab: proxy, pollMailbox: false });
+
+      for (const msg of proxyHby.db.clonePreIter(proxy.pre)) {
+        ingestKeriBytes(relayRuntime, msg);
+      }
+      ingestKeriBytes(relayRuntime, proxyMailboxAuth);
+      ingestKeriBytes(relayRuntime, relayLoc);
+      ingestKeriBytes(
+        relayRuntime,
+        relay.makeEndRole(relay.pre, EndpointRoles.controller, true),
+      );
+      ingestKeriBytes(
+        relayRuntime,
+        relay.makeEndRole(relay.pre, EndpointRoles.mailbox, true),
+      );
+      yield* processRuntimeTurn(relayRuntime, { hab: relay, sink: relaySink, pollMailbox: false });
+
+      yield* waitForServer(witnessPort);
+      yield* waitForServer(relayPort);
+
+      const query = proxy.query(
+        delegator.pre,
+        witness.pre,
+        { fn: "0", s: "0", a: seal },
+        "logs",
+      );
+      const sink = queryTransportSink(proxyRuntime, proxyHby, proxy);
+      yield* sink.send({
+        kind: "wire",
+        cue: {
+          kin: "query",
+          pre: delegator.pre,
+          src: witness.pre,
+          route: "logs",
+          query: { fn: "0", s: "0", a: seal },
+          wits: [witness.pre],
+        },
+        msgs: [query],
+      });
+
+      assertExists(witnessRuntime.hby.db.getKever(proxy.pre));
+      assertExists(
+        witnessRuntime.hby.db.ends.get([proxy.pre, EndpointRoles.mailbox, relay.pre]),
+      );
+      assertEquals(
+        witness.fetchUrls(relay.pre).http ?? null,
+        relayUrl,
+      );
+      assertEquals(
+        Boolean(
+          witnessRuntime.hby.db.fetchAllSealingEventByEventSeal(
+            delegator.pre,
+            seal,
+          ),
+        ),
+        true,
+      );
+      assertEquals(witnessRuntime.hby.db.qnfs.cnt(), 0);
+
+      const mbx = proxy.query(
+        proxy.pre,
+        relay.pre,
+        { topics: { "/replay": 0 } },
+        "mbx",
+      );
+      assertExists(relayRuntime.hby.db.getKever(witness.pre));
+      const { response, controller } = yield* fetchResponseHandle(relayUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/cesr" },
+        body: textDecoder.decode(mbx),
+      });
+      assertEquals(response.status, 200);
+      const body = yield* readMailboxSseBody(response, controller, {
+        idleTimeoutMs: 500,
+        maxDurationMs: 5_000,
+      });
+      assertStringIncludes(body, "event: /replay");
+      assertStringIncludes(body, delegator.pre);
+    } finally {
+      yield* waitForTaskHalt(relayServerTask);
+      yield* waitForTaskHalt(witnessServerTask);
+      yield* waitForTaskHalt(relayRuntimeTask);
+      yield* waitForTaskHalt(witnessRuntimeTask);
+      yield* relayRuntime.close();
+      yield* witnessRuntime.close();
+      yield* proxyRuntime.close();
+      yield* relayHby.close(true);
+      yield* witnessHby.close(true);
+      yield* proxyHby.close(true);
+    }
+  });
+});
+
+Deno.test("Gate E - reopened witness `logs` queries replay remote accepted KEL state via read-through `getKever`", async () => {
+  const witnessName = `gate-e-reopen-witness-${crypto.randomUUID()}`;
+  const subjectName = `gate-e-reopen-subject-${crypto.randomUUID()}`;
+  const requesterName = `gate-e-reopen-requester-${crypto.randomUUID()}`;
+  const witnessHeadDirPath = `/tmp/tufa-gate-e-reopen-witness-${crypto.randomUUID()}`;
+  const subjectHeadDirPath = `/tmp/tufa-gate-e-reopen-subject-${crypto.randomUUID()}`;
+  const requesterHeadDirPath = `/tmp/tufa-gate-e-reopen-requester-${crypto.randomUUID()}`;
+  let witnessPre = "";
+  let subjectPre = "";
+  let subjectSaid = "";
+  let queryBytes = new Uint8Array();
+
+  await run(function*() {
+    const witnessHby = yield* createHabery({
+      name: witnessName,
+      headDirPath: witnessHeadDirPath,
+      skipConfig: true,
+    });
+    const subjectHby = yield* createHabery({
+      name: subjectName,
+      headDirPath: subjectHeadDirPath,
+      skipConfig: true,
+    });
+    const requesterHby = yield* createHabery({
+      name: requesterName,
+      headDirPath: requesterHeadDirPath,
+      skipConfig: true,
+    });
+
+    try {
+      const witness = witnessHby.makeHab("witness", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const requester = requesterHby.makeHab("requester", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const subject = subjectHby.makeHab("subject", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+
+      witnessPre = witness.pre;
+      subjectPre = subject.pre;
+      subjectSaid = subject.kever?.said ?? "";
+      queryBytes = new Uint8Array(
+        requester.query(subject.pre, requester.pre, { fn: "0", s: "0" }, "logs"),
+      );
+
+      const runtime = yield* createAgentRuntime(witnessHby, { mode: "indirect" });
+      try {
+        const message = [...subjectHby.db.clonePreIter(subject.pre, 0)][0];
+        assertExists(message);
+        const result = yield* witnessReceiptPost(runtime, witness, message);
+        assertEquals(result.kind, "accepted");
+        assertEquals(
+          witnessHby.db.wigs.get(dgKey(subject.pre, subjectSaid)).length,
+          1,
+        );
+        assertExists(witnessHby.db.getState(subject.pre));
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* requesterHby.close(true);
+      yield* subjectHby.close(true);
+      yield* witnessHby.close();
+    }
+  });
+
+  await run(function*() {
+    const witnessHby = yield* createHabery({
+      name: witnessName,
+      headDirPath: witnessHeadDirPath,
+      skipConfig: true,
+    });
+    try {
+      const witness = witnessHby.habByName("witness");
+      assertExists(witness);
+      assertExists(witnessHby.db.getState(subjectPre));
+      assertEquals(witnessHby.db.kevers.has(subjectPre), false);
+
+      const runtime = yield* createAgentRuntime(witnessHby, { mode: "indirect" });
+      const emissions: Array<{ kind: string; kin: string; msgs: number; dest: string | null }> = [];
+      try {
+        ingestKeriBytes(runtime, queryBytes);
+        yield* processRuntimeTurn(runtime, {
+          hab: witness,
+          pollMailbox: false,
+          sink: {
+            *send(emission) {
+              emissions.push({
+                kind: emission.kind,
+                kin: emission.cue.kin,
+                msgs: emission.msgs.length,
+                dest: emission.cue.kin === "replay" ? emission.cue.dest ?? null : null,
+              });
+            },
+          },
+        });
+
+        assertEquals(
+          emissions.some((emission) =>
+            emission.kind === "wire"
+            && emission.kin === "replay"
+            && emission.msgs > 0
+          ),
+          true,
+        );
+        assertEquals(witnessHby.db.kevers.has(subjectPre), true);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* witnessHby.close(true);
     }
   });
 });

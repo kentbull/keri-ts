@@ -4,25 +4,25 @@ import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import {
+  mailboxAddCommand,
+  mailboxDebugCommand,
+  mailboxListCommand,
+  mailboxRemoveCommand,
+  mailboxUpdateCommand,
+} from "../../../../tufa/src/cli/mailbox.ts";
+import { startServer } from "../../../../tufa/src/host/http-server.ts";
+import {
   createAgentRuntime,
   ingestKeriBytes,
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
-import {
-  mailboxAddCommand,
-  mailboxDebugCommand,
-  mailboxListCommand,
-  mailboxRemoveCommand,
-  mailboxUpdateCommand,
-} from "../../../src/app/cli/mailbox.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { startServer } from "../../../src/app/server.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
-import { makeEmbeddedExchangeMessage, makeExchangeSerder } from "../../../src/core/messages.ts";
+import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
@@ -31,6 +31,23 @@ import { testCLICommand } from "../../utils.ts";
 import { seedHostedController, seedLocalController } from "./mailbox-runtime-support.ts";
 
 const textDecoder = new TextDecoder();
+
+function makeExchangeSerder(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  return exchangeMessage(route, payload, args)[0];
+}
+
+function makeEmbeddedExchangeMessage(
+  route: string,
+  payload: Record<string, unknown>,
+  args: Parameters<typeof exchangeMessage>[2],
+) {
+  const [serder, attachments] = exchangeMessage(route, payload, args);
+  return { serder, attachments };
+}
 
 /** Collect one controller replay stream for remote mailbox admin submission. */
 function collectReplay(

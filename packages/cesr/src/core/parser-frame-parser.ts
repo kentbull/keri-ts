@@ -5,7 +5,11 @@ import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
-import { interpretMapperBodySyntax, type MapperBodySyntax, parseMapperBodySyntax } from "../primitives/mapper.ts";
+import {
+  interpretMapperBodySyntax,
+  type MapperBodySyntax,
+  parseMapperBodySyntax,
+} from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import type { Primitive } from "../primitives/primitive.ts";
 import { parseVerser } from "../primitives/verser.ts";
@@ -135,13 +139,15 @@ interface NativeBodySyntaxArtifact {
  */
 export class FrameParser {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
-  private readonly attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  private readonly attachmentVersionFallbackPolicy:
+    AttachmentVersionFallbackPolicy;
   private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
   constructor(options: FrameParserOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
-    this.attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy;
+    this.attachmentVersionFallbackPolicy =
+      options.attachmentVersionFallbackPolicy;
     this.onEnclosedFrames = options.onEnclosedFrames;
     this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
   }
@@ -311,7 +317,8 @@ export class FrameParser {
         };
       }
       case "bodyWithAttachmentGroup": {
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
         return this.parseBodyWithAttachmentGroup(
           input,
           syntax.offset,
@@ -328,7 +335,8 @@ export class FrameParser {
             `Expected attachment domain for non-native body but got ${syntax.cold}`,
           );
         }
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
         return this.parseNonNativeBodyGroup(
           input,
           syntax.offset,
@@ -346,7 +354,8 @@ export class FrameParser {
             `Expected attachment domain for native body but got ${syntax.cold}`,
           );
         }
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
         return this.parseNativeBodyGroup(
           input,
           syntax.offset,
@@ -360,7 +369,8 @@ export class FrameParser {
         );
       }
       case "genericGroup": {
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameVersion, headerSize, unit } =
+          requireGroupMetadata();
         return this.parseGenericGroup(
           input,
           syntax.offset,
@@ -437,14 +447,15 @@ export class FrameParser {
         streamVersion,
       };
     } catch (_error) {
+      const raw = input.slice(offset, offset + headerSize + bodySize);
       return {
         frame: {
           body: {
-            raw: matter.raw,
+            raw,
             ked: null,
             proto: Protocols.keri,
             kind: Kinds.cesr,
-            size: matter.raw.length,
+            size: raw.length,
             pvrsn: version,
             gvrsn: version,
             ilk: null,
@@ -489,11 +500,11 @@ export class FrameParser {
     // belong to lower-level CESR-native surfaces such as Mapper/Aggor.
     const { serder } = reapSerder(raw);
     if (
-      serder.proto !== metadata.proto
-      || serder.pvrsn.major !== metadata.pvrsn.major
-      || serder.pvrsn.minor !== metadata.pvrsn.minor
-      || (metadata.ilk !== null && serder.ilk !== metadata.ilk)
-      || (metadata.said !== null && serder.said !== metadata.said)
+      serder.proto !== metadata.proto ||
+      serder.pvrsn.major !== metadata.pvrsn.major ||
+      serder.pvrsn.minor !== metadata.pvrsn.minor ||
+      (metadata.ilk !== null && serder.ilk !== metadata.ilk) ||
+      (metadata.said !== null && serder.said !== metadata.said)
     ) {
       throw new SemanticInterpretationError(
         "Native body syntax pre-read disagreed with Serder hydration",
@@ -719,9 +730,9 @@ export class FrameParser {
       };
     } catch (error) {
       if (
-        error instanceof ShortageError
-        || error instanceof UnknownCodeError
-        || error instanceof DeserializeError
+        error instanceof ShortageError ||
+        error instanceof UnknownCodeError ||
+        error instanceof DeserializeError
       ) {
         throw new SyntaxParseError(
           `Native body syntax parse failed: ${error.message}`,
@@ -865,7 +876,9 @@ export class FrameParser {
       } catch (error) {
         if (error instanceof SemanticInterpretationError) {
           throw new SemanticInterpretationError(
-            `Native body semantic interpretation failed: ${(error as Error).message}`,
+            `Native body semantic interpretation failed: ${
+              (error as Error).message
+            }`,
             error,
           );
         }
@@ -930,8 +943,8 @@ export class FrameParser {
           throw error;
         }
         if (
-          error instanceof UnknownCodeError
-          || error instanceof DeserializeError
+          error instanceof UnknownCodeError ||
+          error instanceof DeserializeError
         ) {
           continue;
         }
@@ -968,8 +981,8 @@ export class FrameParser {
           throw error;
         }
         if (
-          error instanceof UnknownCodeError
-          || error instanceof DeserializeError
+          error instanceof UnknownCodeError ||
+          error instanceof DeserializeError
         ) {
           if (!firstError) {
             firstError = error;

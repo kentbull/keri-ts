@@ -15,12 +15,17 @@ interface DenoManifest {
 }
 
 interface SyncTarget {
-  name: "keri" | "cesr";
+  name: "tufa" | "keri" | "cesr";
   packagePath: URL;
   denoPath: URL;
 }
 
 const TARGETS: SyncTarget[] = [
+  {
+    name: "tufa",
+    packagePath: new URL("../packages/tufa/package.json", import.meta.url),
+    denoPath: new URL("../packages/tufa/deno.json", import.meta.url),
+  },
   {
     name: "keri",
     packagePath: new URL("../packages/keri/package.json", import.meta.url),

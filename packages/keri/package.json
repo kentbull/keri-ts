@@ -1,7 +1,7 @@
 {
   "name": "keri-ts",
   "version": "0.5.0",
-  "description": "KERI TypeScript package with database primitives and CLI runtime",
+  "description": "KERI TypeScript protocol and runtime library",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

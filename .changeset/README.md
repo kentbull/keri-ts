@@ -20,6 +20,11 @@ deno task release:version
 
 Notes:
 
-- `keri-ts` and `cesr-ts` are versioned independently.
+- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` are versioned independently.
+- Add one changeset per publishable package affected by a release.
+- `deno task release:version` updates package manifests, synced `deno.json`
+  versions, and generated version modules for all three packages.
+- `@keri-ts/tufa` publishes from the `tufa-v<version>` tag workflow after any
+  required `cesr-ts` / `keri-ts` dependency versions are already on npm.
 - Build metadata is appended to CLI display versions on CI builds only.
 - Full maintainer release guidance lives in `../MAINTAINER-README.md`.

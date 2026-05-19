@@ -1,6 +1,6 @@
 import { type Operation, spawn, type Task } from "effection";
+import { type RuntimeHttpHostOptions, startServer } from "../../tufa/src/host/http-server.ts";
 import type { AgentRuntime } from "../src/app/agent-runtime.ts";
-import { type RuntimeServerOptions, startServer } from "../src/app/server.ts";
 import { promiseOp, waitForServer } from "./effection-http.ts";
 import type { TestListenAddress } from "./http-test-support.ts";
 
@@ -17,7 +17,7 @@ export interface StartedRuntimeServer {
  */
 export function* startTestServer(
   runtime?: AgentRuntime,
-  options: RuntimeServerOptions = {},
+  options: RuntimeHttpHostOptions = {},
 ): Operation<StartedRuntimeServer> {
   const listening = Promise.withResolvers<TestListenAddress>();
   const task = yield* spawn(function*() {

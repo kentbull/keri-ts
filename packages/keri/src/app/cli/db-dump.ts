@@ -14,10 +14,11 @@ import { RawRecord } from "../../core/records.ts";
 import { Baser, type BaserOptions, createBaser } from "../../db/basing.ts";
 import { createKeeper, Keeper, type KeeperOptions } from "../../db/keeping.ts";
 import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailboxing.ts";
+import { createNoter, Noter, type NoterOptions } from "../../db/noting.ts";
 import { createOutboxer, Outboxer, type OutboxerOptions } from "../../db/outboxing.ts";
 
-type DomainName = "baser" | "keeper" | "mailboxer" | "outboxer";
-type DumpDomain = Baser | Keeper | Mailboxer | Outboxer;
+type DomainName = "baser" | "keeper" | "mailboxer" | "noter" | "outboxer";
+type DumpDomain = Baser | Keeper | Mailboxer | Noter | Outboxer;
 
 type DumpArgs = {
   name?: string;
@@ -47,6 +48,7 @@ type DomainFactoryOptions =
   | BaserOptions
   | KeeperOptions
   | MailboxerOptions
+  | NoterOptions
   | OutboxerOptions;
 
 type DomainFactory = {
@@ -62,6 +64,9 @@ const DOMAIN_FACTORIES: Record<DomainName, DomainFactory> = {
   },
   mailboxer: {
     open: (options) => createMailboxer(options as MailboxerOptions),
+  },
+  noter: {
+    open: (options) => createNoter(options as NoterOptions),
   },
   outboxer: {
     open: (options) => createOutboxer(options as OutboxerOptions),
@@ -87,10 +92,11 @@ function parseTarget(rawTarget: string | undefined): {
     domainRaw !== "baser"
     && domainRaw !== "keeper"
     && domainRaw !== "mailboxer"
+    && domainRaw !== "noter"
     && domainRaw !== "outboxer"
   ) {
     throw new ValidationError(
-      `Unknown dump domain "${domainRaw}". Expected one of: baser, keeper, mailboxer, outboxer.`,
+      `Unknown dump domain "${domainRaw}". Expected one of: baser, keeper, mailboxer, noter, outboxer.`,
     );
   }
   return {
@@ -222,6 +228,9 @@ function normalizeDumpValue(value: unknown): unknown {
   if (typeof value === "object") {
     if ("qb64" in value && typeof (value as { qb64?: unknown }).qb64 === "string") {
       return (value as { qb64: string }).qb64;
+    }
+    if ("pad" in value && typeof (value as { pad?: unknown }).pad === "object") {
+      return normalizeDumpValue((value as { pad: unknown }).pad);
     }
     if ("sad" in value && typeof (value as { sad?: unknown }).sad === "object") {
       return normalizeDumpValue((value as { sad: unknown }).sad);

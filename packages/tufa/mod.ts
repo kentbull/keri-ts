@@ -1,0 +1,13 @@
+import { run } from "effection";
+import { reportCliFailure, tufa } from "./src/cli/cli.ts";
+
+/**
+ * `tufa` application entrypoint.
+ *
+ * Stage 1 ownership rule:
+ * - the runnable CLI now lives in the `tufa` package
+ * - `keri-ts` package roots stay library entrypoints
+ */
+run(() => tufa(Deno.args)).catch((error) => {
+  Deno.exit(reportCliFailure(error));
+});

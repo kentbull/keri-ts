@@ -405,7 +405,7 @@ export class AnchorQuerier implements QueryContinuation {
     }
 
     if (
-      coordinator.hby.db.fetchAllSealingEventByEventSeal(this.pre, this.anchor)
+      coordinator.hby.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)
     ) {
       this.done = true;
     }
@@ -655,6 +655,15 @@ export class QueryCoordinator implements CueSink {
       if (eid) {
         return eid;
       }
+    }
+
+    if (
+      (ends[Roles.mailbox] && Object.keys(ends[Roles.mailbox]).length > 0)
+      && this.hby.db.getKever(pre)
+    ) {
+      // Mailbox-only topologies still query the controller AID itself; the
+      // mailbox role affects delivery transport, not the attester identity.
+      return pre;
     }
 
     return null;

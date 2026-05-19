@@ -1,10 +1,10 @@
 /**
  * CLI module - public API
  *
- * This module provides the KERI TypeScript CLI interface.
+ * This transitional module now exposes only the remaining non-host command
+ * helpers that still live under `keri-ts`.
  */
 export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "./challenge.ts";
-export { tufa } from "./cli.ts";
 export { endsAddCommand } from "./ends.ts";
 export { exchangeSendCommand } from "./exchange.ts";
 export { exportCommand } from "./export.ts";

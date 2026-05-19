@@ -52,7 +52,7 @@ import {
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
-import { makeReplySerder } from "./messages.ts";
+import { reply as replyEvent } from "./protocol-eventing.ts";
 import { KeyStateRecord, ObservedRecord } from "./records.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "./routing.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
@@ -106,7 +106,9 @@ function continuePartialWitnessReplay(): { kind: "continue" } {
 export type KeverEventEnvelope = Pick<
   KeriDispatchEnvelope,
   "serder" | "sigers" | "wigers" | "frcs" | "sscs" | "ssts" | "local"
->;
+> & {
+  eager?: boolean;
+};
 
 /**
  * Query envelope subset consumed by `Kevery.processQuery()`.
@@ -277,7 +279,11 @@ export class Kevery {
           return dropQuery("invalidLogsGate");
         }
 
-        const kever = this.kevers.get(pre);
+        // Query targets may be remote accepted identifiers that exist only in
+        // durable `states.` after a reopen. Use the read-through DB accessor so
+        // witness/query replay works for reopened remote state, not just local
+        // habitats already hot in the in-memory cache.
+        const kever = this.db.getKever(pre);
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -312,7 +318,7 @@ export class Kevery {
         }]);
       }
       case "ksn": {
-        const kever = this.kevers.get(pre);
+        const kever = this.db.getKever(pre);
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -322,13 +328,13 @@ export class Kevery {
         return acceptQuery([{
           kin: "reply",
           route: "/ksn",
-          serder: makeReplySerder(`/ksn/${src}`, kever.state().asDict()),
+          serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
           src,
           dest,
         }]);
       }
       case "mbx": {
-        if (!this.kevers.has(pre)) {
+        if (!this.db.getKever(pre)) {
           return escrowQuery("missingKever");
         }
         return acceptQuery([{
@@ -2405,6 +2411,7 @@ export class Kevery {
       sscs: [...envelope.sscs],
       ssts: [...envelope.ssts],
       local,
+      eager: envelope.eager,
     };
   }
 
@@ -2594,6 +2601,7 @@ export class Kevery {
 
   /** Reconstruct one escrowed event envelope from durable event/sig state. */
   private rehydrateEscrowEnvelope(
+    currentEscrow: EscrowKind,
     pre: string,
     said: string,
   ): KeverEventEnvelope | null {
@@ -2611,6 +2619,11 @@ export class Kevery {
       sscs: seal ? [SealSource.fromTuple(seal)] : [],
       ssts: [],
       local: this.db.esrs.get(dgkey)?.local ?? false,
+      // Mirror KERIpy escrow unescrow behavior: partial signature/witness/
+      // delegation escrows re-enter validation with eager delegation lookup.
+      eager: currentEscrow === "partialSigs"
+        || currentEscrow === "partialWigs"
+        || currentEscrow === "partialDels",
     };
   }
 
@@ -2701,7 +2714,7 @@ export class Kevery {
     on: number | null,
     said: string,
   ): void {
-    const envelope = this.rehydrateEscrowEnvelope(pre, said);
+    const envelope = this.rehydrateEscrowEnvelope(currentEscrow, pre, said);
     if (!envelope) {
       this.removeEscrow(currentEscrow, pre, on, said);
       return;
@@ -2855,6 +2868,14 @@ function queryReplyDest(envelope: QueryEnvelope): string | null {
 }
 
 function parseQueryOrdinal(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (typeof value === "bigint") {
+    return value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(value)
+      : null;
+  }
   if (typeof value !== "string" || !/^[0-9a-f]+$/iu.test(value)) {
     return null;
   }

@@ -8,6 +8,9 @@ import {
   runtimeOobiConverged,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
+import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
+import { sendExchangeMessage } from "../forwarding.ts";
+import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -30,6 +33,19 @@ interface OobiResolveArgs {
   url?: string;
   oobiAlias?: string;
   compat?: boolean;
+}
+
+interface OobiRequestArgs {
+  name?: string;
+  base?: string;
+  headDirPath?: string;
+  passcode?: string;
+  alias?: string;
+  recipient?: string;
+  url?: string;
+  compat?: boolean;
+  outboxer?: boolean;
+  cesrBodyMode?: CesrBodyMode;
 }
 
 /**
@@ -226,6 +242,85 @@ export function* oobiResolveCommand(
       throw new ValidationError(`OOBI ${commandArgs.url} did not resolve.`);
     }
     console.log(commandArgs.url);
+  } finally {
+    yield* hby.close();
+  }
+}
+
+/**
+ * Implement `tufa oobi request` through the mailbox-first EXN transport path.
+ *
+ * This mirrors KERIpy's `"/oobis"` route while keeping the CLI and transport
+ * ownership aligned with other outbound messaging commands.
+ */
+export function* oobiRequestCommand(
+  args: Record<string, unknown>,
+): Operation<void> {
+  const commandArgs: OobiRequestArgs = {
+    name: args.name as string | undefined,
+    base: args.base as string | undefined,
+    headDirPath: args.headDirPath as string | undefined,
+    passcode: args.passcode as string | undefined,
+    alias: args.alias as string | undefined,
+    recipient: args.recipient as string | undefined,
+    url: args.url as string | undefined,
+    compat: args.compat as boolean | undefined,
+    outboxer: args.outboxer as boolean | undefined,
+    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+  };
+
+  if (!commandArgs.name) {
+    throw new ValidationError("Name is required and cannot be empty");
+  }
+  if (!commandArgs.alias) {
+    throw new ValidationError("Alias is required and cannot be empty");
+  }
+  if (!commandArgs.recipient) {
+    throw new ValidationError("Recipient alias or prefix is required.");
+  }
+  if (!commandArgs.url) {
+    throw new ValidationError("OOBI URL is required and cannot be empty");
+  }
+
+  const parsed = new URL(commandArgs.url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ValidationError(`Unsupported OOBI scheme ${parsed.protocol}`);
+  }
+
+  const hby = yield* setupHby(
+    commandArgs.name,
+    commandArgs.base ?? "",
+    commandArgs.passcode,
+    false,
+    commandArgs.headDirPath,
+    {
+      compat: commandArgs.compat ?? false,
+      readonly: false,
+      skipConfig: false,
+      skipSignator: false,
+      outboxer: commandArgs.outboxer ?? false,
+      cesrBodyMode: commandArgs.cesrBodyMode,
+    },
+  );
+
+  try {
+    const hab = hby.habByName(commandArgs.alias);
+    if (!hab) {
+      throw new ValidationError(`invalid sender alias ${commandArgs.alias}`);
+    }
+
+    const exn = oobiRequestExn(hab, commandArgs.recipient, commandArgs.url);
+    const { serder } = yield* sendExchangeMessage(hby, hab, {
+      recipient: commandArgs.recipient,
+      route: OOBI_REQUEST_ROUTE,
+      topic: OOBI_MAILBOX_TOPIC,
+      payload: (exn.ked?.a as Record<string, unknown>) ?? {
+        dest: commandArgs.recipient,
+        oobi: commandArgs.url,
+      },
+    });
+    console.log("Sent OOBI request");
+    console.log(serder.pretty());
   } finally {
     yield* hby.close();
   }

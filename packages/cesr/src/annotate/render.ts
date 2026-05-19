@@ -1,5 +1,10 @@
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
-import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
+import {
+  DeserializeError,
+  GroupSizeError,
+  ShortageError,
+  UnknownCodeError,
+} from "../core/errors.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { CesrMessage } from "../core/types.ts";
 import { sniff } from "../parser/cold-start.ts";
@@ -7,10 +12,19 @@ import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
-import { type GroupEntry, isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
+import {
+  type GroupEntry,
+  isCounterGroupLike,
+  isPrimitiveTuple,
+} from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { counterCodeName, counterCodeNameForVersion, matterCodeName, nativeLabelName } from "./comments.ts";
+import {
+  counterCodeName,
+  counterCodeNameForVersion,
+  matterCodeName,
+  nativeLabelName,
+} from "./comments.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
 const TEXT_DECODER = new TextDecoder();
@@ -36,10 +50,10 @@ function toHex(bytes: Uint8Array): string {
 }
 
 function isRecoverableParseError(error: unknown): boolean {
-  return error instanceof UnknownCodeError
-    || error instanceof DeserializeError
-    || error instanceof ShortageError
-    || error instanceof GroupSizeError;
+  return error instanceof UnknownCodeError ||
+    error instanceof DeserializeError ||
+    error instanceof ShortageError ||
+    error instanceof GroupSizeError;
 }
 
 function spaces(count: number): string {
@@ -284,7 +298,9 @@ function renderNativeBody(
   emitLine(
     lines,
     counter.qb64,
-    `${counterCodeNameForVersion(counter.code, version)} count=${counter.count}`,
+    `${
+      counterCodeNameForVersion(counter.code, version)
+    } count=${counter.count}`,
     0,
     options,
   );
@@ -319,7 +335,9 @@ function renderNativeBody(
 
     const matter = parseMatter(slice, domain);
     const matterSize = domain === "bny" ? matter.fullSizeB2 : matter.fullSize;
-    const field = frame.body.native?.fields.find((candidate) => candidate.primitive.qb64 === matter.qb64);
+    const field = frame.body.native?.fields.find((candidate) =>
+      candidate.primitive.qb64 === matter.qb64
+    );
     const label = field ? nativeLabelName(field.label) : null;
     const primitiveComment = matter instanceof Indexer
       ? `Indexer ${matter.code}`
@@ -337,8 +355,8 @@ function renderMessageBody(
   options: Required<AnnotateOptions>,
 ): void {
   const rawBody = TEXT_DECODER.decode(frame.body.raw);
-  const isOpaqueCesrBody = frame.body.kind === "CESR"
-    && frame.body.ked === null;
+  const isOpaqueCesrBody = frame.body.kind === "CESR" &&
+    frame.body.ked === null;
 
   if (isOpaqueCesrBody) {
     emitLine(
@@ -382,7 +400,9 @@ function renderFrame(
   const version = frame.body.gvrsn ?? frame.body.pvrsn;
   const domain = asDomain(frame.body.raw);
 
-  if (domain === "txt" || domain === "bny") {
+  if (frame.body.kind === "CESR" && frame.body.ked === null) {
+    renderMessageBody(lines, frame, options);
+  } else if (domain === "txt" || domain === "bny") {
     renderNativeBody(lines, frame, options, version);
   } else {
     renderMessageBody(lines, frame, options);

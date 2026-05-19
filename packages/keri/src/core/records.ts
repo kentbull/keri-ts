@@ -294,6 +294,89 @@ export class KeyStateRecord extends RawRecord<KeyStateRecordShape> implements Ke
   }
 }
 
+export interface RegistryRecordShape {
+  registryKey: string;
+  prefix: string;
+}
+
+/** Registry metadata keyed by registry name. */
+export class RegistryRecord extends RawRecord<RegistryRecordShape> implements RegistryRecordShape {
+  declare registryKey: string;
+  declare prefix: string;
+}
+
+export interface RegStateRecordShape {
+  vn?: number[];
+  i?: string;
+  s?: string;
+  d?: string;
+  ii?: string;
+  dt?: string;
+  et?: string;
+  bt?: string;
+  b?: string[];
+  c?: string[];
+}
+
+/** Current registry transaction-state record. */
+export class RegStateRecord extends RawRecord<RegStateRecordShape> implements RegStateRecordShape {
+  declare vn?: number[];
+  declare i?: string;
+  declare s?: string;
+  declare d?: string;
+  declare ii?: string;
+  declare dt?: string;
+  declare et?: string;
+  declare bt?: string;
+  declare b?: string[];
+  declare c?: string[];
+
+  constructor(data: RegStateRecordShape = {}) {
+    super();
+    assignDefined(this, {
+      ...data,
+      vn: data.vn ? [...data.vn] : data.vn,
+      b: data.b ? [...data.b] : data.b,
+      c: data.c ? [...data.c] : data.c,
+    });
+  }
+}
+
+export interface VcStateRecordShape {
+  vn?: number[];
+  i?: string;
+  s?: string;
+  d?: string;
+  ri?: string;
+  ra?: Record<string, unknown>;
+  a?: Record<string, unknown>;
+  dt?: string;
+  et?: string;
+}
+
+/** Current credential transaction-state record. */
+export class VcStateRecord extends RawRecord<VcStateRecordShape> implements VcStateRecordShape {
+  declare vn?: number[];
+  declare i?: string;
+  declare s?: string;
+  declare d?: string;
+  declare ri?: string;
+  declare ra?: Record<string, unknown>;
+  declare a?: Record<string, unknown>;
+  declare dt?: string;
+  declare et?: string;
+
+  constructor(data: VcStateRecordShape = {}) {
+    super();
+    assignDefined(this, {
+      ...data,
+      vn: data.vn ? [...data.vn] : data.vn,
+      ra: data.ra ? { ...data.ra } : data.ra,
+      a: data.a ? { ...data.a } : data.a,
+    });
+  }
+}
+
 export interface EventSourceRecordShape {
   local?: boolean;
 }

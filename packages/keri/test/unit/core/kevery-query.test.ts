@@ -8,7 +8,7 @@ import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
-import { makeQuerySerder, makeReplySerder } from "../../../src/core/messages.ts";
+import { query as makeQuerySerder, reply as makeReplySerder } from "../../../src/core/protocol-eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -1034,6 +1034,45 @@ Deno.test("Kevery.processQuery replays logs from fn=0 when q.fn is omitted", asy
         cue.msgs,
         concatMessages([...hby.db.clonePreIter(hab.pre, 0)]),
       );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery.processQuery accepts KERIpy-style numeric logs ordinals", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-logs-qry-numeric-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const kvy = new Kevery(hby.db, { local: true });
+
+      const serder = makeQuerySerder("logs", {
+        i: hab.pre,
+        src: hab.pre,
+        s: 0,
+        fn: 0,
+      });
+      kvy.processQuery(signedQueryEnvelope(hab, serder));
+
+      const cue = pullCueOfKin(kvy, "replay");
+      assertExists(cue);
+      if (!cue || cue.kin !== "replay") {
+        throw new Error("Expected replay cue.");
+      }
+      assertEquals(cue.pre, hab.pre);
+      assertEquals(cue.dest, hab.pre);
+      assertEquals(cue.msgs.length > 0, true);
     } finally {
       yield* hby.close(true);
     }

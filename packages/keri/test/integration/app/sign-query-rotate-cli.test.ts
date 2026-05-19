@@ -113,7 +113,7 @@ async function runCmdWithTimeout(
 async function runTufa(args: string[]): Promise<CmdResult> {
   return await runCmd(
     "deno",
-    ["run", "--allow-all", "--unstable-ffi", "packages/keri/mod.ts", ...args],
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     packageRoot(),
   );
 }
@@ -124,7 +124,7 @@ async function runTufaWithTimeout(
 ): Promise<CmdResult> {
   return await runCmdWithTimeout(
     "deno",
-    ["run", "--allow-all", "--unstable-ffi", "packages/keri/mod.ts", ...args],
+    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
     packageRoot(),
     timeoutMs,
   );
@@ -345,7 +345,7 @@ Deno.test("CLI integration - stale tufa verify fails before query and succeeds a
         "run",
         "--allow-all",
         "--unstable-ffi",
-        "packages/keri/mod.ts",
+        "packages/tufa/mod.ts",
         "agent",
         "--name",
         aliceName,

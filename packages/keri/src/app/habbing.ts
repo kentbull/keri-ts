@@ -16,44 +16,43 @@ import { type Operation } from "npm:effection@^3.6.0";
 import {
   Cigar,
   concatBytes,
-  Counter,
   createParser,
-  CtrDexV1,
-  DigDex,
   Diger,
-  DIGEST_CODES,
   Ilks,
-  parseMatter,
-  PREFIX_CODES,
   Prefixer,
-  Seqner,
+  SealLast,
   SerderKERI,
   Siger,
-  Tholder,
   type ThresholdSith,
   type Tier,
   Tiers,
   Verfer,
 } from "../../../cesr/mod.ts";
-import { b } from "../../../cesr/mod.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
+import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kevery } from "../core/eventing.ts";
 import { Kever } from "../core/kever.ts";
-import { makeQuerySerder, makeReceiptSerder, makeReplySerder } from "../core/messages.ts";
+import {
+  incept as inceptEvent,
+  interact as interactEvent,
+  query as queryEvent,
+  receipt as receiptEvent,
+  reply as replyEvent,
+  rotate as rotateEvent,
+} from "../core/protocol-eventing.ts";
+import { messagize } from "../core/protocol-serialization.ts";
 import { HabitatRecord, type VerferCigarCouple } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
-import { deriveRotatedWitnessSet } from "../core/witnesses.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
 import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
+import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE, splitCesrStream } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
 import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
@@ -197,238 +196,6 @@ function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   return messages.length === 0 ? emptyMessage() : concatBytes(...messages);
 }
 
-/** Require verifier context on runtime non-transferable reply cigars. */
-function requireCigarVerfer(cigar: Cigar): Verfer {
-  if (!cigar.verfer) {
-    throw new ValidationError("Reply cigar is missing verifier context.");
-  }
-  return cigar.verfer;
-}
-
-function hexToFixedBytes(hex: string, size: number): Uint8Array {
-  const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
-  if (!/^[0-9a-f]+$/i.test(normalized)) {
-    throw new ValidationError(`Invalid hex ordinal ${hex}`);
-  }
-  if (normalized.length > size * 2) {
-    throw new ValidationError(`Hex ordinal ${hex} exceeds ${size} bytes.`);
-  }
-
-  const raw = new Uint8Array(size);
-  const padded = normalized.padStart(size * 2, "0");
-  for (let i = 0; i < size; i++) {
-    raw[i] = Number.parseInt(padded.slice(i * 2, (i * 2) + 2), 16);
-  }
-  return raw;
-}
-
-/**
- * KERIpy-compatible transferable seal ordinals must be emitted as fixed-width
- * `Seqner` primitives, even when the runtime currently holds a wider ordinal
- * abstraction like `NumberPrimitive`.
- */
-function encodeSealSeqnerQb64b(tsg: TransIdxSigGroup): Uint8Array {
-  return tsg.seqner instanceof Seqner
-    ? tsg.seqner.qb64b
-    : new Seqner({ code: "0A", raw: hexToFixedBytes(tsg.snh, 16) }).qb64b;
-}
-
-/**
- * Build one fully attached endorsed message from an arbitrary KERI body serder.
- *
- * Supported attachment shapes for the current bootstrap slice:
- * - transferable controller signature groups for reply-like messages
- * - transferable last-establishment signature groups for queries
- * - non-transferable reply cigars with attached verifier context
- *
- * KERIpy parity rule:
- * - runtime code handles non-transferable replies as hydrated `Cigar` objects
- *   with `.verfer`
- * - wire output still emits the CESR couple shape `verfer + cigar`
- */
-function buildEndorsedMessage(args: {
-  serder: SerderKERI;
-  tsg?: TransIdxSigGroup;
-  ssg?: TransLastIdxSigGroup;
-  cigars?: readonly Cigar[];
-  pipelined?: boolean;
-}): Uint8Array {
-  const attachments: Uint8Array[] = [];
-
-  if (args.tsg && args.tsg.sigers.length > 0) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.TransIdxSigGroups,
-        count: 1,
-        version: KERI_V1,
-      }).qb64b,
-      args.tsg.prefixer.qb64b,
-      encodeSealSeqnerQb64b(args.tsg),
-      args.tsg.diger.qb64b,
-      new Counter({
-        code: CtrDexV1.ControllerIdxSigs,
-        count: args.tsg.sigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...args.tsg.sigers.map((siger) => siger.qb64b),
-    );
-  } else if (args.ssg && args.ssg.sigers.length > 0) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.TransLastIdxSigGroups,
-        count: 1,
-        version: KERI_V1,
-      }).qb64b,
-      args.ssg.prefixer.qb64b,
-      new Counter({
-        code: CtrDexV1.ControllerIdxSigs,
-        count: args.ssg.sigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...args.ssg.sigers.map((siger) => siger.qb64b),
-    );
-  } else if (args.cigars && args.cigars.length > 0) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.NonTransReceiptCouples,
-        count: args.cigars.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...args.cigars.flatMap((cigar) => [
-        requireCigarVerfer(cigar).qb64b,
-        cigar.qb64b,
-      ]),
-    );
-  }
-
-  return concatMessageWithAttachmentGroup(
-    args.serder.raw,
-    attachments,
-    args.pipelined ?? true,
-  );
-}
-
-/**
- * Build one fully attached `rct` wire message.
- *
- * Supported receipt attachment shapes:
- * - `tsgs` for transferable validator receipt groups
- * - `wigers` for witness indexed signatures
- * - `cigars` for non-transferable non-witness receipts
- */
-function buildReceiptMessage(args: {
-  serder: SerderKERI;
-  cigars?: readonly Cigar[];
-  wigers?: readonly Siger[];
-  tsgs?: readonly TransIdxSigGroup[];
-}): Uint8Array {
-  const attachments: Uint8Array[] = [];
-
-  if (args.tsgs && args.tsgs.length > 0) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.TransIdxSigGroups,
-        count: args.tsgs.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...args.tsgs.flatMap((tsg) => [
-        tsg.prefixer.qb64b,
-        encodeSealSeqnerQb64b(tsg),
-        tsg.diger.qb64b,
-        new Counter({
-          code: CtrDexV1.ControllerIdxSigs,
-          count: tsg.sigers.length,
-          version: KERI_V1,
-        }).qb64b,
-        ...tsg.sigers.map((siger) => siger.qb64b),
-      ]),
-    );
-  }
-
-  if (args.wigers && args.wigers.length > 0) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.WitnessIdxSigs,
-        count: args.wigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...args.wigers.map((wiger) => wiger.qb64b),
-    );
-  }
-
-  if (args.cigars && args.cigars.length > 0) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.NonTransReceiptCouples,
-        count: args.cigars.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...args.cigars.flatMap((cigar) => [
-        requireCigarVerfer(cigar).qb64b,
-        cigar.qb64b,
-      ]),
-    );
-  }
-
-  return concatMessageWithAttachmentGroup(args.serder.raw, attachments);
-}
-
-/** Build one fully attached KEL event wire message with indexed controller signatures. */
-function buildEventMessage(
-  serder: SerderKERI,
-  sigers: readonly Siger[],
-): Uint8Array {
-  return concatMessageWithAttachmentGroup(
-    serder.raw,
-    sigers.length > 0
-      ? [
-        new Counter({
-          code: CtrDexV1.ControllerIdxSigs,
-          count: sigers.length,
-          version: KERI_V1,
-        }).qb64b,
-        ...sigers.map((siger) => siger.qb64b),
-      ]
-      : [],
-  );
-}
-
-/**
- * KERIpy emits reply/query/receipt attachments in one counted attachment group.
- *
- * Some consumers, especially KERIpy's parser stack, rely on that pipelined
- * framing to delimit attachments correctly when multiple messages are streamed.
- */
-function concatMessageWithAttachmentGroup(
-  body: Uint8Array,
-  attachments: readonly Uint8Array[],
-  pipelined = true,
-): Uint8Array {
-  if (attachments.length === 0) {
-    return body;
-  }
-
-  const atc = concatBytes(...attachments);
-  if (!pipelined) {
-    return concatBytes(body, atc);
-  }
-  if (atc.length % 4 !== 0) {
-    throw new ValidationError(
-      `Invalid attachment quadlet size ${atc.length} for pipelined message.`,
-    );
-  }
-
-  return concatBytes(
-    body,
-    new Counter({
-      code: CtrDexV1.AttachmentGroup,
-      count: atc.length / 4,
-      version: KERI_V1,
-    }).qb64b,
-    atc,
-  );
-}
-
 /**
  * Rebuild stored transferable reply signature groups from `ssgs.`.
  *
@@ -491,17 +258,18 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
   const tsgs = fetchReplyTsgs(db, said);
   if (tsgs.length > 0) {
     const lead = tsgs[0];
-    return buildEndorsedMessage({
-      serder,
-      tsg: lead,
+    return messagize(serder, {
+      sigers: lead.sigers,
+      seal: { i: lead.prefixer, s: lead.seqner, d: lead.diger },
+      pipelined: true,
     });
   }
 
   const cigars = db.scgs.get([said]);
   if (cigars.length > 0) {
-    return buildEndorsedMessage({
-      serder,
+    return messagize(serder, {
       cigars: cigars.map((entry) => hydrateStoredCigar(entry)),
+      pipelined: true,
     });
   }
 
@@ -516,215 +284,6 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
  * - relies on simple numeric threshold defaults
  * - keeps SAID code resolution centralized for prefix derivation consistency
  */
-function makeInceptRaw(
-  keys: string[],
-  ndigs: string[],
-  args: {
-    code: string;
-    isith?: ThresholdSith;
-    nsith?: ThresholdSith;
-    toad: number;
-    wits: string[];
-    cnfg: string[];
-    data: unknown[];
-    delpre?: string;
-  },
-): SerderKERI {
-  const ilk = args.delpre ? Ilks.dip : Ilks.icp;
-  const kt = args.isith ?? defaultThreshold(keys.length, 1);
-  const nt = args.nsith ?? defaultThreshold(ndigs.length, 0);
-
-  const ked: Record<string, unknown> = {
-    t: ilk,
-    i: "",
-    kt,
-    k: keys,
-    nt,
-    n: ndigs,
-    bt: `${args.toad.toString(16)}`,
-    b: args.wits,
-    c: args.cnfg,
-    a: args.data,
-  };
-
-  if (args.delpre) ked.di = args.delpre;
-  if (!args.delpre && !DIGEST_CODES.has(args.code) && keys.length === 1) {
-    ked.i = keys[0];
-  }
-
-  const saids = resolveInceptiveSaidCodes(ked, args.code);
-  return new SerderKERI({
-    sad: ked,
-    makify: true,
-    saids,
-  });
-}
-
-/**
- * Build one rotation/delegated-rotation serder from current and next key material.
- *
- * Validation stays aligned with KERIpy's rotation builder:
- * - current and next thresholds must fit the provided key counts
- * - witness cut/add math must be coherent against the current witness set
- * - default toad follows KERIpy's `ample()` rule only when witness membership changes
- */
-function makeRotateRaw(
-  pre: string,
-  priorSaid: string,
-  sn: number,
-  keys: string[],
-  ndigs: string[],
-  args: {
-    delegated?: boolean;
-    currentWits: string[];
-    isith?: ThresholdSith;
-    nsith?: ThresholdSith;
-    toad?: number;
-    cuts?: string[];
-    adds?: string[];
-    data?: unknown[];
-  },
-): SerderKERI {
-  if (sn < 1) {
-    throw new ValidationError(`Invalid rotation sequence number ${sn}.`);
-  }
-
-  const tholder = new Tholder({
-    sith: args.isith ?? defaultThreshold(keys.length, 1),
-  });
-  if (tholder.num !== null && tholder.num < 1n) {
-    throw new ValidationError(
-      `Invalid current threshold ${String(args.isith ?? "")}.`,
-    );
-  }
-  if (tholder.size > keys.length) {
-    throw new ValidationError(
-      `Invalid current threshold for ${keys.length} keys.`,
-    );
-  }
-
-  const ntholder = new Tholder({
-    sith: args.nsith ?? defaultThreshold(ndigs.length, 0),
-  });
-  if (ntholder.num !== null && ntholder.num < 0n) {
-    throw new ValidationError(
-      `Invalid next threshold ${String(args.nsith ?? "")}.`,
-    );
-  }
-  if (ntholder.size > ndigs.length) {
-    throw new ValidationError(
-      `Invalid next threshold for ${ndigs.length} next keys.`,
-    );
-  }
-
-  const cuts = [...(args.cuts ?? [])];
-  const adds = [...(args.adds ?? [])];
-  const derived = deriveRotatedWitnessSet(args.currentWits, cuts, adds);
-  if (derived.kind === "reject") {
-    throw new ValidationError(
-      `Invalid witness cut/add combination: ${derived.reason}.`,
-    );
-  }
-
-  const toad = args.toad
-    ?? (cuts.length === 0 && adds.length === 0
-      ? parseInt(defaultThreshold(args.currentWits.length, 0), 16)
-      : ample(derived.value.wits.length));
-  if (derived.value.wits.length === 0 && toad !== 0) {
-    throw new ValidationError(`Invalid toad ${toad} for empty witness set.`);
-  }
-  if (
-    derived.value.wits.length > 0
-    && (toad < 1 || toad > derived.value.wits.length)
-  ) {
-    throw new ValidationError(
-      `Invalid toad ${toad} for witness count ${derived.value.wits.length}.`,
-    );
-  }
-
-  return new SerderKERI({
-    sad: {
-      t: args.delegated ? Ilks.drt : Ilks.rot,
-      d: "",
-      i: pre,
-      s: sn.toString(16),
-      p: priorSaid,
-      kt: tholder.sith,
-      k: keys,
-      nt: ntholder.sith,
-      n: ndigs,
-      bt: toad.toString(16),
-      br: cuts,
-      ba: adds,
-      a: [...(args.data ?? [])],
-    },
-    makify: true,
-  });
-}
-
-/**
- * Build one interaction serder from current accepted state and committed data.
- *
- * KERIpy correspondence:
- * - exact `ixn` SAD shape with `{ t, d, i, s, p, a }`
- * - `sn` must begin at 1 because interactions always follow an establishment
- *   event
- */
-function makeInteractRaw(
-  pre: string,
-  priorSaid: string,
-  sn: number,
-  data: unknown[] = [],
-): SerderKERI {
-  if (sn < 1) {
-    throw new ValidationError(`Invalid interaction sequence number ${sn}.`);
-  }
-
-  return new SerderKERI({
-    sad: {
-      t: Ilks.ixn,
-      d: "",
-      i: pre,
-      s: sn.toString(16),
-      p: priorSaid,
-      a: [...data],
-    },
-    makify: true,
-  });
-}
-
-/**
- * Resolve SAID derivation codes for one inceptive event body.
- *
- * KERI substance:
- * - `d` always uses the event digest code
- * - `i` may use either an explicit prefix code or an already-populated prefix
- *   value when it is parseable as CESR matter
- */
-function resolveInceptiveSaidCodes(
-  ked: Record<string, unknown>,
-  explicitPrefixCode?: string,
-): Record<string, string> {
-  const saids: Record<string, string> = {
-    d: DigDex.Blake3_256,
-    i: DigDex.Blake3_256,
-  };
-
-  if (explicitPrefixCode && PREFIX_CODES.has(explicitPrefixCode)) {
-    saids.i = explicitPrefixCode;
-    return saids;
-  }
-
-  if (typeof ked.i === "string" && ked.i.length > 0) {
-    try {
-      saids.i = parseMatter(b(ked.i), "txt").code;
-    } catch {
-      // Match KERIpy priority: invalid existing values do not override defaults.
-    }
-  }
-
-  return saids;
-}
 
 /** Represents a local identifier habitat and its current key state. */
 export class Hab {
@@ -935,9 +494,10 @@ export class Hab {
 
     const currentSith = isith ?? defaultThreshold(keys.length, 1);
     const nextThreshold = nextSith ?? defaultThreshold(ndigs.length, 0);
-    const serder = makeInceptRaw(keys, ndigs, {
+    const serder = inceptEvent(keys, {
       code: prefixCode,
       isith: currentSith,
+      ndigs,
       nsith: nextThreshold,
       toad,
       wits,
@@ -1041,18 +601,18 @@ export class Hab {
     const ndigs = digers.map((diger) => diger.qb64);
 
     try {
-      const serder = makeRotateRaw(
+      const serder = rotateEvent(
         this.pre,
-        kever.serder.said ?? kever.said,
-        kever.sn + 1,
         keys,
-        ndigs,
+        kever.serder.said ?? kever.said,
         {
-          delegated: kever.delpre !== null,
-          currentWits: [...kever.wits],
+          ilk: kever.delpre !== null ? Ilks.drt : Ilks.rot,
+          sn: kever.sn + 1,
           isith: currentSith,
+          ndigs,
           nsith: nextSith,
           toad: preservedToad,
+          wits: [...kever.wits],
           cuts: args.cuts,
           adds: args.adds,
           data: args.data,
@@ -1068,7 +628,7 @@ export class Hab {
         this.ks.pris.rem(pub);
       }
 
-      return buildEventMessage(serder, sigers);
+      return messagize(serder, { sigers, pipelined: true });
     } catch (error) {
       // Roll keeper state back if the event was not accepted locally. The
       // accepted-state machine, not keeper progression alone, defines success.
@@ -1102,7 +662,7 @@ export class Hab {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
 
-    const serder = makeInteractRaw(
+    const serder = interactEvent(
       this.pre,
       kever.serder.said ?? kever.said,
       kever.sn + 1,
@@ -1110,7 +670,7 @@ export class Hab {
     );
     const sigers = this.sign(serder.raw, true) as Siger[];
     this.acceptLocally(serder, sigers);
-    return buildEventMessage(serder, sigers);
+    return messagize(serder, { sigers, pipelined: true });
   }
 
   /** Produces signatures with this habitat's current signing keys. */
@@ -1161,8 +721,7 @@ export class Hab {
     const prefixer = kever.prefixer;
     const pipelined = options.pipelined ?? true;
     if (!kever.transferable) {
-      return buildEndorsedMessage({
-        serder,
+      return messagize(serder, {
         cigars: this.sign(serder.raw, false) as Cigar[],
         pipelined,
       });
@@ -1170,9 +729,9 @@ export class Hab {
 
     const sigers = this.sign(serder.raw, true) as Siger[];
     if (serder.ilk === Ilks.qry) {
-      return buildEndorsedMessage({
-        serder,
-        ssg: new TransLastIdxSigGroup(prefixer, sigers),
+      return messagize(serder, {
+        sigers,
+        seal: SealLast.fromTuple([prefixer]),
         pipelined,
       });
     }
@@ -1186,14 +745,9 @@ export class Hab {
     if (!seqner) {
       throw new Error(`Missing establishment sequence number for ${this.pre}.`);
     }
-    return buildEndorsedMessage({
-      serder,
-      tsg: new TransIdxSigGroup(
-        prefixer,
-        seqner,
-        new Diger({ qb64: estSaid }),
-        sigers,
-      ),
+    return messagize(serder, {
+      sigers,
+      seal: { i: prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
       pipelined,
     });
   }
@@ -1213,7 +767,7 @@ export class Hab {
     if (!this.pre) {
       throw new Error("Cannot build a reply before habitat inception.");
     }
-    return this.endorse(makeReplySerder(route, data, stamp));
+    return this.endorse(replyEvent(route, data, { pre: this.pre, stamp }));
   }
 
   /**
@@ -1230,7 +784,10 @@ export class Hab {
     stamp = makeNowIso8601(),
   ): Uint8Array {
     return this.endorse(
-      makeQuerySerder(route, { ...query, i: pre, src }, stamp),
+      queryEvent(route, { ...query, i: pre, src }, {
+        pre: this.pre,
+        stamp,
+      }),
     );
   }
 
@@ -1257,7 +814,7 @@ export class Hab {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
 
-    const reserder = makeReceiptSerder(pre, sn, said);
+    const reserder = receiptEvent(pre, sn, said);
 
     if (!kever.transferable) {
       const cigars = this.sign(serder.raw, false) as Cigar[];
@@ -1268,7 +825,7 @@ export class Hab {
         tsgs: [],
         local: true,
       });
-      return buildReceiptMessage({ serder: reserder, cigars });
+      return messagize(reserder, { cigars, pipelined: true });
     }
 
     const estSaid = kever.lastEst.d || kever.said;
@@ -1293,7 +850,11 @@ export class Hab {
       tsgs: [tsg],
       local: true,
     });
-    return buildReceiptMessage({ serder: reserder, tsgs: [tsg] });
+    return messagize(reserder, {
+      sigers: tsg.sigers,
+      seal: { i: tsg.prefixer, s: tsg.seqner, d: tsg.diger },
+      pipelined: true,
+    });
   }
 
   /**
@@ -1329,7 +890,7 @@ export class Hab {
       );
     }
 
-    const reserder = makeReceiptSerder(pre, sn, said);
+    const reserder = receiptEvent(pre, sn, said);
     const wigers = this.mgr.sign(serder.raw, {
       pubs: [this.pre],
       indexed: true,
@@ -1342,7 +903,7 @@ export class Hab {
       tsgs: [],
       local: true,
     });
-    return buildReceiptMessage({ serder: reserder, wigers });
+    return messagize(reserder, { wigers, pipelined: true });
   }
 
   /**
@@ -1521,8 +1082,27 @@ export class Hab {
   ): Uint8Array {
     const messages: Uint8Array[] = [];
     const cloned = new Set<string>();
+    const delegatedReady = (pre: string): boolean => {
+      const kever = this.db.getKever(pre);
+      if (!kever?.delegated) {
+        return true;
+      }
+      const estSaid = kever.lastEst.d || kever.said;
+      if (!estSaid || !this.db.aess.get(dgKey(pre, estSaid))) {
+        return false;
+      }
+      const chain = [...this.db.cloneDelegation(kever)];
+      if (chain.length === 0) {
+        return false;
+      }
+      messages.push(...chain);
+      return true;
+    };
     const appendClone = (pre: string) => {
       if (!pre || cloned.has(pre)) {
+        return;
+      }
+      if (!delegatedReady(pre)) {
         return;
       }
       messages.push(...this.db.clonePreIter(pre));
@@ -1582,6 +1162,14 @@ export class Hab {
     role?: Role | string,
     eids: string[] = [],
   ): Uint8Array {
+    const kever = this.db.getKever(aid);
+    const estSaid = kever?.lastEst.d || kever?.said;
+    if (
+      kever?.delegated
+      && (!estSaid || !this.db.aess.get(dgKey(aid, estSaid)) || [...this.db.cloneDelegation(kever)].length === 0)
+    ) {
+      return new Uint8Array();
+    }
     return this.replyEndRole(aid, role, eids);
   }
 
@@ -1645,7 +1233,7 @@ export class Hab {
           yield { cue, msgs: [this.witness(cue.serder)], kind: "wire" };
           break;
         case "replay":
-          yield { cue, msgs: [cue.msgs], kind: "wire" };
+          yield { cue, msgs: splitCesrStream(cue.msgs), kind: "wire" };
           break;
         case "reply":
           yield {

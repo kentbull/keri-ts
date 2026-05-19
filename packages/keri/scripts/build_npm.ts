@@ -1,15 +1,23 @@
 import { build, emptyDir } from "@deno/dnt";
 
 const ENTRYPOINT = "./src/npm/index.ts";
-const NODE_CLI_ENTRYPOINT = "./src/app/cli/cli-node.ts";
+const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
+const DB_ENTRYPOINT = "./src/npm/db.ts";
 const OUT_DIR = "./npm";
 const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
 const NPM_MAIN_PATH = "./esm/keri/src/npm/index.js";
 const NPM_TYPES_PATH = "./types/keri/src/npm/index.d.ts";
-const NPM_BIN_PATH = "./esm/keri/src/app/cli/cli-node.js";
+const NPM_RUNTIME_PATH = "./esm/keri/src/npm/runtime.js";
+const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
+const NPM_DB_PATH = "./esm/keri/src/npm/db.js";
+const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
 
 interface PackageManifest {
   version?: string;
+}
+
+interface BuiltNpmPackageManifest {
+  exports?: Record<string, unknown>;
 }
 
 /**
@@ -79,6 +87,27 @@ function writeDntImportMap(cesrVersion: string): void {
   );
 }
 
+function normalizeBuiltManifest(): void {
+  const packageJsonPath = `${OUT_DIR}/package.json`;
+  const raw = Deno.readTextFileSync(packageJsonPath);
+  const manifest = JSON.parse(raw) as BuiltNpmPackageManifest;
+  manifest.exports = {
+    ".": {
+      import: NPM_MAIN_PATH,
+      types: NPM_TYPES_PATH,
+    },
+    "./runtime": {
+      import: NPM_RUNTIME_PATH,
+      types: NPM_RUNTIME_TYPES_PATH,
+    },
+    "./db": {
+      import: NPM_DB_PATH,
+      types: NPM_DB_TYPES_PATH,
+    },
+  };
+  Deno.writeTextFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 // Avoid running native install scripts (for example lmdb build) during packaging.
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
   Deno.env.set("NPM_CONFIG_IGNORE_SCRIPTS", "true");
@@ -91,7 +120,7 @@ writeDntImportMap(cesrPackageVersion);
 // build keri-ts package
 try {
   await build({
-    entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
+    entryPoints: [ENTRYPOINT, RUNTIME_ENTRYPOINT, DB_ENTRYPOINT],
     outDir: OUT_DIR,
     shims: {
       deno: true,
@@ -104,7 +133,7 @@ try {
     package: {
       name: "keri-ts",
       version: resolvePackageVersion(),
-      description: "KERI TypeScript package with database primitives and CLI runtime",
+      description: "KERI TypeScript protocol and runtime library",
       license: "Apache-2.0",
       repository: {
         type: "git",
@@ -125,9 +154,14 @@ try {
           import: NPM_MAIN_PATH,
           types: NPM_TYPES_PATH,
         },
-      },
-      bin: {
-        tufa: NPM_BIN_PATH,
+        "./runtime": {
+          import: NPM_RUNTIME_PATH,
+          types: NPM_RUNTIME_TYPES_PATH,
+        },
+        "./db": {
+          import: NPM_DB_PATH,
+          types: NPM_DB_TYPES_PATH,
+        },
       },
       files: ["esm", "types", "README.md", "LICENSE"],
       dependencies: {
@@ -145,15 +179,9 @@ try {
       },
     },
     postBuild() {
+      normalizeBuiltManifest();
       Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
       Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
-
-      const binPath = `${OUT_DIR}/${NPM_BIN_PATH.replace(/^\.\//, "")}`;
-      const current = Deno.readTextFileSync(binPath);
-      if (!current.startsWith("#!/usr/bin/env node\n")) {
-        Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);
-      }
-      Deno.chmodSync(binPath, 0o755);
     },
   });
 } finally {

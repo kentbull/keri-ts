@@ -96,6 +96,27 @@ runtime cues are genuinely cross-component state:
 This is different from topic-local workflow state like OOBI job queues, which
 belong behind `Oobiery` and in durable DB families such as `oobis.`.
 
+## Notifications Are Parallel To Cues, Not New Cue Kinds
+
+KERIpy does have a generic host-visible notification path, but it is not part
+of the core cue taxonomy. It lives in the app layer as:
+
+- durable notices in `Noter`
+- signed notice mutation/read logic in `Notifier`
+- transient `/notification` pings in `Signaler`
+
+`keri-ts` now follows that same separation:
+
+- runtime cues remain protocol/runtime observations
+- `Notifier`/`Signaler` are parallel host-observation surfaces owned by the app
+  layer and composed by `AgentRuntime`
+- routed exchange notifications such as `"/delegate/request"` and `"/oobis"`
+  should write notices through `Notifier`, not invent new `AgentCue` variants
+
+This boundary matters because durable controller notifications are not the same
+thing as parser/runtime convergence work. Mixing them would force host-only UI
+concerns back into the protocol cue taxonomy.
+
 ## Why Also Keep A Habery-Local Cue Deck
 
 `Habery.kevery` needs its own cue deck because local habitat work can happen
@@ -200,6 +221,9 @@ These are intentional, not accidental:
   host-specific plumbing.
 - Future cue-consuming work should prefer `CueEmission` + `CueSink` over raw
   byte iterators or new root-owned transport queues.
+- Future controller-facing app notifications should prefer `Notifier` /
+  `Noter` / `Signaler` over new cue kinds unless the information is genuinely
+  part of runtime protocol convergence.
 - `loc add` and similar local admin commands must continue to mutate local state
   through parser/routing acceptance, not through direct DB writes.
 - Receipt/witness cue parity is still incomplete in current `keri-ts`; the

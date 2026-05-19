@@ -2,97 +2,65 @@
 
 ## Purpose
 
-Persistent learnings for witness, watcher, and observer infrastructure,
-deployment, CI, and interoperability operations.
+Persistent learnings for witness, watcher, and observer infrastructure, CI,
+release, and interoperability operations.
 
 ## Current State
 
-1. Witness interop now has a real explicit-harness test seam, not just local
-   `tufa` witness coverage or fixed-port KERIpy demos. The dedicated
-   `interop-witness` lane boots real KERIpy witnesses from temp-copied config
-   files with randomized localhost ports so receipt/query behavior is exercised
-   against actual KERIpy witness processes.
+1. Witness interop now has a real explicit-harness seam. The `interop-witness`
+   lane boots actual KERIpy witnesses from temp-copied configs with randomized
+   localhost ports instead of relying on fixed-port demos.
 2. Explicit KERIpy witness hosts should be treated as OOBI-served services, not
-   `/health`-served services. `kli witness start` does not expose the same
-   health endpoint contract as `tufa` hosts, so readiness should probe the
-   controller or witness OOBI URL instead of assuming `/health`.
+   `/health`-served services; readiness should probe controller or witness OOBI
+   URLs.
 3. Witness-node discovery needs both controller and witness OOBIs. Resolving
-   only the witness OOBI is not enough for stable HTTP receipt/query interop,
-   because controllers also need the location/end-role material carried through
-   the controller OOBI path.
+   only the witness OOBI is not enough for stable receipt/query interop.
 4. The currently proved witness matrix is:
-   - `tufa` controller with only KERIpy witnesses, including successful cut/add
-     witness rotation, interaction events, and full receipt convergence.
-   - KLI/KERIpy controller with only KERIpy witnesses across multiple fully
-     witnessed rotations while keeping the witness set stable.
-   - `tufa` controller with a mixed `tufa` + KERIpy witness set, including
-     cross-implementation witness replacement and receipt convergence.
-5. The 6-witness KERIpy soak is intentionally a manual/nightly seam, not a
-   default CI requirement. Keep it ignored by default and document the explicit
-   opt-in command.
-6. Infra work should inherit the same DB ordering and duplicate-semantics model
-   as the rest of the project; mailbox and receipt behavior are not exempt from
-   the shared DB architecture contract.
+   - `tufa` controller with only KERIpy witnesses, including cut/add rotation
+     and receipt convergence
+   - KLI/KERIpy controller with only KERIpy witnesses across repeated
+     same-witness rotations
+   - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
+     cross-implementation replacement
+5. The 6-witness KERIpy soak is intentionally manual/nightly, not default CI.
+6. Infra work inherits the same DB ordering and duplicate-semantics model as
+   the rest of the project.
 7. Formatting policy is `dprint`, and CI/release paths should enforce
    `deno task fmt:check`.
-8. `master` now has a dedicated PR stage gate that runs formatting, lint, and
-   quality/test coverage against a pinned KERIpy CLI so GitHub Actions matches
-   local expectations more closely.
-9. Runtime version generation is deterministic during checks: build metadata is
-   empty by default and CI artifact steps must opt into stamped metadata
-   explicitly.
-10. KERIpy interop depends on exact LMDB-js behavior, not just an npm version:
-    keep `lmdb` pinned to `3.4.4`, preserve `LMDB_DATA_V1=true`, and rebuild the
-    native addon in the compatible way rather than assuming runner defaults are
-    safe.
-11. The LMDB v1-compatible rebuild path should rebuild the native addon directly
-    instead of using the published package's
-    `npm rebuild ... --build-from-source` path, which expects a JS build
-    toolchain CI may not provide.
-12. Cache topology is part of correctness. Shared bootstrap caches are useful,
-    but LMDB-v1-sensitive interop jobs need their own cache boundary so a
-    non-interop job cannot accidentally suppress the required rebuild.
-13. CI feedback should follow isolation boundaries, not folder names: static
-    checks, interop-sensitive jobs, smoke paths, and slower lanes should be
-    split so failures localize quickly without breaking branch-protection
-    stability. That now includes KERI lane fanout inside the default path
-    itself: DB, core-fast-a, core-fast-b, app/server, runtime-medium, stateful
-    app, and interop jobs should be separate when their wall clocks diverge
-    materially.
-14. Exact env pins, action SHAs, environment assertions, and saved artifacts are
-    part of reproducibility for a native-addon library repo, not optional
-    polish.
-15. KERI test topology is now an explicit repo contract, not an informal shell
-    convention. `scripts/ci/run-keri-test-group.ts` discovers lane membership
-    from source-owned `@file-test-lane` and `@test-lane` annotations,
-    `test:quality` vs `test:slow` is the durable default/slow split, and lane
-    audit should fail if any discovered test case is unassigned or double-owned.
-    The current maintained inventory is 66 KERI test files and 360 named tests.
-    Keep compat LMDB rebuild out of the runner itself; the harness should audit
-    and execute, while job/local setup owns native-addon preparation.
-16. Parallelism policy is now explicit too. `db-fast`, `core-fast-a`,
-    `core-fast-b`, and the whole-file-safe slice of `app-fast` run with capped
-    auto-detected workers, while `server`, `runtime-*`, `app-stateful-*`, and
-    `interop-*` stay serial until their fixed-port, global-state, or
-    persisted-store assumptions are refactored away. Override worker count with
-    `KERI_TEST_JOBS` or `CESR_TEST_JOBS`, with `DENO_JOBS` as the shared
-    fallback. Keep `core-fast` only as a compatibility alias: one oversized
-    "parallel" lane can still serialize itself if the runner has to batch heavy
-    files internally. The phase-2 runtime split now follows a stronger rule
-    too: once a mixed file contains a pure module-safe slice and a
-    listener-backed/mailbox-heavy slice, prefer physical file splits such as
-    `challenge-generate`, `challenge-direct-runtime`,
-    `challenge-mailbox-runtime`, `gate-e-local-state`,
-    `mailbox-poller-runtime`, and `mailbox-runtime-slow` over permanent
-    per-test lane escape hatches. CI must mirror that move: once default-path
-    coverage is extracted into `runtime-slow`, PR workflows need a dedicated
-    runtime-slow job instead of assuming `runtime-medium` still covers it.
+8. PR CI is stage-gated and pinned closely enough to local expectations that
+   GitHub Actions can serve as honest interop evidence rather than a separate
+   environment story.
+9. Runtime version generation should stay deterministic during checks; build
+   metadata is opt-in for artifact/release steps.
+10. KERIpy interop depends on exact LMDB-js behavior: keep `lmdb` pinned to
+    `3.4.4`, preserve `LMDB_DATA_V1=true`, and use the correct native-addon
+    rebuild path.
+11. Cache topology is part of correctness. Interop-sensitive LMDB-v1 jobs need
+    their own cache boundary.
+12. CI feedback should follow true isolation boundaries: DB, core, app/server,
+    runtime, stateful app, and interop lanes should split when their wall-clock
+    or isolation needs diverge materially.
+13. KERI test topology is an explicit repo contract. The source-owned lane
+    annotations plus `scripts/ci/run-keri-test-group.ts` are authoritative, and
+    lane audit should fail if any discovered test case is missing or
+    double-owned.
+14. Parallelism policy is explicit: parallelize only where isolation is real,
+    cap default worker counts, and keep runtime/server/interop/stateful lanes
+    serial until their assumptions change.
+15. When the true safe boundary is the file or module rather than individual
+    tests, physically split the file instead of accumulating lane overrides.
+16. The active host boundary lives in `packages/tufa`: shared host kernel, Hono
+    HTTP edge, Deno/Node listeners, witness TCP listener, and role-host seams.
+17. Infra and runtime tests should target `packages/tufa` entrypoints/roles
+    rather than rebuilding dependencies on removed `packages/keri` host paths.
+18. `tufa db dump` is the preferred operational seam for localizing
+    controller-vs-witness or provider-vs-controller state drift.
 
 ## Use This Doc For
 
-1. Witness/watcher/observer deployment and operational compatibility notes.
-2. CI/release/runtime interop contracts that affect infra behavior.
-3. Cache, versioning, and test-isolation lessons.
+1. Witness/watcher/observer deployment and compatibility notes
+2. CI/release/runtime interop contracts that affect infra behavior
+3. Cache, versioning, and test-isolation lessons
 
 ## Key References
 
@@ -102,207 +70,47 @@ deployment, CI, and interoperability operations.
 
 ## Current Follow-Ups
 
-1. Keep the explicit KERIpy witness harness on temp-copied randomized configs.
-   Do not regress to fixed-port `kli witness demo` for default CI coverage.
-2. Preserve the controller-plus-witness OOBI resolution rule for witness hosts
-   whenever new interop or bootstrap helpers are added.
+1. Keep the explicit KERIpy witness harness on temp-copied randomized configs;
+   do not regress to fixed-port demos for default CI coverage.
+2. Preserve the controller-plus-witness OOBI resolution rule whenever new
+   interop or bootstrap helpers are added.
 3. Keep CI and release workflows honest about LMDB v1 rebuild requirements and
    KERIpy pins whenever bootstrap logic changes.
 4. Preserve split-job feedback topology and isolation-aware test grouping rather
-   than collapsing everything back into one giant lane.
-5. Keep the KERI lane metadata current when mailbox/runtime/interop files gain
-   new tests. Updating the test file without updating annotations or lane audit
-   is now a topology regression.
+   than collapsing back into a giant lane.
+5. Keep KERI lane metadata current when mailbox/runtime/interop files gain new
+   tests.
 6. Keep runtime/server lanes serial until the tests stop depending on fixed
-   ports, process-global state, or shared stores. More workers are not a fix for
-   poor isolation. The current safe rewrite seam is shared ephemeral-port
-   helpers plus truthful host-reported port capture, not more random fixed-port
-   literals.
+   ports, process-global state, or shared stores.
 7. If KLI/KERIpy witness-set replacement under the explicit harness becomes a
-   required control path, prove it in its own scenario instead of silently
-   expanding the stable-control test that currently covers repeated same-witness
-   rotations.
-8. When infra-role protocol work deepens, add it here as durable operational
-   rules rather than as workflow-by-workflow diary entries.
+   required control path, prove it in its own scenario rather than silently
+   broadening a different test.
+8. Keep new host/integration tests pointed at `packages/tufa` surfaces so
+   package-boundary drift is caught where users actually run the code.
 
 ## Milestone Rollup
 
-### 2026-03-03 - Shared DB Invariants Became Explicit For Infra Work
+### 2026-03-03 to 2026-03-27 - Reproducible Infra Rules Became Explicit
 
-- Infra-role work now routes through the shared DB architecture contract so
-  duplicate ordering, idempotence, and mailbox/receipt indexing assumptions do
-  not drift from the rest of the codebase.
+- Infra work was tied to the shared DB invariants contract instead of carrying
+  its own storage folklore.
+- Formatting, PR gates, version determinism, LMDB-v1 rebuild rules, and cache
+  topology were turned into explicit correctness constraints.
 
-### 2026-03-16 - Formatting And PR Gate Policy Were Locked
+### 2026-04-07 to 2026-04-08 - Witness Interop And Test Topology Became Honest
 
-- Switched formatter policy to `dprint`.
-- Added the dedicated PR stage gate, pinned KERIpy install, and cache-aware
-  workflow design so CI exercises the same interop-sensitive quality surface
-  maintainers expect locally.
+- Mailbox query interop failures were narrowed to controller convergence and
+  replay/publication truth rather than generic SSE compatibility.
+- Real KERIpy witness interop now uses an explicit harness, OOBI-based
+  readiness, and a clearly stated proved scenario matrix.
+- `tufa db dump` became the preferred seam for localizing interop failures.
+- KERI lane ownership became a maintained contract rather than an informal shell
+  convention.
 
-### 2026-03-17 - CI Reproducibility And Interop Contracts Tightened
+### 2026-04-09 - CI Buckets And Runtime Isolation Were Recut Around Reality
 
-- Made version checks deterministic by removing implicit ambient GitHub-env
-  stamping from ordinary check paths.
-- Codified LMDB-js v1 compatibility as a CI/runtime contract and documented the
-  correct native-addon rebuild path.
-- Split KERI test/workflow topology around real isolation boundaries so failures
-  are easier to localize and warm-cache latency is better.
-
-### 2026-03-27 - Interop Cache Topology Became Part Of Correctness
-
-- Added a separate interop-sensitive `node_modules` cache boundary so only jobs
-  that actually perform the LMDB-v1 rebuild can satisfy later interop runs.
-- This closed the specific failure mode where generic bootstrap jobs populated
-  caches that caused interop jobs to skip the only step that made the native
-  addon KERIpy-compatible.
-
-### 2026-04-07 - Mailbox Query Interop Needs More Than Just SSE Compatibility
-
-- KLI/Tufa mailbox interop was not blocked by SSE framing once `/reply` and
-  `/replay` topic publication was correct. The harder failure was controller
-  query convergence after rotation.
-- Durable rule: for controller `ksn` queries without witnesses, mailbox
-  compatibility is not enough by itself. The requester may need replay material
-  quickly enough to verify the signer state behind the reply. In practice that
-  means the host must preserve the mailbox publication path for `/reply` and may
-  also need to bridge replay catch-up for cross-implementation clients.
-- Operationally, treat mailbox topic ownership (`dest` vs subject prefix) as a
-  correctness boundary, not a storage detail. The wrong bucket silently turns
-  "query succeeded" into stale remote state.
-
-### 2026-04-08 - Real KERIpy Witness Interop Needs An Explicit Harness
-
-- The durable witness-interop seam is now a dedicated `interop-witness` test
-  lane backed by a shared helper module and an explicit `KeriPyWitnessHarness`.
-  That harness should copy reference witness configs into a temp config root,
-  rewrite `curls` to randomized localhost ports, initialize each witness in an
-  isolated temp home/base, and start long-lived KERIpy witnesses from the
-  local-source Python package.
-- Readiness for explicit KERIpy witness hosts should be OOBI-based, not
-  `/health`-based.
-- Controllers must resolve both controller and witness OOBIs for witness nodes
-  so receipt/query endpoint discovery is present in both `tufa` and KLI flows.
-- The stable proved matrix now includes all-KERIpy-witness `tufa` flows, mixed
-  `tufa` + KERIpy witness flows, and an all-KERIpy KLI control case across
-  multiple same-witness rotations. Keep the 6-witness soak manual/ignored by
-  default.
-
-### 2026-04-08 - Use `tufa db dump` To Localize Witness Interop Failures Fast
-
-- The fastest way to separate controller-store convergence bugs from
-  witness-store convergence bugs is to dump both sides with `tufa db dump`
-  instead of guessing from CLI success alone. For compat-mode KLI/KERIpy stores,
-  dump `baser.kels`, `baser.wigs`, and `baser.states` first.
-- The mixed KLI-controller replacement investigation showed why this matters: a
-  controller can have the final event while both the controller and a `tufa`
-  witness still lack the full active receipt set. That instantly rules out
-  "controller fetch only" and points at the receipt/fanout path instead.
-
-### 2026-04-08 - Hosted Witness Root HTTP Ingress Must Use Witness Semantics
-
-- The durable host fix for KLI-driven replacement parity was in the shared HTTP
-  host, not in the low-level receipt-core. Generic POST/PUT requests to a hosted
-  witness base path must be processed through the witness-local ingress seam,
-  just like TCP witness ingress and `/receipts`.
-- Keep mailbox `qry/mbx`, `/fwd`, `/receipts`, and `/query` behavior on their
-  existing paths. The correction is specifically for ordinary witness root-path
-  event/reply traffic on the hosted witness AID.
-
-### 2026-04-08 - KLI Replacement Parity Is Now Proved, Not Just Same-Set Rotations
-
-- KLI/KERIpy controllers are now proved against all-`tufa` witness sets across
-  multiple same-set rotations and witness replacement.
-- KLI/KERIpy controllers are also now proved against mixed `tufa` + KERIpy
-  witness sets across multiple same-set rotations and cross-implementation
-  witness replacement.
-- The only witness interop seam that should remain ignored by default is the
-  explicit 6-witness soak. Do not reintroduce ignored parity tests for the
-  normal controller/witness replacement matrix.
-
-### 2026-04-08 - KERI Test Topology Became A Maintained Contract
-
-- The old grouped KERI shell runner had drifted badly enough that only 31 of 61
-  KERI test files were on the normal grouped path. The durable fix was one
-  authoritative lane runner plus source-owned lane annotations in the tests.
-- `test:quality` is now the truthful default path, `test:slow` is the explicit
-  mailbox-heavy/runtime-heavy path, and lane audit checks every discovered test
-  case so mixed-speed files can be split by exact source annotations without
-  silently dropping coverage.
-- Compat LMDB rebuild remains job/local setup owned. The runner's job is honest
-  ownership and execution, not hidden bootstrap magic.
-
-### 2026-04-08 - Older Stateful KERI Tests Now Reuse Local Setup
-
-- The next durable optimization step after truthful lane ownership was not a
-  global fixture framework. It was local reuse inside the older app-stateful
-  files.
-- `cli.test.ts` now keeps commander/debug behavior on subprocess seams, but the
-  setup-heavy init/incept/sign/verify/rotate command semantics run in process.
-- `habbing.test.ts`, `incept.test.ts`, and `list-aid.test.ts` now group related
-  assertions around shared initialized stores or shared Habery instances so the
-  suite stops paying repeated cold-start cost for every happy-path assertion.
-- The measurable result on the landed machine state was modest but real:
-  `cli.test.ts` fell from about 14s to about 10s and `habbing.test.ts` from
-  about 75s to about 66s, while the grouped `app-stateful-a` and
-  `app-stateful-b` lanes still passed.
-
-### 2026-04-09 - The Old "Fast" CI Bucket Was Too Broad
-
-- Splitting source-owned test lanes was necessary but not sufficient. The first
-  CI fanout still hid `db-fast`, `core-fast`, `app-fast`/`server`, and
-  `runtime-medium` behind one `keri-fast-tests` job, which made "fast" a bad
-  label once `core-fast` became the longest-running default-path bucket.
-- Durable rule: CI job names should describe real wall-clock behavior closely
-  enough that the slowest lane is visible. When one lane materially dominates,
-  give it its own job instead of keeping an aggregate umbrella just because the
-  tests are still on the default path.
-
-### 2026-04-09 - Parallelism Needs Capped Defaults And Honest Isolation
-
-- After the CI fanout split, the next durable speed win was inside the runner:
-  keep `db-fast` and core parallel, split `app-fast` into
-  `app-fast-parallel` vs `app-fast-isolated`, and leave `server`, `runtime-*`,
-  `app-stateful-*`, and `interop-*` serial until their isolation assumptions
-  change.
-- Default worker selection should be explicit and inspectable. KERI parallel
-  lanes now honor `KERI_TEST_JOBS`, then `DENO_JOBS`, otherwise auto-detect CPUs
-  and cap per lane; CESR does the same with `CESR_TEST_JOBS` and an 8-worker
-  cap.
-- Durable rule: use source-owned lane metadata to encode the true isolation
-  boundary. Do not keep fragile side manifests of "safe" test names in the
-  runner just to force more parallelism.
-
-### 2026-04-09 - One Oversized Parallel Lane Was Still A Serial Bottleneck
-
-- `core-fast` looked parallel on paper but still ran as one dominant CI bucket
-  because the runner had to batch its 11 files into two sequential invocations,
-  and the first batch contained almost all of the heavy stateful core files.
-- Durable fix: split the source-owned core unit slice into `core-fast-a` and
-  `core-fast-b`, keep `core-fast` only as a compatibility alias, and mirror
-  that split in CI with `keri-core-fast-a-tests` and
-  `keri-core-fast-b-tests`.
-- For local wall-clock wins, the new `test:quality:core-fast-parallel` helper
-  runs both slices concurrently and divides the detected or caller-specified
-  worker budget across the two child lanes.
-
-### 2026-04-09 - Runtime File Splits Beat Long-Lived Slow-Test Escape Hatches
-
-- The next durable runtime optimization step was not "turn on more workers" for
-  `runtime-*`. It was to physically split mixed files where the safe parallel
-  boundary was clearly the module.
-- `challenge-runtime.test.ts` is now three files: `challenge-generate.test.ts`,
-  `challenge-direct-runtime.test.ts`, and `challenge-mailbox-runtime.test.ts`.
-- Pure Gate E local-state cases now live in `gate-e-local-state.test.ts`, while
-  hosted/runtime Gate E flows stay in `gate-e-runtime.test.ts`.
-- Mailbox poller/local-batch semantics now live in
-  `mailbox-poller-runtime.test.ts`, and the slow mailbox admin/CLI/challenge/
-  authorization flows now live in `mailbox-runtime-slow.test.ts`, leaving the
-  remaining `mailbox-runtime.test.ts` file medium-owned.
-- The shared host rewrite seam is now explicit: `startStaticHttpHost(...)` for
-  lightweight OOBI/mailbox fixtures, `startTestServer(...)` for runtime-backed
-  hosts, and truthful actual-port reporting through
-  `startServer(..., { onListen })`, including the Node fallback.
-- When a remaining hosted runtime test still cannot use the fully actual-port
-  seam yet, the minimum acceptable fallback is reserving an ephemeral TCP port.
-  Do not keep hard-coded localhost ports in active test files.
+- The old "fast" CI umbrella was split because it no longer described actual
+  wall-clock behavior.
+- Worker defaults were capped and tied to honest isolation boundaries.
+- Oversized parallel lanes were split, and mixed runtime files were physically
+  separated so the test topology matches the real safe concurrency boundary.

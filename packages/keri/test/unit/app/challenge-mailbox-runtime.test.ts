@@ -2,6 +2,7 @@
 
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { mailboxAddCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
@@ -9,7 +10,6 @@ import {
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
-import { mailboxAddCommand } from "../../../src/app/cli/mailbox.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";

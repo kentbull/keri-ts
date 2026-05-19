@@ -15,7 +15,7 @@ import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
-import { makeExchangeSerder } from "../core/messages.ts";
+import { exchange as exchangeMessage } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
@@ -505,7 +505,7 @@ export function* sendSignedExchangeMessage(
     );
   }
 
-  const serder = makeExchangeSerder(args.route, args.payload, {
+  const [serder] = exchangeMessage(args.route, args.payload, {
     sender: hab.pre,
     recipient: args.recipient,
     modifiers: args.modifiers,

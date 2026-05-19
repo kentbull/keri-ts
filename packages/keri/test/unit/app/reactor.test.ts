@@ -7,7 +7,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
-import { makeQuerySerder } from "../../../src/core/messages.ts";
+import { query as makeQuerySerder } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 

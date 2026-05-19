@@ -11,6 +11,8 @@ import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../cesr/mod.ts";
 import { dumpDatabase } from "../../../src/app/cli/db-dump.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
+import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper, PrePrm } from "../../../src/db/keeping.ts";
 import { createMailboxer } from "../../../src/db/mailboxing.ts";
@@ -143,6 +145,55 @@ Deno.test({
     assert(outboxDump.output.some((line) => line.includes("Target: outboxer.tgts")));
     assert(outboxDump.output.some((line) => line.includes("\"status\": \"pending\"")));
     assert(outboxDump.output.some((line) => line.includes("\"eid\": \"mailbox1\"")));
+  },
+});
+
+/** Proves noter-domain inspection works for notification debugging workflows. */
+Deno.test({
+  name: "Integration: db dump supports noter targets for notification debugging",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const name = `db-dump-noter-${crypto.randomUUID()}`;
+
+    await run(function*() {
+      const hby = yield* createHabery({
+        name,
+        temp: true,
+        skipConfig: true,
+      });
+      const noter = yield* openNoterForHabery(hby);
+      const notifier = new Notifier(hby, { noter });
+
+      try {
+        notifier.add({
+          r: "/delegate/request",
+          src: "EA",
+          delpre: "EB",
+        });
+      } finally {
+        yield* noter.close();
+        yield* hby.close();
+      }
+    });
+
+    const summary = await captureDump({
+      name,
+      temp: true,
+      target: "noter",
+    });
+    assertEquals(summary.errors.length, 0);
+    assert(summary.output.some((line) => line.includes("Domain summary for noter")));
+    assert(summary.output.some((line) => line.includes("noter.notes")));
+
+    const focused = await captureDump({
+      name,
+      temp: true,
+      target: "noter.notes",
+    });
+    assertEquals(focused.errors.length, 0);
+    assert(focused.output.some((line) => line.includes("Target: noter.notes")));
+    assert(focused.output.some((line) => line.includes("\"r\": \"/delegate/request\"")));
   },
 });
 

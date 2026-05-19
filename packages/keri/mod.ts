@@ -1,10 +1,10 @@
-import { run } from "npm:effection@^3.6.0";
-import { reportCliFailure, tufa } from "./src/app/cli/cli.ts";
-
 /**
- * Main entry point - Effection is the outermost runtime
- * All execution happens within Effection's structured concurrency
+ * Default `keri-ts` library surface.
+ *
+ * Boundary rule:
+ * - root/default imports must remain browser-safe
+ * - non-browser-safe runtime and LMDB-backed storage live behind explicit
+ *   subpath entrypoints such as `keri-ts/runtime` and `keri-ts/db`
  */
-run(() => tufa(Deno.args)).catch((error) => {
-  Deno.exit(reportCliFailure(error));
-});
+export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "./src/app/version.ts";
+export * from "./src/library/index.ts";

@@ -27,11 +27,20 @@ been sensitive to runtime drift.
 
 Local macOS note:
 
-- `packages/keri/scripts/setup_lmdb_v1.sh` also applies the repo's Deno cleanup
-  hook workaround before rebuilding `lmdb-js`
+- `packages/keri/scripts/setup_lmdb_v1.sh` rebuilds every discovered local
+  `lmdb` package tree that Node or Deno may actually load, including Deno's
+  `.deno/.../node_modules/lmdb` copy when present
+- this is an addon-provenance safeguard, not a global-install requirement:
+  Deno may resolve `npm:lmdb` from its shadow package tree under
+  `node_modules/.deno/...`, and that tree can otherwise keep using an optional
+  prebuilt native addon even after top-level `node_modules/lmdb` has been
+  rebuilt successfully
+- the script intentionally resolves `npm:lmdb` through Deno itself so the
+  runtime-selected package directory is materialized and rebuilt, not just the
+  package directory we assume should be used
 - `deno task test` triggers that rebuild automatically through the KERI test
   group runner on macOS
-- the cleanup-hook patch is the upstream candidate
+- the cleanup-hook source patch comes from the forked `lmdb-js` dependency
 - if the macOS data-v1 lock path still fails with `ENOSPC`, treat it as a host
   OS/resource-exhaustion problem to document separately, not as justification
   for weakening LMDB locking semantics in `keri-ts`
@@ -40,7 +49,7 @@ Local macOS note:
 
 Primary reference:
 
-- `docs/release-versioning.md`
+- `docs/versioning/release-versioning.md`
 
 Quick commands:
 
@@ -53,25 +62,32 @@ deno task release:version
 
 # Verify generated/runtime versions
 deno task version:check
+
+# Validate the full Tufa release path before tagging
+deno task release:verify:tufa
 ```
 
 ## Build and smoke-test npm artifacts
 
 ```bash
-# Build keri npm package
+# Build keri-ts library npm package
 deno task build:npm
 
-# Build both npm packages
+# Build all npm packages
 deno task npm:build:all
 
-# Smoke test keri tarball in node:alpine (tufa version + annotate)
+# Smoke test the keri-ts tarball entrypoints in node:alpine
 deno task smoke:keri:npm
+
+# Smoke test the tufa tarball in node:alpine (tufa version + annotate)
+deno task smoke:tufa:npm
 ```
 
 To test a specific prebuilt tarball:
 
 ```bash
 bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
+bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/keri-ts-tufa-<version>.tgz
 ```
 
 ## CI workflows
@@ -79,8 +95,20 @@ bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
 - `/.github/workflows/changesets-version-pr.yml`
 - `/.github/workflows/keri-ts-npm-release.yml`
 - `/.github/workflows/cesr-npm-release.yml`
+- `/.github/workflows/tufa-npm-release.yml`
 
 Tag-triggered release workflows require package version/tag alignment.
+
+Tufa release order rule:
+
+- if `@keri-ts/tufa` depends on new `cesr-ts` or `keri-ts` versions, publish
+  those first, then publish `@keri-ts/tufa`
+
+Tufa release prep rule:
+
+- add a changeset when `@keri-ts/tufa` changes in a publishable way, run
+  `deno task release:version`, then run `deno task release:verify:tufa` before
+  creating `tufa-v<version>`
 
 ## Deno global install notes for tufa
 

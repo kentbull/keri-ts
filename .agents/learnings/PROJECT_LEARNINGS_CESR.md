@@ -181,3 +181,15 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 - `blinder.ts` and `mediar.ts` stay transport-only counted-group wrappers. Do
   not hang semantic disclosure verbs on them just because KERIpy's richer
   `Blinder` class bundled both roles together.
+
+### 2026-05-06 - Annotation Opaque Fallback Must Preserve Text-Domain Raw
+
+- `annotate()` is part of the CESR round-trip surface: even fallback paths must
+  emit the original text-domain frame bytes before the comment so `denot()` can
+  reconstruct the input.
+- For `NonNativeBodyGroup` bodies that cannot become a `Serder`, keep the full
+  counter+payload span as `body.raw`; rendering the decoded `Texter/Matter.raw`
+  leaks binary/null bytes into annotation and breaks text-domain parity.
+- Interop parity for KERIpy `kli annotate` should compare structural labels and
+  denotation, not exact prose comments, because KERIpy and tufa intentionally
+  render different human-facing details.

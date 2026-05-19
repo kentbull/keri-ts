@@ -1,5 +1,6 @@
 import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { dgKey } from "../../db/core/keys.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface ExportArgs {
@@ -63,6 +64,20 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
 
       const decoder = new TextDecoder();
       let count = 0;
+      const kever = hby.db.getKever(hab.pre);
+      if (kever?.delegated) {
+        const estSaid = kever.lastEst.d || kever.said;
+        const chain = [...hby.db.cloneDelegation(kever)];
+        if (!estSaid || !hby.db.aess.get(dgKey(hab.pre, estSaid)) || chain.length === 0) {
+          throw new ValidationError(
+            `Delegated export for ${hab.pre} requires a locally known approving delegation chain.`,
+          );
+        }
+        for (const msg of chain) {
+          console.log(decoder.decode(msg));
+          count += 1;
+        }
+      }
       for (const msg of hby.db.clonePreIter(hab.pre)) {
         console.log(decoder.decode(msg));
         count += 1;
