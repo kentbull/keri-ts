@@ -13,7 +13,11 @@ export * from "../app/challenging.ts";
 export { aidCommand } from "../app/cli/aid.ts";
 export { annotateCommand } from "../app/cli/annotate.ts";
 export { benchmarkCommand } from "../app/cli/benchmark.ts";
-export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "../app/cli/challenge.ts";
+export {
+  challengeGenerateCommand,
+  challengeRespondCommand,
+  challengeVerifyCommand,
+} from "../app/cli/challenge.ts";
 export { dumpEvts } from "../app/cli/db-dump.ts";
 export { delegateConfirmCommand } from "../app/cli/delegate.ts";
 export { endsAddCommand } from "../app/cli/ends.ts";
@@ -29,7 +33,11 @@ export {
   notificationsMarkReadCommand,
   notificationsRemoveCommand,
 } from "../app/cli/notifications.ts";
-export { oobiGenerateCommand, oobiRequestCommand, oobiResolveCommand } from "../app/cli/oobi.ts";
+export {
+  oobiGenerateCommand,
+  oobiRequestCommand,
+  oobiResolveCommand,
+} from "../app/cli/oobi.ts";
 export { queryCommand } from "../app/cli/query.ts";
 export { rotateCommand } from "../app/cli/rotate.ts";
 export { signCommand } from "../app/cli/sign.ts";
@@ -54,7 +62,11 @@ export * from "../app/reactor.ts";
 export * from "../app/respondant.ts";
 export * from "../app/runtime-turn.ts";
 export * from "../app/signaling.ts";
-export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
+export {
+  BUILD_METADATA,
+  DISPLAY_VERSION,
+  PACKAGE_VERSION,
+} from "../app/version.ts";
 export {
   processWitnessIngress,
   Receiptor,

@@ -41,7 +41,8 @@ export interface ResumePendingResult {
  */
 export class AttachmentCollector {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
-  private readonly attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  private readonly attachmentVersionFallbackPolicy:
+    AttachmentVersionFallbackPolicy;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
@@ -51,7 +52,8 @@ export class AttachmentCollector {
 
   constructor(options: AttachmentCollectorOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
-    this.attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy;
+    this.attachmentVersionFallbackPolicy =
+      options.attachmentVersionFallbackPolicy;
     this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }

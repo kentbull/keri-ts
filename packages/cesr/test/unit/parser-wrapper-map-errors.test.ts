@@ -10,7 +10,9 @@ import { encode } from "../fixtures/stream-byte-fixtures.ts";
 Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside AttachmentGroup wrapper payload", () => {
   const nested = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const payload = `${nested}ABCD`; // valid nested group + opaque tail quadlet
-  const wrappedAttachmentGroup = `${counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)}${payload}`;
+  const wrappedAttachmentGroup = `${
+    counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)
+  }${payload}`;
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}`;
 
   const parser = createParser({ attachmentDispatchMode: "strict" });
@@ -29,7 +31,9 @@ Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside Att
 Deno.test("supplemental: compat mode preserves opaque tail remainder inside AttachmentGroup wrapper payload", () => {
   const nested = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const payload = `${nested}ABCD`; // valid nested group + opaque tail quadlet
-  const wrappedAttachmentGroup = `${counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)}${payload}`;
+  const wrappedAttachmentGroup = `${
+    counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)
+  }${payload}`;
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}`;
 
   const parser = createParser({ attachmentDispatchMode: "compat" });
@@ -46,7 +50,8 @@ Deno.test("supplemental: compat mode preserves opaque tail remainder inside Atta
   assertEquals(attachment.items.length, 2);
   assertEquals(
     attachment.items.some(
-      (item) => item instanceof CounterGroup && item.name === "ControllerIdxSigs",
+      (item) =>
+        item instanceof CounterGroup && item.name === "ControllerIdxSigs",
     ),
     true,
   );

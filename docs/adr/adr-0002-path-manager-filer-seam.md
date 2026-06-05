@@ -57,32 +57,31 @@ Concretely:
 
 ## Substantive Differences And Why They Exist
 
-1. Composition instead of inheritance.
-   `Filer` is a Python base class; `PathManager` is a helper owned by
-   `LMDBer` and `Configer`. This keeps path policy reusable without forcing the
-   rest of the Python class hierarchy or coupling unrelated resource lifecycles
-   together.
+1. Composition instead of inheritance. `Filer` is a Python base class;
+   `PathManager` is a helper owned by `LMDBer` and `Configer`. This keeps path
+   policy reusable without forcing the rest of the Python class hierarchy or
+   coupling unrelated resource lifecycles together.
 
-2. Path policy only, not handle policy.
-   `Filer` may also own a file handle. `PathManager` does not. In `keri-ts`,
-   path preparation is the shared concern, but LMDB env lifecycle and config
-   file I/O are meaningfully different enough to stay in their owning classes.
+2. Path policy only, not handle policy. `Filer` may also own a file handle.
+   `PathManager` does not. In `keri-ts`, path preparation is the shared concern,
+   but LMDB env lifecycle and config file I/O are meaningfully different enough
+   to stay in their owning classes.
 
-3. Explicit Effection reopen/close lifecycle.
-   `Filer` may reopen from `__init__`. `PathManager.reopen()` is an Effection
-   `Operation` invoked explicitly by callers/factories. This matches
-   structured-concurrency rules and avoids hiding side effects in constructors.
+3. Explicit Effection reopen/close lifecycle. `Filer` may reopen from
+   `__init__`. `PathManager.reopen()` is an Effection `Operation` invoked
+   explicitly by callers/factories. This matches structured-concurrency rules
+   and avoids hiding side effects in constructors.
 
-4. Cross-runtime permission normalization.
-   `PathManager` treats Deno permission errors and Node-style mkdir errors
-   (`EACCES`, `EPERM`) as the same fallback signal. That preserves the same
-   primary-to-alt behavior across Deno and npm/Node runtimes.
+4. Cross-runtime permission normalization. `PathManager` treats Deno permission
+   errors and Node-style mkdir errors (`EACCES`, `EPERM`) as the same fallback
+   signal. That preserves the same primary-to-alt behavior across Deno and
+   npm/Node runtimes.
 
-5. Narrower live usage than full `Filer` parity.
-   `PathManager` keeps some `Filer`-shaped vocabulary, but current `keri-ts`
-   call sites use it as a directory/root-path seam. They do not rely on it as a
-   general opened-file abstraction, and maintainers should not assume that it
-   provides full `Filer` file-handle semantics.
+5. Narrower live usage than full `Filer` parity. `PathManager` keeps some
+   `Filer`-shaped vocabulary, but current `keri-ts` call sites use it as a
+   directory/root-path seam. They do not rely on it as a general opened-file
+   abstraction, and maintainers should not assume that it provides full `Filer`
+   file-handle semantics.
 
 ## Consequences
 

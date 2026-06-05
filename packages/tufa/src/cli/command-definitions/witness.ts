@@ -19,7 +19,10 @@ export function registerWitnessCmds(
     .option("-u, --url <url>", "Advertised witness HTTP URL")
     .option("--tcp-url <url>", "Advertised witness TCP URL")
     .option("--datetime <time>", "Authoritative startup timestamp")
-    .option("-c, --config-dir <dir>", "Directory override for configuration data")
+    .option(
+      "-c, --config-dir <dir>",
+      "Directory override for configuration data",
+    )
     .option("--config-file <name>", "Witness startup config file or path")
     .option("-H, --http <port>", "Local HTTP port override")
     .option("-T, --tcp <port>", "Local TCP port override")
@@ -58,7 +61,11 @@ export function registerWitnessCmds(
     .description("Submit the current event to witnesses and converge receipts")
     .requiredOption("-n, --name <name>", "Keystore name")
     .requiredOption("-a, --alias <alias>", "Local identifier alias")
-    .option("--force", "Resubmit even when the current event already has a full witness set", false)
+    .option(
+      "--force",
+      "Resubmit even when the current event already has a full witness set",
+      false,
+    )
     .option(
       "--receipt-endpoint",
       "Attempt to connect to witness receipt endpoint for witness receipts.",

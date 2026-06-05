@@ -1,7 +1,19 @@
-import { assert, assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { DeserializeError, UnknownCodeError } from "../../../src/core/errors.ts";
+import {
+  assert,
+  assertEquals,
+  assertInstanceOf,
+  assertThrows,
+} from "jsr:@std/assert";
+import {
+  DeserializeError,
+  UnknownCodeError,
+} from "../../../src/core/errors.ts";
 import { Cipher } from "../../../src/primitives/cipher.ts";
-import { CIPHER_X25519_VARIABLE_STREAM_CODES, CiXDex, MtrDex } from "../../../src/primitives/codex.ts";
+import {
+  CIPHER_X25519_VARIABLE_STREAM_CODES,
+  CiXDex,
+  MtrDex,
+} from "../../../src/primitives/codex.ts";
 import { Decrypter } from "../../../src/primitives/decrypter.ts";
 import { Encrypter } from "../../../src/primitives/encrypter.ts";
 import { Salter } from "../../../src/primitives/salter.ts";
@@ -36,8 +48,14 @@ Deno.test("cipher: infers fixed seed and salt codes from raw ciphertext size", (
     prim: new Salter({ qb64: KERIPY_MATTER_VECTORS.salterFixed }),
   });
 
-  assertEquals(new Cipher({ raw: seedCipher.raw }).code, MtrDex.X25519_Cipher_Seed);
-  assertEquals(new Cipher({ raw: saltCipher.raw }).code, MtrDex.X25519_Cipher_Salt);
+  assertEquals(
+    new Cipher({ raw: seedCipher.raw }).code,
+    MtrDex.X25519_Cipher_Seed,
+  );
+  assertEquals(
+    new Cipher({ raw: saltCipher.raw }).code,
+    MtrDex.X25519_Cipher_Salt,
+  );
 
   assertThrows(
     () => new Cipher({ raw: seedCipher.raw.slice(1) }),
@@ -54,35 +72,49 @@ Deno.test("cipher: infers fixed seed and salt codes from raw ciphertext size", (
 
 Deno.test("cipher: normalizes variable-family codes from raw size like KERIpy Matter", () => {
   assertEquals(
-    new Cipher({ raw: new Uint8Array(108), code: MtrDex.X25519_Cipher_QB64_L0 }).code,
+    new Cipher({ raw: new Uint8Array(108), code: MtrDex.X25519_Cipher_QB64_L0 })
+      .code,
     MtrDex.X25519_Cipher_QB64_L0,
   );
   assertEquals(
-    new Cipher({ raw: new Uint8Array(116), code: MtrDex.X25519_Cipher_QB64_L0 }).code,
+    new Cipher({ raw: new Uint8Array(116), code: MtrDex.X25519_Cipher_QB64_L0 })
+      .code,
     MtrDex.X25519_Cipher_QB64_L1,
   );
   assertEquals(
-    new Cipher({ raw: new Uint8Array(112), code: MtrDex.X25519_Cipher_QB64_L0 }).code,
+    new Cipher({ raw: new Uint8Array(112), code: MtrDex.X25519_Cipher_QB64_L0 })
+      .code,
     MtrDex.X25519_Cipher_QB64_L2,
   );
   assertEquals(
-    new Cipher({ raw: new Uint8Array(12696), code: MtrDex.X25519_Cipher_L0 }).code,
+    new Cipher({ raw: new Uint8Array(12696), code: MtrDex.X25519_Cipher_L0 })
+      .code,
     MtrDex.X25519_Cipher_Big_L0,
   );
   assertEquals(
-    new Cipher({ raw: new Uint8Array(12696), code: MtrDex.X25519_Cipher_QB64_L0 }).code,
+    new Cipher({
+      raw: new Uint8Array(12696),
+      code: MtrDex.X25519_Cipher_QB64_L0,
+    }).code,
     MtrDex.X25519_Cipher_QB64_Big_L0,
   );
   assertEquals(
-    new Cipher({ raw: new Uint8Array(12696), code: MtrDex.X25519_Cipher_QB2_L0 }).code,
+    new Cipher({
+      raw: new Uint8Array(12696),
+      code: MtrDex.X25519_Cipher_QB2_L0,
+    }).code,
     MtrDex.X25519_Cipher_QB2_Big_L0,
   );
 });
 
 Deno.test("cipher: decrypts KERIpy stable seed and salt vectors via prikey and seed", () => {
   const decrypter = makeParityDecrypter();
-  const seedCipher = new Cipher({ qb64: KERIPY_MATTER_VECTORS.cipherSeedVector });
-  const saltCipher = new Cipher({ qb64: KERIPY_MATTER_VECTORS.cipherSaltVector });
+  const seedCipher = new Cipher({
+    qb64: KERIPY_MATTER_VECTORS.cipherSeedVector,
+  });
+  const saltCipher = new Cipher({
+    qb64: KERIPY_MATTER_VECTORS.cipherSaltVector,
+  });
 
   const signerFromPrikey = seedCipher.decrypt({
     prikey: KERIPY_MATTER_VECTORS.decrypterX25519Private,
@@ -112,7 +144,10 @@ Deno.test("cipher: decrypts KERIpy stable seed and salt vectors via prikey and s
   assertInstanceOf(salterFromPrikey, Salter);
   assertEquals(salterFromPrikey.qb64, KERIPY_MATTER_VECTORS.salterCipherPlain);
   assertEquals(
-    saltCipher.decrypt({ seed: KERIPY_MATTER_VECTORS.keeperCryptSeedEd25519, bare: true }),
+    saltCipher.decrypt({
+      seed: KERIPY_MATTER_VECTORS.keeperCryptSeedEd25519,
+      bare: true,
+    }),
     salterFromPrikey.qb64b,
   );
 });
@@ -122,7 +157,9 @@ Deno.test("cipher: requires ctor for variable qb64 and qb2 ciphers but defaults 
   const decrypter = makeParityDecrypter();
 
   const texter = new Texter({
-    raw: new TextEncoder().encode("The quick brown fox jumps over the lazy dogcats"),
+    raw: new TextEncoder().encode(
+      "The quick brown fox jumps over the lazy dogcats",
+    ),
     code: MtrDex.Bytes_L0,
   });
   const qb64Cipher = encrypter.encrypt({
@@ -133,7 +170,9 @@ Deno.test("cipher: requires ctor for variable qb64 and qb2 ciphers but defaults 
     prim: texter,
     code: MtrDex.X25519_Cipher_QB2_L0,
   });
-  const streamer = new Streamer({ stream: new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x01]) });
+  const streamer = new Streamer({
+    stream: new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x01]),
+  });
   const streamCipher = encrypter.encrypt({
     prim: streamer,
     code: MtrDex.X25519_Cipher_L0,

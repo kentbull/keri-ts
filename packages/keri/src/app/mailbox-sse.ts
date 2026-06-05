@@ -79,8 +79,8 @@ export function* readMailboxSseBody(
 
       if (next === timedOut) {
         if (
-          parseMailboxSse(text).length > 0
-          || Date.now() + idleTimeoutMs >= deadline
+          parseMailboxSse(text).length > 0 ||
+          Date.now() + idleTimeoutMs >= deadline
         ) {
           controller.abort();
           break;

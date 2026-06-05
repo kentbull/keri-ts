@@ -3,8 +3,15 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../../../src/app/agent-runtime.ts";
+import {
+  readCesrRequestBytes,
+  splitCesrStream,
+} from "../../../src/app/cesr-http.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { queryTransportSink } from "../../../src/app/query-transport.ts";
@@ -24,7 +31,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
   });
 
   try {
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({
         name: `query-transport-local-${crypto.randomUUID()}`,
         temp: true,
@@ -45,14 +52,18 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           nsith: "1",
           toad: 0,
         });
-        const remoteController = remoteHby.makeHab("remote-controller", undefined, {
-          transferable: true,
-          icount: 1,
-          isith: "1",
-          ncount: 1,
-          nsith: "1",
-          toad: 0,
-        });
+        const remoteController = remoteHby.makeHab(
+          "remote-controller",
+          undefined,
+          {
+            transferable: true,
+            icount: 1,
+            isith: "1",
+            ncount: 1,
+            nsith: "1",
+            toad: 0,
+          },
+        );
 
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         try {
@@ -99,7 +110,9 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
 
           assertEquals(
             bodies,
-            splitCesrStream(concatBytes(introduce(sender, remoteController.pre), query)),
+            splitCesrStream(
+              concatBytes(introduce(sender, remoteController.pre), query),
+            ),
           );
         } finally {
           yield* runtime.close();
@@ -133,7 +146,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
   });
 
   try {
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({
         name: `query-transport-witness-local-${crypto.randomUUID()}`,
         temp: true,
@@ -160,15 +173,19 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           isith: "1",
           toad: 0,
         });
-        const remoteController = remoteHby.makeHab("remote-controller", undefined, {
-          transferable: true,
-          icount: 1,
-          isith: "1",
-          ncount: 1,
-          nsith: "1",
-          wits: [remoteWitness.pre],
-          toad: 1,
-        });
+        const remoteController = remoteHby.makeHab(
+          "remote-controller",
+          undefined,
+          {
+            transferable: true,
+            icount: 1,
+            isith: "1",
+            ncount: 1,
+            nsith: "1",
+            wits: [remoteWitness.pre],
+            toad: 1,
+          },
+        );
 
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         try {
@@ -191,7 +208,11 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           const query = sender.query(
             remoteController.pre,
             remoteWitness.pre,
-            { s: "0", fn: "0", a: { i: sender.pre, s: "0", d: sender.kever!.said! } },
+            {
+              s: "0",
+              fn: "0",
+              a: { i: sender.pre, s: "0", d: sender.kever!.said! },
+            },
             "logs",
           );
           const sink = queryTransportSink(runtime, hby, sender);
@@ -203,7 +224,11 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               pre: remoteController.pre,
               src: remoteWitness.pre,
               route: "logs",
-              query: { s: "0", fn: "0", a: { i: sender.pre, s: "0", d: sender.kever!.said! } },
+              query: {
+                s: "0",
+                fn: "0",
+                a: { i: sender.pre, s: "0", d: sender.kever!.said! },
+              },
               wits: [remoteWitness.pre],
             },
             msgs: [query],
@@ -211,7 +236,9 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
 
           assertEquals(
             bodies,
-            splitCesrStream(concatBytes(introduce(sender, remoteWitness.pre), query)),
+            splitCesrStream(
+              concatBytes(introduce(sender, remoteWitness.pre), query),
+            ),
           );
         } finally {
           yield* runtime.close();
@@ -247,7 +274,9 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
       new ReadableStream<Uint8Array>({
         start(stream) {
           stream.enqueue(encoder.encode("retry: 5000\n\n"));
-          stream.enqueue(encoder.encode("id: 0\nevent: /replay\nretry: 5000\ndata: "));
+          stream.enqueue(
+            encoder.encode("id: 0\nevent: /replay\nretry: 5000\ndata: "),
+          );
           stream.enqueue(replay);
           stream.enqueue(encoder.encode("\n\n"));
         },
@@ -260,7 +289,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
   });
 
   try {
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({
         name: `query-transport-sse-local-${crypto.randomUUID()}`,
         temp: true,
@@ -281,14 +310,18 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           nsith: "1",
           toad: 0,
         });
-        const remoteController = remoteHby.makeHab("remote-controller", undefined, {
-          transferable: true,
-          icount: 1,
-          isith: "1",
-          ncount: 1,
-          nsith: "1",
-          toad: 0,
-        });
+        const remoteController = remoteHby.makeHab(
+          "remote-controller",
+          undefined,
+          {
+            transferable: true,
+            icount: 1,
+            isith: "1",
+            ncount: 1,
+            nsith: "1",
+            toad: 0,
+          },
+        );
 
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });
         try {
@@ -341,7 +374,9 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           assertEquals(runtime.hby.db.getKever(remoteController.pre)?.sn, 1);
           assertEquals(
             bodies,
-            splitCesrStream(concatBytes(introduce(sender, remoteController.pre), query)),
+            splitCesrStream(
+              concatBytes(introduce(sender, remoteController.pre), query),
+            ),
           );
         } finally {
           yield* runtime.close();

@@ -3,7 +3,11 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { Diger, Prefixer } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../../../src/app/agent-runtime.ts";
 import { loadChallengeHandlers } from "../../../src/app/challenging.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -70,7 +74,7 @@ Deno.test("exchange mirrors KERIpy v1 recipient projection rules and changes SAI
 });
 
 Deno.test("Exchanger accepts signed challenge responses and records exchange state", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `exchange-accept-${crypto.randomUUID()}`,
       temp: true,
@@ -149,7 +153,7 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
 });
 
 Deno.test("Exchanger replays partial-signature escrows once the missing signatures arrive", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `exchange-escrow-${crypto.randomUUID()}`,
       temp: true,

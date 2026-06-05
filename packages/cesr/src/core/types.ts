@@ -1,4 +1,8 @@
-import type { CounterGroupLike, GroupEntry, Primitive } from "../primitives/primitive.ts";
+import type {
+  CounterGroupLike,
+  GroupEntry,
+  Primitive,
+} from "../primitives/primitive.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind, Protocol } from "../tables/versions.ts";
 

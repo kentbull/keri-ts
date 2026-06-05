@@ -6,7 +6,9 @@ import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { assertOperationThrows, CLITestHarness } from "../../../test/utils.ts";
 
-async function captureCommandOutput(operation: Operation<void>): Promise<string> {
+async function captureCommandOutput(
+  operation: Operation<void>,
+): Promise<string> {
   const harness = new CLITestHarness();
   harness.captureOutput();
   try {
@@ -69,9 +71,9 @@ Deno.test("CLI - incept command reuses initialized stores for happy-path coverag
       alias: "weighted",
       transferable: true,
       icount: 2,
-      isith: "[\"1/2\",\"1/2\"]",
+      isith: '["1/2","1/2"]',
       ncount: 2,
-      nsith: "[{\"1\":[\"1/2\",\"1/2\"]}]",
+      nsith: '[{"1":["1/2","1/2"]}]',
       toad: 0,
     }),
   );

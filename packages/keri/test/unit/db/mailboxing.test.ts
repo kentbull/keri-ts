@@ -22,7 +22,7 @@ Deno.test("db/mailboxing - explicit compat readonly mailbox open fails when addi
   const name = `compat-mailbox-${crypto.randomUUID()}`;
 
   try {
-    await run(function*() {
+    await run(function* () {
       const baser = yield* createBaser({
         name,
         headDirPath,
@@ -39,7 +39,7 @@ Deno.test("db/mailboxing - explicit compat readonly mailbox open fails when addi
 
     await assertRejects(
       () =>
-        run(function*() {
+        run(function* () {
           yield* createMailboxer({
             name,
             headDirPath,
@@ -61,7 +61,7 @@ Deno.test("db/mailboxing - compat readonly habery open succeeds without creating
   let mailboxDataPath = "";
 
   try {
-    await run(function*() {
+    await run(function* () {
       const baser = yield* createBaser({
         name,
         headDirPath,
@@ -91,7 +91,7 @@ Deno.test("db/mailboxing - compat readonly habery open succeeds without creating
 
     assertEquals(await pathExists(mailboxDataPath), false);
 
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({
         name,
         headDirPath,

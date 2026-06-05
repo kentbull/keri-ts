@@ -1,4 +1,7 @@
-import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
+import {
+  decode as decodeMsgpack,
+  encode as encodeMsgpack,
+} from "@msgpack/msgpack";
 import { encode as encodeDefaultCbor } from "cbor-x/encode";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeKeriCbor, encodeKeriCbor } from "../../src/core/cbor.ts";
@@ -167,8 +170,8 @@ const vectors: CborVector[] = [
  */
 function assertPlainObjectListShape(value: unknown): void {
   if (
-    value === null || typeof value === "string" || typeof value === "number"
-    || typeof value === "boolean"
+    value === null || typeof value === "string" || typeof value === "number" ||
+    typeof value === "boolean"
   ) {
     return;
   }

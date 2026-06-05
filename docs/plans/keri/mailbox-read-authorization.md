@@ -6,8 +6,8 @@
   `stream` cue that corresponds to the inbound `mbx` query `said`, mirroring
   KERIpy's `QryRpyMailboxIterable` correlation model as closely as practical.
 - Enforce a second gate on every mailbox read: the addressed hosted mailbox AID
-  must currently be authorized for the requested recipient before any SSE
-  stream is opened.
+  must currently be authorized for the requested recipient before any SSE stream
+  is opened.
 - Add one explicit unsafe host-side operator override,
   `--insecure-mailbox-read-override`, that bypasses only the "matching accepted
   stream cue for this query `said`" requirement. It does not bypass
@@ -21,12 +21,12 @@
 
 - In `packages/keri/src/app/server.ts`, keep parsing and ingesting the inbound
   CESR `qry` as today.
-- For `route === "mbx"`, stop deriving SSE stream inputs directly from raw
-  `q.i` and `q.topics`.
+- For `route === "mbx"`, stop deriving SSE stream inputs directly from raw `q.i`
+  and `q.topics`.
 - After `processRuntimeRequest(...)`, look up and consume the accepted
   `StreamCue` whose `cue.serder.said` matches the inbound query `serder.said`.
-- When a matching cue exists, derive `recipient pre` and `topics` from that
-  cue, not from raw request fields.
+- When a matching cue exists, derive `recipient pre` and `topics` from that cue,
+  not from raw request fields.
 - If no matching cue exists and the host override is disabled, return
   `403 Forbidden`.
 - If no matching cue exists and the host override is enabled, fall back to the
@@ -37,9 +37,9 @@
 
 ### Mailbox Director
 
-- In `packages/keri/src/app/mailbox-director.ts`, add a helper that consumes
-  one accepted mailbox `StreamCue` by query `said`, preserving unmatched cues
-  in the deck.
+- In `packages/keri/src/app/mailbox-director.ts`, add a helper that consumes one
+  accepted mailbox `StreamCue` by query `said`, preserving unmatched cues in the
+  deck.
 - Add a helper for mailbox read authorization: given
   `(recipientPre, mailboxAid)`, return whether
   `[recipientPre, mailbox, mailboxAid]` is currently allowed or enabled in
@@ -62,20 +62,20 @@
   `mailbox debug --recipient <aid>`.
 - Default remains current behavior: use the local habitat prefix when
   `--recipient` is absent.
-- When `--recipient` is present, build the `mbx` query for that target
-  recipient while still sending it to the selected mailbox endpoint.
+- When `--recipient` is present, build the `mbx` query for that target recipient
+  while still sending it to the selected mailbox endpoint.
 - Do not add a separate client-side unsafe flag; the unsafe behavior is
   host-controlled only.
 
 ### Behavioral Decisions
 
 - Recipient-only reads remain the default secure model.
-- The unsafe override bypasses only cue-correlation and
-  recipient-authenticated acceptance.
+- The unsafe override bypasses only cue-correlation and recipient-authenticated
+  acceptance.
 - The unsafe override does not bypass mailbox authorization, hosted-endpoint
   path resolution, or CESR query shape parsing.
-- Keep the KERIpy-style one-shot cue correlation model instead of introducing
-  a new token/session layer or detached HTTP-signature protocol.
+- Keep the KERIpy-style one-shot cue correlation model instead of introducing a
+  new token/session layer or detached HTTP-signature protocol.
 
 ## Test Plan
 
@@ -87,8 +87,8 @@
   when override is off.
 - The same query succeeds when override is on, provided the hosted mailbox AID
   is authorized for the targeted recipient.
-- Query fails with `403` when the addressed hosted mailbox AID is not
-  authorized for the recipient, even when override is on.
+- Query fails with `403` when the addressed hosted mailbox AID is not authorized
+  for the recipient, even when override is on.
 - Base-path and root-hosted mailbox routes still resolve the correct hosted
   mailbox AID for the authorization check.
 
@@ -104,8 +104,7 @@
 - `mailbox debug --recipient <aid>` targets the supplied recipient instead of
   the local habitat prefix.
 - Operator debug flow from a non-controller box fails against a strict host and
-  succeeds against a host started with
-  `--insecure-mailbox-read-override`.
+  succeeds against a host started with `--insecure-mailbox-read-override`.
 
 ### Regression Coverage
 

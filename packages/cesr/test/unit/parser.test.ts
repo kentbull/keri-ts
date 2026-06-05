@@ -4,10 +4,18 @@ import { sniff } from "../../src/parser/cold-start.ts";
 import { smell } from "../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { COUNTER_CODE_NAMES_V1 } from "../../src/tables/counter.tables.generated.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
-import { minimalV1CborBody, minimalV1MgpkBody, v1ify } from "../fixtures/versioned-body-fixtures.ts";
+import {
+  minimalV1CborBody,
+  minimalV1MgpkBody,
+  v1ify,
+} from "../fixtures/versioned-body-fixtures.ts";
 
 function selectV2OnlyQuadletGroupCode(): string {
   const candidates = [
@@ -38,7 +46,7 @@ Deno.test("sniff detects message and text counters", () => {
 });
 
 Deno.test("smell parses v1 version string", () => {
-  const raw = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const raw = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   const result = smell(encode(raw));
   assertEquals(result.smellage.proto, "KERI");
   assertEquals(result.smellage.kind, "JSON");
@@ -77,7 +85,7 @@ Deno.test("parser emits frames for cold-start MGPK/CBOR bodies", () => {
 });
 
 Deno.test("parser emits frame with nested attachment group", () => {
-  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   const nested = `-AAB${sigerToken()}`; // v1 ControllerIdxSigs count=1
   const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
 
@@ -95,7 +103,7 @@ Deno.test("parser emits frame with nested attachment group", () => {
 });
 
 Deno.test("parser fail-fast on malformed attachment stream", () => {
-  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   const ims = `${body}-AAB`; // truncated group payload
 
   const parser = createParser();
@@ -104,8 +112,10 @@ Deno.test("parser fail-fast on malformed attachment stream", () => {
 });
 
 Deno.test("parser strict mode rejects mixed-version attachments that need fallback", () => {
-  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
+  const v2OnlyAttachment = `${
+    counterV2(selectV2OnlyQuadletGroupCode(), 1)
+  }AAAA`;
   const ims = `${body}${v2OnlyAttachment}`;
 
   const parser = createParser({ attachmentDispatchMode: "strict" });
@@ -114,8 +124,10 @@ Deno.test("parser strict mode rejects mixed-version attachments that need fallba
 });
 
 Deno.test("parser compat mode uses fallback callback for mixed-version attachments", () => {
-  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
+  const v2OnlyAttachment = `${
+    counterV2(selectV2OnlyQuadletGroupCode(), 1)
+  }AAAA`;
   const ims = `${body}${v2OnlyAttachment}`;
   const fallbackCalls: Array<{ from: number; to: number }> = [];
 
@@ -163,7 +175,7 @@ Deno.test("V-P0-006: parser emits opaque CESR body for size-consistent NonNative
 });
 
 Deno.test("parser handles chunked input", () => {
-  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const body = v1ify('{"v":"KERI10JSON000000_","t":"icp","d":"Eabc"}');
   const nested = `-AAB${sigerToken()}`;
   const ims = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
   const parser = createParser();
@@ -177,7 +189,8 @@ Deno.test("parser handles chunked input", () => {
 
 Deno.test("native frame emission is split-boundary deterministic", () => {
   const parser = createParser();
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+  const ims =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   const split = KERIPY_NATIVE_V2_ICP_FIX_BODY.length;
 
   const first = parser.feed(encode(ims.slice(0, split)));
@@ -218,8 +231,12 @@ Deno.test("V-P0-010: parser ignores leading and repeated annotation bytes before
     ...prefixedParser.feed(encode(prefixed)),
     ...prefixedParser.flush(),
   ];
-  const prefixedFrames = prefixedEvents.filter((event) => event.type === "frame");
-  const prefixedErrors = prefixedEvents.filter((event) => event.type === "error");
+  const prefixedFrames = prefixedEvents.filter((event) =>
+    event.type === "frame"
+  );
+  const prefixedErrors = prefixedEvents.filter((event) =>
+    event.type === "error"
+  );
   assertEquals(prefixedErrors.length, 0);
   assertEquals(prefixedFrames.length, 1);
 
@@ -249,7 +266,9 @@ Deno.test("V-P0-010: parser ignores leading and repeated annotation bytes before
 
 Deno.test("parser fail-fast on malformed native fix-body payload tokenization", () => {
   const parser = createParser();
-  const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)}`;
+  const bad = `${KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(0, 4)}!${
+    KERIPY_NATIVE_V2_ICP_FIX_BODY.slice(5)
+  }`;
   const frames = [...parser.feed(encode(bad)), ...parser.flush()];
   assertEquals(frames.some((e) => e.type === "error"), true);
 });

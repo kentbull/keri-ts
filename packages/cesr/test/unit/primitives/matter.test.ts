@@ -2,12 +2,21 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { b64ToInt, codeB64ToB2, decodeB64 } from "../../../src/core/bytes.ts";
 import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { MtrDex } from "../../../src/primitives/codex.ts";
-import { Matter, parseMatter, parseMatterFromBinary, parseMatterFromText } from "../../../src/primitives/matter.ts";
+import {
+  Matter,
+  parseMatter,
+  parseMatterFromBinary,
+  parseMatterFromText,
+} from "../../../src/primitives/matter.ts";
 import { Prefixer } from "../../../src/primitives/prefixer.ts";
 import { Verfer } from "../../../src/primitives/verfer.ts";
 import { token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import { assertQb64Qb2Parity, assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
+import {
+  assertQb64Qb2Parity,
+  assertTxtBnyQb64Parity,
+  txt,
+} from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("matter: parses canonical KERIpy qb64 vectors", () => {
   const vectors = [
@@ -56,7 +65,9 @@ Deno.test("matter: exposes KERIpy semantic/readability projections", () => {
   const special = new Matter({ qb64: KERIPY_MATTER_VECTORS.labelerI });
   const digest = new Matter({ qb64: KERIPY_MATTER_VECTORS.digerBlake3 });
   const variable = new Matter({ qb64: KERIPY_MATTER_VECTORS.texterSimple });
-  const prefixer = new Prefixer({ qb64: KERIPY_MATTER_VECTORS.prefixerEd25519N });
+  const prefixer = new Prefixer({
+    qb64: KERIPY_MATTER_VECTORS.prefixerEd25519N,
+  });
   const verfer = new Verfer({ qb64: KERIPY_MATTER_VECTORS.verferEcdsaR1 });
 
   assertEquals(special.name, "Tag1");

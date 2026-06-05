@@ -1,5 +1,10 @@
 import type { Operation } from "effection";
-import { type AgentRuntime, type CueEmission, type Hab, settleRuntimeIngress } from "keri-ts/runtime";
+import {
+  type AgentRuntime,
+  type CueEmission,
+  type Hab,
+  settleRuntimeIngress,
+} from "keri-ts/runtime";
 
 /**
  * Ingest one mailbox-aware request payload through the shared runtime.
@@ -32,8 +37,8 @@ export function* drainRuntimeCues(
   serviceHab?: Hab,
 ): Operation<CueEmission[]> {
   const habitats = [...runtime.hby.habs.values()];
-  const hab = serviceHab
-    ?? (habitats.length === 1 ? habitats[0] ?? null : null);
+  const hab = serviceHab ??
+    (habitats.length === 1 ? habitats[0] ?? null : null);
   if (!hab) {
     return [];
   }

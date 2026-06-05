@@ -12,7 +12,11 @@ import {
 import { Matter, type MatterInit } from "./matter.ts";
 import type { CipherHydratable, CipherHydratableCtor } from "./primitive.ts";
 import { Salter } from "./salter.ts";
-import { boxKeyPairFromEd25519Seed, boxPublicKeyFromPrivateKey, openSealedBox } from "./sealed-box.ts";
+import {
+  boxKeyPairFromEd25519Seed,
+  boxPublicKeyFromPrivateKey,
+  openSealedBox,
+} from "./sealed-box.ts";
 import { Signer } from "./signer.ts";
 import { Streamer } from "./streamer.ts";
 
@@ -24,7 +28,8 @@ import { Streamer } from "./streamer.ts";
  * - provide an Ed25519 signer seed through `seed` and derive the matching
  *   X25519 private box key during construction
  */
-export interface DecrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64" | "qb2"> {
+export interface DecrypterInit
+  extends Omit<MatterInit, "raw" | "qb64b" | "qb64" | "qb2"> {
   raw?: Uint8Array | ArrayBufferView;
   qb64b?: Uint8Array | ArrayBufferView;
   qb64?: ByteLike;
@@ -142,9 +147,9 @@ function defaultCtorForCipher(
     return Streamer;
   }
   if (
-    CIPHER_X25519_FIXED_QB64_CODES.has(cipher.code)
-    || CIPHER_X25519_QB2_VARIABLE_CODES.has(cipher.code)
-    || CIPHER_X25519_ALL_QB64_CODES.has(cipher.code)
+    CIPHER_X25519_FIXED_QB64_CODES.has(cipher.code) ||
+    CIPHER_X25519_QB2_VARIABLE_CODES.has(cipher.code) ||
+    CIPHER_X25519_ALL_QB64_CODES.has(cipher.code)
   ) {
     throw new UnknownCodeError(
       `Unsupported cipher code = ${cipher.code} when ctor is missing.`,
@@ -201,8 +206,8 @@ export class Decrypter extends Matter {
       bare = false,
     }: DecrypterDecryptOptions<T> = {},
   ): T | Uint8Array {
-    const hydrated = cipher
-      ?? (qb64
+    const hydrated = cipher ??
+      (qb64
         ? new Cipher({ qb64b: normalizeByteLike(qb64) })
         : qb2
         ? new Cipher({ qb2: normalizeByteLike(qb2) })
@@ -222,7 +227,8 @@ export class Decrypter extends Matter {
       return plain;
     }
 
-    const effectiveCtor = (ctor ?? defaultCtorForCipher(hydrated)) as CipherHydratableCtor<T>;
+    const effectiveCtor =
+      (ctor ?? defaultCtorForCipher(hydrated)) as CipherHydratableCtor<T>;
     return hydratePlaintext(
       hydrated,
       plain,

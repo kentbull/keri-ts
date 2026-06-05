@@ -4,7 +4,11 @@
  * This transitional module now exposes only the remaining non-host command
  * helpers that still live under `keri-ts`.
  */
-export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "./challenge.ts";
+export {
+  challengeGenerateCommand,
+  challengeRespondCommand,
+  challengeVerifyCommand,
+} from "./challenge.ts";
 export { endsAddCommand } from "./ends.ts";
 export { exchangeSendCommand } from "./exchange.ts";
 export { exportCommand } from "./export.ts";

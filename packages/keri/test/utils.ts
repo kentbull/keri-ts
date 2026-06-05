@@ -19,7 +19,9 @@ async function resolveCompatBinaryPath(
   }).output();
   if (out.code !== 0) {
     throw new Error(
-      `Unable to resolve lmdb build path: ${new TextDecoder().decode(out.stderr).trim()}`,
+      `Unable to resolve lmdb build path: ${
+        new TextDecoder().decode(out.stderr).trim()
+      }`,
     );
   }
   return new TextDecoder().decode(out.stdout).trim();
@@ -227,7 +229,7 @@ export function* testConcurrentCLICommands(
 
   // Spawn all commands concurrently
   const tasks = commands.map(({ name, command, args }) =>
-    spawn(function*() {
+    spawn(function* () {
       const result = yield* testCLICommand(command, args);
       results[name] = result;
     })

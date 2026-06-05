@@ -1,11 +1,35 @@
 // @file-test-lane db-fast
 
 import { run } from "effection";
-import { assertEquals, assertExists, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
+import {
+  assertEquals,
+  assertExists,
+  assertInstanceOf,
+  assertThrows,
+} from "jsr:@std/assert";
+import {
+  b,
+  Cigar,
+  Diger,
+  MtrDex,
+  NumberPrimitive,
+  Prefixer,
+  Siger,
+  Verfer,
+} from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
-import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
-import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
+import {
+  Algos,
+  Creatory,
+  encodeHugeNumber,
+  Manager,
+  saltySigner,
+} from "../../../src/app/keeping.ts";
+import {
+  encryptSaltQb64,
+  makeDecrypterFromSeed,
+  makeEncrypterFromAeid,
+} from "../../../src/core/keeper-crypto.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 
 function keeperPubsKey(pre: string, ridx: number): string {
@@ -17,7 +41,7 @@ function signatureQb64s(signatures: Array<Siger | Cigar>): string[] {
 }
 
 Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `keeper-${crypto.randomUUID()}`,
       temp: true,
@@ -90,7 +114,7 @@ Deno.test("app/keeping - Creatory builds salty and randy creators with executabl
 });
 
 Deno.test("app/keeping - Manager returns narrow CESR primitives for inception and signing", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-${crypto.randomUUID()}`,
       temp: true,
@@ -121,7 +145,7 @@ Deno.test("app/keeping - Manager returns narrow CESR primitives for inception an
 });
 
 Deno.test("app/keeping - Manager.sign preserves overload behavior for indexed and unindexed calls", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-sign-${crypto.randomUUID()}`,
       temp: true,
@@ -154,7 +178,7 @@ Deno.test("app/keeping - Manager.sign preserves overload behavior for indexed an
 });
 
 Deno.test("app/keeping - Manager.sign derives current salty signers from pre and current path metadata", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-derived-current-${crypto.randomUUID()}`,
       temp: true,
@@ -195,7 +219,7 @@ Deno.test("app/keeping - Manager.sign derives current salty signers from pre and
 });
 
 Deno.test("app/keeping - Manager.sign derives next-lot salty signers from explicit path metadata", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-derived-next-${crypto.randomUUID()}`,
       temp: true,
@@ -224,7 +248,10 @@ Deno.test("app/keeping - Manager.sign derives next-lot salty signers from explic
       assertEquals(sigers.length, sit.nxt.pubs.length);
       assertEquals(sigers.map((siger) => siger.verfer?.qb64), sit.nxt.pubs);
       for (const [idx, siger] of sigers.entries()) {
-        assertEquals(new Verfer({ qb64: sit.nxt.pubs[idx] }).verify(siger.raw, ser), true);
+        assertEquals(
+          new Verfer({ qb64: sit.nxt.pubs[idx] }).verify(siger.raw, ser),
+          true,
+        );
       }
     } finally {
       yield* keeper.close(true);
@@ -233,7 +260,7 @@ Deno.test("app/keeping - Manager.sign derives next-lot salty signers from explic
 });
 
 Deno.test("app/keeping - Manager.sign derived-path indices select and order salty signers for indexed and unindexed output", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-derived-indices-${crypto.randomUUID()}`,
       temp: true,
@@ -267,7 +294,10 @@ Deno.test("app/keeping - Manager.sign derived-path indices select and order salt
       });
 
       assertEquals(indexed.map((siger) => siger.index), indexedSelection);
-      assertEquals(indexed.map((siger) => siger.verfer?.qb64), indexedSelection.map((index) => sit.new.pubs[index]));
+      assertEquals(
+        indexed.map((siger) => siger.verfer?.qb64),
+        indexedSelection.map((index) => sit.new.pubs[index]),
+      );
       assertEquals(signatureQb64s(indexed), signatureQb64s(explicitIndexed));
 
       const unindexedSelection = [2, 0];
@@ -280,7 +310,10 @@ Deno.test("app/keeping - Manager.sign derived-path indices select and order salt
       assertEquals(unindexed.length, unindexedSelection.length);
       for (const [offset, cigar] of unindexed.entries()) {
         assertEquals(
-          new Verfer({ qb64: sit.new.pubs[unindexedSelection[offset]] }).verify(cigar.raw, ser),
+          new Verfer({ qb64: sit.new.pubs[unindexedSelection[offset]] }).verify(
+            cigar.raw,
+            ser,
+          ),
           true,
         );
       }
@@ -291,7 +324,7 @@ Deno.test("app/keeping - Manager.sign derived-path indices select and order salt
 });
 
 Deno.test("app/keeping - Manager.sign derived-path ondices match explicit pubs semantics", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-derived-ondices-${crypto.randomUUID()}`,
       temp: true,
@@ -328,8 +361,16 @@ Deno.test("app/keeping - Manager.sign derived-path ondices match explicit pubs s
       });
 
       assertEquals(
-        derived.map((siger) => ({ code: siger.code, index: siger.index, ondex: siger.ondex })),
-        explicit.map((siger) => ({ code: siger.code, index: siger.index, ondex: siger.ondex })),
+        derived.map((siger) => ({
+          code: siger.code,
+          index: siger.index,
+          ondex: siger.ondex,
+        })),
+        explicit.map((siger) => ({
+          code: siger.code,
+          index: siger.index,
+          ondex: siger.ondex,
+        })),
       );
       assertEquals(signatureQb64s(derived), signatureQb64s(explicit));
     } finally {
@@ -339,7 +380,7 @@ Deno.test("app/keeping - Manager.sign derived-path ondices match explicit pubs s
 });
 
 Deno.test("app/keeping - Manager.sign resolves randy prefixes by addressed pub lots", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-derived-randy-${crypto.randomUUID()}`,
       temp: true,
@@ -362,13 +403,19 @@ Deno.test("app/keeping - Manager.sign resolves randy prefixes by addressed pub l
       const ser = new TextEncoder().encode("derived-randy");
 
       const current = manager.sign(ser, { pre, indexed: true });
-      const currentExplicit = manager.sign(ser, { pubs: sit.new.pubs, indexed: true });
+      const currentExplicit = manager.sign(ser, {
+        pubs: sit.new.pubs,
+        indexed: true,
+      });
       const next = manager.sign(ser, {
         pre,
         path: { ridx: sit.nxt.ridx, kidx: sit.nxt.kidx },
         indexed: true,
       });
-      const nextExplicit = manager.sign(ser, { pubs: sit.nxt.pubs, indexed: true });
+      const nextExplicit = manager.sign(ser, {
+        pubs: sit.nxt.pubs,
+        indexed: true,
+      });
 
       assertEquals(signatureQb64s(current), signatureQb64s(currentExplicit));
       assertEquals(signatureQb64s(next), signatureQb64s(nextExplicit));
@@ -379,7 +426,7 @@ Deno.test("app/keeping - Manager.sign resolves randy prefixes by addressed pub l
 });
 
 Deno.test("app/keeping - Manager.sign derives historical salty lots from pubs storage when no signer secrets remain", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-derived-history-${crypto.randomUUID()}`,
       temp: true,
@@ -412,7 +459,10 @@ Deno.test("app/keeping - Manager.sign derives historical salty lots from pubs st
       const historicalPub = keeper.getPubs(keeperPubsKey(pre, 0))!.pubs[0];
 
       assertEquals(historical[0].verfer?.qb64, historicalPub);
-      assertEquals(new Verfer({ qb64: historicalPub }).verify(historical[0].raw, ser), true);
+      assertEquals(
+        new Verfer({ qb64: historicalPub }).verify(historical[0].raw, ser),
+        true,
+      );
     } finally {
       yield* keeper.close(true);
     }
@@ -420,7 +470,7 @@ Deno.test("app/keeping - Manager.sign derives historical salty lots from pubs st
 });
 
 Deno.test("app/keeping - Manager.sign preserves branch precedence for pubs then verfers then pre", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-sign-precedence-${crypto.randomUUID()}`,
       temp: true,
@@ -456,10 +506,16 @@ Deno.test("app/keeping - Manager.sign preserves branch precedence for pubs then 
         path: { ridx: sit.new.ridx, kidx: sit.new.kidx },
         indexed: true,
       });
-      const verfersOnly = manager.sign(ser, { verfers: [nextVerfer], indexed: true });
+      const verfersOnly = manager.sign(ser, {
+        verfers: [nextVerfer],
+        indexed: true,
+      });
 
       assertEquals(signatureQb64s(pubsPreferred), signatureQb64s(pubsOnly));
-      assertEquals(signatureQb64s(verfersPreferred), signatureQb64s(verfersOnly));
+      assertEquals(
+        signatureQb64s(verfersPreferred),
+        signatureQb64s(verfersOnly),
+      );
     } finally {
       yield* keeper.close(true);
     }
@@ -467,7 +523,7 @@ Deno.test("app/keeping - Manager.sign preserves branch precedence for pubs then 
 });
 
 Deno.test("app/keeping - Manager.sign derived-path rejects invalid indices and mismatched known kidx", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-sign-derived-errors-${crypto.randomUUID()}`,
       temp: true,
@@ -510,7 +566,7 @@ Deno.test("app/keeping - Manager.sign derived-path rejects invalid indices and m
 });
 
 Deno.test("app/keeping - Manager.sign derived-path fails when historical pubs are missing or salty state is tampered", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-sign-derived-missing-${crypto.randomUUID()}`,
       temp: true,
@@ -535,7 +591,8 @@ Deno.test("app/keeping - Manager.sign derived-path fails when historical pubs ar
 
       keeper.pubs.rem(keeperPubsKey(pre, 0));
       assertThrows(
-        () => manager.sign(ser, { pre, path: { ridx: 0, kidx: 0 }, indexed: true }),
+        () =>
+          manager.sign(ser, { pre, path: { ridx: 0, kidx: 0 }, indexed: true }),
         Error,
         "Missing pubs",
       );
@@ -554,7 +611,7 @@ Deno.test("app/keeping - Manager.sign derived-path fails when historical pubs ar
 });
 
 Deno.test("app/keeping - Manager.incept honors requested current and next signer suites", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-suite-incept-${crypto.randomUUID()}`,
       temp: true,
@@ -576,8 +633,8 @@ Deno.test("app/keeping - Manager.incept honors requested current and next signer
       const nextPub = [...keeper.pris.getTopItemIter()]
         .map(([keys]) => keys[0])
         .find((pub): pub is string =>
-          !!pub && pub !== currentPub
-          && Diger.compare(b(pub), digers[0].code, digers[0].raw)
+          !!pub && pub !== currentPub &&
+          Diger.compare(b(pub), digers[0].code, digers[0].raw)
         );
 
       assertEquals(verfers[0].code, MtrDex.ECDSA_256k1);
@@ -592,7 +649,7 @@ Deno.test("app/keeping - Manager.incept honors requested current and next signer
 });
 
 Deno.test("app/keeping - Manager.incept stores next Ed25519 public keys and derives digers from them", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-ed25519-next-${crypto.randomUUID()}`,
       temp: true,
@@ -615,7 +672,10 @@ Deno.test("app/keeping - Manager.incept stores next Ed25519 public keys and deri
       const storedNext = sit?.nxt.pubs[0];
 
       assertExists(storedNext);
-      assertEquals(Diger.compare(b(storedNext), digers[0].code, digers[0].raw), true);
+      assertEquals(
+        Diger.compare(b(storedNext), digers[0].code, digers[0].raw),
+        true,
+      );
       assertEquals(keeper.getPubs(keeperPubsKey(pre, 1))?.pubs[0], storedNext);
     } finally {
       yield* keeper.close(true);
@@ -624,7 +684,7 @@ Deno.test("app/keeping - Manager.incept stores next Ed25519 public keys and deri
 });
 
 Deno.test("app/keeping - Manager.sign emits suite-correct signatures from stored signer material", async () => {
-  await run(function*() {
+  await run(function* () {
     const suites = [
       {
         icode: MtrDex.ECDSA_256k1_Seed,
@@ -675,7 +735,7 @@ Deno.test("app/keeping - Manager.sign emits suite-correct signatures from stored
 });
 
 Deno.test("app/keeping - Manager.rotate advances Ed25519 current and next public key state", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-ed25519-rotate-${crypto.randomUUID()}`,
       temp: true,
@@ -709,7 +769,11 @@ Deno.test("app/keeping - Manager.rotate advances Ed25519 current and next public
       assertEquals(rotatedSit?.old.pubs[0], pre);
       assertEquals(rotatedSit?.new.pubs[0], nextPub);
       assertEquals(
-        Diger.compare(b(rotatedSit?.nxt.pubs[0] ?? ""), rotDigers[0].code, rotDigers[0].raw),
+        Diger.compare(
+          b(rotatedSit?.nxt.pubs[0] ?? ""),
+          rotDigers[0].code,
+          rotDigers[0].raw,
+        ),
         true,
       );
       assertEquals(
@@ -723,7 +787,7 @@ Deno.test("app/keeping - Manager.rotate advances Ed25519 current and next public
 });
 
 Deno.test("app/keeping - Manager.ingest and replay preserve Ed25519 current and next public key sequences", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-ed25519-ingest-${crypto.randomUUID()}`,
       temp: true,
@@ -773,12 +837,20 @@ Deno.test("app/keeping - Manager.ingest and replay preserve Ed25519 current and 
       assertEquals(ipre, verferies[0][0].qb64);
       assertEquals(currentVerfers[0].qb64, verferies[0][0].qb64);
       assertEquals(
-        Diger.compare(b(verferies[1][0].qb64), currentDigers[0].code, currentDigers[0].raw),
+        Diger.compare(
+          b(verferies[1][0].qb64),
+          currentDigers[0].code,
+          currentDigers[0].raw,
+        ),
         true,
       );
       assertEquals(advancedVerfers[0].qb64, verferies[1][0].qb64);
       assertEquals(
-        Diger.compare(b(sit?.nxt.pubs[0] ?? ""), advancedDigers[0].code, advancedDigers[0].raw),
+        Diger.compare(
+          b(sit?.nxt.pubs[0] ?? ""),
+          advancedDigers[0].code,
+          advancedDigers[0].raw,
+        ),
         true,
       );
     } finally {
@@ -788,7 +860,7 @@ Deno.test("app/keeping - Manager.ingest and replay preserve Ed25519 current and 
 });
 
 Deno.test("app/keeping - Manager.decrypt opens Ed25519 ciphertexts and rejects non-Ed25519 signer suites", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-ed25519-decrypt-${crypto.randomUUID()}`,
       temp: true,
@@ -820,7 +892,7 @@ Deno.test("app/keeping - Manager.decrypt opens Ed25519 ciphertexts and rejects n
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-ecdsa-decrypt-${crypto.randomUUID()}`,
       temp: true,
@@ -840,7 +912,10 @@ Deno.test("app/keeping - Manager.decrypt opens Ed25519 ciphertexts and rejects n
       });
 
       assertThrows(
-        () => manager.decrypt("1AAHAAAAAAAAAAAAAAAAAAAA", { pubs: [verfers[0].qb64] }),
+        () =>
+          manager.decrypt("1AAHAAAAAAAAAAAAAAAAAAAA", {
+            pubs: [verfers[0].qb64],
+          }),
         Error,
         "Unsupported decrypt signer code",
       );
@@ -857,7 +932,7 @@ Deno.test("app/keeping - encrypted manager persists sealed secrets and reopens w
   const { seed, aeid } = branToSeedAeid(bran);
   let pub = "";
 
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name,
       headDirPath,
@@ -890,7 +965,7 @@ Deno.test("app/keeping - encrypted manager persists sealed secrets and reopens w
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name,
       headDirPath,
@@ -910,7 +985,7 @@ Deno.test("app/keeping - encrypted manager persists sealed secrets and reopens w
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name,
       headDirPath,
@@ -933,7 +1008,7 @@ Deno.test("app/keeping - encrypted manager persists sealed secrets and reopens w
 });
 
 Deno.test("app/keeping - updateAeid re-encrypts stored salts and signer secrets", async () => {
-  await run(function*() {
+  await run(function* () {
     const keeper = yield* createKeeper({
       name: `manager-reaeid-${crypto.randomUUID()}`,
       temp: true,

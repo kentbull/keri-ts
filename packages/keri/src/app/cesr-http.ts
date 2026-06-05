@@ -44,8 +44,8 @@ const textDecoder = new TextDecoder();
 /** Return true when one HTTP content type names CESR payload framing. */
 export function isCesrContentType(value: string | null | undefined): boolean {
   const normalized = value?.split(";")[0]?.trim()?.toLowerCase();
-  return normalized === CESR_CONTENT_TYPE
-    || normalized === KERIPY_CESR_JSON_CONTENT_TYPE;
+  return normalized === CESR_CONTENT_TYPE ||
+    normalized === KERIPY_CESR_JSON_CONTENT_TYPE;
 }
 
 /** Return true when one HTTP content type names multipart form media. */
@@ -212,9 +212,9 @@ export async function readCesrRequestBytes(req: Request): Promise<Uint8Array> {
   const attachment = req.headers.get(CESR_ATTACHMENT_HEADER);
 
   if (
-    contentType === CESR_CONTENT_TYPE
-    && attachment
-    && attachment.length > 0
+    contentType === CESR_CONTENT_TYPE &&
+    attachment &&
+    attachment.length > 0
   ) {
     return new Uint8Array(
       [...body, ...textEncoder.encode(attachment)],
@@ -333,7 +333,9 @@ function smellageFromMessage(
 function readRequiredMailboxAdminField(form: FormData, name: string): string {
   const value = readOptionalMailboxAdminField(form, name);
   if (!value) {
-    throw new ValidationError(`Mailbox authorization request is missing ${name}`);
+    throw new ValidationError(
+      `Mailbox authorization request is missing ${name}`,
+    );
   }
   return value;
 }
@@ -347,7 +349,9 @@ function readOptionalMailboxAdminField(
     return undefined;
   }
   if (typeof value !== "string") {
-    throw new ValidationError(`Mailbox authorization field ${name} must be text`);
+    throw new ValidationError(
+      `Mailbox authorization field ${name} must be text`,
+    );
   }
   return value;
 }
@@ -359,7 +363,9 @@ function inspectMailboxAdminCesrStream(
     return inspectCesrStream(bytes);
   } catch (error) {
     throw new ValidationError(
-      `Invalid mailbox authorization stream: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid mailbox authorization stream: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
   }
 }
@@ -378,7 +384,9 @@ function inspectMailboxAdminReply(bytes: Uint8Array): CesrStreamInspection {
       throw error;
     }
     throw new ValidationError(
-      `Invalid mailbox authorization reply: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid mailbox authorization reply: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
   }
 }

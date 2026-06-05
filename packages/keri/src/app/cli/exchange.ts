@@ -44,7 +44,9 @@ export function* exchangeSendCommand(
     data: normalizeDataArgs(args.data),
     compat: args.compat as boolean | undefined,
     outboxer: args.outboxer as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
 
   if (!commandArgs.name) {

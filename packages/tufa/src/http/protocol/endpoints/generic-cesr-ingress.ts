@@ -8,7 +8,11 @@ import {
 } from "keri-ts/runtime";
 import { jsonNoContentResponse, textResponse } from "../responses.ts";
 import { processRuntimeRequest } from "../runtime-bridge.ts";
-import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
+import type {
+  CesrIngressRoute,
+  ProtocolRequestContext,
+  ProtocolRoute,
+} from "../types.ts";
 
 const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   kind: "none",
@@ -53,11 +57,11 @@ export function classifyCesrIngressRoute(
   const witnessHab = context.policy.witnessHab;
 
   if (
-    witnessHab
-    && hosted.kind === "one"
-    && hosted.endpoint?.eid === witnessHab.pre
-    && serder.ilk !== Ilks.qry
-    && serder.ilk !== Ilks.exn
+    witnessHab &&
+    hosted.kind === "one" &&
+    hosted.endpoint?.eid === witnessHab.pre &&
+    serder.ilk !== Ilks.qry &&
+    serder.ilk !== Ilks.exn
   ) {
     return { kind: "witnessLocalIngress", witnessHab };
   }
@@ -116,14 +120,14 @@ export async function handleGenericCesrIngress(
 
   switch (ingressRoute.kind) {
     case "witnessLocalIngress":
-      await run(function*() {
+      await run(function* () {
         yield* processWitnessIngress(runtime, ingressRoute.witnessHab, bytes, {
           local: true,
         });
       });
       return jsonNoContentResponse();
     case "runtimeIngress":
-      await run(function*() {
+      await run(function* () {
         yield* processRuntimeRequest(
           runtime,
           bytes,
@@ -133,7 +137,7 @@ export async function handleGenericCesrIngress(
       });
       return jsonNoContentResponse();
     case "mailboxQueryStream":
-      await run(function*() {
+      await run(function* () {
         yield* processRuntimeRequest(
           runtime,
           bytes,

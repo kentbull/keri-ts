@@ -1,6 +1,14 @@
 import { type Operation, run } from "npm:effection@^3.6.0";
-import { type AgentRuntime, createAgentRuntime, processRuntimeUntil } from "../../../src/app/agent-runtime.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import {
+  type AgentRuntime,
+  createAgentRuntime,
+  processRuntimeUntil,
+} from "../../../src/app/agent-runtime.ts";
+import {
+  createHabery,
+  type Hab,
+  type Habery,
+} from "../../../src/app/habbing.ts";
 import {
   type CmdResult,
   extractLastNonEmptyLine,
@@ -110,21 +118,19 @@ export async function inceptTufaAlias(
         args.passcode,
         "--alias",
         args.alias,
-        ...(args.transferable === false
-          ? []
-          : [
-            "--transferable",
-            "--isith",
-            "1",
-            "--icount",
-            "1",
-            "--nsith",
-            "1",
-            "--ncount",
-            "1",
-            "--toad",
-            String(args.toad ?? 0),
-          ]),
+        ...(args.transferable === false ? [] : [
+          "--transferable",
+          "--isith",
+          "1",
+          "--icount",
+          "1",
+          "--nsith",
+          "1",
+          "--ncount",
+          "1",
+          "--toad",
+          String(args.toad ?? 0),
+        ]),
         ...(args.transferable === false
           ? [
             "--isith",

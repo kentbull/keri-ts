@@ -23,7 +23,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["sign", lazyCommand(() => import("keri-ts/runtime"), "signCommand")],
     ["verify", lazyCommand(() => import("keri-ts/runtime"), "verifyCommand")],
     ["query", lazyCommand(() => import("keri-ts/runtime"), "queryCommand")],
-    ["interact", lazyCommand(() => import("keri-ts/runtime"), "interactCommand")],
+    [
+      "interact",
+      lazyCommand(() => import("keri-ts/runtime"), "interactCommand"),
+    ],
     [
       "challenge.generate",
       lazyCommand(
@@ -62,7 +65,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["export", lazyCommand(() => import("keri-ts/runtime"), "exportCommand")],
     ["list", lazyCommand(() => import("keri-ts/runtime"), "listCommand")],
     ["aid", lazyCommand(() => import("keri-ts/runtime"), "aidCommand")],
-    ["ends.add", lazyCommand(() => import("keri-ts/runtime"), "endsAddCommand")],
+    [
+      "ends.add",
+      lazyCommand(() => import("keri-ts/runtime"), "endsAddCommand"),
+    ],
     ["loc.add", lazyCommand(() => import("keri-ts/runtime"), "locAddCommand")],
     [
       "oobi.generate",
@@ -106,7 +112,10 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
         "notificationsRemoveCommand",
       ),
     ],
-    ["annotate", lazyCommand(() => import("keri-ts/runtime"), "annotateCommand")],
+    [
+      "annotate",
+      lazyCommand(() => import("keri-ts/runtime"), "annotateCommand"),
+    ],
     [
       "benchmark.cesr",
       lazyCommand(
@@ -116,13 +125,37 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ],
     ["db.dump", lazyCommand(() => import("keri-ts/runtime"), "dumpEvts")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
-    ["mailbox.start", lazyCommand(() => import("./mailbox.ts"), "mailboxStartCommand")],
-    ["mailbox.add", lazyCommand(() => import("./mailbox.ts"), "mailboxAddCommand")],
-    ["mailbox.remove", lazyCommand(() => import("./mailbox.ts"), "mailboxRemoveCommand")],
-    ["mailbox.list", lazyCommand(() => import("./mailbox.ts"), "mailboxListCommand")],
-    ["mailbox.update", lazyCommand(() => import("./mailbox.ts"), "mailboxUpdateCommand")],
-    ["mailbox.debug", lazyCommand(() => import("./mailbox.ts"), "mailboxDebugCommand")],
-    ["witness.start", lazyCommand(() => import("./witness.ts"), "witnessStartCommand")],
-    ["witness.submit", lazyCommand(() => import("./witness.ts"), "witnessSubmitCommand")],
+    [
+      "mailbox.start",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxStartCommand"),
+    ],
+    [
+      "mailbox.add",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxAddCommand"),
+    ],
+    [
+      "mailbox.remove",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxRemoveCommand"),
+    ],
+    [
+      "mailbox.list",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxListCommand"),
+    ],
+    [
+      "mailbox.update",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxUpdateCommand"),
+    ],
+    [
+      "mailbox.debug",
+      lazyCommand(() => import("./mailbox.ts"), "mailboxDebugCommand"),
+    ],
+    [
+      "witness.start",
+      lazyCommand(() => import("./witness.ts"), "witnessStartCommand"),
+    ],
+    [
+      "witness.submit",
+      lazyCommand(() => import("./witness.ts"), "witnessSubmitCommand"),
+    ],
   ]);
 }

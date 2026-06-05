@@ -10,7 +10,11 @@
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
-import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
+import {
+  Receiptor,
+  type WitnessAuthMap,
+  WitnessReceiptor,
+} from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { parseDataItems } from "./common/parsing.ts";
 
@@ -97,7 +101,7 @@ export function* interactCommand(
 
   const data = parseDataItems(interactArgs.data);
 
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const hby = yield* setupHby(
       interactArgs.name!,
       interactArgs.base ?? "",

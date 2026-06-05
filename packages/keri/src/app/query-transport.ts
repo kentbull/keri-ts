@@ -43,7 +43,9 @@ function resolveQueryDestinationUrl(
 
   const ends = hab.endsFor(queriedPre);
   for (const role of [Roles.controller, Roles.agent, Roles.witness]) {
-    const endpoint = flattenRoleUrls(ends[role]).find((entry) => entry.eid === destination);
+    const endpoint = flattenRoleUrls(ends[role]).find((entry) =>
+      entry.eid === destination
+    );
     if (endpoint) {
       return endpoint.url;
     }
@@ -61,7 +63,9 @@ function* readResponseBytes(response: Response): Operation<Uint8Array> {
   const buffer = yield* action<ArrayBuffer>((resolve, reject) => {
     response.arrayBuffer()
       .then(resolve)
-      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+      .catch((error) =>
+        reject(error instanceof Error ? error : new Error(String(error)))
+      );
     return () => {};
   });
   return new Uint8Array(buffer);
@@ -93,7 +97,8 @@ function* postQueryMessage(
         `Query delivery to ${url} failed with HTTP ${response.status}.`,
       );
     }
-    const contentType = response.headers.get("Content-Type")?.toLowerCase() ?? "";
+    const contentType = response.headers.get("Content-Type")?.toLowerCase() ??
+      "";
     if (contentType.startsWith("text/event-stream")) {
       const text = yield* readMailboxSseBody(response, controller, {
         idleTimeoutMs: 500,

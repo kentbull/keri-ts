@@ -24,7 +24,10 @@ import {
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
-import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
+import {
+  Anchorer,
+  DELEGATE_REQUEST_ROUTE,
+} from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
@@ -50,7 +53,7 @@ function makeEmbeddedExchangeMessage(
 }
 
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-rotate-${crypto.randomUUID()}`,
       temp: true,
@@ -111,7 +114,7 @@ Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", asyn
 });
 
 Deno.test("Hab.interact advances accepted state, preserves keys, and commits anchor data", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-interact-${crypto.randomUUID()}`,
       temp: true,
@@ -177,7 +180,7 @@ Deno.test("Hab.interact advances accepted state, preserves keys, and commits anc
 });
 
 Deno.test("Hab.interact preserves hex-width boundaries across successive accepted events", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-interact-hex-${crypto.randomUUID()}`,
       temp: true,
@@ -229,7 +232,7 @@ Deno.test("Hab.interact preserves hex-width boundaries across successive accepte
 });
 
 Deno.test("Anchorer uses the proxy habitat for delegated inception and retries witness-backed anchor queries from dune", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-${crypto.randomUUID()}`,
       temp: true,
@@ -290,7 +293,13 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       > = [];
       const poster = {
         *sendExchange(
-          hab: { pre: string; endorse: (serder: SerderKERI, options?: { pipelined?: boolean }) => Uint8Array },
+          hab: {
+            pre: string;
+            endorse: (
+              serder: SerderKERI,
+              options?: { pipelined?: boolean },
+            ) => Uint8Array;
+          },
           args: {
             recipient: string;
             route: string;
@@ -372,7 +381,10 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         initial[0] && "to" in initial[0] ? initial[0].to : null,
         "waitingDelegatorAnchor",
       );
-      assertEquals(coordinator.workflowStatus(delegate.pre, "0").proxyDependent, true);
+      assertEquals(
+        coordinator.workflowStatus(delegate.pre, "0").proxyDependent,
+        true,
+      );
       assertEquals(
         sent.map(({ sender, recipient, topic }) => ({
           sender,
@@ -403,7 +415,11 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       assertEquals(queuedQueries, [{
         pre: delegator.pre,
         route: "logs",
-        query: { fn: "0", s: "0", a: { i: delegate.pre, s: "0", d: delegate.kever!.said! } },
+        query: {
+          fn: "0",
+          s: "0",
+          a: { i: delegate.pre, s: "0", d: delegate.kever!.said! },
+        },
         hab: proxy.pre,
         wits: [delegatorWitness.pre],
       }]);
@@ -422,7 +438,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
 });
 
 Deno.test("Anchorer completes delegated inception once the delegator approval is locally discoverable", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-complete-${crypto.randomUUID()}`,
       temp: true,
@@ -496,7 +512,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
 });
 
 Deno.test("Anchorer fails delegated inception without an explicit proxy", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-delegate-requires-proxy-${crypto.randomUUID()}`,
       temp: true,
@@ -534,7 +550,9 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
       } as unknown as Poster;
       const querying = {
         watchAnchor() {
-          throw new Error("delegated inception should not query without a proxy");
+          throw new Error(
+            "delegated inception should not query without a proxy",
+          );
         },
       } as unknown as QueryCoordinator;
       const coordinator = new Anchorer(hby, { poster, querying });
@@ -553,7 +571,7 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
 });
 
 Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues a witness-backed anchor query by default", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-delegate-rotation-default-sender-${crypto.randomUUID()}`,
       temp: true,
@@ -618,7 +636,13 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
       > = [];
       const poster = {
         *sendExchange(
-          hab: { pre: string; endorse: (serder: SerderKERI, options?: { pipelined?: boolean }) => Uint8Array },
+          hab: {
+            pre: string;
+            endorse: (
+              serder: SerderKERI,
+              options?: { pipelined?: boolean },
+            ) => Uint8Array;
+          },
           args: {
             recipient: string;
             route: string;
@@ -700,7 +724,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
 });
 
 Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approved delegation chains", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `habery-delegate-oobi-${crypto.randomUUID()}`,
       temp: true,
@@ -762,7 +786,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -813,7 +837,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -848,7 +872,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
   const name = `habery-local-kevery-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -881,7 +905,7 @@ Deno.test("Habery reconfigure preserves top-level OOBI preload queues", async ()
   const name = `habery-config-oobi-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -926,7 +950,7 @@ Deno.test("Hab reconfigure applies alias-scoped controller curls through reply a
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const url = "http://127.0.0.1:7002/controller";
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -974,7 +998,7 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
   let endSaid = "";
   let locSaid = "";
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -1009,7 +1033,7 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -1035,7 +1059,7 @@ Deno.test("Hab receives KERIpy-style config and local routing seams from Habery"
   const name = `habery-injected-seams-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -1086,7 +1110,7 @@ Deno.test("Hab endorse matches KERIpy EXN pipelining modes", async () => {
   const name = `habery-endorse-exn-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1127,7 +1151,7 @@ Deno.test("Habery inception reuses one Habery across prefix and threshold varian
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const nested = [{ "1": ["1/2", "1/2"] }];
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1198,7 +1222,7 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
   const name = `habery-sign-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1253,7 +1277,7 @@ Deno.test("Hab receipt helpers reuse one Habery across witness and receipt varia
   const name = `habery-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1358,7 +1382,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
   const bran = "MyPasscodeARealSecret";
   let signatoryPre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1390,7 +1414,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1420,7 +1444,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
 
   await assertRejects(
     () =>
-      run(function*() {
+      run(function* () {
         const hby = yield* createHabery({
           name,
           headDirPath,
@@ -1442,7 +1466,7 @@ Deno.test("Signator reuses the Habery narrow dependency seam across reopen", asy
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   let signatoryPre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1463,7 +1487,7 @@ Deno.test("Signator reuses the Habery narrow dependency seam across reopen", asy
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,

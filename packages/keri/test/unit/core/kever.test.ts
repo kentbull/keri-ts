@@ -9,7 +9,7 @@ import { KeyStateRecord } from "../../../src/core/records.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 
 Deno.test("Kever reloads durable state and serializes back to the same key-state record", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `kever-roundtrip-${crypto.randomUUID()}`,
       temp: true,
@@ -40,7 +40,7 @@ Deno.test("Kever reloads durable state and serializes back to the same key-state
 });
 
 Deno.test("Kever reloads weighted threshold state without flattening it", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `kever-weighted-roundtrip-${crypto.randomUUID()}`,
       temp: true,
@@ -70,7 +70,7 @@ Deno.test("Kever reloads weighted threshold state without flattening it", async 
 });
 
 Deno.test("Kever constructor path preserves delegated inception state", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `kever-dip-${crypto.randomUUID()}`,
       temp: true,
@@ -108,7 +108,7 @@ Deno.test("Kever constructor path preserves delegated inception state", async ()
 });
 
 Deno.test("Kever evaluateInception normalizes deprecated intive bt inputs before persisting state", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `kever-intive-bt-${crypto.randomUUID()}`,
       temp: true,
@@ -171,7 +171,7 @@ Deno.test("Kever evaluateInception normalizes deprecated intive bt inputs before
 });
 
 Deno.test("Kever reload preserves large bt hex values without bigint-to-number drift", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `kever-large-bt-${crypto.randomUUID()}`,
       temp: true,
@@ -207,7 +207,7 @@ Deno.test("Baser reopen reloads accepted local kevers and prefixes", async () =>
   const headDirPath = `/tmp/tufa-baser-${crypto.randomUUID()}`;
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -228,7 +228,7 @@ Deno.test("Baser reopen reloads accepted local kevers and prefixes", async () =>
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const baser = yield* createBaser({
       name,
       headDirPath,
@@ -248,7 +248,7 @@ Deno.test("Baser reopen removes orphaned non-group hab records like KERIpy reloa
   const headDirPath = `/tmp/tufa-baser-${crypto.randomUUID()}`;
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -271,7 +271,7 @@ Deno.test("Baser reopen removes orphaned non-group hab records like KERIpy reloa
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const baser = yield* createBaser({
       name,
       headDirPath,
@@ -288,7 +288,7 @@ Deno.test("Baser reopen removes orphaned non-group hab records like KERIpy reloa
 });
 
 Deno.test("Kever.verifyIndexedSignatures preserves verifier context for ECDSA prior-next exposures", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `kever-ecdsa-exposed-${crypto.randomUUID()}`,
       temp: true,
@@ -312,8 +312,8 @@ Deno.test("Kever.verifyIndexedSignatures preserves verifier context for ECDSA pr
       const nextPub = [...hby.ks.pris.getTopItemIter()]
         .map(([keys]) => keys[0])
         .find((pub): pub is string =>
-          !!pub && pub !== kever.verfers[0].qb64
-          && Diger.compare(b(pub), nextDiger.code, nextDiger.raw)
+          !!pub && pub !== kever.verfers[0].qb64 &&
+          Diger.compare(b(pub), nextDiger.code, nextDiger.raw)
         );
       assertExists(nextPub);
 

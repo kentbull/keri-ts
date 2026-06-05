@@ -3,10 +3,21 @@
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { DELEGATE_REQUEST_ROUTE, DelegateRequestHandler } from "../../../src/app/delegating.ts";
+import {
+  DELEGATE_REQUEST_ROUTE,
+  DelegateRequestHandler,
+} from "../../../src/app/delegating.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
-import { notice, Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
-import { OOBI_REQUEST_ROUTE, oobiRequestExn, OobiRequestHandler } from "../../../src/app/oobiery.ts";
+import {
+  notice,
+  Notifier,
+  openNoterForHabery,
+} from "../../../src/app/notifying.ts";
+import {
+  OOBI_REQUEST_ROUTE,
+  oobiRequestExn,
+  OobiRequestHandler,
+} from "../../../src/app/oobiery.ts";
 import { Signal, Signaler } from "../../../src/app/signaling.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 
@@ -36,7 +47,7 @@ function inceptionMessage(hby: Habery, pre: string, said: string): Uint8Array {
 }
 
 Deno.test("Notifier signs, lists, marks, removes, and signals notices with collapse-key replacement", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `notifier-${crypto.randomUUID()}`,
       temp: true,
@@ -47,7 +58,10 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
     const notifier = new Notifier(hby, { noter, signaler });
 
     try {
-      assertEquals(notifier.add({ r: "/delegate/request", src: "EA", delpre: "EB" }), true);
+      assertEquals(
+        notifier.add({ r: "/delegate/request", src: "EA", delpre: "EB" }),
+        true,
+      );
       assertEquals(notifier.count(), 1);
       assertEquals(signaler.count(), 1);
 
@@ -77,7 +91,7 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
 });
 
 Deno.test("Notifier rejects tampered stored notices", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `notifier-tamper-${crypto.randomUUID()}`,
       temp: true,
@@ -128,7 +142,7 @@ Deno.test("Signaler preserves raw/pad round trips and explicit collapse keys", (
 });
 
 Deno.test("DelegateRequestHandler writes notices only for local delegators", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `delegate-request-handler-${crypto.randomUUID()}`,
       temp: true,
@@ -198,7 +212,7 @@ Deno.test("DelegateRequestHandler writes notices only for local delegators", asy
 });
 
 Deno.test("OobiRequestHandler queues oobis and writes controller notices", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `oobi-request-handler-${crypto.randomUUID()}`,
       temp: true,
@@ -241,7 +255,7 @@ Deno.test("OobiRequestHandler queues oobis and writes controller notices", async
 });
 
 Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `runtime-noter-${crypto.randomUUID()}`,
       temp: true,

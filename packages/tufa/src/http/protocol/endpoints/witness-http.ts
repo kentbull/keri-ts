@@ -26,8 +26,8 @@ export function classifyWitnessHttpRoute(
 
   const relativePath = context.hosted?.relativePath ?? context.pathname;
   if (
-    (context.method === "POST" || context.method === "PUT")
-    && relativePath === "/receipts"
+    (context.method === "POST" || context.method === "PUT") &&
+    relativePath === "/receipts"
   ) {
     return {
       kind: "witnessReceiptsPost",
@@ -57,7 +57,7 @@ export async function handleWitnessReceiptPost(
     return textResponse("Unacceptable content type.", 406);
   }
 
-  const result = await run(function*() {
+  const result = await run(function* () {
     return yield* witnessReceiptPost(runtime, witnessHab, bytes);
   });
   if (result.kind === "accepted") {

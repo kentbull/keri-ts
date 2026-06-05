@@ -1,7 +1,12 @@
 // @file-test-lane core-fast-a
 
 import { assertEquals } from "jsr:@std/assert";
-import { EndpointRoles, isEndpointRole, isRole, Roles } from "../../../src/core/roles.ts";
+import {
+  EndpointRoles,
+  isEndpointRole,
+  isRole,
+  Roles,
+} from "../../../src/core/roles.ts";
 import { isScheme, Schemes } from "../../../src/core/schemes.ts";
 
 Deno.test("KERI role codex includes watcher while endpoint-role subset stays narrow", () => {

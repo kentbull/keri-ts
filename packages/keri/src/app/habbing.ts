@@ -50,9 +50,17 @@ import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
-import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
+import {
+  createOutboxer,
+  DisabledOutboxer,
+  type OutboxerLike,
+} from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE, splitCesrStream } from "./cesr-http.ts";
+import {
+  type CesrBodyMode,
+  DEFAULT_CESR_BODY_MODE,
+  splitCesrStream,
+} from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
 import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
@@ -593,8 +601,8 @@ export class Hab {
 
     const currentSith = args.isith ?? kever.ntholder?.sith;
     const nextSith = args.nsith ?? currentSith;
-    const preservedToad = args.toad
-      ?? ((args.cuts?.length ?? 0) === 0 && (args.adds?.length ?? 0) === 0
+    const preservedToad = args.toad ??
+      ((args.cuts?.length ?? 0) === 0 && (args.adds?.length ?? 0) === 0
         ? Number(kever.toader.num)
         : undefined);
     const keys = verfers.map((verfer) => verfer.qb64);
@@ -1165,8 +1173,9 @@ export class Hab {
     const kever = this.db.getKever(aid);
     const estSaid = kever?.lastEst.d || kever?.said;
     if (
-      kever?.delegated
-      && (!estSaid || !this.db.aess.get(dgKey(aid, estSaid)) || [...this.db.cloneDelegation(kever)].length === 0)
+      kever?.delegated &&
+      (!estSaid || !this.db.aess.get(dgKey(aid, estSaid)) ||
+        [...this.db.cloneDelegation(kever)].length === 0)
     ) {
       return new Uint8Array();
     }
@@ -1692,8 +1701,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       mustExist: outboxer === "open",
     }));
 
-  const cf = providedCf
-    ?? (skipConfig ? undefined : (yield* createConfiger({
+  const cf = providedCf ??
+    (skipConfig ? undefined : (yield* createConfiger({
       name,
       base,
       temp,

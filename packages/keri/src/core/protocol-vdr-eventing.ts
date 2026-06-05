@@ -12,7 +12,12 @@ import {
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
 import { query as coreQuery } from "./protocol-eventing.ts";
-import { RegStateRecord, type RegStateRecordShape, VcStateRecord, type VcStateRecordShape } from "./records.ts";
+import {
+  RegStateRecord,
+  type RegStateRecordShape,
+  VcStateRecord,
+  type VcStateRecordShape,
+} from "./records.ts";
 
 function resolveVersion(version?: Versionage): Versionage {
   return version ?? Vrsn_1_0;
@@ -75,10 +80,16 @@ export function incept(
     ? Number.parseInt(toad, 16)
     : toad ?? (actualBaks.length === 0 ? 0 : ample(actualBaks.length));
   if (actualBaks.length === 0 && actualToad !== 0) {
-    throw new ValidationError(`Invalid toad = ${actualToad} for baks = ${actualBaks}`);
+    throw new ValidationError(
+      `Invalid toad = ${actualToad} for baks = ${actualBaks}`,
+    );
   }
-  if (actualBaks.length > 0 && (actualToad < 1 || actualToad > actualBaks.length)) {
-    throw new ValidationError(`Invalid toad = ${actualToad} for baks = ${actualBaks}`);
+  if (
+    actualBaks.length > 0 && (actualToad < 1 || actualToad > actualBaks.length)
+  ) {
+    throw new ValidationError(
+      `Invalid toad = ${actualToad} for baks = ${actualBaks}`,
+    );
   }
   return new SerderKERI({
     sad: {
@@ -141,17 +152,23 @@ export function rotate(
   }
   for (const cut of cutsList) {
     if (!bakset.has(cut)) {
-      throw new ValidationError(`Invalid cuts = ${cutsList}, not all members in baks.`);
+      throw new ValidationError(
+        `Invalid cuts = ${cutsList}, not all members in baks.`,
+      );
     }
   }
   for (const cut of cutsList) {
     if (addsList.includes(cut)) {
-      throw new ValidationError(`Intersecting cuts = ${cutsList} and adds = ${addsList}.`);
+      throw new ValidationError(
+        `Intersecting cuts = ${cutsList} and adds = ${addsList}.`,
+      );
     }
   }
   for (const add of addsList) {
     if (bakset.has(add)) {
-      throw new ValidationError(`Intersecting baks = ${currentBaks} and adds = ${addsList}.`);
+      throw new ValidationError(
+        `Intersecting baks = ${currentBaks} and adds = ${addsList}.`,
+      );
     }
   }
   const nextBaks = currentBaks.filter((bak) => !cutsList.includes(bak));
@@ -160,10 +177,14 @@ export function rotate(
     ? Number.parseInt(toad, 16)
     : toad ?? (nextBaks.length === 0 ? 0 : ample(nextBaks.length));
   if (nextBaks.length === 0 && actualToad !== 0) {
-    throw new ValidationError(`Invalid toad = ${actualToad} for resultant wits = ${nextBaks}`);
+    throw new ValidationError(
+      `Invalid toad = ${actualToad} for resultant wits = ${nextBaks}`,
+    );
   }
   if (nextBaks.length > 0 && (actualToad < 1 || actualToad > nextBaks.length)) {
-    throw new ValidationError(`Invalid toad = ${actualToad} for resultant wits = ${nextBaks}`);
+    throw new ValidationError(
+      `Invalid toad = ${actualToad} for resultant wits = ${nextBaks}`,
+    );
   }
   return new SerderKERI({
     sad: {
@@ -341,7 +362,10 @@ export function state(
   if (new Set(actualWits).size !== actualWits.length) {
     throw new ValidationError(`Invalid wits = ${actualWits}, has duplicates.`);
   }
-  const actualToad = toad ?? (actualWits.length === 0 ? 0 : Math.max(1, Math.ceil(actualWits.length / 2)));
+  const actualToad = toad ??
+    (actualWits.length === 0
+      ? 0
+      : Math.max(1, Math.ceil(actualWits.length / 2)));
   return new RegStateRecord(
     {
       vn: [resolveVersion(version).major, resolveVersion(version).minor],

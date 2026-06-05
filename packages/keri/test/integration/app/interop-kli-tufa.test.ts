@@ -14,7 +14,10 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { mailboxTopicKey, openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
+import {
+  mailboxTopicKey,
+  openMailboxerForHabery,
+} from "../../../src/app/mailboxing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import {
   createInteropContext,
@@ -214,7 +217,9 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
   const base = `interop-rotate-${crypto.randomUUID().slice(0, 8)}`;
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
-  const tufaHeadDir = await Deno.makeTempDir({ prefix: "tufa-interop-rotate-" });
+  const tufaHeadDir = await Deno.makeTempDir({
+    prefix: "tufa-interop-rotate-",
+  });
   const tufaRepoRoot = workspaceRoot();
   const tufaName = `tufa-rotate-${crypto.randomUUID().slice(0, 8)}`;
   const tufaAlias = "alice";
@@ -934,7 +939,8 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     ctx.env,
     ctx.repoRoot,
   );
-  const providerMailboxOobi = `${providerOrigin}/oobi/${providerPre}/mailbox/${providerPre}`;
+  const providerMailboxOobi =
+    `${providerOrigin}/oobi/${providerPre}/mailbox/${providerPre}`;
   const bobControllerOobi = `${bobOrigin}/oobi/${bobPre}/controller`;
   const bobAgent = spawnChild(
     "deno",
@@ -969,7 +975,7 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
       );
       assertStringIncludes(
         await providerFetch.text(),
-        "\"r\":\"/loc/scheme\"",
+        '"r":"/loc/scheme"',
       );
 
       await requireSuccess(
@@ -1221,7 +1227,7 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     });
   });
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: providerName,
       base,

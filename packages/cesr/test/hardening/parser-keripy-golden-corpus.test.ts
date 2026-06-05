@@ -9,8 +9,15 @@ import {
   SUDexByVersion,
   UniDexByVersion,
 } from "../../src/tables/counter-version-registry.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
-import { KERIPY_NATIVE_V2_ICP_FIX_BODY, KERIPY_V1_JSON_ICP_BODY } from "../fixtures/external-vectors.ts";
+import {
+  counterV1,
+  counterV2,
+  sigerToken,
+} from "../fixtures/counter-token-fixtures.ts";
+import {
+  KERIPY_NATIVE_V2_ICP_FIX_BODY,
+  KERIPY_V1_JSON_ICP_BODY,
+} from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 
 interface FrameSummary {
@@ -50,7 +57,9 @@ function summarizeFrames(
       pvrsn: `${event.frame.body.pvrsn.major}.${event.frame.body.pvrsn.minor}`,
       ilk: event.frame.body.ilk ?? "",
       said: event.frame.body.said ?? "",
-      attachments: event.frame.attachments.map((group) => `${group.code}:${group.count}`),
+      attachments: event.frame.attachments.map((group) =>
+        `${group.code}:${group.count}`
+      ),
     }));
 }
 
@@ -73,15 +82,19 @@ Deno.test(
   "V-P2-017: KERIpy-derived golden corpus preserves txt/qb2 parity and split determinism",
   () => {
     const expectedSaid = "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN";
-    const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 2)}${sigerToken()}${sigerToken()}`;
+    const nestedAttachment = `${
+      counterV2(CtrDexV2.ControllerIdxSigs, 2)
+    }${sigerToken()}${sigerToken()}`;
     // Build nested wrapper shapes from the canonical KERIpy v2 native fixture so
     // parity assertions lock wrapper semantics, not synthetic body differences.
-    const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+    const wrappedPayload =
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
     const wrappedBodyWithAttachment = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
       wrappedPayload,
     );
-    const genericPayload = `${wrappedBodyWithAttachment}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const genericPayload =
+      `${wrappedBodyWithAttachment}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const nestedGeneric = wrapQuadletGroupV2(
       CtrDexV2.GenericGroup,
       genericPayload,
@@ -299,10 +312,12 @@ Deno.test(
 Deno.test(
   "V-P2-019: historical implicit-v1 KERIpy-style stream parses in compat mode without selectors",
   () => {
-    const stream = `${KERIPY_V1_JSON_ICP_BODY}${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`;
+    const stream = `${KERIPY_V1_JSON_ICP_BODY}${
+      counterV1(CtrDexV1.ControllerIdxSigs, 1)
+    }${sigerToken()}`;
     const bodyEnd = KERIPY_V1_JSON_ICP_BODY.length;
-    const counterEnd = bodyEnd
-      + counterV1(CtrDexV1.ControllerIdxSigs, 1).length;
+    const counterEnd = bodyEnd +
+      counterV1(CtrDexV1.ControllerIdxSigs, 1).length;
     // Stress parser continuation right around legacy body->attachment boundary.
     const boundaries = [bodyEnd - 1, bodyEnd + 1, counterEnd + 1];
     const summary = summarizeFrames(encode(stream), boundaries);

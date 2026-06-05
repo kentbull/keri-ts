@@ -19,7 +19,9 @@ function parsePositiveIntEnv(key: string): number | null {
 
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${key} must be a positive integer when set, got "${value}".`);
+    throw new Error(
+      `${key} must be a positive integer when set, got "${value}".`,
+    );
   }
 
   return parsed;

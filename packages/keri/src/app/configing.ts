@@ -1,7 +1,10 @@
 import { basename, dirname, join } from "jsr:@std/path";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
-import { PathManager, type PathManagerOptions } from "../db/core/path-manager.ts";
+import {
+  PathManager,
+  type PathManagerOptions,
+} from "../db/core/path-manager.ts";
 
 interface ConfigerDefaults {
   tailDirPath: string;
@@ -121,8 +124,8 @@ export class Configer {
 
       // On Windows, rename may fail when target already exists.
       if (
-        !(error instanceof Deno.errors.AlreadyExists)
-        && !(error instanceof Deno.errors.PermissionDenied)
+        !(error instanceof Deno.errors.AlreadyExists) &&
+        !(error instanceof Deno.errors.PermissionDenied)
       ) {
         throw error;
       }
@@ -248,7 +251,9 @@ export class Configer {
       return JSON.parse(raw) as T;
     } catch (error) {
       throw new ValidationError(
-        `Invalid JSON configuration at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        `Invalid JSON configuration at ${path}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }

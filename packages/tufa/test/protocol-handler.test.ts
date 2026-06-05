@@ -2,7 +2,12 @@
 
 import { Ilks } from "cesr-ts";
 import { assertEquals } from "jsr:@std/assert";
-import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
+import type {
+  AgentRuntime,
+  Hab,
+  HostedRouteResolution,
+  ProtocolHostPolicy,
+} from "keri-ts/runtime";
 import {
   classifyCesrIngressRoute,
   classifyProtocolRoute,

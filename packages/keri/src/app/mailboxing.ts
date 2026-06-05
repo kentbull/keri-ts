@@ -18,7 +18,11 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import { TopicsRecord } from "../core/records.ts";
 import { Roles } from "../core/roles.ts";
-import { createMailboxer, type Mailboxer, type MailboxerOptions } from "../db/mailboxing.ts";
+import {
+  createMailboxer,
+  type Mailboxer,
+  type MailboxerOptions,
+} from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
@@ -342,7 +346,9 @@ export function hostedEndpointPathMatches(
     matches.push({ eid, url, basePath, relativePath });
   }
 
-  return matches.sort((left, right) => right.basePath.length - left.basePath.length);
+  return matches.sort((left, right) =>
+    right.basePath.length - left.basePath.length
+  );
 }
 
 /**
@@ -418,7 +424,9 @@ export function flattenRoleUrls(
 export function firstSortedEndpoint(
   roleUrls?: Record<string, Record<string, string>>,
 ): { eid: string; url: string } | null {
-  const flattened = flattenRoleUrls(roleUrls).sort((left, right) => left.eid.localeCompare(right.eid));
+  const flattened = flattenRoleUrls(roleUrls).sort((left, right) =>
+    left.eid.localeCompare(right.eid)
+  );
   return flattened[0] ?? null;
 }
 
@@ -451,7 +459,9 @@ function joinBasePath(basePath: string, suffix: string): string {
     return normalizePath(basePath);
   }
   return normalizePath(
-    `${normalizePath(basePath) === "/" ? "" : normalizePath(basePath)}${suffix}`,
+    `${
+      normalizePath(basePath) === "/" ? "" : normalizePath(basePath)
+    }${suffix}`,
   );
 }
 

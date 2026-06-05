@@ -105,7 +105,7 @@ interface CueRecord {
 }
 
 Deno.test("Query coordinator turns incomplete query cues into outbound `logs` queries when a local hab and controller endpoint exist", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `querying-incomplete-${crypto.randomUUID()}`,
       temp: true,
@@ -166,7 +166,7 @@ Deno.test("Query coordinator turns incomplete query cues into outbound `logs` qu
 });
 
 Deno.test("Query coordinator keeps incomplete queries notify-only when no honest local habitat can be resolved", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `querying-ambiguous-${crypto.randomUUID()}`,
       temp: true,
@@ -223,7 +223,7 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when no honest
 });
 
 Deno.test("Query coordinator keeps incomplete queries notify-only when the target has no controller, agent, or witness endpoint", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `querying-no-endpoint-${crypto.randomUUID()}`,
       temp: true,
@@ -272,7 +272,7 @@ Deno.test("Query coordinator keeps incomplete queries notify-only when the targe
 });
 
 Deno.test("Query coordinator emits mailbox-delivered queries when only a mailbox endpoint is known for the target", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `querying-mailbox-only-${crypto.randomUUID()}`,
       temp: true,
@@ -330,7 +330,7 @@ Deno.test("Query coordinator emits mailbox-delivered queries when only a mailbox
 });
 
 Deno.test("KeyStateNoticer finishes immediately once a saved key state matches local accepted state", async () => {
-  await run(function*() {
+  await run(function* () {
     const requesterHby = yield* createHabery({
       name: `querying-ksn-current-requester-${crypto.randomUUID()}`,
       temp: true,
@@ -357,7 +357,9 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(requesterHby, {
+        mode: "local",
+      });
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",
@@ -368,7 +370,8 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
       );
       seedControllerEndpoint(requesterHby, subject.pre);
       runtime.cues.clear();
-      const resolvedUrl = `http://127.0.0.1:7723/oobi/${subject.pre}/controller`;
+      const resolvedUrl =
+        `http://127.0.0.1:7723/oobi/${subject.pre}/controller`;
       requesterHby.db.roobi.pin(resolvedUrl, {
         date: new Date().toISOString(),
         state: "resolved",
@@ -409,7 +412,7 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
 });
 
 Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is ahead and clears once local KEL catches up", async () => {
-  await run(function*() {
+  await run(function* () {
     const requesterHby = yield* createHabery({
       name: `querying-ksn-ahead-requester-${crypto.randomUUID()}`,
       temp: true,
@@ -436,7 +439,9 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(requesterHby, {
+        mode: "local",
+      });
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",
@@ -447,7 +452,8 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
       );
       seedControllerEndpoint(requesterHby, subject.pre);
       runtime.cues.clear();
-      const resolvedUrl = `http://127.0.0.1:7723/oobi/${subject.pre}/controller`;
+      const resolvedUrl =
+        `http://127.0.0.1:7723/oobi/${subject.pre}/controller`;
       requesterHby.db.roobi.pin(resolvedUrl, {
         date: new Date().toISOString(),
         state: "resolved",
@@ -504,7 +510,7 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
 });
 
 Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local completion conditions are satisfied", async () => {
-  await run(function*() {
+  await run(function* () {
     const requesterHby = yield* createHabery({
       name: `querying-continuations-requester-${crypto.randomUUID()}`,
       temp: true,
@@ -531,7 +537,9 @@ Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local complet
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(requesterHby, {
+        mode: "local",
+      });
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",

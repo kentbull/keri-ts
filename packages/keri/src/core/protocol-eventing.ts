@@ -17,7 +17,12 @@ import {
 } from "../../../cesr/mod.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
-import { KeyStateRecord, type KeyStateRecordShape, StateEERecord, type StateEERecordShape } from "./records.ts";
+import {
+  KeyStateRecord,
+  type KeyStateRecordShape,
+  StateEERecord,
+  type StateEERecordShape,
+} from "./records.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
 
 const MAX_INTIVE_THRESHOLD = 0xffff;
@@ -114,7 +119,9 @@ function validateThreshold(
     sith: value ?? defaultThreshold(count, minimum),
   });
   if (tholder.num !== null && tholder.num < BigInt(minimum)) {
-    throw new ValidationError(`Invalid ${label} threshold ${String(value ?? "")}.`);
+    throw new ValidationError(
+      `Invalid ${label} threshold ${String(value ?? "")}.`,
+    );
   }
   if (tholder.size > count) {
     throw new ValidationError(
@@ -129,9 +136,9 @@ function encodeThreshold(
   intive = false,
 ): ThresholdSith | number {
   if (
-    intive
-    && tholder.num !== null
-    && tholder.num <= BigInt(MAX_INTIVE_THRESHOLD)
+    intive &&
+    tholder.num !== null &&
+    tholder.num <= BigInt(MAX_INTIVE_THRESHOLD)
   ) {
     return Number(tholder.num);
   }
@@ -208,7 +215,11 @@ export function state(
   const currentVersion = pvrsn ?? version ?? Vrsn_1_0;
   const snNum = coerceWholeNumber(sn, "sn");
   const fnNum = coerceWholeNumber(fn, "fn");
-  if (!(new Set<string>([Ilks.icp, Ilks.rot, Ilks.ixn, Ilks.dip, Ilks.drt])).has(eilk)) {
+  if (
+    !(new Set<string>([Ilks.icp, Ilks.rot, Ilks.ixn, Ilks.dip, Ilks.drt])).has(
+      eilk,
+    )
+  ) {
     throw new ValidationError(`Invalid event type et=${eilk} in key state.`);
   }
 
@@ -226,21 +237,29 @@ export function state(
     throw new ValidationError(`Invalid wits = ${witnessList}, has duplicates.`);
   }
   const resolvedToad = toad === undefined
-    ? (witnessList.length === 0 ? 0 : Math.max(1, Math.ceil(witnessList.length / 2)))
+    ? (witnessList.length === 0
+      ? 0
+      : Math.max(1, Math.ceil(witnessList.length / 2)))
     : coerceWholeNumber(toad, "toad");
   if (witnessList.length === 0 && resolvedToad !== 0) {
-    throw new ValidationError(`Invalid toad = ${resolvedToad} for wits = ${witnessList}.`);
+    throw new ValidationError(
+      `Invalid toad = ${resolvedToad} for wits = ${witnessList}.`,
+    );
   }
   if (
-    witnessList.length > 0
-    && (resolvedToad < 1 || resolvedToad > witnessList.length)
+    witnessList.length > 0 &&
+    (resolvedToad < 1 || resolvedToad > witnessList.length)
   ) {
-    throw new ValidationError(`Invalid toad = ${resolvedToad} for wits = ${witnessList}.`);
+    throw new ValidationError(
+      `Invalid toad = ${resolvedToad} for wits = ${witnessList}.`,
+    );
   }
 
   const latestEst = StateEERecord.fromDict(eevt);
   if (!latestEst.s || !latestEst.d) {
-    throw new ValidationError(`Missing or invalid latest est event = ${String(eevt)} for key state.`);
+    throw new ValidationError(
+      `Missing or invalid latest est event = ${String(eevt)} for key state.`,
+    );
   }
 
   const cuts = cloneStringList(latestEst.br);
@@ -252,7 +271,9 @@ export function state(
     throw new ValidationError(`Invalid adds = ${adds}, has duplicates.`);
   }
   if (cuts.some((cut) => adds.includes(cut))) {
-    throw new ValidationError(`Intersecting cuts = ${cuts} and adds = ${adds}.`);
+    throw new ValidationError(
+      `Intersecting cuts = ${cuts} and adds = ${adds}.`,
+    );
   }
 
   return new KeyStateRecord(
@@ -326,13 +347,17 @@ export function incept(
     ? (witnessList.length === 0 ? 0 : ample(witnessList.length))
     : coerceWholeNumber(toad, "toad");
   if (witnessList.length === 0 && resolvedToad !== 0) {
-    throw new ValidationError(`Invalid toad = ${resolvedToad} for wits = ${witnessList}`);
+    throw new ValidationError(
+      `Invalid toad = ${resolvedToad} for wits = ${witnessList}`,
+    );
   }
   if (
-    witnessList.length > 0
-    && (resolvedToad < 1 || resolvedToad > witnessList.length)
+    witnessList.length > 0 &&
+    (resolvedToad < 1 || resolvedToad > witnessList.length)
   ) {
-    throw new ValidationError(`Invalid toad = ${resolvedToad} for wits = ${witnessList}`);
+    throw new ValidationError(
+      `Invalid toad = ${resolvedToad} for wits = ${witnessList}`,
+    );
   }
 
   const sad: Record<string, unknown> = {
@@ -416,7 +441,9 @@ export function rotate(
   }
   const snNum = coerceWholeNumber(sn, "sn");
   if (snNum < 1) {
-    throw new ValidationError(`Invalid sn = 0x${snNum.toString(16)} for rot or drt.`);
+    throw new ValidationError(
+      `Invalid sn = 0x${snNum.toString(16)} for rot or drt.`,
+    );
   }
 
   const currentTholder = validateThreshold(isith, keys.length, "current", 1);
@@ -439,10 +466,16 @@ export function rotate(
     ? (nextWits.length === 0 ? 0 : ample(nextWits.length))
     : coerceWholeNumber(toad, "toad");
   if (nextWits.length === 0 && resolvedToad !== 0) {
-    throw new ValidationError(`Invalid toad = ${resolvedToad} for wits = ${nextWits}`);
+    throw new ValidationError(
+      `Invalid toad = ${resolvedToad} for wits = ${nextWits}`,
+    );
   }
-  if (nextWits.length > 0 && (resolvedToad < 1 || resolvedToad > nextWits.length)) {
-    throw new ValidationError(`Invalid toad = ${resolvedToad} for wits = ${nextWits}`);
+  if (
+    nextWits.length > 0 && (resolvedToad < 1 || resolvedToad > nextWits.length)
+  ) {
+    throw new ValidationError(
+      `Invalid toad = ${resolvedToad} for wits = ${nextWits}`,
+    );
   }
 
   const sad: Record<string, unknown> = {

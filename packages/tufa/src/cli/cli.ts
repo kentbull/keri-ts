@@ -1,5 +1,10 @@
 import { type Operation } from "effection";
-import { AppError, LOG_LEVELS, type LogLevel, setLogLevel } from "keri-ts/runtime";
+import {
+  AppError,
+  LOG_LEVELS,
+  type LogLevel,
+  setLogLevel,
+} from "keri-ts/runtime";
 import { Command, Option } from "npm:commander@^10.0.1";
 import { tufaCliVersionLine } from "../version-display.ts";
 import { registerCmds } from "./command-definitions.ts";
@@ -62,8 +67,8 @@ function isCommanderExitError(error: unknown): error is { code: string } {
 
 function commanderExitCode(error: unknown): number {
   if (
-    error && typeof error === "object" && "exitCode" in error
-    && typeof error.exitCode === "number"
+    error && typeof error === "object" && "exitCode" in error &&
+    typeof error.exitCode === "number"
   ) {
     return error.exitCode;
   }

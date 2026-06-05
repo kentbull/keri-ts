@@ -10,7 +10,11 @@ import {
   unblindBlindState,
   unblindBoundState,
 } from "../../../src/primitives/disclosure.ts";
-import { BlindState, BoundState, TypeMedia } from "../../../src/primitives/structing.ts";
+import {
+  BlindState,
+  BoundState,
+  TypeMedia,
+} from "../../../src/primitives/structing.ts";
 import {
   KERIPY_DISCLOSURE_HELPER_VECTORS,
   KERIPY_STRUCTING_DATA_VECTORS,

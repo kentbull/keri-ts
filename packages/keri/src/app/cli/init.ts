@@ -64,7 +64,9 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     aeid: args.aeid as string | undefined,
     seed: args.seed as string | undefined,
     outboxer: args.outboxer as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
 
   // Validate required name
@@ -98,7 +100,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const cues = createQueue<{ kin: string; mode: string; name: string }, void>();
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const cf: Configer | undefined = initArgs.configFile
       ? (yield* createConfiger({
         name: initArgs.configFile,
@@ -195,7 +197,9 @@ function runtimeBootstrapNeeded(
 
 function configuredWellKnownUrls(hby: Habery): string[] {
   return Array.isArray(hby.config.wurls)
-    ? hby.config.wurls.filter((entry): entry is string => typeof entry === "string")
+    ? hby.config.wurls.filter((entry): entry is string =>
+      typeof entry === "string"
+    )
     : [];
 }
 
@@ -204,7 +208,9 @@ function assertConfiguredWellKnownAuth(
   hby: Habery,
   context: string,
 ): void {
-  const failed = configuredWellKnownUrls(hby).filter((url) => !runtimeHasWellKnownAuth(runtime, url));
+  const failed = configuredWellKnownUrls(hby).filter((url) =>
+    !runtimeHasWellKnownAuth(runtime, url)
+  );
   if (failed.length === 0) {
     return;
   }

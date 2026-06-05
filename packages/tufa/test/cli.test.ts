@@ -1,8 +1,15 @@
 // @file-test-lane app-fast-isolated
 
 import { run } from "effection";
-import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
-import { DISPLAY_VERSION as KERI_DISPLAY_VERSION, ValidationError } from "keri-ts/runtime";
+import {
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "jsr:@std/assert";
+import {
+  DISPLAY_VERSION as KERI_DISPLAY_VERSION,
+  ValidationError,
+} from "keri-ts/runtime";
 import { tufa } from "../src/cli/cli.ts";
 import { mailboxStartCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
@@ -50,7 +57,9 @@ async function captureConsoleLog(
 }
 
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((candidate) => candidate.trim().startsWith("Prefix"));
+  const line = output.split(/\r?\n/).find((candidate) =>
+    candidate.trim().startsWith("Prefix")
+  );
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -60,7 +69,9 @@ function extractPrefix(output: string): string {
 Deno.test("tufa/cli - version command prints display version", async () => {
   const captured = await captureConsoleLog(() => run(() => tufa(["version"])));
 
-  assertEquals(captured, [`tufa ${TUFA_DISPLAY_VERSION} (keri-ts ${KERI_DISPLAY_VERSION})`]);
+  assertEquals(captured, [
+    `tufa ${TUFA_DISPLAY_VERSION} (keri-ts ${KERI_DISPLAY_VERSION})`,
+  ]);
 });
 
 Deno.test("tufa/cli - --version prints display version", async () => {
@@ -163,7 +174,7 @@ Deno.test("tufa/cli - interact reaches the real command body through the Tufa bi
     "--alias",
     alias,
     "--data",
-    "{\"anchor\":\"acdc\"}",
+    '{"anchor":"acdc"}',
   ]);
   assertEquals(
     interact.code,

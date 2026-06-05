@@ -7,10 +7,10 @@ Deno.test("parseExnDataItems matches KERIpy-style coercion and merge order", () 
   const parsed = parseExnDataItems([
     "count=1",
     "enabled=true",
-    "tags=[\"a\",\"b\"]",
-    "meta={\"x\":1}",
+    'tags=["a","b"]',
+    'meta={"x":1}',
     "note=hello",
-    "{\"count\":2,\"extra\":\"json\"}",
+    '{"count":2,"extra":"json"}',
     "empty=null",
   ]);
 

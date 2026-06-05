@@ -18,8 +18,8 @@ hardening work could safely proceed.
 2. The initial parity floor had to include chunk boundaries, mixed-version
    fallback, wrapper recovery, and nested group behavior.
 3. KERIpy was the parity authority for those vectors.
-4. P0/P1 vectors captured immediate must-have and next-up coverage, while P2
-   was explicitly separated as later hardening work.
+4. P0/P1 vectors captured immediate must-have and next-up coverage, while P2 was
+   explicitly separated as later hardening work.
 
 ## Durable Outcomes
 

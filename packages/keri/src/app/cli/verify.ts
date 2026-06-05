@@ -62,7 +62,7 @@ export function* verifyCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("At least one signature is required");
   }
 
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const hby = yield* setupHby(
       verifyArgs.name!,
       verifyArgs.base ?? "",

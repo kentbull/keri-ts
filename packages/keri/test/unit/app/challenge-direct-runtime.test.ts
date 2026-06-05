@@ -8,21 +8,32 @@ import {
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
-import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
+import {
+  challengeRespondCommand,
+  challengeVerifyCommand,
+} from "../../../src/app/cli/challenge.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
-import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
+import {
+  controllerOobiResponse,
+  startStaticHttpHost,
+} from "../../http-test-support.ts";
 import { startTestServer } from "../../runtime-test-hosts.ts";
 import { testCLICommand } from "../../utils.ts";
-import { seedHostedIdentifier, seedLocalIdentifier } from "./challenge-runtime-support.ts";
+import {
+  seedHostedIdentifier,
+  seedLocalIdentifier,
+} from "./challenge-runtime-support.ts";
 
 Deno.test("challenge respond and verify round-trip through direct controller delivery", async () => {
   const aliceName = `challenge-direct-alice-${crypto.randomUUID()}`;
   const bobName = `challenge-direct-bob-${crypto.randomUUID()}`;
-  const aliceHeadDirPath = `/tmp/tufa-challenge-direct-alice-${crypto.randomUUID()}`;
-  const bobHeadDirPath = `/tmp/tufa-challenge-direct-bob-${crypto.randomUUID()}`;
+  const aliceHeadDirPath =
+    `/tmp/tufa-challenge-direct-alice-${crypto.randomUUID()}`;
+  const bobHeadDirPath =
+    `/tmp/tufa-challenge-direct-bob-${crypto.randomUUID()}`;
   const words = ["baba", "coco", "dede"];
 
   let alice!: Awaited<ReturnType<typeof seedHostedIdentifier>>;
@@ -56,7 +67,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
       `${aliceHost.origin}/oobi/${alice.pre}/controller`,
     );
 
-    await run(function*(): Operation<void> {
+    await run(function* (): Operation<void> {
       const hby = yield* createHabery({
         name: bobName,
         headDirPath: bobHeadDirPath,
@@ -68,7 +79,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
       }
 
       const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
-      const runtimeTask = yield* spawn(function*() {
+      const runtimeTask = yield* spawn(function* () {
         yield* runAgentRuntime(runtime, { hab });
       });
       const { address, task: serverTask } = yield* startTestServer(runtime);
@@ -128,7 +139,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
     );
     assertStringIncludes(verified.output.at(-1) ?? "", alice.pre);
 
-    await run(function*(): Operation<void> {
+    await run(function* (): Operation<void> {
       const hby = yield* createHabery({
         name: bobName,
         headDirPath: bobHeadDirPath,

@@ -2,7 +2,12 @@
 
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { b, t } from "../../../../../cesr/mod.ts";
-import { onItemsAsText, pairsAsText, valuesAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
+import {
+  onItemsAsText,
+  pairsAsText,
+  valuesAsText,
+  withTempLMDBer,
+} from "./lmdber-test-utils.ts";
 
 Deno.test("db/core lmdber ioset - putIoSetVals preserves first-seen order and only appends new logical values", async () => {
   await withTempLMDBer("ioset-put", (lmdber) => {

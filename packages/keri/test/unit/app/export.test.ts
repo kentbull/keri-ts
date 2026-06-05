@@ -58,7 +58,7 @@ Deno.test("CLI - export command refuses unapproved delegated AIDs and exports ap
   const alias = "delegate";
   const headDirPath = `/tmp/tufa-export-${crypto.randomUUID()}`;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({ name, headDirPath });
     try {
       const delegator = hby.makeHab("delegator", undefined, {
@@ -85,7 +85,7 @@ Deno.test("CLI - export command refuses unapproved delegated AIDs and exports ap
     "requires a locally known approving delegation chain",
   );
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({ name, headDirPath });
     try {
       const delegator = hby.habByName("delegator");

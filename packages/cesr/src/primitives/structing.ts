@@ -17,7 +17,10 @@
  * unblind, or commitment recomputation; those live in `disclosure.ts`.
  */
 import { b, concatBytes } from "../core/bytes.ts";
-import type { CounterCodeNameV1, CounterCodeNameV2 } from "../tables/counter-codex.ts";
+import type {
+  CounterCodeNameV1,
+  CounterCodeNameV2,
+} from "../tables/counter-codex.ts";
 import { Bexter } from "./bexter.ts";
 import { LabelDex, NonceDex } from "./codex.ts";
 import { Diger } from "./diger.ts";
@@ -54,7 +57,7 @@ export type StructingPrimitive =
  * form. When `ipn` is `null`, the field serializes through canonical `qb64`.
  */
 export type Castage = Readonly<{
-  kls: new(init: Matter | MatterInit) => StructingPrimitive;
+  kls: new (init: Matter | MatterInit) => StructingPrimitive;
   ipn: string | null;
 }>;
 
@@ -71,7 +74,7 @@ export type Castage = Readonly<{
  * - `null` falls back to canonical `qb64`
  */
 export function castage(
-  kls: new(init: Matter | MatterInit) => StructingPrimitive,
+  kls: new (init: Matter | MatterInit) => StructingPrimitive,
   ipn: string | null = null,
 ): Castage {
   return Object.freeze({ kls, ipn });
@@ -137,8 +140,8 @@ function encodeTag(text: string): string {
   if (!code) {
     throw new TypeError(`Unsupported label text length=${text.length}`);
   }
-  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5
-      || code === LabelDex.Tag9
+  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 ||
+      code === LabelDex.Tag9
     ? "_"
     : "";
   return `${code}${pad}${text}`;

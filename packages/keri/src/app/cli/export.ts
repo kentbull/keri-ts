@@ -41,7 +41,7 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
     void
   >();
 
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const hby = yield* setupHby(
       exportArgs.name!,
       exportArgs.base ?? "",
@@ -68,7 +68,10 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
       if (kever?.delegated) {
         const estSaid = kever.lastEst.d || kever.said;
         const chain = [...hby.db.cloneDelegation(kever)];
-        if (!estSaid || !hby.db.aess.get(dgKey(hab.pre, estSaid)) || chain.length === 0) {
+        if (
+          !estSaid || !hby.db.aess.get(dgKey(hab.pre, estSaid)) ||
+          chain.length === 0
+        ) {
           throw new ValidationError(
             `Delegated export for ${hab.pre} requires a locally known approving delegation chain.`,
           );

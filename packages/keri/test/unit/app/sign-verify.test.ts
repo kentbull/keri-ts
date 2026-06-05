@@ -1,13 +1,25 @@
 // @file-test-lane app-fast-parallel
 
 import { run } from "effection";
-import { assertEquals, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertNotEquals,
+  assertStringIncludes,
+} from "jsr:@std/assert";
 import { Siger } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../../../src/app/agent-runtime.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
-import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
+import {
+  assertOperationThrows,
+  CLITestHarness,
+  createMockArgs,
+} from "../../../test/utils.ts";
 
 function captureOperationOutput(
   operationFactory: () => ReturnType<typeof signCommand>,
@@ -22,7 +34,9 @@ function captureOperationOutput(
 function extractRawSignature(lines: string[]): string {
   const first = lines.find((line) => /^\d+\.\s+/.test(line));
   if (!first) {
-    throw new Error(`Unable to parse signature from output:\n${lines.join("\n")}`);
+    throw new Error(
+      `Unable to parse signature from output:\n${lines.join("\n")}`,
+    );
   }
   return first.replace(/^\d+\.\s+/, "");
 }
@@ -35,7 +49,7 @@ Deno.test("CLI sign signs inline text and @file text identically", async () => {
   const filePath = `${headDirPath}/message.txt`;
   Deno.writeTextFileSync(filePath, message);
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({ name, headDirPath });
     try {
       hby.makeHab(alias, undefined, {
@@ -80,7 +94,7 @@ Deno.test("CLI verify validates raw signatures and rejects out-of-range indices"
   const message = "verify me";
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({ name, headDirPath });
     try {
       const hab = hby.makeHab(alias, undefined, {
@@ -135,8 +149,12 @@ Deno.test("CLI verify validates raw signatures and rejects out-of-range indices"
 });
 
 Deno.test("CLI verify fails against stale key state after source rotation", async () => {
-  const sourceHeadDir = await Deno.makeTempDir({ prefix: "tufa-stale-source-" });
-  const observerHeadDir = await Deno.makeTempDir({ prefix: "tufa-stale-observer-" });
+  const sourceHeadDir = await Deno.makeTempDir({
+    prefix: "tufa-stale-source-",
+  });
+  const observerHeadDir = await Deno.makeTempDir({
+    prefix: "tufa-stale-observer-",
+  });
   const sourceName = `stale-source-${crypto.randomUUID()}`;
   const observerName = `stale-observer-${crypto.randomUUID()}`;
   const alias = "alice";
@@ -144,8 +162,11 @@ Deno.test("CLI verify fails against stale key state after source rotation", asyn
   let pre = "";
   let staleFailureSignature = "";
 
-  await run(function*() {
-    const source = yield* createHabery({ name: sourceName, headDirPath: sourceHeadDir });
+  await run(function* () {
+    const source = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDir,
+    });
     const observer = yield* createHabery({
       name: observerName,
       headDirPath: observerHeadDir,
@@ -174,7 +195,8 @@ Deno.test("CLI verify fails against stale key state after source rotation", asyn
       const newKey = hab.kever?.verfers[0]?.qb64 ?? "";
       assertNotEquals(newKey, oldKey);
 
-      staleFailureSignature = (hab.sign(new TextEncoder().encode(message), true)[0]?.qb64) ?? "";
+      staleFailureSignature =
+        (hab.sign(new TextEncoder().encode(message), true)[0]?.qb64) ?? "";
     } finally {
       yield* runtime.close();
       yield* observer.close();
@@ -201,7 +223,7 @@ Deno.test("CLI verify still expects raw signature material, not numbered sign ou
   const message = "raw signature only";
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({ name, headDirPath });
     try {
       const hab = hby.makeHab(alias, undefined, {
@@ -241,7 +263,8 @@ Deno.test("CLI verify still expects raw signature material, not numbered sign ou
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     assertEquals(
-      messageText.includes("Unsupported code") || messageText.includes("Unknown indexer code"),
+      messageText.includes("Unsupported code") ||
+        messageText.includes("Unknown indexer code"),
       true,
       messageText,
     );

@@ -25,8 +25,8 @@ query before it can verify signatures from the newly active key state.
   - CLI surface for authoring one local `ixn` and optionally converging witness
     receipts.
 - `packages/keri/src/app/querying.ts`
-  - Query correspondence layer: `KeyStateNoticer`, `LogQuerier`,
-    `SeqNoQuerier`, `AnchorQuerier`, and `QueryCoordinator`.
+  - Query correspondence layer: `KeyStateNoticer`, `LogQuerier`, `SeqNoQuerier`,
+    `AnchorQuerier`, and `QueryCoordinator`.
 - `packages/keri/src/app/habbing.ts`
   - `Hab.rotate(...)`, `Hab.interact(...)`, event builders, local acceptance,
     and keeper rollback.
@@ -70,8 +70,8 @@ What is intentionally different in `keri-ts`:
 - query transport and mailbox polling are composed explicitly per command
   instead of being mostly ambient long-lived runtime behavior.
 - attester selection is deterministic instead of randomized.
-- parser ingress uses CESR frames/envelopes plus `dispatchEnvelope(...)`
-  instead of KERIpy's monolithic `Parser` object model.
+- parser ingress uses CESR frames/envelopes plus `dispatchEnvelope(...)` instead
+  of KERIpy's monolithic `Parser` object model.
 
 ## Query / Reply / Escrow Flow
 
@@ -85,12 +85,12 @@ The query path is:
 1. `tufa query` opens a local runtime and registers a continuation.
 2. `QueryCoordinator` turns continuations into honest outbound `qry` messages.
 3. transport sends the query and ingests any immediate CESR reply bytes.
-4. `Reactor` parses ingress and dispatches envelopes through `Revery`,
-   `Kevery`, and `Exchanger`.
+4. `Reactor` parses ingress and dispatches envelopes through `Revery`, `Kevery`,
+   and `Exchanger`.
 5. if a reply is not yet verifiable, it may be recoverable and escrowed rather
    than treated as terminal failure.
-6. later turns retry reply/KEL escrow processing until accepted state
-   converges or the bounded command time expires.
+6. later turns retry reply/KEL escrow processing until accepted state converges
+   or the bounded command time expires.
 
 The recoverability model is conceptually the same as KERIpy's
 `UnverifiedReplyError` handling:

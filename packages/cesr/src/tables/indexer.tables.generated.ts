@@ -68,8 +68,12 @@ export const INDEXER_CODES_BY_NAME = {
 } as const;
 
 export const INDEXER_HARDS = new Map<string, number>([
-  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => [c, 1] as [string, number]),
-  ..."abcdefghijklmnopqrstuvwxyz".split("").map((c) => [c, 1] as [string, number]),
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) =>
+    [c, 1] as [string, number]
+  ),
+  ..."abcdefghijklmnopqrstuvwxyz".split("").map((c) =>
+    [c, 1] as [string, number]
+  ),
   ["0", 2],
   ["1", 2],
   ["2", 2],

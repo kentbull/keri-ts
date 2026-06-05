@@ -1,7 +1,11 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa ends add`. */
@@ -28,7 +32,9 @@ interface EndsAddArgs {
  * This command mutates local state only through normal KERI reply processing,
  * not through a side-channel direct DB write.
  */
-export function* endsAddCommand(args: Record<string, unknown>): Operation<void> {
+export function* endsAddCommand(
+  args: Record<string, unknown>,
+): Operation<void> {
   const commandArgs: EndsAddArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -47,7 +53,9 @@ export function* endsAddCommand(args: Record<string, unknown>): Operation<void> 
     throw new ValidationError("Alias is required and cannot be empty");
   }
   if (!commandArgs.role || !isEndpointRole(commandArgs.role)) {
-    throw new ValidationError(`Unsupported endpoint role ${String(commandArgs.role)}`);
+    throw new ValidationError(
+      `Unsupported endpoint role ${String(commandArgs.role)}`,
+    );
   }
   if (!commandArgs.eid) {
     throw new ValidationError("Endpoint AID is required and cannot be empty");
@@ -70,11 +78,16 @@ export function* endsAddCommand(args: Record<string, unknown>): Operation<void> 
   try {
     const hab = hby.habByName(commandArgs.alias);
     if (!hab) {
-      throw new ValidationError(`No local AID found for alias ${commandArgs.alias}`);
+      throw new ValidationError(
+        `No local AID found for alias ${commandArgs.alias}`,
+      );
     }
 
     const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    ingestKeriBytes(runtime, hab.makeEndRole(commandArgs.eid, commandArgs.role, true));
+    ingestKeriBytes(
+      runtime,
+      hab.makeEndRole(commandArgs.eid, commandArgs.role, true),
+    );
     yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
 
     const end = hby.db.ends.get([hab.pre, commandArgs.role, commandArgs.eid]);

@@ -11,9 +11,17 @@ import {
   nabSextets,
   sceil,
 } from "../core/bytes.ts";
-import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
+import {
+  DeserializeError,
+  ShortageError,
+  UnknownCodeError,
+} from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import { MATTER_CODE_NAMES, MATTER_HARDS, MATTER_SIZES } from "../tables/matter.tables.generated.ts";
+import {
+  MATTER_CODE_NAMES,
+  MATTER_HARDS,
+  MATTER_SIZES,
+} from "../tables/matter.tables.generated.ts";
 import { DIGEST_CODES, NON_TRANSFERABLE_CODES, PREFIX_CODES } from "./codex.ts";
 
 /**
@@ -51,13 +59,13 @@ const MATTER_BARDS = new Map<string, number>(
 );
 
 function isMatterData(value: unknown): value is MatterData {
-  return typeof value === "object"
-    && value !== null
-    && "code" in value
-    && "raw" in value
-    && "qb64" in value
-    && "fullSize" in value
-    && "fullSizeB2" in value;
+  return typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    "raw" in value &&
+    "qb64" in value &&
+    "fullSize" in value &&
+    "fullSizeB2" in value;
 }
 
 function rawSizeForCode(code: string): number {
@@ -95,7 +103,11 @@ function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
   const leadSize = (3 - (raw.length % 3)) % 3;
   const size = (raw.length + leadSize) / 3;
 
-  if (SMALL_VAR_SELECTORS.includes(selector as (typeof SMALL_VAR_SELECTORS)[number])) {
+  if (
+    SMALL_VAR_SELECTORS.includes(
+      selector as (typeof SMALL_VAR_SELECTORS)[number],
+    )
+  ) {
     if (size <= (64 ** 2) - 1) {
       return `${SMALL_VAR_SELECTORS[leadSize]}${code.slice(1, 2)}`;
     }
@@ -107,7 +119,11 @@ function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
     );
   }
 
-  if (LARGE_VAR_SELECTORS.includes(selector as (typeof LARGE_VAR_SELECTORS)[number])) {
+  if (
+    LARGE_VAR_SELECTORS.includes(
+      selector as (typeof LARGE_VAR_SELECTORS)[number],
+    )
+  ) {
     if (size <= (64 ** 4) - 1) {
       return `${LARGE_VAR_SELECTORS[leadSize]}${code.slice(1, 4)}`;
     }
@@ -116,7 +132,9 @@ function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
     );
   }
 
-  throw new DeserializeError(`Unsupported variable raw-size family for ${code}.`);
+  throw new DeserializeError(
+    `Unsupported variable raw-size family for ${code}.`,
+  );
 }
 
 /** Resolve the effective matter code from the text-domain hard-selector prefix. */
@@ -430,10 +448,10 @@ export class Matter {
   /** True when both qb64 and qb2 are 24-bit aligned and round-trip exactly. */
   get composable(): boolean {
     const qb2 = this.qb2;
-    return this.qb64b.length % 4 === 0
-      && qb2.length % 3 === 0
-      && encodeB64(qb2) === this.qb64
-      && bytesEqual(decodeB64(this.qb64), qb2);
+    return this.qb64b.length % 4 === 0 &&
+      qb2.length % 3 === 0 &&
+      encodeB64(qb2) === this.qb64 &&
+      bytesEqual(decodeB64(this.qb64), qb2);
   }
 
   equals(other: { qb64: string }): boolean {

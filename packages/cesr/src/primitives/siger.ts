@@ -42,7 +42,8 @@ export class Siger extends Indexer {
   /** Rebuild indexed signature material from detached signature bytes plus verifier context. */
   static fromCigar(
     cigar: Cigar,
-    { index, ondex, only = false, verfer = cigar.verfer }: SigerFromCigarOptions,
+    { index, ondex, only = false, verfer = cigar.verfer }:
+      SigerFromCigarOptions,
   ): Siger {
     if (!verfer) {
       throw new Error(

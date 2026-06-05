@@ -18,7 +18,11 @@ import { Kever } from "../core/kever.ts";
 import { exchange as exchangeMessage } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
+import {
+  buildCesrRequest,
+  type CesrBodyMode,
+  splitCesrStream,
+} from "./cesr-http.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 
@@ -206,8 +210,8 @@ export class Exchanger {
         continue;
       }
       if (
-        Date.now() - new Date(dater.iso8601).getTime()
-          > EXCHANGE_ESCROW_TIMEOUT_MS
+        Date.now() - new Date(dater.iso8601).getTime() >
+          EXCHANGE_ESCROW_TIMEOUT_MS
       ) {
         this.removeEscrow(said);
         continue;
@@ -217,7 +221,9 @@ export class Exchanger {
         serder,
         tsgs: this.rebuildEscrowedGroups(said),
         cigars: this.hby.db.ecigs.get([said]).map(([, cigar]) => cigar),
-        ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
+        ptds: this.hby.db.epath.get([said]).map((text) =>
+          PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))
+        ),
         essrs: this.hby.db.essrs.get([said]),
       });
 
@@ -245,8 +251,7 @@ export class Exchanger {
       tsgs: TransIdxSigGroup[];
       cigars: Cigar[];
     }
-    | ExchangeDecision
-  {
+    | ExchangeDecision {
     if (args.tsgs.length > 0) {
       const verifiedGroups: TransIdxSigGroup[] = [];
 
@@ -254,7 +259,8 @@ export class Exchanger {
         if (tsg.pre !== args.sender) {
           return {
             kind: "reject",
-            reason: `Exchange signer ${tsg.pre} does not match sender ${args.sender}.`,
+            reason:
+              `Exchange signer ${tsg.pre} does not match sender ${args.sender}.`,
             said: args.serder.said ?? "<unknown>",
           };
         }
@@ -271,7 +277,8 @@ export class Exchanger {
           this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
           return {
             kind: "escrow",
-            reason: `Missing accepted establishment state for ${tsg.pre}:${tsg.said}.`,
+            reason:
+              `Missing accepted establishment state for ${tsg.pre}:${tsg.said}.`,
             said: args.serder.said ?? "<unknown>",
           };
         }
@@ -280,7 +287,8 @@ export class Exchanger {
         if (!tholder || estEvent.verfers.length < tholder.size) {
           return {
             kind: "reject",
-            reason: `Invalid threshold material for exchange signer ${tsg.pre}.`,
+            reason:
+              `Invalid threshold material for exchange signer ${tsg.pre}.`,
             said: args.serder.said ?? "<unknown>",
           };
         }
@@ -300,7 +308,9 @@ export class Exchanger {
           this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
           return {
             kind: "escrow",
-            reason: `Exchange ${args.serder.said ?? "<unknown>"} does not yet satisfy sender threshold.`,
+            reason: `Exchange ${
+              args.serder.said ?? "<unknown>"
+            } does not yet satisfy sender threshold.`,
             said: args.serder.said ?? "<unknown>",
           };
         }
@@ -326,7 +336,8 @@ export class Exchanger {
         if (cigar.verfer.qb64 !== args.sender) {
           return {
             kind: "reject",
-            reason: `Exchange cigar signer ${cigar.verfer.qb64} does not match sender ${args.sender}.`,
+            reason:
+              `Exchange cigar signer ${cigar.verfer.qb64} does not match sender ${args.sender}.`,
             said: args.serder.said ?? "<unknown>",
           };
         }
@@ -453,10 +464,10 @@ export class Exchanger {
         continue;
       }
       if (
-        currentKey
-        && (currentKey[0] !== groupKey[0]
-          || currentKey[1] !== groupKey[1]
-          || currentKey[2] !== groupKey[2])
+        currentKey &&
+        (currentKey[0] !== groupKey[0] ||
+          currentKey[1] !== groupKey[1] ||
+          currentKey[2] !== groupKey[2])
       ) {
         flush();
       }
@@ -501,7 +512,9 @@ export function* sendSignedExchangeMessage(
   );
   if (!url) {
     throw new ValidationError(
-      `No ${args.transport ?? "auto"} exchange endpoint is available for ${args.recipient}.`,
+      `No ${
+        args.transport ?? "auto"
+      } exchange endpoint is available for ${args.recipient}.`,
     );
   }
 
@@ -618,7 +631,9 @@ function* postCesrMessage(
   }
 
   if (!lastResponse) {
-    throw new ValidationError("No CESR HTTP request was generated for delivery.");
+    throw new ValidationError(
+      "No CESR HTTP request was generated for delivery.",
+    );
   }
 
   return lastResponse;

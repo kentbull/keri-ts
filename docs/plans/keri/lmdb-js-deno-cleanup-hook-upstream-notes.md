@@ -31,8 +31,8 @@ registrations because the `arg` is always `nullptr`.
 
 ## What We Verified Locally
 
-- the cleanup-hook failures were reproducible in Deno against `lmdb@3.5.3`
-  with `LMDB_DATA_V1=true`
+- the cleanup-hook failures were reproducible in Deno against `lmdb@3.5.3` with
+  `LMDB_DATA_V1=true`
 - the failures matched the Node-API cleanup-hook contract problems we saw in
   `lmdb-js`:
   - duplicate registration of the same `(fun, arg)` pair
@@ -102,5 +102,5 @@ The local `keri-ts` patch set that corresponds to this upstream candidate is:
   Registers `cleanupEnvWraps` with `openEnvWraps` as the hook `arg` instead of
   `nullptr`.
 
-Those four changes are the intended upstream patch. Nothing related to
-`noLock`, warning suppression, or lock-semantics changes should be included.
+Those four changes are the intended upstream patch. Nothing related to `noLock`,
+warning suppression, or lock-semantics changes should be included.

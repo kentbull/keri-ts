@@ -1,4 +1,11 @@
-import { Cipher, Decrypter, Encrypter, Salter, Signer, Verfer } from "../../../cesr/mod.ts";
+import {
+  Cipher,
+  Decrypter,
+  Encrypter,
+  Salter,
+  Signer,
+  Verfer,
+} from "../../../cesr/mod.ts";
 
 /**
  * Thin compatibility wrappers over CESR-owned sealed-box primitives.
@@ -89,7 +96,10 @@ export function decryptCipherQb64b(
   cipher: Cipher | string | Uint8Array,
   decrypter: Decrypter,
 ): Uint8Array {
-  return decrypter.decrypt({ cipher: asCipher(cipher), bare: true }) as Uint8Array;
+  return decrypter.decrypt({
+    cipher: asCipher(cipher),
+    bare: true,
+  }) as Uint8Array;
 }
 
 /** Encrypt one keeper salt through the CESR sealed-box primitive surface. */

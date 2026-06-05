@@ -39,7 +39,7 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
   let request!: ReturnType<typeof buildCesrRequest>;
   let destination!: string;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `cesr-header-${crypto.randomUUID()}`,
       temp: true,
@@ -55,7 +55,12 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
         nsith: "1",
         toad: 0,
       });
-      message = hab.query(hab.pre, hab.pre, { topics: { "/challenge": 0 } }, "mbx");
+      message = hab.query(
+        hab.pre,
+        hab.pre,
+        { topics: { "/challenge": 0 } },
+        "mbx",
+      );
       destination = hab.pre;
       request = buildCesrRequest(message, {
         bodyMode: "header",
@@ -87,7 +92,7 @@ Deno.test("CESR HTTP - body mode preserves the full CESR message in the body", a
   let request!: ReturnType<typeof buildCesrRequest>;
   let destination!: string;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `cesr-body-${crypto.randomUUID()}`,
       temp: true,
@@ -103,7 +108,12 @@ Deno.test("CESR HTTP - body mode preserves the full CESR message in the body", a
         nsith: "1",
         toad: 0,
       });
-      message = hab.query(hab.pre, hab.pre, { topics: { "/challenge": 0 } }, "mbx");
+      message = hab.query(
+        hab.pre,
+        hab.pre,
+        { topics: { "/challenge": 0 } },
+        "mbx",
+      );
       destination = hab.pre;
       request = buildCesrRequest(message, {
         bodyMode: "body",
@@ -135,7 +145,7 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
   let query!: Uint8Array;
   let stream!: Uint8Array;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `cesr-stream-${crypto.randomUUID()}`,
       temp: true,
@@ -156,7 +166,12 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
         role: "mailbox",
         eid: hab.pre,
       });
-      query = hab.query(hab.pre, hab.pre, { topics: { "/challenge": 0 } }, "mbx");
+      query = hab.query(
+        hab.pre,
+        hab.pre,
+        { topics: { "/challenge": 0 } },
+        "mbx",
+      );
       stream = new Uint8Array(reply.length + query.length);
       stream.set(reply, 0);
       stream.set(query, reply.length);
@@ -173,7 +188,7 @@ Deno.test("CESR HTTP - header mode splits a multi-message stream into KERIpy-sty
 Deno.test("CESR HTTP - header mode does not split a forwarded exn across embedded replay bytes", async () => {
   let forwarded!: Uint8Array;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `cesr-forwarded-replay-${crypto.randomUUID()}`,
       temp: true,
@@ -216,7 +231,7 @@ Deno.test("CESR HTTP - stream request helper preserves a raw multi-message CESR 
   let stream!: Uint8Array;
   let request!: ReturnType<typeof buildCesrStreamRequest>;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `cesr-stream-body-${crypto.randomUUID()}`,
       temp: true,
@@ -234,7 +249,9 @@ Deno.test("CESR HTTP - stream request helper preserves a raw multi-message CESR 
       });
       const replay = [...hby.db.clonePreIter(hab.pre)];
       const rpy = hab.makeEndRole(hab.pre, "mailbox", true);
-      stream = new Uint8Array(replay.reduce((sum, part) => sum + part.length, rpy.length));
+      stream = new Uint8Array(
+        replay.reduce((sum, part) => sum + part.length, rpy.length),
+      );
       let offset = 0;
       for (const part of replay) {
         stream.set(part, offset);
@@ -257,7 +274,7 @@ Deno.test("CESR HTTP - terminal message inspection returns the final message in 
   let query!: Uint8Array;
   let stream!: Uint8Array;
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `cesr-terminal-${crypto.randomUUID()}`,
       temp: true,

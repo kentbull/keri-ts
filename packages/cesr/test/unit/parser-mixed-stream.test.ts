@@ -41,8 +41,10 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
 }
 
 Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", () => {
-  const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const attachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const body = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
+  const attachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
 
   // Same semantic frame, two attachment domains:
   // - txt stream carries qb64 attachments.
@@ -58,13 +60,20 @@ Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", 
 });
 
 Deno.test("V-P1-005: multi-message mixed stream ordering is split-deterministic", () => {
-  const jsonBody = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const jsonAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const jsonBody = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
+  const jsonAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
   const jsonFrame = `${jsonBody}${jsonAttachment}`;
 
-  const wrappedNestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
-  const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
-  const wrappedFrame = `${counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)}${wrappedPayload}`;
+  const wrappedNestedAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
+  const wrappedPayload =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
+  const wrappedFrame = `${
+    counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)
+  }${wrappedPayload}`;
 
   const stream = encode(
     `${jsonFrame}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedFrame}`,

@@ -1,7 +1,11 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../src/core/errors.ts";
 import type { MapperMap } from "../../src/primitives/mapper.ts";
-import { canonicalizeCesrNativeRaw, dumpCesrNativeSad, parseCesrNativeKed } from "../../src/serder/native.ts";
+import {
+  canonicalizeCesrNativeRaw,
+  dumpCesrNativeSad,
+  parseCesrNativeKed,
+} from "../../src/serder/native.ts";
 import { SerderKERI } from "../../src/serder/serder.ts";
 import { Serdery } from "../../src/serder/serdery.ts";
 import { versify } from "../../src/serder/smell.ts";
@@ -199,7 +203,8 @@ Deno.test("Serdery: native fixture reaps to the same SerderKERI in txt and qb2 d
   // End-to-end runtime bridge: regardless of input domain, `Serdery` should
   // produce one canonical `SerderKERI` with the same semantic body and qb64 raw.
   const serdery = new Serdery();
-  const txt = serdery.reap(new TextEncoder().encode(nativeKeriIcpFixtureQb64())).serder;
+  const txt =
+    serdery.reap(new TextEncoder().encode(nativeKeriIcpFixtureQb64())).serder;
   const bny = serdery.reap(nativeKeriIcpFixtureQb2()).serder;
 
   assertEquals(txt instanceof SerderKERI, true);

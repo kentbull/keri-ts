@@ -1,7 +1,22 @@
-import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
+import {
+  decode as decodeMsgpack,
+  encode as encodeMsgpack,
+} from "@msgpack/msgpack";
 import { type Database } from "npm:lmdb";
-import { b, decodeKeriCbor, encodeKeriCbor, type Kind, Kinds, t } from "../../../cesr/mod.ts";
-import { RawRecord, type RawRecordClass, type RecordInputOf, type RecordShapeOf } from "../core/records.ts";
+import {
+  b,
+  decodeKeriCbor,
+  encodeKeriCbor,
+  type Kind,
+  Kinds,
+  t,
+} from "../../../cesr/mod.ts";
+import {
+  RawRecord,
+  type RawRecordClass,
+  type RecordInputOf,
+  type RecordShapeOf,
+} from "../core/records.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -25,24 +40,27 @@ export interface KomerBaseOptions<TRecord extends RawRecord<any>> {
 }
 
 /** Constructor options for non-duplicate `Komer` variants. */
-export interface KomerOptions<TRecord extends RawRecord<any>> extends Omit<KomerBaseOptions<TRecord>, "dupsort"> {}
+export interface KomerOptions<TRecord extends RawRecord<any>>
+  extends Omit<KomerBaseOptions<TRecord>, "dupsort"> {}
 
 function assertKomerKind(kind: KomerKind): KomerKind {
   if (
-    kind !== Kinds.json
-    && kind !== Kinds.cbor
-    && kind !== Kinds.mgpk
+    kind !== Kinds.json &&
+    kind !== Kinds.cbor &&
+    kind !== Kinds.mgpk
   ) {
     throw new Error(
-      `Unsupported Komer serialization kind=${String(kind)}. Expected JSON, CBOR, or MGPK.`,
+      `Unsupported Komer serialization kind=${
+        String(kind)
+      }. Expected JSON, CBOR, or MGPK.`,
     );
   }
   return kind;
 }
 
 function toUint8Array(bytes: Uint8Array): Uint8Array {
-  return bytes instanceof Uint8Array
-      && Object.getPrototypeOf(bytes) === Uint8Array.prototype
+  return bytes instanceof Uint8Array &&
+      Object.getPrototypeOf(bytes) === Uint8Array.prototype
     ? bytes
     : new Uint8Array(bytes);
 }
@@ -52,9 +70,9 @@ function asIterable<T>(value: T | Iterable<T> | null | undefined): T[] {
     return [];
   }
   if (
-    Symbol.iterator in Object(value)
-    && typeof value !== "string"
-    && !(value instanceof Uint8Array)
+    Symbol.iterator in Object(value) &&
+    typeof value !== "string" &&
+    !(value instanceof Uint8Array)
   ) {
     return [...(value as Iterable<T>)];
   }
@@ -121,7 +139,9 @@ export class KomerBase<TRecord extends RawRecord<any>> {
       return keys;
     }
 
-    const parts = [...keys].map((part) => typeof part === "string" ? part : t(part));
+    const parts = [...keys].map((part) =>
+      typeof part === "string" ? part : t(part)
+    );
     if (topive && parts.at(-1) !== "") {
       parts.push("");
     }
@@ -291,7 +311,8 @@ export class KomerBase<TRecord extends RawRecord<any>> {
 export class Komer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
   constructor(
     db: LMDBer,
-    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }:
+      KomerOptions<TRecord>,
   ) {
     super(db, { subkey, sep, kind, dupsort: false, ...options });
   }
@@ -347,10 +368,12 @@ export class Komer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
  * KERIpy correspondence:
  * - mirrors `keri.db.koming.IoSetKomer`
  */
-export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
+export class IoSetKomer<TRecord extends RawRecord<any>>
+  extends KomerBase<TRecord> {
   constructor(
     db: LMDBer,
-    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }:
+      KomerOptions<TRecord>,
   ) {
     super(db, { subkey, sep, kind, dupsort: false, ...options });
   }
@@ -364,7 +387,8 @@ export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecor
    */
   put(
     keys: Keys,
-    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null =
+      null,
   ): boolean {
     return this.db.putIoSetVals(
       this.sdb,
@@ -377,7 +401,8 @@ export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecor
   /** Upsert an insertion-ordered set of records for one effective key. */
   pin(
     keys: Keys,
-    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null =
+      null,
   ): boolean {
     return this.db.pinIoSetVals(
       this.sdb,
@@ -459,8 +484,8 @@ export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecor
   /** Count stored members for one effective key or the whole subdb. */
   cnt(keys: Keys = "", { ion = 0 }: { ion?: number } = {}): number {
     if (
-      (typeof keys === "string" && keys.length === 0)
-      || (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0) ||
+      (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -497,10 +522,12 @@ export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecor
  * - duplicates are kept in LMDB duplicate-sort order, not insertion order
  * - values must remain under LMDB's dupsort value-size limits
  */
-export class DupKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
+export class DupKomer<TRecord extends RawRecord<any>>
+  extends KomerBase<TRecord> {
   constructor(
     db: LMDBer,
-    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
+    { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }:
+      KomerOptions<TRecord>,
   ) {
     super(db, { subkey, sep, kind, dupsort: true, ...options });
   }
@@ -508,7 +535,8 @@ export class DupKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord>
   /** Insert duplicate members at one effective key without overwriting existing values. */
   put(
     keys: Keys,
-    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null =
+      null,
   ): boolean {
     return this.db.putVals(
       this.sdb,
@@ -525,7 +553,8 @@ export class DupKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord>
   /** Replace the full duplicate set for one effective key. */
   pin(
     keys: Keys,
-    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null = null,
+    vals: RecordInputOf<TRecord> | Iterable<RecordInputOf<TRecord>> | null =
+      null,
   ): boolean {
     const key = this._tokey(keys);
     this.db.delVals(this.sdb, key);
@@ -566,8 +595,8 @@ export class DupKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord>
   /** Count duplicate members at one effective key or across the whole subdb. */
   cnt(keys: Keys = ""): number {
     if (
-      (typeof keys === "string" && keys.length === 0)
-      || (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0) ||
+      (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }

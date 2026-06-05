@@ -156,7 +156,9 @@ export async function runCmdWithTimeout(
     await child.status.catch(() => undefined);
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
     throw new Error(
-      `Command timed out after ${timeoutMs}ms: ${command} ${args.join(" ")}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      `Command timed out after ${timeoutMs}ms: ${command} ${
+        args.join(" ")
+      }\nstdout:\n${stdout}\nstderr:\n${stderr}`,
     );
   }
 
@@ -228,13 +230,17 @@ export async function resolveKliCommand(
   }
 
   throw new Error(
-    `kli is required for interop tests but could not be resolved. Tried: ${candidates.join(", ")}`,
+    `kli is required for interop tests but could not be resolved. Tried: ${
+      candidates.join(", ")
+    }`,
   );
 }
 
 /** Parse the human-readable `Prefix` line emitted by both CLIs. */
 export function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
+  const line = output.split(/\r?\n/).find((line) =>
+    line.trim().startsWith("Prefix")
+  );
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -244,7 +250,9 @@ export function extractPrefix(output: string): string {
 
 /** Parse the raw qb64 signature from numbered KLI/Tufa sign output. */
 export function extractRawSignature(output: string): string {
-  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
+  const line = output.split(/\r?\n/).find((line) =>
+    /^\d+\.\s+/.test(line.trim())
+  );
   if (!line) {
     throw new Error(`Unable to parse signature from output:\n${output}`);
   }
@@ -272,7 +280,7 @@ export function normalizeCesr(text: string): string {
 export function extractKelStream(output: string): string {
   return output
     .split(/\r?\n/)
-    .filter((line) => line.trim().startsWith("{\"v\":\"KERI"))
+    .filter((line) => line.trim().startsWith('{"v":"KERI'))
     .join("\n");
 }
 
@@ -484,8 +492,8 @@ export async function readChildOutput(child: SpawnedChild): Promise<string> {
       return await new Response(stream).text();
     } catch (error) {
       if (
-        error instanceof TypeError
-        && error.message.includes("ReadableStream is locked or disturbed")
+        error instanceof TypeError &&
+        error.message.includes("ReadableStream is locked or disturbed")
       ) {
         return "";
       }
@@ -543,7 +551,9 @@ export async function withStartedChild<T>(
   } catch (error) {
     const details = await stopChild(child);
     throw new Error(
-      `Failed to start host on port ${port}: ${error instanceof Error ? error.message : String(error)}\n${details}`,
+      `Failed to start host on port ${port}: ${
+        error instanceof Error ? error.message : String(error)
+      }\n${details}`,
     );
   }
 
@@ -564,7 +574,8 @@ export async function resolvePythonCommand(
   const probeEnv = pyenvProbeEnv(env);
   if (kliCommand.includes("/")) {
     try {
-      const first = (await Deno.readTextFile(kliCommand)).split(/\r?\n/, 1)[0] ?? "";
+      const first =
+        (await Deno.readTextFile(kliCommand)).split(/\r?\n/, 1)[0] ?? "";
       if (first.startsWith("#!")) {
         const parts = first.slice(2).trim().split(/\s+/);
         const python = parts.at(-1);
@@ -699,7 +710,7 @@ export function* inspectCompatHabery(
       HOME: ctx.env.HOME,
       DENO_DIR: ctx.env.DENO_DIR,
     },
-    function*() {
+    function* () {
       const hby = yield* createHabery(args);
       try {
         inspect(hby);
@@ -872,8 +883,8 @@ export async function startKeriPyWitnessHarness(
   const configRoot = await Deno.makeTempDir({
     prefix: "keripy-witness-config-",
   });
-  const base = options.base
-    ?? `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
+  const base = options.base ??
+    `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
   const env = {
     ...ctx.env,
     HOME: home,
@@ -947,7 +958,9 @@ export async function startKeriPyWitnessHarness(
       ),
     );
     throw new Error(
-      `${error instanceof Error ? error.message : String(error)}\n${details.join("\n\n")}`,
+      `${error instanceof Error ? error.message : String(error)}\n${
+        details.join("\n\n")
+      }`,
     );
   }
 
@@ -1160,7 +1173,9 @@ export async function startTufaWitnessHarness(
       ),
     );
     throw new Error(
-      `${error instanceof Error ? error.message : String(error)}\n${details.join("\n\n")}`,
+      `${error instanceof Error ? error.message : String(error)}\n${
+        details.join("\n\n")
+      }`,
     );
   }
 

@@ -2,7 +2,10 @@
 
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { createAgentRuntime, processMailboxTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  processMailboxTurn,
+} from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { MailboxPoller } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -10,7 +13,10 @@ import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
-import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
+import {
+  controllerOobiResponse,
+  startStaticHttpHost,
+} from "../../http-test-support.ts";
 import {
   authorizeMailboxPollTarget,
   delayForRequest,
@@ -36,8 +42,10 @@ function makeExchangeSerder(
 Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeout expires before headers arrive", async () => {
   const providerName = `mailbox-open-timeout-provider-${crypto.randomUUID()}`;
   const clientName = `mailbox-open-timeout-client-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-open-timeout-provider-${crypto.randomUUID()}`;
-  const clientHeadDirPath = `/tmp/tufa-mailbox-open-timeout-client-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-open-timeout-provider-${crypto.randomUUID()}`;
+  const clientHeadDirPath =
+    `/tmp/tufa-mailbox-open-timeout-client-${crypto.randomUUID()}`;
   let postCount = 0;
   let provider!: Awaited<ReturnType<typeof seedHostedController>>;
 
@@ -75,7 +83,7 @@ Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeo
       host.origin,
     );
 
-    await run(function*(): Operation<void> {
+    await run(function* (): Operation<void> {
       const hby = yield* createHabery({
         name: clientName,
         headDirPath: clientHeadDirPath,
@@ -124,8 +132,10 @@ Deno.test("MailboxPoller.processOnce returns cleanly when the request-open timeo
 Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-open timeout", async () => {
   const providerName = `mailbox-read-duration-provider-${crypto.randomUUID()}`;
   const clientName = `mailbox-read-duration-client-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-read-duration-provider-${crypto.randomUUID()}`;
-  const clientHeadDirPath = `/tmp/tufa-mailbox-read-duration-client-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-read-duration-provider-${crypto.randomUUID()}`;
+  const clientHeadDirPath =
+    `/tmp/tufa-mailbox-read-duration-client-${crypto.randomUUID()}`;
   let postCount = 0;
   let provider!: Awaited<ReturnType<typeof seedHostedController>>;
 
@@ -192,7 +202,7 @@ Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-ope
       host.origin,
     );
 
-    await run(function*(): Operation<void> {
+    await run(function* (): Operation<void> {
       const hby = yield* createHabery({
         name: clientName,
         headDirPath: clientHeadDirPath,
@@ -245,7 +255,8 @@ Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-ope
  */
 Deno.test("MailboxPoller.processOnce stops after the bounded command-local budget is exhausted", async () => {
   const clientName = `mailbox-budget-client-${crypto.randomUUID()}`;
-  const clientHeadDirPath = `/tmp/tufa-mailbox-budget-client-${crypto.randomUUID()}`;
+  const clientHeadDirPath =
+    `/tmp/tufa-mailbox-budget-client-${crypto.randomUUID()}`;
   await seedLocalController(clientName, clientHeadDirPath, "bob");
 
   let seeded1!: Awaited<ReturnType<typeof seedHostedController>>;
@@ -315,7 +326,7 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
       host2.origin,
     );
 
-    await run(function*(): Operation<void> {
+    await run(function* (): Operation<void> {
       const hby = yield* createHabery({
         name: clientName,
         headDirPath: clientHeadDirPath,
@@ -358,7 +369,8 @@ Deno.test("MailboxPoller.processOnce stops after the bounded command-local budge
  */
 Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remote endpoint", async () => {
   const clientName = `mailbox-concurrency-client-${crypto.randomUUID()}`;
-  const clientHeadDirPath = `/tmp/tufa-mailbox-concurrency-client-${crypto.randomUUID()}`;
+  const clientHeadDirPath =
+    `/tmp/tufa-mailbox-concurrency-client-${crypto.randomUUID()}`;
   await seedLocalController(clientName, clientHeadDirPath, "bob");
 
   let seeded1!: Awaited<ReturnType<typeof seedHostedController>>;
@@ -436,7 +448,7 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
       host2.origin,
     );
 
-    await run(function*(): Operation<void> {
+    await run(function* (): Operation<void> {
       const hby = yield* createHabery({
         name: clientName,
         headDirPath: clientHeadDirPath,
@@ -458,7 +470,7 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
         );
         poller.registerTopic("/challenge");
 
-        const task = yield* spawn(function*() {
+        const task = yield* spawn(function* () {
           yield* poller.pollDo((_batch) => {});
         });
 
@@ -489,11 +501,12 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
  */
 Deno.test("processMailboxTurn settles local mailbox batches and returns them", async () => {
   const clientName = `mailbox-turn-client-${crypto.randomUUID()}`;
-  const clientHeadDirPath = `/tmp/tufa-mailbox-turn-client-${crypto.randomUUID()}`;
+  const clientHeadDirPath =
+    `/tmp/tufa-mailbox-turn-client-${crypto.randomUUID()}`;
   const wordsA = ["able", "baker"];
   const wordsB = ["charlie", "delta"];
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name: clientName,
       headDirPath: clientHeadDirPath,

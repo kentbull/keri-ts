@@ -1,4 +1,7 @@
-import { COUNTER_CODE_NAMES_V1, COUNTER_CODE_NAMES_V2 } from "./counter.tables.generated.ts";
+import {
+  COUNTER_CODE_NAMES_V1,
+  COUNTER_CODE_NAMES_V2,
+} from "./counter.tables.generated.ts";
 
 type NameByCode = Record<string, string>;
 
@@ -13,9 +16,11 @@ function invertCodeNames<T extends NameByCode>(
 }
 
 /** Union of generated semantic counter names available in the v1 table. */
-export type CounterCodeNameV1 = (typeof COUNTER_CODE_NAMES_V1)[keyof typeof COUNTER_CODE_NAMES_V1];
+export type CounterCodeNameV1 =
+  (typeof COUNTER_CODE_NAMES_V1)[keyof typeof COUNTER_CODE_NAMES_V1];
 /** Union of generated semantic counter names available in the v2 table. */
-export type CounterCodeNameV2 = (typeof COUNTER_CODE_NAMES_V2)[keyof typeof COUNTER_CODE_NAMES_V2];
+export type CounterCodeNameV2 =
+  (typeof COUNTER_CODE_NAMES_V2)[keyof typeof COUNTER_CODE_NAMES_V2];
 
 /** Inverted v1 counter code table (`semantic name -> code`). */
 export const CtrDexV1 = invertCodeNames(COUNTER_CODE_NAMES_V1);

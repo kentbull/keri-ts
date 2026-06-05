@@ -105,7 +105,10 @@ function normalizeBuiltManifest(): void {
       types: NPM_DB_TYPES_PATH,
     },
   };
-  Deno.writeTextFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  Deno.writeTextFileSync(
+    packageJsonPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 }
 
 // Avoid running native install scripts (for example lmdb build) during packaging.

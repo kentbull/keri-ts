@@ -35,7 +35,9 @@ function summarizeFrames(events: CesrFrame[]): string[] {
 }
 
 Deno.test("V-P1-006: big wrapper counters (--A/--B/--C) preserve txt/qb2 parity", () => {
-  const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedSigGroup = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
 
   const bigBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSigGroup}`;
   const bigBodyWrapped = wrapQuadletGroupV2(
@@ -47,7 +49,8 @@ Deno.test("V-P1-006: big wrapper counters (--A/--B/--C) preserve txt/qb2 parity"
     CtrDexV2.BigAttachmentGroup,
     nestedSigGroup,
   );
-  const bodyPlusBigAttachment = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${bigAttachmentWrapped}`;
+  const bodyPlusBigAttachment =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${bigAttachmentWrapped}`;
 
   const genericPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${bigBodyWrapped}`;
   const bigGenericWrapped = wrapQuadletGroupV2(

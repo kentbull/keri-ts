@@ -1,6 +1,15 @@
-import { assert, assertEquals, assertFalse, assertInstanceOf, assertThrows } from "jsr:@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertFalse,
+  assertInstanceOf,
+  assertThrows,
+} from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import { CIPHER_X25519_VARIABLE_STREAM_CODES, MtrDex } from "../../../src/primitives/codex.ts";
+import {
+  CIPHER_X25519_VARIABLE_STREAM_CODES,
+  MtrDex,
+} from "../../../src/primitives/codex.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Decrypter } from "../../../src/primitives/decrypter.ts";
 import { Encrypter } from "../../../src/primitives/encrypter.ts";
@@ -48,7 +57,9 @@ Deno.test("encrypter: verifies matching Ed25519 seed material", () => {
   });
 
   assert(encrypter.verifySeed(KERIPY_MATTER_VECTORS.keeperCryptSeedEd25519));
-  assertFalse(encrypter.verifySeed(KERIPY_MATTER_VECTORS.signerSeedEd25519Vector));
+  assertFalse(
+    encrypter.verifySeed(KERIPY_MATTER_VECTORS.signerSeedEd25519Vector),
+  );
 });
 
 Deno.test("encrypter: encrypts raw plaintext, infers signer and salt codes, and round-trips typed primitives", () => {
@@ -86,7 +97,9 @@ Deno.test("encrypter: encrypts raw plaintext, infers signer and salt codes, and 
   );
 
   const texter = new Texter({
-    raw: new TextEncoder().encode("The quick brown fox jumps over the lazy dog"),
+    raw: new TextEncoder().encode(
+      "The quick brown fox jumps over the lazy dog",
+    ),
     code: MtrDex.Bytes_L0,
   });
   const qb64Cipher = encrypter.encrypt({
@@ -116,11 +129,16 @@ Deno.test("encrypter: encrypts raw plaintext, infers signer and salt codes, and 
     prim: counter,
     code: MtrDex.X25519_Cipher_QB64_L0,
   });
-  const counterOut = decrypter.decrypt({ cipher: counterCipher, ctor: Counter });
+  const counterOut = decrypter.decrypt({
+    cipher: counterCipher,
+    ctor: Counter,
+  });
   assertInstanceOf(counterOut, Counter);
   assertEquals(counterOut.qb64, counter.qb64);
 
-  const stream = new Streamer({ stream: new Uint8Array([0x01, 0x02, 0x03, 0x04]) });
+  const stream = new Streamer({
+    stream: new Uint8Array([0x01, 0x02, 0x03, 0x04]),
+  });
   const streamCipher = encrypter.encrypt({
     prim: stream,
     code: MtrDex.X25519_Cipher_L0,

@@ -6,7 +6,10 @@ import { Dater, Diger, Prefixer, SerderKERI } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Revery, unverifiedReplyDecision } from "../../../src/core/routing.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
+import {
+  encodeDateTimeToDater,
+  makeNowIso8601,
+} from "../../../src/time/mod.ts";
 import { expectKind, routingTestApi } from "../../private-access.ts";
 
 function createEscrowedReplyFixture(
@@ -69,7 +72,7 @@ function createEscrowedReplyFixture(
 }
 
 Deno.test("Revery.acceptReply aggregates weighted reply signatures until the threshold is met", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-weighted-${crypto.randomUUID()}`,
       temp: true,
@@ -143,7 +146,7 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
 });
 
 Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via verifier dispatch", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-ecdsa-nontrans-${crypto.randomUUID()}`,
       temp: true,
@@ -186,7 +189,7 @@ Deno.test("Revery.acceptReply verifies non-transferable ECDSA reply cigars via v
 });
 
 Deno.test("Revery.acceptReply still rejects non-transferable replies whose authorizing AID does not match the verifier", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-ecdsa-mismatch-${crypto.randomUUID()}`,
       temp: true,
@@ -228,7 +231,7 @@ Deno.test("Revery.acceptReply still rejects non-transferable replies whose autho
 });
 
 Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups via establishment verfers", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-ecdsa-trans-${crypto.randomUUID()}`,
       temp: true,
@@ -284,7 +287,7 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
 });
 
 Deno.test("Revery.processEscrowReply keeps replies on recoverable unverified replay decisions", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-escrow-keep-${crypto.randomUUID()}`,
       temp: true,
@@ -311,7 +314,7 @@ Deno.test("Revery.processEscrowReply keeps replies on recoverable unverified rep
 });
 
 Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and removes stored reply state", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-escrow-drop-${crypto.randomUUID()}`,
       temp: true,
@@ -337,7 +340,7 @@ Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and remove
 });
 
 Deno.test("Revery escrow replay preserves processing error detail on drop decisions", async () => {
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name: `revery-escrow-processing-detail-${crypto.randomUUID()}`,
       temp: true,

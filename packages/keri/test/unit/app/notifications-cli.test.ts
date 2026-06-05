@@ -13,7 +13,9 @@ import { CLITestHarness } from "../../../test/utils.ts";
 
 async function captureCommand(
   args: Record<string, unknown>,
-  command: (args: Record<string, unknown>) => ReturnType<typeof notificationsListCommand>,
+  command: (
+    args: Record<string, unknown>,
+  ) => ReturnType<typeof notificationsListCommand>,
 ): Promise<string[]> {
   const harness = new CLITestHarness();
   harness.captureOutput();
@@ -32,7 +34,7 @@ Deno.test("notifications CLI list, mark-read, and remove round-trip local notice
   });
 
   try {
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({
         name,
         headDirPath,

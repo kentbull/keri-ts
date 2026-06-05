@@ -19,7 +19,14 @@ import {
   Verfer,
 } from "../../../cesr/mod.ts";
 import { b } from "../../../cesr/mod.ts";
-import { Keeper, type PrePrm, type PrePrmShape, type PreSit, type PreSitShape, PubLot } from "../db/keeping.ts";
+import {
+  Keeper,
+  type PrePrm,
+  type PrePrmShape,
+  type PreSit,
+  type PreSitShape,
+  PubLot,
+} from "../db/keeping.ts";
 
 /**
  * Root key-creation strategy selectors stored in keeper globals.
@@ -308,7 +315,9 @@ export class RandyCreator extends Creator {
     transferable = true,
   }: CreatorCreateArgs = {}): Signer[] {
     const effectiveCodes = codes ?? Array.from({ length: count }, () => code);
-    return effectiveCodes.map((suite) => Signer.random({ code: suite, transferable }));
+    return effectiveCodes.map((suite) =>
+      Signer.random({ code: suite, transferable })
+    );
   }
 }
 
@@ -635,8 +644,8 @@ export class Manager {
 
     if (currentAeid) {
       if (
-        !this.seed || !this.encrypter
-        || !this.encrypter.verifySeed(this.seed)
+        !this.seed || !this.encrypter ||
+        !this.encrypter.verifySeed(this.seed)
       ) {
         throw new Error(
           `Last seed missing or provided last seed not associated with last aeid=${currentAeid}.`,
@@ -863,7 +872,9 @@ export class Manager {
 
       if (!signer || signer.verfer.qb64 !== pub) {
         throw new Error(
-          `Derived signer mismatch for pre=${pre} ri=${lot.ridx} kidx=${lot.kidx + offset}.`,
+          `Derived signer mismatch for pre=${pre} ri=${lot.ridx} kidx=${
+            lot.kidx + offset
+          }.`,
         );
       }
       return signer;
@@ -1435,7 +1446,9 @@ export class Manager {
     let first = true;
 
     for (const secrecy of secrecies) {
-      const csigners = secrecy.map((secret) => new Signer({ qb64: secret, transferable }));
+      const csigners = secrecy.map((secret) =>
+        new Signer({ qb64: secret, transferable })
+      );
       const pubs = csigners.map((signer) => signer.verfer.qb64);
       const dt = new Date().toISOString();
       verferies.push(csigners.map((signer) => signer.verfer));

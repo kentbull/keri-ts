@@ -13,10 +13,18 @@
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
 import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
-import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
+import {
+  concatBytes,
+  Counter,
+  parsePather,
+  SerderKERI,
+} from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
-import { DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import {
+  DELEGATE_MAILBOX_TOPIC,
+  OOBI_MAILBOX_TOPIC,
+} from "../core/mailbox-topics.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
@@ -26,9 +34,17 @@ import { makeNowIso8601 } from "../time/mod.ts";
 import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
+import {
+  closeResponseBody,
+  fetchResponseHandle,
+  fetchResponseHandleOrNull,
+} from "./httping.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
-import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
+import {
+  type MailboxSseMessage,
+  parseMailboxSse,
+  readMailboxSseBody,
+} from "./mailbox-sse.ts";
 import {
   directDeliveryEndpoints,
   firstSortedEndpoint,
@@ -219,7 +235,9 @@ export class Poster {
           }
         } else if (deliveries.length === 0) {
           throw new ValidationError(
-            `Exchange delivery failed for ${recipient}: ${[...failed.values()].join("; ")}`,
+            `Exchange delivery failed for ${recipient}: ${
+              [...failed.values()].join("; ")
+            }`,
           );
         }
       }
@@ -242,7 +260,9 @@ export class Poster {
     }
 
     if (delivery !== "direct") {
-      const witnessEndpoint = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      const witnessEndpoint = firstSortedEndpoint(
+        hab.endsFor(recipient)[Roles.witness],
+      );
       if (witnessEndpoint) {
         yield* this.deliverWitnessTarget(
           hab,
@@ -332,7 +352,9 @@ export class Poster {
           }
         } else if (deliveries.length === 0) {
           throw new ValidationError(
-            `CESR delivery failed for ${recipient}: ${[...failed.values()].join("; ")}`,
+            `CESR delivery failed for ${recipient}: ${
+              [...failed.values()].join("; ")
+            }`,
           );
         }
       }
@@ -360,7 +382,9 @@ export class Poster {
           `Witness fallback delivery requires an explicit topic for ${recipient}.`,
         );
       }
-      const witnessEndpoint = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      const witnessEndpoint = firstSortedEndpoint(
+        hab.endsFor(recipient)[Roles.witness],
+      );
       if (witnessEndpoint) {
         yield* this.deliverWitnessTarget(
           hab,
@@ -459,7 +483,13 @@ export class Poster {
     message: Uint8Array,
     endpoint: { eid: string; url: string },
   ): Operation<void> {
-    yield* this.deliverForwardedTarget(hab, recipient, topic, message, endpoint);
+    yield* this.deliverForwardedTarget(
+      hab,
+      recipient,
+      topic,
+      message,
+      endpoint,
+    );
   }
 
   /**
@@ -473,7 +503,13 @@ export class Poster {
     message: Uint8Array,
     endpoint: { eid: string; url: string },
   ): Operation<void> {
-    yield* this.deliverForwardedTarget(hab, recipient, topic, message, endpoint);
+    yield* this.deliverForwardedTarget(
+      hab,
+      recipient,
+      topic,
+      message,
+      endpoint,
+    );
   }
 
   /**
@@ -548,9 +584,9 @@ export class ForwardHandler implements ExchangeRouteHandler {
     attachments: ExchangeAttachment[];
   }): boolean {
     const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
-    return typeof modifiers?.pre === "string"
-      && typeof modifiers?.topic === "string"
-      && extractForwardedMessage(args.serder, args.attachments) !== null;
+    return typeof modifiers?.pre === "string" &&
+      typeof modifiers?.topic === "string" &&
+      extractForwardedMessage(args.serder, args.attachments) !== null;
   }
 
   /**
@@ -585,7 +621,14 @@ export class ForwardHandler implements ExchangeRouteHandler {
     }
 
     if (mailboxAid) {
-      if (!hostCanStoreForwardRecipient(hby, recipient, recipientKever, mailboxAid)) {
+      if (
+        !hostCanStoreForwardRecipient(
+          hby,
+          recipient,
+          recipientKever,
+          mailboxAid,
+        )
+      ) {
         return;
       }
     } else if (!hasLocalStoreForwardHost(hby, recipient, recipientKever)) {
@@ -637,11 +680,12 @@ function hasLocalStoreForwardHost(
  * - ingests retrieved payloads back through the shared `Reactor`
  */
 export class MailboxPoller {
-  static readonly DefaultTimeoutPolicy: Readonly<MailboxPollingTimeoutPolicy> = Object.freeze({
-    requestOpenTimeoutMs: 5_000,
-    maxPollDurationMs: 30_000,
-    commandLocalBudgetMs: 5_000,
-  });
+  static readonly DefaultTimeoutPolicy: Readonly<MailboxPollingTimeoutPolicy> =
+    Object.freeze({
+      requestOpenTimeoutMs: 5_000,
+      maxPollDurationMs: 30_000,
+      commandLocalBudgetMs: 5_000,
+    });
   static readonly ReadIdleTimeoutMs = 500;
 
   readonly hby: Habery;
@@ -863,7 +907,9 @@ export class MailboxPoller {
             continue;
           }
 
-          const task = yield* spawn(() => this.remoteEndpointWorker(hab, endpoint, onBatch));
+          const task = yield* spawn(() =>
+            this.remoteEndpointWorker(hab, endpoint, onBatch)
+          );
           remoteWorkers.set(workerKey, task);
         }
       }
@@ -953,7 +999,9 @@ export function introduce(
   }
 
   const latestSaid = kever.serder.said;
-  if (!latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)) {
+  if (
+    !latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)
+  ) {
     return new Uint8Array();
   }
 
@@ -984,7 +1032,11 @@ function remoteAlreadyReceiptedLatestEvent(
     if (hab.db.vrcs.get(key).some(([prefixer]) => prefixer.qb64 === remote)) {
       return true;
     }
-    if (hab.db.rcts.get(key).some(([prefixer]) => prefixer.qb64.startsWith(remote))) {
+    if (
+      hab.db.rcts.get(key).some(([prefixer]) =>
+        prefixer.qb64.startsWith(remote)
+      )
+    ) {
       return true;
     }
   }

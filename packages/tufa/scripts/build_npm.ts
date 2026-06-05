@@ -66,7 +66,10 @@ function normalizeBuiltManifest(): void {
       types: NPM_TYPES_PATH,
     },
   };
-  Deno.writeTextFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  Deno.writeTextFileSync(
+    packageJsonPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 }
 
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
@@ -74,8 +77,12 @@ if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
 }
 
 await emptyDir(OUT_DIR);
-const keriPackageVersion = resolveWorkspacePackageVersion("../keri/package.json");
-const cesrPackageVersion = resolveWorkspacePackageVersion("../cesr/package.json");
+const keriPackageVersion = resolveWorkspacePackageVersion(
+  "../keri/package.json",
+);
+const cesrPackageVersion = resolveWorkspacePackageVersion(
+  "../cesr/package.json",
+);
 writeDntImportMap(keriPackageVersion, cesrPackageVersion);
 
 try {

@@ -20,7 +20,9 @@ const V2 = { major: 2, minor: 0 } as const;
 Deno.test("aggor: parses list aggregate groups", () => {
   // Minimal parser-compat inhale example for a plain generic list group.
   const payload = "ABCDWXYZ";
-  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
+  const listBody = `${
+    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
+  }${payload}`;
 
   const aggor = parseAggor(txt(listBody), V2, "txt");
   assertEquals(aggor instanceof Aggor, true);
@@ -45,7 +47,9 @@ Deno.test("aggor: parses map aggregate groups", () => {
   // TS still preserves map-family aggor compatibility for parser projections,
   // even though the richer semantic lane is the list/aggregate path.
   const payload = `0J_i${token("B")}`;
-  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
+  const mapBody = `${
+    counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)
+  }${payload}`;
 
   const aggor = parseAggor(txt(mapBody), V2, "txt");
   assertEquals(aggor instanceof Aggor, true);
@@ -57,7 +61,9 @@ Deno.test("aggor: qb2 parsing keeps KERIpy-derived payload stable", () => {
   // Like the rest of native CESR, qb2 should canonicalize back to the same qb64
   // text-domain shape a maintainer can actually read and reason about.
   const payload = KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload;
-  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
+  const listBody = `${
+    counterV2(CtrDexV2.GenericListGroup, payload.length / 4)
+  }${payload}`;
   const qb2 = codeB64ToB2(listBody);
 
   const aggor = parseAggor(qb2, V2, "bny");

@@ -18,10 +18,10 @@ This document is the primary end-to-end explainer for:
 KERIpy remains the behavioral reference implementation. `keri-ts` documents the
 same architecture with more explicit runtime ownership and typed host seams.
 
-`docs/adr/adr-0004-cue-runtime-portability.md` remains the normative
-`keri-ts` runtime contract. This document is broader: it explains the whole
-cross-runtime cue graph so mailbox, query/reply, OOBI, and host work can be
-understood as one system.
+`docs/adr/adr-0004-cue-runtime-portability.md` remains the normative `keri-ts`
+runtime contract. This document is broader: it explains the whole cross-runtime
+cue graph so mailbox, query/reply, OOBI, and host work can be understood as one
+system.
 
 ## Verdict
 
@@ -30,8 +30,8 @@ Cues are the cross-component signaling fabric of KERI runtime behavior.
 They are not transport payloads.
 
 They are typed work items emitted by processors such as `Kevery`, `Revery`,
-`Oobiery`, `Kever`, or `Exchanger` when some accepted, deferred, or
-follow-on action must be surfaced outside the current function.
+`Oobiery`, `Kever`, or `Exchanger` when some accepted, deferred, or follow-on
+action must be surfaced outside the current function.
 
 The architecture only makes sense when it is split into three stages:
 
@@ -157,7 +157,8 @@ cue deck.
 3. `MailboxStart.cueDo()` drains the shared `cues` deck.
 4. `MailboxStart.cueDo()` routes `stream` cues to `HttpEnd.qrycues` and sends
    all other cues to the normal response path.
-5. `HttpEnd.on_post()` has already attached `QryRpyMailboxIterable(..., said=qry.said)` to the HTTP response.
+5. `HttpEnd.on_post()` has already attached
+   `QryRpyMailboxIterable(..., said=qry.said)` to the HTTP response.
 6. `QryRpyMailboxIterable` waits for the matching `stream` cue, then creates a
    `MailboxIterable`.
 7. `MailboxIterable` reads ordered payloads from `Mailboxer` and emits SSE

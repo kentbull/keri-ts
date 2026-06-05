@@ -72,8 +72,8 @@ export function* runHostKernel(
     enableMailboxStore: spec.enableMailboxStore,
   });
   const seedHabs = spec.seedHabs ?? [spec.serviceHab];
-  const hostedPrefixes = spec.hostedPrefixes
-    ?? seedHabs.map((hab) => hab.pre);
+  const hostedPrefixes = spec.hostedPrefixes ??
+    seedHabs.map((hab) => hab.pre);
   const protocolPolicy: ProtocolHostPolicy = {
     ...spec.protocolPolicy,
     serviceHab: spec.protocolPolicy.serviceHab ?? spec.serviceHab,
@@ -95,7 +95,7 @@ export function* runHostKernel(
     serviceHab: spec.serviceHab,
     protocolPolicy,
   };
-  const runtimeTask = yield* spawn(function*() {
+  const runtimeTask = yield* spawn(function* () {
     yield* runAgentRuntime(runtime, {
       hab: spec.serviceHab,
       sink,
@@ -106,7 +106,7 @@ export function* runHostKernel(
   try {
     for (const companion of spec.companionHosts ?? []) {
       companionTasks.push(
-        yield* spawn(function*() {
+        yield* spawn(function* () {
           yield* companion(context);
         }),
       );

@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Top-level routing and durable cross-topic memory for `keri-ts`. This file
-should stay short enough to reread at session start.
+Top-level routing and durable cross-topic memory for `keri-ts`. This file should
+stay short enough to reread at session start.
 
 ## Current Focus
 
@@ -55,9 +55,9 @@ should stay short enough to reread at session start.
    `Matter` and `Indexer` are low-level bases, not the preferred public result.
 5. `Signer`/`Verfer` own signer/verifier suite dispatch; crypto helpers should
    not become a second semantic home.
-6. Fixed-field seal/blind/media values belong to CESR
-   `primitives/structing.ts`; KERI runtime code should project through CESR
-   structing helpers rather than duplicating raw-shape logic.
+6. Fixed-field seal/blind/media values belong to CESR `primitives/structing.ts`;
+   KERI runtime code should project through CESR structing helpers rather than
+   duplicating raw-shape logic.
 7. CESR-native and ACDC-native behavior should extend the shared native support
    matrix in `packages/cesr/src/serder/native.ts`.
 8. Weighted thresholds are semantic through `Tholder`; KEL and reply logic
@@ -67,22 +67,22 @@ should stay short enough to reread at session start.
 10. Durable local state is DB-backed: `states.` is authoritative local key
     state, `kels.` / `fels.` / `dtss.` support reopenable event state, and
     `Habery.habs` is only an in-memory reconstruction cache.
-11. Record-model parity is `FooRecord` plus `FooRecordShape`, with
-    `recordClass` as the durable public seam.
+11. Record-model parity is `FooRecord` plus `FooRecordShape`, with `recordClass`
+    as the durable public seam.
 12. KEL control flow should stay on typed decisions: `Kever` decides validity,
-    `Kevery` routes/applies, and `docs/adr/adr-0005-kel-decision-control-flow.md`
-    is normative.
+    `Kevery` routes/applies, and
+    `docs/adr/adr-0005-kel-decision-control-flow.md` is normative.
 13. Cue/runtime ownership is dual-scope and explicit: runtime-hosted work uses
-    the shared runtime cue deck, while `Habery.kevery` owns a separate local
-    cue deck for habitat-local processing.
+    the shared runtime cue deck, while `Habery.kevery` owns a separate local cue
+    deck for habitat-local processing.
 14. `Revery` owns reply verification/BADA/escrows, `Kevery` owns KEL and
     KEL-derived reply families, and `Oobiery` owns introduction-driven OOBI
     work.
 15. The mailbox mental model must stay explicit: provider mailbox storage is
     shared runtime-composed state above `Habery`, while remote topic cursors
     stay durable habery state in `tops.`.
-16. Local location updates must arrive through signed `/loc/scheme` replies,
-    not direct writes to `locs.` / `lans.`.
+16. Local location updates must arrive through signed `/loc/scheme` replies, not
+    direct writes to `locs.` / `lans.`.
 17. Interop contracts are exact: keep `lmdb` pinned to `3.4.4`, preserve
     `LMDB_DATA_V1=true` for KERIpy interop workflows, and route protocol/storage
     CBOR through the shared CESR codec.

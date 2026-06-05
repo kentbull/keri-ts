@@ -6,7 +6,11 @@
  * These scenarios prove witness behavior against explicit KERIpy witnesses
  * instead of relying on all-Tufa witness topologies.
  */
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertStringIncludes,
+} from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -129,7 +133,8 @@ async function resolveWitnessesForTufa(
 ): Promise<void> {
   for (const witness of witnesses) {
     const urls = [witness.controllerOobi, witness.witnessOobi].filter(
-      (url, index, all): url is string => typeof url === "string" && all.indexOf(url) === index,
+      (url, index, all): url is string =>
+        typeof url === "string" && all.indexOf(url) === index,
     );
     for (const url of urls) {
       await requireSuccess(
@@ -170,7 +175,8 @@ async function resolveWitnessesForKli(
 ): Promise<void> {
   for (const witness of witnesses) {
     const urls = [witness.controllerOobi, witness.witnessOobi].filter(
-      (url, index, all): url is string => typeof url === "string" && all.indexOf(url) === index,
+      (url, index, all): url is string =>
+        typeof url === "string" && all.indexOf(url) === index,
     );
     for (const url of urls) {
       await requireSuccess(
@@ -351,7 +357,7 @@ async function assertTufaWitnessStores(
   sn: number,
   expectedWitnessCount: number,
 ): Promise<void> {
-  await run(function*() {
+  await run(function* () {
     const stores = [];
     for (const witness of activeWitnesses) {
       stores.push(
@@ -601,7 +607,7 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
           controllerAlias,
           "--receipt-endpoint",
           "--data",
-          "{\"anchor\":\"acdc\"}",
+          '{"anchor":"acdc"}',
         ],
         ctx.env,
         ctx.repoRoot,
@@ -613,7 +619,7 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
     let firstRotationSaid = "";
     let secondRotationSaid = "";
     let interactionSaid = "";
-    await run(function*() {
+    await run(function* () {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,
@@ -1424,7 +1430,7 @@ Deno.test("Interop witness: tufa controller completes fully witnessed rotations 
     let inceptionSaid = "";
     let firstRotationSaid = "";
     let secondRotationSaid = "";
-    await run(function*() {
+    await run(function* () {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,
@@ -2120,12 +2126,15 @@ Deno.test("Interop witness: KLI controller reaches full replacement convergence 
 });
 
 Deno.test({
-  name: "Interop witness: manual 6-witness KERIpy soak reaches full receipt convergence",
+  name:
+    "Interop witness: manual 6-witness KERIpy soak reaches full receipt convergence",
   ignore: true,
   async fn() {
     const ctx = await createInteropContext();
     const headDirPath = await Deno.makeTempDir({ prefix: "tufa-keripy-soak-" });
-    const controllerName = `tufa-keripy-soak-${crypto.randomUUID().slice(0, 8)}`;
+    const controllerName = `tufa-keripy-soak-${
+      crypto.randomUUID().slice(0, 8)
+    }`;
     const controllerAlias = "controller";
     const harness = await startKeriPyWitnessHarness(ctx);
 
@@ -2205,7 +2214,7 @@ Deno.test({
         );
       }
 
-      await run(function*() {
+      await run(function* () {
         const controllerHby = yield* createHabery({
           name: controllerName,
           headDirPath,

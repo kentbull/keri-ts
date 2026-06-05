@@ -6,7 +6,8 @@
 export const PARSIDE_GROUP_VECTORS = {
   transIdxSigGroups:
     "-FABEFhg5my9DuMU6gw1CVk6QgkmZKBttWSXDzVzWVmxh0_K0AAAAAAAAAAAAAAAAAAAAAAAEFhg5my9DuMU6gw1CVk6QgkmZKBttWSXDzVzWVmxh0_K-AABAADghKct9eYTuSgSd5wdPSYG06tGX7ZRp_BDnrgbSxJpsJtrA-fP7Pa1W602gHeMrO6HZsD1z3tWV5jGlApFmVIB",
-  controllerIdxSigs: "-AABAABg3q8uNg1A2jhEAdbKGf-QupQhNnmZQx3zIyPLWBe6qqLT5ynytivf9EwJhxyhy87a0x2cezDdil4SsM2xxs0O",
+  controllerIdxSigs:
+    "-AABAABg3q8uNg1A2jhEAdbKGf-QupQhNnmZQx3zIyPLWBe6qqLT5ynytivf9EwJhxyhy87a0x2cezDdil4SsM2xxs0O",
   nonTransReceiptCouples:
     "-CABBD8-gMSJ6K1PQ7_gG5ZJn2NkHQJgdkiNrTBz_FWWS_cC0BDc1i44ZX0jaIHh5oNDx-TITbPnI6VEn2nKlqPwkkTF452X7XxYh80tolDpReYwZpnD8TF4Or2v3CpSCikyt6EG",
   attachmentGroup:
@@ -40,4 +41,4 @@ export const KERIPY_NATIVE_V2_EXN_FIX_BODY =
 
 /** KERIpy-generated v1 JSON ICP body retained for non-native version-string parity checks. */
 export const KERIPY_V1_JSON_ICP_BODY =
-  "{\"v\":\"KERI10JSON00012b_\",\"t\":\"icp\",\"d\":\"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF\",\"i\":\"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx\",\"s\":\"0\",\"kt\":\"1\",\"k\":[\"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx\"],\"nt\":\"1\",\"n\":[\"EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2\"],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}";
+  '{"v":"KERI10JSON00012b_","t":"icp","d":"EIcca2-uqsicYK7-q5gxlZXuzOkqrNSL3JIaLflSOOgF","i":"DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx","s":"0","kt":"1","k":["DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx"],"nt":"1","n":["EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2"],"bt":"0","b":[],"c":[],"a":[]}';

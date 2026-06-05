@@ -23,8 +23,8 @@ release, and interoperability operations.
    - `tufa` controller with mixed `tufa` + KERIpy witnesses, including
      cross-implementation replacement
 5. The 6-witness KERIpy soak is intentionally manual/nightly, not default CI.
-6. Infra work inherits the same DB ordering and duplicate-semantics model as
-   the rest of the project.
+6. Infra work inherits the same DB ordering and duplicate-semantics model as the
+   rest of the project.
 7. Formatting policy is `dprint`, and CI/release paths should enforce
    `deno task fmt:check`.
 8. PR CI is stage-gated and pinned closely enough to local expectations that

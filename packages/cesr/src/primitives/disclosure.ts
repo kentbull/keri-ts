@@ -542,7 +542,9 @@ export function unblindBoundState(
   // Placeholder bound pairs matter for parity with KERIpy's partially revealed
   // disclosure states, so the search space always includes `(0, "")`.
   const normalizedBounds = [
-    ...bounds.map(([bsn, bd]) => [coerceNumh(bsn), coerceNonceText(bd)] as const),
+    ...bounds.map(([bsn, bd]) =>
+      [coerceNumh(bsn), coerceNonceText(bd)] as const
+    ),
     ["0", ""] as const,
   ];
   const uniqueBounds = [

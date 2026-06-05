@@ -1,5 +1,11 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "../../../cesr/mod.ts";
+import {
+  type Cigar,
+  Diger,
+  Ilks,
+  Prefixer,
+  SerderKERI,
+} from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -8,7 +14,11 @@ import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
-import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import {
+  acceptReplyDecision,
+  type ReplyProcessDecision,
+  unverifiedReplyDecision,
+} from "../core/routing.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -144,8 +154,10 @@ export class Oobiery {
 
       const urls = record.urls ?? [];
       if (
-        urls.length === 0
-        || urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
+        urls.length === 0 ||
+        urls.every((childUrl) =>
+          !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl)
+        )
       ) {
         return [url, record];
       }
@@ -203,8 +215,8 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
-    const contentType = response.headers.get("content-type")?.toLowerCase()
-      ?? "";
+    const contentType = response.headers.get("content-type")?.toLowerCase() ??
+      "";
     this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
@@ -282,14 +294,16 @@ export class Oobiery {
     const urls = Array.isArray(data?.urls)
       ? [
         ...new Set(
-          data.urls.filter((entry): entry is string => typeof entry === "string"),
+          data.urls.filter((entry): entry is string =>
+            typeof entry === "string"
+          ),
         ),
       ]
       : [];
 
     if (
-      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null)
-      || urls.length === 0
+      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null) ||
+      urls.length === 0
     ) {
       this.failFetchedOobi(url, record, "invalid-multi-oobi");
       return;
@@ -313,8 +327,8 @@ export class Oobiery {
   private completeMultiOobi(url: string, record: OobiRecord): void {
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
-    const failed = urls.length === 0
-      || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+    const failed = urls.length === 0 ||
+      urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
 
     this.hby.db.moobi.rem(url);
     if (failed) {
@@ -590,7 +604,11 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
     alias: alias ?? parsed.searchParams.get("name") ?? undefined,
   };
 
-  const wellKnownIndex = findPathSequence(parts, [".well-known", "keri", "oobi"]);
+  const wellKnownIndex = findPathSequence(parts, [
+    ".well-known",
+    "keri",
+    "oobi",
+  ]);
   if (wellKnownIndex >= 0 && wellKnownIndex + 3 < parts.length) {
     job.cid = parts[wellKnownIndex + 3];
     job.role = Roles.controller;

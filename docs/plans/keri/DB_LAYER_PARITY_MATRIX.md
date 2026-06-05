@@ -3,9 +3,8 @@
 ## Purpose
 
 D0 parity workbook for KERIpy DB-layer reconciliation against `keri-ts`. This
-audited revision refreshes the symbol inventory, current KERIpy line
-references, and per-row status values against the code actually present on
-2026-04-03.
+audited revision refreshes the symbol inventory, current KERIpy line references,
+and per-row status values against the code actually present on 2026-04-03.
 
 ## Sources
 
@@ -36,14 +35,14 @@ references, and per-row status values against the code actually present on
 
 ## Audit Notes
 
-- KERIpy line numbers were refreshed against the current local `keripy`
-  checkout on 2026-04-03.
+- KERIpy line numbers were refreshed against the current local `keripy` checkout
+  on 2026-04-03.
 - Record-contract rows belong to `keripy/src/keri/recording.py`; the earlier
   matrix mapping them to `basing.py` was inaccurate.
 - The inventory is parity-relevant, not a blind dump of every private helper,
   comment-block TODO, or compatibility alias in KERIpy.
-- Status is intentionally conservative: existing code stays `Partial` unless
-  the current evidence is strong enough to call the row parity-complete.
+- Status is intentionally conservative: existing code stays `Partial` unless the
+  current evidence is strong enough to call the row parity-complete.
 
 ## Module Symbol Summary
 
@@ -171,17 +170,15 @@ references, and per-row status values against the code actually present on
 
 ## Row Audit Update (2026-04-03)
 
-1. The row inventory now matches the actual current KERIpy locations and
-   removes stale placeholder mappings such as `basing.py` -> record-contract
-   rows.
-2. All 30 inventoried `subing.py` classes now have concrete `subing.ts`
-   targets; the previous wall of `Missing` rows was document drift, not code
-   reality.
+1. The row inventory now matches the actual current KERIpy locations and removes
+   stale placeholder mappings such as `basing.py` -> record-contract rows.
+2. All 30 inventoried `subing.py` classes now have concrete `subing.ts` targets;
+   the previous wall of `Missing` rows was document drift, not code reality.
 3. `koming.ts` now has `KomerBase`, `Komer`, `IoSetKomer`, and `DupKomer`; no
    inventoried `koming.py` row is currently `Missing`.
-4. `basing.ts` now binds the broad named-subdb surface, and KERIpy's
-   `statedict` read-through behavior is approximated by explicit
-   `reloadKevers()` / `getKever()` helpers rather than a Python dict subclass.
+4. `basing.ts` now binds the broad named-subdb surface, and KERIpy's `statedict`
+   read-through behavior is approximated by explicit `reloadKevers()` /
+   `getKever()` helpers rather than a Python dict subclass.
 5. The previous row-level `Missing` surface (`RawRecord`, `OobiQueryRecord`,
    `DupKomer`, `BaserDoer`, `Broker`) is now implemented and directly tested,
    but all five remain conservatively `Partial` until broader parity review is
@@ -208,8 +205,8 @@ references, and per-row status values against the code actually present on
 2. Promote the newly landed `RawRecord`, `OobiQueryRecord`, `DupKomer`,
    `BaserDoer`, and `Broker` rows from `Partial` to `Equivalent` only with
    row-specific evidence beyond symbol existence and smoke tests.
-3. Decide whether the generic `fetchTsgs` helper should remain a separate
-   shared DB utility or stay intentionally embedded in row-specific callers.
+3. Decide whether the generic `fetchTsgs` helper should remain a separate shared
+   DB utility or stay intentionally embedded in row-specific callers.
 4. Decide whether factory/contextmanager helper differences (`openLMDB`,
    `openDB`, `reopenDB`) should stay intentionally TS-native or gain exact
    KERIpy aliases.

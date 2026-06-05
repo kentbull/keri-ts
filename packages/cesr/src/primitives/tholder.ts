@@ -137,9 +137,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 function isMatterInitLike(value: unknown): value is Matter | MatterInit {
   return value instanceof Matter || (
-    isRecord(value)
-    && ("raw" in value || "qb64" in value || "qb64b" in value || "qb2" in value
-      || "code" in value)
+    isRecord(value) &&
+    ("raw" in value || "qb64" in value || "qb64b" in value || "qb2" in value ||
+      "code" in value)
   );
 }
 
@@ -212,9 +212,9 @@ function rationalOne(): Rational {
 /** Convert a normalized rational back into the SAD-facing textual weight form. */
 function formatWeight(weight: Rational): string {
   if (
-    weight.denominator === 1n
-    || weight.numerator === 0n
-    || weight.numerator === weight.denominator
+    weight.denominator === 1n ||
+    weight.numerator === 0n ||
+    weight.numerator === weight.denominator
   ) {
     return weight.numerator.toString(10);
   }
@@ -224,9 +224,9 @@ function formatWeight(weight: Rational): string {
 /** Encode one rational into the compact bext token form used inside weighted limens. */
 function encodeBextWeight(weight: Rational): string {
   if (
-    weight.denominator === 1n
-    || weight.numerator === 0n
-    || weight.numerator === weight.denominator
+    weight.denominator === 1n ||
+    weight.numerator === 0n ||
+    weight.numerator === weight.denominator
   ) {
     return weight.numerator.toString(10);
   }
@@ -261,8 +261,8 @@ function parseWeight(input: string): Rational {
   const denominator = BigInt(match[2]);
   const normalized = normalizeRational(numerator, denominator);
   if (
-    compareRationals(normalized, rationalZero()) < 0
-    || compareRationals(normalized, rationalOne()) > 0
+    compareRationals(normalized, rationalZero()) < 0 ||
+    compareRationals(normalized, rationalOne()) > 0
   ) {
     throw new Error(
       `Invalid threshold weight not 0 <= ${text} <= 1.`,
@@ -338,7 +338,9 @@ function bigintToBytes(value: bigint): Uint8Array {
 function makeNumberMatterInit(value: bigint): MatterInit {
   const raw = bigintToBytes(value);
   const code = chooseNumberCode(raw.length);
-  const entry = NUMERIC_CAPACITIES.find(({ code: current }) => current === code);
+  const entry = NUMERIC_CAPACITIES.find(({ code: current }) =>
+    current === code
+  );
   if (!entry) {
     throw new Error(`Unsupported threshold number code=${code}.`);
   }
@@ -502,7 +504,9 @@ function normalizeThresholdInput(
     clause.map((entry) =>
       "numerator" in entry
         ? encodeBextWeight(entry)
-        : `${encodeBextWeight(entry.weight)}k${entry.members.map(encodeBextWeight).join("v")}`
+        : `${encodeBextWeight(entry.weight)}k${
+          entry.members.map(encodeBextWeight).join("v")
+        }`
     ).join("c")
   ).join("a");
   const raw = Bexter.rawify(bext);
@@ -513,8 +517,9 @@ function normalizeThresholdInput(
     numeric: null,
     size: weighted.clauses.reduce(
       (count, clause) =>
-        count
-        + clause.reduce((clauseCount, entry) => clauseCount + ("numerator" in entry ? 1 : entry.members.length), 0),
+        count +
+        clause.reduce((clauseCount, entry) =>
+          clauseCount + ("numerator" in entry ? 1 : entry.members.length), 0),
       0,
     ),
     thold: weighted.clauses,
@@ -569,8 +574,9 @@ function decodeThresholdMatter(
       numeric: null,
       size: normalized.clauses.reduce(
         (count, clause) =>
-          count
-          + clause.reduce((clauseCount, entry) => clauseCount + ("numerator" in entry ? 1 : entry.members.length), 0),
+          count +
+          clause.reduce((clauseCount, entry) =>
+            clauseCount + ("numerator" in entry ? 1 : entry.members.length), 0),
         0,
       ),
       thold: normalized.clauses,
@@ -651,8 +657,8 @@ export class Tholder extends Matter {
     const normalized = normalizeConstructorInput(init);
     super(normalized.matterInit);
     if (
-      !THOLDER_NUMERIC_CODES.has(this.code)
-      && !THOLDER_WEIGHTED_CODES.has(this.code)
+      !THOLDER_NUMERIC_CODES.has(this.code) &&
+      !THOLDER_WEIGHTED_CODES.has(this.code)
     ) {
       throw new UnknownCodeError(`Expected threshold code, got ${this.code}`);
     }
@@ -724,9 +730,9 @@ export class Tholder extends Matter {
    */
   satisfy(indices: readonly number[]): boolean {
     if (!this._weighted) {
-      return this._num !== null
-        && this._num > 0n
-        && BigInt(indices.length) >= this._num;
+      return this._num !== null &&
+        this._num > 0n &&
+        BigInt(indices.length) >= this._num;
     }
     if (indices.length === 0) {
       return false;

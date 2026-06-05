@@ -1,4 +1,8 @@
-import { assertEquals, assertInstanceOf, assertNotInstanceOf } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertInstanceOf,
+  assertNotInstanceOf,
+} from "jsr:@std/assert";
 import { b } from "../../../src/core/bytes.ts";
 import { Cigar } from "../../../src/primitives/cigar.ts";
 import { Dater } from "../../../src/primitives/dater.ts";

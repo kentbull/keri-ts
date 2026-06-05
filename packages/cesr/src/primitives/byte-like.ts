@@ -20,7 +20,7 @@ export function normalizeByteLike(value: ByteLike): Uint8Array {
 
 /** Runtime guard for byte-like primitive constructor inputs. */
 export function isByteLike(value: unknown): value is ByteLike {
-  return typeof value === "string"
-    || value instanceof Uint8Array
-    || ArrayBuffer.isView(value);
+  return typeof value === "string" ||
+    value instanceof Uint8Array ||
+    ArrayBuffer.isView(value);
 }

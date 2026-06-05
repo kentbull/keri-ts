@@ -40,7 +40,10 @@ export class Signal<T extends SignalAttrs = SignalAttrs> {
   constructor(
     init:
       | { raw: Uint8Array; ckey?: string }
-      | { pad: Omit<Partial<SignalPad<T>>, "a" | "r"> & { a: T; r: string }; ckey?: string },
+      | {
+        pad: Omit<Partial<SignalPad<T>>, "a" | "r"> & { a: T; r: string };
+        ckey?: string;
+      },
   ) {
     if ("raw" in init) {
       this.#ckey = init.ckey;
@@ -160,7 +163,9 @@ export class Signaler {
   ): Signal<T> {
     const created = signal(attrs, topic, options);
     if (created.ckey) {
-      const index = this.signals.findIndex((existing) => existing.ckey === created.ckey);
+      const index = this.signals.findIndex((existing) =>
+        existing.ckey === created.ckey
+      );
       if (index >= 0) {
         this.signals.splice(index, 1, created);
         return created;
@@ -172,7 +177,9 @@ export class Signaler {
   }
 
   list(): Signal[] {
-    return this.signals.map((current) => new Signal({ raw: current.raw, ckey: current.ckey }));
+    return this.signals.map((current) =>
+      new Signal({ raw: current.raw, ckey: current.ckey })
+    );
   }
 
   count(): number {

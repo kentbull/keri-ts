@@ -7,8 +7,8 @@ and KERIpy interoperability.
 
 ## Current State
 
-1. Phase 2 remains parity-first. The broad DB foundation is in place; the
-   active edge is runtime, key-management, and `kli`/`tufa` interoperability.
+1. Phase 2 remains parity-first. The broad DB foundation is in place; the active
+   edge is runtime, key-management, and `kli`/`tufa` interoperability.
 2. `docs/design-docs/db/db-architecture.md` is the storage contract for
    ordering, duplicate semantics, reopen behavior, and serialization.
 3. The remaining DB story is no longer "missing broad surface area." It is
@@ -26,8 +26,8 @@ and KERIpy interoperability.
 7. Durable local identifier state is DB-backed: `states.` is authoritative,
    `kels.` / `fels.` / `dtss.` preserve reopenable event state, and
    `Habery.habs` is only a reconstructed in-memory cache.
-8. Local key-management stays primitive-first: `Manager`, `Signator`, and
-   keeper encryption should consume and return CESR primitives directly.
+8. Local key-management stays primitive-first: `Manager`, `Signator`, and keeper
+   encryption should consume and return CESR primitives directly.
 9. Parser-to-runtime dispatch is a first-class seam. Keep KERIpy family names
    such as `tsgs`, `trqs`, and `ssgs`, but do not create unnecessary local
    wrapper taxonomies around them.
@@ -71,40 +71,51 @@ and KERIpy interoperability.
 23. Delegator-side `delegate confirm` parity is sequencing-sensitive: do not pin
     local `aess` or force delegated unescrow until the delegate event has been
     observed as locally committed through the witness-backed confirm path.
-24. The remaining runtime gaps are narrower now: broader exchange/forwarding
+24. Cross-implementation delegation coverage now proves single-key and 2-of-2
+    multi-key threshold `dip` + `drt` in both Tufa->KERIpy and KERIpy->Tufa
+    directions. Protocol-level true group delegation is also proved both ways:
+    real KERIpy two-member `GroupHab` delegated inception can be approved by
+    Tufa and completed in KERIpy, and a Tufa-generated two-member delegated
+    group inception can be approved by KERIpy and completed in Tufa. Tufa now
+    has a narrow production `Habery.makeGroupHab(...)` inception surface for
+    locally available members, but this is not a full distributed group
+    workflow; Tufa still lacks KERIpy-style `Counselor` / `Multiplexor`
+    coordination and group rotation orchestration.
+25. The remaining runtime gaps are narrower now: broader exchange/forwarding
     route breadth, the stale/timeout continuation tail, and the last high-value
     DB parity promotions.
-25. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
+26. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
     partially signed `exn` persistence, challenge flows are live, and mailbox
     forwarding/polling now sit on explicit shared provider storage plus durable
     `tops.` cursors.
-26. The mailbox mental model must stay explicit: provider mailbox storage is
+27. The mailbox mental model must stay explicit: provider mailbox storage is
     shared runtime-composed state above `Habery`, while remote topic cursors are
     durable habery state in `tops.`.
-27. `tufa agent` has two independent compatibility seams: CLI flag semantics
-    and packaged Node runtime behavior. Release confidence requires smoke
-    coverage against the packed artifact, not just Deno source runs.
-28. Honest CLI/bootstrap tests must use explicit file-path flags such as
+28. `tufa agent` has two independent compatibility seams: CLI flag semantics and
+    packaged Node runtime behavior. Release confidence requires smoke coverage
+    against the packed artifact, not just Deno source runs.
+29. Honest CLI/bootstrap tests must use explicit file-path flags such as
     `--config-dir` / `--config-file` rather than hidden default-path mutation.
-29. End-to-end controller-to-controller coverage must respect single-store
-    ownership. Do not run CLI commands against the same store a live `tufa agent` is currently hosting.
-30. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
+30. End-to-end controller-to-controller coverage must respect single-store
+    ownership. Do not run CLI commands against the same store a live
+    `tufa agent` is currently hosting.
+31. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
     selectors over ad hoc LMDB scripts or whole-store dumps.
-31. The host mental model is one listener/runtime per Habery or command
+32. The host mental model is one listener/runtime per Habery or command
     invocation with explicit hosted-prefix filtering. A multi-AID bug is a
     selection/bootstrap bug, not one-listener-per-AID topology.
-32. AEID is keeper auth/encryption state, not an ordinary hosted or user-facing
+33. AEID is keeper auth/encryption state, not an ordinary hosted or user-facing
     AID. Treat signatory/AEID-related identities as non-user-facing by default.
-33. Endpoint-role capability and startup seeding are separate concerns. The
+34. Endpoint-role capability and startup seeding are separate concerns. The
     presence of `Roles.agent` in protocol code is not, by itself, a reason to
     auto-create self `agent` roles at startup.
-34. Alias-scoped config `dt` + `curls` is the canonical controller endpoint
+35. Alias-scoped config `dt` + `curls` is the canonical controller endpoint
     bootstrap path; localhost synthesis is a fallback only when config and
     accepted endpoint state are both missing.
-35. `MailboxPoller` now has an honest finite/infinite split: bounded
+36. `MailboxPoller` now has an honest finite/infinite split: bounded
     `processOnce()` returns typed batches, while long-lived `pollDo()` stays
     sink-based for concurrent workers.
-36. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
+37. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
     library/runtime surface, not the home of host composition, command
     registration, or transport middleware policy.
 
@@ -157,8 +168,8 @@ and KERIpy interoperability.
 - Runtime architecture locked around explicit parser-to-runtime dispatch, the
   shared runtime cue deck, and `Habery`-local `Kevery` ownership for local
   acceptance.
-- `Kever`/`Kevery` split, threshold semantics, live receipt-family handling,
-  and replay/unescrow decisions moved onto clearer typed seams.
+- `Kever`/`Kevery` split, threshold semantics, live receipt-family handling, and
+  replay/unescrow decisions moved onto clearer typed seams.
 - CESR structing records became the semantic home for fixed-field seal/blind
   data, with KERI tuple aliases remaining derived storage views.
 
@@ -177,7 +188,26 @@ and KERIpy interoperability.
 - `tufa agent` parity now treats source-vs-npm drift as a real release risk.
 - Hosted-prefix filtering, mailbox/witness role hosting, and protocol routing
   were split onto clearer host/runtime/package ownership lines.
-- `packages/tufa` is now the runnable CLI/host boundary, while `keri-ts`
-  exposes the narrow library surface.
+- `packages/tufa` is now the runnable CLI/host boundary, while `keri-ts` exposes
+  the narrow library surface.
 - AEID and other system-managed identities were clarified as keeper/system state
   rather than ordinary user-facing hosted identities.
+
+### 2026-06-05 - Cross-Implementation Delegation Boundary Proven
+
+- Tufa/KERIpy delegation interop now has executable `dip` + `drt` coverage in
+  both directions for single-key and 2-of-2 multi-key threshold delegated AIDs.
+- KERIpy delegated events for a local Tufa delegator must route into
+  `delegables` until the local delegator approves; remote-protected shortcuts
+  must not bypass that local approval gate.
+- True group delegation is proved at the protocol boundary in both directions:
+  KERIpy `GroupHab` -> Tufa approval -> KERIpy completion, and Tufa-generated
+  two-member group `dip` -> KERIpy approval -> Tufa completion.
+  `Habery.makeGroupHab(...)` now provides the Tufa production inception surface
+  used by that test; full Counselor/Multiplexor coordination and group rotation
+  remain unimplemented.
+- Group habitat metadata must be persisted before processing so pending
+  delegated group records survive reopen, but `db.prefixes` / `db.groups` must
+  be marked only after actual acceptance. Marking them before validation turns
+  the event into a protected-party case and can incorrectly bypass remote
+  delegator proof.

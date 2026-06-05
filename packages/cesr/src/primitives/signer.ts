@@ -132,7 +132,8 @@ export class Signer extends Matter {
 
   /** Create one explicit random signer seed for creator-style flows. */
   static random(
-    { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions = {},
+    { code = MtrDex.Ed25519_Seed, transferable = true }: SignerRandomOptions =
+      {},
   ): Signer {
     const raw = crypto.getRandomValues(
       new Uint8Array(Signer.seedSizeForCode(code)),
@@ -152,12 +153,12 @@ export class Signer extends Matter {
     code: string,
   ): asserts code is SupportedVerferCode {
     if (
-      code !== MtrDex.Ed25519
-      && code !== MtrDex.Ed25519N
-      && code !== MtrDex.ECDSA_256k1
-      && code !== MtrDex.ECDSA_256k1N
-      && code !== MtrDex.ECDSA_256r1
-      && code !== MtrDex.ECDSA_256r1N
+      code !== MtrDex.Ed25519 &&
+      code !== MtrDex.Ed25519N &&
+      code !== MtrDex.ECDSA_256k1 &&
+      code !== MtrDex.ECDSA_256k1N &&
+      code !== MtrDex.ECDSA_256r1 &&
+      code !== MtrDex.ECDSA_256r1N
     ) {
       throw new UnknownCodeError(`Unsupported verifier code ${code}`);
     }

@@ -8,7 +8,11 @@ import {
   parseIndexerFromText,
 } from "../../../src/primitives/indexer.ts";
 import { KERIPY_INDEXER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import { assertQb64Qb2Parity, assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
+import {
+  assertQb64Qb2Parity,
+  assertTxtBnyQb64Parity,
+  txt,
+} from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("indexer: parses key KERIpy indexed-signature vectors", () => {
   const vectors = [
@@ -53,7 +57,9 @@ Deno.test("indexer: constructor roundtrip and qb2 trimming", () => {
 });
 
 Deno.test("indexer: raw bytes roundtrip through qb64 constructor", () => {
-  const raw = decodeB64("A".repeat(2) + KERIPY_INDEXER_VECTORS.ed25519SigIdx5.slice(2)).slice(2);
+  const raw = decodeB64(
+    "A".repeat(2) + KERIPY_INDEXER_VECTORS.ed25519SigIdx5.slice(2),
+  ).slice(2);
   const src = new Indexer({ code: "A", raw, index: 5 });
   const rebuilt = new Indexer({ qb64: src.qb64 });
   assertEquals(rebuilt.qb64, src.qb64);

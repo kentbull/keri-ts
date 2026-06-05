@@ -32,8 +32,16 @@ import { receipt as receiptEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
-import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
-import { buildCesrRequest, inspectCesrRequest, splitCesrStream } from "./cesr-http.ts";
+import {
+  type AgentRuntime,
+  createAgentRuntime,
+  settleRuntimeIngress,
+} from "./agent-runtime.ts";
+import {
+  buildCesrRequest,
+  inspectCesrRequest,
+  splitCesrStream,
+} from "./cesr-http.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopesFromFrames } from "./parsering.ts";
@@ -361,7 +369,10 @@ function witnessReceiptEligibility(
   if (!kever.wits.includes(serviceHab.pre)) {
     return {
       kind: "reject",
-      message: `${serviceHab.pre} is not an authorized witness for ${pre}:${said}: wits=${JSON.stringify(kever.wits)}.`,
+      message:
+        `${serviceHab.pre} is not an authorized witness for ${pre}:${said}: wits=${
+          JSON.stringify(kever.wits)
+        }.`,
     };
   }
 
@@ -379,11 +390,11 @@ export function* witnessReceiptPost(
     return { kind: "reject", status: 400, message: "Invalid CESR request" };
   }
   if (
-    serder.ilk !== Ilks.icp
-    && serder.ilk !== Ilks.rot
-    && serder.ilk !== Ilks.ixn
-    && serder.ilk !== Ilks.dip
-    && serder.ilk !== Ilks.drt
+    serder.ilk !== Ilks.icp &&
+    serder.ilk !== Ilks.rot &&
+    serder.ilk !== Ilks.ixn &&
+    serder.ilk !== Ilks.dip &&
+    serder.ilk !== Ilks.drt
   ) {
     return {
       kind: "reject",
@@ -443,7 +454,9 @@ export function witnessReceiptGet(
     return {
       kind: "reject",
       status: 404,
-      message: `event for ${pre} at ${String(query.sn ?? "")} (${String(said)}) not found`,
+      message: `event for ${pre} at ${String(query.sn ?? "")} (${
+        String(said)
+      }) not found`,
     };
   }
 
@@ -461,7 +474,8 @@ export function witnessReceiptGet(
     return {
       kind: "reject",
       status: 400,
-      message: `${serviceHab.pre} is not a valid witness for ${pre} event at ${serder.sn}.`,
+      message:
+        `${serviceHab.pre} is not a valid witness for ${pre} event at ${serder.sn}.`,
     };
   }
 
@@ -649,7 +663,9 @@ export function* sendWitnessMessage(
     if (!response.ok) {
       const body = yield* readResponseBytes(response);
       throw new ValidationError(
-        `Witness delivery to ${witness} failed with HTTP ${response.status}: ${new TextDecoder().decode(body)}`,
+        `Witness delivery to ${witness} failed with HTTP ${response.status}: ${
+          new TextDecoder().decode(body)
+        }`,
       );
     }
     yield* closeResponseBody(response);
@@ -705,7 +721,8 @@ function* pollWitnessReceipt(
     return {
       kind: "reject",
       status: 400,
-      message: `Witness ${witness} does not advertise an HTTP(S) endpoint for receipt polling.`,
+      message:
+        `Witness ${witness} does not advertise an HTTP(S) endpoint for receipt polling.`,
     };
   }
 
@@ -743,7 +760,8 @@ function* postWitnessReceiptEndpoint(
     return {
       kind: "reject",
       status: 400,
-      message: `Witness ${witness} does not advertise an HTTP(S) receipt endpoint.`,
+      message:
+        `Witness ${witness} does not advertise an HTTP(S) receipt endpoint.`,
     };
   }
 
@@ -751,7 +769,9 @@ function* postWitnessReceiptEndpoint(
     destination: witness,
   });
   const responseUrl = new URL(url);
-  responseUrl.pathname = `${responseUrl.pathname.replace(/\/+$/, "") || ""}/receipts`;
+  responseUrl.pathname = `${
+    responseUrl.pathname.replace(/\/+$/, "") || ""
+  }/receipts`;
   const { response } = yield* fetchResponseHandle(responseUrl.toString(), {
     method: "POST",
     headers: {
@@ -794,7 +814,8 @@ function* getWitnessReceiptEndpoint(
     return {
       kind: "reject",
       status: 400,
-      message: `Witness ${witness} does not advertise an HTTP(S) receipt endpoint.`,
+      message:
+        `Witness ${witness} does not advertise an HTTP(S) receipt endpoint.`,
     };
   }
   const endpoint = new URL(url);
@@ -920,7 +941,9 @@ export class Receiptor {
             ? response.message
             : "receipt remained escrowed";
           throw new ValidationError(
-            `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
+            `Witness ${witness} failed to receipt ${pre}:${
+              eventSn.toString(16)
+            }: ${detail}`,
           );
         }
 
@@ -945,13 +968,15 @@ export class Receiptor {
           continue;
         }
 
-        const introWitnesses = witnesses.filter((current) => current !== witness && receiptGroups.has(current));
+        const introWitnesses = witnesses.filter((current) =>
+          current !== witness && receiptGroups.has(current)
+        );
         const parts: Uint8Array[] = [];
         if (
-          serder.ilk === Ilks.icp
-          || serder.ilk === Ilks.dip
-          || ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt)
-            && serder.adds.includes(witness))
+          serder.ilk === Ilks.icp ||
+          serder.ilk === Ilks.dip ||
+          ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) &&
+            serder.adds.includes(witness))
         ) {
           const schemes = witnessSchemeReplies(hab, introWitnesses);
           if (schemes.length > 0) {

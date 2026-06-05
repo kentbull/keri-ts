@@ -1,7 +1,11 @@
 import type { AgentRuntime, ProtocolHostPolicy } from "keri-ts/runtime";
 import { Hono } from "npm:hono@^4.7.11";
 import { installTufaHttpErrorHandling } from "./error-mapping.ts";
-import { installTufaHttpPolicy, resolveTufaHttpAppPolicy, type TufaHttpAppOptions } from "./policy.ts";
+import {
+  installTufaHttpPolicy,
+  resolveTufaHttpAppPolicy,
+  type TufaHttpAppOptions,
+} from "./policy.ts";
 import { createProtocolHandler } from "./protocol-handler.ts";
 import type { ProtocolHandler } from "./protocol/types.ts";
 
@@ -25,8 +29,8 @@ export function createTufaApp(
 ): Hono {
   const app = new Hono();
   const policy = resolveTufaHttpAppPolicy(options.app);
-  const handler = options.protocolHandler
-    ?? createProtocolHandler(options.runtime, options.protocolPolicy ?? {});
+  const handler = options.protocolHandler ??
+    createProtocolHandler(options.runtime, options.protocolPolicy ?? {});
 
   installTufaHttpPolicy(app, policy);
   installTufaHttpErrorHandling(app, policy);

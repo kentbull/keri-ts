@@ -45,14 +45,14 @@ export function resolveTufaHttpAppPolicy(
   return {
     logger: options.logger ?? consoleLogger,
     cors: {
-      allowOrigin: options.cors?.allowOrigin
-        ?? DEFAULT_TUFA_CORS_POLICY.allowOrigin,
-      allowMethods: options.cors?.allowMethods
-        ?? DEFAULT_TUFA_CORS_POLICY.allowMethods,
-      allowHeaders: options.cors?.allowHeaders
-        ?? DEFAULT_TUFA_CORS_POLICY.allowHeaders,
-      exposeHeaders: options.cors?.exposeHeaders
-        ?? DEFAULT_TUFA_CORS_POLICY.exposeHeaders,
+      allowOrigin: options.cors?.allowOrigin ??
+        DEFAULT_TUFA_CORS_POLICY.allowOrigin,
+      allowMethods: options.cors?.allowMethods ??
+        DEFAULT_TUFA_CORS_POLICY.allowMethods,
+      allowHeaders: options.cors?.allowHeaders ??
+        DEFAULT_TUFA_CORS_POLICY.allowHeaders,
+      exposeHeaders: options.cors?.exposeHeaders ??
+        DEFAULT_TUFA_CORS_POLICY.exposeHeaders,
     },
   };
 }
@@ -74,7 +74,13 @@ function createTufaHttpPolicyMiddleware(
     if (context.req.method === "OPTIONS") {
       const response = new Response(null, { status: 204 });
       applyTufaCorsHeaders(response.headers, policy.cors);
-      logRequest(policy.logger, context.req.url, context.req.method, 204, startedAt);
+      logRequest(
+        policy.logger,
+        context.req.url,
+        context.req.method,
+        204,
+        startedAt,
+      );
       return response;
     }
 

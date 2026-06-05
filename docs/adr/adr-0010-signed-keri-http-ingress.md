@@ -35,8 +35,8 @@ KERIpy is the behavioral reference here:
 
 ## Decision
 
-`keri-ts` classifies HTTP endpoints that touch KERI material into three
-distinct patterns.
+`keri-ts` classifies HTTP endpoints that touch KERI material into three distinct
+patterns.
 
 ### 1. KERI-native ingress endpoints
 
@@ -132,8 +132,8 @@ approved transport boundary visible in one place.
 
 ## Consequences
 
-- `POST /mailboxes` now accepts one raw CESR stream instead of multipart
-  `kel` / `delkel` / `rpy` fields
+- `POST /mailboxes` now accepts one raw CESR stream instead of multipart `kel` /
+  `delkel` / `rpy` fields
 - mailbox add/remove clients post raw CESR bytes
 - maintainers should reach for CESR helpers before inventing new HTTP wrappers
   for signed KERI submissions

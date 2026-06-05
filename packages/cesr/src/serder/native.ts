@@ -3,7 +3,12 @@ import { DeserializeError, SerializeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
-import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
+import {
+  Aggor,
+  isAggorListCode,
+  isAggorMapCode,
+  parseAggor,
+} from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
 import {
   BEXTER_CODES,
@@ -21,13 +26,20 @@ import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Dater } from "../primitives/dater.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { Labeler, parseLabeler } from "../primitives/labeler.ts";
-import { Mapper, type MapperMap, type MapperValue } from "../primitives/mapper.ts";
+import {
+  Mapper,
+  type MapperMap,
+  type MapperValue,
+} from "../primitives/mapper.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import { parseNoncer } from "../primitives/noncer.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
 import { makePather, parsePather } from "../primitives/pather.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
-import { isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
+import {
+  isCounterGroupLike,
+  isPrimitiveTuple,
+} from "../primitives/primitive.ts";
 import { Structor } from "../primitives/structor.ts";
 import { Texter } from "../primitives/texter.ts";
 import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
@@ -35,7 +47,12 @@ import { parseTraitor } from "../primitives/traitor.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { Kinds, type Protocol, Protocols, Vrsn_2_0 } from "../tables/versions.ts";
+import {
+  Kinds,
+  type Protocol,
+  Protocols,
+  Vrsn_2_0,
+} from "../tables/versions.ts";
 import { versify } from "./smell.ts";
 
 type SadMap = Record<string, MapperValue>;
@@ -150,9 +167,10 @@ function encodeTag(text: string): string {
   if (!code) {
     throw new SerializeError(`Unsupported tag length=${text.length}`);
   }
-  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
-    ? "_"
-    : "";
+  const pad =
+    code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
+      ? "_"
+      : "";
   return `${code}${pad}${text}`;
 }
 
@@ -204,9 +222,9 @@ function encodeVerser(
   pvrsn: Versionage,
   gvrsn: Versionage | null,
 ): string {
-  const payload = `${proto}${intToB64(pvrsn.major, 1)}${intToB64(pvrsn.minor, 2)}${
-    gvrsn ? `${intToB64(gvrsn.major, 1)}${intToB64(gvrsn.minor, 2)}` : ""
-  }`;
+  const payload = `${proto}${intToB64(pvrsn.major, 1)}${
+    intToB64(pvrsn.minor, 2)
+  }${gvrsn ? `${intToB64(gvrsn.major, 1)}${intToB64(gvrsn.minor, 2)}` : ""}`;
   return encodeTag(payload);
 }
 
@@ -264,7 +282,9 @@ function encodeThreshold(value: ThresholdSith | number | bigint): string {
 
 /** CESR-native datetimes substitute base64-safe glyphs for RFC3339 punctuation. */
 function encodeDate(iso8601: string): string {
-  return `${MtrDex.DateTime}${iso8601.replaceAll(":", "c").replaceAll(".", "d").replaceAll("+", "p")}`;
+  return `${MtrDex.DateTime}${
+    iso8601.replaceAll(":", "c").replaceAll(".", "d").replaceAll("+", "p")
+  }`;
 }
 
 /**
@@ -287,7 +307,9 @@ function encodeList(entries: string[], gvrsn: Versionage | null): string {
   const code = count < 64 ** 2
     ? CtrDexV2.GenericListGroup
     : CtrDexV2.BigGenericListGroup;
-  return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
+  return `${
+    new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64
+  }${frame}`;
 }
 
 /**
@@ -310,7 +332,9 @@ function encodeMap(
     : count < 64 ** 2
     ? CtrDexV2.GenericMapGroup
     : CtrDexV2.BigGenericMapGroup;
-  return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
+  return `${
+    new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64
+  }${frame}`;
 }
 
 /**
@@ -333,13 +357,13 @@ function encodeValue(
     try {
       const primitive = parseMatter(b(value), "txt");
       if (
-        DIGEST_CODES.has(primitive.code)
-        || PREFIX_CODES.has(primitive.code)
-        || NON_DIGEST_PREFIX_CODES.has(primitive.code)
-        || NONCE_CODES.has(primitive.code)
-        || BEXTER_CODES.has(primitive.code)
-        || TAG_CODES.has(primitive.code)
-        || DATER_CODES.has(primitive.code)
+        DIGEST_CODES.has(primitive.code) ||
+        PREFIX_CODES.has(primitive.code) ||
+        NON_DIGEST_PREFIX_CODES.has(primitive.code) ||
+        NONCE_CODES.has(primitive.code) ||
+        BEXTER_CODES.has(primitive.code) ||
+        TAG_CODES.has(primitive.code) ||
+        DATER_CODES.has(primitive.code)
       ) {
         return primitive.qb64;
       }
@@ -414,9 +438,9 @@ function decodeEntry(entry: GroupEntry, gvrsn: Versionage): MapperValue {
 
   const matter = entry;
   if (
-    DIGEST_CODES.has(matter.code)
-    || PREFIX_CODES.has(matter.code)
-    || NON_DIGEST_PREFIX_CODES.has(matter.code)
+    DIGEST_CODES.has(matter.code) ||
+    PREFIX_CODES.has(matter.code) ||
+    NON_DIGEST_PREFIX_CODES.has(matter.code)
   ) {
     return matter.qb64;
   }
@@ -477,8 +501,8 @@ function decodeMapperField(
 function decodeList(raw: Uint8Array, gvrsn: Versionage): MapperValue[] {
   const counter = parseCounter(raw, gvrsn, "txt");
   if (
-    counter.code !== CtrDexV2.GenericListGroup
-    && counter.code !== CtrDexV2.BigGenericListGroup
+    counter.code !== CtrDexV2.GenericListGroup &&
+    counter.code !== CtrDexV2.BigGenericListGroup
   ) {
     throw new DeserializeError(`Expected list group, got ${counter.code}`);
   }
@@ -1179,7 +1203,9 @@ function getNativeLayout(
   const layout = NATIVE_LAYOUTS.get(nativeLayoutKey(proto, version, ilk));
   if (!layout) {
     throw new DeserializeError(
-      `Unsupported ${proto} native ilk=${String(ilk)} version=${version.major}.${version.minor}`,
+      `Unsupported ${proto} native ilk=${
+        String(ilk)
+      } version=${version.major}.${version.minor}`,
     );
   }
   return layout;
@@ -1248,14 +1274,14 @@ function parseNativeField(
   if (spec.kind === "seal-list-or-mapper") {
     const counter = parseCounter(raw.slice(offset), gvrsn, "txt");
     if (
-      counter.code === CtrDexV2.GenericMapGroup
-      || counter.code === CtrDexV2.BigGenericMapGroup
+      counter.code === CtrDexV2.GenericMapGroup ||
+      counter.code === CtrDexV2.BigGenericMapGroup
     ) {
       return parseMapperField(raw, offset, gvrsn, spec.strict ?? true);
     }
     if (
-      counter.code === CtrDexV2.GenericListGroup
-      || counter.code === CtrDexV2.BigGenericListGroup
+      counter.code === CtrDexV2.GenericListGroup ||
+      counter.code === CtrDexV2.BigGenericListGroup
     ) {
       return parseNestedSealOrDataListField(raw, offset, gvrsn);
     }
@@ -1322,9 +1348,9 @@ function encodeNativeFieldValue(
   }
   if (spec.kind === "number") {
     if (
-      typeof value !== "string"
-      && typeof value !== "number"
-      && typeof value !== "bigint"
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "bigint"
     ) {
       throw new SerializeError(
         `Expected numeric value for native field ${label}`,
@@ -1334,10 +1360,10 @@ function encodeNativeFieldValue(
   }
   if (spec.kind === "threshold") {
     if (
-      typeof value !== "string"
-      && typeof value !== "number"
-      && typeof value !== "bigint"
-      && !Array.isArray(value)
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "bigint" &&
+      !Array.isArray(value)
     ) {
       throw new SerializeError(
         `Expected threshold value for native field ${label}`,
@@ -1503,8 +1529,8 @@ export function parseCesrNativeKed(
   const textRaw = canonicalizeCesrNativeRaw(raw, gvrsn);
   const counter = parseCounter(textRaw, gvrsn, "txt");
   let offset = counter.fullSize;
-  const fixed = counter.code === CtrDexV2.FixBodyGroup
-    || counter.code === CtrDexV2.BigFixBodyGroup;
+  const fixed = counter.code === CtrDexV2.FixBodyGroup ||
+    counter.code === CtrDexV2.BigFixBodyGroup;
 
   if (!fixed) {
     const versionLabel = parseLabeler(textRaw.slice(offset), "txt");
@@ -1547,7 +1573,9 @@ export function parseCesrNativeKed(
     (fixed && layout.shape !== "fixed") || (!fixed && layout.shape !== "map")
   ) {
     throw new DeserializeError(
-      `${smellage.proto} CESR-native ilk=${String(ilk)} requires ${layout.shape} body shape`,
+      `${smellage.proto} CESR-native ilk=${
+        String(ilk)
+      } requires ${layout.shape} body shape`,
     );
   }
 
@@ -1588,7 +1616,9 @@ export function parseCesrNativeKed(
     const spec = layout.fields[label];
     if (!spec) {
       throw new DeserializeError(
-        `Unsupported ${smellage.proto} native label=${label} for ilk=${String(ilk)}`,
+        `Unsupported ${smellage.proto} native label=${label} for ilk=${
+          String(ilk)
+        }`,
       );
     }
     const parsed = parseNativeField(textRaw, offset, label, spec, gvrsn);
@@ -1697,7 +1727,9 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
       const code = frame.length / 4 < 64 ** 2
         ? CtrDexV2.MapBodyGroup
         : CtrDexV2.BigMapBodyGroup;
-      return `${new Counter({ code, count: frame.length / 4, version }).qb64}${frame}`;
+      return `${
+        new Counter({ code, count: frame.length / 4, version }).qb64
+      }${frame}`;
     })()
     : (() => {
       if (!ilk) {
@@ -1705,7 +1737,9 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
           `Missing ilk for fixed-body native ${smellage.proto} message`,
         );
       }
-      let frame = `${encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)}${encodeTag(ilk)}`;
+      let frame = `${
+        encodeVerser(smellage.proto, smellage.pvrsn, smellage.gvrsn)
+      }${encodeTag(ilk)}`;
       for (const label of layout.labels) {
         const spec = layout.fields[label];
         if (!spec) {
@@ -1718,7 +1752,9 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
       const code = frame.length / 4 < 64 ** 2
         ? CtrDexV2.FixBodyGroup
         : CtrDexV2.BigFixBodyGroup;
-      return `${new Counter({ code, count: frame.length / 4, version }).qb64}${frame}`;
+      return `${
+        new Counter({ code, count: frame.length / 4, version }).qb64
+      }${frame}`;
     })();
 
   return b(body);

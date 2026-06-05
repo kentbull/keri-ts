@@ -35,7 +35,7 @@ export type CipherHydratable = QualifiedPrimitive | Streamer;
 /** Constructor contract for cipher plaintext rehydration. */
 export type CipherHydratableCtor<
   T extends CipherHydratable = CipherHydratable,
-> = new(...args: any[]) => T;
+> = new (...args: any[]) => T;
 /** Ordered tuple payload used by grouped attachments (for fixed small tuples). */
 export type PrimitiveTuple = readonly GroupEntry[];
 /** Recursive parser graph entry for attachment/native payloads. */
@@ -50,8 +50,8 @@ export function isPrimitiveTuple(entry: GroupEntry): entry is PrimitiveTuple {
 export function isCounterGroupLike(
   entry: GroupEntry,
 ): entry is CounterGroupLike {
-  return typeof entry === "object" && entry !== null && !Array.isArray(entry)
-    && "items" in entry && "count" in entry && "code" in entry;
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry) &&
+    "items" in entry && "count" in entry && "code" in entry;
 }
 
 /**
@@ -64,9 +64,9 @@ export function isCounterGroupLike(
 export function isQualifiedPrimitive(
   entry: unknown,
 ): entry is QualifiedPrimitive {
-  return typeof entry === "object"
-    && entry !== null
-    && !Array.isArray(entry)
-    && !isCounterGroupLike(entry as GroupEntry)
-    && "qb64b" in entry;
+  return typeof entry === "object" &&
+    entry !== null &&
+    !Array.isArray(entry) &&
+    !isCounterGroupLike(entry as GroupEntry) &&
+    "qb64b" in entry;
 }

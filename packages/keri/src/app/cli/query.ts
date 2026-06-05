@@ -15,7 +15,12 @@
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { createAgentRuntime, processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
+import {
+  createAgentRuntime,
+  processRuntimeTurn,
+  runtimeHasPendingWork,
+  runtimeTurn,
+} from "../agent-runtime.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
 import { queryTransportSink } from "../query-transport.ts";
@@ -67,8 +72,8 @@ function controllerCatchupUrl(
   queriedPre: string,
 ): string | null {
   const ends = hab.endsFor(queriedPre);
-  const controller = flattenRoleUrls(ends[Roles.controller])[0]
-    ?? flattenRoleUrls(ends[Roles.agent])[0];
+  const controller = flattenRoleUrls(ends[Roles.controller])[0] ??
+    flattenRoleUrls(ends[Roles.agent])[0];
   if (!controller) {
     return null;
   }
@@ -111,7 +116,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Prefix is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function*() {
+  const doer = yield* spawn(function* () {
     const hby = yield* setupHby(
       queryArgs.name!,
       queryArgs.base ?? "",
@@ -137,13 +142,19 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       if (queryArgs.anchor) {
         const anchor = loadAnchor(queryArgs.anchor);
         console.log(`Checking for anchor ${JSON.stringify(anchor)}...`);
-        const querier = runtime.querying.watchAnchor(queryArgs.prefix!, anchor, {
-          hab,
-        });
+        const querier = runtime.querying.watchAnchor(
+          queryArgs.prefix!,
+          anchor,
+          {
+            hab,
+          },
+        );
         watchDone = () => querier.done;
       } else {
         console.log("Checking for updates...");
-        const noticer = runtime.querying.watchKeyState(queryArgs.prefix!, { hab });
+        const noticer = runtime.querying.watchKeyState(queryArgs.prefix!, {
+          hab,
+        });
         watchDone = () => noticer.done;
       }
 
@@ -161,7 +172,11 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
           runtime.oobiery.resolve(catchupUrl);
           const catchupDeadline = Date.now() + 5_000;
           while (!watchDone() && Date.now() < catchupDeadline) {
-            yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
+            yield* processRuntimeTurn(runtime, {
+              hab,
+              pollMailbox: true,
+              sink,
+            });
             if (!runtimeHasPendingWork(runtime)) {
               break;
             }

@@ -1,6 +1,11 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { fetchOp, startTestServer, textOp, waitForTaskHalt } from "../test-helpers.ts";
+import {
+  fetchOp,
+  startTestServer,
+  textOp,
+  waitForTaskHalt,
+} from "../test-helpers.ts";
 
 /**
  * Integration test for the shared Tufa HTTP host.
@@ -11,7 +16,7 @@ import { fetchOp, startTestServer, textOp, waitForTaskHalt } from "../test-helpe
  */
 
 Deno.test("tufa/server - startServer serves HTTP requests", async () => {
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const { address, task: serverTask } = yield* startTestServer();
 
     try {
@@ -34,25 +39,25 @@ Deno.test("tufa/server - startServer serves HTTP requests", async () => {
 });
 
 Deno.test("tufa/server - startServer handles concurrent requests", async () => {
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const { address, task: serverTask } = yield* startTestServer();
 
     try {
-      const request1 = yield* spawn(function*() {
+      const request1 = yield* spawn(function* () {
         const res = yield* fetchOp(
           `http://${address.hostname}:${address.port}/health`,
         );
         return yield* textOp(res);
       });
 
-      const request2 = yield* spawn(function*() {
+      const request2 = yield* spawn(function* () {
         const res = yield* fetchOp(
           `http://${address.hostname}:${address.port}/health`,
         );
         return yield* textOp(res);
       });
 
-      const request3 = yield* spawn(function*() {
+      const request3 = yield* spawn(function* () {
         const res = yield* fetchOp(
           `http://${address.hostname}:${address.port}/health`,
         );
@@ -69,7 +74,7 @@ Deno.test("tufa/server - startServer handles concurrent requests", async () => {
 });
 
 Deno.test("tufa/server - startServer recovers from 404s and keeps serving", async () => {
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const { address, task: serverTask } = yield* startTestServer();
 
     try {

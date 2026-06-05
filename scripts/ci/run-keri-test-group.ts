@@ -63,7 +63,8 @@ const laneConfigs: Record<string, LaneConfig> = {
     maxJobs: 4,
   },
   "app-fast-isolated": {
-    description: "Global-state app coverage that still mutates console or HOME.",
+    description:
+      "Global-state app coverage that still mutates console or HOME.",
     allowAll: true,
   },
   "runtime-medium": {
@@ -95,11 +96,13 @@ const laneConfigs: Record<string, LaneConfig> = {
     allowAll: true,
   },
   "interop-delegation": {
-    description: "Cross-implementation delegated inception and rotation scenarios.",
+    description:
+      "Cross-implementation delegated inception and rotation scenarios.",
     allowAll: true,
   },
   "runtime-slow": {
-    description: "Mailbox-heavy runtime, agent reopen, and witness runtime coverage.",
+    description:
+      "Mailbox-heavy runtime, agent reopen, and witness runtime coverage.",
     allowAll: true,
   },
   "interop-mailbox-slow": {
@@ -117,14 +120,16 @@ const groupDefinitions: Record<string, GroupDefinition> = {
     ],
   },
   "app-fast": {
-    description: "Public app-fast alias over parallel-safe and isolated app slices.",
+    description:
+      "Public app-fast alias over parallel-safe and isolated app slices.",
     lanes: [
       "app-fast-parallel",
       "app-fast-isolated",
     ],
   },
   quality: {
-    description: "Truthful default path with representative runtime and interop coverage.",
+    description:
+      "Truthful default path with representative runtime and interop coverage.",
     lanes: [
       "db-fast",
       "core-fast-a",
@@ -183,7 +188,11 @@ function usage(): never {
   }
   console.error("");
   console.error("Available groups:");
-  console.error(`  ${"lane-audit".padEnd(20)} verify annotated ownership for all discovered KERI tests`);
+  console.error(
+    `  ${
+      "lane-audit".padEnd(20)
+    } verify annotated ownership for all discovered KERI tests`,
+  );
   for (const [groupName, group] of Object.entries(groupDefinitions)) {
     console.error(`  ${groupName.padEnd(20)} ${group.description}`);
   }
@@ -202,7 +211,10 @@ async function collectTestFiles(): Promise<string[]> {
 
 async function walkTests(dir: URL, files: string[]): Promise<void> {
   for await (const entry of Deno.readDir(dir)) {
-    const entryUrl = new URL(`${entry.name}${entry.isDirectory ? "/" : ""}`, dir);
+    const entryUrl = new URL(
+      `${entry.name}${entry.isDirectory ? "/" : ""}`,
+      dir,
+    );
     if (entry.isDirectory) {
       await walkTests(entryUrl, files);
       continue;
@@ -216,7 +228,8 @@ async function walkTests(dir: URL, files: string[]): Promise<void> {
 function extractTestNames(source: string): string[] {
   const names: string[] = [];
   const directPattern = /Deno\.test\(\s*(?:"([^"]+)"|'([^']+)')/gs;
-  const objectPattern = /Deno\.test\(\s*\{[\s\S]*?\bname\s*:\s*(?:"([^"]+)"|'([^']+)')[\s\S]*?\}\s*\)/gs;
+  const objectPattern =
+    /Deno\.test\(\s*\{[\s\S]*?\bname\s*:\s*(?:"([^"]+)"|'([^']+)')[\s\S]*?\}\s*\)/gs;
 
   for (const match of source.matchAll(directPattern)) {
     names.push(match[1] ?? match[2] ?? "");
@@ -228,13 +241,18 @@ function extractTestNames(source: string): string[] {
   return names.filter((name) => name.length > 0);
 }
 
-function parseFileLaneDiscovery(file: string, source: string): FileLaneDiscovery {
+function parseFileLaneDiscovery(
+  file: string,
+  source: string,
+): FileLaneDiscovery {
   const testNames = extractTestNames(source);
   if (testNames.length === 0) {
     throw new Error(`No Deno.test names found in ${file}.`);
   }
 
-  const fileLaneMatches = [...source.matchAll(/^\s*\/\/\s*@file-test-lane\s+([a-z0-9-]+)\s*$/gm)];
+  const fileLaneMatches = [
+    ...source.matchAll(/^\s*\/\/\s*@file-test-lane\s+([a-z0-9-]+)\s*$/gm),
+  ];
   if (fileLaneMatches.length !== 1) {
     throw new Error(
       `${file} must declare exactly one "// @file-test-lane <lane>" annotation.`,
@@ -251,7 +269,9 @@ function parseFileLaneDiscovery(file: string, source: string): FileLaneDiscovery
   let testIndex = 0;
 
   for (const line of source.split(/\r?\n/)) {
-    const overrideMatch = line.match(/^\s*\/\/\s*@test-lane\s+([a-z0-9-]+)\s*$/);
+    const overrideMatch = line.match(
+      /^\s*\/\/\s*@test-lane\s+([a-z0-9-]+)\s*$/,
+    );
     if (overrideMatch) {
       const lane = overrideMatch[1];
       if (!(lane in laneConfigs)) {
@@ -267,7 +287,9 @@ function parseFileLaneDiscovery(file: string, source: string): FileLaneDiscovery
 
     const name = testNames[testIndex];
     if (!name) {
-      throw new Error(`${file} has more Deno.test registrations than discovered names.`);
+      throw new Error(
+        `${file} has more Deno.test registrations than discovered names.`,
+      );
     }
 
     tests.push({
@@ -391,7 +413,9 @@ function parsePositiveIntEnv(key: string): number | null {
 
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${key} must be a positive integer when set, got "${value}".`);
+    throw new Error(
+      `${key} must be a positive integer when set, got "${value}".`,
+    );
   }
 
   return parsed;

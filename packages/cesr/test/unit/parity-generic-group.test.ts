@@ -32,13 +32,18 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
   const messages = out.filter((event) => event.type === "frame");
   return messages.map((event) => {
     const att = event.frame.attachments.map((group) => group.code).join(",");
-    return `${event.frame.body.kind}|${event.frame.body.ilk ?? ""}|${event.frame.body.said ?? ""}|${att}`;
+    return `${event.frame.body.kind}|${event.frame.body.ilk ?? ""}|${
+      event.frame.body.said ?? ""
+    }|${att}`;
   });
 }
 
 Deno.test("V-P0-001: top-level GenericGroup enclosing one BodyWithAttachmentGroup", () => {
-  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
-  const bodyWithAttachmentPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+  const nestedAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
+  const bodyWithAttachmentPayload =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const bodyWithAttachment = wrapQuadletGroup(
     CtrDexV2.BodyWithAttachmentGroup,
     bodyWithAttachmentPayload,
@@ -57,8 +62,11 @@ Deno.test("V-P0-001: top-level GenericGroup enclosing one BodyWithAttachmentGrou
 });
 
 Deno.test("V-P0-002: nested GenericGroup two levels deep with mixed enclosed content is split-deterministic", () => {
-  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
-  const wrappedBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+  const nestedAttachment = `${
+    counterV2(CtrDexV2.ControllerIdxSigs, 1)
+  }${sigerToken()}`;
+  const wrappedBodyPayload =
+    `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const wrappedBody = wrapQuadletGroup(
     CtrDexV2.BodyWithAttachmentGroup,
     wrappedBodyPayload,

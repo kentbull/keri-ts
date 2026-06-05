@@ -1,8 +1,18 @@
 // @file-test-lane runtime-slow
 
 import { action, type Operation, run, spawn } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
+import {
+  assertEquals,
+  assertExists,
+  assertStringIncludes,
+} from "jsr:@std/assert";
+import {
+  concatBytes,
+  Diger,
+  SealSource,
+  SerderKERI,
+  Siger,
+} from "../../../../cesr/mod.ts";
 import {
   mailboxAddCommand,
   mailboxDebugCommand,
@@ -17,18 +27,40 @@ import {
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
-import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
-import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import {
+  challengeRespondCommand,
+  challengeVerifyCommand,
+} from "../../../src/app/cli/challenge.ts";
+import {
+  oobiGenerateCommand,
+  oobiResolveCommand,
+} from "../../../src/app/cli/oobi.ts";
+import {
+  createHabery,
+  type Hab,
+  type Habery,
+} from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
-import { controllerOobiResponse, reserveTcpPort, startStaticHttpHost } from "../../http-test-support.ts";
+import {
+  fetchOp,
+  textOp,
+  waitForServer,
+  waitForTaskHalt,
+} from "../../effection-http.ts";
+import {
+  controllerOobiResponse,
+  reserveTcpPort,
+  startStaticHttpHost,
+} from "../../http-test-support.ts";
 import { testCLICommand } from "../../utils.ts";
-import { seedHostedController, seedLocalController } from "./mailbox-runtime-support.ts";
+import {
+  seedHostedController,
+  seedLocalController,
+} from "./mailbox-runtime-support.ts";
 
 const textDecoder = new TextDecoder();
 
@@ -188,7 +220,7 @@ async function seedMailboxHost(
 ): Promise<string> {
   let pre = "";
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -317,13 +349,16 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
   const providerName = `mailbox-admin-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-controller-${crypto.randomUUID()}`;
   const delegatedName = `mailbox-admin-delegated-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-provider-${crypto.randomUUID()}`;
-  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-controller-${crypto.randomUUID()}`;
-  const delegatedHeadDirPath = `/tmp/tufa-mailbox-admin-delegated-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-admin-provider-${crypto.randomUUID()}`;
+  const controllerHeadDirPath =
+    `/tmp/tufa-mailbox-admin-controller-${crypto.randomUUID()}`;
+  const delegatedHeadDirPath =
+    `/tmp/tufa-mailbox-admin-delegated-${crypto.randomUUID()}`;
   const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
 
-  await run(function*() {
+  await run(function* () {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -387,10 +422,10 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
     );
     yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -552,13 +587,16 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
 
 Deno.test("mailbox admin rejects unsupported content types and invalid raw or multipart replies", async () => {
   const providerName = `mailbox-admin-invalid-provider-${crypto.randomUUID()}`;
-  const controllerName = `mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-invalid-provider-${crypto.randomUUID()}`;
-  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
+  const controllerName =
+    `mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-admin-invalid-provider-${crypto.randomUUID()}`;
+  const controllerHeadDirPath =
+    `/tmp/tufa-mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
   const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
 
-  await run(function*() {
+  await run(function* () {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -605,10 +643,10 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
     );
     yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -796,7 +834,8 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
 Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote mailbox host", async () => {
   const providerName = `mailbox-provider-${crypto.randomUUID()}`;
   const clientName = `mailbox-client-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-provider-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-provider-${crypto.randomUUID()}`;
   const clientHeadDirPath = `/tmp/tufa-mailbox-client-${crypto.randomUUID()}`;
   const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
@@ -812,7 +851,7 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     "alice",
   );
 
-  await run(function*() {
+  await run(function* () {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -826,10 +865,10 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
     }
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 
@@ -913,7 +952,7 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const clientHby = yield* createHabery({
       name: clientName,
       headDirPath: clientHeadDirPath,
@@ -957,9 +996,11 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
   const providerName = `mailbox-base-provider-${crypto.randomUUID()}`;
   const bobName = `mailbox-base-bob-${crypto.randomUUID()}`;
   const aliceName = `mailbox-base-alice-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-base-provider-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-base-provider-${crypto.randomUUID()}`;
   const bobHeadDirPath = `/tmp/tufa-mailbox-base-bob-${crypto.randomUUID()}`;
-  const aliceHeadDirPath = `/tmp/tufa-mailbox-base-alice-${crypto.randomUUID()}`;
+  const aliceHeadDirPath =
+    `/tmp/tufa-mailbox-base-alice-${crypto.randomUUID()}`;
   const providerPort = reserveTcpPort();
   const providerUrl = `http://127.0.0.1:${providerPort}`;
   const words = ["able", "baker", "charlie"];
@@ -991,7 +1032,7 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
   );
 
   try {
-    await run(function*() {
+    await run(function* () {
       const providerHby = yield* createHabery({
         name: providerName,
         headDirPath: providerHeadDirPath,
@@ -1005,10 +1046,10 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
       }
-      const runtimeTask = yield* spawn(function*() {
+      const runtimeTask = yield* spawn(function* () {
         yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
       });
-      const serverTask = yield* spawn(function*() {
+      const serverTask = yield* spawn(function* () {
         yield* startServer(providerPort, undefined, runtime);
       });
 
@@ -1113,7 +1154,7 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
       }
     });
 
-    await run(function*() {
+    await run(function* () {
       const bobHby = yield* createHabery({
         name: bobName,
         headDirPath: bobHeadDirPath,
@@ -1147,9 +1188,12 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
   const providerName = `mailbox-auth-provider-${crypto.randomUUID()}`;
   const senderName = `mailbox-auth-sender-${crypto.randomUUID()}`;
   const clientName = `mailbox-auth-client-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-auth-provider-${crypto.randomUUID()}`;
-  const senderHeadDirPath = `/tmp/tufa-mailbox-auth-sender-${crypto.randomUUID()}`;
-  const clientHeadDirPath = `/tmp/tufa-mailbox-auth-client-${crypto.randomUUID()}`;
+  const providerHeadDirPath =
+    `/tmp/tufa-mailbox-auth-provider-${crypto.randomUUID()}`;
+  const senderHeadDirPath =
+    `/tmp/tufa-mailbox-auth-sender-${crypto.randomUUID()}`;
+  const clientHeadDirPath =
+    `/tmp/tufa-mailbox-auth-client-${crypto.randomUUID()}`;
   const port = reserveTcpPort();
   const url = `http://127.0.0.1:${port}`;
   const providerPre = await seedMailboxHost(
@@ -1164,7 +1208,7 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
     "alice",
   );
 
-  await run(function*() {
+  await run(function* () {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -1178,10 +1222,10 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
     }
-    const runtimeTask = yield* spawn(function*() {
+    const runtimeTask = yield* spawn(function* () {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* startServer(port, undefined, runtime);
     });
 

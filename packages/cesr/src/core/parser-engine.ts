@@ -9,9 +9,15 @@ import { AttachmentCollector } from "./parser-attachment-collector.ts";
 import { DEFAULT_VERSION } from "./parser-constants.ts";
 import { DeferredFrameLifecycle } from "./parser-deferred-frames.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
-import { createFrameBoundaryPolicy, type FrameBoundaryPolicy } from "./parser-policy.ts";
+import {
+  createFrameBoundaryPolicy,
+  type FrameBoundaryPolicy,
+} from "./parser-policy.ts";
 import { ParserStreamState } from "./parser-stream-state.ts";
-import { composeRecoveryDiagnosticObserver, type RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
+import {
+  composeRecoveryDiagnosticObserver,
+  type RecoveryDiagnosticObserver,
+} from "./recovery-diagnostics.ts";
 import type { CesrFrame, CesrMessage } from "./types.ts";
 
 /**
@@ -65,18 +71,19 @@ export class CesrParser {
    * 2) derived defaults from legacy `framed` and strict/compat options
    */
   constructor(options: ParserOptions = {}) {
-    this.frameBoundaryPolicy = options.frameBoundaryPolicy
-      ?? createFrameBoundaryPolicy(options.framed ?? false);
+    this.frameBoundaryPolicy = options.frameBoundaryPolicy ??
+      createFrameBoundaryPolicy(options.framed ?? false);
     this.recoveryDiagnosticObserver = composeRecoveryDiagnosticObserver({
       onRecoveryDiagnostic: options.onRecoveryDiagnostic,
       onAttachmentVersionFallback: options.attachmentVersionFallbackPolicy
         ? undefined
         : options.onAttachmentVersionFallback,
     });
-    const attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy
-      ?? createAttachmentVersionFallbackPolicy({
-        mode: options.attachmentDispatchMode,
-      });
+    const attachmentVersionFallbackPolicy =
+      options.attachmentVersionFallbackPolicy ??
+        createAttachmentVersionFallbackPolicy({
+          mode: options.attachmentDispatchMode,
+        });
 
     this.stream = new ParserStreamState(DEFAULT_VERSION);
     this.deferred = new DeferredFrameLifecycle();
@@ -90,7 +97,8 @@ export class CesrParser {
       frameBoundaryPolicy: this.frameBoundaryPolicy,
       attachmentVersionFallbackPolicy,
       recoveryDiagnosticObserver: this.recoveryDiagnosticObserver,
-      isFrameBoundaryAhead: (input, version, cold) => this.frameParser.isFrameBoundaryAhead(input, version, cold),
+      isFrameBoundaryAhead: (input, version, cold) =>
+        this.frameParser.isFrameBoundaryAhead(input, version, cold),
     });
   }
 

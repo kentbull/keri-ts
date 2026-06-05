@@ -6,7 +6,7 @@ import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
 Deno.test("db/basing - Baser binds DB-backed state and record stores", async () => {
-  await run(function*() {
+  await run(function* () {
     const baser = yield* createBaser({
       name: `baser-${crypto.randomUUID()}`,
       temp: true,
@@ -63,7 +63,7 @@ Deno.test("db/basing - Baser binds DB-backed state and record stores", async () 
 Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on exit", async () => {
   let tempPath: string | null = null;
 
-  await run(function*() {
+  await run(function* () {
     const baser = new Baser({
       name: `baser-doer-${crypto.randomUUID()}`,
       temp: true,

@@ -118,8 +118,8 @@ from KERIpy's stub comments:
 
 ### Why Not Use a Raw String Path?
 
-Because `Manager` is not the primitive derivation API. `Salter` and `Signer`
-own derivation and signing semantics. `Manager` owns keeper-state orchestration.
+Because `Manager` is not the primitive derivation API. `Salter` and `Signer` own
+derivation and signing semantics. `Manager` owns keeper-state orchestration.
 
 If `Manager.sign(...)` accepted raw derivation strings as its public contract,
 it would blur:
@@ -183,8 +183,8 @@ Negative:
   rather than by direct line-for-line parity
 - historical `pubs.`-only lots do not persist `kidx`, so caller-supplied `kidx`
   is trusted there while known `old/new/nxt` lots require an exact match
-- manager code becomes somewhat more explicit because it now owns lot
-  resolution and derived-branch selection rules
+- manager code becomes somewhat more explicit because it now owns lot resolution
+  and derived-branch selection rules
 
 ## Rejected Alternatives
 

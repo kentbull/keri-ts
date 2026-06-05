@@ -4,7 +4,11 @@ import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
-import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
+import type {
+  ExchangeAttachment,
+  Exchanger,
+  ExchangeRouteHandler,
+} from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
@@ -277,9 +281,9 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
   }): boolean {
     const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
     const embeds = args.serder.ked?.e as Record<string, unknown> | undefined;
-    return typeof payload?.["delpre"] === "string"
-      && typeof embeds?.["evt"] === "object"
-      && embeds?.["evt"] !== null;
+    return typeof payload?.["delpre"] === "string" &&
+      typeof embeds?.["evt"] === "object" &&
+      embeds?.["evt"] !== null;
   }
 
   handle(args: {
@@ -413,10 +417,10 @@ export class Anchorer {
     snh: string,
   ): DelegationWorkflowStatus {
     const key: [string, string] = [pre, snh];
-    const serder = this.hby.db.dpwe.get(key)
-      ?? this.hby.db.dune.get(key)
-      ?? this.hby.db.dpub.get(key)
-      ?? null;
+    const serder = this.hby.db.dpwe.get(key) ??
+      this.hby.db.dune.get(key) ??
+      this.hby.db.dpub.get(key) ??
+      null;
     const completed = this.complete(pre, snh);
     if (!serder) {
       return { phase: null, proxyDependent: false, complete: completed };
@@ -457,14 +461,32 @@ export class Anchorer {
 
   *processAllOnce(): Operation<DelegationWorkflowResult[]> {
     const results: DelegationWorkflowResult[] = [];
-    for (const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
-      results.push(yield* this.processPartialWitnessEscrow(escrowContext(keys, serder)));
+    for (
+      const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<
+        [[string, string], SerderKERI]
+      >
+    ) {
+      results.push(
+        yield* this.processPartialWitnessEscrow(escrowContext(keys, serder)),
+      );
     }
-    for (const [keys, serder] of [...this.hby.db.dune.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
-      results.push(yield* this.processUnanchoredEscrow(escrowContext(keys, serder)));
+    for (
+      const [keys, serder] of [...this.hby.db.dune.getTopItemIter()] as Array<
+        [[string, string], SerderKERI]
+      >
+    ) {
+      results.push(
+        yield* this.processUnanchoredEscrow(escrowContext(keys, serder)),
+      );
     }
-    for (const [keys, serder] of [...this.hby.db.dpub.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
-      results.push(yield* this.processWitnessPublication(escrowContext(keys, serder)));
+    for (
+      const [keys, serder] of [...this.hby.db.dpub.getTopItemIter()] as Array<
+        [[string, string], SerderKERI]
+      >
+    ) {
+      results.push(
+        yield* this.processWitnessPublication(escrowContext(keys, serder)),
+      );
     }
     return results;
   }
@@ -516,8 +538,8 @@ export class Anchorer {
     }
 
     if (
-      hab.kever && hab.kever.wits.length > 0
-      && !witnessReceiptsComplete(this.hby, serder)
+      hab.kever && hab.kever.wits.length > 0 &&
+      !witnessReceiptsComplete(this.hby, serder)
     ) {
       return {
         kind: "keep",
@@ -557,7 +579,8 @@ export class Anchorer {
       said,
       from: "waitingWitnessReceipts",
       to: "waitingDelegatorAnchor",
-      reason: `Forwarded delegated event ${said} to delegator ${delpre} through ${communicationHab.pre}.`,
+      reason:
+        `Forwarded delegated event ${said} to delegator ${delpre} through ${communicationHab.pre}.`,
     };
   }
 
@@ -613,7 +636,8 @@ export class Anchorer {
         pre,
         said,
         phase: "waitingDelegatorAnchor",
-        reason: "Delegator approval is anchored and no witness republication is required.",
+        reason:
+          "Delegator approval is anchored and no witness republication is required.",
       };
     }
 
@@ -625,7 +649,8 @@ export class Anchorer {
       said,
       from: "waitingDelegatorAnchor",
       to: "waitingWitnessPublication",
-      reason: "Delegator approval is anchored; published the delegation chain to delegate witnesses.",
+      reason:
+        "Delegator approval is anchored; published the delegation chain to delegate witnesses.",
     };
   }
 
@@ -740,8 +765,8 @@ export class Anchorer {
     const nextPass = pass + 1;
     if (nextPass < DELEGATION_ANCHOR_QUERY_RETRY_PASSES) {
       this.anchorQueryRetryPasses.set(id, nextPass);
-      const remaining = DELEGATION_ANCHOR_QUERY_RETRY_PASSES
-        - nextPass;
+      const remaining = DELEGATION_ANCHOR_QUERY_RETRY_PASSES -
+        nextPass;
       return `Delegator anchor has not been learned locally yet; next delegator witness query retry in ${remaining} pass(es).`;
     }
 

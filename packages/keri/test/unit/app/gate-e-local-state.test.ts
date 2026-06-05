@@ -1,9 +1,17 @@
 // @file-test-lane app-fast-parallel
 
 import { type Operation, run } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertStringIncludes,
+} from "jsr:@std/assert";
 import { Diger, Prefixer, Seqner, SerderKERI } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  ingestKeriBytes,
+  processRuntimeTurn,
+} from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -68,7 +76,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   const alias = "alice";
   let pre = "";
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -101,7 +109,7 @@ Deno.test("Gate E - ends add command persists mailbox role through runtime path"
   );
   assertEquals(result.output.at(-1), `${EndpointRoles.mailbox} ${pre}`);
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -128,7 +136,7 @@ Deno.test("Gate E - transferable controller OOBI reply seal attachments use fixe
   const hostUrl = "http://127.0.0.1:46321";
   const fixedSeqner = new Seqner({ code: "0A", raw: new Uint8Array(16) }).qb64;
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       temp: true,
@@ -173,7 +181,7 @@ Deno.test("Gate E - non-transferable mailbox OOBI replies use reply cigars", asy
   const passcode = "MyPasscodeARealSecret";
   const hostUrl = "http://127.0.0.1:46322";
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       temp: true,
@@ -201,7 +209,7 @@ Deno.test("Gate E - non-transferable mailbox OOBI replies use reply cigars", asy
         hab.replyToOobi(pre, EndpointRoles.mailbox, [pre]),
       );
 
-      assertStringIncludes(stream, "\"r\":\"/loc/scheme\"");
+      assertStringIncludes(stream, '"r":"/loc/scheme"');
       assertStringIncludes(stream, "-CAB");
     } finally {
       yield* hby.close();
@@ -216,7 +224,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
   let pre = "";
   const url = "http://127.0.0.1:5642";
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -251,7 +259,7 @@ Deno.test("Gate E - loc add command persists location state through reply accept
     `Location ${url} added for aid ${pre} with scheme http`,
   );
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -281,7 +289,7 @@ Deno.test("Gate E - loc add command rejects malformed URLs deterministically", a
 });
 
 Deno.test("Gate E - `/introduce` replies enqueue discovered OOBIs through Oobiery route ownership", async () => {
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const hby = yield* createHabery({
       name: `gate-e-introduce-${crypto.randomUUID()}`,
       temp: true,

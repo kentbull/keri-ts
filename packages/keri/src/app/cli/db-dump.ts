@@ -13,9 +13,17 @@ import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
 import { RawRecord } from "../../core/records.ts";
 import { Baser, type BaserOptions, createBaser } from "../../db/basing.ts";
 import { createKeeper, Keeper, type KeeperOptions } from "../../db/keeping.ts";
-import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailboxing.ts";
+import {
+  createMailboxer,
+  Mailboxer,
+  type MailboxerOptions,
+} from "../../db/mailboxing.ts";
 import { createNoter, Noter, type NoterOptions } from "../../db/noting.ts";
-import { createOutboxer, Outboxer, type OutboxerOptions } from "../../db/outboxing.ts";
+import {
+  createOutboxer,
+  Outboxer,
+  type OutboxerOptions,
+} from "../../db/outboxing.ts";
 
 type DomainName = "baser" | "keeper" | "mailboxer" | "noter" | "outboxer";
 type DumpDomain = Baser | Keeper | Mailboxer | Noter | Outboxer;
@@ -89,11 +97,11 @@ function parseTarget(rawTarget: string | undefined): {
     );
   }
   if (
-    domainRaw !== "baser"
-    && domainRaw !== "keeper"
-    && domainRaw !== "mailboxer"
-    && domainRaw !== "noter"
-    && domainRaw !== "outboxer"
+    domainRaw !== "baser" &&
+    domainRaw !== "keeper" &&
+    domainRaw !== "mailboxer" &&
+    domainRaw !== "noter" &&
+    domainRaw !== "outboxer"
   ) {
     throw new ValidationError(
       `Unknown dump domain "${domainRaw}". Expected one of: baser, keeper, mailboxer, noter, outboxer.`,
@@ -106,11 +114,11 @@ function parseTarget(rawTarget: string | undefined): {
 }
 
 function isDumpableStore(value: unknown): value is DumpableStore {
-  return typeof value === "object"
-    && value !== null
-    && (
-      typeof (value as DumpableStore).getFullItemIter === "function"
-      || typeof (value as DumpableStore).getTopItemIter === "function"
+  return typeof value === "object" &&
+    value !== null &&
+    (
+      typeof (value as DumpableStore).getFullItemIter === "function" ||
+      typeof (value as DumpableStore).getTopItemIter === "function"
     );
 }
 
@@ -132,7 +140,9 @@ function resolveStore(
 ): DumpableStore {
   const value = (domain as unknown as Record<string, unknown>)[storeName];
   if (!isDumpableStore(value)) {
-    const available = collectStores(domain).map(([name]) => `${domainName}.${name}`).join(", ");
+    const available = collectStores(domain).map(([name]) =>
+      `${domainName}.${name}`
+    ).join(", ");
     throw new ValidationError(
       `Unknown target "${domainName}.${storeName}". Available targets: ${available}`,
     );
@@ -203,9 +213,9 @@ function normalizeDumpValue(value: unknown): unknown {
     return truncateString(value);
   }
   if (
-    typeof value === "number"
-    || typeof value === "boolean"
-    || typeof value === "bigint"
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
   ) {
     return value;
   }
@@ -226,16 +236,24 @@ function normalizeDumpValue(value: unknown): unknown {
     return value.map((item) => normalizeDumpValue(item));
   }
   if (typeof value === "object") {
-    if ("qb64" in value && typeof (value as { qb64?: unknown }).qb64 === "string") {
+    if (
+      "qb64" in value && typeof (value as { qb64?: unknown }).qb64 === "string"
+    ) {
       return (value as { qb64: string }).qb64;
     }
-    if ("pad" in value && typeof (value as { pad?: unknown }).pad === "object") {
+    if (
+      "pad" in value && typeof (value as { pad?: unknown }).pad === "object"
+    ) {
       return normalizeDumpValue((value as { pad: unknown }).pad);
     }
-    if ("sad" in value && typeof (value as { sad?: unknown }).sad === "object") {
+    if (
+      "sad" in value && typeof (value as { sad?: unknown }).sad === "object"
+    ) {
       return normalizeDumpValue((value as { sad: unknown }).sad);
     }
-    if ("ked" in value && typeof (value as { ked?: unknown }).ked === "object") {
+    if (
+      "ked" in value && typeof (value as { ked?: unknown }).ked === "object"
+    ) {
       return normalizeDumpValue((value as { ked: unknown }).ked);
     }
     return Object.fromEntries(
@@ -265,7 +283,9 @@ function printStoreSummary(domainName: DomainName, domain: DumpDomain): void {
   console.log("-".repeat(64));
   for (const [name, store] of stores) {
     console.log(
-      `${`${domainName}.${name}`.padEnd(24)} ${store.constructor.name.padEnd(20)} ${summarizeStoreCount(store)}`,
+      `${`${domainName}.${name}`.padEnd(24)} ${
+        store.constructor.name.padEnd(20)
+      } ${summarizeStoreCount(store)}`,
     );
   }
 }
@@ -379,11 +399,15 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
   try {
     console.log(
       `Dumping ${
-        parsedTarget.storeName ? `${parsedTarget.domain}.${parsedTarget.storeName}` : parsedTarget.domain
+        parsedTarget.storeName
+          ? `${parsedTarget.domain}.${parsedTarget.storeName}`
+          : parsedTarget.domain
       } from ${domain.path ?? "(unknown path)"}`,
     );
     console.log(
-      `Mode: readonly compat=${compat ? "true" : "false"} temp=${temp ? "true" : "false"}`,
+      `Mode: readonly compat=${compat ? "true" : "false"} temp=${
+        temp ? "true" : "false"
+      }`,
     );
     console.log("");
 
@@ -392,7 +416,11 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
       return;
     }
 
-    const store = resolveStore(domain, parsedTarget.domain, parsedTarget.storeName);
+    const store = resolveStore(
+      domain,
+      parsedTarget.domain,
+      parsedTarget.storeName,
+    );
     printStoreEntries(
       parsedTarget.domain,
       parsedTarget.storeName,

@@ -21,7 +21,11 @@ import { ValidationError } from "../core/errors.ts";
 import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Habery } from "./habbing.ts";
-import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "./mailboxing.ts";
+import {
+  mailboxQueryTopics,
+  mailboxTopicKey,
+  updateMailboxRemoteCursor,
+} from "./mailboxing.ts";
 
 /** Shared encoder for SSE mailbox stream framing. */
 const textEncoder = new TextEncoder();
@@ -188,8 +192,8 @@ export class MailboxDirector {
     const cursors = { ...topicCursor };
     const encoder = new TextEncoder();
     let closed = false;
-    let idleTimer: number | null = null;
-    let pollTimer: number | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
     const cleanup = () => {
       if (closed) {
@@ -286,7 +290,7 @@ export class MailboxDirector {
   ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
     let closed = false;
-    let pollTimer: number | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
     const cleanup = () => {
