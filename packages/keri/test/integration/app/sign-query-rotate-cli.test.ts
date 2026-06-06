@@ -16,9 +16,7 @@ function packageRoot(): string {
 }
 
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((line) =>
-    line.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -26,9 +24,7 @@ function extractPrefix(output: string): string {
 }
 
 function extractRawSignature(output: string): string {
-  const line = output.split(/\r?\n/).find((line) =>
-    /^\d+\.\s+/.test(line.trim())
-  );
+  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
   if (!line) {
     throw new Error(`Unable to parse signature from output:\n${output}`);
   }
@@ -102,9 +98,7 @@ async function runCmdWithTimeout(
     await child.status.catch(() => undefined);
     const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
     throw new Error(
-      `Command timed out after ${timeoutMs}ms: ${command} ${
-        args.join(" ")
-      }\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      `Command timed out after ${timeoutMs}ms: ${command} ${args.join(" ")}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
     );
   }
 
@@ -197,9 +191,7 @@ async function withStartedChild<T>(
   } catch (error) {
     const details = await stopChild(child);
     throw new Error(
-      `Failed to start host on port ${port}: ${
-        error instanceof Error ? error.message : String(error)
-      }\n${details}`,
+      `Failed to start host on port ${port}: ${error instanceof Error ? error.message : String(error)}\n${details}`,
     );
   }
 

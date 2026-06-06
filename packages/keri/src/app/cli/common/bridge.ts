@@ -51,12 +51,10 @@ export function* runKliOp(
   env?: Record<string, string>,
 ): Operation<KliExecResult> {
   const { operation, resolve, reject } = withResolvers<KliExecResult>();
-  const task = yield* spawn(function* () {
+  const task = yield* spawn(function*() {
     runKli(args, env)
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
   });
   yield* task;
   return yield* operation;

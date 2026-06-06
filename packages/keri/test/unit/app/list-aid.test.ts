@@ -9,9 +9,7 @@ import { listCommand } from "../../../src/app/cli/list.ts";
 import { assertOperationThrows, CLITestHarness } from "../../../test/utils.ts";
 
 function identifierLines(lines: string[]): string[] {
-  return lines.filter((line) =>
-    /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim())
-  );
+  return lines.filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim()));
 }
 
 async function captureOutputLines(

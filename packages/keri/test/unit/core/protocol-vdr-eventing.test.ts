@@ -2,14 +2,7 @@
 
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { Ilks } from "../../../../cesr/mod.ts";
-import {
-  backerIssue,
-  incept,
-  issue,
-  query,
-  state,
-  vcstate,
-} from "../../../src/core/protocol-vdr-eventing.ts";
+import { backerIssue, incept, issue, query, state, vcstate } from "../../../src/core/protocol-vdr-eventing.ts";
 import { RegStateRecord, VcStateRecord } from "../../../src/core/records.ts";
 
 const ISSUER = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";

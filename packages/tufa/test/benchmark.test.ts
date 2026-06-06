@@ -7,7 +7,7 @@ import { tufa } from "../src/cli/cli.ts";
 Deno.test("tufa/benchmark - cesr reads stream file and prints metrics", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
-  const sample = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const sample = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 
   const originalLog = console.log;
   let captured = "";
@@ -41,7 +41,7 @@ Deno.test("tufa/benchmark - cesr reads stream file and prints metrics", async ()
 Deno.test("tufa/benchmark - cesr emits JSON result when requested", async () => {
   const dir = await Deno.makeTempDir();
   const inPath = `${dir}/in.cesr`;
-  const sample = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+  const sample = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 
   const originalLog = console.log;
   let captured = "";

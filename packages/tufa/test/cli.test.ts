@@ -1,15 +1,8 @@
 // @file-test-lane app-fast-isolated
 
 import { run } from "effection";
-import {
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "jsr:@std/assert";
-import {
-  DISPLAY_VERSION as KERI_DISPLAY_VERSION,
-  ValidationError,
-} from "keri-ts/runtime";
+import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { DISPLAY_VERSION as KERI_DISPLAY_VERSION, ValidationError } from "keri-ts/runtime";
 import { tufa } from "../src/cli/cli.ts";
 import { mailboxStartCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
@@ -57,9 +50,7 @@ async function captureConsoleLog(
 }
 
 function extractPrefix(output: string): string {
-  const line = output.split(/\r?\n/).find((candidate) =>
-    candidate.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((candidate) => candidate.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -174,7 +165,7 @@ Deno.test("tufa/cli - interact reaches the real command body through the Tufa bi
     "--alias",
     alias,
     "--data",
-    '{"anchor":"acdc"}',
+    "{\"anchor\":\"acdc\"}",
   ]);
   assertEquals(
     interact.code,

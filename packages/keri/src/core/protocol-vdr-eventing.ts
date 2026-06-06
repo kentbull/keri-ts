@@ -12,12 +12,7 @@ import {
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
 import { query as coreQuery } from "./protocol-eventing.ts";
-import {
-  RegStateRecord,
-  type RegStateRecordShape,
-  VcStateRecord,
-  type VcStateRecordShape,
-} from "./records.ts";
+import { RegStateRecord, type RegStateRecordShape, VcStateRecord, type VcStateRecordShape } from "./records.ts";
 
 function resolveVersion(version?: Versionage): Versionage {
   return version ?? Vrsn_1_0;
@@ -362,8 +357,8 @@ export function state(
   if (new Set(actualWits).size !== actualWits.length) {
     throw new ValidationError(`Invalid wits = ${actualWits}, has duplicates.`);
   }
-  const actualToad = toad ??
-    (actualWits.length === 0
+  const actualToad = toad
+    ?? (actualWits.length === 0
       ? 0
       : Math.max(1, Math.ceil(actualWits.length / 2)));
   return new RegStateRecord(

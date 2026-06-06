@@ -158,9 +158,7 @@ export function* mailboxStartCommand(
     console.log(`Advertised URL  ${startup.url}`);
     console.log(`Mailbox Admin  ${adminUrl(startup.url)}`);
     console.log(
-      `Mailbox OOBI   ${
-        canonicalMailboxOrigin(startup.url)
-      }/oobi/${hab.pre}/mailbox/${hab.pre}`,
+      `Mailbox OOBI   ${canonicalMailboxOrigin(startup.url)}/oobi/${hab.pre}/mailbox/${hab.pre}`,
     );
     console.log(`Listening On   ${listenHost}:${port}`);
     console.log(`Keystore       ${ensured.created ? "created" : "reused"}`);
@@ -253,8 +251,8 @@ export function* mailboxUpdateCommand(
 
   try {
     const hab = requireHab(hby, commandArgs.alias);
-    const record = hby.db.tops.get([hab.pre, commandArgs.witness]) ??
-      new TopicsRecord({ topics: {} });
+    const record = hby.db.tops.get([hab.pre, commandArgs.witness])
+      ?? new TopicsRecord({ topics: {} });
     record.topics[topic] = Number(commandArgs.index);
     hby.db.tops.pin([hab.pre, commandArgs.witness], record);
     console.log(`${commandArgs.witness} ${topic} ${record.topics[topic]}`);
@@ -327,9 +325,7 @@ export function* mailboxDebugCommand(
           continue;
         }
         console.log(
-          `${pending.message.topic} ${pending.target.eid} attempts=${
-            pending.target.attempts ?? 0
-          }`,
+          `${pending.message.topic} ${pending.target.eid} attempts=${pending.target.attempts ?? 0}`,
         );
       }
     }
@@ -490,8 +486,8 @@ function parseMailboxStartArgs(
     );
   }
   if (
-    parsed.port !== undefined &&
-    (!Number.isFinite(parsed.port) || parsed.port < 1 || parsed.port > 65535)
+    parsed.port !== undefined
+    && (!Number.isFinite(parsed.port) || parsed.port < 1 || parsed.port > 65535)
   ) {
     throw new ValidationError("Port must be between 1 and 65535.");
   }
@@ -548,9 +544,7 @@ function mailboxConfigCandidates(
   candidates.add(configFile);
   candidates.add(fileName);
 
-  const homes = [Deno.env.get("HOME")].filter((value): value is string =>
-    !!value
-  );
+  const homes = [Deno.env.get("HOME")].filter((value): value is string => !!value);
   const suffixes = compat ? [".keri/cf"] : [".tufa/cf", "keri/cf"];
 
   if (headDirPath) {
@@ -621,8 +615,8 @@ function resolveConfiguredStartup(
     source: "config" as const,
   };
   if (
-    cli &&
-    (cli.url !== configured.url || cli.datetime !== configured.datetime)
+    cli
+    && (cli.url !== configured.url || cli.datetime !== configured.datetime)
   ) {
     throw new ValidationError(
       `Config section '${alias}' conflicts with explicit --url/--datetime startup material.`,
@@ -664,8 +658,8 @@ function validateMailboxHabitat(
     );
   }
   if (
-    record?.mid || (record?.smids?.length ?? 0) > 0 ||
-    (record?.rmids?.length ?? 0) > 0
+    record?.mid || (record?.smids?.length ?? 0) > 0
+    || (record?.rmids?.length ?? 0) > 0
   ) {
     throw new ValidationError(
       `Mailbox alias ${hab.name} must be a local single-identifier habitat.`,
@@ -678,9 +672,9 @@ function mailboxIdentityComplete(
   pre: string,
   url: string,
 ): boolean {
-  return storedMailboxUrl(hby, pre) === normalizeMailboxUrl(url) &&
-    roleEnabled(hby, pre, EndpointRoles.controller, pre) &&
-    roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
+  return storedMailboxUrl(hby, pre) === normalizeMailboxUrl(url)
+    && roleEnabled(hby, pre, EndpointRoles.controller, pre)
+    && roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
 }
 
 function roleEnabled(
@@ -699,9 +693,7 @@ function storedMailboxUrl(
 ): string | null {
   const urls = fetchEndpointUrls(hby, pre);
   const candidates = [urls.https, urls.http]
-    .filter((entry): entry is string =>
-      typeof entry === "string" && entry.length > 0
-    )
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
     .map((url) => normalizeMailboxUrl(url));
   if (candidates.length === 0) {
     return null;
@@ -814,12 +806,12 @@ function resolveListenHost(
 }
 
 function isBindableLiteralHost(hostname: string): boolean {
-  return hostname === "localhost" ||
-    hostname === "0.0.0.0" ||
-    hostname === "::" ||
-    hostname === "::1" ||
-    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
-    hostname.includes(":");
+  return hostname === "localhost"
+    || hostname === "0.0.0.0"
+    || hostname === "::"
+    || hostname === "::1"
+    || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
+    || hostname.includes(":");
 }
 
 /**

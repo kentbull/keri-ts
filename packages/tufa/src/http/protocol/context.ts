@@ -1,8 +1,4 @@
-import {
-  type AgentRuntime,
-  type ProtocolHostPolicy,
-  resolveHostedEndpointPath,
-} from "keri-ts/runtime";
+import { type AgentRuntime, type ProtocolHostPolicy, resolveHostedEndpointPath } from "keri-ts/runtime";
 import { parseOobiRouteRequest } from "./endpoints/oobi.ts";
 import type { ProtocolRequestContext } from "./types.ts";
 

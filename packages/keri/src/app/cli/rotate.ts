@@ -17,11 +17,7 @@ import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import { queryTransportSink } from "../query-transport.ts";
-import {
-  Receiptor,
-  type WitnessAuthMap,
-  WitnessReceiptor,
-} from "../witnessing.ts";
+import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import {
   loadRotateFileOptions,
@@ -186,7 +182,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
 
   const options = mergeWithFile(rotateArgs);
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       rotateArgs.name!,
       rotateArgs.base ?? "",
@@ -276,8 +272,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
             () => runtime.delegating.complete(hab.pre, hab.kever!.sn),
             { hab, sink, maxTurns: 512, pollMailbox: true },
           );
-          delegationPhase =
-            runtime.delegating.workflowStatus(hab.pre, snh).phase;
+          delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
         } finally {
           yield* runtime.close();
         }

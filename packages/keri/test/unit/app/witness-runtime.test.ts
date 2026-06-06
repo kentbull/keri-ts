@@ -1,40 +1,19 @@
 // @file-test-lane runtime-slow
 
 import { action, type Operation, run, spawn } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
-import {
-  buildCesrRequest,
-  splitCesrStream,
-} from "../../../src/app/cesr-http.ts";
-import {
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../src/app/habbing.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { buildCesrRequest, splitCesrStream } from "../../../src/app/cesr-http.ts";
+import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { Schemes } from "../../../src/core/schemes.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import {
-  fetchOp,
-  sleepOp,
-  textOp,
-  waitForServer,
-  waitForTaskHalt,
-} from "../../effection-http.ts";
+import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 
 function randomPort(): number {
   return 20000 + Math.floor(Math.random() * 20000);
@@ -117,14 +96,12 @@ function* seedRemoteWitnessLocation(
 Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and combined mailbox OOBIs", async () => {
   const sourceName = `witness-runtime-source-${crypto.randomUUID()}`;
   const providerName = `witness-runtime-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-witness-runtime-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-witness-runtime-provider-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-witness-runtime-src-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-witness-runtime-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
-  await run(function* () {
+  await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -164,7 +141,7 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
         mode: "both",
         enableMailboxStore: true,
       });
-      const serverTask = yield* spawn(function* () {
+      const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
           hostedPrefixes: [witness.pre],
@@ -240,14 +217,12 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
 Deno.test("Witness runtime returns 202 for receipting before the prior KEL state arrives", async () => {
   const sourceName = `witness-escrow-source-${crypto.randomUUID()}`;
   const providerName = `witness-escrow-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-witness-escrow-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-witness-escrow-provider-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-witness-escrow-src-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-witness-escrow-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
-  await run(function* () {
+  await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -286,7 +261,7 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
         mode: "both",
         enableMailboxStore: true,
       });
-      const serverTask = yield* spawn(function* () {
+      const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
           hostedPrefixes: [witness.pre],
@@ -321,14 +296,12 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
 Deno.test("Witness runtime rejects receipting when the hosted witness is not authorized for the event", async () => {
   const sourceName = `witness-reject-source-${crypto.randomUUID()}`;
   const providerName = `witness-reject-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-witness-reject-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-witness-reject-provider-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-witness-reject-src-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-witness-reject-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
-  await run(function* () {
+  await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -362,7 +335,7 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
         mode: "both",
         enableMailboxStore: true,
       });
-      const serverTask = yield* spawn(function* () {
+      const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
           hostedPrefixes: [witness.pre],
@@ -398,14 +371,12 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
 Deno.test("Witness runtime accepts root-path catchup before synchronous receipting", async () => {
   const sourceName = `witness-root-catchup-source-${crypto.randomUUID()}`;
   const providerName = `witness-root-catchup-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath =
-    `/tmp/tufa-witness-root-catchup-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-witness-root-catchup-provider-${crypto.randomUUID()}`;
+  const sourceHeadDirPath = `/tmp/tufa-witness-root-catchup-src-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-witness-root-catchup-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
-  await run(function* () {
+  await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -451,7 +422,7 @@ Deno.test("Witness runtime accepts root-path catchup before synchronous receipti
         mode: "both",
         enableMailboxStore: true,
       });
-      const serverTask = yield* spawn(function* () {
+      const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
           hostedPrefixes: [witness.pre],
@@ -506,12 +477,11 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
   const sourceName = `witness-tcp-source-${crypto.randomUUID()}`;
   const providerName = `witness-tcp-provider-${crypto.randomUUID()}`;
   const sourceHeadDirPath = `/tmp/tufa-witness-tcp-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-witness-tcp-provider-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-witness-tcp-provider-${crypto.randomUUID()}`;
   const tcpPort = randomPort();
   const tcpUrl = `tcp://127.0.0.1:${tcpPort}`;
 
-  await run(function* () {
+  await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
       headDirPath: sourceHeadDirPath,
@@ -540,7 +510,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
       yield* seedRemoteWitnessLocation(sourceHby, witness, tcpUrl, Schemes.tcp);
 
       const runtime = yield* createAgentRuntime(providerHby, { mode: "local" });
-      const tcpTask = yield* spawn(function* () {
+      const tcpTask = yield* spawn(function*() {
         yield* startWitnessTcpServer(
           tcpPort,
           "127.0.0.1",

@@ -1,10 +1,7 @@
 // @file-test-lane app-fast-parallel
 
 import { assertEquals } from "jsr:@std/assert";
-import {
-  defaultOobiAid,
-  selectResponderHab,
-} from "../../../../../tufa/src/http/protocol/endpoints/oobi.ts";
+import { defaultOobiAid, selectResponderHab } from "../../../../../tufa/src/http/protocol/endpoints/oobi.ts";
 import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
 
 Deno.test("app/protocol/oobi - default blind OOBI aid prefers service hab, then hosted singleton, then lone local hab", () => {

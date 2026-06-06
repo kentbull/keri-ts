@@ -132,9 +132,9 @@ function coerceExnDataValue(value: string): unknown {
     return "";
   }
   if (
-    trimmed.startsWith("{") || trimmed.startsWith("[") ||
-    trimmed === "true" || trimmed === "false" || trimmed === "null" ||
-    isNumber(trimmed)
+    trimmed.startsWith("{") || trimmed.startsWith("[")
+    || trimmed === "true" || trimmed === "false" || trimmed === "null"
+    || isNumber(trimmed)
   ) {
     try {
       return JSON.parse(trimmed);
@@ -239,19 +239,13 @@ export function loadRotateFileOptions(path: string): RotateFileOptions {
     isith: normalizeThresholdOption(loaded.isith),
     nsith: normalizeThresholdOption(loaded.nsith),
     wits: Array.isArray(loaded.wits)
-      ? loaded.wits.filter((value): value is string =>
-        typeof value === "string"
-      )
+      ? loaded.wits.filter((value): value is string => typeof value === "string")
       : loaded.wits,
     witsCut: Array.isArray(loaded.witsCut)
-      ? loaded.witsCut.filter((value): value is string =>
-        typeof value === "string"
-      )
+      ? loaded.witsCut.filter((value): value is string => typeof value === "string")
       : loaded.witsCut,
     witsAdd: Array.isArray(loaded.witsAdd)
-      ? loaded.witsAdd.filter((value): value is string =>
-        typeof value === "string"
-      )
+      ? loaded.witsAdd.filter((value): value is string => typeof value === "string")
       : loaded.witsAdd,
   };
 }

@@ -12,18 +12,8 @@
  * - multi-AID host filtering for the selected mailbox alias
  */
 import { action, type Operation, run, spawn } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
-import {
-  concatBytes,
-  Diger,
-  SealSource,
-  SerderKERI,
-  Siger,
-} from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import { agentCommand } from "../../../../tufa/src/cli/agent.ts";
 import {
   mailboxAddCommand,
@@ -42,39 +32,20 @@ import {
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
-import {
-  challengeRespondCommand,
-  challengeVerifyCommand,
-} from "../../../src/app/cli/challenge.ts";
+import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
-import {
-  oobiGenerateCommand,
-  oobiResolveCommand,
-} from "../../../src/app/cli/oobi.ts";
+import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { MailboxPoller } from "../../../src/app/forwarding.ts";
-import {
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../src/app/habbing.ts";
+import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
-import {
-  fetchEndpointUrls,
-  mailboxTopicKey,
-} from "../../../src/app/mailboxing.ts";
+import { fetchEndpointUrls, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import {
-  fetchOp,
-  sleepOp,
-  textOp,
-  waitForServer,
-  waitForTaskHalt,
-} from "../../effection-http.ts";
+import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { reserveTcpPort } from "../../http-test-support.ts";
 import { CLITestHarness, testCLICommand } from "../../utils.ts";
 
@@ -295,7 +266,7 @@ async function authorizeMailboxPollTarget(
   mailboxPre: string,
   mailboxUrl: string,
 ): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const resolved = yield* testCLICommand(
       oobiResolveCommand({
         name,
@@ -377,7 +348,7 @@ async function seedMailboxHost(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -423,7 +394,7 @@ async function seedHostedController(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -465,7 +436,7 @@ async function seedLocalController(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -583,15 +554,13 @@ function* postMailboxAdminMultipart(
 Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a root alias", async () => {
   const providerName = `mailbox-admin-path-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-path-controller-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-mailbox-admin-path-provider-${crypto.randomUUID()}`;
-  const controllerHeadDirPath =
-    `/tmp/tufa-mailbox-admin-path-controller-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-path-provider-${crypto.randomUUID()}`;
+  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-path-controller-${crypto.randomUUID()}`;
   const port = randomPort();
   const origin = `http://127.0.0.1:${port}`;
   const advertisedUrl = `${origin}/relay`;
 
-  await run(function* () {
+  await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
       headDirPath: providerHeadDirPath,
@@ -635,10 +604,10 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
     );
     yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
-    const runtimeTask = yield* spawn(function* () {
+    const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* startServer(port, undefined, runtime, {
         hostedPrefixes: [mailbox.pre],
         serviceHab: hab ?? undefined,
@@ -706,10 +675,10 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
     }),
   );
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -720,9 +689,7 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
     yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
 
     try {
-      const prefixLine = harness.getOutput().find((line) =>
-        line.startsWith("Mailbox Prefix")
-      );
+      const prefixLine = harness.getOutput().find((line) => line.startsWith("Mailbox Prefix"));
       assertEquals(!!prefixLine, true);
       const pre = prefixLine!.split(/\s+/).at(-1)!;
 
@@ -764,9 +731,7 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
       skipSignator: true,
     });
     try {
-      const hab = [...hby.habs.values()].find((current) =>
-        current.name === "relay"
-      );
+      const hab = [...hby.habs.values()].find((current) => current.name === "relay");
       assertEquals(!!hab, true);
       const pre = hab!.pre;
       assertEquals(hab!.kever?.transferable, false);
@@ -803,10 +768,10 @@ Deno.test("mailbox start accepts config URLs with non-root paths and serves mail
     }),
   );
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -817,15 +782,12 @@ Deno.test("mailbox start accepts config URLs with non-root paths and serves mail
     yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
     const controllerHby = yield* createHabery({
       name: `mailbox-start-path-controller-${crypto.randomUUID()}`,
-      headDirPath:
-        `/tmp/tufa-mailbox-start-path-controller-${crypto.randomUUID()}`,
+      headDirPath: `/tmp/tufa-mailbox-start-path-controller-${crypto.randomUUID()}`,
       skipConfig: true,
     });
 
     try {
-      const prefixLine = harness.getOutput().find((line) =>
-        line.startsWith("Mailbox Prefix")
-      );
+      const prefixLine = harness.getOutput().find((line) => line.startsWith("Mailbox Prefix"));
       assertEquals(!!prefixLine, true);
       const pre = prefixLine!.split(/\s+/).at(-1)!;
       const controller = controllerHby.makeHab("alice", undefined, {
@@ -894,9 +856,7 @@ Deno.test("mailbox start accepts config URLs with non-root paths and serves mail
       skipSignator: true,
     });
     try {
-      const hab = [...hby.habs.values()].find((current) =>
-        current.name === "relay"
-      );
+      const hab = [...hby.habs.values()].find((current) => current.name === "relay");
       assertEquals(!!hab, true);
       const pre = hab!.pre;
       assertEquals(hab!.kever?.transferable, false);
@@ -924,7 +884,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
   const configuredUrl = `http://localhost:${port}`;
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -949,7 +909,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name: configFile,
       headDirPath: configDir,
@@ -967,8 +927,8 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* agentCommand({
         name,
         headDirPath,
@@ -1015,7 +975,7 @@ Deno.test("agent command falls back to synthesized controller state only when co
   const fallbackUrl = `http://127.0.0.1:${port}`;
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1036,8 +996,8 @@ Deno.test("agent command falls back to synthesized controller state only when co
     }
   });
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* agentCommand({
         name,
         headDirPath,
@@ -1082,7 +1042,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
   const startupUrl = `http://127.0.0.1:${port}`;
   let otherPre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1102,10 +1062,10 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
     }
   });
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -1117,9 +1077,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
     yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
 
     try {
-      const prefixLine = harness.getOutput().find((line) =>
-        line.startsWith("Mailbox Prefix")
-      );
+      const prefixLine = harness.getOutput().find((line) => line.startsWith("Mailbox Prefix"));
       assertEquals(!!prefixLine, true);
       const relayPre = prefixLine!.split(/\s+/).at(-1)!;
 

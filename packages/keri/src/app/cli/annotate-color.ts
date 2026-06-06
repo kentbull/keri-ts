@@ -88,8 +88,8 @@ function parseColorConfig(raw: string): AnnotColorConfig | null {
     const key = match[1];
     let value = match[2];
     if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
+      (value.startsWith("\"") && value.endsWith("\""))
+      || (value.startsWith("'") && value.endsWith("'"))
     ) {
       value = value.slice(1, -1);
     }
@@ -173,8 +173,7 @@ function colorizeComment(
 ) {
   const saidTinted = comment.replace(
     SAID_CAPTURE,
-    (_whole, prefix: string, said: string) =>
-      `${prefix}${color(said, colors.said)}`,
+    (_whole, prefix: string, said: string) => `${prefix}${color(said, colors.said)}`,
   );
   return color(saidTinted, colors.comment);
 }

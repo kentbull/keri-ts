@@ -1,24 +1,23 @@
-import { Ilks, type SerderKERI } from "cesr-ts";
+import { concatBytes, Ilks, type SerderKERI } from "cesr-ts";
 import { run } from "effection";
 import {
+  type CueEmission,
   type HostedRouteResolution,
   inspectCesrRequest,
   processWitnessIngress,
   readRequiredCesrRequestBytes,
+  runtimeTurn,
 } from "keri-ts/runtime";
-import { jsonNoContentResponse, textResponse } from "../responses.ts";
-import { processRuntimeRequest } from "../runtime-bridge.ts";
-import type {
-  CesrIngressRoute,
-  ProtocolRequestContext,
-  ProtocolRoute,
-} from "../types.ts";
+import { cesrResponse, jsonNoContentResponse, textResponse } from "../responses.ts";
+import { drainRuntimeCues, processRuntimeRequest } from "../runtime-bridge.ts";
+import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
 const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   kind: "none",
   endpoint: null,
   relativePath: null,
 };
+const DIRECT_QUERY_RESPONSE_WAIT_MS = 60_000;
 
 /** Classify generic POST/PUT CESR ingress after all explicit HTTP routes. */
 export function classifyGenericCesrIngressRoute(
@@ -57,11 +56,11 @@ export function classifyCesrIngressRoute(
   const witnessHab = context.policy.witnessHab;
 
   if (
-    witnessHab &&
-    hosted.kind === "one" &&
-    hosted.endpoint?.eid === witnessHab.pre &&
-    serder.ilk !== Ilks.qry &&
-    serder.ilk !== Ilks.exn
+    witnessHab
+    && hosted.kind === "one"
+    && hosted.endpoint?.eid === witnessHab.pre
+    && serder.ilk !== Ilks.qry
+    && serder.ilk !== Ilks.exn
   ) {
     return { kind: "witnessLocalIngress", witnessHab };
   }
@@ -100,6 +99,50 @@ function querySseResponse(
   );
 }
 
+function directQueryResponse(
+  emissions: readonly CueEmission[],
+): Response | null {
+  const messages: Uint8Array[] = [];
+  for (const emission of emissions) {
+    if (
+      emission.kind === "wire"
+      && (emission.cue.kin === "replay" || emission.cue.kin === "reply")
+    ) {
+      messages.push(...emission.msgs);
+    }
+  }
+  return messages.length > 0
+    ? cesrResponse(concatBytes(...messages), 200)
+    : null;
+}
+
+function* deferredDirectQueryResponse(
+  context: ProtocolRequestContext,
+  serder: SerderKERI,
+  emissions: readonly CueEmission[],
+) {
+  const immediate = directQueryResponse(emissions);
+  if (immediate || serder.ilk !== Ilks.qry || serder.route !== "logs") {
+    return immediate;
+  }
+
+  const runtime = context.runtime!;
+  const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
+  while (Date.now() < expires) {
+    runtime.reactor.processEscrowsOnce();
+    const replayEmissions = yield* drainRuntimeCues(
+      runtime,
+      context.policy.serviceHab,
+    );
+    const response = directQueryResponse(replayEmissions);
+    if (response) {
+      return response;
+    }
+    yield* runtimeTurn();
+  }
+  return null;
+}
+
 /** Handle one generic POST/PUT CESR ingress request. */
 export async function handleGenericCesrIngress(
   context: ProtocolRequestContext,
@@ -120,24 +163,31 @@ export async function handleGenericCesrIngress(
 
   switch (ingressRoute.kind) {
     case "witnessLocalIngress":
-      await run(function* () {
+      await run(function*() {
         yield* processWitnessIngress(runtime, ingressRoute.witnessHab, bytes, {
           local: true,
         });
       });
       return jsonNoContentResponse();
-    case "runtimeIngress":
-      await run(function* () {
-        yield* processRuntimeRequest(
+    case "runtimeIngress": {
+      let response: Response | null = null;
+      await run(function*() {
+        const emissions = yield* processRuntimeRequest(
           runtime,
           bytes,
           ingressRoute.mailboxAid,
           context.policy.serviceHab,
         );
+        response = yield* deferredDirectQueryResponse(
+          context,
+          serder,
+          emissions,
+        );
       });
-      return jsonNoContentResponse();
+      return response ?? jsonNoContentResponse();
+    }
     case "mailboxQueryStream":
-      await run(function* () {
+      await run(function*() {
         yield* processRuntimeRequest(
           runtime,
           bytes,

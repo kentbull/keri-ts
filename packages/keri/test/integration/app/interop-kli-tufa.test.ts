@@ -6,7 +6,7 @@
  * The mailbox handoff relies especially on the two mailbox scenarios in this
  * file:
  * - KLI mailbox operations against a Tufa mailbox host
- * - Tufa mailbox operations against the real local-source KERIpy mailbox host
+ * - Tufa mailbox operations against the pinned KERIpy mailbox host
  *
  * The helper layer exists to keep those subprocess-heavy scenarios readable and
  * debuggable instead of burying the protocol assertions in process plumbing.
@@ -14,10 +14,7 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { createHabery } from "../../../src/app/habbing.ts";
-import {
-  mailboxTopicKey,
-  openMailboxerForHabery,
-} from "../../../src/app/mailboxing.ts";
+import { mailboxTopicKey, openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import {
   createInteropContext,
@@ -26,12 +23,10 @@ import {
   extractPrefix,
   extractRawSignature,
   inspectCompatHabery,
-  localKeriPySourceEnv,
   normalizeCesr,
   packageRoot,
   randomPort,
   requireSuccess,
-  resolvePythonCommand,
   runCmd,
   runCmdWithTimeout,
   runTufa,
@@ -939,8 +934,7 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     ctx.env,
     ctx.repoRoot,
   );
-  const providerMailboxOobi =
-    `${providerOrigin}/oobi/${providerPre}/mailbox/${providerPre}`;
+  const providerMailboxOobi = `${providerOrigin}/oobi/${providerPre}/mailbox/${providerPre}`;
   const bobControllerOobi = `${bobOrigin}/oobi/${bobPre}/controller`;
   const bobAgent = spawnChild(
     "deno",
@@ -975,7 +969,7 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
       );
       assertStringIncludes(
         await providerFetch.text(),
-        '"r":"/loc/scheme"',
+        "\"r\":\"/loc/scheme\"",
       );
 
       await requireSuccess(
@@ -1227,7 +1221,7 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     });
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: providerName,
       base,
@@ -1264,7 +1258,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
 // @test-lane interop-mailbox-slow
 Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host", async () => {
   const ctx = await createInteropContext();
-  const pythonCommand = await resolvePythonCommand(ctx.env, ctx.kliCommand);
   const base = `interop-mailbox-tufa-${crypto.randomUUID().slice(0, 8)}`;
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
@@ -1543,10 +1536,8 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
   );
 
   const providerHost = spawnChild(
-    pythonCommand,
+    ctx.kliCommand,
     [
-      "-m",
-      "keri.cli.kli",
       "mailbox",
       "start",
       "--name",
@@ -1560,7 +1551,7 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
       "--http",
       String(providerPort),
     ],
-    localKeriPySourceEnv(ctx.env),
+    ctx.env,
   );
   const bobAgent = spawnChild(
     "deno",

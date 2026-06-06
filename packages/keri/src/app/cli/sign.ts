@@ -56,7 +56,7 @@ export function* signCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Text is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       signArgs.name!,
       signArgs.base ?? "",

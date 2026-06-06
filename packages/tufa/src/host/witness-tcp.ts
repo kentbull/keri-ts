@@ -1,10 +1,6 @@
 import { concatBytes } from "cesr-ts";
 import { action, type Operation, run } from "effection";
-import {
-  type AgentRuntime,
-  type Hab,
-  processWitnessIngress,
-} from "keri-ts/runtime";
+import { type AgentRuntime, type Hab, processWitnessIngress } from "keri-ts/runtime";
 import { createServer, type Server, type Socket } from "node:net";
 
 interface RunningWitnessTcpServer {
@@ -35,7 +31,7 @@ async function handleWitnessSocket(
   try {
     const bytes = await readSocketBytes(socket);
     if (bytes.length > 0) {
-      await run(function* () {
+      await run(function*() {
         yield* processWitnessIngress(runtime, serviceHab, bytes, {
           local: true,
         });

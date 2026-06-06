@@ -39,14 +39,13 @@ async function captureDump(args: Record<string, unknown>): Promise<{
 
 /** Proves summary and focused dumping for protocol-state `Baser` stores. */
 Deno.test({
-  name:
-    "Integration: db dump supports baser summaries and focused subdb targets",
+  name: "Integration: db dump supports baser summaries and focused subdb targets",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
     const name = `db-dump-baser-${crypto.randomUUID()}`;
 
-    await run(function* () {
+    await run(function*() {
       const baser = yield* createBaser({
         name,
         temp: true,
@@ -87,9 +86,7 @@ Deno.test({
     assertEquals(focused.errors.length, 0);
     assert(focused.output.some((line) => line.includes("Target: baser.locs")));
     assert(
-      focused.output.some((line) =>
-        line.includes('"url": "http://127.0.0.1:8080/oobi"')
-      ),
+      focused.output.some((line) => line.includes("\"url\": \"http://127.0.0.1:8080/oobi\"")),
     );
   },
 });
@@ -102,7 +99,7 @@ Deno.test({
   fn: async () => {
     const name = `db-dump-mailbox-${crypto.randomUUID()}`;
 
-    await run(function* () {
+    await run(function*() {
       const mailboxer = yield* createMailboxer({
         name,
         temp: true,
@@ -143,9 +140,7 @@ Deno.test({
 
     assertEquals(mailboxDump.errors.length, 0);
     assert(
-      mailboxDump.output.some((line) =>
-        line.includes("Target: mailboxer.msgs")
-      ),
+      mailboxDump.output.some((line) => line.includes("Target: mailboxer.msgs")),
     );
     assert(
       mailboxDump.output.some((line) => line.includes("challenge payload")),
@@ -162,24 +157,23 @@ Deno.test({
       outboxDump.output.some((line) => line.includes("Target: outboxer.tgts")),
     );
     assert(
-      outboxDump.output.some((line) => line.includes('"status": "pending"')),
+      outboxDump.output.some((line) => line.includes("\"status\": \"pending\"")),
     );
     assert(
-      outboxDump.output.some((line) => line.includes('"eid": "mailbox1"')),
+      outboxDump.output.some((line) => line.includes("\"eid\": \"mailbox1\"")),
     );
   },
 });
 
 /** Proves noter-domain inspection works for notification debugging workflows. */
 Deno.test({
-  name:
-    "Integration: db dump supports noter targets for notification debugging",
+  name: "Integration: db dump supports noter targets for notification debugging",
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
     const name = `db-dump-noter-${crypto.randomUUID()}`;
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name,
         temp: true,
@@ -219,7 +213,7 @@ Deno.test({
     assertEquals(focused.errors.length, 0);
     assert(focused.output.some((line) => line.includes("Target: noter.notes")));
     assert(
-      focused.output.some((line) => line.includes('"r": "/delegate/request"')),
+      focused.output.some((line) => line.includes("\"r\": \"/delegate/request\"")),
     );
   },
 });
@@ -232,7 +226,7 @@ Deno.test({
   fn: async () => {
     const name = `db-dump-keeper-${crypto.randomUUID()}`;
 
-    await run(function* () {
+    await run(function*() {
       const keeper = yield* createKeeper({
         name,
         temp: true,
@@ -266,9 +260,9 @@ Deno.test({
     assert(
       keeperDump.output.some((line) => line.includes("Target: keeper.prms")),
     );
-    assert(keeperDump.output.some((line) => line.includes('"algo": "salty"')));
+    assert(keeperDump.output.some((line) => line.includes("\"algo\": \"salty\"")));
     assert(
-      keeperDump.output.some((line) => line.includes('"stem": "signify:aid"')),
+      keeperDump.output.some((line) => line.includes("\"stem\": \"signify:aid\"")),
     );
   },
 });

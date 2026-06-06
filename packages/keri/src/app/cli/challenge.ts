@@ -10,10 +10,7 @@ import {
   markChallengeVerified,
   parseChallengeWords,
 } from "../challenging.ts";
-import {
-  type ExchangeDeliveryPreference,
-  sendExchangeMessage,
-} from "../forwarding.ts";
+import { type ExchangeDeliveryPreference, sendExchangeMessage } from "../forwarding.ts";
 import type { Habery } from "../habbing.ts";
 import { Organizer } from "../organizing.ts";
 import { setupHby } from "./common/existing.ts";

@@ -15,12 +15,7 @@
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import {
-  createAgentRuntime,
-  processRuntimeTurn,
-  runtimeHasPendingWork,
-  runtimeTurn,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
 import { queryTransportSink } from "../query-transport.ts";
@@ -72,8 +67,8 @@ function controllerCatchupUrl(
   queriedPre: string,
 ): string | null {
   const ends = hab.endsFor(queriedPre);
-  const controller = flattenRoleUrls(ends[Roles.controller])[0] ??
-    flattenRoleUrls(ends[Roles.agent])[0];
+  const controller = flattenRoleUrls(ends[Roles.controller])[0]
+    ?? flattenRoleUrls(ends[Roles.agent])[0];
   if (!controller) {
     return null;
   }
@@ -116,7 +111,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Prefix is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       queryArgs.name!,
       queryArgs.base ?? "",

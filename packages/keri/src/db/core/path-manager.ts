@@ -19,13 +19,13 @@ function hasErrorCode(error: unknown, codes: string[]): boolean {
 }
 
 function isNotFoundLike(error: unknown): boolean {
-  return error instanceof Deno.errors.NotFound ||
-    hasErrorCode(error, ["ENOENT"]);
+  return error instanceof Deno.errors.NotFound
+    || hasErrorCode(error, ["ENOENT"]);
 }
 
 function isPermissionDeniedLike(error: unknown): boolean {
-  return error instanceof Deno.errors.PermissionDenied ||
-    hasErrorCode(error, ["EACCES", "EPERM"]);
+  return error instanceof Deno.errors.PermissionDenied
+    || hasErrorCode(error, ["EACCES", "EPERM"]);
 }
 
 /**
@@ -181,10 +181,9 @@ export class PathManager {
   }
 
   _getTempPath(): string {
-    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP") ||
-      Deno.env.get("TEMP") || "/tmp";
-    const tempName =
-      `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
+    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP")
+      || Deno.env.get("TEMP") || "/tmp";
+    const tempName = `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
     return join(tempDir, tempName);
   }
 

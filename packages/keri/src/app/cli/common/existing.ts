@@ -1,11 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../../core/errors.ts";
 import { createKeeper, Keeper } from "../../../db/keeping.ts";
-import {
-  type CesrBodyMode,
-  cesrBodyModeFromGlobal,
-  normalizeCesrBodyMode,
-} from "../../cesr-http.ts";
+import { type CesrBodyMode, cesrBodyModeFromGlobal, normalizeCesrBodyMode } from "../../cesr-http.ts";
 import type { Configer } from "../../configing.ts";
 import { createHabery, Habery } from "../../habbing.ts";
 

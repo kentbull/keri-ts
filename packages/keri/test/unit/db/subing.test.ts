@@ -2,21 +2,10 @@
 
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import {
-  b,
-  Cipher,
-  parseSerder,
-  Prefixer,
-  SerderKERI,
-  Signer,
-  smell,
-} from "../../../../cesr/mod.ts";
+import { b, Cipher, parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/habbing.ts";
 import { saltySigner } from "../../../src/app/keeping.ts";
-import {
-  makeDecrypterFromSeed,
-  makeEncrypterFromAeid,
-} from "../../../src/core/keeper-crypto.ts";
+import { makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
   CesrIoSetSuber,
@@ -62,16 +51,14 @@ function makeTestSerder(): SerderKERI {
   const encoder = new TextEncoder();
   const raw = encoder.encode(JSON.stringify({
     ...ked,
-    v: `KERI10JSON${
-      encoder.encode(JSON.stringify(ked)).length.toString(16).padStart(6, "0")
-    }_`,
+    v: `KERI10JSON${encoder.encode(JSON.stringify(ked)).length.toString(16).padStart(6, "0")}_`,
   }));
   const { smellage } = smell(raw);
   return parseSerder(raw, smellage) as SerderKERI;
 }
 
 Deno.test("db/subing - Suber uses the configured separator and iterates keys", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `suber-${crypto.randomUUID()}`,
       temp: true,
@@ -90,7 +77,7 @@ Deno.test("db/subing - Suber uses the configured separator and iterates keys", a
 });
 
 Deno.test("db/subing - OnSuber preserves exposed ordinals", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `onsuber-${crypto.randomUUID()}`,
       temp: true,
@@ -130,7 +117,7 @@ Deno.test("db/subing - OnSuber preserves exposed ordinals", async () => {
 });
 
 Deno.test("db/subing - IoSetSuber keeps insertion order while deduplicating values", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `ioset-${crypto.randomUUID()}`,
       temp: true,
@@ -151,7 +138,7 @@ Deno.test("db/subing - IoSetSuber keeps insertion order while deduplicating valu
 });
 
 Deno.test("db/subing - CesrSuber hydrates typed CESR primitives", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `cesrsuber-${crypto.randomUUID()}`,
       temp: true,
@@ -183,7 +170,7 @@ Deno.test("db/subing - CesrSuber hydrates typed CESR primitives", async () => {
 });
 
 Deno.test("db/subing - OnIoDupSuber supports normalized iterators while retaining legacy aliases", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `oniodup-${crypto.randomUUID()}`,
       temp: true,
@@ -229,7 +216,7 @@ Deno.test("db/subing - OnIoDupSuber supports normalized iterators while retainin
 });
 
 Deno.test("db/subing - OnIoSetSuber exposes normalized KERIpy-style methods and legacy aliases", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `onioset-${crypto.randomUUID()}`,
       temp: true,
@@ -331,7 +318,7 @@ Deno.test("db/subing - OnIoSetSuber exposes normalized KERIpy-style methods and 
 });
 
 Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `cesrioset-${crypto.randomUUID()}`,
       temp: true,
@@ -361,7 +348,7 @@ Deno.test("db/subing - CesrIoSetSuber round-trips typed CESR set members", async
 });
 
 Deno.test("db/subing - SerderSuber hydrates KERI serders through the shared parser", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `serdersuber-${crypto.randomUUID()}`,
       temp: true,
@@ -381,7 +368,7 @@ Deno.test("db/subing - SerderSuber hydrates KERI serders through the shared pars
 });
 
 Deno.test("db/subing - CryptSignerSuber encrypts at rest and decrypts on read", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `cryptsigner-${crypto.randomUUID()}`,
       temp: true,
@@ -418,7 +405,7 @@ Deno.test("db/subing - CryptSignerSuber encrypts at rest and decrypts on read", 
 });
 
 Deno.test("db/subing - SignerSuber rehydrates non-transferable signer semantics from keyspace verfers", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* createLMDBer({
       name: `signersuber-transferability-${crypto.randomUUID()}`,
       temp: true,

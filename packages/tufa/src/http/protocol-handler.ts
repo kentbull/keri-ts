@@ -13,30 +13,16 @@ import {
   classifyGenericCesrIngressRoute,
   handleGenericCesrIngress,
 } from "./protocol/endpoints/generic-cesr-ingress.ts";
-import {
-  classifyHealthRoute,
-  handleHealthRoute,
-} from "./protocol/endpoints/health.ts";
-import {
-  classifyMailboxAdminRoute,
-  handleMailboxAdmin,
-} from "./protocol/endpoints/mailbox-admin.ts";
-import {
-  classifyOobiRoute,
-  handleOobiRoute,
-  parseOobiRouteRequest,
-} from "./protocol/endpoints/oobi.ts";
+import { classifyHealthRoute, handleHealthRoute } from "./protocol/endpoints/health.ts";
+import { classifyMailboxAdminRoute, handleMailboxAdmin } from "./protocol/endpoints/mailbox-admin.ts";
+import { classifyOobiRoute, handleOobiRoute, parseOobiRouteRequest } from "./protocol/endpoints/oobi.ts";
 import {
   classifyWitnessHttpRoute,
   handleWitnessQueryGet,
   handleWitnessReceiptGet,
   handleWitnessReceiptPost,
 } from "./protocol/endpoints/witness-http.ts";
-import type {
-  ProtocolHandler,
-  ProtocolRequestContext,
-  ProtocolRoute,
-} from "./protocol/types.ts";
+import type { ProtocolHandler, ProtocolRequestContext, ProtocolRoute } from "./protocol/types.ts";
 
 export { buildProtocolRequestContext } from "./protocol/context.ts";
 export { classifyCesrIngressRoute } from "./protocol/endpoints/generic-cesr-ingress.ts";
@@ -65,12 +51,12 @@ export function createProtocolHandler(
 export function classifyProtocolRoute(
   context: ProtocolRequestContext,
 ): ProtocolRoute {
-  return classifyHealthRoute(context) ??
-    classifyMailboxAdminRoute(context) ??
-    classifyWitnessHttpRoute(context) ??
-    classifyOobiRoute(context) ??
-    classifyGenericCesrIngressRoute(context) ??
-    { kind: "notFound" };
+  return classifyHealthRoute(context)
+    ?? classifyMailboxAdminRoute(context)
+    ?? classifyWitnessHttpRoute(context)
+    ?? classifyOobiRoute(context)
+    ?? classifyGenericCesrIngressRoute(context)
+    ?? { kind: "notFound" };
 }
 
 /** Dispatch one already-classified route to its concrete response. */

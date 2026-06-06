@@ -163,9 +163,7 @@ export class Signaler {
   ): Signal<T> {
     const created = signal(attrs, topic, options);
     if (created.ckey) {
-      const index = this.signals.findIndex((existing) =>
-        existing.ckey === created.ckey
-      );
+      const index = this.signals.findIndex((existing) => existing.ckey === created.ckey);
       if (index >= 0) {
         this.signals.splice(index, 1, created);
         return created;
@@ -177,9 +175,7 @@ export class Signaler {
   }
 
   list(): Signal[] {
-    return this.signals.map((current) =>
-      new Signal({ raw: current.raw, ckey: current.ckey })
-    );
+    return this.signals.map((current) => new Signal({ raw: current.raw, ckey: current.ckey }));
   }
 
   count(): number {

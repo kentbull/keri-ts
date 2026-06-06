@@ -145,9 +145,7 @@ export function messagize(
   } = argsOrProof;
   if (sigers.length === 0 && wigers.length === 0 && cigars.length === 0) {
     throw new ValidationError(
-      `Missing attached signatures on message = ${
-        JSON.stringify(serderOrCreder.ked)
-      }.`,
+      `Missing attached signatures on message = ${JSON.stringify(serderOrCreder.ked)}.`,
     );
   }
 

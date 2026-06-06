@@ -9,28 +9,16 @@ import {
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
-import {
-  challengeRespondCommand,
-  challengeVerifyCommand,
-} from "../../../src/app/cli/challenge.ts";
-import {
-  oobiGenerateCommand,
-  oobiResolveCommand,
-} from "../../../src/app/cli/oobi.ts";
+import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
+import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
-import {
-  controllerOobiResponse,
-  startStaticHttpHost,
-} from "../../http-test-support.ts";
+import { controllerOobiResponse, startStaticHttpHost } from "../../http-test-support.ts";
 import { startTestServer } from "../../runtime-test-hosts.ts";
 import { testCLICommand } from "../../utils.ts";
-import {
-  seedHostedIdentifier,
-  seedLocalIdentifier,
-} from "./challenge-runtime-support.ts";
+import { seedHostedIdentifier, seedLocalIdentifier } from "./challenge-runtime-support.ts";
 
 async function seedMailboxProvider(
   name: string,
@@ -39,7 +27,7 @@ async function seedMailboxProvider(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -64,12 +52,9 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
   const providerName = `challenge-indirect-provider-${crypto.randomUUID()}`;
   const bobName = `challenge-indirect-bob-${crypto.randomUUID()}`;
   const aliceName = `challenge-indirect-alice-${crypto.randomUUID()}`;
-  const providerHeadDirPath =
-    `/tmp/tufa-challenge-indirect-provider-${crypto.randomUUID()}`;
-  const bobHeadDirPath =
-    `/tmp/tufa-challenge-indirect-bob-${crypto.randomUUID()}`;
-  const aliceHeadDirPath =
-    `/tmp/tufa-challenge-indirect-alice-${crypto.randomUUID()}`;
+  const providerHeadDirPath = `/tmp/tufa-challenge-indirect-provider-${crypto.randomUUID()}`;
+  const bobHeadDirPath = `/tmp/tufa-challenge-indirect-bob-${crypto.randomUUID()}`;
+  const aliceHeadDirPath = `/tmp/tufa-challenge-indirect-alice-${crypto.randomUUID()}`;
   const words = ["fafa", "gogo", "haha"];
 
   const providerPre = await seedMailboxProvider(
@@ -97,7 +82,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
   );
 
   try {
-    await run(function* (): Operation<void> {
+    await run(function*(): Operation<void> {
       const providerHby = yield* createHabery({
         name: providerName,
         headDirPath: providerHeadDirPath,
@@ -115,7 +100,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
       }
-      const runtimeTask = yield* spawn(function* () {
+      const runtimeTask = yield* spawn(function*() {
         yield* runAgentRuntime(runtime, { hab });
       });
       const { address, task: serverTask } = yield* startTestServer(runtime);
@@ -210,8 +195,8 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
         );
         assertEquals(responded.output[0], "Sent EXN message");
         assertEquals(
-          mailboxer.getTopicMsgs(mailboxTopicKey(bobPre, "/challenge")).length >
-            0,
+          mailboxer.getTopicMsgs(mailboxTopicKey(bobPre, "/challenge")).length
+            > 0,
           true,
         );
 
@@ -234,7 +219,7 @@ Deno.test("exchange send can deliver challenge responses through mailbox-authori
       }
     });
 
-    await run(function* (): Operation<void> {
+    await run(function*(): Operation<void> {
       const bobHby = yield* createHabery({
         name: bobName,
         headDirPath: bobHeadDirPath,

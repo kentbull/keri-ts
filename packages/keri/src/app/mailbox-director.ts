@@ -21,11 +21,7 @@ import { ValidationError } from "../core/errors.ts";
 import type { MbxTopicCursor } from "../core/mailbox-topics.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Habery } from "./habbing.ts";
-import {
-  mailboxQueryTopics,
-  mailboxTopicKey,
-  updateMailboxRemoteCursor,
-} from "./mailboxing.ts";
+import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "./mailboxing.ts";
 
 /** Shared encoder for SSE mailbox stream framing. */
 const textEncoder = new TextEncoder();

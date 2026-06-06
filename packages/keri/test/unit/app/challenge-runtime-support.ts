@@ -1,9 +1,5 @@
 import { type Operation, run } from "effection";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
@@ -23,7 +19,7 @@ export async function seedHostedIdentifier(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -73,7 +69,7 @@ export async function seedLocalIdentifier(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,

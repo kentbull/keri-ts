@@ -1,9 +1,4 @@
-import {
-  AppError,
-  DatabaseError,
-  PathError,
-  ValidationError,
-} from "keri-ts/runtime";
+import { AppError, DatabaseError, PathError, ValidationError } from "keri-ts/runtime";
 import type { Context, Hono } from "npm:hono@^4.7.11";
 import { applyTufaCorsHeaders } from "./policy.ts";
 import type { TufaHttpAppPolicy } from "./policy.ts";

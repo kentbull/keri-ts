@@ -32,7 +32,7 @@ Deno.test("db/core lmdber plain - setVal overwrites and getVal handles missing v
 });
 
 Deno.test("db/core lmdber plain - getVal throws the existing guard error after close", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* openLMDB({
       name: `plain-closed-${crypto.randomUUID()}`,
       temp: true,

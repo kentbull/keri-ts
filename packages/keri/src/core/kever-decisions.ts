@@ -1,11 +1,4 @@
-import type {
-  Dater,
-  Diger,
-  SealEvent,
-  SealSource,
-  SerderKERI,
-  Siger,
-} from "../../../cesr/mod.ts";
+import type { Dater, Diger, SealEvent, SealSource, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import type { FirstSeenReplayCouple } from "./dispatch.ts";
 import { consoleLogger, type Logger } from "./logger.ts";

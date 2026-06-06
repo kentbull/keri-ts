@@ -23,7 +23,7 @@ function eventEnvelope(args: {
 }
 
 Deno.test("Kevery unescrows witness receipts against partially witnessed events", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `kevery-rct-wit-src-${crypto.randomUUID()}`,
       temp: true,

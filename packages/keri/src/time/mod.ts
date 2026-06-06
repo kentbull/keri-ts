@@ -28,7 +28,5 @@ export function makeNowIso8601(): string {
  * - this helper centralizes the temporary bootstrap encoding seam in `keri-ts`
  */
 export function encodeDateTimeToDater(dts: string): string {
-  return `1AAG${
-    dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")
-  }`;
+  return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
 }

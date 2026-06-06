@@ -1,16 +1,12 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
-import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
-import type {
-  ExchangeAttachment,
-  Exchanger,
-  ExchangeRouteHandler,
-} from "./exchanging.ts";
+import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
-import type { Hab, Habery } from "./habbing.ts";
+import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
 import type { QueryCoordinator } from "./querying.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
@@ -171,23 +167,6 @@ function witnessReceiptsComplete(hby: Habery, serder: SerderKERI): boolean {
   return hby.db.wigs.get(dgKey(pre, said)).length >= kever.wits.length;
 }
 
-function eventMessage(hby: Habery, serder: SerderKERI): Uint8Array {
-  const pre = serder.pre;
-  const said = serder.said;
-  if (!pre || !said) {
-    throw new ValidationError(
-      "Delegated workflow event is missing pre or said.",
-    );
-  }
-  const fn = hby.db.getFelFn(pre, said);
-  if (fn === null) {
-    throw new ValidationError(
-      `Missing first-seen ordinal for delegated event ${pre}:${said}.`,
-    );
-  }
-  return hby.db.cloneEvtMsg(pre, fn, said);
-}
-
 function delegatedWorkflowDelpre(
   hby: Habery,
   serder: SerderKERI,
@@ -281,9 +260,9 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
   }): boolean {
     const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
     const embeds = args.serder.ked?.e as Record<string, unknown> | undefined;
-    return typeof payload?.["delpre"] === "string" &&
-      typeof embeds?.["evt"] === "object" &&
-      embeds?.["evt"] !== null;
+    return typeof payload?.["delpre"] === "string"
+      && typeof embeds?.["evt"] === "object"
+      && embeds?.["evt"] !== null;
   }
 
   handle(args: {
@@ -417,10 +396,10 @@ export class Anchorer {
     snh: string,
   ): DelegationWorkflowStatus {
     const key: [string, string] = [pre, snh];
-    const serder = this.hby.db.dpwe.get(key) ??
-      this.hby.db.dune.get(key) ??
-      this.hby.db.dpub.get(key) ??
-      null;
+    const serder = this.hby.db.dpwe.get(key)
+      ?? this.hby.db.dune.get(key)
+      ?? this.hby.db.dpub.get(key)
+      ?? null;
     const completed = this.complete(pre, snh);
     if (!serder) {
       return { phase: null, proxyDependent: false, complete: completed };
@@ -538,8 +517,8 @@ export class Anchorer {
     }
 
     if (
-      hab.kever && hab.kever.wits.length > 0 &&
-      !witnessReceiptsComplete(this.hby, serder)
+      hab.kever && hab.kever.wits.length > 0
+      && !witnessReceiptsComplete(this.hby, serder)
     ) {
       return {
         kind: "keep",
@@ -550,7 +529,7 @@ export class Anchorer {
       };
     }
 
-    const message = eventMessage(this.hby, serder);
+    const message = eventPayloadMessage(this.hby, serder);
     yield* this.poster.sendExchange(communicationHab, {
       recipient: delpre,
       exchangeRecipient: null,
@@ -579,8 +558,7 @@ export class Anchorer {
       said,
       from: "waitingWitnessReceipts",
       to: "waitingDelegatorAnchor",
-      reason:
-        `Forwarded delegated event ${said} to delegator ${delpre} through ${communicationHab.pre}.`,
+      reason: `Forwarded delegated event ${said} to delegator ${delpre} through ${communicationHab.pre}.`,
     };
   }
 
@@ -636,8 +614,7 @@ export class Anchorer {
         pre,
         said,
         phase: "waitingDelegatorAnchor",
-        reason:
-          "Delegator approval is anchored and no witness republication is required.",
+        reason: "Delegator approval is anchored and no witness republication is required.",
       };
     }
 
@@ -649,8 +626,7 @@ export class Anchorer {
       said,
       from: "waitingDelegatorAnchor",
       to: "waitingWitnessPublication",
-      reason:
-        "Delegator approval is anchored; published the delegation chain to delegate witnesses.",
+      reason: "Delegator approval is anchored; published the delegation chain to delegate witnesses.",
     };
   }
 
@@ -765,8 +741,8 @@ export class Anchorer {
     const nextPass = pass + 1;
     if (nextPass < DELEGATION_ANCHOR_QUERY_RETRY_PASSES) {
       this.anchorQueryRetryPasses.set(id, nextPass);
-      const remaining = DELEGATION_ANCHOR_QUERY_RETRY_PASSES -
-        nextPass;
+      const remaining = DELEGATION_ANCHOR_QUERY_RETRY_PASSES
+        - nextPass;
       return `Delegator anchor has not been learned locally yet; next delegator witness query retry in ${remaining} pass(es).`;
     }
 
@@ -800,6 +776,18 @@ export class Anchorer {
       for (const witness of kever.wits) {
         yield* sendWitnessMessage(hab, witness, msg);
       }
+    }
+
+    const approvedEvent = eventReplayMessage(this.hby, kever.serder);
+    if (kever.delpre) {
+      yield* this.poster.sendBytes(hab, {
+        recipient: kever.delpre,
+        topic: REPLAY_MAILBOX_TOPIC,
+        message: approvedEvent,
+      });
+    }
+    for (const witness of kever.wits) {
+      yield* sendWitnessMessage(hab, witness, approvedEvent);
     }
   }
 }

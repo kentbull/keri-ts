@@ -6,17 +6,8 @@
  * policy lives in `keri-ts` through `ProtocolHostPolicy`.
  */
 import { action, type Operation } from "effection";
-import {
-  type AgentRuntime,
-  consoleLogger,
-  type Logger,
-  type ProtocolHostPolicy,
-} from "keri-ts/runtime";
-import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { type AgentRuntime, consoleLogger, type Logger, type ProtocolHostPolicy } from "keri-ts/runtime";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createTufaApp } from "../http/app.ts";
@@ -243,8 +234,7 @@ function openServerHost(
     protocolPolicy: options,
     app: { logger },
   });
-  const handler = (req: Request): Promise<Response> =>
-    Promise.resolve(app.fetch(req));
+  const handler = (req: Request): Promise<Response> => Promise.resolve(app.fetch(req));
   let host: ServerHost;
   if (hasDenoServe()) {
     try {

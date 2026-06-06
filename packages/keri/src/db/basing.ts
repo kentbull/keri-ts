@@ -24,10 +24,7 @@ import {
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
-import {
-  DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
@@ -90,8 +87,8 @@ import {
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
 function isMissingReloadEventError(error: unknown): boolean {
-  return error instanceof Error &&
-    error.message.startsWith(
+  return error instanceof Error
+    && error.message.startsWith(
       "Missing accepted event for reloaded Kever state ",
     );
 }
@@ -99,15 +96,15 @@ function isMissingReloadEventError(error: unknown): boolean {
 type EventSealRecord = ReturnType<typeof SealEvent.fromSad>;
 
 function isEventSealRecord(value: unknown): value is EventSealRecord {
-  return typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    "i" in value &&
-    "s" in value &&
-    "d" in value &&
-    (value as { i: unknown }).i instanceof Prefixer &&
-    (value as { s: unknown }).s instanceof NumberPrimitive &&
-    (value as { d: unknown }).d instanceof Diger;
+  return typeof value === "object"
+    && value !== null
+    && !Array.isArray(value)
+    && "i" in value
+    && "s" in value
+    && "d" in value
+    && (value as { i: unknown }).i instanceof Prefixer
+    && (value as { s: unknown }).s instanceof NumberPrimitive
+    && (value as { d: unknown }).d instanceof Diger;
 }
 
 function normalizeEventSeal(value: unknown): EventSealRecord | null {
@@ -128,9 +125,9 @@ function eventSealsEqual(
   left: EventSealRecord,
   right: EventSealRecord,
 ): boolean {
-  return left.i.qb64 === right.i.qb64 &&
-    left.s.numh === right.s.numh &&
-    left.d.qb64 === right.d.qb64;
+  return left.i.qb64 === right.i.qb64
+    && left.s.numh === right.s.numh
+    && left.d.qb64 === right.d.qb64;
 }
 
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
@@ -1450,9 +1447,7 @@ export class Baser {
     const dgkey = dgKey(pre, said);
     return this.sigs.put(
       dgkey,
-      sigs.map((sig) =>
-        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
-      ),
+      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 
@@ -1465,9 +1460,7 @@ export class Baser {
     const dgkey = dgKey(pre, said);
     return this.sigs.pin(
       dgkey,
-      sigs.map((sig) =>
-        typeof sig === "string" ? new Siger({ qb64: sig }) : sig
-      ),
+      sigs.map((sig) => typeof sig === "string" ? new Siger({ qb64: sig }) : sig),
     );
   }
 

@@ -17,12 +17,7 @@ import {
 } from "../../../cesr/mod.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
-import {
-  KeyStateRecord,
-  type KeyStateRecordShape,
-  StateEERecord,
-  type StateEERecordShape,
-} from "./records.ts";
+import { KeyStateRecord, type KeyStateRecordShape, StateEERecord, type StateEERecordShape } from "./records.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
 
 const MAX_INTIVE_THRESHOLD = 0xffff;
@@ -136,9 +131,9 @@ function encodeThreshold(
   intive = false,
 ): ThresholdSith | number {
   if (
-    intive &&
-    tholder.num !== null &&
-    tholder.num <= BigInt(MAX_INTIVE_THRESHOLD)
+    intive
+    && tholder.num !== null
+    && tholder.num <= BigInt(MAX_INTIVE_THRESHOLD)
   ) {
     return Number(tholder.num);
   }
@@ -247,8 +242,8 @@ export function state(
     );
   }
   if (
-    witnessList.length > 0 &&
-    (resolvedToad < 1 || resolvedToad > witnessList.length)
+    witnessList.length > 0
+    && (resolvedToad < 1 || resolvedToad > witnessList.length)
   ) {
     throw new ValidationError(
       `Invalid toad = ${resolvedToad} for wits = ${witnessList}.`,
@@ -352,8 +347,8 @@ export function incept(
     );
   }
   if (
-    witnessList.length > 0 &&
-    (resolvedToad < 1 || resolvedToad > witnessList.length)
+    witnessList.length > 0
+    && (resolvedToad < 1 || resolvedToad > witnessList.length)
   ) {
     throw new ValidationError(
       `Invalid toad = ${resolvedToad} for wits = ${witnessList}`,

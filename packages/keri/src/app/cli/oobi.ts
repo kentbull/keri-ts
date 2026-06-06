@@ -10,11 +10,7 @@ import {
 } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../forwarding.ts";
-import {
-  OOBI_MAILBOX_TOPIC,
-  OOBI_REQUEST_ROUTE,
-  oobiRequestExn,
-} from "../oobiery.ts";
+import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -145,9 +141,7 @@ export function* oobiGenerateCommand(
           const url = preferredUrl(surls);
           if (url) {
             urls.push(
-              `${
-                canonicalOobiOrigin(url)
-              }/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
+              `${canonicalOobiOrigin(url)}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
             );
           }
         }

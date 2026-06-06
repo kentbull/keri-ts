@@ -38,7 +38,7 @@ Deno.test("tufa/runtime-bridge - replay cues are forwarded through poster instea
     },
   };
 
-  const emissions = await run(function* () {
+  const emissions = await run(function*() {
     return yield* drainRuntimeCues(
       runtime as never,
       serviceHab as never,

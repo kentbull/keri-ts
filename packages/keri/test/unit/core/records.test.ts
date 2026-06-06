@@ -3,11 +3,7 @@
 import { decode as decodeMsgpack } from "@msgpack/msgpack";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { decodeKeriCbor } from "../../../../cesr/mod.ts";
-import {
-  KeyStateRecord,
-  OobiQueryRecord,
-  StateEERecord,
-} from "../../../src/core/records.ts";
+import { KeyStateRecord, OobiQueryRecord, StateEERecord } from "../../../src/core/records.ts";
 
 Deno.test("core/records - RawRecord helpers round-trip dict, JSON, CBOR, and MGPK without changing stored shape", () => {
   const state = KeyStateRecord.fromDict({

@@ -2,14 +2,10 @@
 
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
-import {
-  clearDatabaserDir,
-  createLMDBer,
-  openLMDB,
-} from "../../../../src/db/core/lmdber.ts";
+import { clearDatabaserDir, createLMDBer, openLMDB } from "../../../../src/db/core/lmdber.ts";
 
 Deno.test("db/core lmdber - openLMDB alias opens an LMDBer", async () => {
-  await run(function* () {
+  await run(function*() {
     const name = `open-lmdb-${crypto.randomUUID()}`;
     const lmdber = yield* openLMDB({ name, temp: true });
     try {
@@ -45,7 +41,7 @@ Deno.test("db/core lmdber - clearDatabaserDir removes directories idempotently",
 });
 
 Deno.test("db/core lmdber - createLMDBer factory opens an LMDBer", async () => {
-  await run(function* () {
+  await run(function*() {
     // Mirrors `openLMDB` coverage for the constructor-safe async factory alias.
     const name = `create-lmdber-${crypto.randomUUID()}`;
     const lmdber = yield* createLMDBer({ name, temp: true });

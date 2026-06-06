@@ -1,11 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa ends add`. */

@@ -299,7 +299,9 @@ export class Kever {
    */
   locallyOwned(pre?: string | null): boolean {
     const current = pre ?? this.pre;
-    return this.prefixes.has(current) && !this.groups.has(current);
+    const habord = current ? this.db.getHab(current) : null;
+    return !!current && habord !== null && !habord.mid
+      && !this.groups.has(current);
   }
 
   /**
@@ -311,7 +313,7 @@ export class Kever {
    *   that a local member is still a current signer of the delegator group
    */
   locallyDelegated(pre: string | null | undefined): boolean {
-    return !!pre && this.prefixes.has(pre);
+    return !!pre && this.db.getHab(pre) !== null;
   }
 
   /**
@@ -355,7 +357,7 @@ export class Kever {
         wits = derived.wits;
       }
     }
-    return wits.some((wit) => this.prefixes.has(wit));
+    return wits.some((wit) => this.db.getHab(wit) !== null);
   }
 
   /**
@@ -464,8 +466,8 @@ export class Kever {
           wits: attachments.attachments.wits,
           first: !init.check,
           frc,
-          sourceSeal: attachments.attachments.sourceSeal ??
-            provisionalSourceSeal,
+          sourceSeal: attachments.attachments.sourceSeal
+            ?? provisionalSourceSeal,
           local: init.local ?? false,
         },
       },
@@ -606,8 +608,8 @@ export class Kever {
     const first = args.first ?? false;
     const replayDater = args.frc?.dater ?? null;
     const nowIso8601 = replayDater?.iso8601 ?? makeNowIso8601();
-    const nowDater = replayDater ??
-      new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
+    const nowDater = replayDater
+      ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
     const dgkey = dgKey(pre, said);
 
     this.db.dtss.put(dgkey, nowDater);
@@ -896,8 +898,8 @@ export class Kever {
       // candidates. A bare `Kever` still enforces those rules even when the
       // normal remote-processing path routes through `Kevery` first.
       if (
-        (ilk === Ilks.rot && sn <= this.lastEst.s) ||
-        (ilk === Ilks.drt && sn < this.lastEst.s)
+        (ilk === Ilks.rot && sn <= this.lastEst.s)
+        || (ilk === Ilks.drt && sn < this.lastEst.s)
       ) {
         return Kever.reject(
           "stale",
@@ -925,17 +927,13 @@ export class Kever {
       if (!pserder || !pserder.compare(serder.prior ?? "")) {
         return Kever.reject(
           "invalidRecovery",
-          `Recovery rotation prior ${
-            String(serder.prior)
-          } does not match stored state for ${this.pre}.`,
+          `Recovery rotation prior ${String(serder.prior)} does not match stored state for ${this.pre}.`,
         );
       }
     } else if (serder.prior !== this.said) {
       return Kever.reject(
         "invalidPriorDigest",
-        `Rotation prior ${
-          String(serder.prior)
-        } does not match current SAID ${this.said}.`,
+        `Rotation prior ${String(serder.prior)} does not match current SAID ${this.said}.`,
       );
     }
 
@@ -944,9 +942,7 @@ export class Kever {
     if (!hasValidThresholdMaterial(tholder, serder.verfers.length)) {
       return Kever.reject(
         "invalidThreshold",
-        `Rotation ${
-          serder.said ?? "<unknown>"
-        } does not carry enough current keys.`,
+        `Rotation ${serder.said ?? "<unknown>"} does not carry enough current keys.`,
       );
     }
 
@@ -957,9 +953,7 @@ export class Kever {
     if (!derived) {
       return Kever.reject(
         "invalidWitnessSet",
-        `Rotation ${
-          serder.said ?? "<unknown>"
-        } carries invalid witness cuts/adds.`,
+        `Rotation ${serder.said ?? "<unknown>"} carries invalid witness cuts/adds.`,
       );
     }
 
@@ -1070,9 +1064,7 @@ export class Kever {
     if (serder.prior !== this.said) {
       return Kever.reject(
         "invalidPriorDigest",
-        `Interaction prior ${
-          String(serder.prior)
-        } does not match current SAID ${this.said}.`,
+        `Interaction prior ${String(serder.prior)} does not match current SAID ${this.said}.`,
       );
     }
 
@@ -1217,11 +1209,15 @@ export class Kever {
     // for escrow. Misfit checks come first so locally protected events do not
     // leak into a more permissive partial-signature or partial-delegation
     // class.
+    const localDelegatorApprovalCandidate = (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
+      && this.locallyDelegated(delpre)
+      && !this.locallyOwned();
+
     if (
-      !input.local &&
-      (this.locallyOwned() ||
-        this.locallyWitnessed({ wits: [...input.wits] }) ||
-        this.locallyDelegated(delpre))
+      !input.local
+      && (this.locallyOwned()
+        || this.locallyWitnessed({ wits: [...input.wits] })
+        || (this.locallyDelegated(delpre) && !localDelegatorApprovalCandidate))
     ) {
       return this.makeAttachmentEscrowDecision(
         "misfit",
@@ -1235,9 +1231,7 @@ export class Kever {
       return this.makeAttachmentEscrowDecision(
         "partialSigs",
         input,
-        `Event ${said} does not yet satisfy controller threshold ${
-          formatThreshold(tholder)
-        }.`,
+        `Event ${said} does not yet satisfy controller threshold ${formatThreshold(tholder)}.`,
         remoteMemberedCues,
       );
     }
@@ -1245,18 +1239,16 @@ export class Kever {
     // Establishment rotations must also satisfy the prior-next threshold
     // exposed by the newly current signatures against the prior digest list.
     if (
-      input.isEstablishment &&
-      this.ntholder &&
-      (input.serder.ilk === Ilks.rot || input.serder.ilk === Ilks.drt)
+      input.isEstablishment
+      && this.ntholder
+      && (input.serder.ilk === Ilks.rot || input.serder.ilk === Ilks.drt)
     ) {
       const ondices = this.exposeds(verified.sigers);
       if (!this.ntholder.satisfy(ondices)) {
         return this.makeAttachmentEscrowDecision(
           "partialSigs",
           input,
-          `Event ${said} does not yet satisfy prior-next threshold ${
-            formatThreshold(this.ntholder)
-          }.`,
+          `Event ${said} does not yet satisfy prior-next threshold ${formatThreshold(this.ntholder)}.`,
           remoteMemberedCues,
         );
       }
@@ -1277,8 +1269,8 @@ export class Kever {
         );
       }
     } else if (
-      !(this.locallyOwned() || this.locallyMembered() ||
-        this.locallyWitnessed({ wits: [...input.wits] }))
+      !(this.locallyOwned() || this.locallyMembered()
+        || this.locallyWitnessed({ wits: [...input.wits] }))
     ) {
       // Only non-protected validators require the witness threshold to be
       // satisfied up front. Local controllers, local witnesses, and locally
@@ -1335,8 +1327,8 @@ export class Kever {
         wigers: verifiedWigs,
         wits: [...input.wits],
         delpre,
-        sourceSeal: delegation.attachments.sourceSeal ?? input.sourceSeal ??
-          null,
+        sourceSeal: delegation.attachments.sourceSeal ?? input.sourceSeal
+          ?? null,
         cues: [...remoteMemberedCues, ...(delegation.attachments.cues ?? [])],
       },
     };
@@ -1387,13 +1379,39 @@ export class Kever {
       };
     }
 
+    // A local delegator without an attached approval seal is not a generic
+    // partial-delegation case. It is specifically waiting for local
+    // out-of-band approval to be attached and reprocessed.
+    const sourceSealApprovesEvent = input.sourceSeal
+      ? this.lookupAcceptedDelegatingEvent(
+        delpre,
+        input.sourceSeal,
+        input.serder,
+      ) !== null
+      : false;
+
+    if (
+      (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
+      && this.locallyDelegated(delpre)
+      && !this.locallyOwned()
+      && !sourceSealApprovesEvent
+    ) {
+      return this.makeAttachmentEscrowDecision(
+        "delegables",
+        input,
+        `Missing local delegator approval for delegated event ${input.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
     // Protected parties to the delegation may accept before full remote-style
     // delegation proof because their local acceptance is what drives later
-    // witness and approval processing.
+    // witness and approval processing. The local-delegator approval gate above
+    // must run first; otherwise a remote delegate request for one of our local
+    // delegator AIDs is accepted instead of entering `delegables`.
     if (
-      this.locallyOwned() ||
-      this.locallyMembered() ||
-      this.locallyWitnessed({ wits: [...input.wits] })
+      this.locallyOwned()
+      || this.locallyMembered()
+      || this.locallyWitnessed({ wits: [...input.wits] })
     ) {
       return {
         kind: "verified",
@@ -1414,9 +1432,7 @@ export class Kever {
       return this.makeAttachmentEscrowDecision(
         "partialDels",
         input,
-        `Missing delegator KEL for ${delpre} while validating ${
-          input.serder.said ?? "<unknown>"
-        }.`,
+        `Missing delegator KEL for ${delpre} while validating ${input.serder.said ?? "<unknown>"}.`,
         [{
           kin: "query",
           q: { pre: delpre ?? undefined },
@@ -1429,22 +1445,6 @@ export class Kever {
       return Kever.rejectAttachment(
         "delegationPolicyViolation",
         `Delegator ${delpre} does not allow delegation for ${input.serder.said ?? "<unknown>"}.`,
-      );
-    }
-
-    // A local delegator without an attached approval seal is not a generic
-    // partial-delegation case. It is specifically waiting for local
-    // out-of-band approval to be attached and reprocessed.
-    if (
-      (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
-      && this.locallyDelegated(delpre)
-      && !this.locallyOwned()
-      && !input.sourceSeal
-    ) {
-      return this.makeAttachmentEscrowDecision(
-        "delegables",
-        input,
-        `Missing local delegator approval for delegated event ${input.serder.said ?? "<unknown>"}.`,
       );
     }
 
@@ -1481,10 +1481,10 @@ export class Kever {
     // problem, an in-order delegated rotation is fine once anchored, and a
     // same-sn `drt` may directly supersede an `ixn` head state.
     if (
-      input.serder.ilk !== Ilks.drt ||
-      input.serder.sn === null ||
-      input.serder.sn === this.sn + 1 ||
-      (input.serder.sn === this.sn && this.ilk === Ilks.ixn)
+      input.serder.ilk !== Ilks.drt
+      || input.serder.sn === null
+      || input.serder.sn === this.sn + 1
+      || (input.serder.sn === this.sn && this.ilk === Ilks.ixn)
     ) {
       return {
         kind: "verified",
@@ -1593,21 +1593,15 @@ export class Kever {
       if (candidateBossSn === null || originalBossSn === null) {
         return Kever.rejectAttachment(
           "invalidDelegation",
-          `Delegation recovery chain for ${
-            candidateEvent.said ?? "<unknown>"
-          } is missing sequence numbers.`,
+          `Delegation recovery chain for ${candidateEvent.said ?? "<unknown>"} is missing sequence numbers.`,
         );
       }
 
-      const cycleKey = `${currentDelpre}:${candidateBoss.serder.said ?? ""}:${
-        originalBoss.serder.said ?? ""
-      }`;
+      const cycleKey = `${currentDelpre}:${candidateBoss.serder.said ?? ""}:${originalBoss.serder.said ?? ""}`;
       if (visited.has(cycleKey)) {
         return Kever.rejectAttachment(
           "invalidDelegation",
-          `Delegation recovery chain for ${
-            candidateEvent.said ?? "<unknown>"
-          } contains a cycle.`,
+          `Delegation recovery chain for ${candidateEvent.said ?? "<unknown>"} contains a cycle.`,
         );
       }
       visited.add(cycleKey);
@@ -1619,9 +1613,9 @@ export class Kever {
       const candidateBossIlk = candidateBoss.serder.ilk;
       const originalBossIlk = originalBoss.serder.ilk;
       if (
-        candidateBossSn === originalBossSn &&
-        (candidateBossIlk === Ilks.rot || candidateBossIlk === Ilks.drt) &&
-        originalBossIlk === Ilks.ixn
+        candidateBossSn === originalBossSn
+        && (candidateBossIlk === Ilks.rot || candidateBossIlk === Ilks.drt)
+        && originalBossIlk === Ilks.ixn
       ) {
         return null;
       }
@@ -1632,9 +1626,7 @@ export class Kever {
         }
         return Kever.rejectAttachment(
           "invalidDelegation",
-          `Delegated recovery ${
-            candidateEvent.said ?? "<unknown>"
-          } does not supersede accepted event ${
+          `Delegated recovery ${candidateEvent.said ?? "<unknown>"} does not supersede accepted event ${
             originalEvent.said ?? "<unknown>"
           }.`,
         );
@@ -1677,9 +1669,7 @@ export class Kever {
         return this.makeAttachmentEscrowDecision(
           "partialDels",
           input,
-          `No delegating recovery chain found for ${
-            candidate.said ?? "<unknown>"
-          } under ${currentDelpre}.`,
+          `No delegating recovery chain found for ${candidate.said ?? "<unknown>"} under ${currentDelpre}.`,
           [{
             kin: "query",
             q: { pre: currentDelpre ?? undefined },
@@ -1700,9 +1690,7 @@ export class Kever {
         return this.makeAttachmentEscrowDecision(
           "partialDels",
           input,
-          `No original delegating recovery chain found for ${
-            original.said ?? "<unknown>"
-          } under ${currentDelpre}.`,
+          `No original delegating recovery chain found for ${original.said ?? "<unknown>"} under ${currentDelpre}.`,
           [{
             kin: "query",
             q: { pre: currentDelpre ?? undefined },
@@ -1777,12 +1765,12 @@ export class Kever {
       delpre,
       sourceSealDigest(sourceSeal).qb64,
     );
-    if (
-      !candidate || !candidate.said ||
-      !this.db.fons.get(dgKey(delpre, candidate.said))
-    ) {
+    if (!candidate || !candidate.said || candidate.sn === null) {
       return null;
     }
+    const accepted = !!this.db.fons.get(dgKey(delpre, candidate.said))
+      || this.db.kels.getLast(delpre, candidate.sn) === candidate.said;
+    if (!accepted) return null;
     return this.delegatingLookup(candidate, serder);
   }
 
@@ -1895,9 +1883,9 @@ export class Kever {
   ): number {
     for (const [index, seal] of candidate.eventSeals.entries()) {
       if (
-        seal.i.qb64 === serder.pre &&
-        seal.s.numh === serder.snh &&
-        seal.d.qb64 === serder.said
+        seal.i.qb64 === serder.pre
+        && seal.s.numh === serder.snh
+        && seal.d.qb64 === serder.said
       ) {
         return index;
       }
@@ -2284,9 +2272,7 @@ function numberPrimitiveFromBigInt(value: bigint): NumberPrimitive {
     bytes.reverse();
     return new Uint8Array(bytes);
   })();
-  const entry = THOLDER_NUMERIC_CAPACITIES.find(({ rawSize }) =>
-    raw.length <= rawSize
-  );
+  const entry = THOLDER_NUMERIC_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
   if (!entry) {
     throw new ValidationError(
       `Unsupported numeric threshold width for value=${value.toString(16)}.`,

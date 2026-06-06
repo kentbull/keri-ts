@@ -71,9 +71,9 @@ Deno.test("CLI - incept command reuses initialized stores for happy-path coverag
       alias: "weighted",
       transferable: true,
       icount: 2,
-      isith: '["1/2","1/2"]',
+      isith: "[\"1/2\",\"1/2\"]",
       ncount: 2,
-      nsith: '[{"1":["1/2","1/2"]}]',
+      nsith: "[{\"1\":[\"1/2\",\"1/2\"]}]",
       toad: 0,
     }),
   );

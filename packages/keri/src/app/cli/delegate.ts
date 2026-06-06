@@ -5,7 +5,9 @@ import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import {
+  type AgentRuntime,
   createAgentRuntime,
+  type CueSink,
   processRuntimeTurn,
   processRuntimeUntil,
 } from "../agent-runtime.ts";
@@ -73,12 +75,32 @@ function pendingDelegations(
       continue;
     }
     const serder = hby.db.getEvtSerder(pre, said);
-    if (!serder || serder.delpre !== delegatorPre) {
+    if (!serder) {
+      continue;
+    }
+    const sourcePrefix = delegationSourcePrefix(hby, serder, pre);
+    if (sourcePrefix !== delegatorPre) {
       continue;
     }
     pending.push(serder);
   }
   return pending.sort((left, right) => (left.sn ?? 0) - (right.sn ?? 0));
+}
+
+function delegationSourcePrefix(
+  hby: Habery,
+  serder: SerderKERI,
+  pre: string,
+): string | undefined {
+  if (serder.delpre) {
+    return serder.delpre;
+  }
+  if (serder.ilk !== "drt") {
+    return undefined;
+  }
+  const delegatedPre = serder.pre ?? pre;
+  return hby.db.getKever(delegatedPre)?.delpre
+    ?? hby.db.getState(delegatedPre)?.di;
 }
 
 function anchorData(serder: SerderKERI): { i: string; s: string; d: string } {
@@ -137,6 +159,23 @@ function delegateWitnessLogsQuery(
   };
 }
 
+function delegateConfirmSink(
+  runtime: AgentRuntime,
+  hby: Habery,
+  hab: Hab,
+): CueSink {
+  const querySink = queryTransportSink(runtime, hby, hab);
+  return {
+    *send(emission: CueEmission): Operation<void> {
+      if (emission.kind === "wire" && emission.cue.kin === "query") {
+        yield* querySink.send(emission);
+        return;
+      }
+      yield* runtime.respondant.sendWithHab(emission, hab);
+    },
+  };
+}
+
 export function* delegateConfirmCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
@@ -162,7 +201,7 @@ export function* delegateConfirmCommand(
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function* () {
+  const doer = yield* spawn(function*() {
     const hby = yield* setupHby(
       confirmArgs.name!,
       confirmArgs.base ?? "",
@@ -187,7 +226,7 @@ export function* delegateConfirmCommand(
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       try {
-        const sink = queryTransportSink(runtime, hby, hab);
+        const sink = delegateConfirmSink(runtime, hby, hab);
         yield* processRuntimeUntil(
           runtime,
           () => pendingDelegations(hby, hab.pre).length > 0,
@@ -238,6 +277,13 @@ export function* delegateConfirmCommand(
               "Approving event material is incomplete.",
             );
           }
+          const pinApprovalSeal = () => {
+            hby.db.aess.pin(dgKey(serder.pre!, serder.said!), [
+              approving.sner!,
+              new Diger({ qb64: approving.said! }),
+            ]);
+            hab.kvy.processEscrowDelegables();
+          };
           const witnesses = delegateWitnesses(hby, serder).sort();
           const selectedWitness = witnesses[0];
           if (selectedWitness) {
@@ -255,6 +301,10 @@ export function* delegateConfirmCommand(
               serder.sn ?? 0,
               { hab },
             );
+            // No delegate witness exists to query. Process the local delegable
+            // after the delegator has anchored approval; the delegate still
+            // discovers approval through its own delegator-KEL query path.
+            pinApprovalSeal();
             yield* processRuntimeUntil(
               runtime,
               () => querier.done,
@@ -265,12 +315,10 @@ export function* delegateConfirmCommand(
 
           // Match KERIpy sequencing: only record the approving seal and retry
           // delegated unescrow after the delegate event has been observed as
-          // locally committed through the witness-backed replay path.
-          hby.db.aess.pin(dgKey(serder.pre, serder.said), [
-            approving.sner,
-            new Diger({ qb64: approving.said }),
-          ]);
-          hab.kvy.processEscrowDelegables();
+          // locally committed through the witness-backed query/replay path.
+          if (selectedWitness) {
+            pinApprovalSeal();
+          }
 
           if (serder.pre && serder.said) {
             const stillPending = hby.db.delegables.get([serder.pre]).includes(
@@ -284,9 +332,9 @@ export function* delegateConfirmCommand(
           }
 
           console.log(
-            `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${
-              serder.pre ?? ""
-            } using ${interactionApproval ? "ixn" : "rot"}.`,
+            `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${serder.pre ?? ""} using ${
+              interactionApproval ? "ixn" : "rot"
+            }.`,
           );
         }
       } finally {

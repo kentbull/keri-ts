@@ -99,10 +99,10 @@ function* fetchResponseHandleInternal(
       settled = true;
       clearTimer();
       if (
-        nullOnAbort &&
-        error instanceof DOMException &&
-        error.name === "AbortError" &&
-        timedOut
+        nullOnAbort
+        && error instanceof DOMException
+        && error.name === "AbortError"
+        && timedOut
       ) {
         resolve(null);
         return;

@@ -2,13 +2,7 @@
 
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { Ilks, Vrsn_2_0 } from "../../../../cesr/mod.ts";
-import {
-  incept,
-  query,
-  reply,
-  rotate,
-  state,
-} from "../../../src/core/protocol-eventing.ts";
+import { incept, query, reply, rotate, state } from "../../../src/core/protocol-eventing.ts";
 import { KeyStateRecord } from "../../../src/core/records.ts";
 
 const PRE = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";

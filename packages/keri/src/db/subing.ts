@@ -20,11 +20,11 @@ import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 type KeyPart = string | Uint8Array;
 type Keys = KeyPart | Iterable<KeyPart>;
 type CesrValue = Matter | Indexer | Counter;
-type QualifiedCtor<T extends CesrValue> = new (
+type QualifiedCtor<T extends CesrValue> = new(
   init: { qb64b: Uint8Array } | { qb64: string },
 ) => T;
 type SerderCtor<T extends Serder> = {
-  new (init?: unknown): T;
+  new(init?: unknown): T;
   name: string;
 };
 
@@ -35,9 +35,9 @@ function isKeysIterable(value: Keys): value is Iterable<KeyPart> {
 function isNonStringIterable<T>(
   value: T | Iterable<T> | null | undefined,
 ): value is Iterable<T> {
-  return value !== null && value !== undefined && typeof value !== "string" &&
-    !(value instanceof Uint8Array) &&
-    Symbol.iterator in Object(value);
+  return value !== null && value !== undefined && typeof value !== "string"
+    && !(value instanceof Uint8Array)
+    && Symbol.iterator in Object(value);
 }
 
 function asIterable<T>(
@@ -50,8 +50,8 @@ function asIterable<T>(
 }
 
 function asUint8Array(value: Uint8Array): Uint8Array {
-  return value instanceof Uint8Array &&
-      Object.getPrototypeOf(value) === Uint8Array.prototype
+  return value instanceof Uint8Array
+      && Object.getPrototypeOf(value) === Uint8Array.prototype
     ? value
     : new Uint8Array(value);
 }
@@ -148,9 +148,7 @@ export class SuberBase<T = string> {
       return keys;
     }
 
-    const parts = [...keys].map((part) =>
-      typeof part === "string" ? part : t(part)
-    );
+    const parts = [...keys].map((part) => typeof part === "string" ? part : t(part));
     if (topive && parts.at(-1) !== "") {
       parts.push("");
     }
@@ -374,8 +372,8 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
   /** Count ordinal buckets from one starting ordinal under a logical key path. */
   cntOn(keys: Keys = "", on = 0): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return 0;
     }
@@ -518,9 +516,7 @@ export class B64SuberBase<T extends string[] = string[]> extends Suber<T> {
       }
       return vals;
     }
-    const items = [...vals].map((item) =>
-      typeof item === "string" ? item : t(item)
-    );
+    const items = [...vals].map((item) => typeof item === "string" ? item : t(item));
     for (const item of items) {
       if (!isBase64UrlSegment(item)) {
         throw new Error(`Non Base64 value=${item}.`);
@@ -589,8 +585,7 @@ export class CesrSuberBase<T extends CesrValue = CesrValue> extends Suber<T> {
 }
 
 /** Concrete qualified-CESR single-value family. */
-export class CesrSuber<T extends CesrValue = CesrValue>
-  extends CesrSuberBase<T> {}
+export class CesrSuber<T extends CesrValue = CesrValue> extends CesrSuberBase<T> {}
 
 /**
  * Qualified CESR primitive family with an exposed ordinal in the keyspace.
@@ -599,8 +594,7 @@ export class CesrSuber<T extends CesrValue = CesrValue>
  * - exposed ordinal in the physical key (`On*`)
  * - one qualified CESR primitive per logical item
  */
-export class CesrOnSuber<T extends CesrValue = CesrValue>
-  extends OnSuberBase<T> {
+export class CesrOnSuber<T extends CesrValue = CesrValue> extends OnSuberBase<T> {
   protected readonly ctor: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -831,8 +825,8 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
   /** Count members for one effective key, or the whole subdb when the key is empty. */
   override cnt(keys: Keys = "", { ion = 0 }: { ion?: number } = {}): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -918,8 +912,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
  * - synthetic keyspace virtualization (`IoSet*`)
  * - Base64-only tuple-like text payloads
  */
-export class B64IoSetSuber<T extends string[] = string[]>
-  extends IoSetSuber<T> {
+export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> {
   constructor(
     db: LMDBer,
     {
@@ -962,8 +955,7 @@ export class B64IoSetSuber<T extends string[] = string[]>
  * - synthetic keyspace virtualization (`IoSet*`)
  * - one qualified CESR primitive per logical member
  */
-export class CesrIoSetSuber<T extends CesrValue = CesrValue>
-  extends IoSetSuber<T> {
+export class CesrIoSetSuber<T extends CesrValue = CesrValue> extends IoSetSuber<T> {
   protected readonly ctor: QualifiedCtor<T>;
   protected readonly strict: boolean;
 
@@ -1310,8 +1302,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
 }
 
 /** Concrete single-value serder family. */
-export class SerderSuber<T extends Serder = SerderKERI>
-  extends SerderSuberBase<T> {}
+export class SerderSuber<T extends Serder = SerderKERI> extends SerderSuberBase<T> {}
 
 /**
  * Serder family over synthetic insertion-ordered sets.
@@ -1320,8 +1311,7 @@ export class SerderSuber<T extends Serder = SerderKERI>
  * - synthetic keyspace virtualization (`IoSet*`)
  * - typed serder hydration through `smell()` + `parseSerder()`
  */
-export class SerderIoSetSuber<T extends Serder = SerderKERI>
-  extends IoSetSuber<T> {
+export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<T> {
   protected readonly ctor: SerderCtor<T>;
 
   constructor(
@@ -1366,8 +1356,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI>
 }
 
 /** Concrete schemer-style family built on the single-value serder adapter. */
-export class SchemerSuber<T extends Serder = SerderKERI>
-  extends SerderSuberBase<T> {}
+export class SchemerSuber<T extends Serder = SerderKERI> extends SerderSuberBase<T> {}
 
 /**
  * Native dupsort duplicate families (`Dup*` / `IoDup*`).
@@ -1435,8 +1424,8 @@ export class DupSuber<T = string> extends SuberBase<T> {
   /** Count duplicate values at one key, or the whole subdb when the key is empty. */
   override cnt(keys: Keys = ""): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -1605,8 +1594,8 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
   /** Count insertion-ordered duplicate members at one key or across the whole subdb. */
   override cnt(keys: Keys = ""): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -1634,8 +1623,7 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
 }
 
 /** Base64 tuple family over insertion-ordered native duplicates. */
-export class B64IoDupSuber<T extends string[] = string[]>
-  extends IoDupSuber<T> {
+export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> {
   constructor(
     db: LMDBer,
     {
@@ -1806,8 +1794,8 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
   /** Count logical duplicate members for one exposed ordinal bucket or branch. */
   cntOn(keys: Keys = "", on = 0): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -1951,8 +1939,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
 }
 
 /** Base64 tuple family over exposed-ordinal insertion-ordered duplicates. */
-export class B64OnIoDupSuber<T extends string[] = string[]>
-  extends OnIoDupSuber<T> {
+export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber<T> {
   constructor(
     db: LMDBer,
     {
@@ -2391,8 +2378,7 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
 }
 
 /** Base64 tuple family over exposed-ordinal synthetic insertion-ordered sets. */
-export class B64OnIoSetSuber<T extends string[] = string[]>
-  extends OnIoSetSuber<T> {
+export class B64OnIoSetSuber<T extends string[] = string[]> extends OnIoSetSuber<T> {
   constructor(
     db: LMDBer,
     {

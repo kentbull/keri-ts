@@ -2,10 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { type CueSink, processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 
@@ -14,7 +11,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
   const headDirPath = `/tmp/tufa-cue-runtime-${crypto.randomUUID()}`;
   const emissions: Array<{ kind: string; msgs: number; kin: string }> = [];
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -91,7 +88,7 @@ Deno.test("Cue runtime - runtime turn preserves cues without a local habitat int
   const headDirPath = `/tmp/tufa-cue-runtime-fallback-${crypto.randomUUID()}`;
   const emissions: Array<{ kind: string; kin: string }> = [];
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,

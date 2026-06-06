@@ -2,11 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Respondant } from "../../../src/app/respondant.ts";
@@ -106,7 +102,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
   ];
 
   for (const current of cases) {
-    await run(function* () {
+    await run(function*() {
       yield* responder.sendWithHab(current.emission, sourceHab as never);
     });
   }
@@ -168,7 +164,7 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
     topics: { "/reply": 0 },
   };
 
-  await run(function* () {
+  await run(function*() {
     yield* responder.sendWithHab({
       kind: "transport",
       cue,
@@ -215,7 +211,7 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
   };
   const bytes = new Uint8Array([9, 9, 9]);
 
-  const emissions = await run(function* () {
+  const emissions = await run(function*() {
     return yield* processWitnessIngress(
       runtime as never,
       serviceHab as never,
@@ -230,7 +226,7 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
 });
 
 Deno.test("app/runtime-responder - receipt cues for witness-only recipients land in the hosted witness mailbox store", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `runtime-respondant-witness-fallback-${crypto.randomUUID()}`,
       temp: true,

@@ -10,20 +10,12 @@ import {
   type Tier,
   Verfer,
 } from "../../../cesr/mod.ts";
-import {
-  DatabaseNotOpenError,
-  DatabaseOperationError,
-} from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
-import {
-  CatCesrIoSetSuber,
-  CesrSuber,
-  CryptSignerSuber,
-  Suber,
-} from "./subing.ts";
+import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
 
 /** Options for opening a keeper LMDB environment and its named subdb surface. */
 export interface KeeperOptions extends LMDBerOptions {

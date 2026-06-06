@@ -4,46 +4,18 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import { denot } from "../../../../cesr/src/annotate/denot.ts";
 import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";
-import {
-  CtrDexV1,
-  CtrDexV2,
-} from "../../../../cesr/src/tables/counter-codex.ts";
-import {
-  counterV1,
-  counterV2,
-  sigerToken,
-} from "../../../../cesr/test/fixtures/counter-token-fixtures.ts";
+import { CtrDexV1, CtrDexV2 } from "../../../../cesr/src/tables/counter-codex.ts";
+import { counterV1, counterV2, sigerToken } from "../../../../cesr/test/fixtures/counter-token-fixtures.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
 } from "../../../../cesr/test/fixtures/external-vectors.ts";
-import { wrapperHeavyV2Stream } from "../../../../cesr/test/hardening/hardening-helpers.ts";
 import { v1ify } from "../../../../cesr/test/fixtures/versioned-body-fixtures.ts";
-import {
-  createInteropContext,
-  requireSuccess,
-  resolvePythonCommand,
-  runCmd,
-  runTufa,
-  workspaceRoot,
-} from "./interop-test-helpers.ts";
+import { wrapperHeavyV2Stream } from "../../../../cesr/test/hardening/hardening-helpers.ts";
+import { createInteropContext, requireSuccess, runCmd, runTufa, workspaceRoot } from "./interop-test-helpers.ts";
 
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
-
-function keripyRepoRoot(): string {
-  return join(workspaceRoot(), "../../python/keripy");
-}
-
-function localKliEnv(env: Record<string, string>): Record<string, string> {
-  return {
-    ...env,
-    PYTHONPATH: [
-      join(keripyRepoRoot(), "src"),
-      env.PYTHONPATH ?? "",
-    ].filter((item) => item.length > 0).join(":"),
-  };
-}
 
 async function writeTempInput(bytes: Uint8Array): Promise<string> {
   const dir = await Deno.makeTempDir({ prefix: "annotate-interop-" });
@@ -58,14 +30,12 @@ async function runKliAnnotate(
   args: readonly string[] = [],
 ): Promise<string> {
   const path = await writeTempInput(bytes);
-  const python = await resolvePythonCommand(ctx.env, ctx.kliCommand);
   const result = await requireSuccess(
     `kli annotate ${args.join(" ")}`,
     runCmd(
-      python,
-      ["-m", "keri.cli.kli", "annotate", "--in", path, ...args],
-      localKliEnv(ctx.env),
-      keripyRepoRoot(),
+      ctx.kliCommand,
+      ["annotate", "--in", path, ...args],
+      ctx.env,
     ),
   );
   return result.stdout;
@@ -93,10 +63,8 @@ function expectLabels(output: string, labels: readonly string[]): void {
 Deno.test("kli annotate and tufa annotate cover the same CESR stream surfaces", async () => {
   const ctx = await createInteropContext();
   const sigs = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
-  const jsonRpy = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
-  const v1Attachment = `${
-    v1ify('{"v":"KERI10JSON000000_","t":"rpy","d":"Eabc"}')
-  }${
+  const jsonRpy = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
+  const v1Attachment = `${v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}")}${
     counterV1(
       CtrDexV1.AttachmentGroup,
       PARSIDE_GROUP_VECTORS.nonTransReceiptCouples.length / 4,

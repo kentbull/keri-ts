@@ -5,17 +5,14 @@ import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { Cigar, Diger } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import {
-  TransIdxSigGroup,
-  TransReceiptQuadruple,
-} from "../../../src/core/dispatch.ts";
+import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
 import { query as makeQuerySerder } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 Deno.test("app/reactor - query parsing normalizes transferable last-establishment endorsements into source plus sigers", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-qry-ssg-${crypto.randomUUID()}`,
       temp: true,
@@ -55,7 +52,7 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
 });
 
 Deno.test("app/reactor - cloned events replay attached non-transferable receipt couples into Kevery", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `reactor-clone-couples-src-${crypto.randomUUID()}`,
       temp: true,
@@ -118,7 +115,7 @@ Deno.test("app/reactor - cloned events replay attached non-transferable receipt 
 });
 
 Deno.test("app/reactor - cloned events replay attached transferable receipt quadruples into Kevery", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `reactor-clone-trqs-src-${crypto.randomUUID()}`,
       temp: true,
@@ -193,7 +190,7 @@ Deno.test("app/reactor - cloned events replay attached transferable receipt quad
 });
 
 Deno.test("app/reactor - query parsing keeps non-transferable endorsements as runtime cigars", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-qry-cigar-${crypto.randomUUID()}`,
       temp: true,
@@ -231,7 +228,7 @@ Deno.test("app/reactor - query parsing keeps non-transferable endorsements as ru
 });
 
 Deno.test("app/reactor - reply parsing normalizes transferable groups into dispatch value objects", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-${crypto.randomUUID()}`,
       temp: true,
@@ -271,7 +268,7 @@ Deno.test("app/reactor - reply parsing normalizes transferable groups into dispa
 });
 
 Deno.test("app/reactor - reply parsing normalizes non-transferable receipt couples into runtime cigars with verfer", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-nontrans-${crypto.randomUUID()}`,
       temp: true,
@@ -307,7 +304,7 @@ Deno.test("app/reactor - reply parsing normalizes non-transferable receipt coupl
 });
 
 Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier context before runtime dispatch", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-reload-${crypto.randomUUID()}`,
       temp: true,
@@ -350,7 +347,7 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
 });
 
 Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-rct-${crypto.randomUUID()}`,
       temp: true,
@@ -402,7 +399,7 @@ Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", 
 });
 
 Deno.test("app/reactor - malformed and unsupported queries do not throw, and unsupported routes emit invalid cues", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `reactor-qry-invalid-${crypto.randomUUID()}`,
       temp: true,
@@ -443,7 +440,7 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
 });
 
 Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escrow instead of aborting ingress", async () => {
-  await run(function* () {
+  await run(function*() {
     const source = yield* createHabery({
       name: `reactor-ksn-source-${crypto.randomUUID()}`,
       temp: true,

@@ -100,9 +100,9 @@ function queryBodyFromCue(cue: QueryCue): Record<string, unknown> {
 /** Resolve the queried AID from cue-level or body-level portability hints. */
 function extractQueriedPrefix(cue: QueryCue): string | null {
   const body = cue.query ?? cue.q ?? {};
-  const pre = cue.pre ??
-    (typeof body.pre === "string" ? body.pre : null) ??
-    (typeof body.i === "string" ? body.i : null);
+  const pre = cue.pre
+    ?? (typeof body.pre === "string" ? body.pre : null)
+    ?? (typeof body.i === "string" ? body.i : null);
   return typeof pre === "string" && pre.length > 0 ? pre : null;
 }
 
@@ -430,8 +430,7 @@ export class QueryCoordinator implements CueSink {
 
   constructor(
     hby: Habery,
-    { sink = ignoreSink, hab = null }: { sink?: CueSink; hab?: Hab | null } =
-      {},
+    { sink = ignoreSink, hab = null }: { sink?: CueSink; hab?: Hab | null } = {},
   ) {
     this.hby = hby;
     this.sink = sink;
@@ -578,9 +577,7 @@ export class QueryCoordinator implements CueSink {
   }
 
   private compactContinuations(): void {
-    this.continuations = this.continuations.filter((continuation) =>
-      !continuation.done
-    );
+    this.continuations = this.continuations.filter((continuation) => !continuation.done);
   }
 
   /**
@@ -613,8 +610,8 @@ export class QueryCoordinator implements CueSink {
       return null;
     }
 
-    const src = request.src ??
-      this.resolveAttester(hab, request.pre, request.wits);
+    const src = request.src
+      ?? this.resolveAttester(hab, request.pre, request.wits);
     if (!src) {
       return null;
     }
@@ -661,8 +658,8 @@ export class QueryCoordinator implements CueSink {
     }
 
     if (
-      (ends[Roles.mailbox] && Object.keys(ends[Roles.mailbox]).length > 0) &&
-      this.hby.db.getKever(pre)
+      (ends[Roles.mailbox] && Object.keys(ends[Roles.mailbox]).length > 0)
+      && this.hby.db.getKever(pre)
     ) {
       // Mailbox-only topologies still query the controller AID itself; the
       // mailbox role affects delivery transport, not the attester identity.

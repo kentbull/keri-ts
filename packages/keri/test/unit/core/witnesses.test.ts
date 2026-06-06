@@ -1,10 +1,7 @@
 // @file-test-lane core-fast-b
 
 import { assertEquals } from "jsr:@std/assert";
-import {
-  deriveRotatedWitnessSet,
-  hasUniqueWitnesses,
-} from "../../../src/core/witnesses.ts";
+import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "../../../src/core/witnesses.ts";
 
 Deno.test("core/witnesses - deriveRotatedWitnessSet preserves ordered cuts and adds", () => {
   const derived = deriveRotatedWitnessSet(

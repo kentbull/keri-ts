@@ -1,17 +1,6 @@
-import {
-  type AgentRuntime,
-  endpointBasePath,
-  fetchEndpointUrls,
-  type Hab,
-  preferredUrl,
-  Roles,
-} from "keri-ts/runtime";
+import { type AgentRuntime, endpointBasePath, fetchEndpointUrls, type Hab, preferredUrl, Roles } from "keri-ts/runtime";
 import { textResponse } from "../responses.ts";
-import type {
-  OobiRouteRequest,
-  ProtocolRequestContext,
-  ProtocolRoute,
-} from "../types.ts";
+import type { OobiRouteRequest, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
 /** Parse one OOBI-style request path into its route semantics. */
 export function parseOobiRouteRequest(
@@ -20,10 +9,10 @@ export function parseOobiRouteRequest(
   const parts = pathname.split("/").filter((part) => part.length > 0);
 
   if (
-    parts.length >= 4 &&
-    parts[0] === ".well-known" &&
-    parts[1] === "keri" &&
-    parts[2] === "oobi"
+    parts.length >= 4
+    && parts[0] === ".well-known"
+    && parts[1] === "keri"
+    && parts[2] === "oobi"
   ) {
     return {
       kind: "wellKnown",
@@ -190,18 +179,18 @@ export function selectResponderHab(
     if (hosted.kind === "one") {
       const hostedAid = hosted.endpoint?.eid;
       if (
-        hostedAid &&
-        runtime.hby.habs.has(hostedAid) &&
-        (aid === hostedAid || eid === hostedAid)
+        hostedAid
+        && runtime.hby.habs.has(hostedAid)
+        && (aid === hostedAid || eid === hostedAid)
       ) {
         return hostedAid;
       }
       return undefined;
     }
-    return hostedCandidate(aid) ??
-      hostedCandidate(eid) ??
-      rootHostedCandidate(aid) ??
-      rootHostedCandidate(eid);
+    return hostedCandidate(aid)
+      ?? hostedCandidate(eid)
+      ?? rootHostedCandidate(aid)
+      ?? rootHostedCandidate(eid);
   }
 
   if (runtime.hby.habs.has(aid)) {

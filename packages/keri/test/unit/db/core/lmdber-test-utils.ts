@@ -12,7 +12,7 @@ export async function withTempLMDBer(
   label: string,
   fn: (lmdber: LMDBer) => void,
 ): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const lmdber = yield* openLMDB({
       name: `${label}-${crypto.randomUUID()}`,
       temp: true,

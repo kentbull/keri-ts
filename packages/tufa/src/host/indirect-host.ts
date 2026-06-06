@@ -25,8 +25,8 @@ export function* runIndirectHost(
   options: IndirectHostOptions,
 ): Operation<void> {
   const seedHabs = options.seedHabs ?? [options.serviceHab];
-  const hostedPrefixes = options.hostedPrefixes ??
-    seedHabs.map((hab) => hab.pre);
+  const hostedPrefixes = options.hostedPrefixes
+    ?? seedHabs.map((hab) => hab.pre);
   yield* runHostKernel(hby, {
     runtimeMode: "indirect",
     serviceHab: options.serviceHab,

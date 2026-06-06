@@ -22,9 +22,7 @@ function* loadModule<TModule extends CommandModule>(
   return yield* action((resolve, reject) => {
     load()
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
     return () => {};
   });
 }
@@ -39,7 +37,7 @@ export function lazyCommand<TModule extends CommandModule>(
   load: () => Promise<TModule>,
   exportName: string,
 ): CommandHandler {
-  return function* (args: CommandArgs): Operation<void> {
+  return function*(args: CommandArgs): Operation<void> {
     const module = yield* loadModule(load);
     const handler = module[exportName];
     if (typeof handler !== "function") {

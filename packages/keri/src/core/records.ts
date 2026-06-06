@@ -24,8 +24,8 @@ import type { MbxTopicCursor } from "./mailbox-topics.ts";
 const textEncoder = new TextEncoder();
 
 function toUint8Array(bytes: Uint8Array): Uint8Array {
-  return bytes instanceof Uint8Array &&
-      Object.getPrototypeOf(bytes) === Uint8Array.prototype
+  return bytes instanceof Uint8Array
+      && Object.getPrototypeOf(bytes) === Uint8Array.prototype
     ? bytes
     : new Uint8Array(bytes);
 }
@@ -33,9 +33,9 @@ function toUint8Array(bytes: Uint8Array): Uint8Array {
 function isPlainObject(
   value: unknown,
 ): value is Record<string, unknown> {
-  return typeof value === "object" &&
-    value !== null &&
-    Object.getPrototypeOf(value) === Object.prototype;
+  return typeof value === "object"
+    && value !== null
+    && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function normalizeRecordValue(value: unknown): unknown {
@@ -183,8 +183,7 @@ export abstract class RawRecord<
 }
 
 /** Stored plain-object shape carried by one `RawRecord` subclass. */
-export type RecordShapeOf<TRecord extends RawRecord<any>> = TRecord extends
-  RawRecord<infer TShape> ? TShape : never;
+export type RecordShapeOf<TRecord extends RawRecord<any>> = TRecord extends RawRecord<infer TShape> ? TShape : never;
 
 /** Accepted write value for one `RawRecord` family. */
 export type RecordInputOf<TRecord extends RawRecord<any>> =
@@ -193,7 +192,7 @@ export type RecordInputOf<TRecord extends RawRecord<any>> =
 
 /** Runtime record-class contract consumed by `Komer` and related mappers. */
 export interface RawRecordClass<TRecord extends RawRecord<any>> {
-  new (...args: any[]): TRecord;
+  new(...args: any[]): TRecord;
   fromDict<TThis extends RawRecordClass<TRecord>>(
     this: TThis,
     data?: unknown,
@@ -216,8 +215,7 @@ export interface StateEERecordShape {
  * This sub-record captures the latest establishment event referenced by the
  * current key state, including witness/backer cuts and adds.
  */
-export class StateEERecord extends RawRecord<StateEERecordShape>
-  implements StateEERecordShape {
+export class StateEERecord extends RawRecord<StateEERecordShape> implements StateEERecordShape {
   declare s?: string;
   declare d?: string;
   declare br?: string[];
@@ -263,8 +261,7 @@ export interface KeyStateRecordShape {
  * for accepted current key state. Live `Kever` instances are reloaded from
  * this record rather than treating in-memory habitat wrappers as authoritative.
  */
-export class KeyStateRecord extends RawRecord<KeyStateRecordShape>
-  implements KeyStateRecordShape {
+export class KeyStateRecord extends RawRecord<KeyStateRecordShape> implements KeyStateRecordShape {
   declare vn?: number[];
   declare i?: string;
   declare s?: string;
@@ -303,8 +300,7 @@ export interface RegistryRecordShape {
 }
 
 /** Registry metadata keyed by registry name. */
-export class RegistryRecord extends RawRecord<RegistryRecordShape>
-  implements RegistryRecordShape {
+export class RegistryRecord extends RawRecord<RegistryRecordShape> implements RegistryRecordShape {
   declare registryKey: string;
   declare prefix: string;
 }
@@ -323,8 +319,7 @@ export interface RegStateRecordShape {
 }
 
 /** Current registry transaction-state record. */
-export class RegStateRecord extends RawRecord<RegStateRecordShape>
-  implements RegStateRecordShape {
+export class RegStateRecord extends RawRecord<RegStateRecordShape> implements RegStateRecordShape {
   declare vn?: number[];
   declare i?: string;
   declare s?: string;
@@ -360,8 +355,7 @@ export interface VcStateRecordShape {
 }
 
 /** Current credential transaction-state record. */
-export class VcStateRecord extends RawRecord<VcStateRecordShape>
-  implements VcStateRecordShape {
+export class VcStateRecord extends RawRecord<VcStateRecordShape> implements VcStateRecordShape {
   declare vn?: number[];
   declare i?: string;
   declare s?: string;
@@ -396,8 +390,7 @@ export interface EventSourceRecordShape {
  * Used in `Baser.esrs` to distinguish locally protected events from remote
  * events that may still require stronger validation/authentication treatment.
  */
-export class EventSourceRecord extends RawRecord<EventSourceRecordShape>
-  implements EventSourceRecordShape {
+export class EventSourceRecord extends RawRecord<EventSourceRecordShape> implements EventSourceRecordShape {
   declare local?: boolean;
 }
 
@@ -421,8 +414,7 @@ export interface HabitatRecordShape {
  * This record is intentionally metadata-only. Durable event/key state belongs
  * in `states.`/`kels.`/`fels.` and signatures belong in separate DB families.
  */
-export class HabitatRecord extends RawRecord<HabitatRecordShape>
-  implements HabitatRecordShape {
+export class HabitatRecord extends RawRecord<HabitatRecordShape> implements HabitatRecordShape {
   declare hid: string;
   declare name?: string;
   declare domain?: string;
@@ -457,8 +449,7 @@ export interface TopicsRecordShape {
  * Used in `Baser.tops` to track last-seen per-topic indices for witness mailbox
  * retrieval flows.
  */
-export class TopicsRecord extends RawRecord<TopicsRecordShape>
-  implements TopicsRecordShape {
+export class TopicsRecord extends RawRecord<TopicsRecordShape> implements TopicsRecordShape {
   declare topics: MbxTopicCursor;
 }
 
@@ -478,8 +469,7 @@ export interface OutboxMessageRecordShape {
  * - pair with an outbox payload store keyed by the message SAID
  * - act as the parent record for per-mailbox-target delivery state
  */
-export class OutboxMessageRecord extends RawRecord<OutboxMessageRecordShape>
-  implements OutboxMessageRecordShape {
+export class OutboxMessageRecord extends RawRecord<OutboxMessageRecordShape> implements OutboxMessageRecordShape {
   declare sender: string;
   declare recipient: string;
   declare topic: string;
@@ -503,8 +493,7 @@ export interface OutboxTargetRecordShape {
  * - each mailbox endpoint gets its own durable state row
  * - retries and cancellation are tracked per endpoint, not per message
  */
-export class OutboxTargetRecord extends RawRecord<OutboxTargetRecordShape>
-  implements OutboxTargetRecordShape {
+export class OutboxTargetRecord extends RawRecord<OutboxTargetRecordShape> implements OutboxTargetRecordShape {
   declare eid: string;
   declare status: "pending" | "delivered" | "cancelled";
   declare attempts?: number | null;
@@ -530,8 +519,7 @@ export interface OobiQueryRecordShape {
  * - the record contract is ported, but `Baser` does not yet bind an `oobiq`
  *   store because current KERIpy does not actively wire that family either
  */
-export class OobiQueryRecord extends RawRecord<OobiQueryRecordShape>
-  implements OobiQueryRecordShape {
+export class OobiQueryRecord extends RawRecord<OobiQueryRecordShape> implements OobiQueryRecordShape {
   declare cid?: string | null;
   declare role?: string | null;
   declare eids?: string[];
@@ -565,8 +553,7 @@ export interface OobiRecordShape {
  *
  * Shared by the active, escrowed, resolved, MFA, and related OOBI stores.
  */
-export class OobiRecord extends RawRecord<OobiRecordShape>
-  implements OobiRecordShape {
+export class OobiRecord extends RawRecord<OobiRecordShape> implements OobiRecordShape {
   declare oobialias?: string | null;
   declare said?: string | null;
   declare cid?: string | null;
@@ -600,8 +587,7 @@ export interface EndpointRecordShape {
  * Stored in `Baser.ends` for `(cid, role, eid)` paths and populated from
  * reply/expose message processing when those higher-layer flows are ported.
  */
-export class EndpointRecord extends RawRecord<EndpointRecordShape>
-  implements EndpointRecordShape {
+export class EndpointRecord extends RawRecord<EndpointRecordShape> implements EndpointRecordShape {
   declare allowed?: boolean | null;
   declare enabled?: boolean | null;
   declare name?: string;
@@ -618,8 +604,7 @@ export interface EndAuthRecordShape {
  * KERIpy correspondence:
  * - mirrors `EndAuthRecord` from `keri.recording`
  */
-export class EndAuthRecord extends RawRecord<EndAuthRecordShape>
-  implements EndAuthRecordShape {
+export class EndAuthRecord extends RawRecord<EndAuthRecordShape> implements EndAuthRecordShape {
   declare cid?: string;
   declare roles?: string[];
 
@@ -642,8 +627,7 @@ export interface LocationRecordShape {
  * KERIpy correspondence:
  * - mirrors `LocationRecord` from `keri.recording`
  */
-export class LocationRecord extends RawRecord<LocationRecordShape>
-  implements LocationRecordShape {
+export class LocationRecord extends RawRecord<LocationRecordShape> implements LocationRecordShape {
   declare url: string;
 }
 
@@ -661,8 +645,7 @@ export interface ObservedRecordShape {
  *
  * Stored in `Baser.obvs` for `(cid, aid, oid)` paths.
  */
-export class ObservedRecord extends RawRecord<ObservedRecordShape>
-  implements ObservedRecordShape {
+export class ObservedRecord extends RawRecord<ObservedRecordShape> implements ObservedRecordShape {
   declare enabled?: boolean | null;
   declare name?: string;
   declare datetime?: string | null;
@@ -684,8 +667,7 @@ export interface CacheTypeRecordShape {
  * KERIpy correspondence:
  * - mirrors `CacheTypeRecord` from `keri.recording`
  */
-export class CacheTypeRecord extends RawRecord<CacheTypeRecordShape>
-  implements CacheTypeRecordShape {
+export class CacheTypeRecord extends RawRecord<CacheTypeRecordShape> implements CacheTypeRecordShape {
   declare d?: number;
   declare sl?: number;
   declare ll?: number;
@@ -710,8 +692,7 @@ export interface MsgCacheRecordShape {
  * KERIpy correspondence:
  * - mirrors `MsgCacheRecord` from `keri.recording`
  */
-export class MsgCacheRecord extends RawRecord<MsgCacheRecordShape>
-  implements MsgCacheRecordShape {
+export class MsgCacheRecord extends RawRecord<MsgCacheRecordShape> implements MsgCacheRecordShape {
   declare mdt?: string;
   declare d?: number;
   declare ml?: number;
@@ -736,8 +717,7 @@ export interface TxnMsgCacheRecordShape {
  * KERIpy correspondence:
  * - mirrors `TxnMsgCacheRecord` from `keri.recording`
  */
-export class TxnMsgCacheRecord extends RawRecord<TxnMsgCacheRecordShape>
-  implements TxnMsgCacheRecordShape {
+export class TxnMsgCacheRecord extends RawRecord<TxnMsgCacheRecordShape> implements TxnMsgCacheRecordShape {
   declare mdt?: string;
   declare xdt?: string;
   declare d?: number;
@@ -760,8 +740,7 @@ export interface WellKnownAuthNShape {
  *
  * Stored through `IoSetKomer` in `Baser.wkas`.
  */
-export class WellKnownAuthN extends RawRecord<WellKnownAuthNShape>
-  implements WellKnownAuthNShape {
+export class WellKnownAuthN extends RawRecord<WellKnownAuthNShape> implements WellKnownAuthNShape {
   declare url: string;
   declare dt: string;
 }

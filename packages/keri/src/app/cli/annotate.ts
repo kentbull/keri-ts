@@ -86,12 +86,10 @@ function sleep(ms: number): Promise<void> {
 
 function* readAllStdinOp(): Operation<Uint8Array> {
   const { operation, resolve, reject } = withResolvers<Uint8Array>();
-  const task = yield* spawn(function* () {
+  const task = yield* spawn(function*() {
     readAllStdinAsync()
       .then(resolve)
-      .catch((error) =>
-        reject(error instanceof Error ? error : new Error(String(error)))
-      );
+      .catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
   });
   yield* task;
   return yield* operation;

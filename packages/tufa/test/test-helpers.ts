@@ -1,9 +1,6 @@
 import { action, type Operation, spawn, type Task } from "effection";
 import type { AgentRuntime } from "keri-ts/runtime";
-import {
-  type RuntimeHttpHostOptions,
-  startServer,
-} from "../src/host/http-server.ts";
+import { type RuntimeHttpHostOptions, startServer } from "../src/host/http-server.ts";
 
 export interface CmdResult {
   code: number;
@@ -223,7 +220,7 @@ export function* startTestServer(
   options: RuntimeHttpHostOptions = {},
 ): Operation<StartedRuntimeServer> {
   const listening = Promise.withResolvers<TestListenAddress>();
-  const task = yield* spawn(function* () {
+  const task = yield* spawn(function*() {
     yield* startServer(0, undefined, runtime, {
       ...options,
       onListen: ({ hostname, port }) => {

@@ -34,7 +34,7 @@ Deno.test("notifications CLI list, mark-read, and remove round-trip local notice
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name,
         headDirPath,

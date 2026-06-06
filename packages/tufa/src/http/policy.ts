@@ -45,14 +45,14 @@ export function resolveTufaHttpAppPolicy(
   return {
     logger: options.logger ?? consoleLogger,
     cors: {
-      allowOrigin: options.cors?.allowOrigin ??
-        DEFAULT_TUFA_CORS_POLICY.allowOrigin,
-      allowMethods: options.cors?.allowMethods ??
-        DEFAULT_TUFA_CORS_POLICY.allowMethods,
-      allowHeaders: options.cors?.allowHeaders ??
-        DEFAULT_TUFA_CORS_POLICY.allowHeaders,
-      exposeHeaders: options.cors?.exposeHeaders ??
-        DEFAULT_TUFA_CORS_POLICY.exposeHeaders,
+      allowOrigin: options.cors?.allowOrigin
+        ?? DEFAULT_TUFA_CORS_POLICY.allowOrigin,
+      allowMethods: options.cors?.allowMethods
+        ?? DEFAULT_TUFA_CORS_POLICY.allowMethods,
+      allowHeaders: options.cors?.allowHeaders
+        ?? DEFAULT_TUFA_CORS_POLICY.allowHeaders,
+      exposeHeaders: options.cors?.exposeHeaders
+        ?? DEFAULT_TUFA_CORS_POLICY.exposeHeaders,
     },
   };
 }

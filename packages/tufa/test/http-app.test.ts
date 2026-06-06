@@ -1,8 +1,4 @@
-import {
-  assertEquals,
-  assertMatch,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertMatch, assertStringIncludes } from "jsr:@std/assert";
 import { type Logger, ValidationError } from "keri-ts/runtime";
 import { createTufaApp } from "../src/http/app.ts";
 
@@ -14,10 +10,9 @@ interface LogEntry {
 
 function createStubLogger(): { logger: Logger; entries: LogEntry[] } {
   const entries: LogEntry[] = [];
-  const record =
-    (level: LogEntry["level"]) => (message: string, ...meta: unknown[]) => {
-      entries.push({ level, message, meta });
-    };
+  const record = (level: LogEntry["level"]) => (message: string, ...meta: unknown[]) => {
+    entries.push({ level, message, meta });
+  };
 
   return {
     logger: {
@@ -85,9 +80,7 @@ Deno.test("tufa/http app - request logging uses normalized path and omits reques
   assertMatch(infoEntries[0]!.message, /^POST \/foo -> 204 \d+\.\dms$/);
   assertEquals(infoEntries[0]!.message.includes("super-secret-body"), false);
   assertEquals(
-    infoEntries.some((entry) =>
-      `${entry.message} ${entry.meta.join(" ")}`.includes("super-secret-body")
-    ),
+    infoEntries.some((entry) => `${entry.message} ${entry.meta.join(" ")}`.includes("super-secret-body")),
     false,
   );
 });

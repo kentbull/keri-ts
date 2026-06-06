@@ -66,8 +66,8 @@ export class ChallengeHandler implements ExchangeRouteHandler {
     attachments: ExchangeAttachment[];
   }): boolean {
     const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
-    return challengeWordsFromPayload(payload) !== null &&
-      args.attachments.length === 0;
+    return challengeWordsFromPayload(payload) !== null
+      && args.attachments.length === 0;
   }
 
   handle(args: {
@@ -184,8 +184,8 @@ function challengeWordsEqual(
   actual: readonly string[],
   expected: readonly string[],
 ): boolean {
-  return actual.length === expected.length &&
-    actual.every((word, index) => word === expected[index]);
+  return actual.length === expected.length
+    && actual.every((word, index) => word === expected[index]);
 }
 
 function challengeWordsFromPayload(

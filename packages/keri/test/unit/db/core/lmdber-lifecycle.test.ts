@@ -7,7 +7,7 @@ import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
 import { LMDBer } from "../../../../src/db/core/lmdber.ts";
 
 Deno.test("db/core lmdber lifecycle - reopen preserves data and close clears env state", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = new LMDBer({
       name: `lifecycle-${crypto.randomUUID()}`,
       temp: true,
@@ -43,7 +43,7 @@ Deno.test("db/core lmdber lifecycle - readonly reopen on a missing database retu
   const headDirPath = await Deno.makeTempDir({ prefix: "lmdber-readonly-" });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const lmdber = new LMDBer({
         headDirPath,
         base: "missing",
@@ -64,7 +64,7 @@ Deno.test("db/core lmdber lifecycle - readonly reopen on a missing database retu
 });
 
 Deno.test("db/core lmdber lifecycle - getVer and setVer handle overwrite, missing metadata, and empty markers", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = new LMDBer({
       name: `version-${crypto.randomUUID()}`,
       temp: true,
@@ -87,7 +87,7 @@ Deno.test("db/core lmdber lifecycle - getVer and setVer handle overwrite, missin
 });
 
 Deno.test("db/core lmdber lifecycle - openDB changes duplicate semantics for named databases", async () => {
-  await run(function* () {
+  await run(function*() {
     const lmdber = new LMDBer({
       name: `named-db-${crypto.randomUUID()}`,
       temp: true,

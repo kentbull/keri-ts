@@ -3,15 +3,8 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
-import {
-  readCesrRequestBytes,
-  splitCesrStream,
-} from "../../../src/app/cesr-http.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
+import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { queryTransportSink } from "../../../src/app/query-transport.ts";
@@ -31,7 +24,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: `query-transport-local-${crypto.randomUUID()}`,
         temp: true,
@@ -146,7 +139,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: `query-transport-witness-local-${crypto.randomUUID()}`,
         temp: true,
@@ -289,7 +282,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: `query-transport-sse-local-${crypto.randomUUID()}`,
         temp: true,

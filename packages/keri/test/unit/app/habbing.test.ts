@@ -24,14 +24,12 @@ import {
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
-import {
-  Anchorer,
-  DELEGATE_REQUEST_ROUTE,
-} from "../../../src/app/delegating.ts";
+import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
-import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
+import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
+import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -53,7 +51,7 @@ function makeEmbeddedExchangeMessage(
 }
 
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-rotate-${crypto.randomUUID()}`,
       temp: true,
@@ -114,7 +112,7 @@ Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", asyn
 });
 
 Deno.test("Hab.interact advances accepted state, preserves keys, and commits anchor data", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-interact-${crypto.randomUUID()}`,
       temp: true,
@@ -180,7 +178,7 @@ Deno.test("Hab.interact advances accepted state, preserves keys, and commits anc
 });
 
 Deno.test("Hab.interact preserves hex-width boundaries across successive accepted events", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-interact-hex-${crypto.randomUUID()}`,
       temp: true,
@@ -232,7 +230,7 @@ Deno.test("Hab.interact preserves hex-width boundaries across successive accepte
 });
 
 Deno.test("Anchorer uses the proxy habitat for delegated inception and retries witness-backed anchor queries from dune", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-${crypto.randomUUID()}`,
       temp: true,
@@ -438,7 +436,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
 });
 
 Deno.test("Anchorer completes delegated inception once the delegator approval is locally discoverable", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-coordinator-complete-${crypto.randomUUID()}`,
       temp: true,
@@ -512,7 +510,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
 });
 
 Deno.test("Anchorer fails delegated inception without an explicit proxy", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-requires-proxy-${crypto.randomUUID()}`,
       temp: true,
@@ -571,7 +569,7 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
 });
 
 Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues a witness-backed anchor query by default", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-rotation-default-sender-${crypto.randomUUID()}`,
       temp: true,
@@ -724,7 +722,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
 });
 
 Deno.test("Hab.replyToOobi refuses unapproved delegated state and serves approved delegation chains", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `habery-delegate-oobi-${crypto.randomUUID()}`,
       temp: true,
@@ -786,7 +784,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -837,7 +835,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -868,11 +866,281 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   });
 });
 
+Deno.test("Habery makeGroupHab creates a local group inception and persists member metadata", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-group-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [
+          member1.pre,
+          member2.pre,
+        ],
+        undefined,
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+        },
+      );
+
+      assertEquals(group.hab.pre, group.serder.pre);
+      assertEquals(group.sigers.map((siger) => siger.index), [0, 1]);
+      assertEquals(group.message.length > group.serder.raw.length, true);
+      assertEquals(hby.db.getKever(group.hab.pre)?.sn, 0);
+      assertEquals(hby.db.groups.has(group.hab.pre), true);
+
+      const stored = hby.db.getHab(group.hab.pre);
+      assertEquals(stored?.hid, group.hab.pre);
+      assertEquals(stored?.mid, member1.pre);
+      assertEquals(stored?.smids, [member1.pre, member2.pre]);
+      assertEquals(stored?.rmids, [member1.pre, member2.pre]);
+      assertEquals(
+        hby.ks.getSmids(group.hab.pre).map(([, number]) => number.num),
+        [
+          0n,
+          1n,
+        ],
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("eventReplayMessage includes stored witness indexed signatures", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `habery-replay-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `habery-replay-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const witness = source.makeHab("wit", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = source.makeHab("ctrl", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      if (!event?.pre || !event.said || event.sn === null) {
+        throw new Error("Expected accepted witnessed controller event.");
+      }
+
+      const kvy = new Kevery(remote.db);
+      kvy.processEvent({
+        serder: event,
+        sigers: controller.sign(event.raw, true) as Siger[],
+        wigers: witness.sign(event.raw, true) as Siger[],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      });
+
+      assertEquals(remote.db.wigs.get(dgKey(event.pre, event.said)).length, 1);
+      const replay = eventReplayMessage(remote, event);
+      const replayAttachments = new TextDecoder().decode(
+        replay.slice(event.size),
+      );
+      const witnessCounter = new TextDecoder().decode(
+        new Counter({
+          code: CtrDexV1.WitnessIdxSigs,
+          count: 1,
+          version: { major: 1, minor: 0 },
+        }).qb64b,
+      );
+      assertStringIncludes(replayAttachments, witnessCounter);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("eventPayloadMessage can clone a pre-approval delegated event", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegated-payload-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [member1.pre, member2.pre],
+        [member1.pre, member2.pre],
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+          delpre: delegator.pre,
+        },
+      );
+
+      if (!group.serder.pre || !group.serder.said) {
+        throw new Error("Expected delegated group event prefix and SAID.");
+      }
+      assertEquals(hby.db.getFelFn(group.serder.pre, group.serder.said), null);
+      assertThrows(
+        () => eventReplayMessage(hby, group.serder),
+        Error,
+        "Missing first-seen ordinal",
+      );
+      const payload = eventPayloadMessage(hby, group.serder);
+      assertStringIncludes(
+        new TextDecoder().decode(payload.slice(group.serder.size)),
+        new TextDecoder().decode(
+          new Counter({
+            code: CtrDexV1.ControllerIdxSigs,
+            count: 2,
+            version: { major: 1, minor: 0 },
+          }).qb64b,
+        ),
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Habery skips pending delegated group records during reopen", async () => {
+  const name = `habery-pending-group-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  let groupPre = "";
+
+  await run(function*() {
+    const hby = yield* createHabery({ name, headDirPath });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [
+          member1.pre,
+          member2.pre,
+        ],
+        undefined,
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+          delpre: delegator.pre,
+        },
+      );
+      groupPre = group.hab.pre;
+
+      assertEquals(hby.db.getHab(groupPre)?.mid, member1.pre);
+      assertEquals(hby.db.getKever(groupPre), null);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  await run(function*() {
+    const hby = yield* createHabery({ name, headDirPath });
+    try {
+      assertEquals(hby.db.getHab(groupPre)?.name, "team");
+      assertEquals(hby.habs.has(groupPre), false);
+      assertEquals(hby.db.getKever(groupPre), null);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues", async () => {
   const name = `habery-local-kevery-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -905,7 +1173,7 @@ Deno.test("Habery reconfigure preserves top-level OOBI preload queues", async ()
   const name = `habery-config-oobi-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -950,7 +1218,7 @@ Deno.test("Hab reconfigure applies alias-scoped controller curls through reply a
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const url = "http://127.0.0.1:7002/controller";
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -998,7 +1266,7 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
   let endSaid = "";
   let locSaid = "";
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -1033,7 +1301,7 @@ Deno.test("Habery reconfigure reapplies alias-scoped controller curls idempotent
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -1059,7 +1327,7 @@ Deno.test("Hab receives KERIpy-style config and local routing seams from Habery"
   const name = `habery-injected-seams-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name,
       headDirPath,
@@ -1110,7 +1378,7 @@ Deno.test("Hab endorse matches KERIpy EXN pipelining modes", async () => {
   const name = `habery-endorse-exn-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1151,7 +1419,7 @@ Deno.test("Habery inception reuses one Habery across prefix and threshold varian
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const nested = [{ "1": ["1/2", "1/2"] }];
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1222,7 +1490,7 @@ Deno.test("Hab and Signator signing keep indexed and unindexed overload behavior
   const name = `habery-sign-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1277,7 +1545,7 @@ Deno.test("Hab receipt helpers reuse one Habery across witness and receipt varia
   const name = `habery-receipts-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1382,7 +1650,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
   const bran = "MyPasscodeARealSecret";
   let signatoryPre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1414,7 +1682,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1444,7 +1712,7 @@ Deno.test("encrypted Habery reopens its signator and signs with the same passcod
 
   await assertRejects(
     () =>
-      run(function* () {
+      run(function*() {
         const hby = yield* createHabery({
           name,
           headDirPath,
@@ -1466,7 +1734,7 @@ Deno.test("Signator reuses the Habery narrow dependency seam across reopen", asy
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   let signatoryPre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1487,7 +1755,7 @@ Deno.test("Signator reuses the Habery narrow dependency seam across reopen", asy
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,

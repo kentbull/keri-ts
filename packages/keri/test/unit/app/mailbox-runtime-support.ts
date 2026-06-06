@@ -1,10 +1,6 @@
 import { type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -31,7 +27,7 @@ export async function authorizeMailboxPollTarget(
   mailboxPre: string,
   mailboxUrl: string,
 ): Promise<void> {
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const resolved = yield* testCLICommand(
       oobiResolveCommand({
         name,
@@ -117,7 +113,7 @@ export async function seedHostedController(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -159,7 +155,7 @@ export async function seedLocalController(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name,
       headDirPath,

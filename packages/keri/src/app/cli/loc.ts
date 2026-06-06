@@ -1,10 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import {
-  createAgentRuntime,
-  ingestKeriBytes,
-  processRuntimeTurn,
-} from "../agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
 import { setupHby } from "./common/existing.ts";
 
 /** Parsed arguments for `tufa loc add`. */
@@ -95,9 +91,9 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
     for (let i = 0; i < 4; i += 1) {
       yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
       if (
-        hby.db.locs.get([eid, scheme])?.url === commandArgs.url &&
-        !!hby.db.lans.get([eid, scheme]) &&
-        hab.loadLocScheme(eid, scheme).length > 0
+        hby.db.locs.get([eid, scheme])?.url === commandArgs.url
+        && !!hby.db.lans.get([eid, scheme])
+        && hab.loadLocScheme(eid, scheme).length > 0
       ) {
         console.log(
           `Location ${commandArgs.url} added for aid ${eid} with scheme ${scheme}`,

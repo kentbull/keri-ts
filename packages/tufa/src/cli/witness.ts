@@ -122,14 +122,10 @@ export function* witnessStartCommand(
     console.log(`TCP URL         ${startup.tcpUrl}`);
     console.log(`Mailbox Admin   ${adminUrl(startup.httpUrl)}`);
     console.log(
-      `Witness OOBI    ${
-        canonicalOrigin(startup.httpUrl)
-      }/oobi/${hab.pre}/witness/${hab.pre}`,
+      `Witness OOBI    ${canonicalOrigin(startup.httpUrl)}/oobi/${hab.pre}/witness/${hab.pre}`,
     );
     console.log(
-      `Mailbox OOBI    ${
-        canonicalOrigin(startup.httpUrl)
-      }/oobi/${hab.pre}/mailbox/${hab.pre}`,
+      `Mailbox OOBI    ${canonicalOrigin(startup.httpUrl)}/oobi/${hab.pre}/mailbox/${hab.pre}`,
     );
     console.log(`HTTP Listen     ${httpListenHost}:${httpPort}`);
     console.log(`TCP Listen      ${tcpListenHost}:${tcpPort}`);
@@ -288,9 +284,7 @@ function witnessConfigCandidates(
   candidates.add(configFile);
   candidates.add(fileName);
 
-  const homes = [Deno.env.get("HOME")].filter((value): value is string =>
-    !!value
-  );
+  const homes = [Deno.env.get("HOME")].filter((value): value is string => !!value);
   const suffixes = compat ? [".keri/cf"] : [".tufa/cf", "keri/cf"];
 
   if (headDirPath) {
@@ -366,10 +360,10 @@ function resolveWitnessStartupMaterial(
       source: "config" as const,
     };
     if (
-      cli &&
-      (cli.httpUrl !== configured.httpUrl ||
-        cli.tcpUrl !== configured.tcpUrl ||
-        cli.datetime !== configured.datetime)
+      cli
+      && (cli.httpUrl !== configured.httpUrl
+        || cli.tcpUrl !== configured.tcpUrl
+        || cli.datetime !== configured.datetime)
     ) {
       throw new ValidationError(
         `Config section '${args
@@ -408,8 +402,8 @@ function validateWitnessHabitat(hby: Habery, hab: Hab): void {
     );
   }
   if (
-    record?.mid || (record?.smids?.length ?? 0) > 0 ||
-    (record?.rmids?.length ?? 0) > 0
+    record?.mid || (record?.smids?.length ?? 0) > 0
+    || (record?.rmids?.length ?? 0) > 0
   ) {
     throw new ValidationError(
       `Witness alias ${hab.name} must be a local single-identifier habitat.`,
@@ -433,14 +427,10 @@ function storedWitnessStartupMaterial(
 ): WitnessStartupMaterial | null {
   const urls = fetchEndpointUrls(hby, pre);
   const httpEntries = [urls.https, urls.http]
-    .filter((entry): entry is string =>
-      typeof entry === "string" && entry.length > 0
-    )
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
     .map(normalizeHttpUrl);
   const tcpEntries = [urls.tcp]
-    .filter((entry): entry is string =>
-      typeof entry === "string" && entry.length > 0
-    )
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
     .map(normalizeTcpUrl);
   if (httpEntries.length === 0 || tcpEntries.length === 0) {
     return null;
@@ -468,12 +458,12 @@ function witnessIdentityComplete(
   startup: WitnessStartupMaterial,
 ): boolean {
   const stored = storedWitnessStartupMaterial(hby, pre);
-  return !!stored &&
-    stored.httpUrl === normalizeHttpUrl(startup.httpUrl) &&
-    stored.tcpUrl === normalizeTcpUrl(startup.tcpUrl) &&
-    roleEnabled(hby, pre, EndpointRoles.controller, pre) &&
-    roleEnabled(hby, pre, EndpointRoles.witness, pre) &&
-    roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
+  return !!stored
+    && stored.httpUrl === normalizeHttpUrl(startup.httpUrl)
+    && stored.tcpUrl === normalizeTcpUrl(startup.tcpUrl)
+    && roleEnabled(hby, pre, EndpointRoles.controller, pre)
+    && roleEnabled(hby, pre, EndpointRoles.witness, pre)
+    && roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
 }
 
 function* reconcileWitnessIdentity(
@@ -663,12 +653,12 @@ function bindableAdvertiseHost(host?: string): string {
 }
 
 function isBindableLiteralHost(hostname: string): boolean {
-  return hostname === "localhost" ||
-    hostname === "0.0.0.0" ||
-    hostname === "::" ||
-    hostname === "::1" ||
-    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
-    hostname.includes(":");
+  return hostname === "localhost"
+    || hostname === "0.0.0.0"
+    || hostname === "::"
+    || hostname === "::1"
+    || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
+    || hostname.includes(":");
 }
 
 function canonicalOrigin(url: string): string {
