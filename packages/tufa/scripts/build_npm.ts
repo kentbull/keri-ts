@@ -14,8 +14,23 @@ interface PackageManifest {
 
 interface BuiltNpmPackageManifest {
   name?: string;
+  main?: string;
+  module?: string;
+  types?: string;
+  bin?: Record<string, string>;
   exports?: Record<string, unknown>;
 }
+
+interface TufaNpmTargets {
+  root: {
+    import: string;
+    types: string;
+  };
+  bin: string;
+}
+
+const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
+const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
 
 function resolvePackageVersion(): string {
   const raw = Deno.readTextFileSync("./package.json");
@@ -56,21 +71,106 @@ function writeDntImportMap(
   );
 }
 
-function normalizeBuiltManifest(): void {
+function listFilesSync(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of Deno.readDirSync(dir)) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory) {
+      files.push(...listFilesSync(path));
+    } else if (entry.isFile) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+function toPackagePath(path: string): string {
+  return `./${path.replace(`${OUT_DIR}/`, "")}`;
+}
+
+function findGeneratedEntrypoint(
+  root: string,
+  fileName: string,
+  marker: string,
+): string {
+  const matches = listFilesSync(root).filter((path) => {
+    if (!path.endsWith(`/${fileName}`)) {
+      return false;
+    }
+    return Deno.readTextFileSync(path).includes(marker);
+  });
+
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected exactly one generated ${fileName} containing ${
+        JSON.stringify(marker)
+      } under ${root}, found ${matches.length}: ${matches.join(", ")}`,
+    );
+  }
+
+  return toPackagePath(matches[0]);
+}
+
+function assertPackagePathExists(path: string): void {
+  const relative = path.replace(/^\.\//, "");
+  const fullPath = `${OUT_DIR}/${relative}`;
+  const stat = Deno.statSync(fullPath);
+  if (!stat.isFile) {
+    throw new Error(`Expected npm package path to be a file: ${path}`);
+  }
+}
+
+function resolveGeneratedTargets(): TufaNpmTargets {
+  const targets = {
+    root: {
+      import: findGeneratedEntrypoint(
+        `${OUT_DIR}/esm`,
+        "index.js",
+        ROOT_ENTRYPOINT_MARKER,
+      ),
+      types: findGeneratedEntrypoint(
+        `${OUT_DIR}/types`,
+        "index.d.ts",
+        ROOT_ENTRYPOINT_MARKER,
+      ),
+    },
+    bin: findGeneratedEntrypoint(
+      `${OUT_DIR}/esm`,
+      "cli-node.js",
+      BIN_ENTRYPOINT_MARKER,
+    ),
+  };
+
+  assertPackagePathExists(targets.root.import);
+  assertPackagePathExists(targets.root.types);
+  assertPackagePathExists(targets.bin);
+
+  return targets;
+}
+
+function normalizeBuiltManifest(): TufaNpmTargets {
   const packageJsonPath = `${OUT_DIR}/package.json`;
   const raw = Deno.readTextFileSync(packageJsonPath);
   const manifest = JSON.parse(raw) as BuiltNpmPackageManifest;
+  const targets = resolveGeneratedTargets();
   manifest.name = "@keri-ts/tufa";
+  manifest.main = targets.root.import;
+  manifest.module = targets.root.import;
+  manifest.types = targets.root.types;
   manifest.exports = {
     ".": {
-      import: NPM_MAIN_PATH,
-      types: NPM_TYPES_PATH,
+      import: targets.root.import,
+      types: targets.root.types,
     },
+  };
+  manifest.bin = {
+    tufa: targets.bin,
   };
   Deno.writeTextFileSync(
     packageJsonPath,
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
+  return targets;
 }
 
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
@@ -147,7 +247,7 @@ try {
       },
     },
     postBuild() {
-      normalizeBuiltManifest();
+      const targets = normalizeBuiltManifest();
       try {
         Deno.removeSync(`${OUT_DIR}/esm/keri`, { recursive: true });
       } catch {
@@ -161,7 +261,7 @@ try {
       Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
       Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
 
-      const binPath = `${OUT_DIR}/${NPM_BIN_PATH.replace(/^\.\//, "")}`;
+      const binPath = `${OUT_DIR}/${targets.bin.replace(/^\.\//, "")}`;
       const current = Deno.readTextFileSync(binPath);
       if (!current.startsWith("#!/usr/bin/env node\n")) {
         Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);

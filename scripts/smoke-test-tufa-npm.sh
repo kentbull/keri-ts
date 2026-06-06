@@ -35,6 +35,65 @@ if [[ ! -f "${SAMPLES_DIR}/${SAMPLE_STREAM_REL}" ]]; then
   exit 1
 fi
 
+assert_tarball_package_targets() {
+  local manifest_json
+  local target_paths
+  manifest_json="$(tar -xOzf "${TARBALL_PATH}" package/package.json)"
+  target_paths="$(MANIFEST_JSON="${manifest_json}" node --input-type=module - <<'EOF'
+const manifest = JSON.parse(process.env.MANIFEST_JSON ?? "{}");
+const targets = [];
+
+function collectTarget(target) {
+  if (typeof target === "string") {
+    targets.push(target);
+    return;
+  }
+  if (!target || typeof target !== "object") {
+    return;
+  }
+  for (const value of Object.values(target)) {
+    collectTarget(value);
+  }
+}
+
+collectTarget(manifest.main);
+collectTarget(manifest.module);
+collectTarget(manifest.types);
+collectTarget(manifest.bin);
+for (const target of Object.values(manifest.exports ?? {})) {
+  collectTarget(target);
+}
+
+for (const target of [...new Set(targets)]) {
+  if (!target.startsWith("./")) {
+    continue;
+  }
+  console.log(`package/${target.slice(2)}`);
+}
+EOF
+)"
+
+  if [[ -z "${target_paths}" ]]; then
+    echo "No package export/bin targets found in ${TARBALL_PATH}" >&2
+    exit 1
+  fi
+
+  local listing
+  listing="$(tar -tzf "${TARBALL_PATH}")"
+  while IFS= read -r target_path; do
+    if ! grep -qxF "${target_path}" <<<"${listing}"; then
+      echo "Packed tarball is missing package target: ${target_path}" >&2
+      echo "Package targets:" >&2
+      echo "${target_paths}" >&2
+      echo "Matching package contents:" >&2
+      grep -E '^package/(package\.json|esm/|types/)' <<<"${listing}" | head -200 >&2
+      exit 1
+    fi
+  done <<<"${target_paths}"
+}
+
+assert_tarball_package_targets
+
 TARBALL_DIR="$(cd "$(dirname "${TARBALL_PATH}")" && pwd)"
 TARBALL_NAME="$(basename "${TARBALL_PATH}")"
 INSTALL_TARGETS=("/pkg/${TARBALL_NAME}")
