@@ -28,7 +28,7 @@
     "test:quality:core-fast-a": "bash ../../scripts/ci/run-keri-test-group.sh core-fast-a",
     "test:quality:core-fast-b": "bash ../../scripts/ci/run-keri-test-group.sh core-fast-b",
     "test:quality:core-fast": "bash ../../scripts/ci/run-keri-test-group.sh core-fast",
-    "test:quality:core-fast-parallel": "deno run -A ../../scripts/ci/run-keri-core-fast-parallel.ts",
+    "test:quality:core-fast-parallel": "bash ../../scripts/ci/run-keri-test-group.sh core-fast",
     "test:quality:app-fast": "bash ../../scripts/ci/run-keri-test-group.sh app-fast",
     "test:quality:app-fast-parallel": "bash ../../scripts/ci/run-keri-test-group.sh app-fast-parallel",
     "test:quality:app-fast-isolated": "bash ../../scripts/ci/run-keri-test-group.sh app-fast-isolated",

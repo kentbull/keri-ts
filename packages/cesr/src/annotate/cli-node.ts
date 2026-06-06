@@ -1,3 +1,4 @@
+/** npm executable entrypoint for `cesr-annotate`. */
 import { readFile, writeFile } from "node:fs/promises";
 import { argv, exit, stderr, stdin, stdout } from "node:process";
 import { annotateCli, type CliIo } from "./cli.ts";

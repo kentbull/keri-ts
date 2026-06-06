@@ -1,12 +1,15 @@
 {
   "version": "0.2.2",
   "tasks": {
-    "fmt": "deno run -A npm:dprint@0.49.0 fmt",
-    "fmt:check": "deno run -A npm:dprint@0.49.0 check",
+    "fmt": "deno task fmt:dprint",
+    "fmt:check": "deno task fmt:dprint:check",
+    "fmt:dprint": "deno run -A npm:dprint@0.49.0 fmt --config dprint.json",
+    "fmt:dprint:check": "deno run -A npm:dprint@0.49.0 check --config dprint.json",
     "lint": "cd packages/tufa && deno task lint && cd ../keri && deno task lint && cd ../cesr && deno task lint && cd ../.. && deno lint scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
     "docs:check": "deno run --allow-read scripts/check_class_docstrings.ts",
+    "inline-code:check": "deno run --allow-read scripts/check_no_inline_code.ts",
     "check": "cd packages/tufa && deno task check && cd ../keri && deno task check && cd ../cesr && deno check mod.ts && cd ../.. && deno run --allow-read scripts/check_no_direct_cbor_x.ts",
-    "quality:check": "deno task docs:check && deno task check && deno task version:check",
+    "quality:check": "deno task docs:check && deno task inline-code:check && deno task check && deno task version:check",
     "quality": "deno task fmt:check && deno task lint && deno task quality:check && deno task test:quality && deno task test:cesr",
     "quality:report": "deno run --allow-run=rg,scc --allow-read --allow-env=PATH,HOME,TMPDIR scripts/quality-report.ts",
     "manifest:sync": "deno run -A scripts/sync_manifest_versions.ts",
@@ -55,6 +58,27 @@
     "cesr:annotate": "cd packages/cesr && deno task annotate",
     "cesr:build:npm": "deno task version:generate && cd packages/cesr && deno task build:npm",
     "npm:build:all": "deno task build:npm && deno task cesr:build:npm && deno task tufa:build:npm"
+  },
+  "fmt": {
+    "include": [
+      "**/*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,md}"
+    ],
+    "exclude": [
+      "**/.deno-cache/**",
+      "**/node_modules/**",
+      "**/npm/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/*-lock.json",
+      "**/*-lock.yaml"
+    ],
+    "useTabs": false,
+    "lineWidth": 120,
+    "indentWidth": 2,
+    "singleQuote": false,
+    "proseWrap": "preserve",
+    "semiColons": true
   },
   "imports": {
     "@msgpack/msgpack": "npm:@msgpack/msgpack@^3.1.2",

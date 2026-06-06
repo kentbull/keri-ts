@@ -1,27 +1,105 @@
+/**
+ * Build the `cesr-ts` npm package with DNT and normalize generated metadata.
+ *
+ * DNT accepts placeholder package paths before it knows the final emitted tree.
+ * After DNT finishes, this script re-discovers the generated root module,
+ * declaration module, and CLI executable by marker comments, then rewrites
+ * package.json so the packed tarball points at files that actually exist.
+ */
 import { build, emptyDir } from "@deno/dnt";
+import {
+  assertPackagePathExists,
+  findGeneratedEntrypoint,
+  prependShebangIfMissing,
+  readPackageVersionSync,
+  writeJsonFileSync,
+} from "../../../scripts/npm/dnt-helpers.ts";
 
 const ENTRYPOINT = "./mod.ts";
 const NODE_CLI_ENTRYPOINT = "./src/annotate/cli-node.ts";
 const OUT_DIR = "./npm";
+const NPM_MAIN_PATH = "./esm/mod.js";
+const NPM_TYPES_PATH = "./types/mod.d.ts";
+const NPM_BIN_PATH = "./esm/src/annotate/cli-node.js";
 
-interface PackageManifest {
-  version?: string;
+/** Manifest fields that this build script owns after DNT emits package.json. */
+interface BuiltNpmPackageManifest {
+  main?: string;
+  module?: string;
+  types?: string;
+  bin?: Record<string, string>;
+  exports?: Record<string, unknown>;
 }
 
+// These marker comments live in source entrypoints and should survive DNT
+// rewriting. They make generated target discovery resilient to path-depth drift.
+const ROOT_ENTRYPOINT_MARKER = "cesr-ts npm package root entrypoint.";
+const BIN_ENTRYPOINT_MARKER = "npm executable entrypoint for `cesr-annotate`.";
+
+/** Resolve this package version from package.json or a release override. */
 function resolvePackageVersion(): string {
-  const fromEnv = Deno.env.get("CESR_NPM_VERSION");
-  if (fromEnv && fromEnv.trim()) {
-    return fromEnv.trim();
-  }
+  return readPackageVersionSync("./package.json", { envOverride: "CESR_NPM_VERSION" });
+}
 
-  const raw = Deno.readTextFileSync("./package.json");
-  const pkg = JSON.parse(raw) as PackageManifest;
-  const version = pkg.version?.trim();
-  if (!version) {
-    throw new Error("Missing version in ./package.json");
-  }
+/**
+ * Rewrite DNT's placeholder package manifest to generated output facts.
+ *
+ * The initial package block below gives DNT enough metadata to build. The final
+ * artifact must instead use the paths DNT actually emitted, because DNT can add
+ * source-directory segments when entrypoints or imports move. This function
+ * normalizes:
+ *
+ * - `main` and `module` to the discovered ESM root entrypoint
+ * - `types` to the discovered declaration root entrypoint
+ * - `exports["."]` to the same root import/types pair
+ * - `bin["cesr-annotate"]` to the discovered CLI file without a leading `./`
+ *
+ * Each normalized target is asserted before package.json is written so broken
+ * manifest paths fail during build rather than during publish or smoke tests.
+ */
+function normalizeBuiltManifest(): string {
+  const packageJsonPath = `${OUT_DIR}/package.json`;
+  const raw = Deno.readTextFileSync(packageJsonPath);
+  const manifest = JSON.parse(raw) as BuiltNpmPackageManifest;
+  const rootImport = findGeneratedEntrypoint({
+    root: `${OUT_DIR}/esm`,
+    outDir: OUT_DIR,
+    fileName: "mod.js",
+    marker: ROOT_ENTRYPOINT_MARKER,
+  });
+  const rootTypes = findGeneratedEntrypoint({
+    root: `${OUT_DIR}/types`,
+    outDir: OUT_DIR,
+    fileName: "mod.d.ts",
+    marker: ROOT_ENTRYPOINT_MARKER,
+  });
+  const bin = findGeneratedEntrypoint({
+    root: `${OUT_DIR}/esm`,
+    outDir: OUT_DIR,
+    fileName: "cli-node.js",
+    marker: BIN_ENTRYPOINT_MARKER,
+  });
 
-  return version;
+  assertPackagePathExists(OUT_DIR, rootImport);
+  assertPackagePathExists(OUT_DIR, rootTypes);
+  assertPackagePathExists(OUT_DIR, bin);
+
+  manifest.main = rootImport;
+  manifest.module = rootImport;
+  manifest.types = rootTypes;
+  manifest.exports = {
+    ".": {
+      import: rootImport,
+      types: rootTypes,
+    },
+  };
+  manifest.bin = {
+    // npm `bin` entries are package-relative paths without the leading `./`
+    // marker that exports/main/types targets keep.
+    "cesr-annotate": bin.replace(/^\.\//, ""),
+  };
+  writeJsonFileSync(packageJsonPath, manifest);
+  return bin;
 }
 
 await emptyDir(OUT_DIR);
@@ -53,17 +131,17 @@ await build({
     homepage: "https://github.com/kentbull/keri-ts/tree/main/packages/cesr",
     type: "module",
     sideEffects: false,
-    main: "./esm/mod.js",
-    module: "./esm/mod.js",
-    types: "./types/mod.d.ts",
+    main: NPM_MAIN_PATH,
+    module: NPM_MAIN_PATH,
+    types: NPM_TYPES_PATH,
     exports: {
       ".": {
-        import: "./esm/mod.js",
-        types: "./types/mod.d.ts",
+        import: NPM_MAIN_PATH,
+        types: NPM_TYPES_PATH,
       },
     },
     bin: {
-      "cesr-annotate": "./esm/src/annotate/cli-node.js",
+      "cesr-annotate": NPM_BIN_PATH,
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
@@ -81,14 +159,13 @@ await build({
     lib: ["ES2022", "DOM"],
   },
   postBuild() {
+    const bin = normalizeBuiltManifest();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
 
-    const binPath = `${OUT_DIR}/esm/src/annotate/cli-node.js`;
-    const current = Deno.readTextFileSync(binPath);
-    if (!current.startsWith("#!/usr/bin/env node\n")) {
-      Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);
-    }
-    Deno.chmodSync(binPath, 0o755);
+    // Convert the package-relative `./...` bin target into an output-directory
+    // child path before adding the executable shebang.
+    const binPath = `${OUT_DIR}/${bin.replace(/^\.\//, "")}`;
+    prependShebangIfMissing(binPath);
   },
 });

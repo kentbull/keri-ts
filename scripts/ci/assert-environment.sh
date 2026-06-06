@@ -43,33 +43,7 @@ echo "LMDB_DATA_V1: ${LMDB_DATA_V1:-unset}"
 
 # LMDB version/path output is especially useful in this repo because KERIpy
 # interop depends on the native addon being rebuilt with LMDB data-format v1.
-node <<'EOF'
-const fs = require("fs");
-const path = require("path");
-
-try {
-  let dir = process.cwd();
-  let lmdbDir;
-  while (dir !== path.dirname(dir)) {
-    const candidate = path.join(dir, "node_modules", "lmdb");
-    if (fs.existsSync(candidate)) {
-      lmdbDir = candidate;
-      break;
-    }
-    dir = path.dirname(dir);
-  }
-  if (!lmdbDir) {
-    throw new Error("lmdb not installed");
-  }
-  const pkg = JSON.parse(
-    fs.readFileSync(path.join(lmdbDir, "package.json"), "utf8"),
-  );
-  console.log(`lmdb: ${pkg.version}`);
-  console.log(`lmdb dir: ${lmdbDir}`);
-} catch {
-  console.log("lmdb: not installed");
-}
-EOF
+deno run --allow-read scripts/ci/report-lmdb-environment.ts
 
 if command -v kli >/dev/null 2>&1; then
   echo "kli path: $(command -v kli)"

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Smoke-test a packed `@keri-ts/tufa` npm artifact by installing the tarball
-# into a
-# fresh runtime and exercising the published CLI entrypoint.
+# into a fresh runtime and exercising the published CLI entrypoint.
 # Optional additional args:
 # - a locally built `cesr-ts` tarball
 # - a locally built `keri-ts` tarball
@@ -35,69 +34,7 @@ if [[ ! -f "${SAMPLES_DIR}/${SAMPLE_STREAM_REL}" ]]; then
   exit 1
 fi
 
-assert_tarball_package_targets() {
-  # Validate module/export/bin targets from the packed tarball before install.
-  # This is the fastest failure mode for DNT output or package.json drift.
-  local manifest_json
-  local target_paths
-  manifest_json="$(tar -xOzf "${TARBALL_PATH}" package/package.json)"
-  target_paths="$(MANIFEST_JSON="${manifest_json}" node --input-type=module - <<'EOF'
-const manifest = JSON.parse(process.env.MANIFEST_JSON ?? "{}");
-const targets = [];
-
-function collectTarget(target) {
-  if (typeof target === "string") {
-    targets.push(target);
-    return;
-  }
-  if (!target || typeof target !== "object") {
-    return;
-  }
-  for (const value of Object.values(target)) {
-    collectTarget(value);
-  }
-}
-
-collectTarget(manifest.main);
-collectTarget(manifest.module);
-collectTarget(manifest.types);
-collectTarget(manifest.bin);
-for (const target of Object.values(manifest.exports ?? {})) {
-  collectTarget(target);
-}
-
-for (const target of [...new Set(targets)]) {
-  if (target.startsWith("./")) {
-    console.log(`package/${target.slice(2)}`);
-    continue;
-  }
-  if (!target.startsWith("/") && !target.startsWith("../") && !target.includes("://")) {
-    console.log(`package/${target}`);
-  }
-}
-EOF
-)"
-
-  if [[ -z "${target_paths}" ]]; then
-    echo "No package export/bin targets found in ${TARBALL_PATH}" >&2
-    exit 1
-  fi
-
-  local listing
-  listing="$(tar -tzf "${TARBALL_PATH}")"
-  while IFS= read -r target_path; do
-    if ! grep -qxF "${target_path}" <<<"${listing}"; then
-      echo "Packed tarball is missing package target: ${target_path}" >&2
-      echo "Package targets:" >&2
-      echo "${target_paths}" >&2
-      echo "Matching package contents:" >&2
-      grep -E '^package/(package\.json|esm/|types/)' <<<"${listing}" | head -200 >&2
-      exit 1
-    fi
-  done <<<"${target_paths}"
-}
-
-assert_tarball_package_targets
+deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${TARBALL_PATH}" --include-bin
 
 TARBALL_DIR="$(cd "$(dirname "${TARBALL_PATH}")" && pwd)"
 TARBALL_NAME="$(basename "${TARBALL_PATH}")"
@@ -105,6 +42,7 @@ INSTALL_TARGETS=("/pkg/${TARBALL_NAME}")
 DOCKER_ARGS=(
   -v "${TARBALL_DIR}:/pkg"
   -v "${SAMPLES_DIR}:/samples"
+  -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro"
 )
 
 if [[ -n "${CESR_TARBALL_PATH}" ]]; then
@@ -137,146 +75,7 @@ SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 # executable. Workspace imports are optional local tarballs, never symlinks.
 echo "Running Docker smoke test with ${TARBALL_NAME} on ${SMOKE_NODE_IMAGE}"
 docker run --rm \
+  -e "SAMPLE_STREAM_REL=${SAMPLE_STREAM_REL}" \
+  -e "SMOKE_NODE_IMAGE=${SMOKE_NODE_IMAGE}" \
   "${DOCKER_ARGS[@]}" \
-  "${SMOKE_NODE_IMAGE}" /bin/sh -lc "
-set -eu
-log_agent() {
-  echo '--- /tmp/tufa-agent.log ---' >&2
-  if [ -f /tmp/tufa-agent.log ]; then
-    if [ -s /tmp/tufa-agent.log ]; then
-      cat /tmp/tufa-agent.log >&2
-    else
-      echo '<empty>' >&2
-    fi
-  else
-    echo '<missing>' >&2
-  fi
-  echo '--- end /tmp/tufa-agent.log ---' >&2
-}
-log_agent_process() {
-  echo '--- tufa-agent process ---' >&2
-  echo \"pid=\${AGENT_PID:-unset}\" >&2
-  if [ -n \"\${AGENT_PID:-}\" ] && kill -0 \"\${AGENT_PID}\" >/dev/null 2>&1; then
-    echo 'state=running' >&2
-  else
-    echo 'state=exited' >&2
-  fi
-  if [ -f /tmp/tufa-agent.exitcode ]; then
-    printf 'exit_code=' >&2
-    tr -d '\r\n' </tmp/tufa-agent.exitcode >&2
-    printf '\n' >&2
-  else
-    echo 'exit_code=unknown' >&2
-  fi
-  echo '--- end tufa-agent process ---' >&2
-}
-npm install -g ${INSTALL_TARGETS[*]} >/dev/null
-echo \"Node runtime: \$(node --version), npm: \$(npm --version)\" >&2
-V1=\$(tufa version | tr -d '\r')
-V2=\$(tufa --version | tr -d '\r')
-if [ \"\$V1\" != \"\$V2\" ]; then
-  echo \"Version mismatch: tufa version=\$V1, tufa --version=\$V2\" >&2
-  exit 1
-fi
-OUT=\$(tufa annotate --in /samples/${SAMPLE_STREAM_REL} | awk 'NR==1{print; exit}')
-echo \"\$OUT\" | grep -q 'SERDER KERI JSON'
-HEAD_DIR=/tmp/tufa-smoke
-NAME=smoke-agent
-ALIAS=smoke-agent
-PORT=8711
-PASSCODE=MyPasscodeARealSecret
-tufa init --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" --passcode \"\$PASSCODE\" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
-tufa incept --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" --passcode \"\$PASSCODE\" --alias \"\$ALIAS\" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
-rm -f /tmp/tufa-agent.exitcode
-(
-  tufa agent --name \"\$NAME\" --head-dir \"\$HEAD_DIR\" -p \"\$PORT\" -P \"\$PASSCODE\" >/tmp/tufa-agent.log 2>&1
-  status=\$?
-  printf '%s\n' \"\$status\" >/tmp/tufa-agent.exitcode
-  exit \"\$status\"
-) &
-AGENT_PID=\$!
-cleanup() {
-  status=\$?
-  if kill -0 \"\$AGENT_PID\" >/dev/null 2>&1; then
-    kill \"\$AGENT_PID\" >/dev/null 2>&1 || true
-  fi
-  wait \"\$AGENT_PID\" 2>/dev/null || true
-  if [ \"\$status\" -ne 0 ]; then
-    log_agent_process
-    log_agent
-  fi
-}
-trap cleanup EXIT
-TUFA_SMOKE_PORT=\"\$PORT\" TUFA_SMOKE_AGENT_PID=\"\$AGENT_PID\" TUFA_SMOKE_AGENT_EXIT_FILE=\"/tmp/tufa-agent.exitcode\" node --input-type=module -e '
-  import { readFile } from \"node:fs/promises\";
-  import { setTimeout as delay } from \"node:timers/promises\";
-
-  const url = \"http://127.0.0.1:\" + process.env.TUFA_SMOKE_PORT + \"/health\";
-  const agentPid = Number(process.env.TUFA_SMOKE_AGENT_PID ?? \"0\");
-  const agentExitFile = process.env.TUFA_SMOKE_AGENT_EXIT_FILE ?? \"\";
-  let lastStatus = \"\";
-
-  async function readExitCode() {
-    if (!agentExitFile) return null;
-    try {
-      return (await readFile(agentExitFile, \"utf8\")).trim() || \"<empty>\";
-    } catch {
-      return null;
-    }
-  }
-
-  function agentAlive() {
-    if (!Number.isFinite(agentPid) || agentPid <= 0) {
-      return true;
-    }
-    try {
-      process.kill(agentPid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    try {
-      const response = await fetch(url);
-      const text = await response.text();
-      lastStatus = response.status + \" \" + text;
-      if (response.ok && text === \"ok\") {
-        process.exit(0);
-      }
-    } catch (error) {
-      lastStatus = String(error);
-    }
-    if (!agentAlive()) {
-      const exitCode = await readExitCode();
-      lastStatus += exitCode
-        ? \" (agent exited with code \" + exitCode + \")\"
-        : \" (agent exited)\";
-      break;
-    }
-    await delay(100);
-  }
-
-  process.stderr.write(\"Health probe failed: \" + lastStatus + \"\\n\");
-  process.stderr.write(
-    \"Agent PID: \" + (Number.isFinite(agentPid) ? String(agentPid) : \"<unknown>\") + \"\\n\",
-  );
-  process.stderr.write(\"Agent alive: \" + (agentAlive() ? \"yes\" : \"no\") + \"\\n\");
-  const exitCode = await readExitCode();
-  process.stderr.write(\"Agent exit code: \" + (exitCode ?? \"<unknown>\") + \"\\n\");
-  try {
-    const log = await readFile(\"/tmp/tufa-agent.log\", \"utf8\");
-    process.stderr.write(\"--- /tmp/tufa-agent.log ---\\n\");
-    process.stderr.write(log.length > 0 ? log : \"<empty>\\n\");
-    if (!log.endsWith(\"\\n\")) {
-      process.stderr.write(\"\\n\");
-    }
-    process.stderr.write(\"--- end /tmp/tufa-agent.log ---\\n\");
-  } catch (error) {
-    process.stderr.write(\"Unable to read /tmp/tufa-agent.log: \" + String(error) + \"\\n\");
-  }
-  process.exit(1);
-' >/dev/null
-echo \"Smoke test passed for @keri-ts/tufa \$V1 on ${SMOKE_NODE_IMAGE}\"
-"
+  "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-tufa-container.sh "${INSTALL_TARGETS[@]}"

@@ -6,6 +6,14 @@
  * manifest targets instead of hard-coding the final tree layout.
  */
 import { build, emptyDir } from "@deno/dnt";
+import {
+  assertPackagePathExists,
+  findGeneratedEntrypoint,
+  readPackageVersionSync,
+  setIgnoreScriptsDefault,
+  writeDntImportMapSync,
+  writeJsonFileSync,
+} from "../../../scripts/npm/dnt-helpers.ts";
 
 const ENTRYPOINT = "./src/npm/index.ts";
 const CLI_ENTRYPOINT = "./src/npm/cli.ts";
@@ -22,10 +30,7 @@ const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
 const NPM_DB_PATH = "./esm/keri/npm/src/keri/src/npm/db.js";
 const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
 
-interface PackageManifest {
-  version?: string;
-}
-
+/** Manifest fields that this build script owns after DNT emits package.json. */
 interface BuiltNpmPackageManifest {
   main?: string;
   module?: string;
@@ -33,11 +38,13 @@ interface BuiltNpmPackageManifest {
   exports?: Record<string, unknown>;
 }
 
+/** Package import/types pair for one public npm export surface. */
 interface NpmExportTarget {
   import: string;
   types: string;
 }
 
+/** Public npm surfaces that `keri-ts` promises to keep stable. */
 interface NpmExportTargets {
   root: NpmExportTarget;
   cli: NpmExportTarget;
@@ -45,6 +52,8 @@ interface NpmExportTargets {
   db: NpmExportTarget;
 }
 
+// These marker comments live in source entrypoints and should survive DNT
+// rewriting. They make generated target discovery resilient to path-depth drift.
 const ENTRYPOINT_MARKERS = {
   root: "npm package root entrypoint.",
   cli: "npm subpath entrypoint for `keri-ts/cli`.",
@@ -57,19 +66,7 @@ const ENTRYPOINT_MARKERS = {
  * @returns The version of the package.
  */
 function resolvePackageVersion(): string {
-  const fromEnv = Deno.env.get("KERI_TS_NPM_VERSION");
-  if (fromEnv && fromEnv.trim()) {
-    return fromEnv.trim();
-  }
-
-  const raw = Deno.readTextFileSync("./package.json");
-  const pkg = JSON.parse(raw) as PackageManifest;
-  const version = pkg.version?.trim();
-  if (!version) {
-    throw new Error("Missing version in ./package.json");
-  }
-
-  return version;
+  return readPackageVersionSync("./package.json", { envOverride: "KERI_TS_NPM_VERSION" });
 }
 
 /**
@@ -77,14 +74,7 @@ function resolvePackageVersion(): string {
  * @returns The version of the cesr package.
  */
 function resolveCesrPackageVersion(): string {
-  const raw = Deno.readTextFileSync("../cesr/package.json");
-  const pkg = JSON.parse(raw) as PackageManifest;
-  const version = pkg.version?.trim();
-  if (!version) {
-    throw new Error("Missing version in ../cesr/package.json");
-  }
-
-  return version;
+  return readPackageVersionSync("../cesr/package.json");
 }
 
 /**
@@ -93,6 +83,8 @@ function resolveCesrPackageVersion(): string {
  */
 function resolveCesrDependencyRange(): string {
   const version = resolveCesrPackageVersion();
+  // Capture the numeric major/minor/patch prefix so prerelease suffixes do not
+  // affect the compatible dependency range.
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) {
     throw new Error(`Unsupported cesr-ts version format: ${version}`);
@@ -105,134 +97,66 @@ function resolveCesrDependencyRange(): string {
 
 /**
  * Writes CESR version to Deno import map for later consumption during packaging.
+ *
+ * DNT otherwise follows local workspace imports and can inline local CESR
+ * source into the generated package. The temporary import map forces generated
+ * output to depend on the published `cesr-ts` package instead.
+ *
  * @param cesrVersion The version of the cesr package to write to the import map.
  */
 function writeDntImportMap(cesrVersion: string): void {
-  const importMap = {
-    imports: {
-      "cesr-ts": `npm:cesr-ts@${cesrVersion}`,
-    },
-  };
-  Deno.writeTextFileSync(
-    DNT_IMPORT_MAP_PATH,
-    `${JSON.stringify(importMap, null, 2)}\n`,
-  );
-}
-
-/** Recursively list generated files so marker lookup works across DNT layouts. */
-function listFilesSync(dir: string): string[] {
-  const files: string[] = [];
-  for (const entry of Deno.readDirSync(dir)) {
-    const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory) {
-      files.push(...listFilesSync(path));
-    } else if (entry.isFile) {
-      files.push(path);
-    }
-  }
-  return files;
-}
-
-/** Convert an on-disk generated path into a package.json-relative target. */
-function toPackagePath(path: string): string {
-  return `./${path.replace(`${OUT_DIR}/`, "")}`;
+  writeDntImportMapSync(DNT_IMPORT_MAP_PATH, {
+    "cesr-ts": `npm:cesr-ts@${cesrVersion}`,
+  });
 }
 
 /**
- * Locate exactly one generated entrypoint by file name and marker comment.
+ * Resolve all npm root and subpath export targets from generated output.
  *
- * This is the release invariant that catches DNT path drift: npm metadata is
- * rewritten only when the intended generated module/declaration pair exists.
+ * The placeholder constants above are only bootstrap values for DNT's package
+ * block. The generated files can move when DNT rewrites source paths, so final
+ * targets are discovered by searching emitted JS and declaration trees for the
+ * stable entrypoint markers.
  */
-function findGeneratedEntrypoint(
-  root: string,
-  fileName: string,
-  marker: string,
-): string {
-  const matches = listFilesSync(root).filter((path) => {
-    if (!path.endsWith(`/${fileName}`)) {
-      return false;
-    }
-    return Deno.readTextFileSync(path).includes(marker);
-  });
-
-  if (matches.length !== 1) {
-    throw new Error(
-      `Expected exactly one generated ${fileName} containing ${
-        JSON.stringify(marker)
-      } under ${root}, found ${matches.length}: ${matches.join(", ")}`,
-    );
-  }
-
-  return toPackagePath(matches[0]);
-}
-
-/** Assert that a manifest target points at a real file inside the built package. */
-function assertPackagePathExists(path: string): void {
-  const relative = path.replace(/^\.\//, "");
-  const fullPath = `${OUT_DIR}/${relative}`;
-  const stat = Deno.statSync(fullPath);
-  if (!stat.isFile) {
-    throw new Error(`Expected npm package path to be a file: ${path}`);
-  }
-}
-
-/** Resolve all npm root and subpath export targets from generated output. */
 function resolveGeneratedExportTargets(): NpmExportTargets {
   const targets = {
     root: {
       import: findGeneratedEntrypoint(
-        `${OUT_DIR}/esm`,
-        "index.js",
-        ENTRYPOINT_MARKERS.root,
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "index.js", marker: ENTRYPOINT_MARKERS.root },
       ),
       types: findGeneratedEntrypoint(
-        `${OUT_DIR}/types`,
-        "index.d.ts",
-        ENTRYPOINT_MARKERS.root,
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "index.d.ts", marker: ENTRYPOINT_MARKERS.root },
       ),
     },
     cli: {
       import: findGeneratedEntrypoint(
-        `${OUT_DIR}/esm`,
-        "cli.js",
-        ENTRYPOINT_MARKERS.cli,
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "cli.js", marker: ENTRYPOINT_MARKERS.cli },
       ),
       types: findGeneratedEntrypoint(
-        `${OUT_DIR}/types`,
-        "cli.d.ts",
-        ENTRYPOINT_MARKERS.cli,
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "cli.d.ts", marker: ENTRYPOINT_MARKERS.cli },
       ),
     },
     runtime: {
       import: findGeneratedEntrypoint(
-        `${OUT_DIR}/esm`,
-        "runtime.js",
-        ENTRYPOINT_MARKERS.runtime,
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "runtime.js", marker: ENTRYPOINT_MARKERS.runtime },
       ),
       types: findGeneratedEntrypoint(
-        `${OUT_DIR}/types`,
-        "runtime.d.ts",
-        ENTRYPOINT_MARKERS.runtime,
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "runtime.d.ts", marker: ENTRYPOINT_MARKERS.runtime },
       ),
     },
     db: {
       import: findGeneratedEntrypoint(
-        `${OUT_DIR}/esm`,
-        "db.js",
-        ENTRYPOINT_MARKERS.db,
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "db.js", marker: ENTRYPOINT_MARKERS.db },
       ),
       types: findGeneratedEntrypoint(
-        `${OUT_DIR}/types`,
-        "db.d.ts",
-        ENTRYPOINT_MARKERS.db,
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "db.d.ts", marker: ENTRYPOINT_MARKERS.db },
       ),
     },
   };
 
   for (const target of Object.values(targets)) {
-    assertPackagePathExists(target.import);
-    assertPackagePathExists(target.types);
+    assertPackagePathExists(OUT_DIR, target.import);
+    assertPackagePathExists(OUT_DIR, target.types);
   }
 
   return targets;
@@ -241,8 +165,18 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
 /**
  * Rewrite DNT's manifest paths to the discovered generated target paths.
  *
- * The placeholder constants above keep the DNT build happy; this post-build
- * step makes the packed artifact truthful for Node and TypeScript consumers.
+ * The initial package block below gives DNT enough metadata to build. The final
+ * artifact must instead use the paths DNT actually emitted. This function
+ * normalizes:
+ *
+ * - `main` and `module` to the discovered root ESM entrypoint
+ * - `types` to the discovered root declaration entrypoint
+ * - `exports["."]`, `exports["./cli"]`, `exports["./runtime"]`, and
+ *   `exports["./db"]` to their discovered import/types pairs
+ *
+ * These fields are the public npm package surface. Normalizing them here keeps
+ * release behavior stable even when source layout changes alter DNT output
+ * paths.
  */
 function normalizeBuiltManifest(): void {
   const packageJsonPath = `${OUT_DIR}/package.json`;
@@ -270,16 +204,11 @@ function normalizeBuiltManifest(): void {
       types: targets.db.types,
     },
   };
-  Deno.writeTextFileSync(
-    packageJsonPath,
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+  writeJsonFileSync(packageJsonPath, manifest);
 }
 
 // Avoid running native install scripts (for example lmdb build) during packaging.
-if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
-  Deno.env.set("NPM_CONFIG_IGNORE_SCRIPTS", "true");
-}
+setIgnoreScriptsDefault();
 
 await emptyDir(OUT_DIR);
 const cesrPackageVersion = resolveCesrPackageVersion();
