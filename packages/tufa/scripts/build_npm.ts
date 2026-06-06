@@ -96,6 +96,7 @@ try {
     importMap: DNT_IMPORT_MAP_PATH,
     typeCheck: false,
     test: false,
+    skipNpmInstall: true,
     declaration: "separate",
     scriptModule: false,
     package: {
