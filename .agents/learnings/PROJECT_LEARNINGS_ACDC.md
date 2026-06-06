@@ -40,6 +40,11 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
    direct revoked credentials, rejects revoked chains, applies `I2I`/`NI2I`
    defaults, fails `DI2I` explicitly, writes KERIpy `saved`/`issus`/`schms`/
    `subjs` indexes, and replays `mce`/`mse`/`mre` escrows in KERIpy order.
+9. Issuer-side single-sig credential orchestration now lives in
+   `vdr/credentialing.ts`: `Regery`, `Registry`, `Registrar`, and `Credentialer`
+   compose `Reger`, `Tevery`, and `Verifier`; ACDC construction keeps KERIpy's
+   subject-level `d`/`dt` handling; local issue/revoke writes TEL completion
+   markers and verifier wallet indexes.
 
 ## Use This Doc For
 
@@ -58,10 +63,9 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
    lanes; do not collapse them into generic "map in, map out" serder behavior.
 3. Revisit ACDC-specific DB mappings once later DB parity work reaches the
    credential-indexing layers.
-4. Implement registry orchestration services (`Regery`, `Registry`,
-   `Registrar`, `Credentialer`) behind the VDR dispatch seam; the existing
-   `Verifier` depends on TEL state from `Tever` and does not replace issuance
-   orchestration.
+4. Extend the registry orchestration services from the local single-sig path to
+   KERIpy's full witness/multisig dissemination escrows, and add the VC/IPEX
+   CLI command surfaces that drive them.
 
 ## Milestone Rollup
 
@@ -101,3 +105,14 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 - This is still below the Sally-like verifier-agent layer: grant artifact
   extraction, verifier-specific webhook state, business validators, revocation
   webhook delivery, and `tufa verifier` remain follow-up work.
+
+### 2026-06-06 - Local Single-Sig Credentialing Landed
+
+- `vdr/credentialing.ts` now provides the first issuer-side single-sig path:
+  registry inception, local TEL anchoring, credential construction, issue,
+  revoke, completion markers, credential proof serialization, and a wallet view
+  backed by verifier indexes.
+- The module intentionally does not hide remaining KERIpy parity gaps: witness
+  receipt dissemination, multisig counselor flows, operational `vc` CLI
+  commands, grant/admit artifact streaming, and KERIpy golden fixtures remain
+  active follow-up work.

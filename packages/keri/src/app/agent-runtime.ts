@@ -13,6 +13,7 @@ import type { OobiRecord } from "../core/records.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
+import { Regery } from "../vdr/credentialing.ts";
 import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
@@ -179,6 +180,14 @@ export function* createAgentRuntime(
   }
   if (reger && !vdr.vry) {
     vdr.vry = new Verifier(hby, { reger, cues });
+  }
+  if (reger && vdr.tvy instanceof Tevery && vdr.vry instanceof Verifier && !vdr.rgy) {
+    vdr.rgy = new Regery(hby, {
+      reger,
+      tvy: vdr.tvy,
+      vry: vdr.vry,
+      cues,
+    });
   }
   const reactor = new Reactor(hby, { cues, vdr });
   loadChallengeHandlers(hby.db, reactor.exchanger);
