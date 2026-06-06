@@ -44,6 +44,7 @@ function writeDntImportMap(
   const importMap = {
     imports: {
       "keri-ts": `npm:keri-ts@${keriVersion}`,
+      "keri-ts/cli": `npm:keri-ts@${keriVersion}/cli`,
       "keri-ts/runtime": `npm:keri-ts@${keriVersion}/runtime`,
       "keri-ts/db": `npm:keri-ts@${keriVersion}/db`,
       "cesr-ts": `npm:cesr-ts@${cesrVersion}`,

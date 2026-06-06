@@ -13,117 +13,117 @@ import type { CommandHandler } from "./command-types.ts";
 /** Build the canonical command-dispatch map used by the Tufa CLI runtime. */
 export function createCmdHandlers(): Map<string, CommandHandler> {
   return new Map([
-    ["init", lazyCommand(() => import("keri-ts/runtime"), "initCommand")],
-    ["incept", lazyCommand(() => import("keri-ts/runtime"), "inceptCommand")],
-    ["rotate", lazyCommand(() => import("keri-ts/runtime"), "rotateCommand")],
+    ["init", lazyCommand(() => import("keri-ts/cli"), "initCommand")],
+    ["incept", lazyCommand(() => import("keri-ts/cli"), "inceptCommand")],
+    ["rotate", lazyCommand(() => import("keri-ts/cli"), "rotateCommand")],
     [
       "delegate.confirm",
-      lazyCommand(() => import("keri-ts/runtime"), "delegateConfirmCommand"),
+      lazyCommand(() => import("keri-ts/cli"), "delegateConfirmCommand"),
     ],
-    ["sign", lazyCommand(() => import("keri-ts/runtime"), "signCommand")],
-    ["verify", lazyCommand(() => import("keri-ts/runtime"), "verifyCommand")],
-    ["query", lazyCommand(() => import("keri-ts/runtime"), "queryCommand")],
+    ["sign", lazyCommand(() => import("keri-ts/cli"), "signCommand")],
+    ["verify", lazyCommand(() => import("keri-ts/cli"), "verifyCommand")],
+    ["query", lazyCommand(() => import("keri-ts/cli"), "queryCommand")],
     [
       "interact",
-      lazyCommand(() => import("keri-ts/runtime"), "interactCommand"),
+      lazyCommand(() => import("keri-ts/cli"), "interactCommand"),
     ],
     [
       "challenge.generate",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "challengeGenerateCommand",
       ),
     ],
     [
       "challenge.respond",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "challengeRespondCommand",
       ),
     ],
     [
       "challenge.verify",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "challengeVerifyCommand",
       ),
     ],
     [
       "exchange.send",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "exchangeSendCommand",
       ),
     ],
     [
       "exn.send",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "exchangeSendCommand",
       ),
     ],
-    ["export", lazyCommand(() => import("keri-ts/runtime"), "exportCommand")],
-    ["list", lazyCommand(() => import("keri-ts/runtime"), "listCommand")],
-    ["aid", lazyCommand(() => import("keri-ts/runtime"), "aidCommand")],
+    ["export", lazyCommand(() => import("keri-ts/cli"), "exportCommand")],
+    ["list", lazyCommand(() => import("keri-ts/cli"), "listCommand")],
+    ["aid", lazyCommand(() => import("keri-ts/cli"), "aidCommand")],
     [
       "ends.add",
-      lazyCommand(() => import("keri-ts/runtime"), "endsAddCommand"),
+      lazyCommand(() => import("keri-ts/cli"), "endsAddCommand"),
     ],
-    ["loc.add", lazyCommand(() => import("keri-ts/runtime"), "locAddCommand")],
+    ["loc.add", lazyCommand(() => import("keri-ts/cli"), "locAddCommand")],
     [
       "oobi.generate",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "oobiGenerateCommand",
       ),
     ],
     [
       "oobi.resolve",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "oobiResolveCommand",
       ),
     ],
     [
       "oobi.request",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "oobiRequestCommand",
       ),
     ],
     [
       "notifications.list",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "notificationsListCommand",
       ),
     ],
     [
       "notifications.mark-read",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "notificationsMarkReadCommand",
       ),
     ],
     [
       "notifications.remove",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "notificationsRemoveCommand",
       ),
     ],
     [
       "annotate",
-      lazyCommand(() => import("keri-ts/runtime"), "annotateCommand"),
+      lazyCommand(() => import("keri-ts/cli"), "annotateCommand"),
     ],
     [
       "benchmark.cesr",
       lazyCommand(
-        () => import("keri-ts/runtime"),
+        () => import("keri-ts/cli"),
         "benchmarkCommand",
       ),
     ],
-    ["db.dump", lazyCommand(() => import("keri-ts/runtime"), "dumpEvts")],
+    ["db.dump", lazyCommand(() => import("keri-ts/cli"), "dumpEvts")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     [
       "mailbox.start",

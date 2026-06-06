@@ -1,12 +1,15 @@
 import { build, emptyDir } from "@deno/dnt";
 
 const ENTRYPOINT = "./src/npm/index.ts";
+const CLI_ENTRYPOINT = "./src/npm/cli.ts";
 const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const DB_ENTRYPOINT = "./src/npm/db.ts";
 const OUT_DIR = "./npm";
 const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
 const NPM_MAIN_PATH = "./esm/keri/src/npm/index.js";
 const NPM_TYPES_PATH = "./types/keri/src/npm/index.d.ts";
+const NPM_CLI_PATH = "./esm/keri/src/npm/cli.js";
+const NPM_CLI_TYPES_PATH = "./types/keri/src/npm/cli.d.ts";
 const NPM_RUNTIME_PATH = "./esm/keri/src/npm/runtime.js";
 const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
 const NPM_DB_PATH = "./esm/keri/src/npm/db.js";
@@ -96,6 +99,10 @@ function normalizeBuiltManifest(): void {
       import: NPM_MAIN_PATH,
       types: NPM_TYPES_PATH,
     },
+    "./cli": {
+      import: NPM_CLI_PATH,
+      types: NPM_CLI_TYPES_PATH,
+    },
     "./runtime": {
       import: NPM_RUNTIME_PATH,
       types: NPM_RUNTIME_TYPES_PATH,
@@ -123,7 +130,7 @@ writeDntImportMap(cesrPackageVersion);
 // build keri-ts package
 try {
   await build({
-    entryPoints: [ENTRYPOINT, RUNTIME_ENTRYPOINT, DB_ENTRYPOINT],
+    entryPoints: [ENTRYPOINT, CLI_ENTRYPOINT, RUNTIME_ENTRYPOINT, DB_ENTRYPOINT],
     outDir: OUT_DIR,
     shims: {
       deno: true,
@@ -156,6 +163,10 @@ try {
         ".": {
           import: NPM_MAIN_PATH,
           types: NPM_TYPES_PATH,
+        },
+        "./cli": {
+          import: NPM_CLI_PATH,
+          types: NPM_CLI_TYPES_PATH,
         },
         "./runtime": {
           import: NPM_RUNTIME_PATH,

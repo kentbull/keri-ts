@@ -128,9 +128,7 @@ async function runDbFastGroups(): Promise<void> {
   await runParallelGroup(
     DB_FAST_ARGS,
     DB_FAST_WRAPPER_FILES,
-    `==> Running db-fast parallel-safe group: ${
-      DB_FAST_WRAPPER_FILES.join(" ")
-    }`,
+    `==> Running db-fast parallel-safe group: ${DB_FAST_WRAPPER_FILES.join(" ")}`,
   );
 }
 

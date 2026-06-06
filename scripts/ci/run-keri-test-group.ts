@@ -38,33 +38,32 @@ const laneConfigs: Record<string, LaneConfig> = {
     description: "Parallel-safe DB coverage, including mailbox DB tests.",
     allowAll: true,
     parallelFullFiles: true,
-    maxFilesPerRun: 8,
-    maxJobs: 8,
+    maxFilesPerRun: 2,
+    maxJobs: 2,
   },
   "core-fast-a": {
     description: "Core eventing/receipt/foundation unit coverage.",
     allowAll: true,
     parallelFullFiles: true,
-    maxFilesPerRun: 6,
-    maxJobs: 6,
+    maxFilesPerRun: 2,
+    maxJobs: 2,
   },
   "core-fast-b": {
     description: "Core kever/query/routing unit coverage.",
     allowAll: true,
     parallelFullFiles: true,
-    maxFilesPerRun: 5,
-    maxJobs: 6,
+    maxFilesPerRun: 2,
+    maxJobs: 2,
   },
   "app-fast-parallel": {
     description: "Parallel-safe app, protocol, and CLI help coverage.",
     allowAll: true,
     parallelFullFiles: true,
-    maxFilesPerRun: 6,
-    maxJobs: 4,
+    maxFilesPerRun: 2,
+    maxJobs: 2,
   },
   "app-fast-isolated": {
-    description:
-      "Global-state app coverage that still mutates console or HOME.",
+    description: "Global-state app coverage that still mutates console or HOME.",
     allowAll: true,
   },
   "runtime-medium": {
@@ -96,13 +95,11 @@ const laneConfigs: Record<string, LaneConfig> = {
     allowAll: true,
   },
   "interop-delegation": {
-    description:
-      "Cross-implementation delegated inception and rotation scenarios.",
+    description: "Cross-implementation delegated inception and rotation scenarios.",
     allowAll: true,
   },
   "runtime-slow": {
-    description:
-      "Mailbox-heavy runtime, agent reopen, and witness runtime coverage.",
+    description: "Mailbox-heavy runtime, agent reopen, and witness runtime coverage.",
     allowAll: true,
   },
   "interop-mailbox-slow": {
@@ -120,16 +117,14 @@ const groupDefinitions: Record<string, GroupDefinition> = {
     ],
   },
   "app-fast": {
-    description:
-      "Public app-fast alias over parallel-safe and isolated app slices.",
+    description: "Public app-fast alias over parallel-safe and isolated app slices.",
     lanes: [
       "app-fast-parallel",
       "app-fast-isolated",
     ],
   },
   quality: {
-    description:
-      "Truthful default path with representative runtime and interop coverage.",
+    description: "Truthful default path with representative runtime and interop coverage.",
     lanes: [
       "db-fast",
       "core-fast-a",
@@ -189,9 +184,7 @@ function usage(): never {
   console.error("");
   console.error("Available groups:");
   console.error(
-    `  ${
-      "lane-audit".padEnd(20)
-    } verify annotated ownership for all discovered KERI tests`,
+    `  ${"lane-audit".padEnd(20)} verify annotated ownership for all discovered KERI tests`,
   );
   for (const [groupName, group] of Object.entries(groupDefinitions)) {
     console.error(`  ${groupName.padEnd(20)} ${group.description}`);
@@ -228,8 +221,8 @@ async function walkTests(dir: URL, files: string[]): Promise<void> {
 function extractTestNames(source: string): string[] {
   const names: string[] = [];
   const directPattern = /Deno\.test\(\s*(?:"([^"]+)"|'([^']+)')/gs;
-  const objectPattern =
-    /Deno\.test\(\s*\{[\s\S]*?\bname\s*:\s*(?:"([^"]+)"|'([^']+)')[\s\S]*?\}\s*\)/gs;
+  const objectPattern = /Deno\.test\(\s*\{[\s\S]*?\bname\s*:\s*(?:"([^"]+)"|'([^']+)')[\s\S]*?\}\s*\)/gs;
+  const registrationCount = [...source.matchAll(/\bDeno\.test\(/g)].length;
 
   for (const match of source.matchAll(directPattern)) {
     names.push(match[1] ?? match[2] ?? "");
@@ -238,7 +231,18 @@ function extractTestNames(source: string): string[] {
     names.push(match[1] ?? match[2] ?? "");
   }
 
-  return names.filter((name) => name.length > 0);
+  const named = names.filter((name) => name.length > 0);
+  if (
+    named.length === 0 && registrationCount > 0
+    && !/^\s*\/\/\s*@test-lane\s+/m.test(source)
+  ) {
+    return Array.from(
+      { length: registrationCount },
+      (_, index) => `__file_lane_dynamic_test_${index + 1}`,
+    );
+  }
+
+  return named;
 }
 
 function parseFileLaneDiscovery(

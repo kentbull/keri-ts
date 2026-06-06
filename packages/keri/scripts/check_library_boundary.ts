@@ -25,6 +25,10 @@ const EXPECTED_EXPORTS: Record<string, ExportTarget> = {
     import: "./esm/keri/src/npm/index.js",
     types: "./types/keri/src/npm/index.d.ts",
   },
+  "./cli": {
+    import: "./esm/keri/src/npm/cli.js",
+    types: "./types/keri/src/npm/cli.d.ts",
+  },
   "./runtime": {
     import: "./esm/keri/src/npm/runtime.js",
     types: "./types/keri/src/npm/runtime.d.ts",
@@ -91,9 +95,7 @@ async function loadInfo(entrypoint: URL): Promise<DenoInfoOutput> {
 
   if (output.code !== 0) {
     throw new Error(
-      `deno info failed for ${entrypoint.pathname}\n${
-        new TextDecoder().decode(output.stderr)
-      }`,
+      `deno info failed for ${entrypoint.pathname}\n${new TextDecoder().decode(output.stderr)}`,
     );
   }
 
@@ -108,9 +110,7 @@ async function assertSurfaceBoundary(
     .map((module) => module.specifier)
     .filter((specifier): specifier is string => Boolean(specifier));
 
-  const hits = specifiers.filter((specifier) =>
-    forbidden.some((pattern) => specifier.includes(pattern))
-  );
+  const hits = specifiers.filter((specifier) => forbidden.some((pattern) => specifier.includes(pattern)));
   if (hits.length > 0) {
     const details = hits.sort().map((specifier) => `  - ${specifier}`).join(
       "\n",
@@ -128,9 +128,9 @@ function assertManifestExports(): void {
 
   if (JSON.stringify(exportKeys) !== JSON.stringify(expectedKeys)) {
     throw new Error(
-      `packages/keri/npm/package.json exports drifted.\nExpected: ${
-        expectedKeys.join(", ")
-      }\nActual: ${exportKeys.join(", ")}`,
+      `packages/keri/npm/package.json exports drifted.\nExpected: ${expectedKeys.join(", ")}\nActual: ${
+        exportKeys.join(", ")
+      }`,
     );
   }
 
@@ -143,21 +143,15 @@ function assertManifestExports(): void {
     }
     if (actual.import !== expected.import || actual.types !== expected.types) {
       throw new Error(
-        `Export ${key} drifted.\nExpected: ${
-          JSON.stringify(expected)
-        }\nActual: ${JSON.stringify(actual)}`,
+        `Export ${key} drifted.\nExpected: ${JSON.stringify(expected)}\nActual: ${JSON.stringify(actual)}`,
       );
     }
   }
 
-  const leakedInternalExports = exportKeys.filter((key) =>
-    key.includes("/src/npm/")
-  );
+  const leakedInternalExports = exportKeys.filter((key) => key.includes("/src/npm/"));
   if (leakedInternalExports.length > 0) {
     throw new Error(
-      `Internal src/npm exports leaked into the npm manifest: ${
-        leakedInternalExports.join(", ")
-      }`,
+      `Internal src/npm exports leaked into the npm manifest: ${leakedInternalExports.join(", ")}`,
     );
   }
 }
