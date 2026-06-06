@@ -68,54 +68,70 @@ and KERIpy interoperability.
     state via `db.getKever(...)`, not only the hot `db.kevers` cache, or
     reopened witnesses will falsely escrow remote accepted subjects as
     `missingKever` and fail to emit `/replay` or `/reply`.
-23. Delegator-side `delegate confirm` parity is sequencing-sensitive: do not pin
-    local `aess` or force delegated unescrow until the delegate event has been
-    observed as locally committed through the witness-backed confirm path.
+23. Delegator-side `delegate confirm` parity is `delegables`-driven, not
+    notice-driven. Notices from `/delegate/request` are UI hints only; confirm
+    must derive the delegated event, delegator, and approval order from
+    `db.delegables`, then avoid pinning local `aess` or forcing delegated
+    unescrow until the delegate event has been observed as locally committed
+    through the witness-backed confirm path.
 24. Cross-implementation delegation coverage now proves single-key and 2-of-2
     multi-key threshold `dip` + `drt` in both Tufa->KERIpy and KERIpy->Tufa
     directions. Protocol-level true group delegation is also proved both ways:
     real KERIpy two-member `GroupHab` delegated inception can be approved by
     Tufa and completed in KERIpy, and a Tufa-generated two-member delegated
-    group inception can be approved by KERIpy and completed in Tufa. Tufa now
-    has a narrow production `Habery.makeGroupHab(...)` inception surface for
-    locally available members, but this is not a full distributed group
-    workflow; Tufa still lacks KERIpy-style `Counselor` / `Multiplexor`
-    coordination and group rotation orchestration.
-25. The remaining runtime gaps are narrower now: broader exchange/forwarding
+    group inception can be approved by KERIpy and completed in Tufa. Tufa-only
+    true group delegation coverage now proves single->2-of-2 group, 2-of-2
+    group->single, 2-of-2 group->2-of-2 group, and witnessed 2-of-3
+    group->witnessed 2-of-3 group approval. Tufa now has a narrow production
+    `Habery.makeGroupHab(...)` inception surface for locally available members,
+    but this is not a full distributed group workflow; Tufa still lacks
+    KERIpy-style `Counselor` / `Multiplexor` coordination and group rotation
+    orchestration.
+25. Delegation source-seal repair has two cases. Pending delegated events in
+    `pdes` / `delegables` still use explicit delegation escrow promotion, but
+    already accepted local delegated events must also pin `aess` when a later
+    accepted delegator event replays an anchor seal in `a`. Without that repair,
+    single delegated AIDs that accepted locally before the delegator replay can
+    have a valid Kever without durable authorizing seal state. KEL membership is
+    also not sufficient to classify an event as a duplicate when `states.` is
+    behind that sequence number; replay must repair current state before
+    duplicate handling can short-circuit.
+26. The remaining runtime gaps are narrower now: broader exchange/forwarding
     route breadth, the stale/timeout continuation tail, and the last high-value
     DB parity promotions.
-26. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
+27. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
     partially signed `exn` persistence, challenge flows are live, and mailbox
     forwarding/polling now sit on explicit shared provider storage plus durable
     `tops.` cursors.
-27. The mailbox mental model must stay explicit: provider mailbox storage is
+28. The mailbox mental model must stay explicit: provider mailbox storage is
     shared runtime-composed state above `Habery`, while remote topic cursors are
     durable habery state in `tops.`.
-28. `tufa agent` has two independent compatibility seams: CLI flag semantics and
+29. `tufa agent` has two independent compatibility seams: CLI flag semantics and
     packaged Node runtime behavior. Release confidence requires smoke coverage
     against the packed artifact, not just Deno source runs.
-29. Honest CLI/bootstrap tests must use explicit file-path flags such as
+30. Honest CLI/bootstrap tests must use explicit file-path flags such as
     `--config-dir` / `--config-file` rather than hidden default-path mutation.
-30. End-to-end controller-to-controller coverage must respect single-store
+31. End-to-end controller-to-controller coverage must respect single-store
     ownership. Do not run CLI commands against the same store a live
-    `tufa agent` is currently hosting.
-31. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
+    `tufa agent` is currently hosting; a stale live runtime can overwrite
+    newer command-local accepted state.
+32. `tufa db dump` is now a first-class interop-debugging seam; prefer targeted
     selectors over ad hoc LMDB scripts or whole-store dumps.
-32. The host mental model is one listener/runtime per Habery or command
+33. The host mental model is one listener/runtime per Habery or command
     invocation with explicit hosted-prefix filtering. A multi-AID bug is a
     selection/bootstrap bug, not one-listener-per-AID topology.
-33. AEID is keeper auth/encryption state, not an ordinary hosted or user-facing
+34. AEID is keeper auth/encryption state, not an ordinary hosted or user-facing
     AID. Treat signatory/AEID-related identities as non-user-facing by default.
-34. Endpoint-role capability and startup seeding are separate concerns. The
+35. Endpoint-role capability and startup seeding are separate concerns. The
     presence of `Roles.agent` in protocol code is not, by itself, a reason to
     auto-create self `agent` roles at startup.
-35. Alias-scoped config `dt` + `curls` is the canonical controller endpoint
+36. Alias-scoped config `dt` + `curls` is the canonical controller endpoint
     bootstrap path; localhost synthesis is a fallback only when config and
     accepted endpoint state are both missing.
-36. `MailboxPoller` now has an honest finite/infinite split: bounded
+37. `MailboxPoller` now has an honest finite/infinite split: bounded
     `processOnce()` returns typed batches, while long-lived `pollDo()` stays
     sink-based for concurrent workers.
-37. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
+38. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
     library/runtime surface, not the home of host composition, command
     registration, or transport middleware policy.
 
@@ -211,3 +227,24 @@ and KERIpy interoperability.
   be marked only after actual acceptance. Marking them before validation turns
   the event into a protected-party case and can incorrectly bypass remote
   delegator proof.
+- Tufa-only true group delegation now has an executable matrix for
+  single->2-of-2 group, 2-of-2 group->single, 2-of-2 group->2-of-2 group, and
+  witnessed 2-of-3 group->witnessed 2-of-3 group approval. The witnessed case
+  must preserve `WitnessIdxSigs` in both the pre-approval delegated event
+  payload and the delegator approval replay.
+- Accepted delegator anchor replay must repair missing `aess` for already
+  accepted delegated events, not only promote events still sitting in delegation
+  escrows.
+- `delegate confirm` now mirrors KERIpy's source-of-truth shape: scan
+  `delegables`, anchor the local delegator event, wait for normal
+  query/replay-backed delegated commitment, then pin `aess` and unescrow.
+  `/delegate/request` notices remain operator/UI hints and must not route
+  approval or replay publication.
+- Replaying a stored delegated event must not treat `kels.` membership alone as
+  a duplicate when durable `states.` still trails the event sequence number.
+  In that condition, replay repairs state before duplicate handling is allowed
+  to short-circuit.
+- KLI/Tufa interop harnesses must not keep a live `tufa agent` open for the
+  same store that command-local Tufa CLI confirmation is mutating. Use witnessed
+  mailbox/OOBI transport for the cross-implementation workflow instead of a
+  same-store direct Tufa host.
