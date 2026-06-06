@@ -13,9 +13,8 @@ export interface PrimitiveToken {
 /** Parse one text-domain primitive token and include its generated code name. */
 export function parsePrimitiveFromText(input: Uint8Array): PrimitiveToken {
   const matter = parseMatterFromText(input);
-  const name =
-    MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES] ??
-      "UnknownPrimitive";
+  const name = MATTER_CODE_NAMES[matter.code as keyof typeof MATTER_CODE_NAMES]
+    ?? "UnknownPrimitive";
   return {
     code: matter.code,
     name,

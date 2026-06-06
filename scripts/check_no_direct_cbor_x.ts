@@ -42,7 +42,7 @@ async function walk(path: string): Promise<void> {
     }
 
     const text = await Deno.readTextFile(childPath);
-    if (text.includes('"cbor-x"') || text.includes('"cbor-x/')) {
+    if (text.includes("\"cbor-x\"") || text.includes("\"cbor-x/")) {
       offenders.push(relativePath);
     }
   }

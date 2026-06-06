@@ -2,13 +2,7 @@ import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import {
-  Mapper,
-  type MapperInit,
-  type MapperMap,
-  type MapperValue,
-  parseMapperBody,
-} from "./mapper.ts";
+import { Mapper, type MapperInit, type MapperMap, type MapperValue, parseMapperBody } from "./mapper.ts";
 
 type SadMap = MapperMap;
 
@@ -104,8 +98,8 @@ export class Compactor extends Mapper {
     const parts = path.split(".").slice(1);
     for (const part of parts) {
       if (
-        !tail || typeof tail !== "object" || Array.isArray(tail) ||
-        !(part in (tail as SadMap))
+        !tail || typeof tail !== "object" || Array.isArray(tail)
+        || !(part in (tail as SadMap))
       ) {
         return null;
       }
@@ -343,8 +337,8 @@ export class Compactor extends Mapper {
         return true;
       }
       if (
-        value && typeof value === "object" && !Array.isArray(value) &&
-        this._hasSaid(value as SadMap)
+        value && typeof value === "object" && !Array.isArray(value)
+        && this._hasSaid(value as SadMap)
       ) {
         return true;
       }

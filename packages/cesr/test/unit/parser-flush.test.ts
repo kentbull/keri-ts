@@ -76,15 +76,11 @@ Deno.test("V-P1-012: flush idempotency emits terminal shortage only once", () =>
 
 Deno.test("V-P1-014: flush preserves stream order when pendingFrame and queuedFrames coexist", () => {
   const parser = createParser();
-  const nestedAttachment = `${
-    counterV2(CtrDexV2.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const firstEnclosed = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   const secondEnclosed = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const genericPayload = `${firstEnclosed}${secondEnclosed}`;
-  const generic = `${
-    counterV2(CtrDexV2.GenericGroup, genericPayload.length / 4)
-  }${genericPayload}`;
+  const generic = `${counterV2(CtrDexV2.GenericGroup, genericPayload.length / 4)}${genericPayload}`;
 
   // Truncated top-level attachment token triggers shortage after first enclosed
   // frame is selected, leaving second enclosed frame queued.

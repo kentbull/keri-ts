@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { Decimer, parseDecimer } from "../../../src/primitives/decimer.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("decimer: parses KERIpy decimal vectors", () => {
   const d0 = parseDecimer(txt(KERIPY_MATTER_VECTORS.decimerZeroInt), "txt");

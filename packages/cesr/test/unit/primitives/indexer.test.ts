@@ -8,11 +8,7 @@ import {
   parseIndexerFromText,
 } from "../../../src/primitives/indexer.ts";
 import { KERIPY_INDEXER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertQb64Qb2Parity,
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertQb64Qb2Parity, assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("indexer: parses key KERIpy indexed-signature vectors", () => {
   const vectors = [

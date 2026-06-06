@@ -7,10 +7,7 @@ import {
   SUDexByVersion,
   UniDexByVersion,
 } from "../../src/tables/counter-version-registry.ts";
-import {
-  COUNTER_CODE_NAMES_V1,
-  COUNTER_CODE_NAMES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
+import { COUNTER_CODE_NAMES_V1, COUNTER_CODE_NAMES_V2 } from "../../src/tables/counter.tables.generated.ts";
 
 type DispatchMajor = 1 | 2;
 

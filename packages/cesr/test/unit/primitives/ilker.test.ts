@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseIlker } from "../../../src/primitives/ilker.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("ilker: parses KERIpy ilk vector", () => {
   const ilker = parseIlker(txt(KERIPY_MATTER_VECTORS.ilker), "txt");

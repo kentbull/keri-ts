@@ -2,8 +2,7 @@
 export const encoder = new TextEncoder();
 /** Shared UTF-8 decoder used by CESR and DB byte helpers. */
 export const decoder = new TextDecoder();
-const B64_ALPHABET =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /**
  * Concatenates Uint8Array byte arrays into one byte array

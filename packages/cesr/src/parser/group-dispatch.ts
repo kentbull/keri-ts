@@ -1,13 +1,6 @@
 import { b, b64ToInt, intToB64 } from "../core/bytes.ts";
-import {
-  GroupSizeError,
-  ShortageError,
-  UnknownCodeError,
-} from "../core/errors.ts";
-import {
-  composeRecoveryDiagnosticObserver,
-  type RecoveryDiagnosticObserver,
-} from "../core/recovery-diagnostics.ts";
+import { GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
+import { composeRecoveryDiagnosticObserver, type RecoveryDiagnosticObserver } from "../core/recovery-diagnostics.ts";
 import type { AttachmentGroup } from "../core/types.ts";
 import { Counter, CounterGroup, parseCounter } from "../primitives/counter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
@@ -15,10 +8,7 @@ import { parseMatter } from "../primitives/matter.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
-import {
-  resolveVersionedRegistryValue,
-  type VersionedRegistry,
-} from "../tables/counter-version-registry.ts";
+import { resolveVersionedRegistryValue, type VersionedRegistry } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import {
   type AttachmentDispatchDomain,
@@ -73,8 +63,7 @@ function asError(error: unknown): Error {
  * 2) otherwise build default strategy from `mode` and adapt
  *    `onVersionFallback` into structured diagnostics.
  */
-export interface AttachmentDispatchOptions
-  extends AttachmentVersionFallbackPolicyOptions {
+export interface AttachmentDispatchOptions extends AttachmentVersionFallbackPolicyOptions {
   /** Explicit strategy override for fallback + wrapper remainder decisions. */
   versionFallbackPolicy?: AttachmentVersionFallbackPolicy;
   /** Structured recovery diagnostics observer. */
@@ -586,9 +575,7 @@ function splitOpaqueUnits(
         ),
     );
   }
-  return (text.match(/.{1,4}/g) ?? []).map((token) =>
-    UnknownPrimitive.fromPayload(b(token), domain)
-  );
+  return (text.match(/.{1,4}/g) ?? []).map((token) => UnknownPrimitive.fromPayload(b(token), domain));
 }
 
 /** Parse nested siger-list group headed by a version-appropriate siger counter. */
@@ -683,8 +670,8 @@ function parseQuadletGroup(
       } catch (error) {
         const normalized = asError(error);
         if (
-          normalized instanceof ShortageError ||
-          normalized instanceof GroupSizeError
+          normalized instanceof ShortageError
+          || normalized instanceof GroupSizeError
         ) {
           throw normalized;
         }
@@ -1103,8 +1090,8 @@ export function parseAttachmentDispatchCompat(
   domain: ParseDomain,
   options: AttachmentDispatchOptions = {},
 ): { group: AttachmentGroup; consumed: number } {
-  const versionFallbackPolicy = options.versionFallbackPolicy ??
-    createAttachmentVersionFallbackPolicy({
+  const versionFallbackPolicy = options.versionFallbackPolicy
+    ?? createAttachmentVersionFallbackPolicy({
       mode: options.mode,
     });
   const recoveryDiagnosticObserver = composeRecoveryDiagnosticObserver({

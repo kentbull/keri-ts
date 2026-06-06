@@ -5,10 +5,7 @@ import { MtrDex } from "../../../src/primitives/codex.ts";
 import { Signer } from "../../../src/primitives/signer.ts";
 import { parseVerfer, Verfer } from "../../../src/primitives/verfer.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("verfer: parses KERIpy verifier vector", () => {
   const verfer = parseVerfer(txt(KERIPY_MATTER_VECTORS.verferEcdsaR1), "txt");

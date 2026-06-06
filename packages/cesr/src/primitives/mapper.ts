@@ -1,7 +1,4 @@
-import {
-  decode as decodeMsgpack,
-  encode as encodeMsgpack,
-} from "@msgpack/msgpack";
+import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, codeB2ToB64, codeB64ToB2, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
 import {
@@ -20,14 +17,7 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind } from "../tables/versions.ts";
 import { Bexter } from "./bexter.ts";
-import {
-  BEXTER_CODES,
-  DECIMAL_CODES,
-  ESCAPE_CODES,
-  LabelDex,
-  LABELER_CODES,
-  MtrDex,
-} from "./codex.ts";
+import { BEXTER_CODES, DECIMAL_CODES, ESCAPE_CODES, LabelDex, LABELER_CODES, MtrDex } from "./codex.ts";
 import { Counter, parseCounter } from "./counter.ts";
 import { Decimer } from "./decimer.ts";
 import { Diger } from "./diger.ts";
@@ -206,8 +196,8 @@ function parseCounterProbe(
         throw error;
       }
       if (
-        error instanceof UnknownCodeError ||
-        error instanceof DeserializeError
+        error instanceof UnknownCodeError
+        || error instanceof DeserializeError
       ) {
         continue;
       }
@@ -230,8 +220,8 @@ function parseLabelProbe(
       throw error;
     }
     if (
-      error instanceof UnknownCodeError ||
-      error instanceof DeserializeError
+      error instanceof UnknownCodeError
+      || error instanceof DeserializeError
     ) {
       return null;
     }
@@ -385,9 +375,9 @@ export function parseMapperBodySyntax(
     };
   } catch (error) {
     if (
-      error instanceof ShortageError ||
-      error instanceof UnknownCodeError ||
-      error instanceof DeserializeError
+      error instanceof ShortageError
+      || error instanceof UnknownCodeError
+      || error instanceof DeserializeError
     ) {
       throw new SyntaxParseError(
         `Map-body syntax parse failed: ${error.message}`,
@@ -416,10 +406,9 @@ function encodeTag(text: string): string {
   if (!code) {
     throw new SerializeError(`Unsupported mapper tag length=${text.length}`);
   }
-  const pad =
-    code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
-      ? "_"
-      : "";
+  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
+    ? "_"
+    : "";
   return `${code}${pad}${text}`;
 }
 
@@ -523,9 +512,7 @@ function serializeValue(
   }
   if (value && typeof value === "object") {
     const payload = Object.entries(value as MapperMap).map(([label, entry]) =>
-      `${strict ? encodeText(label) : encodeText(label)}${
-        serializeValue(entry, strict)
-      }`
+      `${strict ? encodeText(label) : encodeText(label)}${serializeValue(entry, strict)}`
     ).join("");
     const code = payload.length / 4 < 64 ** 2
       ? CtrDexV2.GenericMapGroup
@@ -619,8 +606,8 @@ function buildFieldProjection(
     return {
       label,
       primitive,
-      isCounter: AGGOR_LIST_CODES.has(primitive.code) ||
-        AGGOR_MAP_CODES.has(primitive.code),
+      isCounter: AGGOR_LIST_CODES.has(primitive.code)
+        || AGGOR_MAP_CODES.has(primitive.code),
       children,
     };
   });
@@ -743,8 +730,7 @@ export class Mapper {
           );
         for (const [label, code] of Object.entries(this.saids)) {
           if (!(label in mad)) continue;
-          mad[label] =
-            new Diger({ code, raw: Diger.digest(dummiedRaw, code) }).qb64;
+          mad[label] = new Diger({ code, raw: Diger.digest(dummiedRaw, code) }).qb64;
         }
       }
 

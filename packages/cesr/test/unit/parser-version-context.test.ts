@@ -1,17 +1,10 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { intToB64 } from "../../src/core/bytes.ts";
-import {
-  createParser,
-  type ParserOptions,
-} from "../../src/core/parser-engine.ts";
+import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  counterV1,
-  counterV2,
-  sigerToken,
-} from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -25,9 +18,7 @@ function parseAll(
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
-    intToB64(minor, 1)
-  }${intToB64(patch, 1)}`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
 }
 
 function wrapQuadletGroupV2(code: string, payload: string): string {
@@ -44,8 +35,8 @@ function v1OpaqueNonNativeFrame(): string {
 }
 
 function hasCode(entry: unknown): entry is { code: string } {
-  return typeof entry === "object" && entry !== null && !Array.isArray(entry) &&
-    "code" in entry;
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry)
+    && "code" in entry;
 }
 
 Deno.test("V-P0-003: top-level genus-version counter persists stream version for subsequent frame parses", () => {
@@ -83,9 +74,7 @@ Deno.test("V-P0-004: BodyWithAttachmentGroup payload-leading genus-version appli
 });
 
 Deno.test("V-P0-005: enclosed AttachmentGroup payload-leading genus-version overrides outer wrapper version for nested attachment parsing", () => {
-  const enclosedAttachments = `${genusVersionCounter(1)}${
-    counterV1(CtrDexV1.ControllerIdxSigs, 1)
-  }${sigerToken()}`;
+  const enclosedAttachments = `${genusVersionCounter(1)}${counterV1(CtrDexV1.ControllerIdxSigs, 1)}${sigerToken()}`;
   const wrappedAttachmentGroup = wrapQuadletGroupV2(
     CtrDexV2.AttachmentGroup,
     enclosedAttachments,
@@ -110,9 +99,9 @@ Deno.test("V-P0-005: enclosed AttachmentGroup payload-leading genus-version over
 
   const nestedControllerSigs = attachment.items.find(
     (item) =>
-      item instanceof CounterGroup &&
-      item.name === "ControllerIdxSigs" &&
-      item.code === CtrDexV1.ControllerIdxSigs,
+      item instanceof CounterGroup
+      && item.name === "ControllerIdxSigs"
+      && item.code === CtrDexV1.ControllerIdxSigs,
   );
   assert(nestedControllerSigs);
 });

@@ -39,8 +39,7 @@ await build({
   package: {
     name: "cesr-ts",
     version: resolvePackageVersion(),
-    description:
-      "CESR parser, primitives, and annotation tooling for TypeScript/JavaScript",
+    description: "CESR parser, primitives, and annotation tooling for TypeScript/JavaScript",
     license: "Apache-2.0",
     repository: {
       type: "git",

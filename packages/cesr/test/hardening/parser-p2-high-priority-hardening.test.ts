@@ -1,25 +1,13 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64, intToB64 } from "../../src/core/bytes.ts";
-import {
-  createParser,
-  type ParserOptions,
-} from "../../src/core/parser-engine.ts";
+import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import {
-  counterV1,
-  counterV2,
-  sigerToken,
-  token,
-} from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
-import {
-  minimalV1CborBody,
-  minimalV1MgpkBody,
-  v2ify,
-} from "../fixtures/versioned-body-fixtures.ts";
+import { minimalV1CborBody, minimalV1MgpkBody, v2ify } from "../fixtures/versioned-body-fixtures.ts";
 
 interface FrameSummary {
   kind: string;
@@ -64,9 +52,7 @@ function summarizeFrames(frames: CesrFrame[]): FrameSummary[] {
       ilk: event.frame.body.ilk ?? "",
       said: event.frame.body.said ?? "",
       nativeBodyCode: event.frame.body.native?.bodyCode ?? "",
-      attachments: event.frame.attachments.map((attachment) =>
-        `${attachment.code}:${attachment.count}`
-      ),
+      attachments: event.frame.attachments.map((attachment) => `${attachment.code}:${attachment.count}`),
     }));
 }
 
@@ -85,20 +71,16 @@ function splitIntoThirds(input: Uint8Array): number[] {
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
   const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${
-    intToB64(minor, 1)
-  }${intToB64(patch, 1)}`;
+  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
 }
 
 Deno.test(
   "V-P2-001: big-count BodyWithAttachmentGroup with large opaque payload preserves txt/qb2 parity",
   () => {
     const opaqueMatter = token("1AAE");
-    const bigOpaqueBody = `${
-      counterV2(CtrDexV2.NonNativeBodyGroup, opaqueMatter.length / 4)
-    }${opaqueMatter}${counterV2(CtrDexV2.ControllerIdxSigs, 20)}${
-      Array.from({ length: 20 }, () => sigerToken()).join("")
-    }`;
+    const bigOpaqueBody = `${counterV2(CtrDexV2.NonNativeBodyGroup, opaqueMatter.length / 4)}${opaqueMatter}${
+      counterV2(CtrDexV2.ControllerIdxSigs, 20)
+    }${Array.from({ length: 20 }, () => sigerToken()).join("")}`;
     const wrapped = wrapQuadletGroupV2(
       CtrDexV2.BigBodyWithAttachmentGroup,
       bigOpaqueBody,
@@ -119,9 +101,7 @@ Deno.test(
 Deno.test(
   "V-P2-002: deep nested GenericGroup chain with mixed wrapper children remains split-deterministic",
   () => {
-    const nestedSigGroup = `${
-      counterV2(CtrDexV2.ControllerIdxSigs, 1)
-    }${sigerToken()}`;
+    const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
     const wrappedBody = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
       `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSigGroup}`,
@@ -152,17 +132,15 @@ Deno.test(
 
     assertEquals(baseline.length, 6);
     assertEquals(
-      baseline.filter((frame) =>
-        frame.attachments.includes(`${CtrDexV2.ControllerIdxSigs}:1`)
-      )
+      baseline.filter((frame) => frame.attachments.includes(`${CtrDexV2.ControllerIdxSigs}:1`))
         .length,
       2,
     );
     assertEquals(baseline.filter((frame) => frame.ilk === "").length, 2);
     assertEquals(
       baseline.filter((frame) =>
-        frame.said ===
-          "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN"
+        frame.said
+          === "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN"
       ).length,
       4,
     );
@@ -184,9 +162,7 @@ Deno.test(
     assertEquals(frame.frame.body.native?.fields.length, 13);
 
     const categories = new Set(
-      (frame.frame.body.native?.fields ?? []).map((field) =>
-        field.primitive.code
-      ),
+      (frame.frame.body.native?.fields ?? []).map((field) => field.primitive.code),
     );
     assertEquals([...categories].sort(), ["-J", "D", "E", "M"]);
   },
@@ -200,11 +176,9 @@ Deno.test(
       CtrDexV2.BodyWithAttachmentGroup,
       `${genusVersionCounter(1)}${v1Opaque}`,
     );
-    const payload = `${genusVersionCounter(1)}${v1Opaque}${
-      genusVersionCounter(2)
-    }${KERIPY_NATIVE_V2_ICP_FIX_BODY}${genusVersionCounter(1)}${wrappedV1}${
-      genusVersionCounter(2)
-    }${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const payload = `${genusVersionCounter(1)}${v1Opaque}${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
+      genusVersionCounter(1)
+    }${wrappedV1}${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const stream = wrapQuadletGroupV2(CtrDexV2.GenericGroup, payload);
     const input = encode(stream);
     const frames = parseFramesNoError(
@@ -212,9 +186,7 @@ Deno.test(
       splitIntoThirds(input),
       { attachmentDispatchMode: "strict" },
     );
-    const majors = frames.map((event) =>
-      event.type === "frame" ? event.frame.body.pvrsn.major : -1
-    );
+    const majors = frames.map((event) => event.type === "frame" ? event.frame.body.pvrsn.major : -1);
     assertEquals(majors, [1, 2, 1, 2]);
   },
 );
@@ -222,21 +194,17 @@ Deno.test(
 Deno.test(
   "V-P2-011: long heterogeneous stream (JSON + MGPK + CBOR + native + wrapper) parses in order",
   () => {
-    const json = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
+    const json = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
     const wrappedNative = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
-        counterV2(CtrDexV2.ControllerIdxSigs, 1)
-      }${sigerToken()}`,
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`,
     );
 
     const part1 = encode(json);
     const part2 = minimalV1MgpkBody();
     const part3 = minimalV1CborBody();
     const part4 = encode(
-      `${
-        genusVersionCounter(2)
-      }${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNative}`,
+      `${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNative}`,
     );
 
     const stream = concatBytes(part1, part2, part3, part4);
@@ -270,9 +238,7 @@ Deno.test(
 Deno.test(
   "V-P2-012: same semantic wrapper-heavy corpus preserves txt/qb2 summary and metadata parity",
   () => {
-    const nestedAttachment = `${
-      counterV2(CtrDexV2.ControllerIdxSigs, 2)
-    }${sigerToken()}${sigerToken()}`;
+    const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 2)}${sigerToken()}${sigerToken()}`;
     const wrapped = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
       `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`,
@@ -308,9 +274,7 @@ Deno.test(
       Array.from({ length: declared }, () => sigerToken()).join("")
     }`;
     const truncated = encode(
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
-        fullAttachment.slice(0, fullAttachment.length - 1)
-      }`,
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${fullAttachment.slice(0, fullAttachment.length - 1)}`,
     );
 
     const parser = createParser();
@@ -341,8 +305,7 @@ Deno.test(
     const wrappedAttachmentGroup = `${
       counterV2(CtrDexV2.AttachmentGroup, malformedPayload.length / 4)
     }${malformedPayload}`;
-    const stream =
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
 
     const strictEvents = parseEvents(
       encode(stream),
@@ -364,9 +327,7 @@ Deno.test(
       assertEquals(compatFrames[0].frame.attachments.length, 1);
       const items = compatFrames[0].frame.attachments[0].items;
       assert(
-        items.some((item) =>
-          item instanceof UnknownPrimitive && item.qb64 === "ABCD"
-        ),
+        items.some((item) => item instanceof UnknownPrimitive && item.qb64 === "ABCD"),
       );
     }
     if (compatFrames[1].type === "frame") {

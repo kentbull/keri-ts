@@ -50,10 +50,7 @@ import {
   VERFER_CODES,
   VERSER_CODES,
 } from "../../../src/primitives/codex.ts";
-import {
-  KERIPY_COUNTER_VECTORS,
-  KERIPY_MATTER_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_COUNTER_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
 function codesOf(codex: Readonly<Record<string, string>>): string[] {
   return Object.values(codex).sort();

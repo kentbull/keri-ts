@@ -1,15 +1,6 @@
-import {
-  assert,
-  assertEquals,
-  assertFalse,
-  assertInstanceOf,
-  assertThrows,
-} from "jsr:@std/assert";
+import { assert, assertEquals, assertFalse, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import {
-  CIPHER_X25519_VARIABLE_STREAM_CODES,
-  MtrDex,
-} from "../../../src/primitives/codex.ts";
+import { CIPHER_X25519_VARIABLE_STREAM_CODES, MtrDex } from "../../../src/primitives/codex.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Decrypter } from "../../../src/primitives/decrypter.ts";
 import { Encrypter } from "../../../src/primitives/encrypter.ts";

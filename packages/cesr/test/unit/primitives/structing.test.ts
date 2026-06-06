@@ -1,20 +1,6 @@
-import {
-  assert,
-  assertEquals,
-  assertInstanceOf,
-  assertStrictEquals,
-  assertThrows,
-} from "jsr:@std/assert";
+import { assert, assertEquals, assertInstanceOf, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { b } from "../../../src/core/bytes.ts";
-import {
-  Diger,
-  Labeler,
-  Noncer,
-  NumberPrimitive,
-  Prefixer,
-  Texter,
-  Verser,
-} from "../../../src/index.ts";
+import { Diger, Labeler, Noncer, NumberPrimitive, Prefixer, Texter, Verser } from "../../../src/index.ts";
 import {
   ACastDom,
   AClanDom,
@@ -40,10 +26,7 @@ import {
   TMClanDom,
   TypeMedia,
 } from "../../../src/primitives/structing.ts";
-import {
-  KERIPY_MATTER_VECTORS,
-  KERIPY_STRUCTING_DATA_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_MATTER_VECTORS, KERIPY_STRUCTING_DATA_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
 // Read these tests as the maintainer tutorial for fixed-field structing:
 // 1. registries/codens mirror KERIpy naming and counter families

@@ -1,13 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
-import {
-  parsePrimitiveFromText,
-  supportedPrimitiveCodes,
-} from "../../../src/primitives/registry.ts";
-import {
-  KERIPY_MAIN_BASELINE,
-  KERIPY_MATTER_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { parsePrimitiveFromText, supportedPrimitiveCodes } from "../../../src/primitives/registry.ts";
+import { KERIPY_MAIN_BASELINE, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("registry: parses KERIpy verifier vector token", () => {

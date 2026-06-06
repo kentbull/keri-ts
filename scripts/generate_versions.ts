@@ -41,8 +41,7 @@ const TARGETS: GenerateTarget[] = [
   },
 ];
 
-const SEMVER_REGEX =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const BUILD_METADATA_REGEX = /^[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*$/;
 
 function parseArgs(args: string[]) {
@@ -96,8 +95,8 @@ function normalizeBuildMetadata(input: string): string {
 }
 
 function computeDefaultBuildMetadata(): string {
-  const run = Deno.env.get("GITHUB_RUN_NUMBER") ??
-    Deno.env.get("GITHUB_RUN_ID");
+  const run = Deno.env.get("GITHUB_RUN_NUMBER")
+    ?? Deno.env.get("GITHUB_RUN_ID");
   const sha = Deno.env.get("GITHUB_SHA")?.slice(0, 8);
 
   if (run && sha) {
@@ -119,8 +118,8 @@ function getBuildMetadata(
   target: GenerateTarget,
   ciBuildMetadata: boolean,
 ): string {
-  const explicit = Deno.env.get(target.envOverrideKey) ??
-    Deno.env.get("BUILD_METADATA");
+  const explicit = Deno.env.get(target.envOverrideKey)
+    ?? Deno.env.get("BUILD_METADATA");
   if (explicit) {
     return normalizeBuildMetadata(explicit);
   }

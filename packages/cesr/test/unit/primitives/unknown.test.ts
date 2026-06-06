@@ -1,10 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { codeB64ToB2 } from "../../../src/core/bytes.ts";
 import { UnknownPrimitive } from "../../../src/primitives/unknown.ts";
-import {
-  KERIPY_COUNTER_VECTORS,
-  KERIPY_MAIN_BASELINE,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_COUNTER_VECTORS, KERIPY_MAIN_BASELINE } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("unknown primitive: keeps KERIpy-baseline metadata", () => {

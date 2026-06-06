@@ -51,10 +51,10 @@ export class Serdery {
     if (cold === "txt" || cold === "bny") {
       const counter = parseCounter(input, Vrsn_2_0, cold);
       if (
-        counter.code === CtrDexV2.FixBodyGroup ||
-        counter.code === CtrDexV2.BigFixBodyGroup ||
-        counter.code === CtrDexV2.MapBodyGroup ||
-        counter.code === CtrDexV2.BigMapBodyGroup
+        counter.code === CtrDexV2.FixBodyGroup
+        || counter.code === CtrDexV2.BigFixBodyGroup
+        || counter.code === CtrDexV2.MapBodyGroup
+        || counter.code === CtrDexV2.BigMapBodyGroup
       ) {
         const consumed = cold === "txt"
           ? counter.fullSize + counter.count * 4
@@ -69,8 +69,8 @@ export class Serdery {
         const textCounter = parseCounter(textRaw, Vrsn_2_0, "txt");
         let offset = textCounter.fullSize;
         if (
-          textCounter.code === CtrDexV2.MapBodyGroup ||
-          textCounter.code === CtrDexV2.BigMapBodyGroup
+          textCounter.code === CtrDexV2.MapBodyGroup
+          || textCounter.code === CtrDexV2.BigMapBodyGroup
         ) {
           offset += parseLabeler(textRaw.slice(offset), "txt").fullSize;
         }

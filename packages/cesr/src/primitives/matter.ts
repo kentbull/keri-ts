@@ -11,17 +11,9 @@ import {
   nabSextets,
   sceil,
 } from "../core/bytes.ts";
-import {
-  DeserializeError,
-  ShortageError,
-  UnknownCodeError,
-} from "../core/errors.ts";
+import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
-import {
-  MATTER_CODE_NAMES,
-  MATTER_HARDS,
-  MATTER_SIZES,
-} from "../tables/matter.tables.generated.ts";
+import { MATTER_CODE_NAMES, MATTER_HARDS, MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import { DIGEST_CODES, NON_TRANSFERABLE_CODES, PREFIX_CODES } from "./codex.ts";
 
 /**
@@ -59,13 +51,13 @@ const MATTER_BARDS = new Map<string, number>(
 );
 
 function isMatterData(value: unknown): value is MatterData {
-  return typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    "raw" in value &&
-    "qb64" in value &&
-    "fullSize" in value &&
-    "fullSizeB2" in value;
+  return typeof value === "object"
+    && value !== null
+    && "code" in value
+    && "raw" in value
+    && "qb64" in value
+    && "fullSize" in value
+    && "fullSizeB2" in value;
 }
 
 function rawSizeForCode(code: string): number {
@@ -448,10 +440,10 @@ export class Matter {
   /** True when both qb64 and qb2 are 24-bit aligned and round-trip exactly. */
   get composable(): boolean {
     const qb2 = this.qb2;
-    return this.qb64b.length % 4 === 0 &&
-      qb2.length % 3 === 0 &&
-      encodeB64(qb2) === this.qb64 &&
-      bytesEqual(decodeB64(this.qb64), qb2);
+    return this.qb64b.length % 4 === 0
+      && qb2.length % 3 === 0
+      && encodeB64(qb2) === this.qb64
+      && bytesEqual(decodeB64(this.qb64), qb2);
   }
 
   equals(other: { qb64: string }): boolean {

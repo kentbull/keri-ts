@@ -1,8 +1,5 @@
 import { intToB64 } from "../../src/core/bytes.ts";
-import {
-  COUNTER_SIZES_V1,
-  COUNTER_SIZES_V2,
-} from "../../src/tables/counter.tables.generated.ts";
+import { COUNTER_SIZES_V1, COUNTER_SIZES_V2 } from "../../src/tables/counter.tables.generated.ts";
 import { MATTER_SIZES } from "../../src/tables/matter.tables.generated.ts";
 
 /** Build a v1 counter token with code-specific size encoding. */

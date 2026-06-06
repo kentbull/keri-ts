@@ -92,9 +92,7 @@ Deno.test("recovery diagnostics: strict fallback emits rejected event", () => {
 Deno.test("recovery diagnostics: compat wrapper tail preservation emits opaque-tail event", () => {
   const nested = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const payload = `${nested}ABCD`;
-  const wrappedAttachmentGroup = `${
-    counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)
-  }${payload}`;
+  const wrappedAttachmentGroup = `${counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)}${payload}`;
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}`;
   const diagnostics: RecoveryDiagnostic[] = [];
 
@@ -139,8 +137,8 @@ Deno.test("recovery diagnostics: parser non-shortage error emits reset event", (
   if (diagnostics[0].type === "parser-error-reset") {
     assertEquals(diagnostics[0].offset, 0);
     assert(
-      diagnostics[0].errorName === "ColdStartError" ||
-        diagnostics[0].errorName === "GroupSizeError",
+      diagnostics[0].errorName === "ColdStartError"
+        || diagnostics[0].errorName === "GroupSizeError",
     );
   }
 });

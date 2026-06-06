@@ -4,10 +4,7 @@ import { Cigar } from "../../../src/primitives/cigar.ts";
 import { IdrDex, MtrDex } from "../../../src/primitives/codex.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
 import { Signer } from "../../../src/primitives/signer.ts";
-import {
-  KERIPY_CODE_VECTORS,
-  KERIPY_MATTER_VECTORS,
-} from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_CODE_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 
 Deno.test("signer: hydrates KERIpy signer seed vectors", () => {
   const sR1 = new Signer({ qb64: KERIPY_MATTER_VECTORS.signerSeedR1 });

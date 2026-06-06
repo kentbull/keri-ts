@@ -90,9 +90,7 @@ export const COUNTER_SIZES_V2 = new Map<string, Cizage>([
 ]);
 
 export const COUNTER_HARDS = new Map<string, number>([
-  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split("").map((c) =>
-    [`-${c}`, 2] as [string, number]
-  ),
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split("").map((c) => [`-${c}`, 2] as [string, number]),
   ["--", 3],
   ["-_", 5],
 ]);

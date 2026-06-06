@@ -34,10 +34,8 @@ export const KERIPY_MATTER_VECTORS = {
   verferEcdsaK1: "1AABAtuYM4WoDrt8FV3dxkdqJAeafJZfBQ9i3i1HVptUKRZ5",
   verferEcdsaR1: "1AAJA3cK_P2CDlh-_EMFPvyqTPI1POkw-dr14DANx5JEXDCZ",
   verferEcdsaR1Vector: "1AAJAxaZvKBRj6Zss11rCpL2hJYoe7Zk6OhXaRW46poCBir_",
-  cigarEcdsaK1:
-    "0CBfgMBa5HEyXffL2xvC9BHDBa_0vjt-rD6MFTqfpQo9aXVFkzTIliv-eY3RTpwfbKfIEtZ6bMV0n--NpyWilUfM",
-  cigarEcdsaR1:
-    "0ICM-rRAAdKrSrzFlouiZXbNUZ07QMM1IXOaG-gv4TAo4QeQCKZC1z82jJYy_wFkAxgIhbikl3a-nOTXxecF2lEj",
+  cigarEcdsaK1: "0CBfgMBa5HEyXffL2xvC9BHDBa_0vjt-rD6MFTqfpQo9aXVFkzTIliv-eY3RTpwfbKfIEtZ6bMV0n--NpyWilUfM",
+  cigarEcdsaR1: "0ICM-rRAAdKrSrzFlouiZXbNUZ07QMM1IXOaG-gv4TAo4QeQCKZC1z82jJYy_wFkAxgIhbikl3a-nOTXxecF2lEj",
   saiderAcdc: "EMRvS7lGxc1eDleXBkvSHkFs8vUrslRcla6UXOJdcczw",
   numberShort: "MPd_",
   seqnerZero: "0AAAAAAAAAAAAAAAAAAAAAAA",
@@ -66,21 +64,15 @@ export const KERIPY_MATTER_VECTORS = {
 
 /** Selected Indexer/Siger vectors from KERIpy tests. */
 export const KERIPY_INDEXER_VECTORS = {
-  ed25519SigIdx0:
-    "AACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519SigIdx5:
-    "AFCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519BigSigIdx67:
-    "2ABDBDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519SigIdx0: "AACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519SigIdx5: "AFCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519BigSigIdx67: "2ABDBDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
   ed25519BigSigIdx90Ondex65:
     "2ABaBBCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519CrtSigIdx3:
-    "BDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
-  ed25519BigCrtSigIdx68:
-    "2BBEAACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519CrtSigIdx3: "BDCZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
+  ed25519BigCrtSigIdx68: "2BBEAACZ0jw5JCQwn2v7GKCMQHISMi5rsscfcA4nbY9AqqWMyG6FyCH2cZFwqezPkq8p3sr8f37Xb3wXgh3UPG8igSYJ",
   tbd0Label: "0zAEHello_World_Peep",
-  sigerSample:
-    "AACdI8OSQkMJ9r-xigjEByEjIua7LHH3AOJ22PQKqljMhuhcgh9nGRcKnsz5KvKd7K_H9-1298F4Id1DxvIoEmCQ",
+  sigerSample: "AACdI8OSQkMJ9r-xigjEByEjIua7LHH3AOJ22PQKqljMhuhcgh9nGRcKnsz5KvKd7K_H9-1298F4Id1DxvIoEmCQ",
 } as const;
 
 /** Selected Counter vectors from KERIpy tests. */
@@ -120,10 +112,8 @@ export const KERIPY_CODE_VECTORS = {
  */
 export const KERIPY_STRUCTOR_VECTORS = {
   aggorEmptyList: "-JAA",
-  sealerTypedDigestEnclosed:
-    "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
-  sealerTypedDigestPayload:
-    "YOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  sealerTypedDigestEnclosed: "-WANYOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
+  sealerTypedDigestPayload: "YOCSRCAAEHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE",
   blinderBlindStateEnclosed:
     "-aAjEBTAKXL5si31rCKCimOwR_gJTRmLaqixvrJEj5OzK769aJte0a_x8dBbGQrBkdYRgkzvFlQss3ovVOkUz1L1YGPdEBju1o4x1Ud-z2sL-uxLC5L3iBVD77d_MYbYGGCUQgqQ0Missued",
   blinderBlindStatePayload:
@@ -148,10 +138,8 @@ export const KERIPY_STRUCTING_DATA_VECTORS = {
     s: "e",
     sQb64: "MAAO",
     d: "ELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
-    qb64:
-      "BN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zRMAAOELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
-    enclosed:
-      "-TAXBN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zRMAAOELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
+    qb64: "BN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zRMAAOELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
+    enclosed: "-TAXBN5Lu0RqptmJC-iXEldMMrlEew7Q01te2fLgqlbqW9zRMAAOELC5L3iBVD77d_MYbYGGCUQgqQBju1o4x1Ud-z2sL-ux",
   },
   sealKind: {
     t: "YOCSRCAA",
@@ -189,7 +177,7 @@ export const KERIPY_STRUCTING_DATA_VECTORS = {
     u: "0ABtZWRpYXJyYXdub25jZV8w",
     mt: "application/json",
     mtQb64: "6BAGAABhcHBsaWNhdGlvbi9qc29u",
-    mv: '{"name":"Sue","food":"Pizza"}',
+    mv: "{\"name\":\"Sue\",\"food\":\"Pizza\"}",
     mvQb64: "5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",
     qb64:
       "EHYFmR_QWCLz8gZyhc4BQ8xJ-ftZ6OA4fNmuu1ZAvyTE0ABtZWRpYXJyYXdub25jZV8w6BAGAABhcHBsaWNhdGlvbi9qc29u5BAKAHsibmFtZSI6IlN1ZSIsImZvb2QiOiJQaXp6YSJ9",

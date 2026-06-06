@@ -1,8 +1,5 @@
 import { resolveCounterCodeNameTable } from "../tables/counter-version-registry.ts";
-import {
-  COUNTER_CODE_NAMES_V1,
-  COUNTER_CODE_NAMES_V2,
-} from "../tables/counter.tables.generated.ts";
+import { COUNTER_CODE_NAMES_V1, COUNTER_CODE_NAMES_V2 } from "../tables/counter.tables.generated.ts";
 import { MATTER_CODE_NAMES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 

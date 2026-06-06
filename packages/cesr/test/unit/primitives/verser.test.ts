@@ -2,10 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../../src/core/errors.ts";
 import { parseVerser } from "../../../src/primitives/verser.ts";
 import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import {
-  assertTxtBnyQb64Parity,
-  txt,
-} from "../../fixtures/primitive-test-helpers.ts";
+import { assertTxtBnyQb64Parity, txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("verser: parses KERIpy KERI 2.0 vector", () => {
   const verser = parseVerser(txt(KERIPY_MATTER_VECTORS.verserKeri20), "txt");

@@ -46,8 +46,7 @@ Deno.test(
   () => {
     // Two native frames keep the round-trip assertion focused on semantic
     // stability, not on preserving literal source-token formatting.
-    const stream =
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
     const annotated = annotate(stream);
     const restored = t(denot(annotated));
     const originalSummary = summarizeFrames(parseFramesNoError(encode(stream)));

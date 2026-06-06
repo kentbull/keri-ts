@@ -1,11 +1,8 @@
 import { assertEquals } from "jsr:@std/assert";
-import {
-  benchmarkCesrParser,
-  parseCesrStreamOnce,
-} from "../../src/bench/parser-benchmark.ts";
+import { benchmarkCesrParser, parseCesrStreamOnce } from "../../src/bench/parser-benchmark.ts";
 
 const TEXT_ENCODER = new TextEncoder();
-const SAMPLE_FRAME = '{"v":"KERI10JSON00002e_","t":"rpy","d":"Eabc"}';
+const SAMPLE_FRAME = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 
 Deno.test("parseCesrStreamOnce parses repeated CESR frames without errors", () => {
   const stream = TEXT_ENCODER.encode(SAMPLE_FRAME.repeat(4));

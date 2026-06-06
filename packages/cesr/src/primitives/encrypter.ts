@@ -12,11 +12,7 @@ import {
 import { Matter, type MatterInit } from "./matter.ts";
 import { type CipherHydratable, isQualifiedPrimitive } from "./primitive.ts";
 import { Salter } from "./salter.ts";
-import {
-  boxKeyPairFromEd25519Seed,
-  boxPublicKeyFromEd25519Verfer,
-  sealBox,
-} from "./sealed-box.ts";
+import { boxKeyPairFromEd25519Seed, boxPublicKeyFromEd25519Verfer, sealBox } from "./sealed-box.ts";
 import { Signer } from "./signer.ts";
 import { Streamer } from "./streamer.ts";
 import { Verfer } from "./verfer.ts";
@@ -29,8 +25,7 @@ import { Verfer } from "./verfer.ts";
  * - provide an Ed25519 verifier key through `verkey` and derive the matching
  *   X25519 public box key during construction
  */
-export interface EncrypterInit
-  extends Omit<MatterInit, "raw" | "qb64b" | "qb64" | "qb2"> {
+export interface EncrypterInit extends Omit<MatterInit, "raw" | "qb64b" | "qb64" | "qb2"> {
   raw?: Uint8Array | ArrayBufferView;
   qb64b?: Uint8Array | ArrayBufferView;
   qb64?: ByteLike;
@@ -71,8 +66,8 @@ function normalizeMatterInit(
   } else if (init.verkey) {
     const verfer = new Verfer({ qb64b: normalizeByteLike(init.verkey) });
     if (
-      verfer.code !== MtrDex.Ed25519 &&
-      verfer.code !== MtrDex.Ed25519N
+      verfer.code !== MtrDex.Ed25519
+      && verfer.code !== MtrDex.Ed25519N
     ) {
       throw new DeserializeError(
         `Unsupported verkey derivation code = ${verfer.code}.`,
