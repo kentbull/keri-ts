@@ -11,6 +11,7 @@ export * from "./configing.ts";
 export * from "./cue-runtime.ts";
 export * from "./exchanging.ts";
 export * from "./habbing.ts";
+export * from "./ipex-credentialing.ts";
 export * from "./ipexing.ts";
 export * from "./keeping.ts";
 export * from "./notifying.ts";

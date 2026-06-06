@@ -17,6 +17,7 @@ export * from "../app/exchanging.ts";
 export * from "../app/forwarding.ts";
 export * from "../app/habbing.ts";
 export * from "../app/httping.ts";
+export * from "../app/ipex-credentialing.ts";
 export * from "../app/ipexing.ts";
 export * from "../app/keeping.ts";
 export * from "../app/mailbox-director.ts";

@@ -9,9 +9,10 @@ import {
   makePather,
   NonceDex,
   Noncer,
+  parseSerder,
   Saider,
-  Serder,
   SerderKERI,
+  smell,
   type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
@@ -45,16 +46,16 @@ function encodePathedEmbeds(
   const e: Record<string, unknown> = {};
   const groups: Uint8Array[] = [];
   for (const [label, msg] of Object.entries(embeds)) {
-    const serder = new Serder({ raw: msg });
+    const { smellage } = smell(msg);
+    const body = msg.slice(0, smellage.size);
+    const serder = parseSerder(body, smellage);
     e[label] = serder.ked;
-    const atc = msg.slice(serder.size);
+    const atc = msg.slice(smellage.size);
     if (atc.length === 0) {
       continue;
     }
     const pathed = concatBytes(makePather(["e", label]).qb64b, atc);
-    const code = pathed.length / 4 < 4096
-      ? CtrDexV1.PathedMaterialCouples
-      : CtrDexV1.BigPathedMaterialCouples;
+    const code = pathed.length / 4 < 4096 ? CtrDexV1.PathedMaterialCouples : CtrDexV1.BigPathedMaterialCouples;
     groups.push(
       concatBytes(
         new Counter({
