@@ -20,7 +20,7 @@ interface BenchmarkCliOptions {
 }
 
 const BENCH_USAGE =
-  "Usage: cesr bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--framed] [--compat] [--allow-errors] [--json]";
+  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--framed] [--compat] [--allow-errors] [--json]";
 
 /** Parse non-negative integer flags used for sizing and warmup controls. */
 function parseNonNegativeInt(argName: string, value: string): number {
@@ -40,7 +40,7 @@ function parsePositiveInt(argName: string, value: string): number {
   return parsed;
 }
 
-/** Parse `cesr bench` command-line flags without performing IO. */
+/** Parse `tephra bench` command-line flags without performing IO. */
 function parseArgs(args: string[]): BenchmarkCliOptions {
   const out: BenchmarkCliOptions = {
     iterations: 50,
@@ -126,7 +126,7 @@ function formatHumanReadable(
   ].join("\n");
 }
 
-/** Execute `cesr bench` using the existing parser benchmark engine. */
+/** Execute `tephra bench` using the existing parser benchmark engine. */
 export async function benchCommand(args: string[], io: CliIo): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     await io.writeStdout(`${BENCH_USAGE}\n`);
@@ -163,7 +163,7 @@ export async function benchCommand(args: string[], io: CliIo): Promise<number> {
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await io.writeStderr(`cesr bench error: ${message}\n`);
+    await io.writeStderr(`tephra bench error: ${message}\n`);
     return 1;
   }
 }

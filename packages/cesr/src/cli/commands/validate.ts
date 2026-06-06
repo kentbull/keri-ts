@@ -25,9 +25,9 @@ interface ValidationReport {
   errors: ValidationErrorReport[];
 }
 
-const VALIDATE_USAGE = "Usage: cesr validate [--in <path>] [--framed] [--compat] [--json]";
+const VALIDATE_USAGE = "Usage: tephra validate [--in <path>] [--framed] [--compat] [--json]";
 
-/** Parse `cesr validate` command-line flags without performing IO. */
+/** Parse `tephra validate` command-line flags without performing IO. */
 function parseArgs(args: string[]): ValidateCliOptions {
   const out: ValidateCliOptions = {
     framed: false,
@@ -90,7 +90,7 @@ function describeError(error: Error): ValidationErrorReport {
 /**
  * Count frames, attachment groups, and parser errors for one input stream.
  *
- * `cesr validate` is strict by default because a validation command should fail
+ * `tephra validate` is strict by default because a validation command should fail
  * on ambiguous attachment dispatch. `--compat` intentionally relaxes that mode
  * for streams that still rely on legacy mixed-major attachment behavior.
  *
@@ -167,7 +167,7 @@ function formatFailure(report: ValidationReport): string {
   return lines.join("\n");
 }
 
-/** Execute `cesr validate` against file input or stdin. */
+/** Execute `tephra validate` against file input or stdin. */
 export async function validateCommand(args: string[], io: CliIo): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     await io.writeStdout(`${VALIDATE_USAGE}\n`);
@@ -193,7 +193,7 @@ export async function validateCommand(args: string[], io: CliIo): Promise<number
     return report.ok ? 0 : 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await io.writeStderr(`cesr validate error: ${message}\n`);
+    await io.writeStderr(`tephra validate error: ${message}\n`);
     return 1;
   }
 }

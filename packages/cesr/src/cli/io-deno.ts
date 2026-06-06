@@ -35,7 +35,7 @@ export async function readAllReadable(
   return out;
 }
 
-/** Create the Deno runtime IO adapter for the package-level `cesr` CLI. */
+/** Create the Deno runtime IO adapter for the package-level `tephra` CLI. */
 export function createDenoCliIo(): CliIo {
   const textEncoder = new TextEncoder();
   return {

@@ -87,7 +87,7 @@ deno task tufa annotate --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.ces
 deno task bench:cesr
 
 # Benchmark parser on any stream from source
-deno task bench:cesr:parser --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
+deno task tephra:bench --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
 
 # Run quality checks
 deno task quality

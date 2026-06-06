@@ -118,6 +118,6 @@ Canonical parser lifecycle/state-machine contract:
 
 ## CLI annotation behavior notes
 
-- `deno task cesr:annotate --in <stream.cesr> [--out <file>] [--qb2] [--pretty]`
+- `deno task tephra:annotate --in <stream.cesr> [--out <file>] [--qb2] [--pretty]`
 - `--pretty` only applies to JSON serder message bodies.
 - Non-JSON or malformed JSON bodies are emitted as-is.

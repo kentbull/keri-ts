@@ -34,7 +34,7 @@ async function writeNodeStream(
   });
 }
 
-/** Create the Node runtime IO adapter for the package-level `cesr` CLI. */
+/** Create the Node runtime IO adapter for the package-level `tephra` CLI. */
 export function createNodeCliIo(): CliIo {
   return {
     readFile: async (path: string) => {

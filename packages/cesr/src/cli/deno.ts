@@ -1,8 +1,8 @@
-/** Deno launcher for the runtime-neutral package-level `cesr` CLI. */
+/** Deno launcher for the runtime-neutral package-level `tephra` CLI. */
 import { createDenoCliIo } from "./io-deno.ts";
-import { cesrCli } from "./main.ts";
+import { tephraCli } from "./main.ts";
 
 if (import.meta.main) {
-  const code = await cesrCli(Deno.args, createDenoCliIo());
+  const code = await tephraCli(Deno.args, createDenoCliIo());
   Deno.exit(code);
 }

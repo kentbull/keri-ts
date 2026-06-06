@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke-test a packed `cesr-ts` npm artifact by installing the tarball into a
-# fresh runtime and exercising the published package-level `cesr` CLI.
+# fresh runtime and exercising the published package-level `tephra` CLI.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,4 +42,4 @@ docker run --rm \
   -v "${TARBALL_DIR}:/pkg" \
   -v "${SAMPLES_DIR}:/samples" \
   -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro" \
-  "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-cesr-container.sh "/pkg/${TARBALL_NAME}"
+  "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-tephra-container.sh "/pkg/${TARBALL_NAME}"

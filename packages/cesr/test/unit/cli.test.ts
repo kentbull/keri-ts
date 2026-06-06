@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { cesrCli } from "../../src/cli/main.ts";
+import { tephraCli } from "../../src/cli/main.ts";
 import type { CliIo } from "../../src/cli/types.ts";
 import { counterV1 } from "../fixtures/counter-token-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -51,78 +51,78 @@ function memoryCliIo(
   };
 }
 
-Deno.test("cesr dispatcher handles top-level help and missing commands", async () => {
+Deno.test("tephra dispatcher handles top-level help and missing commands", async () => {
   const help = memoryCliIo();
-  assertEquals(await cesrCli(["--help"], help.io), 0);
-  assertStringIncludes(help.stdout.join(""), "Usage: cesr <command>");
+  assertEquals(await tephraCli(["--help"], help.io), 0);
+  assertStringIncludes(help.stdout.join(""), "Usage: tephra <command>");
   assertStringIncludes(help.stdout.join(""), "validate");
 
   const missing = memoryCliIo();
-  assertEquals(await cesrCli([], missing.io), 1);
-  assertStringIncludes(missing.stderr.join(""), "Usage: cesr <command>");
+  assertEquals(await tephraCli([], missing.io), 1);
+  assertStringIncludes(missing.stderr.join(""), "Usage: tephra <command>");
 });
 
-Deno.test("cesr dispatcher rejects unknown commands", async () => {
+Deno.test("tephra dispatcher rejects unknown commands", async () => {
   const state = memoryCliIo();
-  assertEquals(await cesrCli(["unknown"], state.io), 1);
-  assertStringIncludes(state.stderr.join(""), "Unknown cesr command: unknown");
+  assertEquals(await tephraCli(["unknown"], state.io), 1);
+  assertStringIncludes(state.stderr.join(""), "Unknown tephra command: unknown");
 });
 
-Deno.test("cesr dispatcher exposes command-specific help", async () => {
+Deno.test("tephra dispatcher exposes command-specific help", async () => {
   for (const command of ["annotate", "validate", "bench"]) {
     const state = memoryCliIo();
-    assertEquals(await cesrCli([command, "--help"], state.io), 0);
-    assertStringIncludes(state.stdout.join(""), `Usage: cesr ${command}`);
+    assertEquals(await tephraCli([command, "--help"], state.io), 0);
+    assertStringIncludes(state.stdout.join(""), `Usage: tephra ${command}`);
   }
 });
 
-Deno.test("cesr annotate routes through the package-level dispatcher", async () => {
+Deno.test("tephra annotate routes through the package-level dispatcher", async () => {
   const state = memoryCliIo({ stdin: VALID_FRAME });
-  assertEquals(await cesrCli(["annotate"], state.io), 0);
+  assertEquals(await tephraCli(["annotate"], state.io), 0);
   assertStringIncludes(state.stdout.join(""), "SERDER KERI JSON");
   assertEquals(state.stderr.join(""), "");
 });
 
-Deno.test("cesr validate accepts a valid CESR stream", async () => {
+Deno.test("tephra validate accepts a valid CESR stream", async () => {
   const state = memoryCliIo({ stdin: VALID_FRAME });
-  assertEquals(await cesrCli(["validate"], state.io), 0);
+  assertEquals(await tephraCli(["validate"], state.io), 0);
   const out = state.stdout.join("");
   assertStringIncludes(out, "CESR validation passed");
   assertStringIncludes(out, "frames: 1");
   assertStringIncludes(out, "attachment groups: 0");
 });
 
-Deno.test("cesr validate supports --framed parser mode", async () => {
+Deno.test("tephra validate supports --framed parser mode", async () => {
   const state = memoryCliIo({ stdin: VALID_FRAME });
-  assertEquals(await cesrCli(["validate", "--framed"], state.io), 0);
+  assertEquals(await tephraCli(["validate", "--framed"], state.io), 0);
   assertStringIncludes(state.stdout.join(""), "CESR validation passed");
 });
 
-Deno.test("cesr validate reports malformed input errors", async () => {
+Deno.test("tephra validate reports malformed input errors", async () => {
   const state = memoryCliIo({ stdin: "?AAA" });
-  assertEquals(await cesrCli(["validate"], state.io), 1);
+  assertEquals(await tephraCli(["validate"], state.io), 1);
   const err = state.stderr.join("");
   assertStringIncludes(err, "CESR validation failed");
   assertStringIncludes(err, "errors: 1");
 });
 
-Deno.test("cesr validate reports truncated input shortage", async () => {
+Deno.test("tephra validate reports truncated input shortage", async () => {
   const state = memoryCliIo({ stdin: VALID_FRAME.slice(0, 12) });
-  assertEquals(await cesrCli(["validate"], state.io), 1);
+  assertEquals(await tephraCli(["validate"], state.io), 1);
   assertStringIncludes(state.stderr.join(""), "ShortageError");
 });
 
-Deno.test("cesr validate rejects empty input with NoFramesError", async () => {
+Deno.test("tephra validate rejects empty input with NoFramesError", async () => {
   const state = memoryCliIo();
-  assertEquals(await cesrCli(["validate"], state.io), 1);
+  assertEquals(await tephraCli(["validate"], state.io), 1);
   const err = state.stderr.join("");
   assertStringIncludes(err, "NoFramesError");
   assertStringIncludes(err, "No CESR frames parsed");
 });
 
-Deno.test("cesr validate --json emits structured failure reports on stdout", async () => {
+Deno.test("tephra validate --json emits structured failure reports on stdout", async () => {
   const state = memoryCliIo();
-  assertEquals(await cesrCli(["validate", "--json"], state.io), 1);
+  assertEquals(await tephraCli(["validate", "--json"], state.io), 1);
   assertEquals(state.stderr.join(""), "");
   const report = JSON.parse(state.stdout.join(""));
   assertEquals(report.ok, false);
@@ -131,23 +131,23 @@ Deno.test("cesr validate --json emits structured failure reports on stdout", asy
   assertEquals(report.errors[0].name, "NoFramesError");
 });
 
-Deno.test("cesr validate defaults strict and allows --compat", async () => {
+Deno.test("tephra validate defaults strict and allows --compat", async () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const nestedV2List = "-JAB--FA";
   const mixedMajorStream = `${body}${counterV1("-V", nestedV2List.length / 4)}${nestedV2List}`;
 
   const strict = memoryCliIo({ stdin: mixedMajorStream });
-  assertEquals(await cesrCli(["validate"], strict.io), 1);
+  assertEquals(await tephraCli(["validate"], strict.io), 1);
   assertStringIncludes(strict.stderr.join(""), "CESR validation failed");
 
   const compat = memoryCliIo({ stdin: mixedMajorStream });
-  assertEquals(await cesrCli(["validate", "--compat"], compat.io), 0);
+  assertEquals(await tephraCli(["validate", "--compat"], compat.io), 0);
   assertStringIncludes(compat.stdout.join(""), "CESR validation passed");
 });
 
-Deno.test("cesr bench routes through the package-level dispatcher", async () => {
+Deno.test("tephra bench routes through the package-level dispatcher", async () => {
   const state = memoryCliIo({ stdin: VALID_FRAME });
-  assertEquals(await cesrCli(["bench", "--iterations", "1", "--warmup", "0"], state.io), 0);
+  assertEquals(await tephraCli(["bench", "--iterations", "1", "--warmup", "0"], state.io), 0);
   assertStringIncludes(state.stdout.join(""), "CESR parser benchmark");
   assertEquals(state.stderr.join(""), "");
 });

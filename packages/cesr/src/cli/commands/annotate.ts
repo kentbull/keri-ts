@@ -9,9 +9,9 @@ interface AnnotateCliOptions {
 }
 
 const TEXT_DECODER = new TextDecoder();
-const ANNOTATE_USAGE = "Usage: cesr annotate [--in <path>] [--out <path>] [--qb2] [--pretty]";
+const ANNOTATE_USAGE = "Usage: tephra annotate [--in <path>] [--out <path>] [--qb2] [--pretty]";
 
-/** Parse `cesr annotate` command-line flags without performing IO. */
+/** Parse `tephra annotate` command-line flags without performing IO. */
 function parseArgs(args: string[]): AnnotateCliOptions {
   const out: AnnotateCliOptions = { qb2: false, pretty: false };
   for (let i = 0; i < args.length; i++) {
@@ -44,10 +44,10 @@ function parseArgs(args: string[]): AnnotateCliOptions {
 }
 
 /**
- * Execute `cesr annotate`.
+ * Execute `tephra annotate`.
  *
- * The command preserves the old `cesr-annotate` behavior while moving it under
- * the package-level dispatcher.
+ * The command preserves the old standalone annotation behavior while moving it
+ * under the package-level dispatcher.
  */
 export async function annotateCommand(args: string[], io: CliIo): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
@@ -77,7 +77,7 @@ export async function annotateCommand(args: string[], io: CliIo): Promise<number
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await io.writeStderr(`cesr annotate error: ${message}\n`);
+    await io.writeStderr(`tephra annotate error: ${message}\n`);
     return 1;
   }
 }

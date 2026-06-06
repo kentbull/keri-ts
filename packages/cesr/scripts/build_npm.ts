@@ -35,7 +35,7 @@ interface BuiltNpmPackageManifest {
 // These marker comments live in source entrypoints and should survive DNT
 // rewriting. They make generated target discovery resilient to path-depth drift.
 const ROOT_ENTRYPOINT_MARKER = "cesr-ts npm package root entrypoint.";
-const BIN_ENTRYPOINT_MARKER = "npm executable entrypoint for the package-level `cesr` CLI.";
+const BIN_ENTRYPOINT_MARKER = "npm executable entrypoint for the package-level `tephra` CLI.";
 
 /** Resolve this package version from package.json or a release override. */
 function resolvePackageVersion(): string {
@@ -53,7 +53,7 @@ function resolvePackageVersion(): string {
  * - `main` and `module` to the discovered ESM root entrypoint
  * - `types` to the discovered declaration root entrypoint
  * - `exports["."]` to the same root import/types pair
- * - `bin["cesr"]` to the discovered package-level CLI file without a leading
+ * - `bin["tephra"]` to the discovered package-level CLI file without a leading
  *   `./`
  *
  * Each normalized target is asserted before package.json is written so broken
@@ -96,7 +96,7 @@ function normalizeBuiltManifest(): string {
     },
   };
   manifest.bin = {
-    cesr: toNpmBinPath(bin),
+    tephra: toNpmBinPath(bin),
   };
   writeJsonFileSync(packageJsonPath, manifest);
   return bin;
@@ -154,7 +154,7 @@ await build({
       },
     },
     bin: {
-      cesr: NPM_BIN_PATH,
+      tephra: NPM_BIN_PATH,
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
