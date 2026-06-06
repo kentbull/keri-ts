@@ -87,6 +87,8 @@ function* postQueryMessage(
       method: "POST",
       headers: request.headers,
       body: request.body,
+    }, {
+      services: runtime.services,
     });
     if (!response.ok) {
       throw new ValidationError(
@@ -99,6 +101,7 @@ function* postQueryMessage(
       const text = yield* readMailboxSseBody(response, controller, {
         idleTimeoutMs: 500,
         maxDurationMs: 5_000,
+        services: runtime.services,
       });
       for (const message of parseMailboxSse(text)) {
         if (message.msg.length > 0) {

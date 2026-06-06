@@ -15,7 +15,14 @@ import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
-import { ForwardHandler, type MailboxPollBatch, MailboxPoller, mailboxTopicForRoute, Poster } from "./forwarding.ts";
+import {
+  ForwardHandler,
+  type MailboxPollBatch,
+  MailboxPoller,
+  type MailboxPollTransport,
+  mailboxTopicForRoute,
+  Poster,
+} from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
@@ -24,6 +31,7 @@ import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiU
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { Respondant } from "./respondant.ts";
+import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
 
@@ -71,6 +79,7 @@ export interface AgentRuntime {
   poster: Poster;
   delegating: Anchorer;
   querying: QueryCoordinator;
+  services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
 }
@@ -88,6 +97,8 @@ export interface AgentRuntimeOptions {
   signaler?: Signaler;
   notifier?: Notifier;
   enableMailboxStore?: boolean;
+  services?: Partial<RuntimeServices>;
+  mailboxPollTransport?: MailboxPollTransport;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -126,6 +137,7 @@ export function* createAgentRuntime(
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
   const mode = options.mode ?? "local";
+  const services = resolveRuntimeServices(options.services);
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
   const mailboxer = options.mailboxer
     ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
@@ -150,7 +162,7 @@ export function* createAgentRuntime(
     hby,
     mailboxer ? { mailboxer } : {},
   );
-  const poster = new Poster(hby, { mailboxer });
+  const poster = new Poster(hby, { mailboxer, services });
   const respondant = new Respondant(hby, { poster, mailboxDirector });
   if (mailboxer) {
     reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
@@ -164,7 +176,10 @@ export function* createAgentRuntime(
       mailboxDirector.registerTopic(topic);
     }
   }
-  const mailboxPoller = new MailboxPoller(hby, mailboxDirector);
+  const mailboxPoller = new MailboxPoller(hby, mailboxDirector, {
+    services,
+    pollTransport: options.mailboxPollTransport,
+  });
   for (
     const topic of [
       DELEGATE_MAILBOX_TOPIC,
@@ -177,9 +192,9 @@ export function* createAgentRuntime(
   }
   const querying = new QueryCoordinator(hby);
   const delegating = new Anchorer(hby, { poster, querying });
-  const oobiery = new Oobiery(hby, reactor, { cues });
+  const oobiery = new Oobiery(hby, reactor, { cues, services });
   oobiery.registerReplyRoutes(reactor.router);
-  const authenticator = new Authenticator(hby);
+  const authenticator = new Authenticator(hby, { services });
   return {
     hby,
     mode,
@@ -197,6 +212,7 @@ export function* createAgentRuntime(
     poster,
     delegating,
     querying,
+    services,
     *close(): Operation<void> {
       if (ownsNoter && noter?.opened) {
         yield* noter.close();

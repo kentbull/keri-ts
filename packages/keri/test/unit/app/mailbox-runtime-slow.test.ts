@@ -27,6 +27,7 @@ import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { controllerOobiResponse, reserveTcpPort, startStaticHttpHost } from "../../http-test-support.ts";
+import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-service-fakes.ts";
 import { testCLICommand } from "../../utils.ts";
 import { seedHostedController, seedLocalController } from "./mailbox-runtime-support.ts";
 
@@ -290,26 +291,42 @@ function* postMailboxAdmin(
   url: string,
   body: Uint8Array,
   contentType = "application/cesr",
+  http?: FakeRuntimeHttpClient,
 ): Operation<Response> {
-  return yield* fetchOp(url, {
+  const init = {
     method: "POST",
     headers: { "Content-Type": contentType },
     body: new Uint8Array(body).slice().buffer,
-  });
+  };
+  return http ? yield* fakeFetchOp(http, url, init) : yield* fetchOp(url, init);
 }
 
 /** Post one multipart mailbox admin request using compatibility field names. */
 function* postMailboxAdminMultipart(
   url: string,
   fields: Array<[string, string]>,
+  http?: FakeRuntimeHttpClient,
 ): Operation<Response> {
   const form = new FormData();
   for (const [name, value] of fields) {
     form.set(name, value);
   }
-  return yield* fetchOp(url, {
+  const init = {
     method: "POST",
     body: form,
+  };
+  return http ? yield* fakeFetchOp(http, url, init) : yield* fetchOp(url, init);
+}
+
+/** Submit one request through the fake runtime HTTP client. */
+function* fakeFetchOp(
+  http: FakeRuntimeHttpClient,
+  url: string,
+  init?: RequestInit,
+): Operation<Response> {
+  return yield* action<Response>((resolve, reject) => {
+    http.fetch(url, init).then(resolve).catch(reject);
+    return () => {};
   });
 }
 
@@ -317,27 +334,26 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
   const providerName = `mailbox-admin-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-controller-${crypto.randomUUID()}`;
   const delegatedName = `mailbox-admin-delegated-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-provider-${crypto.randomUUID()}`;
-  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-controller-${crypto.randomUUID()}`;
-  const delegatedHeadDirPath = `/tmp/tufa-mailbox-admin-delegated-${crypto.randomUUID()}`;
-  const port = reserveTcpPort();
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://mailbox-admin-${crypto.randomUUID()}.test`;
 
   await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const controllerHby = yield* createHabery({
       name: controllerName,
-      headDirPath: controllerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const delegatedHby = yield* createHabery({
       name: delegatedName,
-      headDirPath: delegatedHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
 
     const mailbox = providerHby.makeHab("relay", undefined, {
@@ -387,21 +403,20 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
     );
     yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    const http = new FakeRuntimeHttpClient();
+    new InProcessRuntimeHost(http, { runtime, origin: url });
 
     try {
-      yield* waitForServer(port);
-
       const add = concatBytes(
         collectReplay(controllerHby, controller.pre),
         controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
       );
-      let response = yield* postMailboxAdmin(`${url}/mailboxes`, add);
+      let response = yield* postMailboxAdmin(
+        `${url}/mailboxes`,
+        add,
+        "application/cesr",
+        http,
+      );
       yield* assertResponseStatus(response, 200);
       assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
         cid: controller.pre,
@@ -423,7 +438,12 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
         collectReplay(controllerHby, controller.pre),
         controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, false),
       );
-      response = yield* postMailboxAdmin(`${url}/mailboxes`, cut);
+      response = yield* postMailboxAdmin(
+        `${url}/mailboxes`,
+        cut,
+        "application/cesr",
+        http,
+      );
       yield* assertResponseStatus(response, 200);
       assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
         cid: controller.pre,
@@ -445,7 +465,12 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
         collectReplay(delegatedHby, delegated.pre),
         delegated.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
       );
-      response = yield* postMailboxAdmin(`${url}/mailboxes`, delegatedAdd);
+      response = yield* postMailboxAdmin(
+        `${url}/mailboxes`,
+        delegatedAdd,
+        "application/cesr",
+        http,
+      );
       yield* assertResponseStatus(response, 200);
       assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
         cid: delegated.pre,
@@ -463,18 +488,22 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
         true,
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          [
+            "kel",
+            textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          ],
+          [
+            "rpy",
+            textDecoder.decode(
+              controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+            ),
+          ],
         ],
-        [
-          "rpy",
-          textDecoder.decode(
-            controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-          ),
-        ],
-      ]);
+        http,
+      );
       yield* assertResponseStatus(response, 200);
       assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
         cid: controller.pre,
@@ -483,18 +512,22 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
         allowed: true,
       });
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          [
+            "kel",
+            textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          ],
+          [
+            "rpy",
+            textDecoder.decode(
+              controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, false),
+            ),
+          ],
         ],
-        [
-          "rpy",
-          textDecoder.decode(
-            controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, false),
-          ),
-        ],
-      ]);
+        http,
+      );
       yield* assertResponseStatus(response, 200);
       assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
         cid: controller.pre,
@@ -503,26 +536,30 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
         allowed: false,
       });
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(
-            concatBytes(...delegatedHby.db.clonePreIter(delegated.pre)),
-          ),
+          [
+            "kel",
+            textDecoder.decode(
+              concatBytes(...delegatedHby.db.clonePreIter(delegated.pre)),
+            ),
+          ],
+          [
+            "delkel",
+            textDecoder.decode(
+              concatBytes(...delegatedHby.db.cloneDelegation(delegated.kever!)),
+            ),
+          ],
+          [
+            "rpy",
+            textDecoder.decode(
+              delegated.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+            ),
+          ],
         ],
-        [
-          "delkel",
-          textDecoder.decode(
-            concatBytes(...delegatedHby.db.cloneDelegation(delegated.kever!)),
-          ),
-        ],
-        [
-          "rpy",
-          textDecoder.decode(
-            delegated.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-          ),
-        ],
-      ]);
+        http,
+      );
       yield* assertResponseStatus(response, 200);
       assertEquals(yield* jsonOp<Record<string, unknown>>(response), {
         cid: delegated.pre,
@@ -540,8 +577,6 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
         true,
       );
     } finally {
-      yield* waitForTaskHalt(serverTask);
-      yield* waitForTaskHalt(runtimeTask);
       yield* runtime.close();
       yield* delegatedHby.close();
       yield* controllerHby.close();
@@ -553,21 +588,20 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
 Deno.test("mailbox admin rejects unsupported content types and invalid raw or multipart replies", async () => {
   const providerName = `mailbox-admin-invalid-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-invalid-provider-${crypto.randomUUID()}`;
-  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-invalid-controller-${crypto.randomUUID()}`;
-  const port = reserveTcpPort();
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://mailbox-admin-invalid-${crypto.randomUUID()}.test`;
 
   await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const controllerHby = yield* createHabery({
       name: controllerName,
-      headDirPath: controllerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
 
     const mailbox = providerHby.makeHab("relay", undefined, {
@@ -605,20 +639,15 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
     );
     yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    const http = new FakeRuntimeHttpClient();
+    new InProcessRuntimeHost(http, { runtime, origin: url });
 
     try {
-      yield* waitForServer(port);
-
       let response = yield* postMailboxAdmin(
         `${url}/mailboxes`,
         collectReplay(controllerHby, controller.pre),
         "text/plain",
+        http,
       );
       assertEquals(response.status, 406);
       assertEquals(yield* textOp(response), "Unacceptable content type.");
@@ -626,6 +655,8 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
       response = yield* postMailboxAdmin(
         `${url}/mailboxes`,
         collectReplay(controllerHby, controller.pre),
+        "application/cesr",
+        http,
       );
       assertEquals(response.status, 400);
       assertEquals(
@@ -639,6 +670,8 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
           collectReplay(controllerHby, controller.pre),
           controller.makeLocScheme(url, mailbox.pre, "http"),
         ),
+        "application/cesr",
+        http,
       );
       assertEquals(response.status, 400);
       assertEquals(
@@ -652,6 +685,8 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
           collectReplay(controllerHby, controller.pre),
           controller.makeEndRole(mailbox.pre, "watcher", true),
         ),
+        "application/cesr",
+        http,
       );
       assertEquals(response.status, 400);
       assertEquals(
@@ -665,6 +700,8 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
           collectReplay(controllerHby, controller.pre),
           controller.makeEndRole(otherMailbox.pre, EndpointRoles.mailbox, true),
         ),
+        "application/cesr",
+        http,
       );
       assertEquals(response.status, 403);
       assertEquals(
@@ -675,6 +712,8 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
       response = yield* postMailboxAdmin(
         `${url}/mailboxes`,
         controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+        "application/cesr",
+        http,
       );
       assertEquals(response.status, 403);
       assertEquals(
@@ -682,101 +721,123 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
         "Mailbox authorization reply was not accepted",
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [[
-        "rpy",
-        textDecoder.decode(
-          controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
-        ),
-      ]]);
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
+        [[
+          "rpy",
+          textDecoder.decode(
+            controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+          ),
+        ]],
+        http,
+      );
       assertEquals(response.status, 400);
       assertEquals(
         yield* textOp(response),
         "Mailbox authorization request is missing kel",
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [[
-        "kel",
-        textDecoder.decode(collectReplay(controllerHby, controller.pre)),
-      ]]);
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
+        [[
+          "kel",
+          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+        ]],
+        http,
+      );
       assertEquals(response.status, 400);
       assertEquals(
         yield* textOp(response),
         "Mailbox authorization request is missing rpy",
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          [
+            "kel",
+            textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          ],
+          [
+            "rpy",
+            textDecoder.decode(
+              controller.makeLocScheme(url, mailbox.pre, "http"),
+            ),
+          ],
         ],
-        [
-          "rpy",
-          textDecoder.decode(
-            controller.makeLocScheme(url, mailbox.pre, "http"),
-          ),
-        ],
-      ]);
+        http,
+      );
       assertEquals(response.status, 400);
       assertEquals(
         yield* textOp(response),
         "Unsupported mailbox authorization route",
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          [
+            "kel",
+            textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          ],
+          [
+            "rpy",
+            textDecoder.decode(
+              controller.makeEndRole(mailbox.pre, "watcher", true),
+            ),
+          ],
         ],
-        [
-          "rpy",
-          textDecoder.decode(
-            controller.makeEndRole(mailbox.pre, "watcher", true),
-          ),
-        ],
-      ]);
+        http,
+      );
       assertEquals(response.status, 400);
       assertEquals(
         yield* textOp(response),
         "Mailbox authorization reply must use role=mailbox",
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
-        ],
-        [
-          "rpy",
-          textDecoder.decode(
-            controller.makeEndRole(
-              otherMailbox.pre,
-              EndpointRoles.mailbox,
-              true,
+          [
+            "kel",
+            textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          ],
+          [
+            "rpy",
+            textDecoder.decode(
+              controller.makeEndRole(
+                otherMailbox.pre,
+                EndpointRoles.mailbox,
+                true,
+              ),
             ),
-          ),
+          ],
         ],
-      ]);
+        http,
+      );
       assertEquals(response.status, 403);
       assertEquals(
         yield* textOp(response),
         "Mailbox authorization target does not match hosted mailbox",
       );
 
-      response = yield* postMailboxAdminMultipart(`${url}/mailboxes`, [
+      response = yield* postMailboxAdminMultipart(
+        `${url}/mailboxes`,
         [
-          "kel",
-          textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          [
+            "kel",
+            textDecoder.decode(collectReplay(controllerHby, controller.pre)),
+          ],
+          ["rpy", "not cesr"],
         ],
-        ["rpy", "not cesr"],
-      ]);
+        http,
+      );
       assertEquals(response.status, 400);
       assertEquals(
         yield* textOp(response),
         "Mailbox authorization reply field must contain exactly one CESR message",
       );
     } finally {
-      yield* waitForTaskHalt(serverTask);
-      yield* waitForTaskHalt(runtimeTask);
       yield* runtime.close();
       yield* controllerHby.close();
       yield* providerHby.close();

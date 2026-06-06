@@ -1,9 +1,22 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 /** One live HTTP response plus the controller that can still abort its body. */
 export interface HttpResponseHandle {
   response: Response;
   controller: AbortController;
+}
+
+interface FetchResponseHandleOptions {
+  services?: RuntimeServices;
+}
+
+interface FetchResponseHandleOrNullOptions extends FetchResponseHandleOptions {
+  timeoutMs?: number;
+}
+
+interface FetchResponseHandleInternalOptions extends FetchResponseHandleOrNullOptions {
+  nullOnAbort?: boolean;
 }
 
 /**
@@ -18,8 +31,10 @@ export interface HttpResponseHandle {
 export function* fetchResponseHandle(
   url: string,
   init: RequestInit = {},
+  options: FetchResponseHandleOptions = {},
 ): Operation<HttpResponseHandle> {
-  const handle = yield* fetchResponseHandleInternal(url, init);
+  const { services = defaultRuntimeServices } = options;
+  const handle = yield* fetchResponseHandleInternal(url, init, { services });
   if (!handle) {
     throw new Error("HTTP response handle unexpectedly resolved to null.");
   }
@@ -35,15 +50,13 @@ export function* fetchResponseHandle(
 export function* fetchResponseHandleOrNull(
   url: string,
   init: RequestInit = {},
-  {
-    timeoutMs,
-  }: {
-    timeoutMs?: number;
-  } = {},
+  options: FetchResponseHandleOrNullOptions = {},
 ): Operation<HttpResponseHandle | null> {
+  const { timeoutMs, services = defaultRuntimeServices } = options;
   return yield* fetchResponseHandleInternal(url, init, {
     timeoutMs,
     nullOnAbort: true,
+    services,
   });
 }
 
@@ -68,30 +81,29 @@ export function* closeResponseBody(response: Response): Operation<void> {
 function* fetchResponseHandleInternal(
   url: string,
   init: RequestInit,
-  {
+  options: FetchResponseHandleInternalOptions = {},
+): Operation<HttpResponseHandle | null> {
+  const {
     timeoutMs,
     nullOnAbort = false,
-  }: {
-    timeoutMs?: number;
-    nullOnAbort?: boolean;
-  } = {},
-): Operation<HttpResponseHandle | null> {
+    services = defaultRuntimeServices,
+  } = options;
   return yield* action<HttpResponseHandle | null>((resolve, reject) => {
     const controller = new AbortController();
     let settled = false;
     let timedOut = false;
-    const timeoutId = timeoutMs === undefined ? undefined : setTimeout(() => {
+    const timeoutId = timeoutMs === undefined ? undefined : services.clock.setTimeout(() => {
       timedOut = true;
       controller.abort();
     }, timeoutMs);
 
     const clearTimer = () => {
       if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
+        services.clock.clearTimeout(timeoutId);
       }
     };
 
-    fetch(url, { ...init, signal: controller.signal }).then((response) => {
+    services.http.fetch(url, { ...init, signal: controller.signal }).then((response) => {
       settled = true;
       clearTimer();
       resolve({ response, controller });

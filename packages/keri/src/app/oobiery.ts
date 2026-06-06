@@ -15,6 +15,7 @@ import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import type { Reactor } from "./reactor.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 export const OOBI_REQUEST_ROUTE = "/oobis";
@@ -38,6 +39,11 @@ export interface OobiJob {
 
 type OobiQueueKind = "oobis" | "woobi";
 
+interface OobieryOptions {
+  cues?: Deck<AgentCue>;
+  services?: RuntimeServices;
+}
+
 /**
  * Durable OOBI processing component for one `Habery`.
  *
@@ -55,15 +61,14 @@ export class Oobiery {
   readonly hby: Habery;
   readonly reactor: Reactor;
   readonly cues: Deck<AgentCue>;
+  readonly services: RuntimeServices;
 
-  constructor(
-    hby: Habery,
-    reactor: Reactor,
-    { cues }: { cues?: Deck<AgentCue> } = {},
-  ) {
+  constructor(hby: Habery, reactor: Reactor, options: OobieryOptions = {}) {
+    const { cues, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.reactor = reactor;
     this.cues = cues ?? new Deck();
+    this.services = services;
   }
 
   /** Register `/introduce` on the shared reply router. */
@@ -185,7 +190,7 @@ export class Oobiery {
     };
     this.pinQueueStore(kind, url, queuedRecord);
 
-    const response = yield* fetchOobiResponse(url);
+    const response = yield* fetchOobiResponse(url, this.services);
     if (!response.ok) {
       yield* closeResponseBody(response);
       this.remQueueStore(kind, url);
@@ -648,8 +653,13 @@ export { OOBI_MAILBOX_TOPIC };
  * This is the real promise-adaptation boundary for remote OOBI retrieval. The
  * surrounding runtime stays operation-native.
  */
-function* fetchOobiResponse(url: string): Operation<Response> {
-  const { response } = yield* fetchResponseHandle(url);
+function* fetchOobiResponse(
+  url: string,
+  services: RuntimeServices = defaultRuntimeServices,
+): Operation<Response> {
+  const { response } = yield* fetchResponseHandle(url, {}, {
+    services,
+  });
   return response;
 }
 

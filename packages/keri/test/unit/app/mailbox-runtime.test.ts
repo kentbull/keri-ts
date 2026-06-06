@@ -23,13 +23,11 @@ import {
   mailboxStartCommand,
   mailboxUpdateCommand,
 } from "../../../../tufa/src/cli/mailbox.ts";
-import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
   createAgentRuntime,
   ingestKeriBytes,
   processMailboxTurn,
   processRuntimeTurn,
-  runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
@@ -47,6 +45,7 @@ import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { reserveTcpPort } from "../../http-test-support.ts";
+import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-service-fakes.ts";
 import { CLITestHarness, testCLICommand } from "../../utils.ts";
 
 /** Return a random localhost port for ephemeral mailbox and OOBI hosts. */
@@ -551,25 +550,52 @@ function* postMailboxAdminMultipart(
   });
 }
 
+/** Submit one request through the fake runtime HTTP client. */
+function* fakeFetchOp(
+  http: FakeRuntimeHttpClient,
+  url: string,
+  init?: RequestInit,
+): Operation<Response> {
+  return yield* action<Response>((resolve, reject) => {
+    http.fetch(url, init).then(resolve).catch(reject);
+    return () => {};
+  });
+}
+
+/** Post one multipart mailbox admin request through a fake HTTP origin. */
+function* postMailboxAdminMultipartInProcess(
+  http: FakeRuntimeHttpClient,
+  url: string,
+  fields: Array<[string, string]>,
+): Operation<Response> {
+  const form = new FormData();
+  for (const [name, value] of fields) {
+    form.set(name, value);
+  }
+  return yield* fakeFetchOp(http, url, {
+    method: "POST",
+    body: form,
+  });
+}
+
 Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a root alias", async () => {
   const providerName = `mailbox-admin-path-provider-${crypto.randomUUID()}`;
   const controllerName = `mailbox-admin-path-controller-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-mailbox-admin-path-provider-${crypto.randomUUID()}`;
-  const controllerHeadDirPath = `/tmp/tufa-mailbox-admin-path-controller-${crypto.randomUUID()}`;
-  const port = randomPort();
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = `http://mailbox-admin-path-${crypto.randomUUID()}.test`;
   const advertisedUrl = `${origin}/relay`;
 
   await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const controllerHby = yield* createHabery({
       name: controllerName,
-      headDirPath: controllerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
 
     const mailbox = providerHby.makeHab("relay", undefined, {
@@ -604,19 +630,17 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
     );
     yield* processRuntimeTurn(runtime, { hab: hab ?? undefined });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime, {
+    const http = new FakeRuntimeHttpClient();
+    new InProcessRuntimeHost(http, {
+      runtime,
+      origin,
+      protocolPolicy: {
         hostedPrefixes: [mailbox.pre],
         serviceHab: hab ?? undefined,
-      });
+      },
     });
 
     try {
-      yield* waitForServer(port);
-
       const kel = new TextDecoder().decode(
         collectReplay(controllerHby, controller.pre),
       );
@@ -627,14 +651,19 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
       // Root `/mailboxes` is no longer a mailbox-admin alias when the hosted
       // mailbox URL carries a non-root path. A valid multipart admin envelope
       // therefore fails content-type handling at the generic ingress seam.
-      let response = yield* postMailboxAdminMultipart(`${origin}/mailboxes`, [
-        ["kel", kel],
-        ["rpy", rpy],
-      ]);
+      let response = yield* postMailboxAdminMultipartInProcess(
+        http,
+        `${origin}/mailboxes`,
+        [
+          ["kel", kel],
+          ["rpy", rpy],
+        ],
+      );
       assertEquals(response.status, 406);
       yield* textOp(response);
 
-      response = yield* postMailboxAdminMultipart(
+      response = yield* postMailboxAdminMultipartInProcess(
+        http,
         `${advertisedUrl}/mailboxes`,
         [
           ["kel", kel],
@@ -649,8 +678,6 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
         allowed: true,
       });
     } finally {
-      yield* waitForTaskHalt(serverTask);
-      yield* waitForTaskHalt(runtimeTask);
       yield* runtime.close();
       yield* controllerHby.close();
       yield* providerHby.close();

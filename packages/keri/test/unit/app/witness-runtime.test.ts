@@ -96,21 +96,21 @@ function* seedRemoteWitnessLocation(
 Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and combined mailbox OOBIs", async () => {
   const sourceName = `witness-runtime-source-${crypto.randomUUID()}`;
   const providerName = `witness-runtime-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-witness-runtime-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-witness-runtime-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
   await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
-      headDirPath: sourceHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     try {
       const witness = providerHby.makeHab("witness", undefined, {
@@ -217,21 +217,21 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
 Deno.test("Witness runtime returns 202 for receipting before the prior KEL state arrives", async () => {
   const sourceName = `witness-escrow-source-${crypto.randomUUID()}`;
   const providerName = `witness-escrow-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-witness-escrow-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-witness-escrow-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
   await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
-      headDirPath: sourceHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     try {
       const witness = providerHby.makeHab("witness", undefined, {
@@ -296,21 +296,21 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
 Deno.test("Witness runtime rejects receipting when the hosted witness is not authorized for the event", async () => {
   const sourceName = `witness-reject-source-${crypto.randomUUID()}`;
   const providerName = `witness-reject-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-witness-reject-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-witness-reject-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
   await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
-      headDirPath: sourceHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     try {
       const witness = providerHby.makeHab("witness", undefined, {
@@ -371,21 +371,21 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
 Deno.test("Witness runtime accepts root-path catchup before synchronous receipting", async () => {
   const sourceName = `witness-root-catchup-source-${crypto.randomUUID()}`;
   const providerName = `witness-root-catchup-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-witness-root-catchup-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-witness-root-catchup-provider-${crypto.randomUUID()}`;
   const port = randomPort();
   const hostUrl = `http://127.0.0.1:${port}`;
 
   await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
-      headDirPath: sourceHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     try {
       const witness = providerHby.makeHab("witness", undefined, {
@@ -476,21 +476,21 @@ Deno.test("Witness runtime accepts root-path catchup before synchronous receipti
 Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp is advertised", async () => {
   const sourceName = `witness-tcp-source-${crypto.randomUUID()}`;
   const providerName = `witness-tcp-provider-${crypto.randomUUID()}`;
-  const sourceHeadDirPath = `/tmp/tufa-witness-tcp-src-${crypto.randomUUID()}`;
-  const providerHeadDirPath = `/tmp/tufa-witness-tcp-provider-${crypto.randomUUID()}`;
   const tcpPort = randomPort();
   const tcpUrl = `tcp://127.0.0.1:${tcpPort}`;
 
   await run(function*() {
     const sourceHby = yield* createHabery({
       name: sourceName,
-      headDirPath: sourceHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     const providerHby = yield* createHabery({
       name: providerName,
-      headDirPath: providerHeadDirPath,
+      temp: true,
       skipConfig: true,
+      skipSignator: true,
     });
     try {
       const witness = providerHby.makeHab("witness", undefined, {

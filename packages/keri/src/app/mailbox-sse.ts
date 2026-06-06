@@ -1,4 +1,5 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 
 /** Shared encoder for mailbox SSE parsing. */
 const textEncoder = new TextEncoder();
@@ -12,6 +13,12 @@ export interface MailboxSseMessage {
   topic: string;
 }
 
+interface ReadMailboxSseBodyOptions {
+  idleTimeoutMs?: number;
+  maxDurationMs?: number;
+  services?: RuntimeServices;
+}
+
 /**
  * Read one mailbox-style SSE response without waiting for remote EOF.
  *
@@ -22,14 +29,13 @@ export interface MailboxSseMessage {
 export function* readMailboxSseBody(
   response: Response,
   controller: AbortController,
-  {
+  options: ReadMailboxSseBodyOptions = {},
+): Operation<string> {
+  const {
     idleTimeoutMs = DEFAULT_READ_IDLE_TIMEOUT_MS,
     maxDurationMs = DEFAULT_MAX_READ_DURATION_MS,
-  }: {
-    idleTimeoutMs?: number;
-    maxDurationMs?: number;
-  } = {},
-): Operation<string> {
+    services = defaultRuntimeServices,
+  } = options;
   const body = response.body;
   if (!body) {
     return "";
@@ -38,20 +44,20 @@ export function* readMailboxSseBody(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let text = "";
-  const deadline = Date.now() + maxDurationMs;
+  const deadline = services.clock.now() + maxDurationMs;
   const timedOut = Symbol("timedOut");
 
   try {
-    while (Date.now() < deadline) {
+    while (services.clock.now() < deadline) {
       const remaining = Math.max(
         1,
-        Math.min(idleTimeoutMs, deadline - Date.now()),
+        Math.min(idleTimeoutMs, deadline - services.clock.now()),
       );
       const next = yield* action<
         ReadableStreamReadResult<Uint8Array> | typeof timedOut
       >((resolve, reject) => {
         let settled = false;
-        const timeoutId = setTimeout(() => {
+        const timeoutId = services.clock.setTimeout(() => {
           settled = true;
           resolve(timedOut);
         }, remaining);
@@ -61,26 +67,26 @@ export function* readMailboxSseBody(
             return;
           }
           settled = true;
-          clearTimeout(timeoutId);
+          services.clock.clearTimeout(timeoutId);
           resolve(result);
         }).catch((error) => {
           if (settled) {
             return;
           }
           settled = true;
-          clearTimeout(timeoutId);
+          services.clock.clearTimeout(timeoutId);
           reject(error);
         });
 
         return () => {
-          clearTimeout(timeoutId);
+          services.clock.clearTimeout(timeoutId);
         };
       });
 
       if (next === timedOut) {
         if (
           parseMailboxSse(text).length > 0
-          || Date.now() + idleTimeoutMs >= deadline
+          || services.clock.now() + idleTimeoutMs >= deadline
         ) {
           controller.abort();
           break;
