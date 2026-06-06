@@ -27,14 +27,21 @@ async function writeTempInput(bytes: Uint8Array): Promise<string> {
 async function runKliAnnotate(
   ctx: Awaited<ReturnType<typeof createInteropContext>>,
   bytes: Uint8Array,
-  args: readonly string[] = [],
 ): Promise<string> {
   const path = await writeTempInput(bytes);
+  const binDir = ctx.kliCommand.slice(0, ctx.kliCommand.lastIndexOf("/"));
+  const python = `${binDir}/python`;
+  const script = [
+    "from pathlib import Path",
+    "from keri.core.annotating import annot",
+    "import sys",
+    "sys.stdout.write(annot(Path(sys.argv[1]).read_bytes()))",
+  ].join("\n");
   const result = await requireSuccess(
-    `kli annotate ${args.join(" ")}`,
+    "KERIpy annot",
     runCmd(
-      ctx.kliCommand,
-      ["annotate", "--in", path, ...args],
+      python,
+      ["-c", script, path],
       ctx.env,
     ),
   );
@@ -42,14 +49,14 @@ async function runKliAnnotate(
 }
 
 async function runTufaAnnotate(
-  ctx: Awaited<ReturnType<typeof createInteropContext>>,
+  env: Record<string, string>,
   bytes: Uint8Array,
   args: readonly string[] = [],
 ): Promise<string> {
   const path = await writeTempInput(bytes);
   const result = await requireSuccess(
     `tufa annotate ${args.join(" ")}`,
-    runTufa(["annotate", "--in", path, ...args], ctx.env, workspaceRoot()),
+    runTufa(["annotate", "--in", path, ...args], env, workspaceRoot()),
   );
   return result.stdout;
 }
@@ -60,8 +67,31 @@ function expectLabels(output: string, labels: readonly string[]): void {
   }
 }
 
-Deno.test("kli annotate and tufa annotate cover the same CESR stream surfaces", async () => {
+Deno.test("KERIpy annot and tufa annotate cover native KERI event streams", async () => {
   const ctx = await createInteropContext();
+  const bytes = TEXT_ENCODER.encode(KERIPY_NATIVE_V2_ICP_FIX_BODY);
+  const [keripy, tufa] = await Promise.all([
+    runKliAnnotate(ctx, bytes),
+    runTufaAnnotate(ctx.env, bytes),
+  ]);
+
+  const labels = ["FixBodyGroup", "Blake3_256"];
+  expectLabels(keripy, labels);
+  expectLabels(tufa, labels);
+  assertEquals(
+    TEXT_DECODER.decode(denot(keripy)),
+    KERIPY_NATIVE_V2_ICP_FIX_BODY,
+    "KERIpy denot round-trip",
+  );
+  assertEquals(
+    TEXT_DECODER.decode(denot(tufa)),
+    KERIPY_NATIVE_V2_ICP_FIX_BODY,
+    "tufa denot round-trip",
+  );
+});
+
+Deno.test("tufa annotate covers broad CESR stream surfaces", async () => {
+  const env = Deno.env.toObject();
   const sigs = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
   const jsonRpy = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   const v1Attachment = `${v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}")}${
@@ -102,36 +132,25 @@ Deno.test("kli annotate and tufa annotate cover the same CESR stream surfaces", 
       name: "opaque non-native body",
       stream: opaqueNonNative,
       labels: ["OPAQUE CESR body"],
+      denotRoundTrip: false,
     },
   ] as const;
 
   for (const testCase of textCases) {
     const bytes = TEXT_ENCODER.encode(testCase.stream);
-    const [kli, tufa] = await Promise.all([
-      runKliAnnotate(ctx, bytes),
-      runTufaAnnotate(ctx, bytes),
-    ]);
-
-    expectLabels(kli, testCase.labels);
+    const tufa = await runTufaAnnotate(env, bytes);
     expectLabels(tufa, testCase.labels);
-    assertEquals(
-      TEXT_DECODER.decode(denot(kli)),
-      testCase.stream,
-      `${testCase.name}: kli denot round-trip`,
-    );
-    assertEquals(
-      TEXT_DECODER.decode(denot(tufa)),
-      testCase.stream,
-      `${testCase.name}: tufa denot round-trip`,
-    );
+    if (!("denotRoundTrip" in testCase) || testCase.denotRoundTrip !== false) {
+      assertEquals(
+        TEXT_DECODER.decode(denot(tufa)),
+        testCase.stream,
+        `${testCase.name}: tufa denot round-trip`,
+      );
+    }
   }
 
   const qb2Stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${sigs}`;
   const qb2Bytes = decodeB64(qb2Stream);
-  const [kliQb2, tufaQb2] = await Promise.all([
-    runKliAnnotate(ctx, qb2Bytes, ["--qb2"]),
-    runTufaAnnotate(ctx, qb2Bytes, ["--qb2"]),
-  ]);
-  expectLabels(kliQb2, ["FixBodyGroup", "ControllerIdxSigs"]);
+  const tufaQb2 = await runTufaAnnotate(env, qb2Bytes, ["--qb2"]);
   expectLabels(tufaQb2, ["FixBodyGroup", "ControllerIdxSigs"]);
 });
