@@ -164,7 +164,7 @@ function normalizeBuiltManifest(): TufaNpmTargets {
     },
   };
   manifest.bin = {
-    tufa: targets.bin,
+    tufa: targets.bin.replace(/^\.\//, ""),
   };
   Deno.writeTextFileSync(
     packageJsonPath,

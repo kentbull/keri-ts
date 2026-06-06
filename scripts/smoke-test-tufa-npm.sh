@@ -65,10 +65,13 @@ for (const target of Object.values(manifest.exports ?? {})) {
 }
 
 for (const target of [...new Set(targets)]) {
-  if (!target.startsWith("./")) {
+  if (target.startsWith("./")) {
+    console.log(`package/${target.slice(2)}`);
     continue;
   }
-  console.log(`package/${target.slice(2)}`);
+  if (!target.startsWith("/") && !target.startsWith("../") && !target.includes("://")) {
+    console.log(`package/${target}`);
+  }
 }
 EOF
 )"
