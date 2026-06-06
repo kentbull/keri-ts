@@ -351,7 +351,7 @@ export class Poster {
     ) {
       this.mailboxer.storeMsg(
         mailboxTopicKey(recipient, topic),
-        args.message,
+        mailboxReplyPayload(hab, recipient, topic, args.message),
       );
       deliveries.push(`local-mailbox:${hab.pre}`);
       return { deliveries, queued };
@@ -523,7 +523,7 @@ export class Poster {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
       this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
-        message,
+        mailboxReplyPayload(hab, recipient, topic, message),
       );
       return;
     }
@@ -965,6 +965,29 @@ function buildForwardedDelivery(
     },
   );
   return concatBytes(hab.endorse(serder, { pipelined: false }), attachments);
+}
+
+/**
+ * Include the sender's latest KEL before locally stored `/reply` payloads.
+ *
+ * KERIpy's `Revery` escrows transferable replies whose signer establishment
+ * event is unknown. Python KLI does not route that escrow's follow-up query cue
+ * during the bounded `kli query` command, so a local mailbox host must provide
+ * the verification context with the reply itself for rotated `/ksn` replies.
+ */
+function mailboxReplyPayload(
+  hab: Hab,
+  recipient: string,
+  topic: string,
+  message: Uint8Array,
+): Uint8Array {
+  if (topic !== "/reply" && topic !== "reply") {
+    return message;
+  }
+  const introduction = introduce(hab, recipient);
+  return introduction.length === 0
+    ? message
+    : concatBytes(introduction, message);
 }
 
 /**
