@@ -12,7 +12,7 @@
  * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
+import { type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
@@ -27,19 +27,18 @@ import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
-import { MailboxDirector } from "./mailbox-director.ts";
+import type { MailboxDirector } from "./mailbox-director.ts";
 import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
 import {
   directDeliveryEndpoints,
   firstSortedEndpoint,
-  flattenRoleUrls,
   getOutboxer,
   mailboxDeliveryEndpoints,
   mailboxPollEndpoints,
   mailboxTopicKey,
-  preferredUrl,
 } from "./mailboxing.ts";
 import { Organizer } from "./organizing.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
@@ -58,6 +57,18 @@ export interface RawCesrSendResult {
   queued: string[];
 }
 
+interface PosterOptions {
+  mailboxer?: Mailboxer | null;
+  outboxer?: OutboxerLike;
+  services?: RuntimeServices;
+}
+
+interface MailboxPollerOptions {
+  timeouts?: Partial<MailboxPollingTimeoutPolicy>;
+  services?: RuntimeServices;
+  pollTransport?: MailboxPollTransport;
+}
+
 /**
  * Mailbox-first postman for outbound EXN transport.
  *
@@ -73,21 +84,15 @@ export class Poster {
   readonly mailboxer: Mailboxer | null;
   readonly outboxer: OutboxerLike;
   readonly organizer: Organizer;
+  readonly services: RuntimeServices;
 
-  constructor(
-    hby: Habery,
-    {
-      mailboxer,
-      outboxer,
-    }: {
-      mailboxer?: Mailboxer | null;
-      outboxer?: OutboxerLike;
-    } = {},
-  ) {
+  constructor(hby: Habery, options: PosterOptions = {}) {
+    const { mailboxer, outboxer, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.mailboxer = mailboxer ?? null;
     this.outboxer = outboxer ?? getOutboxer(hby);
     this.organizer = new Organizer(hby);
+    this.services = services;
   }
 
   /**
@@ -235,6 +240,7 @@ export class Poster {
           message,
           this.hby.cesrBodyMode,
           endpoint.eid,
+          this.services,
         );
         deliveries.push(endpoint.url);
       }
@@ -365,6 +371,7 @@ export class Poster {
           args.message,
           this.hby.cesrBodyMode,
           endpoint.eid,
+          this.services,
         );
         deliveries.push(endpoint.url);
       }
@@ -538,6 +545,7 @@ export class Poster {
       concatBytes(introduce(hab, endpoint.eid), forwarded),
       this.hby.cesrBodyMode,
       endpoint.eid,
+      this.services,
     );
   }
 
@@ -690,20 +698,25 @@ export class MailboxPoller {
   readonly hby: Habery;
   readonly mailboxDirector: MailboxDirector;
   readonly timeoutPolicy: Readonly<MailboxPollingTimeoutPolicy>;
+  readonly services: RuntimeServices;
+  readonly pollTransport: MailboxPollTransport;
   private readonly localCursors = new Map<string, Record<string, number>>();
 
   constructor(
     hby: Habery,
     mailboxDirector: MailboxDirector,
-    {
-      timeouts,
-    }: {
-      timeouts?: Partial<MailboxPollingTimeoutPolicy>;
-    } = {},
+    options: MailboxPollerOptions = {},
   ) {
+    const {
+      timeouts,
+      services = defaultRuntimeServices,
+      pollTransport = defaultMailboxPollTransport,
+    } = options;
     this.hby = hby;
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
+    this.services = services;
+    this.pollTransport = pollTransport;
   }
 
   /** Configure mailbox polling state for future expansion; currently a no-op. */
@@ -737,7 +750,7 @@ export class MailboxPoller {
       return [];
     }
     const batches: MailboxPollBatch[] = [];
-    const deadline = Date.now() + positiveTimeoutMs(
+    const deadline = this.services.clock.now() + positiveTimeoutMs(
       budgetMs,
       this.timeoutPolicy.commandLocalBudgetMs,
     );
@@ -752,7 +765,7 @@ export class MailboxPoller {
     for (const hab of this.hby.habs.values()) {
       const remoteEndpoints = mailboxPollEndpoints(this.hby, hab);
       for (const endpoint of remoteEndpoints) {
-        const remainingBudgetMs = deadline - Date.now();
+        const remainingBudgetMs = deadline - this.services.clock.now();
         if (remainingBudgetMs <= 0) {
           return batches;
         }
@@ -863,14 +876,14 @@ export class MailboxPoller {
       hab.pre,
       endpoint.eid,
     );
-    const messages = yield* fetchMailboxMessages(
+    const messages = yield* this.pollTransport.poll({
       hab,
-      endpoint.eid,
-      endpoint.url,
-      cursor,
-      this.hby.cesrBodyMode,
-      mailboxFetchTimeoutPolicy(this.timeoutPolicy, budgetMs),
-    );
+      endpoint,
+      topics: cursor,
+      bodyMode: this.hby.cesrBodyMode,
+      timeouts: mailboxFetchTimeoutPolicy(this.timeoutPolicy, budgetMs),
+      services: this.services,
+    });
     if (messages.length === 0) {
       return null;
     }
@@ -1149,11 +1162,38 @@ export interface MailboxPollBatch {
   messages: Uint8Array[];
 }
 
-interface MailboxFetchTimeoutPolicy {
+export interface MailboxFetchTimeoutPolicy {
   requestOpenTimeoutMs: number;
   maxReadDurationMs: number;
   readIdleTimeoutMs: number;
 }
+
+export interface MailboxPollTransportRequest {
+  hab: Hab;
+  endpoint: { eid: string; url: string };
+  topics: Record<string, number>;
+  bodyMode: "header" | "body";
+  timeouts: MailboxFetchTimeoutPolicy;
+  services: RuntimeServices;
+}
+
+export interface MailboxPollTransport {
+  poll(args: MailboxPollTransportRequest): Operation<MailboxSseMessage[]>;
+}
+
+const defaultMailboxPollTransport: MailboxPollTransport = {
+  *poll(args): Operation<MailboxSseMessage[]> {
+    return yield* fetchMailboxMessages(
+      args.hab,
+      args.endpoint.eid,
+      args.endpoint.url,
+      args.topics,
+      args.bodyMode,
+      args.timeouts,
+      args.services,
+    );
+  },
+};
 
 /**
  * Query one remote mailbox endpoint and parse any returned mailbox SSE events.
@@ -1168,6 +1208,7 @@ function* fetchMailboxMessages(
   topics: Record<string, number>,
   bodyMode: "header" | "body",
   timeouts: MailboxFetchTimeoutPolicy,
+  services: RuntimeServices = defaultRuntimeServices,
 ): Operation<MailboxSseMessage[]> {
   const query = hab.query(hab.pre, src, { topics }, "mbx");
   const handle = yield* fetchMailboxQueryResponse(
@@ -1176,6 +1217,7 @@ function* fetchMailboxMessages(
     bodyMode,
     src,
     timeouts.requestOpenTimeoutMs,
+    services,
   );
   if (!handle) {
     return [];
@@ -1193,6 +1235,7 @@ function* fetchMailboxMessages(
     {
       idleTimeoutMs: timeouts.readIdleTimeoutMs,
       maxDurationMs: timeouts.maxReadDurationMs,
+      services,
     },
   );
   return parseMailboxSse(text);
@@ -1214,6 +1257,7 @@ function* fetchMailboxQueryResponse(
   bodyMode: "header" | "body",
   destination: string,
   timeoutMs: number,
+  services: RuntimeServices = defaultRuntimeServices,
 ): Operation<
   {
     response: Response;
@@ -1228,7 +1272,7 @@ function* fetchMailboxQueryResponse(
     method: "POST",
     headers: request.headers,
     body: request.body,
-  }, { timeoutMs });
+  }, { timeoutMs, services });
 }
 
 function normalizeMailboxPollingTimeoutPolicy(
@@ -1294,6 +1338,7 @@ export function* postCesrMessage(
   body: Uint8Array,
   bodyMode: "header" | "body",
   destination?: string,
+  services: RuntimeServices = defaultRuntimeServices,
 ): Operation<void> {
   const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
   for (const currentBody of requests) {
@@ -1305,6 +1350,8 @@ export function* postCesrMessage(
       method: "POST",
       headers: request.headers,
       body: request.body,
+    }, {
+      services,
     });
 
     yield* closeResponseBody(response);

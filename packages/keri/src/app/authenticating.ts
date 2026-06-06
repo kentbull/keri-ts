@@ -4,7 +4,12 @@ import type { Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
+import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+
+interface AuthenticatorOptions {
+  services?: RuntimeServices;
+}
 
 /**
  * Well-known OOBI authenticator for one `Habery`.
@@ -21,9 +26,12 @@ import { runtimeTurn } from "./runtime-turn.ts";
  */
 export class Authenticator {
   readonly hby: Habery;
+  readonly services: RuntimeServices;
 
-  constructor(hby: Habery) {
+  constructor(hby: Habery, options: AuthenticatorOptions = {}) {
+    const { services = defaultRuntimeServices } = options;
     this.hby = hby;
+    this.services = services;
   }
 
   /** Process one bounded auth step if queued well-known work exists. */
@@ -109,7 +117,7 @@ export class Authenticator {
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
-    const response = yield* fetchAuthResponse(url);
+    const response = yield* fetchAuthResponse(url, this.services);
     const date = new Date().toISOString();
     const state = response.ok ? "resolved" : `http-${response.status}`;
     yield* closeResponseBody(response);
@@ -132,7 +140,12 @@ export class Authenticator {
   }
 }
 
-function* fetchAuthResponse(url: string): Operation<Response> {
-  const { response } = yield* fetchResponseHandle(url);
+function* fetchAuthResponse(
+  url: string,
+  services: RuntimeServices = defaultRuntimeServices,
+): Operation<Response> {
+  const { response } = yield* fetchResponseHandle(url, {}, {
+    services,
+  });
   return response;
 }
