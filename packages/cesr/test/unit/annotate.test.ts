@@ -1,7 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
-import { annotateCli } from "../../src/annotate/cli.ts";
 import { denot } from "../../src/annotate/denot.ts";
+import { tephraCli } from "../../src/cli/main.ts";
 import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
@@ -31,7 +31,7 @@ Deno.test("annotate qb2 stream emits canonical annotated text", () => {
   assertStringIncludes(annotated, "Indexer A");
 });
 
-Deno.test("annotateCli supports --in and --out", async () => {
+Deno.test("tephra annotate supports --in and --out", async () => {
   const ims = KERIPY_NATIVE_V2_ICP_FIX_BODY;
   const files = new Map<string, Uint8Array>([
     ["/virtual/in.cesr", TEXT_ENCODER.encode(ims)],
@@ -39,8 +39,8 @@ Deno.test("annotateCli supports --in and --out", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
 
-  const exitCode = await annotateCli(
-    ["--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated"],
+  const exitCode = await tephraCli(
+    ["annotate", "--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated"],
     {
       readFile: (path: string) => {
         const file = files.get(path);
@@ -115,14 +115,14 @@ Deno.test("annotate labels non-serder CESR fallback body as opaque (not SERDER)"
   assertEquals(annotated.includes("SERDER KERI CESR"), false);
 });
 
-Deno.test("annotateCli --pretty pretty-prints JSON body", async () => {
+Deno.test("tephra annotate --pretty pretty-prints JSON body", async () => {
   const ims = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   const files = new Map<string, Uint8Array>([
     ["/virtual/in.cesr", TEXT_ENCODER.encode(ims)],
   ]);
 
-  const exitCode = await annotateCli(
-    ["--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated", "--pretty"],
+  const exitCode = await tephraCli(
+    ["annotate", "--in", "/virtual/in.cesr", "--out", "/virtual/out.annotated", "--pretty"],
     {
       readFile: (path: string) => Promise.resolve(files.get(path) ?? new Uint8Array(0)),
       writeTextFile: (path: string, text: string) => {

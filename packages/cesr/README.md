@@ -25,16 +25,27 @@ const annotated = annotate(text, { domainHint: "txt", pretty: true });
 ## CLI usage
 
 ```bash
-npx cesr-annotate --in mystream.cesr --pretty
+npm exec --package cesr-ts -- tephra annotate --in mystream.cesr --pretty
+npm exec --package cesr-ts -- tephra validate --in mystream.cesr
+npm exec --package cesr-ts -- tephra bench --in mystream.cesr --iterations 20 --warmup 3
 ```
 
-## Deno CLI usage (from source)
+After global install:
 
 ```bash
-deno task cesr:annotate --in mystream.cesr --pretty
+tephra annotate --in mystream.cesr --pretty
+tephra validate --in mystream.cesr
+tephra bench --in mystream.cesr --iterations 20 --warmup 3
 ```
 
-## Benchmarking (from source)
+## Deno CLI usage (from repository root)
+
+```bash
+deno task tephra:annotate --in mystream.cesr --pretty
+deno task tephra:validate --in mystream.cesr
+```
+
+## Benchmarking (from repository root)
 
 Run standard parser benchmark baselines:
 
@@ -45,8 +56,8 @@ deno task bench:cesr
 Run a benchmark on an arbitrary stream:
 
 ```bash
-deno task bench:cesr:parser --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
-cat ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr | deno task bench:cesr:parser --iterations 20 --warmup 3
+deno task tephra:bench --in ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr
+cat ../../samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr | deno task tephra:bench --iterations 20 --warmup 3
 ```
 
 ## Using cesr-ts through tufa

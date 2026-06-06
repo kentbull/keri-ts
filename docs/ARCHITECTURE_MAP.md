@@ -145,7 +145,7 @@ internal-only implementation areas so refactors can preserve stable contracts.
 
 ## Refactor Invariants
 
-- Do not break `deno task kli ...` and `deno task cesr:annotate ...` UX.
+- Do not break `deno task kli ...` and `deno task tephra:annotate ...` UX.
 - Keep CESR parser behavior and fixture/test parity stable.
 - Treat `packages/cesr/mod.ts`, `packages/keri/mod.ts`,
   `packages/keri/runtime.ts`, and `packages/keri/db.ts` as compatibility
