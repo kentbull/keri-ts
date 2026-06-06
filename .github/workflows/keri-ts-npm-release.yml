@@ -153,7 +153,9 @@ jobs:
       - name: test quality gate
         # Release packaging is only meaningful if the package still passes the
         # KERI runtime test surface right before build.
-        run: deno task test:quality
+        run: |
+          unset LD_LIBRARY_PATH
+          deno task test:quality
 
       - name: build npm package
         # CI metadata is opt-in. Release/build jobs explicitly stamp the runtime
@@ -161,6 +163,7 @@ jobs:
         env:
           BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
         run: |
+          unset LD_LIBRARY_PATH
           deno task version:generate:ci
           cd packages/keri
           deno task build:npm
