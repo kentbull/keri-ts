@@ -1,5 +1,11 @@
 # cesr-ts
 
+## 0.6.0
+
+### Minor Changes
+
+- Fix CESR non-native fallback payload handling and normalize parser/runtime surfaces used by KERI delegation interop flows.
+
 ## 0.5.0
 
 ### Minor Changes
