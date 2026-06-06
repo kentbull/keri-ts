@@ -588,6 +588,7 @@ export class Hab {
       algo,
       salt,
       tier,
+      temp: this.ks.temp,
     });
 
     if (!transferable && verfers.length === 1) {

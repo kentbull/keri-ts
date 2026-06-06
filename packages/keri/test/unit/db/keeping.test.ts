@@ -169,7 +169,7 @@ Deno.test("app/keeping - Manager.sign derives current salty signers from pre and
         ncount: 2,
         stem: "phlegm",
         transferable: true,
-        temp: false,
+        temp: true,
       });
       const pre = verfers[0].qb64;
       const sit = keeper.getSits(pre)!;
@@ -210,7 +210,7 @@ Deno.test("app/keeping - Manager.sign derives next-lot salty signers from explic
         ncount: 2,
         stem: "phlegm",
         transferable: true,
-        temp: false,
+        temp: true,
       });
       const pre = verfers[0].qb64;
       const sit = keeper.getSits(pre)!;
@@ -251,7 +251,7 @@ Deno.test("app/keeping - Manager.sign derived-path indices select and order salt
         ncount: 1,
         stem: "phlegm",
         transferable: true,
-        temp: false,
+        temp: true,
       });
       const pre = verfers[0].qb64;
       const sit = keeper.getSits(pre)!;
@@ -315,7 +315,7 @@ Deno.test("app/keeping - Manager.sign derived-path ondices match explicit pubs s
         ncount: 1,
         stem: "phlegm",
         transferable: true,
-        temp: false,
+        temp: true,
       });
       const pre = verfers[0].qb64;
       const sit = keeper.getSits(pre)!;
@@ -417,13 +417,13 @@ Deno.test("app/keeping - Manager.sign derives historical salty lots from pubs st
         ncount: 1,
         stem: "phlegm",
         transferable: true,
-        temp: false,
+        temp: true,
       });
       const pre = verfers[0].qb64;
       const ser = new TextEncoder().encode("derived-history");
 
-      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
-      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: true });
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: true });
 
       assertEquals(keeper.pris.get(verfers[0].qb64), null);
 
@@ -461,7 +461,7 @@ Deno.test("app/keeping - Manager.sign preserves branch precedence for pubs then 
         ncount: 1,
         stem: "phlegm",
         transferable: true,
-        temp: false,
+        temp: true,
       });
       const pre = verfers[0].qb64;
       const sit = keeper.getSits(pre)!;
@@ -562,8 +562,8 @@ Deno.test("app/keeping - Manager.sign derived-path fails when historical pubs ar
       const pre = verfers[0].qb64;
       const ser = new TextEncoder().encode("derived-missing");
 
-      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
-      manager.rotate({ pre, ncount: 1, transferable: true, temp: false });
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: true });
+      manager.rotate({ pre, ncount: 1, transferable: true, temp: true });
 
       keeper.pubs.rem(keeperPubsKey(pre, 0));
       assertThrows(

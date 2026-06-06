@@ -9,6 +9,7 @@
  *   lane groups with the concurrency policy declared below
  */
 
+import { dirname } from "jsr:@std/path/dirname";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { relative } from "jsr:@std/path/relative";
 
@@ -43,6 +44,34 @@ interface FileLaneDiscovery {
 interface LaneRunShape {
   fullFiles: string[];
   splitFiles: Array<{ file: string; tests: string[] }>;
+}
+
+/** One child `deno test` command timing for CI and local comparisons. */
+interface TestCommandTiming {
+  lane: string;
+  label: string;
+  args: string[];
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  success: boolean;
+}
+
+interface TimingOutput {
+  target: string;
+  generatedAt: string;
+  totalDurationMs: number;
+  audit: AuditResult;
+  commands: TestCommandTiming[];
+}
+
+class DenoTestFailure extends Error {
+  readonly code: number;
+
+  constructor(code: number, label: string) {
+    super(`${label} failed with exit code ${code}.`);
+    this.code = code;
+  }
 }
 
 const packageDir = new URL("../../packages/keri/", import.meta.url);
@@ -497,13 +526,105 @@ function resolveParallelJobs(config: LaneConfig): ParallelJobResolution {
   };
 }
 
-/** Run one Deno test command and fail the runner with the child exit code. */
+function formatDuration(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+
+  const totalSeconds = durationMs / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`;
+  }
+
+  const roundedSeconds = Math.round(totalSeconds);
+  const minutes = Math.floor(roundedSeconds / 60);
+  const seconds = roundedSeconds % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[\\/^$.*+?()[\]{}|]/g, "\\$&");
+}
+
+function splitTestFilter(testNames: string[]): string {
+  return `/^(?:${testNames.map(escapeRegex).join("|")})$/`;
+}
+
+function sortedTimings(timings: TestCommandTiming[]): TestCommandTiming[] {
+  return [...timings].sort((left, right) => right.durationMs - left.durationMs);
+}
+
+function timingMarkdown(output: TimingOutput): string {
+  const lines = [
+    `## KERI test timings: ${output.target}`,
+    "",
+    `Total child-command time: ${formatDuration(output.totalDurationMs)}`,
+    "",
+    "| Duration | Lane | Command |",
+    "|---:|---|---|",
+  ];
+
+  for (const timing of sortedTimings(output.commands)) {
+    lines.push(
+      `| ${formatDuration(timing.durationMs)} | ${timing.lane} | ${timing.label.replaceAll("|", "\\|")} |`,
+    );
+  }
+
+  lines.push("");
+  return `${lines.join("\n")}\n`;
+}
+
+function timingJsonPath(target: string): string | null {
+  const explicit = Deno.env.get("KERI_TEST_TIMINGS_JSON")?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  if (Deno.env.get("GITHUB_ACTIONS") === "true") {
+    const dir = Deno.env.get("KERI_TEST_TIMINGS_DIR")?.trim()
+      || ".test-timings";
+    const job = Deno.env.get("GITHUB_JOB")?.trim() || "keri-tests";
+    return `${dir}/${job}-${target}.json`;
+  }
+
+  return null;
+}
+
+async function emitTimingOutputs(output: TimingOutput): Promise<void> {
+  if (output.commands.length === 0) {
+    return;
+  }
+
+  const markdown = timingMarkdown(output);
+  console.log(markdown.trimEnd());
+
+  const summaryPath = Deno.env.get("GITHUB_STEP_SUMMARY")?.trim();
+  if (summaryPath) {
+    await Deno.writeTextFile(summaryPath, markdown, { append: true });
+  }
+
+  const jsonPath = timingJsonPath(output.target);
+  if (jsonPath) {
+    await Deno.mkdir(dirname(jsonPath), { recursive: true });
+    await Deno.writeTextFile(
+      jsonPath,
+      `${JSON.stringify(output, null, 2)}\n`,
+    );
+    console.log(`==> Wrote KERI test timings to ${jsonPath}`);
+  }
+}
+
+/** Run one Deno test command and record its child-process duration. */
 async function runDenoTest(
   args: string[],
   label: string,
+  laneName: string,
+  timings: TestCommandTiming[],
   env?: Record<string, string>,
 ): Promise<void> {
   console.log(`==> ${label}`);
+  const startedAt = new Date();
+  const start = performance.now();
   const child = new Deno.Command("deno", {
     args,
     cwd: fromFileUrl(packageDir),
@@ -513,8 +634,20 @@ async function runDenoTest(
     stderr: "inherit",
   }).spawn();
   const status = await child.status;
+  const completedAt = new Date();
+  const durationMs = Math.round(performance.now() - start);
+  timings.push({
+    lane: laneName,
+    label,
+    args,
+    startedAt: startedAt.toISOString(),
+    completedAt: completedAt.toISOString(),
+    durationMs,
+    success: status.success,
+  });
+  console.log(`==> ${label} completed in ${formatDuration(durationMs)}`);
   if (!status.success) {
-    Deno.exit(status.code);
+    throw new DenoTestFailure(status.code, label);
   }
 }
 
@@ -530,6 +663,7 @@ function baseTestArgs(config: LaneConfig): string[] {
 async function runLane(
   laneName: string,
   shapes: Record<string, LaneRunShape>,
+  timings: TestCommandTiming[],
 ): Promise<void> {
   const config = laneConfigs[laneName];
   const shape = shapes[laneName];
@@ -548,6 +682,8 @@ async function runLane(
       await runDenoTest(
         [...baseTestArgs(config), "--parallel", ...batch],
         `${laneName} full files batch ${index + 1}`,
+        laneName,
+        timings,
         env,
       );
     }
@@ -556,22 +692,24 @@ async function runLane(
       await runDenoTest(
         [...baseTestArgs(config), file],
         `${laneName} full file ${file}`,
+        laneName,
+        timings,
       );
     }
   }
 
   for (const splitFile of shape.splitFiles) {
-    for (const testName of splitFile.tests) {
-      await runDenoTest(
-        [
-          ...baseTestArgs(config),
-          "--filter",
-          testName,
-          splitFile.file,
-        ],
-        `${laneName} split test ${splitFile.file} :: ${testName}`,
-      );
-    }
+    await runDenoTest(
+      [
+        ...baseTestArgs(config),
+        "--filter",
+        splitTestFilter(splitFile.tests),
+        splitFile.file,
+      ],
+      `${laneName} split file ${splitFile.file} (${splitFile.tests.length} tests)`,
+      laneName,
+      timings,
+    );
   }
 }
 
@@ -581,6 +719,7 @@ async function main(): Promise<void> {
     usage();
   }
 
+  const timings: TestCommandTiming[] = [];
   const audit = await auditLaneAssignments();
   console.log(
     `==> Lane audit passed: ${audit.discoveredFiles} files, ${audit.discoveredTests} tests annotated`,
@@ -592,8 +731,32 @@ async function main(): Promise<void> {
 
   const discovered = await buildDiscoveredTests();
   const shapes = buildLaneRunShapes(discovered);
-  for (const laneName of resolveLaneNames(target)) {
-    await runLane(laneName, shapes);
+  let exitCode = 0;
+  try {
+    for (const laneName of resolveLaneNames(target)) {
+      await runLane(laneName, shapes, timings);
+    }
+  } catch (error) {
+    if (error instanceof DenoTestFailure) {
+      exitCode = error.code;
+    } else {
+      throw error;
+    }
+  } finally {
+    await emitTimingOutputs({
+      target,
+      generatedAt: new Date().toISOString(),
+      totalDurationMs: timings.reduce(
+        (total, timing) => total + timing.durationMs,
+        0,
+      ),
+      audit,
+      commands: timings,
+    });
+  }
+
+  if (exitCode !== 0) {
+    Deno.exit(exitCode);
   }
 }
 
