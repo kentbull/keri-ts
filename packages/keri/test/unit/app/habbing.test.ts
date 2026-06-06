@@ -50,6 +50,36 @@ function makeEmbeddedExchangeMessage(
   return { serder, attachments };
 }
 
+Deno.test("Hab.make propagates temporary keeper mode into key inception", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-temp-incept-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    type InceptArgs = NonNullable<Parameters<typeof hby.mgr.incept>[0]>;
+    const originalIncept = hby.mgr.incept.bind(hby.mgr);
+    const seenTemps: Array<boolean | undefined> = [];
+    hby.mgr.incept = ((args: InceptArgs = {}) => {
+      seenTemps.push(args.temp);
+      return originalIncept(args);
+    }) as typeof hby.mgr.incept;
+    try {
+      hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      assertEquals(seenTemps, [true]);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", async () => {
   await run(function*() {
     const hby = yield* createHabery({

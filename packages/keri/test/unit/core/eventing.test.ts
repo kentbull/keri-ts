@@ -291,6 +291,7 @@ function rotationPrm(
   hby: {
     mgr: {
       ks: {
+        temp: boolean;
         getPrms(pre: string): {
           pidx: number;
           stem: string;
@@ -308,6 +309,7 @@ function rotationPrm(
     salt: prm.salt,
     tier: prm.tier || Tiers.low,
     rootStem: prm.stem || prm.pidx.toString(16),
+    temp: hby.mgr.ks.temp,
   };
 }
 
@@ -322,7 +324,7 @@ function deriveRotationSigner(
     `${prm.rootStem}${pathSuffix}`,
     true,
     prm.tier,
-    false,
+    prm.temp,
   );
 }
 

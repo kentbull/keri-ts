@@ -856,9 +856,9 @@ export class Manager {
         ridx: lot.ridx,
         kidx: lot.kidx + offset,
         transferable: verfer.transferable,
-        // Persisted keeper parameters do not retain temp/stretch mode, so
-        // derived signing must use the normal persisted-sequence behavior.
-        temp: false,
+        // Temp keepers create temp-derived keys, so path re-derivation must
+        // mirror the active keeper mode. Durable keepers remain production-cost.
+        temp: this.ks.temp,
       })[0];
 
       if (!signer || signer.verfer.qb64 !== pub) {
@@ -1265,8 +1265,8 @@ export class Manager {
    *
    * Maintainer warning:
    * - derived salty signing depends only on persisted keeper parameters
-   * - temporary stretch mode (`temp=true`) is not part of `PrePrm`, so this path
-   *   is intended for normal persisted key sequences rather than temp-only tests
+   * - temporary stretch mode (`temp=true`) is taken from the active keeper so
+   *   path signing can rederive keys created by temp test stores
    *
    * Signature-index semantics adapted from KERIpy:
    * - explicit `pubs` / `verfers` keep the usual coherent-list behavior:
