@@ -55,6 +55,13 @@ release, and interoperability operations.
     rather than rebuilding dependencies on removed `packages/keri` host paths.
 18. `tufa db dump` is the preferred operational seam for localizing
     controller-vs-witness or provider-vs-controller state drift.
+19. Npm release build scripts should derive manifest export/bin paths from the
+    generated DNT output and assert those targets in the packed tarball; hard
+    coded emitted paths are release blockers.
+20. Scoped package publication is a separate registry-auth seam from artifact
+    correctness. `@keri-ts/tufa` can build, smoke, dry-run, and sign provenance
+    successfully while still failing publish until the npm token has permission
+    for the `@keri-ts` scope.
 
 ## Use This Doc For
 
@@ -87,6 +94,9 @@ release, and interoperability operations.
    broadening a different test.
 8. Keep new host/integration tests pointed at `packages/tufa` surfaces so
    package-boundary drift is caught where users actually run the code.
+9. Before retrying `@keri-ts/tufa` publication, fix npm registry ownership or
+   token permissions for the `@keri-ts` scope; repository-side release checks
+   are already capable of proving the package artifact.
 
 ## Milestone Rollup
 
@@ -114,3 +124,13 @@ release, and interoperability operations.
 - Worker defaults were capped and tied to honest isolation boundaries.
 - Oversized parallel lanes were split, and mixed runtime files were physically
   separated so the test topology matches the real safe concurrency boundary.
+
+### 2026-06-06 - Release Artifact Validation Became Target-Aware
+
+- `cesr-ts@0.6.0` and `keri-ts@0.6.0` published through CI after PR-gated
+  version and packaging fixes.
+- `keri-ts` and `@keri-ts/tufa` npm build scripts now treat DNT output paths as
+  generated facts, then normalize and assert manifest targets before smoke.
+- `@keri-ts/tufa@0.6.0` remains blocked at npm publish by `@keri-ts` scope
+  authorization despite passing quality, build, npm dry-run, Docker smoke, and
+  artifact upload in CI.
