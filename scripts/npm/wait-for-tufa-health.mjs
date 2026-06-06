@@ -6,6 +6,7 @@
  * source avoids embedding a multiline JS program inside the smoke shell script.
  */
 import { readFile } from "node:fs/promises";
+import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 
 const port = process.env.TUFA_SMOKE_PORT ?? "";

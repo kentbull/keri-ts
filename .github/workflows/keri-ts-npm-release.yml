@@ -24,7 +24,7 @@ env:
   # Release CI uses the same exact versions as PR CI so "green in PR" and
   # "green in release" mean the same runtime contract.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  DENO_VERSION: "2.7.11"
+  DENO_VERSION: "2.8.2"
   KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
   KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
