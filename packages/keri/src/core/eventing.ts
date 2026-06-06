@@ -285,7 +285,7 @@ export class Kevery {
         // durable `states.` after a reopen. Use the read-through DB accessor so
         // witness/query replay works for reopened remote state, not just local
         // habitats already hot in the in-memory cache.
-        const kever = this.db.getKever(pre);
+        const kever = this.db.getKever(pre, { refresh: true });
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -321,7 +321,7 @@ export class Kevery {
         }]);
       }
       case "ksn": {
-        const kever = this.db.getKever(pre);
+        const kever = this.db.getKever(pre, { refresh: true });
         if (!kever) {
           return escrowQuery("missingKever");
         }
