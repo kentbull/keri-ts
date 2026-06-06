@@ -123,8 +123,6 @@ jobs:
         # Publish only after the package has passed checks and the exact tarball
         # has been captured.
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd packages/cesr/npm
-          npm publish --provenance --access public
+          npm publish --access public

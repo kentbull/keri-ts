@@ -194,8 +194,6 @@ jobs:
         # This is intentionally last: nothing publishes until the artifact has
         # been built, packed, smoke-tested, and archived.
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd packages/keri/npm
-          npm publish --provenance --access public
+          npm publish --access public

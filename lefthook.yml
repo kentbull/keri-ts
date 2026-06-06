@@ -1,0 +1,4 @@
+pre-push:
+  commands:
+    changeset-required:
+      run: deno task changeset:check

@@ -3,7 +3,9 @@ name: PR Stage Gate
 # PR merge gate for `master`.
 # Flow:
 # 1. `static-checks` rejects formatting, lint, and deterministic quality drift.
-# 2. The KERI test surface is split by real isolation boundaries:
+# 2. `changeset-required` ensures every normal PR records release intent before
+#    merge, while generated Changesets version PRs are exempt.
+# 3. The KERI test surface is split by real isolation boundaries:
 #    - `keri-db-fast-tests` for parallel-safe DB coverage
 #    - `keri-core-fast-a-tests` and `keri-core-fast-b-tests` for the split core
 #      KEL/query/reply unit lanes
@@ -14,12 +16,12 @@ name: PR Stage Gate
 #      of the representative lane
 #    - `keri-app-stateful-*` for stateful CLI flows that mutate process globals
 #    - `keri-interop-*` for the slow KERIpy/LMDB v1 parity paths
-# 3. `cesr-tests` keeps the CESR package's fast unit surface independent so
+# 4. `cesr-tests` keeps the CESR package's fast unit surface independent so
 #    regressions fail quickly without waiting on interop-heavy jobs.
-# 4. `package-smoke` proves the built `keri-ts` and `tufa` npm artifacts are
+# 5. `package-smoke` proves the built `keri-ts` and `tufa` npm artifacts are
 #    installable and usable, which catches publish-time breakage that normal
 #    tests can miss.
-# 5. `stage-gate` is the single stable branch-protection target; it fails if
+# 6. `stage-gate` is the single stable branch-protection target; it fails if
 #    any of the parallel jobs fail.
 
 on:
@@ -119,6 +121,25 @@ jobs:
           KERI_TS_BUILD_METADATA: ""
           CESR_TS_BUILD_METADATA: ""
         run: deno task quality:check
+
+  # Release intent is a separate fast gate so branch protection can reject
+  # missing Changesets before maintainers discover the issue at release time.
+  changeset-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: require changeset
+        run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
 
   # Parallel-safe DB coverage stays isolated so the cheapest deterministic gate
   # finishes quickly even when heavier KERI lanes are busy.
@@ -947,6 +968,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - static-checks
+      - changeset-required
       - keri-db-fast-tests
       - keri-core-fast-a-tests
       - keri-core-fast-b-tests
@@ -969,6 +991,7 @@ jobs:
         # disappearing when an upstream job aborts early.
         env:
           STATIC_CHECKS: ${{ needs.static-checks.result }}
+          CHANGESET_REQUIRED: ${{ needs.changeset-required.result }}
           KERI_DB_FAST_TESTS: ${{ needs.keri-db-fast-tests.result }}
           KERI_CORE_FAST_A_TESTS: ${{ needs.keri-core-fast-a-tests.result }}
           KERI_CORE_FAST_B_TESTS: ${{ needs.keri-core-fast-b-tests.result }}
@@ -985,6 +1008,7 @@ jobs:
           PACKAGE_SMOKE: ${{ needs.package-smoke.result }}
         run: |
           echo "static-checks=${STATIC_CHECKS}"
+          echo "changeset-required=${CHANGESET_REQUIRED}"
           echo "keri-db-fast-tests=${KERI_DB_FAST_TESTS}"
           echo "keri-core-fast-a-tests=${KERI_CORE_FAST_A_TESTS}"
           echo "keri-core-fast-b-tests=${KERI_CORE_FAST_B_TESTS}"
@@ -1000,6 +1024,7 @@ jobs:
           echo "cesr-tests=${CESR_TESTS}"
           echo "package-smoke=${PACKAGE_SMOKE}"
           [[ "${STATIC_CHECKS}" == "success" ]]
+          [[ "${CHANGESET_REQUIRED}" == "success" ]]
           [[ "${KERI_DB_FAST_TESTS}" == "success" ]]
           [[ "${KERI_CORE_FAST_A_TESTS}" == "success" ]]
           [[ "${KERI_CORE_FAST_B_TESTS}" == "success" ]]

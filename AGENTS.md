@@ -32,6 +32,18 @@ For significant changes, update:
 
 Use the templates in `.agents/PROJECT_LEARNINGS.md`.
 
+## Changeset Discipline
+
+Before opening, publishing, or finalizing any PR, ensure the branch includes a
+non-README `.changeset/*.md` file. Use:
+
+- `deno task release:changeset` for publishable package changes
+- `deno task release:changeset:empty` for tooling, docs, tests, or other
+  no-release changes
+
+Run `deno task changeset:check` before PR handoff. PR summaries must state
+whether the changeset is release-impacting or empty/no-release.
+
 ## Learnings Policy
 
 Use a hierarchical memory model:
