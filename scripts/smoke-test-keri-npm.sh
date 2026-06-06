@@ -28,6 +28,9 @@ if [[ ! -f "${TARBALL_PATH}" ]]; then
 fi
 
 assert_tarball_export_targets() {
+  # Validate the packed artifact itself before Docker install. This catches
+  # manifest path drift even when Node would otherwise fail later with a less
+  # actionable module-resolution error.
   local manifest_json
   local target_paths
   manifest_json="$(tar -xOzf "${TARBALL_PATH}" package/package.json)"
@@ -104,6 +107,8 @@ fi
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 
+# Use a clean container install so the smoke test exercises the packed npm
+# artifact and optional local CESR tarball, not workspace symlinks or caches.
 echo "Running Docker smoke test with ${TARBALL_NAME} on ${SMOKE_NODE_IMAGE}"
 docker run --rm \
   "${DOCKER_ARGS[@]}" \

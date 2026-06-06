@@ -1,3 +1,16 @@
+/**
+ * Delegator-side CLI approval for pending delegated events.
+ *
+ * KERIpy correspondence:
+ * - this is the bounded command analogue of KLI's delegation approval flow
+ * - pending work is discovered from durable `delegables.` escrow, not from
+ *   controller notifications
+ *
+ * Maintainer rule:
+ * - `/delegate/request` notifications are UI hints only
+ * - approval ordering and event selection come from the delegated-event escrows
+ *   and the delegator's own KEL state
+ */
 import { type Operation, spawn } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../../cesr/mod.ts";
 import type { CueEmission } from "../../core/cues.ts";
@@ -30,6 +43,7 @@ interface DelegateConfirmArgs {
   codeTime?: string;
 }
 
+/** Build witness auth payloads from CLI `<witness>:<code>` inputs. */
 function resolveWitnessAuths(
   witnesses: readonly string[],
   codes: readonly string[],
@@ -64,6 +78,7 @@ function resolveWitnessAuths(
   return auths;
 }
 
+/** Return pending delegated events for one local delegator, oldest first. */
 function pendingDelegations(
   hby: Habery,
   delegatorPre: string,
@@ -87,6 +102,7 @@ function pendingDelegations(
   return pending.sort((left, right) => (left.sn ?? 0) - (right.sn ?? 0));
 }
 
+/** Determine the delegator prefix for `dip` or `drt` escrow material. */
 function delegationSourcePrefix(
   hby: Habery,
   serder: SerderKERI,
@@ -103,6 +119,7 @@ function delegationSourcePrefix(
     ?? hby.db.getState(delegatedPre)?.di;
 }
 
+/** Project a delegated event into the seal embedded by the approving event. */
 function anchorData(serder: SerderKERI): { i: string; s: string; d: string } {
   if (!serder.pre || !serder.snh || !serder.said) {
     throw new ValidationError("Delegated event is missing pre, sn, or said.");
@@ -110,6 +127,7 @@ function anchorData(serder: SerderKERI): { i: string; s: string; d: string } {
   return { i: serder.pre, s: serder.snh, d: serder.said };
 }
 
+/** Resolve delegate witnesses for either delegated inception or rotation. */
 function delegateWitnesses(
   hby: Habery,
   serder: SerderKERI,
@@ -123,6 +141,7 @@ function delegateWitnesses(
   return [...(hby.db.getKever(serder.pre)?.wits ?? [])];
 }
 
+/** Return true once the delegated event has left escrow and reached local state. */
 function delegateCommitted(
   hby: Habery,
   serder: SerderKERI,
@@ -134,6 +153,7 @@ function delegateCommitted(
   return kever !== undefined && kever !== null && kever.sn >= (serder.sn ?? 0);
 }
 
+/** Build a witness log query used to pull delegate-side completion material. */
 function delegateWitnessLogsQuery(
   hab: Hab,
   serder: SerderKERI,
@@ -159,6 +179,7 @@ function delegateWitnessLogsQuery(
   };
 }
 
+/** Route query cues through query transport and other cues through Respondant. */
 function delegateConfirmSink(
   runtime: AgentRuntime,
   hby: Habery,
@@ -176,6 +197,7 @@ function delegateConfirmSink(
   };
 }
 
+/** Approve pending delegated events for the selected local delegator habitat. */
 export function* delegateConfirmCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
@@ -255,6 +277,9 @@ export function* delegateConfirmCommand(
 
         for (const serder of selected) {
           const anchor = anchorData(serder);
+          // KERIpy permits either interaction or rotation approval. Keep this
+          // explicit because the chosen approving event type affects later
+          // replay, but the embedded anchor seal is the same.
           if (interactionApproval) {
             hab.interact({ data: [anchor] });
           } else {
@@ -287,6 +312,9 @@ export function* delegateConfirmCommand(
           const witnesses = delegateWitnesses(hby, serder).sort();
           const selectedWitness = witnesses[0];
           if (selectedWitness) {
+            // Witnessed delegates must prove the delegated event is committed
+            // locally before we pin `aess.` and retry delegated unescrow. Doing
+            // it earlier can make local state look approved but incomplete.
             yield* sink.send(
               delegateWitnessLogsQuery(hab, serder, selectedWitness),
             );

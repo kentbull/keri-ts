@@ -1,3 +1,10 @@
+/**
+ * KERI VDR event factory helpers.
+ *
+ * Registry and credential-state events are smaller than KEL events but carry
+ * the same invariants: stable KERIpy-compatible field order, threshold/backer
+ * validation, and semantic seal projection before `SerderKERI` computes SAIDs.
+ */
 import {
   Ilks,
   type Kind,
@@ -36,6 +43,7 @@ function cloneStrings(values?: readonly string[]): string[] {
   return [...(values ?? [])];
 }
 
+/** Project a typed event seal into the SAD dictionary shape used by VDR events. */
 function cloneSealDict(seal?: SealEvent): Record<string, unknown> {
   if (!seal) {
     return {};

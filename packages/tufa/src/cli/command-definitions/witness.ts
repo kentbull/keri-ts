@@ -2,7 +2,12 @@
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
 
-/** Register witness commands. */
+/**
+ * Register witness commands.
+ *
+ * `witness start` owns host provisioning, while `witness submit` owns
+ * controller-to-witness receipt convergence for an existing controller AID.
+ */
 export function registerWitnessCmds(
   program: Command,
   dispatch: CommandDispatch,

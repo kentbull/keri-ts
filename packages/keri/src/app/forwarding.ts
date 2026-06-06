@@ -639,6 +639,9 @@ function hostCanStoreForwardRecipient(
   recipientKever: Kever,
   hostAid: string,
 ): boolean {
+  // A local host may store forwarded traffic only when it is an authorized
+  // witness/mailbox/agent for the recipient. This keeps mailbox storage from
+  // becoming a generic unauthenticated relay.
   if (recipientKever.wits.includes(hostAid)) {
     return true;
   }
@@ -658,6 +661,8 @@ function hasLocalStoreForwardHost(
   recipient: string,
   recipientKever: Kever,
 ): boolean {
+  // Check all local prefixes because a multi-role runtime can host a mailbox
+  // AID that is distinct from the controller currently processing the EXN.
   for (const hostAid of hby.db.prefixes) {
     if (hostCanStoreForwardRecipient(hby, recipient, recipientKever, hostAid)) {
       return true;
@@ -1088,6 +1093,8 @@ function extractForwardedMessage(
     return null;
   }
 
+  // Rebuild the embedded event from SAD plus only the attachment material
+  // pathed to `/e/evt`; other pathed groups belong to the outer `/fwd` message.
   const embedded = new SerderKERI({ sad: evt as Record<string, unknown> });
   const messageParts: Uint8Array[] = [embedded.raw];
 

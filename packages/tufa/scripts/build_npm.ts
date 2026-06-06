@@ -1,3 +1,10 @@
+/**
+ * Build the `@keri-ts/tufa` npm package and normalize its CLI metadata.
+ *
+ * Tufa publishes both a minimal module surface and the `tufa` executable. DNT
+ * output paths can move as imports change, so generated entrypoint marker
+ * comments are used to discover package.json targets before packing.
+ */
 import { build, emptyDir } from "@deno/dnt";
 
 const ENTRYPOINT = "./src/npm/index.ts";
@@ -32,6 +39,7 @@ interface TufaNpmTargets {
 const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
 
+/** Resolve this package version from its workspace package.json. */
 function resolvePackageVersion(): string {
   const raw = Deno.readTextFileSync("./package.json");
   const pkg = JSON.parse(raw) as PackageManifest;
@@ -42,6 +50,7 @@ function resolvePackageVersion(): string {
   return version;
 }
 
+/** Resolve an internal dependency version from a sibling workspace package. */
 function resolveWorkspacePackageVersion(path: string): string {
   const raw = Deno.readTextFileSync(path);
   const pkg = JSON.parse(raw) as PackageManifest;
@@ -52,6 +61,7 @@ function resolveWorkspacePackageVersion(path: string): string {
   return version;
 }
 
+/** Pin DNT's workspace imports to npm package specifiers for generated output. */
 function writeDntImportMap(
   keriVersion: string,
   cesrVersion: string,
@@ -71,6 +81,7 @@ function writeDntImportMap(
   );
 }
 
+/** Recursively list generated files so marker lookup survives DNT path drift. */
 function listFilesSync(dir: string): string[] {
   const files: string[] = [];
   for (const entry of Deno.readDirSync(dir)) {
@@ -84,10 +95,17 @@ function listFilesSync(dir: string): string[] {
   return files;
 }
 
+/** Convert an on-disk generated path into a package.json-relative target. */
 function toPackagePath(path: string): string {
   return `./${path.replace(`${OUT_DIR}/`, "")}`;
 }
 
+/**
+ * Locate exactly one generated entrypoint by filename and marker text.
+ *
+ * This prevents release artifacts from silently publishing stale hard-coded
+ * manifest paths when DNT changes emitted directory structure.
+ */
 function findGeneratedEntrypoint(
   root: string,
   fileName: string,
@@ -111,6 +129,7 @@ function findGeneratedEntrypoint(
   return toPackagePath(matches[0]);
 }
 
+/** Assert that a manifest/bin target points at a real file in the package. */
 function assertPackagePathExists(path: string): void {
   const relative = path.replace(/^\.\//, "");
   const fullPath = `${OUT_DIR}/${relative}`;
@@ -120,6 +139,7 @@ function assertPackagePathExists(path: string): void {
   }
 }
 
+/** Resolve module and CLI executable targets from generated output. */
 function resolveGeneratedTargets(): TufaNpmTargets {
   const targets = {
     root: {
@@ -148,6 +168,12 @@ function resolveGeneratedTargets(): TufaNpmTargets {
   return targets;
 }
 
+/**
+ * Rewrite DNT's manifest paths to the generated module and bare bin target.
+ *
+ * Node package `bin` entries are package-relative paths without a leading
+ * `./`, while exports keep `./` targets. Keep that policy centralized here.
+ */
 function normalizeBuiltManifest(): TufaNpmTargets {
   const packageJsonPath = `${OUT_DIR}/package.json`;
   const raw = Deno.readTextFileSync(packageJsonPath);
@@ -249,11 +275,15 @@ try {
     postBuild() {
       const targets = normalizeBuiltManifest();
       try {
+        // DNT can inline workspace source trees for local imports; published
+        // Tufa should depend on npm packages instead of carrying duplicate
+        // generated keri/cesr implementation trees.
         Deno.removeSync(`${OUT_DIR}/esm/keri`, { recursive: true });
       } catch {
         // no-op
       }
       try {
+        // See the keri tree removal above.
         Deno.removeSync(`${OUT_DIR}/esm/cesr`, { recursive: true });
       } catch {
         // no-op
@@ -264,6 +294,8 @@ try {
       const binPath = `${OUT_DIR}/${targets.bin.replace(/^\.\//, "")}`;
       const current = Deno.readTextFileSync(binPath);
       if (!current.startsWith("#!/usr/bin/env node\n")) {
+        // DNT emits an ESM file; npm executables still need a shebang and
+        // executable mode for global installs and Docker smoke tests.
         Deno.writeTextFileSync(binPath, `#!/usr/bin/env node\n${current}`);
       }
       Deno.chmodSync(binPath, 0o755);

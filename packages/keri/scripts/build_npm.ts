@@ -1,3 +1,10 @@
+/**
+ * Build the `keri-ts` npm package with DNT and normalize generated metadata.
+ *
+ * DNT may change generated path depth as imports evolve, so this script treats
+ * marker comments in the generated entrypoints as the source of truth for npm
+ * manifest targets instead of hard-coding the final tree layout.
+ */
 import { build, emptyDir } from "@deno/dnt";
 
 const ENTRYPOINT = "./src/npm/index.ts";
@@ -112,6 +119,7 @@ function writeDntImportMap(cesrVersion: string): void {
   );
 }
 
+/** Recursively list generated files so marker lookup works across DNT layouts. */
 function listFilesSync(dir: string): string[] {
   const files: string[] = [];
   for (const entry of Deno.readDirSync(dir)) {
@@ -125,10 +133,17 @@ function listFilesSync(dir: string): string[] {
   return files;
 }
 
+/** Convert an on-disk generated path into a package.json-relative target. */
 function toPackagePath(path: string): string {
   return `./${path.replace(`${OUT_DIR}/`, "")}`;
 }
 
+/**
+ * Locate exactly one generated entrypoint by file name and marker comment.
+ *
+ * This is the release invariant that catches DNT path drift: npm metadata is
+ * rewritten only when the intended generated module/declaration pair exists.
+ */
 function findGeneratedEntrypoint(
   root: string,
   fileName: string,
@@ -152,6 +167,7 @@ function findGeneratedEntrypoint(
   return toPackagePath(matches[0]);
 }
 
+/** Assert that a manifest target points at a real file inside the built package. */
 function assertPackagePathExists(path: string): void {
   const relative = path.replace(/^\.\//, "");
   const fullPath = `${OUT_DIR}/${relative}`;
@@ -161,6 +177,7 @@ function assertPackagePathExists(path: string): void {
   }
 }
 
+/** Resolve all npm root and subpath export targets from generated output. */
 function resolveGeneratedExportTargets(): NpmExportTargets {
   const targets = {
     root: {
@@ -221,6 +238,12 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
   return targets;
 }
 
+/**
+ * Rewrite DNT's manifest paths to the discovered generated target paths.
+ *
+ * The placeholder constants above keep the DNT build happy; this post-build
+ * step makes the packed artifact truthful for Node and TypeScript consumers.
+ */
 function normalizeBuiltManifest(): void {
   const packageJsonPath = `${OUT_DIR}/package.json`;
   const raw = Deno.readTextFileSync(packageJsonPath);

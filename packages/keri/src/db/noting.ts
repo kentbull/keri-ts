@@ -40,10 +40,12 @@ function randomNonce(): string {
   return new Salter({ code: MtrDex.Salt_128, raw }).qb64;
 }
 
+/** Serialize notice pads as the signed bytes persisted in `nots.`. */
 function encodePad<T extends object>(pad: T): Uint8Array {
   return textEncoder.encode(JSON.stringify(pad));
 }
 
+/** Decode stored notice bytes back into their mutable pad representation. */
 function decodePad<T extends object>(raw: Uint8Array): T {
   return JSON.parse(textDecoder.decode(raw)) as T;
 }
@@ -166,6 +168,7 @@ export class Noter extends LMDBer {
   static override readonly TempPrefix = "keri_not_";
   static override readonly MaxNamedDBs = 8;
 
+  /** Select `.tufa/not` by default while preserving `.keri/not` compat mode. */
   constructor(options: NoterOptions = {}) {
     const compat = options.compat ?? false;
     super(options, {
@@ -180,6 +183,7 @@ export class Noter extends LMDBer {
     });
   }
 
+  /** Open all notice, reverse-index, and detached-signature families. */
   override *reopen(
     options: Partial<NoterOptions> = {},
   ) {

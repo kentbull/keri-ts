@@ -36,6 +36,8 @@ if [[ ! -f "${SAMPLES_DIR}/${SAMPLE_STREAM_REL}" ]]; then
 fi
 
 assert_tarball_package_targets() {
+  # Validate module/export/bin targets from the packed tarball before install.
+  # This is the fastest failure mode for DNT output or package.json drift.
   local manifest_json
   local target_paths
   manifest_json="$(tar -xOzf "${TARBALL_PATH}" package/package.json)"
@@ -131,6 +133,8 @@ fi
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 
+# Use a clean global install because Tufa's release contract is primarily the
+# executable. Workspace imports are optional local tarballs, never symlinks.
 echo "Running Docker smoke test with ${TARBALL_NAME} on ${SMOKE_NODE_IMAGE}"
 docker run --rm \
   "${DOCKER_ARGS[@]}" \

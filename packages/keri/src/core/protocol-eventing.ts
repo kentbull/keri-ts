@@ -1,3 +1,11 @@
+/**
+ * KERI event factory helpers.
+ *
+ * These functions own the typed construction boundary for KERI KEL SADs:
+ * callers provide semantic options, while this module preserves KERIpy field
+ * order, threshold normalization, witness-set derivation, and SAID code
+ * selection before `SerderKERI` makification.
+ */
 import {
   DigDex,
   DIGEST_CODES,
@@ -147,6 +155,13 @@ function encodeCount(
   return intive && value <= MAX_INTIVE_THRESHOLD ? value : value.toString(16);
 }
 
+/**
+ * Resolve `d` and `i` SAID codes for inception-like events before makification.
+ *
+ * The prefix code may be caller-specified, already present in the KED, or left
+ * as the digest default. Keeping this normalization here prevents habitat and
+ * CLI layers from encoding KERIpy SAID-code policy themselves.
+ */
 function resolveInceptiveSaidCodes(
   ked: Record<string, unknown>,
   explicitPrefixCode?: string,

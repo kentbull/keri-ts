@@ -1,3 +1,11 @@
+/**
+ * Delegation-focused helpers for live KLI/Tufa interop scenarios.
+ *
+ * The helpers here encode the cross-implementation setup contract: isolated
+ * stores, explicit OOBI resolution, hosted controller/mailbox routes, witness
+ * startup, and bounded runtime pumping. Scenario files should use these helpers
+ * so protocol assertions stay separate from subprocess plumbing.
+ */
 import { type Operation, run } from "npm:effection@^3.6.0";
 import { type AgentRuntime, createAgentRuntime, processRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -20,6 +28,7 @@ import {
 export const INTEROP_PASSCODE = "MyPasscodeARealSecret";
 export const INTEROP_SALT = "0AAwMTIzNDU2Nzg5YWJjZGVm";
 
+/** Common Tufa controller store metadata used across live delegation tests. */
 export interface TufaStoreRef {
   name: string;
   base: string;
@@ -29,6 +38,7 @@ export interface TufaStoreRef {
   pre: string;
 }
 
+/** Common KLI controller store metadata used across live delegation tests. */
 export interface KliStoreRef {
   name: string;
   base: string;
@@ -37,6 +47,7 @@ export interface KliStoreRef {
   pre: string;
 }
 
+/** Running Tufa mailbox provider plus OOBIs advertised to remote controllers. */
 export interface TufaMailboxProviderFixture extends TufaStoreRef {
   origin: string;
   controllerOobi: string;
@@ -44,12 +55,14 @@ export interface TufaMailboxProviderFixture extends TufaStoreRef {
   close(): Promise<void>;
 }
 
+/** Runtime snapshot exposed to polling predicates while pumping a Tufa store. */
 export interface TufaRuntimeSnapshot {
   hby: Habery;
   runtime: AgentRuntime;
   hab?: Hab;
 }
 
+/** Initialize a Tufa store through the CLI under the shared interop env. */
 export async function initTufaStore(
   ctx: InteropContext,
   args: {
@@ -81,6 +94,7 @@ export async function initTufaStore(
   );
 }
 
+/** Incept one Tufa alias and return the emitted prefix line. */
 export async function inceptTufaAlias(
   ctx: InteropContext,
   args: {
@@ -145,6 +159,7 @@ export async function inceptTufaAlias(
   return extractPrefixLine(result.stdout);
 }
 
+/** Initialize a KERIpy store, allowing pyenv-backed startup to settle. */
 export async function initKliStore(
   ctx: InteropContext,
   args: {
@@ -174,6 +189,7 @@ export async function initKliStore(
   );
 }
 
+/** Incept one KLI alias and return the emitted prefix line. */
 export async function inceptKliAlias(
   ctx: InteropContext,
   args: {
@@ -230,6 +246,12 @@ export async function inceptKliAlias(
   return extractPrefixLine(result.stdout);
 }
 
+/**
+ * Add controller and optional mailbox endpoint roles for a Tufa-hosted AID.
+ *
+ * Endpoint role replies are what make later mailbox/direct-delivery OOBIs
+ * meaningful to the opposite implementation.
+ */
 export async function addTufaHostedRoute(
   ctx: InteropContext,
   args: {
@@ -321,6 +343,7 @@ export async function addTufaHostedRoute(
   );
 }
 
+/** Add controller and optional mailbox endpoint roles for a KLI-hosted AID. */
 export async function addKliHostedRoute(
   ctx: InteropContext,
   args: {
@@ -393,6 +416,7 @@ export async function addKliHostedRoute(
   );
 }
 
+/** Resolve an OOBI into a Tufa store and wait for the command to finish. */
 export async function resolveTufaOobi(
   ctx: InteropContext,
   args: {
@@ -430,6 +454,7 @@ export async function resolveTufaOobi(
   );
 }
 
+/** Resolve an OOBI into a KLI store and wait for the command to finish. */
 export async function resolveKliOobi(
   ctx: InteropContext,
   args: {
@@ -464,6 +489,7 @@ export async function resolveKliOobi(
   );
 }
 
+/** Register an already-resolved mailbox provider against a Tufa controller. */
 export async function addTufaMailbox(
   ctx: InteropContext,
   args: {
@@ -501,6 +527,7 @@ export async function addTufaMailbox(
   );
 }
 
+/** Register an already-resolved mailbox provider against a KLI controller. */
 export async function addKliMailbox(
   ctx: InteropContext,
   args: {
@@ -535,6 +562,7 @@ export async function addKliMailbox(
   );
 }
 
+/** Generate a mailbox OOBI for a Tufa controller alias. */
 export async function generateTufaMailboxOobi(
   ctx: InteropContext,
   args: {
@@ -572,6 +600,7 @@ export async function generateTufaMailboxOobi(
   return extractLastNonEmptyLine(result.stdout);
 }
 
+/** Generate a mailbox OOBI for a KLI controller alias. */
 export async function generateKliMailboxOobi(
   ctx: InteropContext,
   args: {
@@ -606,6 +635,7 @@ export async function generateKliMailboxOobi(
   return extractLastNonEmptyLine(result.stdout);
 }
 
+/** Start a Tufa agent host and fail with captured output if health never opens. */
 export async function startTufaAgentHost(
   ctx: InteropContext,
   args: {
@@ -651,6 +681,7 @@ export async function startTufaAgentHost(
   return child;
 }
 
+/** Start a KERIpy mailbox host and fail with captured output if health never opens. */
 export async function startKliMailboxHost(
   ctx: InteropContext,
   args: {
@@ -692,6 +723,12 @@ export async function startKliMailboxHost(
   return child;
 }
 
+/**
+ * Provision a non-transferable Tufa mailbox provider fixture.
+ *
+ * The fixture advertises both controller and mailbox roles because delegation
+ * proxy traffic depends on endpoint routing, not just an HTTP health check.
+ */
 export async function setupTufaMailboxProvider(
   ctx: InteropContext,
   args: {
@@ -754,6 +791,7 @@ export async function setupTufaMailboxProvider(
   };
 }
 
+/** Retry a CLI action that can fail transiently while hosts finish startup. */
 export async function waitForEventuallySuccess(
   label: string,
   action: () => Promise<CmdResult>,
@@ -785,6 +823,7 @@ export async function waitForEventuallySuccess(
   );
 }
 
+/** Wait for a spawned subprocess and return combined output for assertions. */
 export async function waitForChildSuccess(
   label: string,
   child: SpawnedChild,
@@ -823,6 +862,12 @@ export async function waitForChildSuccess(
   return output;
 }
 
+/**
+ * Reopen a Tufa store, create a local runtime, and process turns until done.
+ *
+ * This mirrors what a live agent host would do while keeping tests deterministic
+ * and bounded around mailbox polling and escrow continuation.
+ */
 export async function pumpTufaRuntimeUntil(
   store: {
     name: string;
@@ -870,6 +915,7 @@ export async function pumpTufaRuntimeUntil(
   });
 }
 
+/** Inspect a Tufa store in readonly mode without starting runtime workers. */
 export async function inspectTufaHabery<T>(
   store: {
     name: string;
@@ -899,6 +945,7 @@ export async function inspectTufaHabery<T>(
   return value;
 }
 
+/** Inspect the accepted sequence number for a KLI-compatible store prefix. */
 export async function inspectCompatKeverSn(
   ctx: InteropContext,
   store: {

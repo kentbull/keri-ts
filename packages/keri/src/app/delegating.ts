@@ -1,3 +1,17 @@
+/**
+ * Delegation request handling and delegated-event approval workflow support.
+ *
+ * KERIpy correspondence:
+ * - `DelegateRequestHandler` mirrors the notification-facing exchange handler
+ *   in `keri.app.delegating`
+ * - `Anchorer` mirrors the approval workflow role of KERIpy's `Anchorer`
+ *
+ * `keri-ts` difference:
+ * - workflow progress is explicit turn-based escrow processing instead of a
+ *   long-lived HIO doer
+ * - proxy communication is a selected local habitat, not an implicit runtime
+ *   side effect
+ */
 import { type Operation } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -12,13 +26,17 @@ import type { QueryCoordinator } from "./querying.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";
+
+/** Runtime passes to wait between repeated delegator-witness anchor queries. */
 const DELEGATION_ANCHOR_QUERY_RETRY_PASSES = 8;
 
+/** Durable phase for one delegated event as it moves through approval. */
 export type DelegationPhase =
   | "waitingWitnessReceipts"
   | "waitingDelegatorAnchor"
   | "waitingWitnessPublication";
 
+/** One turn-level workflow outcome emitted by `Anchorer.processAllOnce()`. */
 export type DelegationWorkflowResult =
   | {
     kind: "keep";
@@ -56,6 +74,7 @@ export interface DelegationWorkflowStatus {
   complete: boolean;
 }
 
+/** Internal escrow tuple with the durable key and required event fields split out. */
 type DelegationEscrowContext = [
   keys: [string, string],
   serder: SerderKERI,
@@ -73,6 +92,7 @@ function eventKey(serder: SerderKERI): [string, string] {
   return [pre, snh];
 }
 
+/** Build the anchor seal shape a delegator must embed in its approving event. */
 function eventAnchor(serder: SerderKERI): { i: string; s: string; d: string } {
   if (!serder.pre || !serder.snh || !serder.said) {
     throw new ValidationError(
@@ -82,6 +102,7 @@ function eventAnchor(serder: SerderKERI): { i: string; s: string; d: string } {
   return { i: serder.pre, s: serder.snh, d: serder.said };
 }
 
+/** Resolve the local habitat that owns the delegated event being processed. */
 function workflowHab(hby: Habery, serder: SerderKERI): Hab {
   const pre = serder.pre;
   if (!pre) {
@@ -135,6 +156,7 @@ function escrowContext(
   return [keys, serder, pre, said, snh];
 }
 
+/** Persist the delegator event seal that authorizes one delegated event. */
 function pinAuthorizingSeal(
   hby: Habery,
   delegated: SerderKERI,
@@ -167,6 +189,7 @@ function witnessReceiptsComplete(hby: Habery, serder: SerderKERI): boolean {
   return hby.db.wigs.get(dgKey(pre, said)).length >= kever.wits.length;
 }
 
+/** Resolve the delegator prefix from event material or accepted delegated state. */
 function delegatedWorkflowDelpre(
   hby: Habery,
   serder: SerderKERI,
@@ -178,6 +201,7 @@ function delegatedWorkflowDelpre(
   return (hab ?? workflowHab(hby, serder)).kever?.delpre ?? null;
 }
 
+/** Return the local delegator event that contains the delegated event seal. */
 function approvingEvent(
   hby: Habery,
   serder: SerderKERI,
@@ -213,6 +237,7 @@ export function resolveDelegationCommunicationHab(
   return hab;
 }
 
+/** Install delegation-specific EXN handlers into one exchange router. */
 export function loadDelegationHandlers(
   hby: Habery,
   exchanger: Exchanger,
@@ -265,6 +290,7 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
       && embeds?.["evt"] !== null;
   }
 
+  /** Store a signed controller notification when this request targets a local delegator. */
   handle(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
@@ -365,6 +391,7 @@ export class Anchorer {
     }
   }
 
+  /** Begin workflow processing from the currently accepted event for an AID. */
   beginLatest(
     pre: string,
     sn?: number,
@@ -391,6 +418,7 @@ export class Anchorer {
     return serder;
   }
 
+  /** Return the current durable workflow phase without mutating escrow state. */
   workflowStatus(
     pre: string,
     snh: string,
@@ -420,6 +448,7 @@ export class Anchorer {
     };
   }
 
+  /** Return true after the delegated event has been durably completed. */
   complete(pre: string, sn: number | string): boolean {
     const snNum = typeof sn === "number" ? sn : parseInt(sn, 16);
     if (!Number.isInteger(snNum) || snNum < 0) {
@@ -438,6 +467,7 @@ export class Anchorer {
     return false;
   }
 
+  /** Process all delegation escrow families once in KERIpy-compatible order. */
   *processAllOnce(): Operation<DelegationWorkflowResult[]> {
     const results: DelegationWorkflowResult[] = [];
     for (
@@ -529,6 +559,9 @@ export class Anchorer {
       };
     }
 
+    // Do not ask the delegator to approve until the delegate's own witnesses
+    // have receipted the event. That preserves the KERIpy approval ordering
+    // and avoids anchoring an event the delegate cannot yet complete.
     const message = eventPayloadMessage(this.hby, serder);
     yield* this.poster.sendExchange(communicationHab, {
       recipient: delpre,
@@ -603,6 +636,9 @@ export class Anchorer {
       };
     }
 
+    // The approving event is authoritative only after the delegator's sealing
+    // event is learned locally; pinning `aess.` is what lets delegated unescrow
+    // and later reopen paths prove the authorization.
     pinAuthorizingSeal(this.hby, serder, delegating);
     this.hby.db.dune.rem(keys);
 
@@ -701,6 +737,7 @@ export class Anchorer {
     this.anchorQueryRetryPasses.set(id, -1);
   }
 
+  /** Retry bounded delegator-witness queries while waiting for the anchor. */
   private retryDelegatorWitnessQuery(
     serder: SerderKERI,
     communicationHab: Hab,
@@ -772,6 +809,8 @@ export class Anchorer {
       );
     }
 
+    // Publish the delegator chain first, then replay the approving event. This
+    // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
         yield* sendWitnessMessage(hab, witness, msg);

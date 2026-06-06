@@ -46,6 +46,7 @@ import {
   startTufaWitnessHarness,
 } from "./interop-test-helpers.ts";
 
+/** JSON shape emitted by the Tufa notifications CLI in delegation scenarios. */
 interface NotificationList {
   total: number;
   start: number;
@@ -58,6 +59,7 @@ interface NotificationList {
   }>;
 }
 
+/** Delegate key material profile used to exercise single-key and threshold paths. */
 interface DelegateKeyProfile {
   label: string;
   inceptIsith: string;
@@ -83,10 +85,12 @@ const DELEGATE_KEY_PROFILES: readonly DelegateKeyProfile[] = [
   },
 ];
 
+/** Expected number of local signing keys generated for a delegate profile. */
 function expectedSigningKeyCount(profile: DelegateKeyProfile): number {
   return Number.parseInt(profile.inceptIcount, 10);
 }
 
+/** KLI rotation args that preserve the tested delegate threshold profile. */
 function kliRotateKeyArgs(profile: DelegateKeyProfile): string[] {
   return [
     "--isith",
@@ -98,6 +102,7 @@ function kliRotateKeyArgs(profile: DelegateKeyProfile): string[] {
   ];
 }
 
+/** Read delegation notification sidecars through the public Tufa CLI. */
 async function listTufaNotifications(args: {
   env: Record<string, string>;
   repoRoot: string;
