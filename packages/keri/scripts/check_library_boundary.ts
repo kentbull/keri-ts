@@ -120,6 +120,18 @@ async function assertSurfaceBoundary(
 }
 
 function assertManifestExports(): void {
+  try {
+    Deno.statSync(NPM_MANIFEST_PATH);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      console.warn(
+        "Skipping npm manifest export check because packages/keri/npm/package.json has not been generated.",
+      );
+      return;
+    }
+    throw error;
+  }
+
   const raw = Deno.readTextFileSync(NPM_MANIFEST_PATH);
   const manifest = JSON.parse(raw) as NpmManifest;
   const exportsField = manifest.exports ?? {};
