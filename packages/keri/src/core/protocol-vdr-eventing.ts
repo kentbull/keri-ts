@@ -13,6 +13,7 @@ import {
   Salter,
   type SealEvent,
   SerderKERI,
+  TraitDex,
   type Versionage,
   Vrsn_1_0,
 } from "../../../cesr/mod.ts";
@@ -43,15 +44,31 @@ function cloneStrings(values?: readonly string[]): string[] {
   return [...(values ?? [])];
 }
 
-/** Project a typed event seal into the SAD dictionary shape used by VDR events. */
-function cloneSealDict(seal?: SealEvent): Record<string, unknown> {
+/** Project a typed or plain event seal into the SAD dictionary shape used by VDR events. */
+function cloneSealDict(seal?: Record<string, unknown> | SealEvent): Record<string, unknown> {
   if (!seal) {
     return {};
   }
+  const record = seal as Record<string, unknown>;
+  const prefix = record.i;
+  const sequence = record.s;
+  const digest = record.d;
   return {
-    i: seal.i.qb64,
-    s: seal.s.numh,
-    d: seal.d.qb64,
+    ...((typeof prefix === "string")
+      ? { i: prefix }
+      : (prefix && typeof prefix === "object" && "qb64" in prefix)
+      ? { i: String(prefix.qb64) }
+      : {}),
+    ...((typeof sequence === "string")
+      ? { s: sequence }
+      : (sequence && typeof sequence === "object" && "numh" in sequence)
+      ? { s: String(sequence.numh) }
+      : {}),
+    ...((typeof digest === "string")
+      ? { d: digest }
+      : (digest && typeof digest === "object" && "qb64" in digest)
+      ? { d: String(digest.qb64) }
+      : {}),
   };
 }
 
@@ -92,6 +109,11 @@ export function incept(
   ) {
     throw new ValidationError(
       `Invalid toad = ${actualToad} for baks = ${actualBaks}`,
+    );
+  }
+  if (actualCnfg.includes(TraitDex.NoBackers) && actualBaks.length > 0) {
+    throw new ValidationError(
+      `Invalid NoBackers registry with baks = ${actualBaks}`,
     );
   }
   return new SerderKERI({
@@ -365,10 +387,8 @@ export function state(
   if (new Set(actualWits).size !== actualWits.length) {
     throw new ValidationError(`Invalid wits = ${actualWits}, has duplicates.`);
   }
-  const actualToad = toad
-    ?? (actualWits.length === 0
-      ? 0
-      : Math.max(1, Math.ceil(actualWits.length / 2)));
+  const actualToad = toad ??
+    (actualWits.length === 0 ? 0 : Math.max(1, Math.ceil(actualWits.length / 2)));
   return new RegStateRecord(
     {
       vn: [resolveVersion(version).major, resolveVersion(version).minor],
@@ -397,7 +417,7 @@ export function vcstate(
     dts,
     version,
   }: {
-    ra?: SealEvent;
+    ra?: Record<string, unknown> | SealEvent;
     dts?: string;
     version?: Versionage;
   } = {},

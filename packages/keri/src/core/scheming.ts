@@ -12,7 +12,12 @@ import { DigDex, dumps, type Kind, Saider } from "../../../cesr/mod.ts";
 import { ValidationError } from "./errors.ts";
 
 type JsonObject = Record<string, unknown>;
-type SchemaValidator = { validateSchema(schema: unknown): boolean };
+type DataValidator = ((data: unknown) => boolean) & { errors?: unknown };
+type SchemaValidator = {
+  validateSchema(schema: unknown): boolean;
+  compile(schema: unknown): DataValidator;
+  errorsText(errors?: unknown): string;
+};
 type SchemaValidatorCtor = new (options: { strict: boolean }) => SchemaValidator;
 
 /** Constructor options for one schema SAD wrapper. */
@@ -86,6 +91,19 @@ export class Schemer {
     return JSON.stringify(this.sed, null, 1).slice(0, size);
   }
 
+  /** Validate one credential body against this schema. */
+  verify(raw: Uint8Array | string | unknown): boolean {
+    const data = parseSchemaData(raw);
+    const validator = schemaValidatorFor(this.sed);
+    const validate = validator.compile(this.sed);
+    if (!validate(data)) {
+      throw new ValidationError(
+        `Credential failed schema validation: ${validator.errorsText(validate.errors)}`,
+      );
+    }
+    return true;
+  }
+
   /** Detect likely JSON Schema bytes using KERIpy's `$schema` heuristic. */
   static detect(raw: Uint8Array): boolean {
     return new TextDecoder().decode(raw).includes('"$schema"');
@@ -105,6 +123,16 @@ function parseSchemaJson(raw: Uint8Array): JsonObject {
     throw new ValidationError("JSON schema must be an object.");
   }
   return parsed;
+}
+
+function parseSchemaData(raw: Uint8Array | string | unknown): unknown {
+  if (raw instanceof Uint8Array) {
+    return JSON.parse(new TextDecoder().decode(raw));
+  }
+  if (typeof raw === "string") {
+    return JSON.parse(raw);
+  }
+  return raw;
 }
 
 function verifySchemaSaid(sed: JsonObject, kind: Kind): Saider {

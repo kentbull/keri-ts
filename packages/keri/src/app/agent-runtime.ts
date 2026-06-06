@@ -12,6 +12,8 @@ import {
 import type { OobiRecord } from "../core/records.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
+import { createReger, Reger } from "../db/reger.ts";
+import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
@@ -36,6 +38,7 @@ import { Respondant } from "./respondant.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
+import { Verifier } from "./verifying.ts";
 
 /**
  * Shared runtime host mode.
@@ -158,7 +161,25 @@ export function* createAgentRuntime(
   const notifier = options.notifier ??
     (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
   const cues = new Deck<AgentCue>();
-  const vdr = options.vdr ?? {};
+  const vdr: VdrRuntimeServices = { ...(options.vdr ?? {}) };
+  let ownsReger = false;
+  if (!vdr.reger && !hby.readonly) {
+    vdr.reger = yield* createReger({
+      name: hby.name,
+      base: hby.base,
+      temp: hby.temp,
+      headDirPath: hby.headDirPath,
+      compat: hby.compat,
+    });
+    ownsReger = true;
+  }
+  const reger = vdr.reger instanceof Reger ? vdr.reger : null;
+  if (reger && !vdr.tvy) {
+    vdr.tvy = new Tevery({ db: hby.db, reger, cues });
+  }
+  if (reger && !vdr.vry) {
+    vdr.vry = new Verifier(hby, { reger, cues });
+  }
   const reactor = new Reactor(hby, { cues, vdr });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
@@ -227,6 +248,9 @@ export function* createAgentRuntime(
       }
       if (ownsMailboxer && mailboxer?.opened) {
         yield* mailboxer.close();
+      }
+      if (ownsReger && reger?.opened) {
+        yield* reger.close(hby.temp);
       }
     },
   };

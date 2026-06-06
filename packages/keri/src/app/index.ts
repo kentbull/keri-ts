@@ -17,3 +17,4 @@ export * from "./notifying.ts";
 export * from "./oobiery.ts";
 export * from "./reactor.ts";
 export * from "./signaling.ts";
+export * from "./verifying.ts";

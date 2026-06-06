@@ -35,3 +35,19 @@ Deno.test("Schemer rejects schema $id SAID mismatches", () => {
     "Invalid schema $id SAID",
   );
 });
+
+Deno.test("Schemer verifies payloads against the schema document", () => {
+  const schemer = new Schemer({
+    sed: {
+      ...schemaSed(),
+      required: ["name"],
+    },
+  });
+
+  assertEquals(schemer.verify({ name: "holder" }), true);
+  assertThrows(
+    () => schemer.verify({ name: 123 }),
+    Error,
+    "Credential failed schema validation",
+  );
+});

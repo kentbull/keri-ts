@@ -34,6 +34,7 @@ export * from "../app/runtime-services.ts";
 export * from "../app/runtime-turn.ts";
 export * from "../app/schema-resolving.ts";
 export * from "../app/signaling.ts";
+export * from "../app/verifying.ts";
 export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
 export {
   processWitnessIngress,
@@ -57,4 +58,5 @@ export * from "../core/records.ts";
 export * from "../core/roles.ts";
 export * from "../core/schemes.ts";
 export * from "../core/scheming.ts";
+export * from "../vdr/eventing.ts";
 export * from "../time/mod.ts";
