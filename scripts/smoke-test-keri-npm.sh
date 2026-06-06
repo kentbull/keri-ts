@@ -27,6 +27,64 @@ if [[ ! -f "${TARBALL_PATH}" ]]; then
   exit 1
 fi
 
+assert_tarball_export_targets() {
+  local manifest_json
+  local target_paths
+  manifest_json="$(tar -xOzf "${TARBALL_PATH}" package/package.json)"
+  target_paths="$(MANIFEST_JSON="${manifest_json}" node --input-type=module - <<'EOF'
+const manifest = JSON.parse(process.env.MANIFEST_JSON ?? "{}");
+const targets = [];
+
+function collectTarget(target) {
+  if (typeof target === "string") {
+    targets.push(target);
+    return;
+  }
+  if (!target || typeof target !== "object") {
+    return;
+  }
+  for (const value of Object.values(target)) {
+    collectTarget(value);
+  }
+}
+
+collectTarget(manifest.main);
+collectTarget(manifest.module);
+collectTarget(manifest.types);
+for (const target of Object.values(manifest.exports ?? {})) {
+  collectTarget(target);
+}
+
+for (const target of [...new Set(targets)]) {
+  if (!target.startsWith("./")) {
+    continue;
+  }
+  console.log(`package/${target.slice(2)}`);
+}
+EOF
+)"
+
+  if [[ -z "${target_paths}" ]]; then
+    echo "No package export targets found in ${TARBALL_PATH}" >&2
+    exit 1
+  fi
+
+  local listing
+  listing="$(tar -tzf "${TARBALL_PATH}")"
+  while IFS= read -r target_path; do
+    if ! grep -qxF "${target_path}" <<<"${listing}"; then
+      echo "Packed tarball is missing package export target: ${target_path}" >&2
+      echo "Export targets:" >&2
+      echo "${target_paths}" >&2
+      echo "Matching package contents:" >&2
+      grep -E '^package/(package\.json|esm/|types/)' <<<"${listing}" | head -200 >&2
+      exit 1
+    fi
+  done <<<"${target_paths}"
+}
+
+assert_tarball_export_targets
+
 TARBALL_DIR="$(cd "$(dirname "${TARBALL_PATH}")" && pwd)"
 TARBALL_NAME="$(basename "${TARBALL_PATH}")"
 INSTALL_TARGETS=("/pkg/${TARBALL_NAME}")
@@ -57,6 +115,8 @@ npm init -y >/dev/null 2>&1
 npm install ${INSTALL_TARGETS[*]} >/dev/null
 echo \"Node runtime: \$(node --version), npm: \$(npm --version)\" >&2
 node --input-type=module - <<'EOF'
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as keri from 'keri-ts';
 import * as runtime from 'keri-ts/runtime';
 import * as db from 'keri-ts/db';
@@ -65,6 +125,41 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+const packageRoot = 'node_modules/keri-ts';
+const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+const targetPaths = new Set();
+
+function collectTarget(target) {
+  if (typeof target === 'string') {
+    targetPaths.add(target);
+    return;
+  }
+  if (!target || typeof target !== 'object') {
+    return;
+  }
+  for (const value of Object.values(target)) {
+    collectTarget(value);
+  }
+}
+
+collectTarget(manifest.main);
+collectTarget(manifest.module);
+collectTarget(manifest.types);
+for (const target of Object.values(manifest.exports ?? {})) {
+  collectTarget(target);
+}
+
+for (const target of targetPaths) {
+  if (!target.startsWith('./')) {
+    continue;
+  }
+  const installedPath = join(packageRoot, target.slice(2));
+  assert(
+    existsSync(installedPath),
+    'installed keri-ts package is missing export target ' + target,
+  );
 }
 
 assert(typeof keri.PACKAGE_VERSION === 'string' && keri.PACKAGE_VERSION.length > 0, 'keri-ts root missing PACKAGE_VERSION');
