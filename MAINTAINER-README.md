@@ -69,6 +69,12 @@ deno task release:verify:tufa
 
 ## Build and smoke-test npm artifacts
 
+Build and smoke scripts are orchestration only. Executable JavaScript and
+TypeScript used by release/build flows belongs in source files such as
+`scripts/npm/*.ts`, `scripts/npm/*.mjs`, `scripts/ci/*.ts`, or package-local
+script modules. Do not add multiline `node` heredocs, `deno eval`, or generated
+module bodies as shell strings; `deno task inline-code:check` enforces this.
+
 ```bash
 # Build keri-ts library npm package
 deno task build:npm

@@ -4,7 +4,10 @@
   "useTabs": false,
   "indentWidth": 2,
   "newLineKind": "lf",
-  "typescript": {},
+  "typescript": {
+    "exportDeclaration.preferSingleLine": false,
+    "importDeclaration.preferSingleLine": false
+  },
   "json": {},
   "markdown": {},
   "includes": [

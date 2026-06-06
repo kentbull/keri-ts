@@ -41,9 +41,9 @@ release, and interoperability operations.
     runtime, stateful app, and interop lanes should split when their wall-clock
     or isolation needs diverge materially.
 13. KERI test topology is an explicit repo contract. The source-owned lane
-    annotations plus `scripts/ci/run-keri-test-group.ts` are authoritative, and
-    lane audit should fail if any discovered test case is missing or
-    double-owned.
+    annotations plus `scripts/ci/run-keri-test-group.ts` are authoritative, with
+    `scripts/ci/run-keri-test-group.sh` as the stable task wrapper; lane audit
+    should fail if any discovered test case is missing or double-owned.
 14. Parallelism policy is explicit: parallelize only where isolation is real,
     cap default worker counts, and keep runtime/server/interop/stateful lanes
     serial until their assumptions change.
@@ -58,7 +58,12 @@ release, and interoperability operations.
 19. Npm release build scripts should derive manifest export/bin paths from the
     generated DNT output and assert those targets in the packed tarball; hard
     coded emitted paths are release blockers.
-20. Scoped package publication is a separate registry-auth seam from artifact
+20. Build and release shell scripts are orchestration wrappers, not hidden
+    source files. Multiline executable JS/TS belongs in real `.ts`/`.mjs`
+    helpers, generated module bodies belong in source templates/renderers, and
+    `deno task inline-code:check` should block regressions such as `node`
+    heredocs or `deno eval`.
+21. Scoped package publication is a separate registry-auth seam from artifact
     correctness. `@keri-ts/tufa` can build, smoke, dry-run, and sign provenance
     successfully while still failing publish until the npm token has permission
     for the `@keri-ts` scope.
@@ -129,8 +134,13 @@ release, and interoperability operations.
 
 - `cesr-ts@0.6.0` and `keri-ts@0.6.0` published through CI after PR-gated
   version and packaging fixes.
-- `keri-ts` and `@keri-ts/tufa` npm build scripts now treat DNT output paths as
-  generated facts, then normalize and assert manifest targets before smoke.
+- `keri-ts`, `cesr-ts`, and `@keri-ts/tufa` npm build scripts now treat DNT
+  output paths as generated facts, then normalize and assert manifest targets
+  before smoke.
+- Build/smoke scripts stopped carrying multiline JS/TS strings: npm smoke
+  probes, LMDB environment helpers, version templates, and CESR table renderers
+  now live in source files, with an inline-code guard covering shell/workflow
+  regressions.
 - `@keri-ts/tufa@0.6.0` remains blocked at npm publish by `@keri-ts` scope
   authorization despite passing quality, build, npm dry-run, Docker smoke, and
   artifact upload in CI.

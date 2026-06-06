@@ -6,9 +6,9 @@
  * `src/version.ts` files by hand; edit this template instead.
  */
 /** Package semantic version copied from the owning package manifest. */
-export const PACKAGE_VERSION = "0.6.0";
+export const PACKAGE_VERSION = "__PACKAGE_VERSION__";
 /** Optional build metadata stamp injected by release/CI workflows. */
-export const BUILD_METADATA = "";
+export const BUILD_METADATA = "__BUILD_METADATA__";
 /** User-facing version string with build metadata appended when present. */
 export const DISPLAY_VERSION = BUILD_METADATA
   ? `${PACKAGE_VERSION}+${BUILD_METADATA}`

@@ -19,11 +19,12 @@ fail() {
 
 NODE_GYP=""
 NODE_GYP_ARGS=(rebuild)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Use the highest ancestor that still owns node_modules. This script may be
 # launched from the monorepo root, from packages/keri, or from a nested task.
 # We want the real install root that both Node and Deno resolve npm packages
 # from, not merely the current working directory.
-ROOT_DIR="$(node -p "const fs=require('fs'); const p=require('path'); let dir=process.cwd(); let found=''; while (true) { if (fs.existsSync(p.join(dir,'node_modules'))) found=dir; const parent=p.dirname(dir); if (parent === dir) break; dir=parent; } if (found) { console.log(found); process.exit(0); } process.exit(1);")"
+ROOT_DIR="$(deno run --allow-read "${SCRIPT_DIR}/lmdb/resolve-install-root.ts")"
 
 collect_lmdb_dirs() {
   # Collect all already-materialized lmdb package directories that may be
@@ -37,32 +38,7 @@ collect_lmdb_dirs() {
   #    Deno's npm compatibility layer can shadow the top-level install with a
   #    per-package copy under .deno. That copy may build or resolve a different
   #    native addon than the top-level tree, so it must be rebuilt too.
-  ROOT_DIR="${ROOT_DIR}" node <<'NODE'
-const fs = require('fs');
-const p = require('path');
-
-const root = process.env.ROOT_DIR;
-const dirs = new Set();
-
-const nodeModulesLm = p.join(root, 'node_modules', 'lmdb');
-if (fs.existsSync(nodeModulesLm)) {
-  dirs.add(nodeModulesLm);
-}
-
-const denoRoot = p.join(root, 'node_modules', '.deno');
-if (fs.existsSync(denoRoot)) {
-  for (const entry of fs.readdirSync(denoRoot)) {
-    const candidate = p.join(denoRoot, entry, 'node_modules', 'lmdb');
-    if (fs.existsSync(candidate)) {
-      dirs.add(candidate);
-    }
-  }
-}
-
-for (const dir of dirs) {
-  console.log(dir);
-}
-NODE
+  ROOT_DIR="${ROOT_DIR}" deno run --allow-read --allow-env=ROOT_DIR "${SCRIPT_DIR}/lmdb/collect-lmdb-dirs.ts"
 }
 
 materialize_deno_lmdb_dir() {
@@ -77,8 +53,7 @@ materialize_deno_lmdb_dir() {
   # addon over a stale or incompatible optional prebuild.
   (
     cd "${ROOT_DIR}"
-    deno eval --config deno.json --node-modules-dir=auto --print \
-      'new URL(".", import.meta.resolve("npm:lmdb@3.5.3")).pathname'
+    deno run --config deno.json --node-modules-dir=auto "${SCRIPT_DIR}/lmdb/resolve-deno-lmdb-dir.ts"
   )
 }
 
@@ -116,7 +91,7 @@ for LMDB_DIR in "${LMDB_DIRS[@]}"; do
   log "using LMDB_DIR=${LMDB_DIR}"
   if [[ -f "${LMDB_DIR}/package.json" ]]; then
     log "installed lmdb package:"
-    node -e "const pkg=require(process.argv[1]); console.log(JSON.stringify({name:pkg.name, version:pkg.version, repository:pkg.repository?.url ?? pkg.repository}, null, 2))" "${LMDB_DIR}/package.json"
+    deno run --allow-read "${SCRIPT_DIR}/lmdb/read-package-summary.ts" "${LMDB_DIR}/package.json"
   fi
 done
 log "node=$(node --version)"
