@@ -1,5 +1,19 @@
 # cesr-ts
 
+## 0.7.0
+
+### Minor Changes
+
+- 7c5fa42: BREAKING CLI CHANGE: replace the CESR package's executable surface with the
+  package-level `tephra` CLI. The annotation workflow is now `tephra annotate`,
+  validation is available as `tephra validate`, and parser benchmarking is
+  available as `tephra bench`.
+
+### Patch Changes
+
+- 87940ec: Move CESR build, version, and table-generation support into checked shared
+  scripts instead of inline release logic.
+
 ## 0.6.0
 
 ### Minor Changes
