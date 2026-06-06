@@ -3,8 +3,9 @@
  *
  * DNT accepts placeholder package paths before it knows the final emitted tree.
  * After DNT finishes, this script re-discovers the generated root module,
- * declaration module, and CLI executable by marker comments, then rewrites
- * package.json so the packed tarball points at files that actually exist.
+ * declaration module, and package-level CLI executable by marker comments, then
+ * rewrites package.json so the packed tarball points at files that actually
+ * exist.
  */
 import { build, emptyDir } from "@deno/dnt";
 import {
@@ -16,11 +17,11 @@ import {
 } from "../../../scripts/npm/dnt-helpers.ts";
 
 const ENTRYPOINT = "./mod.ts";
-const NODE_CLI_ENTRYPOINT = "./src/annotate/cli-node.ts";
+const NODE_CLI_ENTRYPOINT = "./src/cli/node.ts";
 const OUT_DIR = "./npm";
 const NPM_MAIN_PATH = "./esm/mod.js";
 const NPM_TYPES_PATH = "./types/mod.d.ts";
-const NPM_BIN_PATH = "./esm/src/annotate/cli-node.js";
+const NPM_BIN_PATH = "./esm/src/cli/node.js";
 
 /** Manifest fields that this build script owns after DNT emits package.json. */
 interface BuiltNpmPackageManifest {
@@ -34,7 +35,7 @@ interface BuiltNpmPackageManifest {
 // These marker comments live in source entrypoints and should survive DNT
 // rewriting. They make generated target discovery resilient to path-depth drift.
 const ROOT_ENTRYPOINT_MARKER = "cesr-ts npm package root entrypoint.";
-const BIN_ENTRYPOINT_MARKER = "npm executable entrypoint for `cesr-annotate`.";
+const BIN_ENTRYPOINT_MARKER = "npm executable entrypoint for the package-level `cesr` CLI.";
 
 /** Resolve this package version from package.json or a release override. */
 function resolvePackageVersion(): string {
@@ -52,7 +53,8 @@ function resolvePackageVersion(): string {
  * - `main` and `module` to the discovered ESM root entrypoint
  * - `types` to the discovered declaration root entrypoint
  * - `exports["."]` to the same root import/types pair
- * - `bin["cesr-annotate"]` to the discovered CLI file without a leading `./`
+ * - `bin["cesr"]` to the discovered package-level CLI file without a leading
+ *   `./`
  *
  * Each normalized target is asserted before package.json is written so broken
  * manifest paths fail during build rather than during publish or smoke tests.
@@ -76,7 +78,7 @@ function normalizeBuiltManifest(): string {
   const bin = findGeneratedEntrypoint({
     root: `${OUT_DIR}/esm`,
     outDir: OUT_DIR,
-    fileName: "cli-node.js",
+    fileName: "node.js",
     marker: BIN_ENTRYPOINT_MARKER,
   });
 
@@ -94,12 +96,23 @@ function normalizeBuiltManifest(): string {
     },
   };
   manifest.bin = {
-    // npm `bin` entries are package-relative paths without the leading `./`
-    // marker that exports/main/types targets keep.
-    "cesr-annotate": bin.replace(/^\.\//, ""),
+    cesr: toNpmBinPath(bin),
   };
   writeJsonFileSync(packageJsonPath, manifest);
   return bin;
+}
+
+/**
+ * Convert a DNT-discovered manifest path into npm `bin` path syntax.
+ *
+ * The discovery helper returns package targets in the same `./esm/...` shape
+ * used by `main`, `module`, `types`, and `exports`. npm `bin` entries are
+ * package-relative executable paths, so the leading `./` marker is noise there.
+ * The regex intentionally strips only that first marker and leaves every real
+ * generated path segment untouched.
+ */
+function toNpmBinPath(path: string): string {
+  return path.replace(/^\.\//, "");
 }
 
 await emptyDir(OUT_DIR);
@@ -141,7 +154,7 @@ await build({
       },
     },
     bin: {
-      "cesr-annotate": NPM_BIN_PATH,
+      cesr: NPM_BIN_PATH,
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
@@ -165,7 +178,7 @@ await build({
 
     // Convert the package-relative `./...` bin target into an output-directory
     // child path before adding the executable shebang.
-    const binPath = `${OUT_DIR}/${bin.replace(/^\.\//, "")}`;
+    const binPath = `${OUT_DIR}/${toNpmBinPath(bin)}`;
     prependShebangIfMissing(binPath);
   },
 });

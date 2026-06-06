@@ -25,13 +25,16 @@ const annotated = annotate(text, { domainHint: "txt", pretty: true });
 ## CLI usage
 
 ```bash
-npx cesr-annotate --in mystream.cesr --pretty
+npx cesr annotate --in mystream.cesr --pretty
+npx cesr validate --in mystream.cesr
+npx cesr bench --in mystream.cesr --iterations 20 --warmup 3
 ```
 
 ## Deno CLI usage (from source)
 
 ```bash
 deno task cesr:annotate --in mystream.cesr --pretty
+deno task cesr:validate --in mystream.cesr
 ```
 
 ## Benchmarking (from source)
