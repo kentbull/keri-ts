@@ -342,6 +342,21 @@ export class Poster {
       return { deliveries, queued };
     }
 
+    if (
+      delivery !== "direct"
+      && topic.length > 0
+      && this.mailboxer
+      && this.hby.db.prefixes.has(hab.pre)
+      && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
+    ) {
+      this.mailboxer.storeMsg(
+        mailboxTopicKey(recipient, topic),
+        args.message,
+      );
+      deliveries.push(`local-mailbox:${hab.pre}`);
+      return { deliveries, queued };
+    }
+
     const directEndpoints = directDeliveryEndpoints(hab, recipient);
     if (directEndpoints.length > 0) {
       for (const endpoint of directEndpoints) {

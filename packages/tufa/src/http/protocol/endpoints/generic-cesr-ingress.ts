@@ -121,6 +121,10 @@ function* deferredDirectQueryResponse(
   serder: SerderKERI,
   emissions: readonly CueEmission[],
 ) {
+  if (!context.policy.directQueryResponses) {
+    return null;
+  }
+
   const immediate = directQueryResponse(emissions);
   if (immediate || serder.ilk !== Ilks.qry || serder.route !== "logs") {
     return immediate;

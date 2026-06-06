@@ -188,6 +188,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       serviceHab: cueHab,
       hostedPrefixes: seedHabs.map((hab) => hab.pre),
       seedHabs,
+      directQueryResponses: true,
       onListen: ({ hostname, port }) => {
         console.log(`Server listening on http://${hostname}:${port}`);
       },
