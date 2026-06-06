@@ -876,6 +876,7 @@ export class Tevery {
     this.local = options.local ?? false;
     this.lax = options.lax ?? true;
     this.cues = options.cues ?? new Deck<AgentCue>();
+    this.reloadRegistryStates();
   }
 
   get tevers(): Map<string, Tever> {
@@ -884,6 +885,26 @@ export class Tevery {
 
   get registries(): Set<string> {
     return this.reger.registries;
+  }
+
+  /** Rehydrate cached TEL state from KERIpy-compatible registry state records. */
+  reloadRegistryStates(): void {
+    for (const [, state] of this.reger.states.getTopItemIter()) {
+      if (!state.i || this.tevers.has(state.i)) {
+        continue;
+      }
+      this.tevers.set(
+        state.i,
+        new Tever({
+          db: this.db,
+          reger: this.reger,
+          local: this.local,
+          cues: this.cues,
+          rsr: state,
+        }),
+      );
+      this.registries.add(state.i);
+    }
   }
 
   processEvent(args: TelProcessEventArgs): TelProcessDecision {

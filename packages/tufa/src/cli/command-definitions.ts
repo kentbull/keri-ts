@@ -8,6 +8,7 @@
  */
 import { Command } from "npm:commander@^10.0.1";
 import { registerChallengeCmds } from "./command-definitions/challenge.ts";
+import { registerCredentialCmds } from "./command-definitions/credentials.ts";
 import { registerEndpointCmds } from "./command-definitions/endpoints.ts";
 import { registerIdentityCmds } from "./command-definitions/identity.ts";
 import { registerLifecycleCmds } from "./command-definitions/lifecycle.ts";
@@ -26,6 +27,7 @@ export function registerCmds(
   registerLifecycleCmds(program, dispatch);
   registerIdentityCmds(program, dispatch);
   registerChallengeCmds(program, dispatch);
+  registerCredentialCmds(program, dispatch);
   registerMessagingCmds(program, dispatch);
   registerEndpointCmds(program, dispatch);
   registerNotificationCmds(program, dispatch);

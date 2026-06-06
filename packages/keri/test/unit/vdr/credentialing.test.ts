@@ -177,3 +177,41 @@ Deno.test("vdr/credentialing - registrar facade delegates single-sig completion"
     }
   });
 });
+
+Deno.test("vdr/credentialing - reloads registry TEL state from persisted records", async () => {
+  await run(function* () {
+    const hby = yield* createHabery({
+      name: `credentialing-reload-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const reger = yield* createReger({
+      name: `credentialing-reload-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("issuer", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const rgy = new Regery(hby, { reger });
+      const registry = rgy.makeRegistry("issuer-reg", hab);
+      const regk = registry.regk!;
+
+      reger.tevers.clear();
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vry = new Verifier(hby, { reger });
+      const reloaded = new Regery(hby, { reger, tvy, vry }).registryByName("issuer-reg");
+
+      assertExists(reloaded);
+      assertEquals(tvy.tevers.get(regk)?.regk, regk);
+      assertEquals(reloaded!.complete(regk), true);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});

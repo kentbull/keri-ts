@@ -16,6 +16,16 @@ export { exportCommand } from "./export.ts";
 export { inceptCommand } from "./incept.ts";
 export { initCommand } from "./init.ts";
 export { interactCommand } from "./interact.ts";
+export {
+  ipexAdmitCommand,
+  ipexAgreeCommand,
+  ipexApplyCommand,
+  ipexGrantCommand,
+  ipexJoinCommand,
+  ipexListCommand,
+  ipexOfferCommand,
+  ipexSpurnCommand,
+} from "./ipex.ts";
 export { listCommand } from "./list.ts";
 export { locAddCommand } from "./loc.ts";
 export { notificationsListCommand, notificationsMarkReadCommand, notificationsRemoveCommand } from "./notifications.ts";
@@ -24,3 +34,14 @@ export { queryCommand } from "./query.ts";
 export { rotateCommand } from "./rotate.ts";
 export { signCommand } from "./sign.ts";
 export { verifyCommand } from "./verify.ts";
+export {
+  vcCreateCommand,
+  vcExportCommand,
+  vcImportCommand,
+  vcListCommand,
+  vcRegistryInceptCommand,
+  vcRegistryListCommand,
+  vcRegistryStatusCommand,
+  vcRevokeCommand,
+  vcSchemaImportCommand,
+} from "./vc.ts";
