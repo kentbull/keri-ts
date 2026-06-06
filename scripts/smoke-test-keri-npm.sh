@@ -27,7 +27,9 @@ if [[ ! -f "${TARBALL_PATH}" ]]; then
   exit 1
 fi
 
-deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${TARBALL_PATH}"
+# setup-python exports LD_LIBRARY_PATH on Linux release runners; Deno rejects
+# spawning tar with that inherited environment unless the variable is removed.
+env -u LD_LIBRARY_PATH deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${TARBALL_PATH}"
 
 TARBALL_DIR="$(cd "$(dirname "${TARBALL_PATH}")" && pwd)"
 TARBALL_NAME="$(basename "${TARBALL_PATH}")"
