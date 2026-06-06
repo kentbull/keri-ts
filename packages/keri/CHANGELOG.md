@@ -1,5 +1,24 @@
 # keri-ts
 
+## 0.7.0
+
+### Minor Changes
+
+- Align KERI and Tufa with the 0.7.0 release train after the CESR CLI break so generated npm artifacts depend on the 0.7.0 package line.
+
+### Patch Changes
+
+- 87940ec: Move KERI npm build, LMDB setup discovery, version generation, and
+  installed-artifact checks into checked shared scripts.
+- 87940ec: Harden the `keri-ts` npm artifact by deriving DNT export targets from the
+  generated package output and smoke-checking packed and installed package paths.
+- 87940ec: Honor temp keeper derivation during habitat inception and add KERI test lane
+  timing output for easier test-speed regression tracking.
+- 1c4fb92: Add injectable runtime clock, HTTP, and mailbox polling seams so runtime tests
+  can exercise protocol behavior without repeated real sockets and sleeps. Convert
+  mailbox poller, mailbox admin, and witness runtime coverage to cheaper
+  fixtures while preserving representative live transport tests.
+
 ## 0.6.0
 
 ### Minor Changes
