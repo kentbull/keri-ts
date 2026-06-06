@@ -1,5 +1,13 @@
 // @file-test-lane runtime-slow
 
+/**
+ * Long-running Tufa multisig delegation stress scenario.
+ *
+ * This opt-in test exercises sustained delegated group rotation with weighted
+ * thresholds, changing signer membership, and repeated delegator anchoring.
+ * It is intentionally separate from the default lane because its value is
+ * protocol endurance rather than fast regression coverage.
+ */
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
@@ -20,6 +28,7 @@ import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { HabitatRecord } from "../../../src/core/records.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
+/** Explicit opt-in guard for the slow multisig delegation endurance test. */
 const ENABLE_LONG_MULTISIG_DELEGATION = Deno.env.get("KERI_LONG_MULTISIG_DELEGATION") === "1";
 const GROUP_THRESHOLD: ThresholdSith = ["2/3", "2/3", "2/3"];
 const DELEGATE_EVENT_COUNT = 64;
@@ -47,6 +56,7 @@ function makeMember(hby: Habery, alias: string): Hab {
   });
 }
 
+/** Create a 2-of-3 weighted group, optionally delegated to another group. */
 function makeWeightedGroup(
   hby: Habery,
   alias: string,
@@ -76,6 +86,7 @@ function makeWeightedGroup(
   };
 }
 
+/** Resolve an accepted or escrowed event serder by prefix/sequence number. */
 function eventSerderFor(hby: Habery, pre: string, sn: number): SerderKERI {
   const said = hby.db.kels.getLast(pre, sn)
     ?? hby.db.pdes.getOn(pre, sn)[0]
@@ -93,6 +104,7 @@ function eventAnchor(serder: SerderKERI): { i: string; s: string; d: string } {
   return { i: serder.pre, s: serder.snh, d: serder.said };
 }
 
+/** Encode group member index tuples for durable group habitat sidecars. */
 function memberTuples(members: readonly Hab[]) {
   return members.map((member, index) =>
     [
@@ -102,6 +114,13 @@ function memberTuples(members: readonly Hab[]) {
   );
 }
 
+/**
+ * Persist current/next group membership sidecars after a synthetic rotation.
+ *
+ * Real CLI flows write these records while coordinating multisig operations;
+ * this direct test updates them explicitly so subsequent rotations validate
+ * against the intended current and prior-next member sets.
+ */
 function persistGroupMembers(group: GroupAid): void {
   const pre = group.hab.pre;
   const stored = group.hby.db.getHab(pre);
@@ -153,6 +172,7 @@ function priorNextIndexForKey(group: GroupAid, key: string): number {
   return index;
 }
 
+/** Sign a group event with current keys and, for rotations, prior-next indexes. */
 function signGroupEvent(
   group: GroupAid,
   serder: SerderKERI,
@@ -181,6 +201,7 @@ function signGroupEvent(
   return sigers;
 }
 
+/** Process a locally authored group event and return its pipelined message. */
 function processLocalGroupEvent(
   group: GroupAid,
   serder: SerderKERI,
@@ -230,6 +251,7 @@ function rotateMembers(members: readonly Hab[]): void {
   }
 }
 
+/** Rotate the delegated group to a new current/next member set. */
 function groupRotate(
   group: GroupAid,
   current: Hab[],
@@ -263,6 +285,12 @@ function groupRotate(
   );
 }
 
+/**
+ * Anchor one delegated event in the delegator KEL and process delegables.
+ *
+ * The source-seal hint is pinned exactly where live confirmation would store
+ * it, so the subsequent escrow promotion path matches the production flow.
+ */
 function anchorDelegatedEvent(delegator: GroupAid, delegated: SerderKERI) {
   const approval = groupInteract(delegator, [eventAnchor(delegated)]);
   assertExists(delegated.pre);
@@ -323,6 +351,8 @@ Deno.test({
         anchorDelegatedEvent(delegator, inception);
         assertEquals(hby.db.getKever(delegate.hab.pre)?.sn, 0);
 
+        // Rotate through several signer windows, then hold steady to prove
+        // later delegated rotations continue using repaired group sidecars.
         const membershipPlan = [
           [memberB, memberC, memberD],
           [memberC, memberD, memberE],

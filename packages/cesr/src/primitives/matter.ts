@@ -85,6 +85,13 @@ function matterNameForCode(code: string): string {
   return name;
 }
 
+/**
+ * Select the concrete variable-length Matter code for the raw payload size.
+ *
+ * Variable families encode lead bytes and soft-size width in the selector
+ * itself. Normalizing once during construction keeps generated qb64/qb2 forms
+ * deterministic without leaking that sizing policy to primitive callers.
+ */
 function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
   const sizage = MATTER_SIZES.get(code);
   if (!sizage || sizage.fs !== null) {

@@ -1,8 +1,18 @@
 #!/usr/bin/env -S deno run -A
+/**
+ * Run annotated KERI test lanes for CI and local stage-gate parity.
+ *
+ * Ownership model:
+ * - test files declare membership with `@file-test-lane`
+ * - individual `Deno.test` registrations may override with `@test-lane`
+ * - this runner audits annotations first, then executes configured lanes or
+ *   lane groups with the concurrency policy declared below
+ */
 
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { relative } from "jsr:@std/path/relative";
 
+/** Execution policy for one lane of annotated KERI tests. */
 interface LaneConfig {
   description: string;
   allowAll?: boolean;
@@ -11,21 +21,25 @@ interface LaneConfig {
   maxJobs?: number;
 }
 
+/** Public alias that expands to one or more concrete lanes. */
 interface GroupDefinition {
   description: string;
   lanes: string[];
 }
 
+/** One discovered `Deno.test` registration and its resolved lane. */
 interface DiscoveredTest {
   name: string;
   lane: string;
 }
 
+/** Lane metadata discovered from a single test file. */
 interface FileLaneDiscovery {
   fileLane: string;
   tests: DiscoveredTest[];
 }
 
+/** Files that can run whole vs tests that must be split by filter. */
 interface LaneRunShape {
   fullFiles: string[];
   splitFiles: Array<{ file: string; tests: string[] }>;
@@ -218,6 +232,12 @@ async function walkTests(dir: URL, files: string[]): Promise<void> {
   }
 }
 
+/**
+ * Extract static `Deno.test` names.
+ *
+ * Dynamic unnamed registrations are allowed only when the file has no
+ * per-test lane overrides; in that case the file lane owns every registration.
+ */
 function extractTestNames(source: string): string[] {
   const names: string[] = [];
   const directPattern = /Deno\.test\(\s*(?:"([^"]+)"|'([^']+)')/gs;
@@ -245,6 +265,12 @@ function extractTestNames(source: string): string[] {
   return named;
 }
 
+/**
+ * Parse lane annotations and bind them to test registrations.
+ *
+ * Audit failure is deliberate: CI lanes are only trustworthy when every test
+ * has explicit ownership and every per-test override is consumed exactly once.
+ */
 function parseFileLaneDiscovery(
   file: string,
   source: string,
@@ -318,6 +344,7 @@ function parseFileLaneDiscovery(
   return { fileLane, tests };
 }
 
+/** Discover all test files and their audited lane assignments. */
 async function buildDiscoveredTests(): Promise<Map<string, FileLaneDiscovery>> {
   const discovered = new Map<string, FileLaneDiscovery>();
   for (const file of await collectTestFiles()) {
@@ -327,6 +354,12 @@ async function buildDiscoveredTests(): Promise<Map<string, FileLaneDiscovery>> {
   return discovered;
 }
 
+/**
+ * Build lane execution shapes from audited discovery.
+ *
+ * Whole-file runs preserve Deno's normal file-level behavior. Split runs are
+ * used only when a file intentionally contributes tests to multiple lanes.
+ */
 function buildLaneRunShapes(
   discovered: Map<string, FileLaneDiscovery>,
 ): Record<string, LaneRunShape> {
@@ -369,6 +402,7 @@ interface AuditResult {
   discoveredTests: number;
 }
 
+/** Verify lane ownership before any target-specific execution starts. */
 async function auditLaneAssignments(): Promise<AuditResult> {
   const discovered = await buildDiscoveredTests();
   let discoveredTests = 0;
@@ -381,6 +415,7 @@ async function auditLaneAssignments(): Promise<AuditResult> {
   };
 }
 
+/** Resolve a CLI target to concrete lane names or print usage on mismatch. */
 function resolveLaneNames(target: string): string[] {
   if (target in laneConfigs) {
     return [target];
@@ -425,6 +460,12 @@ function parsePositiveIntEnv(key: string): number | null {
   return parsed;
 }
 
+/**
+ * Resolve lane concurrency with explicit environment overrides first.
+ *
+ * `KERI_TEST_JOBS` is the runner-specific knob. `DENO_JOBS` remains supported
+ * for CI compatibility, and automatic selection is capped by lane policy.
+ */
 function resolveParallelJobs(config: LaneConfig): ParallelJobResolution {
   const available = Math.max(navigator.hardwareConcurrency || 1, 1);
   const keriJobs = parsePositiveIntEnv("KERI_TEST_JOBS");
@@ -456,6 +497,7 @@ function resolveParallelJobs(config: LaneConfig): ParallelJobResolution {
   };
 }
 
+/** Run one Deno test command and fail the runner with the child exit code. */
 async function runDenoTest(
   args: string[],
   label: string,
@@ -484,6 +526,7 @@ function baseTestArgs(config: LaneConfig): string[] {
   return args;
 }
 
+/** Execute one concrete lane according to its whole-file/split-file shape. */
 async function runLane(
   laneName: string,
   shapes: Record<string, LaneRunShape>,

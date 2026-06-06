@@ -1,3 +1,10 @@
+/**
+ * Local notification CLI commands.
+ *
+ * These commands intentionally reopen the `Notifier` sidecar for one bounded
+ * operation and close both sidecar and `Habery` afterward. They are operator
+ * inspection/mutation tools, not protocol delegation approval commands.
+ */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import type { Habery } from "../habbing.ts";
@@ -35,6 +42,7 @@ function requireRid(rid?: string): string {
   return rid;
 }
 
+/** Open the signed notification facade for one CLI invocation. */
 function* openNotifier(args: NotificationsOpenArgs): Operation<{
   hby: Habery;
   notifier: Notifier;
@@ -59,6 +67,7 @@ function* openNotifier(args: NotificationsOpenArgs): Operation<{
   };
 }
 
+/** Print verified local controller notices as JSON for operator inspection. */
 export function* notificationsListCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
@@ -100,6 +109,7 @@ export function* notificationsListCommand(
   }
 }
 
+/** Mark one verified notice as read and persist its new detached signature. */
 export function* notificationsMarkReadCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
@@ -125,6 +135,7 @@ export function* notificationsMarkReadCommand(
   }
 }
 
+/** Remove one verified notice from the notification sidecar. */
 export function* notificationsRemoveCommand(
   args: Record<string, unknown>,
 ): Operation<void> {

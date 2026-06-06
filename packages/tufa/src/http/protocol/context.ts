@@ -1,3 +1,10 @@
+/**
+ * Request-context construction for Tufa protocol routing.
+ *
+ * The router is path-first: every endpoint classifier receives the same
+ * normalized path plus hosted-prefix projections, so mailbox admin, OOBI, and
+ * generic CESR ingress cannot disagree about which local AID a URL addresses.
+ */
 import { type AgentRuntime, type ProtocolHostPolicy, resolveHostedEndpointPath } from "keri-ts/runtime";
 import { parseOobiRouteRequest } from "./endpoints/oobi.ts";
 import type { ProtocolRequestContext } from "./types.ts";
@@ -10,6 +17,9 @@ export function buildProtocolRequestContext(
 ): ProtocolRequestContext {
   const url = new URL(req.url);
   const pathname = normalizeProtocolPath(url.pathname);
+  // Resolve the same normalized path against the three hosted path shapes used
+  // by the HTTP edge: plain hosted endpoints, mailbox admin endpoints, and
+  // generic root-relative CESR ingress.
   const hosted = runtime
     ? resolveHostedEndpointPath(
       runtime.hby,

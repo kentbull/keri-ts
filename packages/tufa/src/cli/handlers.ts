@@ -12,6 +12,8 @@ import type { CommandHandler } from "./command-types.ts";
 
 /** Build the canonical command-dispatch map used by the Tufa CLI runtime. */
 export function createCmdHandlers(): Map<string, CommandHandler> {
+  // Lazy imports keep the runnable `tufa` package as the dispatch owner while
+  // still allowing reusable library CLI operations to live in `keri-ts/cli`.
   return new Map([
     ["init", lazyCommand(() => import("keri-ts/cli"), "initCommand")],
     ["incept", lazyCommand(() => import("keri-ts/cli"), "inceptCommand")],

@@ -437,6 +437,9 @@ export class FrameParser {
         streamVersion,
       };
     } catch (_error) {
+      // Non-native body groups wrap one Matter primitive. If Serder hydration
+      // fails, expose the primitive body bytes only; callers that inspect the
+      // fallback should not see the surrounding group counter envelope.
       const raw = matter.raw;
       return {
         frame: {

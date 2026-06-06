@@ -302,6 +302,10 @@ export class Kevery {
           return escrowQuery("notFullyWitnessed");
         }
 
+        // Reopened validators may have accepted a delegated event before its
+        // `.aess` source-seal hint was learned. Repair that hint before replay
+        // so downstream receivers get the same delegation attachment KERIpy
+        // would clone from persisted delegating-event state.
         this.repairReplaySourceSeal(kever);
         const msgs = [...this.db.clonePreIter(pre, fn)];
         if (kever.delpre) {
@@ -782,6 +786,9 @@ export class Kevery {
     }
 
     const duplicateSaid = this.db.kels.getLast(pre, sn);
+    // A duplicate accepted event may still carry late source-seal or receipt
+    // attachments. Preserve those through the duplicate path instead of
+    // rejecting the whole replay as already-seen.
     if (duplicateSaid && duplicateSaid === said && sn <= kever.sn) {
       return this.buildDuplicateDecision(kever, init);
     }
@@ -1256,6 +1263,9 @@ export class Kevery {
   ): void {
     const habord = this.db.getHab(kever.pre);
     if (habord?.mid) {
+      // Group habitats can be learned through remote traffic after reopen.
+      // Keep the live group-prefix indexes synchronized with durable habitat
+      // records before protected-party cue policy runs.
       this.db.prefixes.add(kever.pre);
       this.db.groups.add(kever.pre);
     }
@@ -2518,6 +2528,13 @@ export class Kevery {
     };
   }
 
+  /**
+   * Decide whether a duplicate event's attached source seal is safe to store.
+   *
+   * Duplicate replay is intentionally narrow: only an existing delegated
+   * establishment event may learn a late source seal, and the seal must name
+   * the exact delegator event already known to anchor this delegate event.
+   */
   private validDuplicateSourceSeal(
     kever: Kever,
     serder: SerderKERI,
@@ -2540,6 +2557,14 @@ export class Kevery {
       && anchoring.said === sourceSeal.d.qb64;
   }
 
+  /**
+   * Backfill `.aess` for an accepted delegated establishment before replay.
+   *
+   * KERIpy clones delegation attachments from durable state during replay.
+   * `keri-ts` keeps replay construction decoupled, so this helper repairs the
+   * accepted source-seal index from the delegator's sealing event when the
+   * event body was accepted before the hint was persisted.
+   */
   private repairReplaySourceSeal(kever: Kever): void {
     const serder = kever.serder;
     const pre = serder.pre;
@@ -2568,6 +2593,14 @@ export class Kevery {
     ]);
   }
 
+  /**
+   * Repair accepted delegated events after a delegator event is accepted.
+   *
+   * When the newly accepted event contains delegation anchors, any already
+   * stored delegate establishment it names can learn the corresponding
+   * source-seal hint immediately. This keeps later duplicate/replay handling
+   * deterministic without rerunning full event acceptance.
+   */
   private repairAnchoredDelegationSourceSeals(serder: SerderKERI): void {
     const delpre = serder.pre;
     const said = serder.said;
@@ -2602,6 +2635,13 @@ export class Kevery {
     }
   }
 
+  /**
+   * Repair source-seal hints for escrowed delegated establishment events.
+   *
+   * Escrow reprocessing may encounter a delegate event after the approving
+   * delegator event was already accepted. This helper converts that discovered
+   * anchor into the same `.aess` hint carried by live source-seal attachments.
+   */
   private repairEscrowDelegationSourceSeal(serder: SerderKERI): void {
     const pre = serder.pre;
     const said = serder.said;

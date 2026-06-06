@@ -1,3 +1,10 @@
+/**
+ * Generic CESR POST/PUT ingress for the Tufa HTTP edge.
+ *
+ * Explicit routes are classified before this module runs. This handler owns
+ * the remaining raw CESR traffic and decides whether it belongs to local
+ * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
+ */
 import { concatBytes, Ilks, type SerderKERI } from "cesr-ts";
 import { run } from "effection";
 import {
@@ -17,6 +24,8 @@ const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   endpoint: null,
   relativePath: null,
 };
+
+/** Upper bound for a direct `/logs` query response to wait for replay cues. */
 const DIRECT_QUERY_RESPONSE_WAIT_MS = 60_000;
 
 /** Classify generic POST/PUT CESR ingress after all explicit HTTP routes. */
@@ -62,6 +71,8 @@ export function classifyCesrIngressRoute(
     && serder.ilk !== Ilks.qry
     && serder.ilk !== Ilks.exn
   ) {
+    // Witness-hosted events are accepted locally by the witness processor, but
+    // witness `qry` and peer `exn` traffic still belongs to runtime routing.
     return { kind: "witnessLocalIngress", witnessHab };
   }
 
@@ -99,6 +110,7 @@ function querySseResponse(
   );
 }
 
+/** Collect immediate replay/reply wire cues into one direct CESR response. */
 function directQueryResponse(
   emissions: readonly CueEmission[],
 ): Response | null {
@@ -116,6 +128,7 @@ function directQueryResponse(
     : null;
 }
 
+/** Optionally wait for escrow replay to produce direct `/logs` response bytes. */
 function* deferredDirectQueryResponse(
   context: ProtocolRequestContext,
   serder: SerderKERI,
@@ -147,7 +160,7 @@ function* deferredDirectQueryResponse(
   return null;
 }
 
-/** Handle one generic POST/PUT CESR ingress request. */
+/** Handle one classified generic POST/PUT CESR ingress request. */
 export async function handleGenericCesrIngress(
   context: ProtocolRequestContext,
   hosted: HostedRouteResolution,

@@ -1209,6 +1209,9 @@ export class Kever {
     // for escrow. Misfit checks come first so locally protected events do not
     // leak into a more permissive partial-signature or partial-delegation
     // class.
+    // A local delegator reviewing someone else's delegated establishment is a
+    // protected-party case, but it must enter `delegables` until the local
+    // approval interaction/rotation is actually attached as a source seal.
     const localDelegatorApprovalCandidate = (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
       && this.locallyDelegated(delpre)
       && !this.locallyOwned();
@@ -1382,6 +1385,9 @@ export class Kever {
     // A local delegator without an attached approval seal is not a generic
     // partial-delegation case. It is specifically waiting for local
     // out-of-band approval to be attached and reprocessed.
+    // Local approval is represented by a real, already accepted delegator
+    // event. The attached source seal is only authoritative when it resolves
+    // to that accepted event and that event's anchors name this delegate event.
     const sourceSealApprovesEvent = input.sourceSeal
       ? this.lookupAcceptedDelegatingEvent(
         delpre,
@@ -1768,6 +1774,9 @@ export class Kever {
     if (!candidate || !candidate.said || candidate.sn === null) {
       return null;
     }
+    // Accepted first-seen state is the primary signal, but restored KELs may
+    // have authoritative sequence membership before first-seen metadata has
+    // been reconstructed. Accept either durable signal for approval lookup.
     const accepted = !!this.db.fons.get(dgKey(delpre, candidate.said))
       || this.db.kels.getLast(delpre, candidate.sn) === candidate.said;
     if (!accepted) return null;

@@ -1,3 +1,11 @@
+/**
+ * Tufa witness operator commands.
+ *
+ * The witness role is a combined witness+mailbox host backed by one
+ * non-transferable local habitat. Startup reconciles self endpoint and role
+ * replies before serving, so later OOBI and receipt flows see durable state
+ * rather than process-local defaults.
+ */
 import type { Operation } from "effection";
 import { join } from "jsr:@std/path";
 import {
@@ -49,6 +57,7 @@ interface WitnessSubmitArgs extends WitnessBaseArgs {
   codeTime?: string;
 }
 
+/** Resolved startup material and its authority source for one witness host. */
 interface WitnessStartupMaterial {
   httpUrl: string;
   tcpUrl: string;
@@ -231,6 +240,7 @@ function parseWitnessStartArgs(
   return parsed;
 }
 
+/** Load an explicit witness config file without creating missing config state. */
 function* loadWitnessStartConfig(
   args: WitnessStartArgs,
 ): Operation<Configer | undefined> {
@@ -272,6 +282,7 @@ function* loadWitnessStartConfig(
   throw new ValidationError(`Config file '${args.configFile}' was not found.`);
 }
 
+/** Candidate config locations accepted for KLI-compatible operator workflows. */
 function witnessConfigCandidates(
   configFile: string,
   headDirPath?: string,
@@ -302,6 +313,15 @@ function witnessConfigCandidates(
   return [...candidates];
 }
 
+/**
+ * Resolve witness startup material in authority order.
+ *
+ * Precedence:
+ * - explicit CLI URL/TCP URL input
+ * - alias-scoped config section
+ * - already accepted local endpoint state
+ * - synthesized localhost defaults for first-run convenience
+ */
 function resolveWitnessStartupMaterial(
   hby: Habery,
   pre: string,
@@ -425,6 +445,8 @@ function storedWitnessStartupMaterial(
   hby: Habery,
   pre: string,
 ): WitnessStartupMaterial | null {
+  // Stored state is authoritative only when there is exactly one HTTP(S) URL
+  // and exactly one TCP URL; ambiguity would make advertised OOBIs unstable.
   const urls = fetchEndpointUrls(hby, pre);
   const httpEntries = [urls.https, urls.http]
     .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
@@ -466,6 +488,7 @@ function witnessIdentityComplete(
     && roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
 }
 
+/** Persist self location and role replies required before serving witness traffic. */
 function* reconcileWitnessIdentity(
   hby: Habery,
   hab: Hab,
@@ -549,6 +572,7 @@ function resolveWitnessAuths(
   return auths;
 }
 
+/** Normalize the advertised HTTP(S) witness URL while preserving path prefix. */
 function normalizeHttpUrl(url: string): string {
   const parsed = new URL(url);
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
@@ -558,6 +582,7 @@ function normalizeHttpUrl(url: string): string {
   return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}${parsed.hash}`;
 }
 
+/** Normalize the advertised TCP witness URL used by witness receipt transport. */
 function normalizeTcpUrl(url: string): string {
   const parsed = new URL(url);
   if (parsed.protocol !== "tcp:") {
@@ -596,6 +621,7 @@ function validateIsoDatetime(dt: string): string {
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
 }
 
+/** Choose a bind address from explicit input or the advertised endpoint. */
 function resolveListenHost(
   explicit: string | undefined,
   advertisedUrl: string,

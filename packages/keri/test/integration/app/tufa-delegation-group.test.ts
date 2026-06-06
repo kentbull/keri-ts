@@ -1,5 +1,14 @@
 // @file-test-lane runtime-medium
 
+/**
+ * Tufa-only delegation matrix for single and group AIDs.
+ *
+ * These scenarios exercise the same issue-hold-approve protocol seams as the
+ * live KLI/Tufa tests without subprocess cost: delegation requests arrive over
+ * an explicit communication AID, local delegators escrow into `delegables`,
+ * approval pins source-seal hints, and replayed delegator KELs release partial
+ * delegation escrow for the delegate.
+ */
 import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Counter, CtrDexV1, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
@@ -69,6 +78,7 @@ const MATRIX: readonly MatrixCase[] = [
   },
 ];
 
+/** Resolve an accepted or escrowed event serder by prefix/sequence number. */
 function eventSerderFor(hby: Habery, pre: string, sn = 0): SerderKERI {
   const said = hby.db.kels.getLast(pre, sn)
     ?? hby.db.pdes.getOn(pre, sn)[0]
@@ -79,6 +89,7 @@ function eventSerderFor(hby: Habery, pre: string, sn = 0): SerderKERI {
   return serder;
 }
 
+/** Convert an event serder into the anchor data carried by delegator events. */
 function eventAnchor(serder: SerderKERI): { i: string; s: string; d: string } {
   assertExists(serder.pre);
   assertExists(serder.snh);
@@ -86,6 +97,12 @@ function eventAnchor(serder: SerderKERI): { i: string; s: string; d: string } {
   return { i: serder.pre, s: serder.snh, d: serder.said };
 }
 
+/**
+ * Attach synthetic witness indexed receipts to a local event.
+ *
+ * This keeps the matrix focused on delegation behavior while still proving
+ * that witnessed delegated events carry and replay witness receipt attachments.
+ */
 function storeWitnessIndexedReceipts(
   hby: Habery,
   serder: SerderKERI,
@@ -127,6 +144,7 @@ function witnessCounter(count: number): string {
   );
 }
 
+/** Assert that a replayed message contains the expected witness signature group. */
 function assertHasWitnessIndexedSigs(message: Uint8Array, count: number): void {
   const serder = new SerderKERI({ raw: message });
   assertStringIncludes(
@@ -135,6 +153,7 @@ function assertHasWitnessIndexedSigs(message: Uint8Array, count: number): void {
   );
 }
 
+/** Build the `/delegate/request` exchange message used by delegation handlers. */
 function delegationRequestMessage(
   sender: Hab,
   delpre: string,
@@ -244,6 +263,7 @@ function createGroupAid(
   };
 }
 
+/** Create either a single-key or multisig local AID for the scenario matrix. */
 function createControlledAid(
   hby: Habery,
   alias: string,
@@ -260,6 +280,7 @@ function createControlledAid(
   return createGroupAid(hby, alias, profile, options);
 }
 
+/** Advance one runtime without polling mailboxes for a bounded number of turns. */
 function* drainRuntime(
   runtime: AgentRuntime,
   hab: Hab,
@@ -270,6 +291,7 @@ function* drainRuntime(
   }
 }
 
+/** Inject serialized messages and drain the runtime so escrows can settle. */
 function* ingestMessages(
   runtime: AgentRuntime,
   hab: Hab,
@@ -282,6 +304,7 @@ function* ingestMessages(
   yield* drainRuntime(runtime, hab, turns);
 }
 
+/** Replay one accepted KEL from a source store into a target runtime. */
 function* transferAcceptedKel(
   source: Habery,
   target: AgentRuntime,
@@ -291,6 +314,12 @@ function* transferAcceptedKel(
   yield* ingestMessages(target, targetHab, source.db.clonePreIter(pre), 12);
 }
 
+/**
+ * Approve one locally escrowed delegated event as a delegator.
+ *
+ * The explicit `.aess` pin mirrors the source-seal attachment that live
+ * delegate confirmation sends after the delegator interaction is accepted.
+ */
 function approveDelegable(
   delegator: ControlledAid,
   delegated: ControlledAid,
@@ -389,6 +418,8 @@ for (const spec of MATRIX) {
             communicationHab: delegateProxy,
           },
         );
+        // Group delegates communicate through a member/proxy AID rather than
+        // the group prefix itself, matching the live IPEX-style proxy path.
         const requestSender = spec.delegate.kind === "single"
           ? delegateProxy
           : delegated.communicationHab;

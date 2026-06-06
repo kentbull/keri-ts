@@ -563,6 +563,13 @@ function mailboxConfigCandidates(
   return [...candidates];
 }
 
+/**
+ * Resolve explicit or config-provided mailbox startup material.
+ *
+ * Unlike witness startup, mailbox startup does not synthesize a new URL for a
+ * missing existing alias; operators must provide either config/CLI material or
+ * already accepted endpoint state.
+ */
 function resolveConfiguredStartup(
   args: MailboxStartArgs,
   config: Record<string, unknown> | null,
@@ -626,6 +633,7 @@ function resolveConfiguredStartup(
   return configured;
 }
 
+/** Resolve the final startup material, falling back to accepted endpoint state. */
 function resolveEffectiveStartupMaterial(
   hby: Habery,
   pre: string,
@@ -668,6 +676,7 @@ function validateMailboxHabitat(
   }
 }
 
+/** Return true when self location plus controller/mailbox roles are accepted. */
 function mailboxIdentityComplete(
   hby: Habery,
   pre: string,
@@ -692,6 +701,8 @@ function storedMailboxUrl(
   hby: Habery,
   pre: string,
 ): string | null {
+  // Treat multiple stored HTTP(S) URLs as an operator error. A mailbox host
+  // needs one canonical advertised origin for admin and OOBI URLs.
   const urls = fetchEndpointUrls(hby, pre);
   const candidates = [urls.https, urls.http]
     .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
@@ -712,6 +723,8 @@ function* reconcileMailboxIdentity(
   hab: ReturnType<typeof requireHab>,
   startup: MailboxStartupMaterial,
 ): Operation<void> {
+  // Feed self-authored location and role replies through the normal runtime
+  // path instead of mutating `locs.` or `ends.` directly.
   const runtime = yield* createAgentRuntime(hby, { mode: "local" });
   const scheme = new URL(startup.url).protocol === "https:" ? "https" : "http";
   ingestKeriBytes(

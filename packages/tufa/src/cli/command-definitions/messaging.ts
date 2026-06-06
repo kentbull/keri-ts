@@ -37,6 +37,9 @@ function registerExnSendSubCmd(
   dispatch: CommandDispatch,
   name: "exchange.send" | "exn.send",
 ): void {
+  // `exchange send` and `exn send` are CLI aliases over the same handler.
+  // Keeping the registration shared prevents their forwarding/topic options
+  // from drifting.
   root
     .command("send")
     .description("Send one signed EXN message to a resolved remote identifier")

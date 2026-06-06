@@ -1,3 +1,15 @@
+/**
+ * Controller notification policy on top of the durable `Noter` sidecar.
+ *
+ * KERIpy correspondence:
+ * - mirrors the high-level responsibilities of `keri.app.notifying.Notifier`
+ * - persistent notice bytes and signatures live in `db/noting.ts`
+ *
+ * Maintainer rule:
+ * - notifications are signed local controller records, not protocol authority
+ * - delegation approval must use delegation escrows; `/notification` signals
+ *   are only transient UI wakeups.
+ */
 import { type Operation } from "npm:effection@^3.6.0";
 import { type Cigar } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -25,6 +37,7 @@ export function notice<T extends NoticeAttrs = NoticeAttrs>(
   });
 }
 
+/** Derive sidecar-open options from the owning `Habery` path/layout settings. */
 export function noterOptionsForHabery(
   hby: Habery,
   options: Partial<NoterOptions> = {},
@@ -41,6 +54,7 @@ export function noterOptionsForHabery(
   };
 }
 
+/** Open the notification sidecar that belongs to one `Habery`. */
 export function* openNoterForHabery(
   hby: Habery,
   options: Partial<NoterOptions> = {},
@@ -50,6 +64,10 @@ export function* openNoterForHabery(
 
 /**
  * Signed durable controller notifications with transient `/notification` pings.
+ *
+ * The detached signature is verified on every read/mutation path so operators
+ * can trust CLI output even though notification payloads are intentionally
+ * application-specific maps.
  */
 export class Notifier {
   readonly hby: Habery;
@@ -71,6 +89,7 @@ export class Notifier {
     this.signaler = signaler ?? new Signaler();
   }
 
+  /** Add one unread signed notice and emit a transient add signal. */
   add<T extends NoticeAttrs = NoticeAttrs>(attrs: T): boolean {
     const signator = this.requireSignator();
     const note = notice(attrs);
@@ -83,6 +102,7 @@ export class Notifier {
     return true;
   }
 
+  /** List verified notices in durable datetime order. */
   list<T extends NoticeAttrs = NoticeAttrs>(
     start = 0,
     limit = 25,
@@ -92,10 +112,12 @@ export class Notifier {
     );
   }
 
+  /** Count durable notices without verifying each payload. */
   count(): number {
     return this.noter.countNotices();
   }
 
+  /** Mark one notice read and re-sign its updated pad. */
   markRead(rid: string): boolean {
     const [note] = this.requireNoticePair(rid);
     if (note.read) {
@@ -113,6 +135,7 @@ export class Notifier {
     return true;
   }
 
+  /** Remove one verified notice and emit a transient remove signal. */
   remove(rid: string): boolean {
     const [note] = this.requireNoticePair(rid);
     if (!this.noter.removeNotice(rid)) {

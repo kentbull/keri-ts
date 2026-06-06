@@ -77,6 +77,7 @@ interface TufaGeneratedGroupEvent {
   message?: Uint8Array;
 }
 
+/** Bridge a Promise into the Effection operation used by runtime helpers. */
 function* awaitPromise<T>(promise: Promise<T>): Operation<T> {
   return yield* action<T>((resolve, reject) => {
     promise.then(resolve, reject);
@@ -84,6 +85,7 @@ function* awaitPromise<T>(promise: Promise<T>): Operation<T> {
   });
 }
 
+/** Ask one Tufa witness host to receipt a serialized group event. */
 function* requestTufaWitnessReceipt(
   witness: TufaWitnessNode,
   message: Uint8Array,
@@ -109,6 +111,7 @@ function* requestTufaWitnessReceipt(
   return body;
 }
 
+/** Parse KLI output across command variants that say either Prefix or Identifier. */
 function extractKliIdentifier(output: string): string {
   try {
     return extractPrefix(output);
@@ -121,6 +124,7 @@ function extractKliIdentifier(output: string): string {
   }
 }
 
+/** Generate a role-specific Tufa OOBI through the CLI. */
 async function generateTufaOobi(
   ctx: InteropContext,
   args: {
@@ -159,6 +163,12 @@ async function generateTufaOobi(
   return extractLastNonEmptyLine(result.stdout);
 }
 
+/**
+ * Create one witnessed KLI participant with mailbox routing enabled.
+ *
+ * The participant is suitable for both multisig member traffic and delegation
+ * proxy delivery because witness and mailbox OOBIs are both advertised.
+ */
 async function createKliParticipant(
   ctx: InteropContext,
   args: {
@@ -220,6 +230,7 @@ async function createKliParticipant(
   };
 }
 
+/** Teach one KLI participant how to reach another participant's mailbox. */
 async function resolveKliParticipantOobis(
   ctx: InteropContext,
   participant: KliParticipant,
@@ -234,6 +245,7 @@ async function resolveKliParticipantOobis(
   });
 }
 
+/** Create one witnessed Tufa AID with mailbox routing enabled. */
 async function createTufaAIDWithMailbox(
   ctx: InteropContext,
   args: {
@@ -310,6 +322,7 @@ async function createTufaAIDWithMailbox(
   };
 }
 
+/** Teach a Tufa controller how to reach a KLI participant mailbox. */
 async function resolveTufaKnownKliParticipant(
   ctx: InteropContext,
   tufa: TufaAID,
@@ -325,6 +338,7 @@ async function resolveTufaKnownKliParticipant(
   });
 }
 
+/** Teach a KLI participant how to reach a Tufa controller mailbox. */
 async function resolveKliKnownTufaAID(
   ctx: InteropContext,
   kli: KliParticipant | {
@@ -343,6 +357,7 @@ async function resolveKliKnownTufaAID(
   });
 }
 
+/** Write the KLI multisig config that delegates the group to a Tufa AID. */
 async function writeKliMultisigConfig(args: {
   member1: KliParticipant;
   member2: KliParticipant;
@@ -373,6 +388,7 @@ async function writeKliMultisigConfig(args: {
   return file;
 }
 
+/** Start the KLI multisig join side and leave it running until completion. */
 function spawnKliMultisigJoin(
   ctx: InteropContext,
   participant: KliParticipant,
@@ -397,6 +413,7 @@ function spawnKliMultisigJoin(
   );
 }
 
+/** Start the KLI multisig incept side and leave it running until completion. */
 function spawnKliMultisigIncept(
   ctx: InteropContext,
   participant: KliParticipant,
@@ -427,6 +444,13 @@ function spawnKliMultisigIncept(
   );
 }
 
+/**
+ * Build the full KLI group-delegate to Tufa-delegator fixture.
+ *
+ * This uses only public KLI commands for the KERIpy side, then resolves enough
+ * cross-OOBIs for multisig coordination, mailbox transport, and delegation
+ * confirmation to run without hidden store mutations.
+ */
 async function setupKliGroupDelegateToTufaDelegator(args: {
   ctx: InteropContext;
   base: string;
@@ -511,6 +535,7 @@ async function setupKliGroupDelegateToTufaDelegator(args: {
   }
 }
 
+/** Wait until the Tufa delegator has escrowed the KLI group event in `delegables`. */
 async function waitForTufaDelegable(
   delegator: TufaAID,
 ): Promise<TufaGeneratedGroupEvent> {
@@ -540,6 +565,7 @@ async function waitForTufaDelegable(
   return event;
 }
 
+/** Approve the current Tufa `delegables` item through the CLI confirmation path. */
 async function approveTufaDelegableWithTufaCli(
   ctx: InteropContext,
   delegator: TufaAID,
@@ -570,6 +596,7 @@ async function approveTufaDelegableWithTufaCli(
   assertStringIncludes(result.stdout, "Approved delegated dip");
 }
 
+/** Wait for both KLI multisig processes and require them to agree on the group AID. */
 async function waitForKliGroupCompletion(args: {
   member1: KliParticipant;
   member2: KliParticipant;
@@ -586,6 +613,7 @@ async function waitForKliGroupCompletion(args: {
   return inceptPrefix;
 }
 
+/** Generate a Tufa group event without accepting it so the test can wire receipts. */
 function makeTufaGeneratedGroupEvent(
   hby: Habery,
   args: {
@@ -627,6 +655,13 @@ function makeTufaGeneratedGroupEvent(
   };
 }
 
+/**
+ * Generate a Tufa delegated group event and post the request to a KLI delegator.
+ *
+ * The event is optionally receipted by a live Tufa witness first, then sent both
+ * as an embedded delegation request and as raw mailbox bytes so the KLI side can
+ * satisfy the same event-payload and replay paths it uses in production.
+ */
 async function postTufaGroupDelegationRequest(args: {
   store: TufaAID;
   member1Alias: string;
@@ -663,6 +698,9 @@ async function postTufaGroupDelegationRequest(args: {
         if (!message) {
           throw new Error("Expected Tufa group delegation message bytes.");
         }
+        // Witness receipts are ingested before extracting the wire payload so
+        // the embedded event includes the indexed witness signatures that KLI
+        // expects for a witnessed delegated group inception.
         const receiptMessage = args.witness
           ? yield* requestTufaWitnessReceipt(args.witness, message)
           : null;
@@ -706,6 +744,7 @@ async function postTufaGroupDelegationRequest(args: {
   });
 }
 
+/** Create a KLI delegator through the participant helper for naming clarity. */
 async function createKliDelegatorWithMailbox(
   ctx: InteropContext,
   args: {
