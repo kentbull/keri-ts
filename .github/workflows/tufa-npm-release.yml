@@ -134,8 +134,6 @@ jobs:
 
       - name: publish to npm
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd packages/tufa/npm
-          npm publish --provenance --access public
+          npm publish --access public
