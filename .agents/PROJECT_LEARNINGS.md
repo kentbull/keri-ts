@@ -108,12 +108,15 @@ stay short enough to reread at session start.
    rather than reintroducing duplicate wrapper families.
 6. Treat source-vs-npm drift in `tufa` as a release blocker; smoke the packed
    artifact when CLI or Node-host behavior changes.
-7. Keep bootstrap config on honest CLI/file seams rather than hidden default
+7. Treat scoped npm package publication as its own release seam:
+   `@keri-ts/tufa` needs `@keri-ts` scope ownership/token permission before tag
+   publish can succeed, even when artifact build/smoke/dry-run all pass.
+8. Keep bootstrap config on honest CLI/file seams rather than hidden default
    paths or ad hoc store mutation in scripts.
-8. Keep host-prefix selection explicit and conservative; do not leak
+9. Keep host-prefix selection explicit and conservative; do not leak
    system-managed identities into normal user-facing host startup.
-9. Keep witness interop claims tied to the scenarios actually proved.
-10. Keep test-lane ownership explicit as mailbox/runtime work grows.
+10. Keep witness interop claims tied to the scenarios actually proved.
+11. Keep test-lane ownership explicit as mailbox/runtime work grows.
 
 ## Recent Durable Changes
 
