@@ -24,6 +24,7 @@ import {
   Organizer,
   preferredUrl,
   processRuntimeTurn,
+  readMailboxSseBody,
   Roles,
   TopicsRecord,
   ValidationError,
@@ -1037,7 +1038,7 @@ function* fetchMailboxDebug(
     bodyMode,
     destination,
   });
-  const { response } = yield* fetchResponseHandle(url, {
+  const { response, controller } = yield* fetchResponseHandle(url, {
     method: "POST",
     headers: request.headers,
     body: request.body,
@@ -1047,9 +1048,11 @@ function* fetchMailboxDebug(
       `Mailbox debug query failed with HTTP ${response.status}.`,
     );
   }
-  return yield* action<string>((resolve, reject) => {
-    response.text().then(resolve).catch(reject);
-    return () => {};
+
+  // KERIpy mailbox iterables are long-poll SSE streams, not finite HTTP bodies.
+  return yield* readMailboxSseBody(response, controller, {
+    idleTimeoutMs: 500,
+    maxDurationMs: 5_000,
   });
 }
 

@@ -19,6 +19,7 @@ export * from "../app/habbing.ts";
 export * from "../app/httping.ts";
 export * from "../app/keeping.ts";
 export * from "../app/mailbox-director.ts";
+export * from "../app/mailbox-sse.ts";
 export * from "../app/mailboxing.ts";
 export * from "../app/notifying.ts";
 export * from "../app/oobiery.ts";
