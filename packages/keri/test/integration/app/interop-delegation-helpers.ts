@@ -6,7 +6,6 @@ import {
   extractLastNonEmptyLine,
   inspectCompatHabery,
   type InteropContext,
-  localKeriPySourceEnv,
   readChildOutput,
   requireSuccess,
   runCmd,
@@ -110,21 +109,19 @@ export async function inceptTufaAlias(
         args.passcode,
         "--alias",
         args.alias,
-        ...(args.transferable === false
-          ? []
-          : [
-            "--transferable",
-            "--isith",
-            "1",
-            "--icount",
-            "1",
-            "--nsith",
-            "1",
-            "--ncount",
-            "1",
-            "--toad",
-            String(args.toad ?? 0),
-          ]),
+        ...(args.transferable === false ? [] : [
+          "--transferable",
+          "--isith",
+          "1",
+          "--icount",
+          "1",
+          "--nsith",
+          "1",
+          "--ncount",
+          "1",
+          "--toad",
+          String(args.toad ?? 0),
+        ]),
         ...(args.transferable === false
           ? [
             "--isith",
@@ -657,7 +654,6 @@ export async function startTufaAgentHost(
 export async function startKliMailboxHost(
   ctx: InteropContext,
   args: {
-    pythonCommand: string;
     name: string;
     base: string;
     passcode: string;
@@ -666,10 +662,8 @@ export async function startKliMailboxHost(
   },
 ): Promise<SpawnedChild> {
   const child = spawnChild(
-    args.pythonCommand,
+    ctx.kliCommand,
     [
-      "-m",
-      "keri.cli.kli",
       "mailbox",
       "start",
       "--name",
@@ -683,7 +677,7 @@ export async function startKliMailboxHost(
       "--http",
       String(args.port),
     ],
-    localKeriPySourceEnv(ctx.env),
+    ctx.env,
   );
   try {
     await waitForChildHealth(child, args.port);
@@ -795,6 +789,9 @@ export async function waitForChildSuccess(
   label: string,
   child: SpawnedChild,
   timeoutMs = 30_000,
+  options: {
+    allowFailureIf?: (output: string) => boolean;
+  } = {},
 ): Promise<string> {
   const timedOut = Symbol("timedOut");
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -817,7 +814,10 @@ export async function waitForChildSuccess(
 
   const status = winner as Deno.CommandStatus;
   const output = await readChildOutput(child);
-  if (status.code !== 0) {
+  if (
+    status.code !== 0
+    && !(options.allowFailureIf && options.allowFailureIf(output))
+  ) {
     throw new Error(`${label} failed.\n${output}`);
   }
   return output;
@@ -847,7 +847,9 @@ export async function pumpTufaRuntimeUntil(
       skipSignator: false,
     });
     try {
-      const hab = store.alias ? hby.habByName(store.alias) ?? undefined : undefined;
+      const hab = store.alias
+        ? hby.habByName(store.alias) ?? undefined
+        : undefined;
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       try {
         yield* processRuntimeUntil(

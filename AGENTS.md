@@ -57,8 +57,8 @@ chronology unless they are themselves durable operational knowledge.
 
 ### Parser Contract
 
-- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is normative
-  for parser lifecycle work
+- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is normative for
+  parser lifecycle work
 - Keep contract, tests, and parity vectors in sync when parser behavior changes
 
 ### State-Machine Control Flow
@@ -93,8 +93,7 @@ For new modules, classes, and functions:
 
 - Prefer targeted `tufa db dump` inspection over ad hoc LMDB scripts
 - Use the narrowest selector that answers the question
-- Treat `tufa db dump` as a comparison seam for both `.tufa` and `.keri`
-  stores
+- Treat `tufa db dump` as a comparison seam for both `.tufa` and `.keri` stores
 
 ### Hosted Identity Selection
 
@@ -119,8 +118,7 @@ For new modules, classes, and functions:
 ## Design Bias
 
 - Optimize for learner/maintainer comprehension
-- Extract small domain-named helpers when they clarify real policy or
-  invariants
+- Extract small domain-named helpers when they clarify real policy or invariants
 - Do not abstract merely to reduce line count
 - Prefer explicit typed contracts and exhaustive mappings over stringly runtime
   indirection

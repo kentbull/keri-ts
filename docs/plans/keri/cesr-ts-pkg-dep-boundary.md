@@ -4,8 +4,8 @@
 
 The current npm dependency failures are a symptom, not the core problem:
 `keri-ts` production source still imports local CESR source via relative paths
-like `../../../cesr/mod.ts`, so the npm build vendors an `esm/cesr` subtree
-into the `keri-ts` tarball.
+like `../../../cesr/mod.ts`, so the npm build vendors an `esm/cesr` subtree into
+the `keri-ts` tarball.
 
 That vendoring makes `keri-ts` responsible for CESR runtime dependencies
 indirectly and incompletely, which is why missing-module failures appear one
@@ -58,11 +58,10 @@ That means:
   CESR paths with bare `cesr-ts` imports throughout `packages/keri/src/**`.
 - Keep this migration scoped to production source first; test imports can remain
   local for now unless they block packaging or type-checking.
-- Remove the deep CESR internal import in
-  `packages/keri/src/db/core/keys.ts` by importing `to32CharHex` from the
-  public `cesr-ts` surface.
-- Treat `packages/keri/deno.json`'s `"cesr-ts": "../cesr/mod.ts"` mapping as
-  the development-time source of truth so local Deno workflows continue to use
+- Remove the deep CESR internal import in `packages/keri/src/db/core/keys.ts` by
+  importing `to32CharHex` from the public `cesr-ts` surface.
+- Treat `packages/keri/deno.json`'s `"cesr-ts": "../cesr/mod.ts"` mapping as the
+  development-time source of truth so local Deno workflows continue to use
   repo-local CESR source.
 
 ### 2. Make the npm build rely on the package boundary instead of vendoring CESR
@@ -86,20 +85,20 @@ That means:
   - Node built-ins (`node:*`)
   - packages explicitly listed in the generated `package.json` dependencies
 - Fail the check if:
-  - the built artifact contains a vendored `esm/cesr/**` tree inside
-    `keri-ts`, or
+  - the built artifact contains a vendored `esm/cesr/**` tree inside `keri-ts`,
+    or
   - any bare runtime import is missing from the generated manifest.
 - Run the same audit for `cesr-ts` so both package builds are held to the same
   rule.
 
 ### 4. Clean up misleading packaging seams and docs
 
-- Remove or explicitly retire the unused `packages/keri/src/cesr/**`
-  "rewritten by the build system" convenience files if they are not part of the
-  real import strategy.
-- Update packaging/release docs to document the intended invariant:
-  `keri-ts` consumes `cesr-ts` through the package boundary and should not ship
-  vendored CESR runtime code.
+- Remove or explicitly retire the unused `packages/keri/src/cesr/**` "rewritten
+  by the build system" convenience files if they are not part of the real import
+  strategy.
+- Update packaging/release docs to document the intended invariant: `keri-ts`
+  consumes `cesr-ts` through the package boundary and should not ship vendored
+  CESR runtime code.
 - Keep the local reinstall and smoke-test workflows focused on validating the
   built tarballs, not compensating for architectural dependency drift.
 
@@ -116,8 +115,8 @@ That means:
 
 ### Source Validation
 
-- Static search confirms no production `packages/keri/src/**` files still
-  import `../../../cesr/**` or deeper CESR source paths.
+- Static search confirms no production `packages/keri/src/**` files still import
+  `../../../cesr/**` or deeper CESR source paths.
 - `deno task check` continues to pass for `keri-ts`.
 - Targeted `keri-ts` tests continue to pass after the import migration.
 
@@ -142,5 +141,5 @@ That means:
    accepted local-development seam.
 2. Production-source migration is the priority; test import cleanup is optional
    follow-up work.
-3. The correct long-term invariant is architectural, not procedural:
-   `keri-ts` should not ship vendored CESR runtime code in its npm tarball.
+3. The correct long-term invariant is architectural, not procedural: `keri-ts`
+   should not ship vendored CESR runtime code in its npm tarball.

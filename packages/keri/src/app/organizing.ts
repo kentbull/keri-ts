@@ -32,7 +32,9 @@ export class Organizer {
     }
 
     const cigar = this.hby.db.ccigs.get([pre]);
-    if (cigar && this.hby.signator && !verifySignedContact(this.hby, raw, cigar)) {
+    if (
+      cigar && this.hby.signator && !verifySignedContact(this.hby, raw, cigar)
+    ) {
       throw new ValidationError(`failed signature on ${pre} contact data`);
     }
 

@@ -76,7 +76,9 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
   try {
     const hab = hby.habByName(commandArgs.alias);
     if (!hab) {
-      throw new ValidationError(`No local AID found for alias ${commandArgs.alias}`);
+      throw new ValidationError(
+        `No local AID found for alias ${commandArgs.alias}`,
+      );
     }
 
     const eid = commandArgs.eid ?? hab.pre;

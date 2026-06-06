@@ -1,12 +1,12 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
-import { DELEGATE_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
-import type { Hab, Habery } from "./habbing.ts";
+import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import type { Notifier } from "./notifying.ts";
 import type { QueryCoordinator } from "./querying.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
@@ -165,23 +165,6 @@ function witnessReceiptsComplete(hby: Habery, serder: SerderKERI): boolean {
     return false;
   }
   return hby.db.wigs.get(dgKey(pre, said)).length >= kever.wits.length;
-}
-
-function eventMessage(hby: Habery, serder: SerderKERI): Uint8Array {
-  const pre = serder.pre;
-  const said = serder.said;
-  if (!pre || !said) {
-    throw new ValidationError(
-      "Delegated workflow event is missing pre or said.",
-    );
-  }
-  const fn = hby.db.getFelFn(pre, said);
-  if (fn === null) {
-    throw new ValidationError(
-      `Missing first-seen ordinal for delegated event ${pre}:${said}.`,
-    );
-  }
-  return hby.db.cloneEvtMsg(pre, fn, said);
 }
 
 function delegatedWorkflowDelpre(
@@ -457,14 +440,32 @@ export class Anchorer {
 
   *processAllOnce(): Operation<DelegationWorkflowResult[]> {
     const results: DelegationWorkflowResult[] = [];
-    for (const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
-      results.push(yield* this.processPartialWitnessEscrow(escrowContext(keys, serder)));
+    for (
+      const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<
+        [[string, string], SerderKERI]
+      >
+    ) {
+      results.push(
+        yield* this.processPartialWitnessEscrow(escrowContext(keys, serder)),
+      );
     }
-    for (const [keys, serder] of [...this.hby.db.dune.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
-      results.push(yield* this.processUnanchoredEscrow(escrowContext(keys, serder)));
+    for (
+      const [keys, serder] of [...this.hby.db.dune.getTopItemIter()] as Array<
+        [[string, string], SerderKERI]
+      >
+    ) {
+      results.push(
+        yield* this.processUnanchoredEscrow(escrowContext(keys, serder)),
+      );
     }
-    for (const [keys, serder] of [...this.hby.db.dpub.getTopItemIter()] as Array<[[string, string], SerderKERI]>) {
-      results.push(yield* this.processWitnessPublication(escrowContext(keys, serder)));
+    for (
+      const [keys, serder] of [...this.hby.db.dpub.getTopItemIter()] as Array<
+        [[string, string], SerderKERI]
+      >
+    ) {
+      results.push(
+        yield* this.processWitnessPublication(escrowContext(keys, serder)),
+      );
     }
     return results;
   }
@@ -528,7 +529,7 @@ export class Anchorer {
       };
     }
 
-    const message = eventMessage(this.hby, serder);
+    const message = eventPayloadMessage(this.hby, serder);
     yield* this.poster.sendExchange(communicationHab, {
       recipient: delpre,
       exchangeRecipient: null,
@@ -775,6 +776,18 @@ export class Anchorer {
       for (const witness of kever.wits) {
         yield* sendWitnessMessage(hab, witness, msg);
       }
+    }
+
+    const approvedEvent = eventReplayMessage(this.hby, kever.serder);
+    if (kever.delpre) {
+      yield* this.poster.sendBytes(hab, {
+        recipient: kever.delpre,
+        topic: REPLAY_MAILBOX_TOPIC,
+        message: approvedEvent,
+      });
+    }
+    for (const witness of kever.wits) {
+      yield* sendWitnessMessage(hab, witness, approvedEvent);
     }
   }
 }

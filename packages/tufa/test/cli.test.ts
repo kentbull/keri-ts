@@ -60,7 +60,9 @@ function extractPrefix(output: string): string {
 Deno.test("tufa/cli - version command prints display version", async () => {
   const captured = await captureConsoleLog(() => run(() => tufa(["version"])));
 
-  assertEquals(captured, [`tufa ${TUFA_DISPLAY_VERSION} (keri-ts ${KERI_DISPLAY_VERSION})`]);
+  assertEquals(captured, [
+    `tufa ${TUFA_DISPLAY_VERSION} (keri-ts ${KERI_DISPLAY_VERSION})`,
+  ]);
 });
 
 Deno.test("tufa/cli - --version prints display version", async () => {

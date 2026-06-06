@@ -163,12 +163,10 @@ export function exchange(
   const actualModifiers = { ...(modifiers ?? {}) };
 
   if (resolved.pvrsn.major === 1) {
-    const attrs = diger
-      ? diger.qb64
-      : {
-        ...(recipient === undefined ? {} : { i: recipient }),
-        ...payload,
-      };
+    const attrs = diger ? diger.qb64 : {
+      ...(recipient === undefined ? {} : { i: recipient }),
+      ...payload,
+    };
     return [
       new SerderKERI({
         sad: {

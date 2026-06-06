@@ -6,7 +6,9 @@ import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { assertOperationThrows, CLITestHarness } from "../../../test/utils.ts";
 
-async function captureCommandOutput(operation: Operation<void>): Promise<string> {
+async function captureCommandOutput(
+  operation: Operation<void>,
+): Promise<string> {
   const harness = new CLITestHarness();
   harness.captureOutput();
   try {

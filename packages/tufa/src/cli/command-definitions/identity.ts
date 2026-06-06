@@ -240,7 +240,10 @@ function registerAidCmd(program: Command, dispatch: CommandDispatch): void {
 }
 
 /** Register the CESR annotation/debugging command. */
-function registerAnnotateCmd(program: Command, dispatch: CommandDispatch): void {
+function registerAnnotateCmd(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
   program
     .command("annotate")
     .description("Annotate CESR stream from file or stdin")

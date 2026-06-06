@@ -68,6 +68,8 @@ export function normalizeMbxTopicCursor(
   return Object.fromEntries(
     Object.entries(value)
       .filter(([topic]) => typeof topic === "string")
-      .map(([topic, idx]) => [topic, typeof idx === "number" ? idx : Number(idx) || 0]),
+      .map((
+        [topic, idx],
+      ) => [topic, typeof idx === "number" ? idx : Number(idx) || 0]),
   );
 }

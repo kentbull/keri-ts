@@ -95,7 +95,11 @@ function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
   const leadSize = (3 - (raw.length % 3)) % 3;
   const size = (raw.length + leadSize) / 3;
 
-  if (SMALL_VAR_SELECTORS.includes(selector as (typeof SMALL_VAR_SELECTORS)[number])) {
+  if (
+    SMALL_VAR_SELECTORS.includes(
+      selector as (typeof SMALL_VAR_SELECTORS)[number],
+    )
+  ) {
     if (size <= (64 ** 2) - 1) {
       return `${SMALL_VAR_SELECTORS[leadSize]}${code.slice(1, 2)}`;
     }
@@ -107,7 +111,11 @@ function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
     );
   }
 
-  if (LARGE_VAR_SELECTORS.includes(selector as (typeof LARGE_VAR_SELECTORS)[number])) {
+  if (
+    LARGE_VAR_SELECTORS.includes(
+      selector as (typeof LARGE_VAR_SELECTORS)[number],
+    )
+  ) {
     if (size <= (64 ** 4) - 1) {
       return `${LARGE_VAR_SELECTORS[leadSize]}${code.slice(1, 4)}`;
     }
@@ -116,7 +124,9 @@ function normalizeVariableMatterCode(code: string, raw: Uint8Array): string {
     );
   }
 
-  throw new DeserializeError(`Unsupported variable raw-size family for ${code}.`);
+  throw new DeserializeError(
+    `Unsupported variable raw-size family for ${code}.`,
+  );
 }
 
 /** Resolve the effective matter code from the text-domain hard-selector prefix. */

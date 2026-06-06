@@ -226,16 +226,24 @@ function normalizeDumpValue(value: unknown): unknown {
     return value.map((item) => normalizeDumpValue(item));
   }
   if (typeof value === "object") {
-    if ("qb64" in value && typeof (value as { qb64?: unknown }).qb64 === "string") {
+    if (
+      "qb64" in value && typeof (value as { qb64?: unknown }).qb64 === "string"
+    ) {
       return (value as { qb64: string }).qb64;
     }
-    if ("pad" in value && typeof (value as { pad?: unknown }).pad === "object") {
+    if (
+      "pad" in value && typeof (value as { pad?: unknown }).pad === "object"
+    ) {
       return normalizeDumpValue((value as { pad: unknown }).pad);
     }
-    if ("sad" in value && typeof (value as { sad?: unknown }).sad === "object") {
+    if (
+      "sad" in value && typeof (value as { sad?: unknown }).sad === "object"
+    ) {
       return normalizeDumpValue((value as { sad: unknown }).sad);
     }
-    if ("ked" in value && typeof (value as { ked?: unknown }).ked === "object") {
+    if (
+      "ked" in value && typeof (value as { ked?: unknown }).ked === "object"
+    ) {
       return normalizeDumpValue((value as { ked: unknown }).ked);
     }
     return Object.fromEntries(
@@ -379,7 +387,9 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
   try {
     console.log(
       `Dumping ${
-        parsedTarget.storeName ? `${parsedTarget.domain}.${parsedTarget.storeName}` : parsedTarget.domain
+        parsedTarget.storeName
+          ? `${parsedTarget.domain}.${parsedTarget.storeName}`
+          : parsedTarget.domain
       } from ${domain.path ?? "(unknown path)"}`,
     );
     console.log(
@@ -392,7 +402,11 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
       return;
     }
 
-    const store = resolveStore(domain, parsedTarget.domain, parsedTarget.storeName);
+    const store = resolveStore(
+      domain,
+      parsedTarget.domain,
+      parsedTarget.storeName,
+    );
     printStoreEntries(
       parsedTarget.domain,
       parsedTarget.storeName,

@@ -25,6 +25,10 @@ const EXPECTED_EXPORTS: Record<string, ExportTarget> = {
     import: "./esm/keri/src/npm/index.js",
     types: "./types/keri/src/npm/index.d.ts",
   },
+  "./cli": {
+    import: "./esm/keri/src/npm/cli.js",
+    types: "./types/keri/src/npm/cli.d.ts",
+  },
   "./runtime": {
     import: "./esm/keri/src/npm/runtime.js",
     types: "./types/keri/src/npm/runtime.d.ts",
@@ -108,12 +112,26 @@ async function assertSurfaceBoundary(
 
   const hits = specifiers.filter((specifier) => forbidden.some((pattern) => specifier.includes(pattern)));
   if (hits.length > 0) {
-    const details = hits.sort().map((specifier) => `  - ${specifier}`).join("\n");
+    const details = hits.sort().map((specifier) => `  - ${specifier}`).join(
+      "\n",
+    );
     throw new Error(`${label} reaches forbidden modules:\n${details}`);
   }
 }
 
 function assertManifestExports(): void {
+  try {
+    Deno.statSync(NPM_MANIFEST_PATH);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      console.warn(
+        "Skipping npm manifest export check because packages/keri/npm/package.json has not been generated.",
+      );
+      return;
+    }
+    throw error;
+  }
+
   const raw = Deno.readTextFileSync(NPM_MANIFEST_PATH);
   const manifest = JSON.parse(raw) as NpmManifest;
   const exportsField = manifest.exports ?? {};
@@ -131,7 +149,9 @@ function assertManifestExports(): void {
   for (const [key, expected] of Object.entries(EXPECTED_EXPORTS)) {
     const actual = exportsField[key];
     if (!actual) {
-      throw new Error(`Missing export ${key} in packages/keri/npm/package.json`);
+      throw new Error(
+        `Missing export ${key} in packages/keri/npm/package.json`,
+      );
     }
     if (actual.import !== expected.import || actual.types !== expected.types) {
       throw new Error(

@@ -19,6 +19,7 @@ import {
   createParser,
   Diger,
   Ilks,
+  NumberPrimitive,
   Prefixer,
   SealLast,
   SerderKERI,
@@ -54,7 +55,15 @@ import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outbo
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE, splitCesrStream } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
-import { Algos, branToSaltQb64, ensureKeeperCryptoReady, Manager, normalizeSaltQb64, saltySigner } from "./keeping.ts";
+import {
+  Algos,
+  branToSaltQb64,
+  encodeHugeNumber,
+  ensureKeeperCryptoReady,
+  Manager,
+  normalizeSaltQb64,
+  saltySigner,
+} from "./keeping.ts";
 import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
 
 /** Reserved alias for the local signatory habitat record. */
@@ -101,6 +110,26 @@ export interface MakeHabArgs {
   algo?: Algos;
   salt?: string;
   tier?: Tier;
+}
+
+/** Group habitat inception options for local member-collected group creation. */
+export interface MakeGroupHabArgs {
+  isith?: ThresholdSith;
+  nsith?: ThresholdSith;
+  toad?: number;
+  wits?: string[];
+  delpre?: string;
+  data?: unknown[];
+  hidden?: boolean;
+}
+
+/** Result of creating one local group inception event. */
+export interface GroupHabCreation {
+  hab: Hab;
+  serder: SerderKERI;
+  sigers: Siger[];
+  /** Initial controller-signed creation bytes; use event replay for later cross-implementation publication. */
+  message: Uint8Array;
 }
 
 /**
@@ -274,6 +303,83 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
   }
 
   return serder.raw;
+}
+
+/**
+ * Return KERIpy-shaped replay bytes for one accepted KEL event.
+ *
+ * The replay payload is event body plus durable attachments from first-seen
+ * storage: controller indexed signatures, witness indexed signatures,
+ * authorizing seals, and receipts in KERIpy `cloneEvtMsg` order.
+ */
+export function eventReplayMessage(
+  hby: Habery,
+  serder: SerderKERI,
+): Uint8Array {
+  const pre = serder.pre;
+  const said = serder.said;
+  if (!pre || !said) {
+    throw new ValidationError(
+      "Cannot replay accepted event without pre and said.",
+    );
+  }
+  const fn = hby.db.getFelFn(pre, said);
+  if (fn === null) {
+    throw new ValidationError(
+      `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
+    );
+  }
+  return hby.db.cloneEvtMsg(pre, fn, said);
+}
+
+/**
+ * Return a stored KEL event payload with KERIpy `cloneEvtMsg` attachment order.
+ *
+ * Accepted events use their first-seen ordinal. Locally generated events that
+ * are still in delegated escrow do not have a first-seen ordinal yet, so they
+ * use their own event sequence number for the stored clone lookup.
+ */
+export function eventPayloadMessage(
+  hby: Habery,
+  serder: SerderKERI,
+): Uint8Array {
+  const pre = serder.pre;
+  const said = serder.said;
+  if (!pre || !said) {
+    throw new ValidationError(
+      "Cannot build event payload without pre and said.",
+    );
+  }
+  const fn = hby.db.getFelFn(pre, said);
+  const sn = serder.sn;
+  const ordinal = fn ?? sn;
+  if (ordinal === null) {
+    throw new ValidationError(
+      `Missing replay ordinal for stored event ${pre}:${said}.`,
+    );
+  }
+  return hby.db.cloneEvtMsg(pre, ordinal, said);
+}
+
+/** Return the exact accepted event replay message at `(pre, sn)`. */
+export function acceptedEventReplayMessage(
+  hby: Habery,
+  pre: string,
+  sn: number,
+): { serder: SerderKERI; message: Uint8Array } {
+  const said = hby.db.kels.getLast(pre, sn);
+  if (!said) {
+    throw new ValidationError(
+      `Missing accepted event at ${pre}:${sn.toString(16)}.`,
+    );
+  }
+  const serder = hby.db.getEvtSerder(pre, said);
+  if (!serder) {
+    throw new ValidationError(
+      `Missing accepted event body for ${pre}:${said}.`,
+    );
+  }
+  return { serder, message: eventReplayMessage(hby, serder) };
 }
 
 /**
@@ -1166,7 +1272,8 @@ export class Hab {
     const estSaid = kever?.lastEst.d || kever?.said;
     if (
       kever?.delegated
-      && (!estSaid || !this.db.aess.get(dgKey(aid, estSaid)) || [...this.db.cloneDelegation(kever)].length === 0)
+      && (!estSaid || !this.db.aess.get(dgKey(aid, estSaid))
+        || [...this.db.cloneDelegation(kever)].length === 0)
     ) {
       return new Uint8Array();
     }
@@ -1511,6 +1618,9 @@ export class Habery {
         hid,
       );
       if (!hab.accepted) {
+        if (habord.mid) {
+          continue;
+        }
         throw new ValidationError(
           `Problem loading Hab pre=${hid} name=${habord.name} from db.`,
         );
@@ -1574,6 +1684,237 @@ export class Habery {
     this.habs.set(hab.pre, hab);
     hab.reconfigure();
     return hab;
+  }
+
+  /**
+   * Create a locally signed group inception event from member habitat state.
+   *
+   * KERIpy correspondence:
+   * - mirrors the narrow `Habery.makeGroupHab()` inception path
+   * - extracts one current verifier per signing member and one next digest per
+   *   rotation member, matching KERIpy's `extractMerfersMigers()`
+   *
+   * Current scope:
+   * - all signing members must be local habitats in this `Habery`
+   * - delegated groups may remain escrowed until the delegator anchor arrives
+   * - rotation/counselor orchestration is intentionally outside this method
+   */
+  makeGroupHab(
+    group: string,
+    mhab: Hab,
+    smids: string[],
+    rmids?: string[],
+    ns?: string,
+    args: MakeGroupHabArgs = {},
+  ): GroupHabCreation {
+    const signingMembers = [...smids];
+    const rotationMembers = rmids === undefined
+      ? [...signingMembers]
+      : [...rmids];
+    if (
+      !mhab.pre
+      || (!signingMembers.includes(mhab.pre)
+        && !rotationMembers.includes(mhab.pre))
+    ) {
+      throw new ValidationError(
+        `Local member identifier ${mhab.pre || "<empty>"} must be a group member.`,
+      );
+    }
+    if (signingMembers.length === 0) {
+      throw new ValidationError(
+        "Group inception requires at least one signing member.",
+      );
+    }
+
+    const keys = this.extractGroupMemberKeys(signingMembers);
+    const ndigs = this.extractGroupMemberNextDigests(rotationMembers);
+    const serder = inceptEvent(keys, {
+      isith: args.isith,
+      ndigs,
+      nsith: args.nsith,
+      toad: args.toad ?? 0,
+      wits: args.wits ?? [],
+      delpre: args.delpre,
+      data: args.data ?? [],
+    });
+    const pre = serder.pre;
+    if (!pre || !serder.said) {
+      throw new Error(
+        "Expected group inception serder to provide pre and said.",
+      );
+    }
+
+    const hab = new Hab(
+      group,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      pre,
+    );
+    const sigers = this.signGroupInception(serder, signingMembers, keys);
+
+    if (!args.hidden) {
+      this.persistGroupHabRecord(
+        pre,
+        group,
+        mhab.pre,
+        signingMembers,
+        rotationMembers,
+        ns,
+      );
+    }
+
+    const decision = this.kevery.processEvent({
+      serder,
+      sigers,
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind === "reject") {
+      if (!args.hidden) {
+        this.removeGroupHabRecord(pre, group, ns);
+      }
+      throw new ValidationError(decision.message, decision.context);
+    }
+
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(pre);
+      this.habs.set(pre, hab);
+    }
+
+    return {
+      hab,
+      serder,
+      sigers,
+      message: messagize(serder, { sigers, pipelined: true }),
+    };
+  }
+
+  /** Extract the single current verifier from each group signing member. */
+  private extractGroupMemberKeys(smids: readonly string[]): string[] {
+    return smids.map((mid) => {
+      const kever = this.db.getKever(mid);
+      if (!kever) {
+        throw new ValidationError(`KEL missing for signing member ${mid}.`);
+      }
+      if (kever.verfers.length !== 1) {
+        throw new ValidationError(
+          `Signing member ${mid} must have exactly one current key, got ${kever.verfers.length}.`,
+        );
+      }
+      const key = kever.verfers[0]?.qb64;
+      if (!key) {
+        throw new ValidationError(
+          `Signing member ${mid} is missing its current key.`,
+        );
+      }
+      return key;
+    });
+  }
+
+  /** Extract one next-key digest from each transferable rotation member. */
+  private extractGroupMemberNextDigests(rmids: readonly string[]): string[] {
+    const ndigs: string[] = [];
+    for (const mid of rmids) {
+      const kever = this.db.getKever(mid);
+      if (!kever) {
+        throw new ValidationError(`KEL missing for rotation member ${mid}.`);
+      }
+      if (kever.ndigers.length > 1) {
+        throw new ValidationError(
+          `Rotation member ${mid} must have at most one next-key digest, got ${kever.ndigers.length}.`,
+        );
+      }
+      const ndig = kever.ndigers[0]?.qb64;
+      if (ndig) {
+        ndigs.push(ndig);
+      }
+    }
+    return ndigs;
+  }
+
+  /** Sign a group inception with each local member at its group-key index. */
+  private signGroupInception(
+    serder: SerderKERI,
+    smids: readonly string[],
+    keys: readonly string[],
+  ): Siger[] {
+    const sigers: Siger[] = [];
+    for (const [index, mid] of smids.entries()) {
+      const member = this.habs.get(mid);
+      if (!member) {
+        throw new ValidationError(
+          `Signing member ${mid} is not a local habitat in this Habery.`,
+        );
+      }
+      sigers.push(
+        ...(member.mgr.sign(serder.raw, {
+          pubs: [keys[index]],
+          indexed: true,
+          indices: [index],
+        }) as Siger[]),
+      );
+    }
+    return sigers;
+  }
+
+  /** Persist group habitat metadata and member ordinals. */
+  private persistGroupHabRecord(
+    pre: string,
+    group: string,
+    mid: string,
+    smids: readonly string[],
+    rmids: readonly string[],
+    ns?: string,
+  ): void {
+    this.db.pinHab(
+      pre,
+      new HabitatRecord({
+        hid: pre,
+        name: group,
+        domain: ns,
+        mid,
+        smids: [...smids],
+        rmids: [...rmids],
+      }),
+    );
+    this.db.pinName(ns ?? "", group, pre);
+    this.ks.pinSmids(pre, this.groupMemberTuples(smids));
+    this.ks.pinRmids(pre, this.groupMemberTuples(rmids));
+  }
+
+  /** Mark an accepted group habitat as locally managed/membered. */
+  private markAcceptedGroupHab(pre: string): void {
+    this.db.prefixes.add(pre);
+    this.db.groups.add(pre);
+  }
+
+  /** Remove group metadata when local event validation rejects the inception. */
+  private removeGroupHabRecord(pre: string, group: string, ns?: string): void {
+    this.db.habs.rem(pre);
+    this.db.names.rem([ns ?? "", group]);
+    this.db.prefixes.delete(pre);
+    this.db.groups.delete(pre);
+    this.ks.smids.rem(pre);
+    this.ks.rmids.rem(pre);
+  }
+
+  /** Encode group member prefixes with durable ordinal metadata. */
+  private groupMemberTuples(mids: readonly string[]) {
+    return mids.map((mid, index) =>
+      [
+        new Prefixer({ qb64: mid }),
+        new NumberPrimitive({ qb64: encodeHugeNumber(index) }),
+      ] as [Prefixer, NumberPrimitive]
+    );
   }
 
   /**

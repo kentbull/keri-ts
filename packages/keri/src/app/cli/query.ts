@@ -137,13 +137,19 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       if (queryArgs.anchor) {
         const anchor = loadAnchor(queryArgs.anchor);
         console.log(`Checking for anchor ${JSON.stringify(anchor)}...`);
-        const querier = runtime.querying.watchAnchor(queryArgs.prefix!, anchor, {
-          hab,
-        });
+        const querier = runtime.querying.watchAnchor(
+          queryArgs.prefix!,
+          anchor,
+          {
+            hab,
+          },
+        );
         watchDone = () => querier.done;
       } else {
         console.log("Checking for updates...");
-        const noticer = runtime.querying.watchKeyState(queryArgs.prefix!, { hab });
+        const noticer = runtime.querying.watchKeyState(queryArgs.prefix!, {
+          hab,
+        });
         watchDone = () => noticer.done;
       }
 
@@ -161,7 +167,11 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
           runtime.oobiery.resolve(catchupUrl);
           const catchupDeadline = Date.now() + 5_000;
           while (!watchDone() && Date.now() < catchupDeadline) {
-            yield* processRuntimeTurn(runtime, { hab, pollMailbox: true, sink });
+            yield* processRuntimeTurn(runtime, {
+              hab,
+              pollMailbox: true,
+              sink,
+            });
             if (!runtimeHasPendingWork(runtime)) {
               break;
             }

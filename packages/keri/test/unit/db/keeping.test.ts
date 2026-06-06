@@ -224,7 +224,10 @@ Deno.test("app/keeping - Manager.sign derives next-lot salty signers from explic
       assertEquals(sigers.length, sit.nxt.pubs.length);
       assertEquals(sigers.map((siger) => siger.verfer?.qb64), sit.nxt.pubs);
       for (const [idx, siger] of sigers.entries()) {
-        assertEquals(new Verfer({ qb64: sit.nxt.pubs[idx] }).verify(siger.raw, ser), true);
+        assertEquals(
+          new Verfer({ qb64: sit.nxt.pubs[idx] }).verify(siger.raw, ser),
+          true,
+        );
       }
     } finally {
       yield* keeper.close(true);
@@ -267,7 +270,10 @@ Deno.test("app/keeping - Manager.sign derived-path indices select and order salt
       });
 
       assertEquals(indexed.map((siger) => siger.index), indexedSelection);
-      assertEquals(indexed.map((siger) => siger.verfer?.qb64), indexedSelection.map((index) => sit.new.pubs[index]));
+      assertEquals(
+        indexed.map((siger) => siger.verfer?.qb64),
+        indexedSelection.map((index) => sit.new.pubs[index]),
+      );
       assertEquals(signatureQb64s(indexed), signatureQb64s(explicitIndexed));
 
       const unindexedSelection = [2, 0];
@@ -280,7 +286,10 @@ Deno.test("app/keeping - Manager.sign derived-path indices select and order salt
       assertEquals(unindexed.length, unindexedSelection.length);
       for (const [offset, cigar] of unindexed.entries()) {
         assertEquals(
-          new Verfer({ qb64: sit.new.pubs[unindexedSelection[offset]] }).verify(cigar.raw, ser),
+          new Verfer({ qb64: sit.new.pubs[unindexedSelection[offset]] }).verify(
+            cigar.raw,
+            ser,
+          ),
           true,
         );
       }
@@ -328,8 +337,16 @@ Deno.test("app/keeping - Manager.sign derived-path ondices match explicit pubs s
       });
 
       assertEquals(
-        derived.map((siger) => ({ code: siger.code, index: siger.index, ondex: siger.ondex })),
-        explicit.map((siger) => ({ code: siger.code, index: siger.index, ondex: siger.ondex })),
+        derived.map((siger) => ({
+          code: siger.code,
+          index: siger.index,
+          ondex: siger.ondex,
+        })),
+        explicit.map((siger) => ({
+          code: siger.code,
+          index: siger.index,
+          ondex: siger.ondex,
+        })),
       );
       assertEquals(signatureQb64s(derived), signatureQb64s(explicit));
     } finally {
@@ -362,13 +379,19 @@ Deno.test("app/keeping - Manager.sign resolves randy prefixes by addressed pub l
       const ser = new TextEncoder().encode("derived-randy");
 
       const current = manager.sign(ser, { pre, indexed: true });
-      const currentExplicit = manager.sign(ser, { pubs: sit.new.pubs, indexed: true });
+      const currentExplicit = manager.sign(ser, {
+        pubs: sit.new.pubs,
+        indexed: true,
+      });
       const next = manager.sign(ser, {
         pre,
         path: { ridx: sit.nxt.ridx, kidx: sit.nxt.kidx },
         indexed: true,
       });
-      const nextExplicit = manager.sign(ser, { pubs: sit.nxt.pubs, indexed: true });
+      const nextExplicit = manager.sign(ser, {
+        pubs: sit.nxt.pubs,
+        indexed: true,
+      });
 
       assertEquals(signatureQb64s(current), signatureQb64s(currentExplicit));
       assertEquals(signatureQb64s(next), signatureQb64s(nextExplicit));
@@ -412,7 +435,10 @@ Deno.test("app/keeping - Manager.sign derives historical salty lots from pubs st
       const historicalPub = keeper.getPubs(keeperPubsKey(pre, 0))!.pubs[0];
 
       assertEquals(historical[0].verfer?.qb64, historicalPub);
-      assertEquals(new Verfer({ qb64: historicalPub }).verify(historical[0].raw, ser), true);
+      assertEquals(
+        new Verfer({ qb64: historicalPub }).verify(historical[0].raw, ser),
+        true,
+      );
     } finally {
       yield* keeper.close(true);
     }
@@ -456,10 +482,16 @@ Deno.test("app/keeping - Manager.sign preserves branch precedence for pubs then 
         path: { ridx: sit.new.ridx, kidx: sit.new.kidx },
         indexed: true,
       });
-      const verfersOnly = manager.sign(ser, { verfers: [nextVerfer], indexed: true });
+      const verfersOnly = manager.sign(ser, {
+        verfers: [nextVerfer],
+        indexed: true,
+      });
 
       assertEquals(signatureQb64s(pubsPreferred), signatureQb64s(pubsOnly));
-      assertEquals(signatureQb64s(verfersPreferred), signatureQb64s(verfersOnly));
+      assertEquals(
+        signatureQb64s(verfersPreferred),
+        signatureQb64s(verfersOnly),
+      );
     } finally {
       yield* keeper.close(true);
     }
@@ -615,7 +647,10 @@ Deno.test("app/keeping - Manager.incept stores next Ed25519 public keys and deri
       const storedNext = sit?.nxt.pubs[0];
 
       assertExists(storedNext);
-      assertEquals(Diger.compare(b(storedNext), digers[0].code, digers[0].raw), true);
+      assertEquals(
+        Diger.compare(b(storedNext), digers[0].code, digers[0].raw),
+        true,
+      );
       assertEquals(keeper.getPubs(keeperPubsKey(pre, 1))?.pubs[0], storedNext);
     } finally {
       yield* keeper.close(true);
@@ -709,7 +744,11 @@ Deno.test("app/keeping - Manager.rotate advances Ed25519 current and next public
       assertEquals(rotatedSit?.old.pubs[0], pre);
       assertEquals(rotatedSit?.new.pubs[0], nextPub);
       assertEquals(
-        Diger.compare(b(rotatedSit?.nxt.pubs[0] ?? ""), rotDigers[0].code, rotDigers[0].raw),
+        Diger.compare(
+          b(rotatedSit?.nxt.pubs[0] ?? ""),
+          rotDigers[0].code,
+          rotDigers[0].raw,
+        ),
         true,
       );
       assertEquals(
@@ -773,12 +812,20 @@ Deno.test("app/keeping - Manager.ingest and replay preserve Ed25519 current and 
       assertEquals(ipre, verferies[0][0].qb64);
       assertEquals(currentVerfers[0].qb64, verferies[0][0].qb64);
       assertEquals(
-        Diger.compare(b(verferies[1][0].qb64), currentDigers[0].code, currentDigers[0].raw),
+        Diger.compare(
+          b(verferies[1][0].qb64),
+          currentDigers[0].code,
+          currentDigers[0].raw,
+        ),
         true,
       );
       assertEquals(advancedVerfers[0].qb64, verferies[1][0].qb64);
       assertEquals(
-        Diger.compare(b(sit?.nxt.pubs[0] ?? ""), advancedDigers[0].code, advancedDigers[0].raw),
+        Diger.compare(
+          b(sit?.nxt.pubs[0] ?? ""),
+          advancedDigers[0].code,
+          advancedDigers[0].raw,
+        ),
         true,
       );
     } finally {
@@ -840,7 +887,10 @@ Deno.test("app/keeping - Manager.decrypt opens Ed25519 ciphertexts and rejects n
       });
 
       assertThrows(
-        () => manager.decrypt("1AAHAAAAAAAAAAAAAAAAAAAA", { pubs: [verfers[0].qb64] }),
+        () =>
+          manager.decrypt("1AAHAAAAAAAAAAAAAAAAAAAA", {
+            pubs: [verfers[0].qb64],
+          }),
         Error,
         "Unsupported decrypt signer code",
       );

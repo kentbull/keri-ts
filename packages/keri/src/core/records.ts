@@ -777,9 +777,13 @@ export type TypedDigestSealCouple = ReturnType<typeof SealKindValue.toTuple>;
 /** Verfer+cigar storage couple stored in `scgs.` and `ecigs.`. */
 export type VerferCigarCouple = [Verfer, Cigar];
 /** Typed-media quadruple stored in `tmqs.`. */
-export type TypedMediaQuadrupleTuple = ReturnType<typeof TypeMediaValue.toTuple>;
+export type TypedMediaQuadrupleTuple = ReturnType<
+  typeof TypeMediaValue.toTuple
+>;
 /** Blinded-state quadruple stored in `bsqs.`. */
-export type BlindedStateQuadrupleTuple = ReturnType<typeof BlindStateValue.toTuple>;
+export type BlindedStateQuadrupleTuple = ReturnType<
+  typeof BlindStateValue.toTuple
+>;
 /** Bound-state sextuple stored in `bsss.`. */
 export type BoundStateSextuple = ReturnType<typeof BoundStateValue.toTuple>;
 /** Blinded-image/media tuple stored in `imgs.` and `iimgs.`. */

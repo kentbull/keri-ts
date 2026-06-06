@@ -63,6 +63,7 @@
     "cbor-x/encode": "npm:cbor-x@^1.6.0/encode",
     "cesr-ts": "./packages/cesr/mod.ts",
     "keri-ts": "./packages/keri/mod.ts",
+    "keri-ts/cli": "./packages/keri/cli.ts",
     "keri-ts/runtime": "./packages/keri/runtime.ts",
     "keri-ts/db": "./packages/keri/db.ts",
     "effection": "npm:effection@^3.6.0"

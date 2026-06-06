@@ -2209,6 +2209,32 @@ Deno.test("Kevery.processEscrowDelegables replays stored `delegables` entries th
   });
 });
 
+Deno.test("Kevery.processEscrows leaves `delegables` entries for explicit approval handling", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `kevery-delegables-explicit-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      hby.db.delegables.add([hab.pre], "Edel");
+
+      const kvy = new Kevery(hby.db);
+      assertEquals(captureEscrowReplays(kvy, () => kvy.processEscrows()), []);
+      assertEquals(hby.db.delegables.get([hab.pre]), ["Edel"]);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Kevery escrow replay only enables eager delegation lookup for KERIpy-style ordinal escrows", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -2228,7 +2254,9 @@ Deno.test("Kevery escrow replay only enables eager delegation lookup for KERIpy-
       assertExists(kever);
       const said = kever.said;
       if (!said) {
-        throw new Error("Expected accepted inception SAID for escrow replay test.");
+        throw new Error(
+          "Expected accepted inception SAID for escrow replay test.",
+        );
       }
 
       hby.db.pses.addOn(hab.pre, 0, said);
@@ -2313,7 +2341,7 @@ Deno.test("Kevery.processEscrowMisfits replays stored `misfit` entries through t
   });
 });
 
-Deno.test("Kevery.processEscrows preserves the full Gate E Chunk 8 sweep order", async () => {
+Deno.test("Kevery.processEscrows preserves the KERIpy-compatible sweep order", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `kevery-sweep-order-${crypto.randomUUID()}`,
@@ -2331,7 +2359,6 @@ Deno.test("Kevery.processEscrows preserves the full Gate E Chunk 8 sweep order",
         "processEscrowPartialWigs",
         "processEscrowPartialSigs",
         "processEscrowDuplicitous",
-        "processEscrowDelegables",
         "processEscrowMisfits",
         "processQueryNotFound",
       ] as const;
@@ -2470,6 +2497,260 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
       assertEquals(hby.db.getKever(hab.pre)?.sn, 1);
     } finally {
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery keeps delegated rotations in delegables when replay carries stale dip approval", async () => {
+  await run(function*() {
+    const local = yield* createHabery({
+      name: `kevery-local-delegator-stale-seal-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-remote-delegate-stale-seal-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = local.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = remote.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+      const delegateKever = delegate.kever;
+      assertExists(delegateKever);
+      const dip = remote.db.getEvtSerder(delegate.pre, delegateKever.said);
+      assertExists(dip);
+      const delegatorKever = delegator.kever;
+      assertExists(delegatorKever);
+      const dipAnchor = makeDelegatingInteraction(
+        delegator.pre,
+        1,
+        delegatorKever.said,
+        [eventSeal(dip)],
+      );
+
+      const kvy = new Kevery(local.db);
+      assertEquals(
+        kvy.processEvent({
+          serder: dipAnchor,
+          sigers: delegator.sign(dipAnchor.raw, true),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: true,
+        }).kind,
+        "accept",
+      );
+      const dipDecision = kvy.processEvent({
+        serder: dip,
+        sigers: remote.db.sigs.get([delegate.pre, delegateKever.said]),
+        wigers: [],
+        frcs: [],
+        sscs: [sourceSealFor(dipAnchor)],
+        ssts: [],
+        local: false,
+      });
+      if (dipDecision.kind !== "accept") {
+        throw new Error(JSON.stringify(dipDecision));
+      }
+
+      const firstRotationSigner = findCommittedRotationSigner(
+        remote,
+        delegate.pre,
+        delegateKever.ndigs[0],
+      );
+      const secondRotationSigner = deriveRotationSigner(
+        remote,
+        delegate.pre,
+        "r2",
+      );
+      const drt = makeDelegatedRotation(
+        delegate.pre,
+        1,
+        dip.said!,
+        firstRotationSigner.verfer.qb64,
+        nextKeyDigest(secondRotationSigner.verfer.qb64).qb64,
+      );
+
+      const decision = kvy.processEvent({
+        serder: drt,
+        sigers: signRotation(drt, firstRotationSigner.signer.seed),
+        wigers: [],
+        frcs: [],
+        sscs: [sourceSealFor(dipAnchor)],
+        ssts: [],
+        local: false,
+      });
+
+      assertEquals(decision.kind, "escrow");
+      if (decision.kind !== "escrow") {
+        throw new Error("Expected stale source seal to stay delegable.");
+      }
+      assertEquals(decision.reason, "delegables");
+      assertEquals(local.db.delegables.get([delegate.pre]), [drt.said]);
+      assertEquals(local.db.getKever(delegate.pre)?.sn, 0);
+    } finally {
+      yield* local.close(true);
+      yield* remote.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery replays delegated rotations when KEL membership exists but state is stale", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-delegated-stale-state-source-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-delegated-stale-state-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = source.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = source.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+      const kvy = new Kevery(remote.db);
+      const delegatorKever = delegator.kever;
+      const delegateKever = delegate.kever;
+      assertExists(delegatorKever);
+      assertExists(delegateKever);
+
+      const delegatorIcp = source.db.getEvtSerder(
+        delegator.pre,
+        delegatorKever.said,
+      );
+      const dip = source.db.getEvtSerder(delegate.pre, delegateKever.said);
+      assertExists(delegatorIcp);
+      assertExists(dip);
+      const dipAnchor = makeDelegatingInteraction(
+        delegator.pre,
+        1,
+        delegatorKever.said,
+        [eventSeal(dip)],
+      );
+      const firstRotationSigner = findCommittedRotationSigner(
+        source,
+        delegate.pre,
+        delegateKever.ndigs[0],
+      );
+      const secondRotationSigner = deriveRotationSigner(
+        source,
+        delegate.pre,
+        "r2",
+      );
+      const drt = makeDelegatedRotation(
+        delegate.pre,
+        1,
+        dip.said!,
+        firstRotationSigner.verfer.qb64,
+        nextKeyDigest(secondRotationSigner.verfer.qb64).qb64,
+      );
+      const drtAnchor = makeDelegatingInteraction(
+        delegator.pre,
+        2,
+        dipAnchor.said!,
+        [eventSeal(drt)],
+      );
+
+      assertEquals(
+        kvy.processEvent({
+          serder: delegatorIcp,
+          sigers: source.db.sigs.get([delegator.pre, delegatorKever.said]),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+      assertEquals(
+        kvy.processEvent({
+          serder: dipAnchor,
+          sigers: delegator.sign(dipAnchor.raw, true),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+      assertEquals(
+        kvy.processEvent({
+          serder: dip,
+          sigers: source.db.sigs.get([delegate.pre, delegateKever.said]),
+          wigers: [],
+          frcs: [],
+          sscs: [sourceSealFor(dipAnchor)],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+      assertEquals(remote.db.getKever(delegate.pre)?.sn, 0);
+      assertEquals(
+        kvy.processEvent({
+          serder: drtAnchor,
+          sigers: delegator.sign(drtAnchor.raw, true),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+
+      remote.db.kels.add(delegate.pre, 1, drt.said!);
+      assertEquals(remote.db.getState(delegate.pre)?.s, "0");
+
+      const decision = kvy.processEvent({
+        serder: drt,
+        sigers: signRotation(drt, firstRotationSigner.signer.seed),
+        wigers: [],
+        frcs: [],
+        sscs: [sourceSealFor(drtAnchor)],
+        ssts: [],
+        local: false,
+      });
+
+      assertEquals(decision.kind, "accept");
+      assertEquals(remote.db.getKever(delegate.pre)?.sn, 1);
+      assertEquals(remote.db.getState(delegate.pre)?.s, "1");
+      assertEquals(remote.db.getKever(delegate.pre)?.said, drt.said);
+    } finally {
+      yield* source.close(true);
+      yield* remote.close(true);
     }
   });
 });

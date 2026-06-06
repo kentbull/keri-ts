@@ -266,7 +266,9 @@ export function* oobiRequestCommand(
     url: args.url as string | undefined,
     compat: args.compat as boolean | undefined,
     outboxer: args.outboxer as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
 
   if (!commandArgs.name) {

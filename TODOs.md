@@ -24,26 +24,31 @@ Things to come back and do at some point:
 - do a repo-wide pass over the remaining higher-level DB consumers beyond
   `Baser` to separate real upstream parity opportunities from false-cleanup
   temptations.
-- consider changing the Habery impl. or otherwise to have functions like `saveOobi`
-  rather than having something like processOobiJob reach down into the DB layer to
-  call db.oobis.pin directly. That is something that should be hidden by an
-  abstraction layer.
-  - See the loc.ts for hby.db.locs.get and the like and consider Habery or Hab functions
-    that abstract over DB shape so we can easily switch between LMDB and IndexedDB or other DB.
-- Does it really make sense to use Reflection based method dispatch in the Router and
-  Revery? This doesn't smell right for Typescript and should be refactored. It seems
-  like there should be a compile-time stable dispatch map with a lookup based on
-  reply message type.
-- How closely is our Oobiery storing Obr records and the like in our LMDB?
-  Have we made any divergences that are unjustified? We should use the KERIpy model unless
-  we have a really good reason not to.
+- consider changing the Habery impl. or otherwise to have functions like
+  `saveOobi` rather than having something like processOobiJob reach down into
+  the DB layer to call db.oobis.pin directly. That is something that should be
+  hidden by an abstraction layer.
+  - See the loc.ts for hby.db.locs.get and the like and consider Habery or Hab
+    functions that abstract over DB shape so we can easily switch between LMDB
+    and IndexedDB or other DB.
+- Does it really make sense to use Reflection based method dispatch in the
+  Router and Revery? This doesn't smell right for Typescript and should be
+  refactored. It seems like there should be a compile-time stable dispatch map
+  with a lookup based on reply message type.
+- How closely is our Oobiery storing Obr records and the like in our LMDB? Have
+  we made any divergences that are unjustified? We should use the KERIpy model
+  unless we have a really good reason not to.
 - look through the cues and determine whether they properly map to KERIpy cues.
-  Build a cue mapping table and make sure that we are cue by cue compatible with KERIpy's mental model.
-- Why is our reply construction function not doing both v1 and v2? It appears to only be v1 compatible.
-- We need full instructions on how to use the new endpoint role addition and location scheme addition
-- Reconsider the records.ts and dispatch.ts class and type names. Maybe they should be renamed or tweaked.
-- Look at why cues are filtered in KERIpy and determine why they are filtered and what we
-  need to mimic there, if at all.
+  Build a cue mapping table and make sure that we are cue by cue compatible with
+  KERIpy's mental model.
+- Why is our reply construction function not doing both v1 and v2? It appears to
+  only be v1 compatible.
+- We need full instructions on how to use the new endpoint role addition and
+  location scheme addition
+- Reconsider the records.ts and dispatch.ts class and type names. Maybe they
+  should be renamed or tweaked.
+- Look at why cues are filtered in KERIpy and determine why they are filtered
+  and what we need to mimic there, if at all.
 - Make Komer type system simple as possible with as few generics as possible.
 - Look at collapsing the types like PreSitShape and PreSit
 
@@ -54,11 +59,14 @@ Things to come back and do at some point:
 ## Missing
 
 - explicit v2 support
-- mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve e2e flow
-- a clean HTTP routing layer. Feels kind of ugly, could benefit from a framework or lib
-- using mailboxes with delegation doesn't seem to work. Revisit this after reviewing and comparing
-  all of the mailbox code. Remember that the difference between SSE streaming and
-  request response with status codes seems to really matter.
+- mailbox listener, exposed OOBI endpoint (cURLable), OOBI generate and resolve
+  e2e flow
+- a clean HTTP routing layer. Feels kind of ugly, could benefit from a framework
+  or lib
+- using mailboxes with delegation doesn't seem to work. Revisit this after
+  reviewing and comparing all of the mailbox code. Remember that the difference
+  between SSE streaming and request response with status codes seems to really
+  matter.
 
 ## Review Queue
 
@@ -90,9 +98,11 @@ Things to come back and do at some point:
     - processReplyAddWatched
     - updateWatched
 - router.addRoute("/watcher/{aid}/{action}", this, "AddWatched");
-- Exchanger implementation (very lightly reviewed, needs a full read through and challenging of code)
+- Exchanger implementation (very lightly reviewed, needs a full read through and
+  challenging of code)
 - challenge response code
 - exchange tufa command
 - Authenticator & well known OOBIs
-  - all these new OOBI functions. are they really justified and are they properly keri-ts native?
+  - all these new OOBI functions. are they really justified and are they
+    properly keri-ts native?
   - all the new Oobiery functions for multi OOBIs and well knowns

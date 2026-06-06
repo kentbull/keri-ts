@@ -74,7 +74,13 @@ function createTufaHttpPolicyMiddleware(
     if (context.req.method === "OPTIONS") {
       const response = new Response(null, { status: 204 });
       applyTufaCorsHeaders(response.headers, policy.cors);
-      logRequest(policy.logger, context.req.url, context.req.method, 204, startedAt);
+      logRequest(
+        policy.logger,
+        context.req.url,
+        context.req.method,
+        204,
+        startedAt,
+      );
       return response;
     }
 

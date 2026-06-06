@@ -22,7 +22,9 @@ function captureOperationOutput(
 function extractRawSignature(lines: string[]): string {
   const first = lines.find((line) => /^\d+\.\s+/.test(line));
   if (!first) {
-    throw new Error(`Unable to parse signature from output:\n${lines.join("\n")}`);
+    throw new Error(
+      `Unable to parse signature from output:\n${lines.join("\n")}`,
+    );
   }
   return first.replace(/^\d+\.\s+/, "");
 }
@@ -135,8 +137,12 @@ Deno.test("CLI verify validates raw signatures and rejects out-of-range indices"
 });
 
 Deno.test("CLI verify fails against stale key state after source rotation", async () => {
-  const sourceHeadDir = await Deno.makeTempDir({ prefix: "tufa-stale-source-" });
-  const observerHeadDir = await Deno.makeTempDir({ prefix: "tufa-stale-observer-" });
+  const sourceHeadDir = await Deno.makeTempDir({
+    prefix: "tufa-stale-source-",
+  });
+  const observerHeadDir = await Deno.makeTempDir({
+    prefix: "tufa-stale-observer-",
+  });
   const sourceName = `stale-source-${crypto.randomUUID()}`;
   const observerName = `stale-observer-${crypto.randomUUID()}`;
   const alias = "alice";
@@ -145,7 +151,10 @@ Deno.test("CLI verify fails against stale key state after source rotation", asyn
   let staleFailureSignature = "";
 
   await run(function*() {
-    const source = yield* createHabery({ name: sourceName, headDirPath: sourceHeadDir });
+    const source = yield* createHabery({
+      name: sourceName,
+      headDirPath: sourceHeadDir,
+    });
     const observer = yield* createHabery({
       name: observerName,
       headDirPath: observerHeadDir,
@@ -241,7 +250,8 @@ Deno.test("CLI verify still expects raw signature material, not numbered sign ou
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     assertEquals(
-      messageText.includes("Unsupported code") || messageText.includes("Unknown indexer code"),
+      messageText.includes("Unsupported code")
+        || messageText.includes("Unknown indexer code"),
       true,
       messageText,
     );

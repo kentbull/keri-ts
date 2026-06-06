@@ -1368,11 +1368,14 @@ Deno.test("Gate E - mailbox host returns 204 for posted `logs`/`ksn` and streams
         { topics: { "/reply": 0 } },
         "mbx",
       );
-      const { response: streamed, controller } = yield* fetchResponseHandle(baseUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/cesr" },
-        body: textDecoder.decode(mailboxQuery),
-      });
+      const { response: streamed, controller } = yield* fetchResponseHandle(
+        baseUrl,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/cesr" },
+          body: textDecoder.decode(mailboxQuery),
+        },
+      );
       assertEquals(streamed.status, 200);
       const body = yield* readMailboxSseBody(streamed, controller, {
         idleTimeoutMs: 500,
@@ -1381,7 +1384,12 @@ Deno.test("Gate E - mailbox host returns 204 for posted `logs`/`ksn` and streams
       assertStringIncludes(body, "event: /reply");
       assertStringIncludes(body, `/ksn/${hab.pre}`);
 
-      const logsQuery = hab.query(hab.pre, hab.pre, { s: "0", fn: "0" }, "logs");
+      const logsQuery = hab.query(
+        hab.pre,
+        hab.pre,
+        { s: "0", fn: "0" },
+        "logs",
+      );
       const logsPosted = yield* fetchOp(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
@@ -1402,10 +1410,14 @@ Deno.test("Gate E - mailbox host returns 204 for posted `logs`/`ksn` and streams
         body: textDecoder.decode(replayQuery),
       });
       assertEquals(replayStream.status, 200);
-      const replayBody = yield* readMailboxSseBody(replayStream, replayController, {
-        idleTimeoutMs: 500,
-        maxDurationMs: 5_000,
-      });
+      const replayBody = yield* readMailboxSseBody(
+        replayStream,
+        replayController,
+        {
+          idleTimeoutMs: 500,
+          maxDurationMs: 5_000,
+        },
+      );
       assertStringIncludes(replayBody, "event: /replay");
       assertStringIncludes(replayBody, hab.pre);
     } finally {
@@ -1505,7 +1517,10 @@ Deno.test("Gate E - witness anchor logs queries forward `/replay` to a separate 
     const witnessSink = witnessRuntime.respondant.forHab(witness);
     const relaySink = relayRuntime.respondant.forHab(relay);
     const witnessRuntimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(witnessRuntime, { hab: witness, sink: witnessSink });
+      yield* runAgentRuntime(witnessRuntime, {
+        hab: witness,
+        sink: witnessSink,
+      });
     });
     const relayRuntimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(relayRuntime, { hab: relay, sink: relaySink });
@@ -1530,7 +1545,10 @@ Deno.test("Gate E - witness anchor logs queries forward `/replay` to a separate 
       ingestKeriBytes(proxyRuntime, proxyMailboxAuth);
       ingestKeriBytes(proxyRuntime, relayLoc);
       ingestKeriBytes(proxyRuntime, witnessLoc);
-      yield* processRuntimeTurn(proxyRuntime, { hab: proxy, pollMailbox: false });
+      yield* processRuntimeTurn(proxyRuntime, {
+        hab: proxy,
+        pollMailbox: false,
+      });
 
       for (const msg of proxyHby.db.clonePreIter(proxy.pre)) {
         ingestKeriBytes(relayRuntime, msg);
@@ -1545,7 +1563,11 @@ Deno.test("Gate E - witness anchor logs queries forward `/replay` to a separate 
         relayRuntime,
         relay.makeEndRole(relay.pre, EndpointRoles.mailbox, true),
       );
-      yield* processRuntimeTurn(relayRuntime, { hab: relay, sink: relaySink, pollMailbox: false });
+      yield* processRuntimeTurn(relayRuntime, {
+        hab: relay,
+        sink: relaySink,
+        pollMailbox: false,
+      });
 
       yield* waitForServer(witnessPort);
       yield* waitForServer(relayPort);
@@ -1572,7 +1594,11 @@ Deno.test("Gate E - witness anchor logs queries forward `/replay` to a separate 
 
       assertExists(witnessRuntime.hby.db.getKever(proxy.pre));
       assertExists(
-        witnessRuntime.hby.db.ends.get([proxy.pre, EndpointRoles.mailbox, relay.pre]),
+        witnessRuntime.hby.db.ends.get([
+          proxy.pre,
+          EndpointRoles.mailbox,
+          relay.pre,
+        ]),
       );
       assertEquals(
         witness.fetchUrls(relay.pre).http ?? null,
@@ -1681,10 +1707,17 @@ Deno.test("Gate E - reopened witness `logs` queries replay remote accepted KEL s
       subjectPre = subject.pre;
       subjectSaid = subject.kever?.said ?? "";
       queryBytes = new Uint8Array(
-        requester.query(subject.pre, requester.pre, { fn: "0", s: "0" }, "logs"),
+        requester.query(
+          subject.pre,
+          requester.pre,
+          { fn: "0", s: "0" },
+          "logs",
+        ),
       );
 
-      const runtime = yield* createAgentRuntime(witnessHby, { mode: "indirect" });
+      const runtime = yield* createAgentRuntime(witnessHby, {
+        mode: "indirect",
+      });
       try {
         const message = [...subjectHby.db.clonePreIter(subject.pre, 0)][0];
         assertExists(message);
@@ -1717,8 +1750,12 @@ Deno.test("Gate E - reopened witness `logs` queries replay remote accepted KEL s
       assertExists(witnessHby.db.getState(subjectPre));
       assertEquals(witnessHby.db.kevers.has(subjectPre), false);
 
-      const runtime = yield* createAgentRuntime(witnessHby, { mode: "indirect" });
-      const emissions: Array<{ kind: string; kin: string; msgs: number; dest: string | null }> = [];
+      const runtime = yield* createAgentRuntime(witnessHby, {
+        mode: "indirect",
+      });
+      const emissions: Array<
+        { kind: string; kin: string; msgs: number; dest: string | null }
+      > = [];
       try {
         ingestKeriBytes(runtime, queryBytes);
         yield* processRuntimeTurn(runtime, {
@@ -1730,7 +1767,9 @@ Deno.test("Gate E - reopened witness `logs` queries replay remote accepted KEL s
                 kind: emission.kind,
                 kin: emission.cue.kin,
                 msgs: emission.msgs.length,
-                dest: emission.cue.kin === "replay" ? emission.cue.dest ?? null : null,
+                dest: emission.cue.kin === "replay"
+                  ? emission.cue.dest ?? null
+                  : null,
               });
             },
           },

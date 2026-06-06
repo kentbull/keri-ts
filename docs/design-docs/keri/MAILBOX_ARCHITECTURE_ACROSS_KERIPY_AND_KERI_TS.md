@@ -64,9 +64,8 @@ The durable mental model is:
 
 The most important security rule is:
 
-- provider-side mailbox storage must only happen when current accepted
-  end-role state says that the addressed recipient has authorized that mailbox
-  provider
+- provider-side mailbox storage must only happen when current accepted end-role
+  state says that the addressed recipient has authorized that mailbox provider
 
 That rule is implicit in witness-coupled mailbox behavior and must be made
 explicit when mailbox hosting is decoupled from witnessing.
@@ -447,11 +446,11 @@ authorizes, but they are not the same as inbox storage.
 
 ### `/mailboxes`
 
-This route is not mailbox payload ingress.
-It is mailbox authorization update ingress.
+This route is not mailbox payload ingress. It is mailbox authorization update
+ingress.
 
-It therefore needs verification of signed end-role update material, not the
-same storage gating as `/fwd`.
+It therefore needs verification of signed end-role update material, not the same
+storage gating as `/fwd`.
 
 ## Mailbox Admin Mental Model
 
@@ -506,8 +505,8 @@ Grounded in KERIpy:
    - target `eid` equals the hosted mailbox AID
 5. mailbox host ingests the whole CESR stream through normal KERI processing
 6. mailbox host checks local accepted `ends.` state
-7. on success, the relationship `(controller, mailbox, hostedMailboxAid)` is
-   now authoritative local state
+7. on success, the relationship `(controller, mailbox, hostedMailboxAid)` is now
+   authoritative local state
 
 ASCII sequence:
 
@@ -584,8 +583,8 @@ This is a host-ownership porcelain, not a mailbox factory API.
 ## End-To-End Sequences
 
 These diagrams are intentionally redundant with the prose above. They exist so
-maintainers can rehydrate the mailbox model quickly without re-reading the
-whole document.
+maintainers can rehydrate the mailbox model quickly without re-reading the whole
+document.
 
 ### Sequence 1: Mailbox Add
 

@@ -262,7 +262,11 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
             communicationHab,
           });
           const snh = hab.kever.sn.toString(16);
-          const sink = queryTransportSink(runtime, hby, communicationHab ?? hab);
+          const sink = queryTransportSink(
+            runtime,
+            hby,
+            communicationHab ?? hab,
+          );
           yield* processRuntimeUntil(
             runtime,
             () => runtime.delegating.complete(hab.pre, hab.kever!.sn),

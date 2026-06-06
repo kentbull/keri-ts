@@ -158,8 +158,8 @@ application developers.
 
 ### Stage 3. Introduce `tufa`
 
-- status: completed for the active host edge; remaining physical cleanup is
-  now substantially complete
+- status: completed for the active host edge; remaining physical cleanup is now
+  substantially complete
 - create the new package
 - move server hosting code there
 - keep the internal role behavior initially parity-preserving
@@ -240,8 +240,7 @@ This reorganization is intentionally breaking:
 2. `startServer` moves out of `keri-ts` main boundary into `tufa`.
 3. `tufa` CLI entrypoint moves into `tufa`.
 4. Role-specific server builders live in `tufa`.
-5. Browser consumers should import only `keri-ts` protocol and runtime
-   surfaces.
+5. Browser consumers should import only `keri-ts` protocol and runtime surfaces.
 
 ## Validation Plan
 

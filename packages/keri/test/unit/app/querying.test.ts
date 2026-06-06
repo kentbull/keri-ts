@@ -357,7 +357,9 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(requesterHby, {
+        mode: "local",
+      });
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",
@@ -436,7 +438,9 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(requesterHby, {
+        mode: "local",
+      });
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",
@@ -531,7 +535,9 @@ Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local complet
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(requesterHby, { mode: "local" });
+      const runtime = yield* createAgentRuntime(requesterHby, {
+        mode: "local",
+      });
       const subjectIcp = subjectHby.db.getEvtSerder(
         subject.pre,
         subject.kever?.said ?? "",

@@ -92,7 +92,12 @@ export function* witnessStartCommand(
     }
 
     validateWitnessHabitat(hby, hab);
-    const startup = resolveWitnessStartupMaterial(hby, hab.pre, commandArgs, startConfig);
+    const startup = resolveWitnessStartupMaterial(
+      hby,
+      hab.pre,
+      commandArgs,
+      startConfig,
+    );
     if (startup.source !== "state") {
       yield* reconcileWitnessIdentity(hby, hab, startup);
     } else if (!witnessIdentityComplete(hby, hab.pre, startup)) {
@@ -101,9 +106,15 @@ export function* witnessStartCommand(
       );
     }
 
-    const httpListenHost = resolveListenHost(commandArgs.listenHost, startup.httpUrl);
+    const httpListenHost = resolveListenHost(
+      commandArgs.listenHost,
+      startup.httpUrl,
+    );
     const httpPort = resolveHttpPort(commandArgs.http, startup.httpUrl);
-    const tcpListenHost = resolveListenHost(commandArgs.listenHost, startup.tcpUrl);
+    const tcpListenHost = resolveListenHost(
+      commandArgs.listenHost,
+      startup.tcpUrl,
+    );
     const tcpPort = resolveTcpPort(commandArgs.tcp, startup.tcpUrl);
 
     console.log(`Witness Prefix  ${hab.pre}`);
@@ -192,7 +203,9 @@ export function* witnessSubmitCommand(
   }
 }
 
-function parseWitnessStartArgs(args: Record<string, unknown>): WitnessStartArgs {
+function parseWitnessStartArgs(
+  args: Record<string, unknown>,
+): WitnessStartArgs {
   const parsed: WitnessStartArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -303,7 +316,9 @@ function resolveWitnessStartupMaterial(
       tcpUrl: args.tcpUrl
         ? normalizeTcpUrl(args.tcpUrl)
         : synthesizeTcpUrl(args.tcp ?? 5632, args.listenHost),
-      datetime: args.datetime ? validateIsoDatetime(args.datetime) : makeNowIso8601(),
+      datetime: args.datetime
+        ? validateIsoDatetime(args.datetime)
+        : makeNowIso8601(),
       source: "cli" as const,
     }
     : null;
@@ -316,11 +331,14 @@ function resolveWitnessStartupMaterial(
         return cli;
       }
       throw new ValidationError(
-        `Config file does not contain a '${args.alias!}' witness startup section.`,
+        `Config file does not contain a '${args
+          .alias!}' witness startup section.`,
       );
     }
     const data = section as Record<string, unknown>;
-    const dt = typeof data.dt === "string" ? validateIsoDatetime(data.dt) : makeNowIso8601();
+    const dt = typeof data.dt === "string"
+      ? validateIsoDatetime(data.dt)
+      : makeNowIso8601();
     const curls = Array.isArray(data.curls)
       ? data.curls.filter((entry): entry is string => typeof entry === "string")
       : [];
@@ -331,7 +349,8 @@ function resolveWitnessStartupMaterial(
     const tcpUrl = curls.find((entry) => new URL(entry).protocol === "tcp:");
     if (!httpUrl || !tcpUrl) {
       throw new ValidationError(
-        `Config section '${args.alias!}' must provide one HTTP(S) url and one tcp url.`,
+        `Config section '${args
+          .alias!}' must provide one HTTP(S) url and one tcp url.`,
       );
     }
     const configured = {
@@ -347,7 +366,8 @@ function resolveWitnessStartupMaterial(
         || cli.datetime !== configured.datetime)
     ) {
       throw new ValidationError(
-        `Config section '${args.alias!}' conflicts with explicit witness startup material.`,
+        `Config section '${args
+          .alias!}' conflicts with explicit witness startup material.`,
       );
     }
     return configured;
@@ -372,10 +392,14 @@ function resolveWitnessStartupMaterial(
 function validateWitnessHabitat(hby: Habery, hab: Hab): void {
   const record = hby.db.getHab(hab.pre);
   if (!hab.kever) {
-    throw new ValidationError(`Witness alias ${hab.name} is missing accepted key state.`);
+    throw new ValidationError(
+      `Witness alias ${hab.name} is missing accepted key state.`,
+    );
   }
   if (hab.kever.transferable) {
-    throw new ValidationError(`Witness alias ${hab.name} must be non-transferable.`);
+    throw new ValidationError(
+      `Witness alias ${hab.name} must be non-transferable.`,
+    );
   }
   if (
     record?.mid || (record?.smids?.length ?? 0) > 0
@@ -450,7 +474,12 @@ function* reconcileWitnessIdentity(
   const runtime = yield* createAgentRuntime(hby, { mode: "local" });
   ingestKeriBytes(
     runtime,
-    hab.makeLocScheme(startup.httpUrl, hab.pre, schemeForUrl(startup.httpUrl), startup.datetime),
+    hab.makeLocScheme(
+      startup.httpUrl,
+      hab.pre,
+      schemeForUrl(startup.httpUrl),
+      startup.datetime,
+    ),
   );
   ingestKeriBytes(
     runtime,
@@ -560,7 +589,10 @@ function validateIsoDatetime(dt: string): string {
   const hh = parsed.getUTCHours().toString().padStart(2, "0");
   const mm = parsed.getUTCMinutes().toString().padStart(2, "0");
   const ss = parsed.getUTCSeconds().toString().padStart(2, "0");
-  const micros = (parsed.getUTCMilliseconds() * 1000).toString().padStart(6, "0");
+  const micros = (parsed.getUTCMilliseconds() * 1000).toString().padStart(
+    6,
+    "0",
+  );
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
 }
 
@@ -575,7 +607,10 @@ function resolveListenHost(
   return isBindableLiteralHost(hostname) ? hostname : "0.0.0.0";
 }
 
-function resolveHttpPort(explicit: number | undefined, advertisedUrl: string): number {
+function resolveHttpPort(
+  explicit: number | undefined,
+  advertisedUrl: string,
+): number {
   if (explicit !== undefined) {
     return explicit;
   }
@@ -583,7 +618,10 @@ function resolveHttpPort(explicit: number | undefined, advertisedUrl: string): n
   return parsed.port.length > 0 ? Number(parsed.port) : 5631;
 }
 
-function resolveTcpPort(explicit: number | undefined, advertisedUrl: string): number {
+function resolveTcpPort(
+  explicit: number | undefined,
+  advertisedUrl: string,
+): number {
   if (explicit !== undefined) {
     return explicit;
   }

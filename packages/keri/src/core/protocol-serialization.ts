@@ -43,7 +43,9 @@ function hexToFixedBytes(hex: string, size: number): Uint8Array {
   return raw;
 }
 
-function encodeSealSeqnerQb64b(seq: NumberPrimitive | Seqner | string): Uint8Array {
+function encodeSealSeqnerQb64b(
+  seq: NumberPrimitive | Seqner | string,
+): Uint8Array {
   if (seq instanceof Seqner) {
     return seq.qb64b;
   }
@@ -56,7 +58,9 @@ function concatMessageWithAttachmentGroup(
   attachments: readonly Uint8Array[],
   pipelined: boolean,
 ): Uint8Array {
-  const atc = attachments.length === 0 ? new Uint8Array() : concatBytes(...attachments);
+  const atc = attachments.length === 0
+    ? new Uint8Array()
+    : concatBytes(...attachments);
   if (!pipelined) {
     return atc.length === 0 ? body : concatBytes(body, atc);
   }
@@ -292,7 +296,9 @@ export function serializeMessage(
   }
 
   for (const path of pathed) {
-    const raw = typeof path === "string" ? new TextEncoder().encode(path) : path;
+    const raw = typeof path === "string"
+      ? new TextEncoder().encode(path)
+      : path;
     attachments.push(
       new Counter({
         code: CtrDexV1.PathedMaterialCouples,
@@ -345,7 +351,9 @@ export function loadEvent(
   }
 
   const receipts: Record<string, unknown> = {};
-  const transferable = db.vrcs.get(dgkey).map(([prefixer, number, diger, siger]) => ({
+  const transferable = db.vrcs.get(dgkey).map((
+    [prefixer, number, diger, siger],
+  ) => ({
     prefix: prefixer.qb64,
     sequence: number.qb64,
     said: diger.qb64,

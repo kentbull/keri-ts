@@ -242,7 +242,9 @@ export class Poster {
     }
 
     if (delivery !== "direct") {
-      const witnessEndpoint = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      const witnessEndpoint = firstSortedEndpoint(
+        hab.endsFor(recipient)[Roles.witness],
+      );
       if (witnessEndpoint) {
         yield* this.deliverWitnessTarget(
           hab,
@@ -340,6 +342,21 @@ export class Poster {
       return { deliveries, queued };
     }
 
+    if (
+      delivery !== "direct"
+      && topic.length > 0
+      && this.mailboxer
+      && this.hby.db.prefixes.has(hab.pre)
+      && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
+    ) {
+      this.mailboxer.storeMsg(
+        mailboxTopicKey(recipient, topic),
+        mailboxReplyPayload(hab, recipient, topic, args.message),
+      );
+      deliveries.push(`local-mailbox:${hab.pre}`);
+      return { deliveries, queued };
+    }
+
     const directEndpoints = directDeliveryEndpoints(hab, recipient);
     if (directEndpoints.length > 0) {
       for (const endpoint of directEndpoints) {
@@ -360,7 +377,9 @@ export class Poster {
           `Witness fallback delivery requires an explicit topic for ${recipient}.`,
         );
       }
-      const witnessEndpoint = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
+      const witnessEndpoint = firstSortedEndpoint(
+        hab.endsFor(recipient)[Roles.witness],
+      );
       if (witnessEndpoint) {
         yield* this.deliverWitnessTarget(
           hab,
@@ -459,7 +478,13 @@ export class Poster {
     message: Uint8Array,
     endpoint: { eid: string; url: string },
   ): Operation<void> {
-    yield* this.deliverForwardedTarget(hab, recipient, topic, message, endpoint);
+    yield* this.deliverForwardedTarget(
+      hab,
+      recipient,
+      topic,
+      message,
+      endpoint,
+    );
   }
 
   /**
@@ -473,7 +498,13 @@ export class Poster {
     message: Uint8Array,
     endpoint: { eid: string; url: string },
   ): Operation<void> {
-    yield* this.deliverForwardedTarget(hab, recipient, topic, message, endpoint);
+    yield* this.deliverForwardedTarget(
+      hab,
+      recipient,
+      topic,
+      message,
+      endpoint,
+    );
   }
 
   /**
@@ -492,7 +523,7 @@ export class Poster {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
       this.requireMailboxer().storeMsg(
         mailboxTopicKey(recipient, topic),
-        message,
+        mailboxReplyPayload(hab, recipient, topic, message),
       );
       return;
     }
@@ -585,7 +616,14 @@ export class ForwardHandler implements ExchangeRouteHandler {
     }
 
     if (mailboxAid) {
-      if (!hostCanStoreForwardRecipient(hby, recipient, recipientKever, mailboxAid)) {
+      if (
+        !hostCanStoreForwardRecipient(
+          hby,
+          recipient,
+          recipientKever,
+          mailboxAid,
+        )
+      ) {
         return;
       }
     } else if (!hasLocalStoreForwardHost(hby, recipient, recipientKever)) {
@@ -930,6 +968,29 @@ function buildForwardedDelivery(
 }
 
 /**
+ * Include the sender's latest KEL before locally stored `/reply` payloads.
+ *
+ * KERIpy's `Revery` escrows transferable replies whose signer establishment
+ * event is unknown. Python KLI does not route that escrow's follow-up query cue
+ * during the bounded `kli query` command, so a local mailbox host must provide
+ * the verification context with the reply itself for rotated `/ksn` replies.
+ */
+function mailboxReplyPayload(
+  hab: Hab,
+  recipient: string,
+  topic: string,
+  message: Uint8Array,
+): Uint8Array {
+  if (topic !== "/reply" && topic !== "reply") {
+    return message;
+  }
+  const introduction = introduce(hab, recipient);
+  return introduction.length === 0
+    ? message
+    : concatBytes(introduction, message);
+}
+
+/**
  * Return the KERIpy-style introduction stream for one remote endpoint.
  *
  * This bootstrap material is intentionally broader than a bare endpoint reply:
@@ -953,7 +1014,9 @@ export function introduce(
   }
 
   const latestSaid = kever.serder.said;
-  if (!latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)) {
+  if (
+    !latestSaid || remoteAlreadyReceiptedLatestEvent(hab, remote, latestSaid)
+  ) {
     return new Uint8Array();
   }
 
@@ -984,7 +1047,9 @@ function remoteAlreadyReceiptedLatestEvent(
     if (hab.db.vrcs.get(key).some(([prefixer]) => prefixer.qb64 === remote)) {
       return true;
     }
-    if (hab.db.rcts.get(key).some(([prefixer]) => prefixer.qb64.startsWith(remote))) {
+    if (
+      hab.db.rcts.get(key).some(([prefixer]) => prefixer.qb64.startsWith(remote))
+    ) {
       return true;
     }
   }

@@ -269,7 +269,11 @@ export class Router {
           );
         }
       }
-      const decision = fn.call(candidate.resource, { ...args, route, ...params });
+      const decision = fn.call(candidate.resource, {
+        ...args,
+        route,
+        ...params,
+      });
       if (
         !decision || typeof decision !== "object"
         || (decision.kind !== "accept" && decision.kind !== "unverified")

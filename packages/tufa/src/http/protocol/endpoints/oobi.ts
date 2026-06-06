@@ -76,7 +76,9 @@ export function handleOobiRoute(
     request.eid,
     context.policy.hostedPrefixes,
   );
-  const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
+  const hab = respondingHabAid
+    ? runtime.hby.habs.get(respondingHabAid)
+    : undefined;
   if (!hab) {
     if (hosted.kind === "ambiguous" && context.policy.hostedPrefixes) {
       return textResponse("Ambiguous hosted endpoint path", 409);
@@ -84,7 +86,11 @@ export function handleOobiRoute(
     return textResponse("Not Found", 404);
   }
 
-  const msgs = hab.replyToOobi(aid, request.role, request.eid ? [request.eid] : []);
+  const msgs = hab.replyToOobi(
+    aid,
+    request.role,
+    request.eid ? [request.eid] : [],
+  );
   if (msgs.length === 0) {
     return textResponse("Not Found", 404);
   }

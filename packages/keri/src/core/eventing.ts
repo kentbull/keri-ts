@@ -103,12 +103,14 @@ function continuePartialWitnessReplay(): { kind: "continue" } {
  * - keep this shaped like the richer dispatch envelope so later receipt,
  *   delegation, and witness work does not need another event-envelope rewrite
  */
-export type KeverEventEnvelope = Pick<
-  KeriDispatchEnvelope,
-  "serder" | "sigers" | "wigers" | "frcs" | "sscs" | "ssts" | "local"
-> & {
-  eager?: boolean;
-};
+export type KeverEventEnvelope =
+  & Pick<
+    KeriDispatchEnvelope,
+    "serder" | "sigers" | "wigers" | "frcs" | "sscs" | "ssts" | "local"
+  >
+  & {
+    eager?: boolean;
+  };
 
 /**
  * Query envelope subset consumed by `Kevery.processQuery()`.
@@ -283,7 +285,7 @@ export class Kevery {
         // durable `states.` after a reopen. Use the read-through DB accessor so
         // witness/query replay works for reopened remote state, not just local
         // habitats already hot in the in-memory cache.
-        const kever = this.db.getKever(pre);
+        const kever = this.db.getKever(pre, { refresh: true });
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -300,6 +302,7 @@ export class Kevery {
           return escrowQuery("notFullyWitnessed");
         }
 
+        this.repairReplaySourceSeal(kever);
         const msgs = [...this.db.clonePreIter(pre, fn)];
         if (kever.delpre) {
           msgs.push(...this.db.cloneDelegation(kever));
@@ -318,7 +321,7 @@ export class Kevery {
         }]);
       }
       case "ksn": {
-        const kever = this.db.getKever(pre);
+        const kever = this.db.getKever(pre, { refresh: true });
         if (!kever) {
           return escrowQuery("missingKever");
         }
@@ -663,9 +666,16 @@ export class Kevery {
     if (!replaySerder) {
       return dropReceipt("staleReceipt");
     }
-    const wits = this.resolveAcceptedEventWitnesses(pre, replaySaid, replaySerder);
+    const wits = this.resolveAcceptedEventWitnesses(
+      pre,
+      replaySaid,
+      replaySerder,
+    );
     return wits
-      ? { kind: "accept", event: { pre, said: replaySaid, serder: replaySerder, wits } }
+      ? {
+        kind: "accept",
+        event: { pre, said: replaySaid, serder: replaySerder, wits },
+      }
       : escrowReceipt("missingReceiptedEvent");
   }
 
@@ -772,7 +782,7 @@ export class Kevery {
     }
 
     const duplicateSaid = this.db.kels.getLast(pre, sn);
-    if (duplicateSaid && duplicateSaid === said) {
+    if (duplicateSaid && duplicateSaid === said && sn <= kever.sn) {
       return this.buildDuplicateDecision(kever, init);
     }
 
@@ -821,6 +831,7 @@ export class Kevery {
           transition.log.serder,
           transition.log.local,
         );
+        this.repairAnchoredDelegationSourceSeals(transition.log.serder);
         break;
       }
       case "duplicate": {
@@ -1031,7 +1042,8 @@ export class Kevery {
   /**
    * Run one full bootstrap KEL escrow sweep.
    *
-   * The call ordering is aligned with the planned continuous-loop runtime.
+   * The call ordering mirrors KERIpy's general escrow sweep. Delegable events
+   * are promoted only by explicit approval handling via processEscrowDelegables.
    */
   processEscrows(): void {
     this.processEscrowOutOfOrders();
@@ -1042,7 +1054,6 @@ export class Kevery {
     this.processEscrowPartialWigs();
     this.processEscrowPartialSigs();
     this.processEscrowDuplicitous();
-    this.processEscrowDelegables();
     this.processEscrowMisfits();
     this.processQueryNotFound();
   }
@@ -1243,6 +1254,12 @@ export class Kevery {
     serder: KeverEventEnvelope["serder"],
     local: boolean,
   ): void {
+    const habord = this.db.getHab(kever.pre);
+    if (habord?.mid) {
+      this.db.prefixes.add(kever.pre);
+      this.db.groups.add(kever.pre);
+    }
+
     if (!this.prefixes.has(kever.pre)) {
       this.cues.push({ kin: "receipt", serder });
     } else if (!local) {
@@ -2450,6 +2467,10 @@ export class Kevery {
   ): KeverDecision {
     const serder = init.serder;
     const dgkey = dgKey(kever.pre, serder.said ?? "");
+    const sourceSeal = init.ssts?.[0] ?? init.sscs?.[0] ?? null;
+    const hasNewSourceSeal = sourceSeal
+      && !this.db.aess.get(dgkey)
+      && this.validDuplicateSourceSeal(kever, serder, sourceSeal);
     const storedWitnesses = this.db.wits.get(dgkey)
       .map((
         wit,
@@ -2474,7 +2495,9 @@ export class Kevery {
       storedWitnesses.map((wit) => new Verfer({ qb64: wit })),
     ).sigers.filter((wiger) => !existingWigs.has(wiger.qb64));
 
-    if (verifiedSigers.length > 0 || verifiedWigs.length > 0) {
+    if (
+      verifiedSigers.length > 0 || verifiedWigs.length > 0 || hasNewSourceSeal
+    ) {
       return {
         kind: "duplicate",
         duplicate: "lateAttachments",
@@ -2483,6 +2506,7 @@ export class Kevery {
           sigers: verifiedSigers,
           wigers: verifiedWigs,
           wits: storedWitnesses,
+          sourceSeal: hasNewSourceSeal ? sourceSeal : null,
           local: init.local ?? false,
         },
       };
@@ -2492,6 +2516,122 @@ export class Kevery {
       kind: "duplicate",
       duplicate: "sameSaid",
     };
+  }
+
+  private validDuplicateSourceSeal(
+    kever: Kever,
+    serder: SerderKERI,
+    sourceSeal: { s: NumberPrimitive; d: Diger },
+  ): boolean {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (
+      !kever.delegated || !kever.delpre || !pre || !said
+      || serder.ilk === Ilks.ixn
+    ) {
+      return false;
+    }
+    const anchoring = this.db.fetchLastSealingEventByEventSeal(kever.delpre, {
+      i: pre,
+      s: serder.snh,
+      d: said,
+    });
+    return anchoring?.snh === sourceSeal.s.numh
+      && anchoring.said === sourceSeal.d.qb64;
+  }
+
+  private repairReplaySourceSeal(kever: Kever): void {
+    const serder = kever.serder;
+    const pre = serder.pre;
+    const said = serder.said;
+    if (
+      !kever.delegated || !kever.delpre || !pre || !said
+      || serder.ilk === Ilks.ixn
+    ) {
+      return;
+    }
+    const dgkey = dgKey(pre, said);
+    if (this.db.aess.get(dgkey)) {
+      return;
+    }
+    const anchoring = this.db.fetchLastSealingEventByEventSeal(kever.delpre, {
+      i: pre,
+      s: serder.snh,
+      d: said,
+    });
+    if (!anchoring?.sner || !anchoring.said) {
+      return;
+    }
+    this.db.aess.pin(dgkey, [
+      anchoring.sner,
+      new Diger({ qb64: anchoring.said }),
+    ]);
+  }
+
+  private repairAnchoredDelegationSourceSeals(serder: SerderKERI): void {
+    const delpre = serder.pre;
+    const said = serder.said;
+    const sner = serder.sner;
+    const anchors = serder.ked?.a;
+    if (!delpre || !said || !sner || !Array.isArray(anchors)) {
+      return;
+    }
+
+    for (const anchor of anchors) {
+      if (
+        typeof anchor !== "object" || anchor === null
+        || typeof (anchor as Record<string, unknown>)["i"] !== "string"
+        || typeof (anchor as Record<string, unknown>)["d"] !== "string"
+      ) {
+        continue;
+      }
+      const pre = (anchor as Record<string, string>)["i"];
+      const dig = (anchor as Record<string, string>)["d"];
+      if (!pre || !dig || !this.db.getEvtSerder(pre, dig)) {
+        continue;
+      }
+      const existing = this.db.getKever(pre) ?? null;
+      const delegatedBy = existing?.delpre ?? this.db.getState(pre)?.di ?? null;
+      if (delegatedBy !== delpre) {
+        continue;
+      }
+      const dgkey = dgKey(pre, dig);
+      if (!this.db.aess.get(dgkey)) {
+        this.db.aess.pin(dgkey, [sner, new Diger({ qb64: said })]);
+      }
+    }
+  }
+
+  private repairEscrowDelegationSourceSeal(serder: SerderKERI): void {
+    const pre = serder.pre;
+    const said = serder.said;
+    if (
+      !pre || !said || (serder.ilk !== Ilks.dip && serder.ilk !== Ilks.drt)
+    ) {
+      return;
+    }
+    const dgkey = dgKey(pre, said);
+    if (this.db.aess.get(dgkey)) {
+      return;
+    }
+    const delpre = serder.ilk === Ilks.dip
+      ? serder.delpre
+      : this.db.getState(pre)?.di || this.db.getKever(pre)?.delpre || null;
+    if (!delpre) {
+      return;
+    }
+    const anchoring = this.db.fetchLastSealingEventByEventSeal(delpre, {
+      i: pre,
+      s: serder.snh,
+      d: said,
+    });
+    if (!anchoring?.sner || !anchoring.said) {
+      return;
+    }
+    this.db.aess.pin(dgkey, [
+      anchoring.sner,
+      new Diger({ qb64: anchoring.said }),
+    ]);
   }
 
   /** Apply accepted first-seen/datetime state after event logging fixes those values. */
@@ -2609,8 +2749,12 @@ export class Kevery {
     if (!serder) {
       return null;
     }
+    if (currentEscrow === "partialDels" || currentEscrow === "delegables") {
+      this.repairEscrowDelegationSourceSeal(serder);
+    }
     const dgkey = dgKey(pre, said);
     const seal = this.db.udes.get(dgkey) ?? this.db.aess.get(dgkey);
+    const sourceRecord = this.db.esrs.get(dgkey);
     return {
       serder,
       sigers: this.db.sigs.get(dgkey),
@@ -2618,13 +2762,27 @@ export class Kevery {
       frcs: [],
       sscs: seal ? [SealSource.fromTuple(seal)] : [],
       ssts: [],
-      local: this.db.esrs.get(dgkey)?.local ?? false,
+      local: currentEscrow === "misfit" && this.promotableDelegationMisfit(serder)
+        ? true
+        : sourceRecord?.local ?? false,
       // Mirror KERIpy escrow unescrow behavior: partial signature/witness/
       // delegation escrows re-enter validation with eager delegation lookup.
       eager: currentEscrow === "partialSigs"
         || currentEscrow === "partialWigs"
         || currentEscrow === "partialDels",
     };
+  }
+
+  private promotableDelegationMisfit(serder: SerderKERI): boolean {
+    const pre = serder.pre;
+    if (!pre || (serder.ilk !== Ilks.dip && serder.ilk !== Ilks.drt)) {
+      return false;
+    }
+    const delpre = serder.ilk === Ilks.dip
+      ? serder.delpre
+      : this.db.getState(pre)?.di || this.db.getKever(pre)?.delpre || null;
+    return !!delpre && this.db.prefixes.has(delpre)
+      && !this.db.prefixes.has(pre);
   }
 
   /**

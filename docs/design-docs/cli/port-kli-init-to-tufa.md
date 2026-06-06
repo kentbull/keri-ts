@@ -22,9 +22,9 @@ Maintainer note (2026-04-03):
 - The later shared-runtime/OOBI work changes two earlier assumptions here:
   - `tufa init` should now host command-local runtime work when config-seeded
     OOBIs exist, not stop at DB preload.
-  - "single-sig local phase" should now be read as a local-creation default,
-    not as a permanent refusal to consume accepted remote transferable state
-    that the shared runtime has already resolved honestly.
+  - "single-sig local phase" should now be read as a local-creation default, not
+    as a permanent refusal to consume accepted remote transferable state that
+    the shared runtime has already resolved honestly.
 - Active sequencing now lives in:
   - `docs/plans/keri/INIT_INCEPT_RECONCILIATION_PLAN.md`
   - `docs/plans/keri/GATE_E_AGENT_RUNTIME_OOBI_PLAN.md`

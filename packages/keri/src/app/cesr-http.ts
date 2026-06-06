@@ -333,7 +333,9 @@ function smellageFromMessage(
 function readRequiredMailboxAdminField(form: FormData, name: string): string {
   const value = readOptionalMailboxAdminField(form, name);
   if (!value) {
-    throw new ValidationError(`Mailbox authorization request is missing ${name}`);
+    throw new ValidationError(
+      `Mailbox authorization request is missing ${name}`,
+    );
   }
   return value;
 }
@@ -347,7 +349,9 @@ function readOptionalMailboxAdminField(
     return undefined;
   }
   if (typeof value !== "string") {
-    throw new ValidationError(`Mailbox authorization field ${name} must be text`);
+    throw new ValidationError(
+      `Mailbox authorization field ${name} must be text`,
+    );
   }
   return value;
 }

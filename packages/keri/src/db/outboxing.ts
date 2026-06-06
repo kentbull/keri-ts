@@ -373,7 +373,9 @@ export class Outboxer extends LMDBer implements OutboxerLike {
 
   private pruneIfComplete(said: string): void {
     let pending = false;
-    for (const [, target] of this.tgts.getTopItemIter([said], { topive: true })) {
+    for (
+      const [, target] of this.tgts.getTopItemIter([said], { topive: true })
+    ) {
       if (target.status === "pending") {
         pending = true;
         break;

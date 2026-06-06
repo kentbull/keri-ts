@@ -7,9 +7,9 @@ main value now is the conclusion, not the full comparator catalog.
 
 ## Evidence Inputs
 
-Compared `keri-ts` primarily against KERIpy, with advisory reference points
-from other implementations where they helped identify shape differences or
-design tradeoffs.
+Compared `keri-ts` primarily against KERIpy, with advisory reference points from
+other implementations where they helped identify shape differences or design
+tradeoffs.
 
 ## Gate Model
 

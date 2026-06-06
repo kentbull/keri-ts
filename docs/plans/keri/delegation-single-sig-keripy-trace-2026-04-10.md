@@ -73,8 +73,8 @@ It is a workflow with four distinct protocol phases:
 1. The delegate creates a delegated event locally and gets its own witness
    receipts.
 2. The delegate publishes two artifacts to the delegator on mailbox topic
-   `/delegate`:
-   the `/delegate/request` EXN and the raw delegated KEL event stream.
+   `/delegate`: the `/delegate/request` EXN and the raw delegated KEL event
+   stream.
 3. The delegate immediately asks a delegator witness for anchor evidence, then
    waits in unanchored escrow until the delegator seals the delegated event.
 4. The delegator anchors approval in its own KEL, then confirms the delegate
@@ -112,9 +112,9 @@ What `Anchorer.delegation(...)` does:
 
 Mental model:
 
-- `dpwe.` means:
-  "the delegated event exists locally, but do not publish the approval request
-  yet because delegate-side witness receipting is not converged"
+- `dpwe.` means: "the delegated event exists locally, but do not publish the
+  approval request yet because delegate-side witness receipting is not
+  converged"
 
 ### 2. Delegate waits for its own witness receipts
 
@@ -203,8 +203,7 @@ The two publications are:
 
 This is the critical publication model.
 
-KERIpy does not choose between them.
-It sends both.
+KERIpy does not choose between them. It sends both.
 
 ### 4. What the proxy path actually does on the wire
 
@@ -291,9 +290,8 @@ KERIpy:
 
 Mental model:
 
-- `dune.` means:
-  "the delegator has been told, and now we are waiting to learn the delegator's
-  sealing event"
+- `dune.` means: "the delegator has been told, and now we are waiting to learn
+  the delegator's sealing event"
 
 ### 8. Delegator receives `/delegate` mailbox traffic
 
@@ -450,8 +448,8 @@ Cue delivery owner:
 For successful `logs` query handling:
 
 - witness-side KEL replay is emitted as a `replay` cue
-- `Respondant` / storing logic sends those replay messages back to the
-  requester on mailbox topic `replay`
+- `Respondant` / storing logic sends those replay messages back to the requester
+  on mailbox topic `replay`
 
 The replay sender habitat is the local witness/controller that owns the cue.
 
@@ -463,8 +461,8 @@ Important:
 
 ### 13. Delegate learns approval too
 
-Separately from the delegator confirm path, the delegate's own `Anchorer`
-stays in `dune.` until the delegator sealing event is learned.
+Separately from the delegator confirm path, the delegate's own `Anchorer` stays
+in `dune.` until the delegator sealing event is learned.
 
 When the delegate finds the authorizing seal:
 
@@ -510,111 +508,85 @@ failure.
 
 ### 1. Delegate-side witness receipt gate before publication
 
-- KERIpy:
-  `Anchorer.processPartialWitnessEscrow()` waits for full witness receipts.
-- Tufa:
-  `packages/keri/src/app/delegating.ts::witnessReceiptsComplete(...)`
+- KERIpy: `Anchorer.processPartialWitnessEscrow()` waits for full witness
+  receipts.
+- Tufa: `packages/keri/src/app/delegating.ts::witnessReceiptsComplete(...)`
   gates publication the same way.
-- Status:
-  aligned.
+- Status: aligned.
 
 ### 2. Single-sig delegated inception requires a proxy communication habitat
 
-- KERIpy:
-  no proxy means failure for single-sig delegated inception publication.
-- Tufa:
-  `Anchorer.communicationHab(...)` requires explicit proxy for delegated
+- KERIpy: no proxy means failure for single-sig delegated inception publication.
+- Tufa: `Anchorer.communicationHab(...)` requires explicit proxy for delegated
   inception.
-- Status:
-  aligned.
+- Status: aligned.
 
 ### 3. Publish `/delegate/request` EXN to mailbox topic `/delegate`
 
-- KERIpy:
-  yes, via `postman.send(... topic="delegate" ...)`.
-- Tufa:
-  yes, via `poster.sendExchange(... route="/delegate/request", topic="/delegate" ...)`.
-- Status:
-  aligned after the recent publication-path fix.
+- KERIpy: yes, via `postman.send(... topic="delegate" ...)`.
+- Tufa: yes, via
+  `poster.sendExchange(... route="/delegate/request", topic="/delegate" ...)`.
+- Status: aligned after the recent publication-path fix.
 
 ### 4. Publish raw delegated event bytes to mailbox topic `/delegate`
 
-- KERIpy:
-  yes, separately from the EXN.
-- Tufa:
-  yes, via `poster.sendBytes(... topic="/delegate" ...)`.
-- Status:
-  aligned in structure.
+- KERIpy: yes, separately from the EXN.
+- Tufa: yes, via `poster.sendBytes(... topic="/delegate" ...)`.
+- Status: aligned in structure.
 
 ### 5. Issue the first delegator-witness anchor query immediately in the same
 
 publication phase
 
-- KERIpy:
-  yes, inside the same `processPartialWitnessEscrow()` pass.
-- Tufa:
-  yes, via `queueDelegatorWitnessQueryNow(...)`.
-- Status:
-  aligned after the recent fix.
+- KERIpy: yes, inside the same `processPartialWitnessEscrow()` pass.
+- Tufa: yes, via `queueDelegatorWitnessQueryNow(...)`.
+- Status: aligned after the recent fix.
 
 ### 6. Use KERIpy-style witness-targeted query shape
 
-- KERIpy:
-  signer is local hab, but `qry.q.src` is the chosen witness AID.
-- Tufa:
-  current query path preserves that shape for explicit witness-targeted queries.
-- Status:
-  aligned.
+- KERIpy: signer is local hab, but `qry.q.src` is the chosen witness AID.
+- Tufa: current query path preserves that shape for explicit witness-targeted
+  queries.
+- Status: aligned.
 
 ### 7. Witness-side `logs` query acceptance for reopened durable remote state
 
-- KERIpy:
-  query answers are based on durable accepted state, not only hot cache.
-- Tufa:
-  `Kevery.decideQuery()` now uses `db.getKever(pre)` for `logs`, `ksn`, and
-  `mbx`.
-- Status:
-  aligned after the recent fix.
+- KERIpy: query answers are based on durable accepted state, not only hot cache.
+- Tufa: `Kevery.decideQuery()` now uses `db.getKever(pre)` for `logs`, `ksn`,
+  and `mbx`.
+- Status: aligned after the recent fix.
 
 ### 8. Proxy introduction stream before `/fwd`
 
-- KERIpy:
-  always `introduce(proxy, mailbox-or-witness)` when needed, which includes:
+- KERIpy: always `introduce(proxy, mailbox-or-witness)` when needed, which
+  includes:
   - sender KEL replay
   - sender delegation chain
   - `replyEndRole(cid=proxy pre)`
-- Tufa:
-  `introduce(...)` also prepends:
+- Tufa: `introduce(...)` also prepends:
   - sender KEL replay
   - sender delegation chain
   - `replyEndRole(hab.pre)`
-- Status:
-  structurally aligned, but this remains a high-value verification seam because
-  reverse interop may depend on exact bootstrap material.
+- Status: structurally aligned, but this remains a high-value verification seam
+  because reverse interop may depend on exact bootstrap material.
 
 ### 9. Delegator mailbox polling of `/delegate` and `/replay`
 
-- KERIpy:
-  `delegate confirm` polls both `/delegate` and `/replay`.
-- Tufa:
-  local runtime does the analogous thing, but the current failing reverse-interop
-  case uses KLI as the delegator.
-- Status:
-  not the current suspect on the Tufa side.
+- KERIpy: `delegate confirm` polls both `/delegate` and `/replay`.
+- Tufa: local runtime does the analogous thing, but the current failing
+  reverse-interop case uses KLI as the delegator.
+- Status: not the current suspect on the Tufa side.
 
 ### 10. Delegator locally accepts the forwarded delegated event into the pending
 
 approval path
 
-- KERIpy->KERIpy expectation:
-  the raw delegated event forwarded on `/delegate` becomes local delegator
-  parser state and lands in `delegables.`
-- Current Tufa->KLI reality:
-  the raw delegated `dip` does land in KLI `delegables.` during the failing
-  reverse-interop run.
-- Status:
-  publication existence is aligned well enough to reach pending approval.
-  The remaining break is later than this seam.
+- KERIpy->KERIpy expectation: the raw delegated event forwarded on `/delegate`
+  becomes local delegator parser state and lands in `delegables.`
+- Current Tufa->KLI reality: the raw delegated `dip` does land in KLI
+  `delegables.` during the failing reverse-interop run.
+- Status: publication existence is aligned well enough to reach pending
+  approval. The remaining break is later than this seam.
 
 ## Current Best Explanation Of The Failure
 
@@ -660,8 +632,8 @@ Candidates:
 Candidates:
 
 - before the latest review pass, Tufa had no single authoritative
-  `exchange(...)` helper and its EXN builders had drifted from KERIpy
-  version-1 semantics
+  `exchange(...)` helper and its EXN builders had drifted from KERIpy version-1
+  semantics
 - recipient-bearing EXNs in Tufa did not project recipient into payload `a.i`,
   which changes SAIDs relative to KERIpy
 - notification-style EXNs like `/delegate/request` and `/oobis` were being sent

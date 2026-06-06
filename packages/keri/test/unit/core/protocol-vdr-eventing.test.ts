@@ -23,11 +23,39 @@ Deno.test("protocol-vdr-eventing constructors preserve KERIpy field order", () =
   });
 
   assertEquals(vcp.ilk, Ilks.vcp);
-  assertEquals(Object.keys(vcp.ked ?? {}), ["v", "t", "d", "i", "ii", "s", "c", "bt", "b", "n"]);
+  assertEquals(Object.keys(vcp.ked ?? {}), [
+    "v",
+    "t",
+    "d",
+    "i",
+    "ii",
+    "s",
+    "c",
+    "bt",
+    "b",
+    "n",
+  ]);
   assertEquals(iss.ilk, Ilks.iss);
-  assertEquals(Object.keys(iss.ked ?? {}), ["v", "t", "d", "i", "s", "ri", "dt"]);
+  assertEquals(Object.keys(iss.ked ?? {}), [
+    "v",
+    "t",
+    "d",
+    "i",
+    "s",
+    "ri",
+    "dt",
+  ]);
   assertEquals(bis.ilk, Ilks.bis);
-  assertEquals(Object.keys(bis.ked ?? {}), ["v", "t", "d", "i", "ii", "s", "ra", "dt"]);
+  assertEquals(Object.keys(bis.ked ?? {}), [
+    "v",
+    "t",
+    "d",
+    "i",
+    "ii",
+    "s",
+    "ra",
+    "dt",
+  ]);
 });
 
 Deno.test("protocol-vdr-eventing state builders return KERIpy-shaped records", () => {

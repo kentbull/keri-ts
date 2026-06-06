@@ -44,6 +44,7 @@ function writeDntImportMap(
   const importMap = {
     imports: {
       "keri-ts": `npm:keri-ts@${keriVersion}`,
+      "keri-ts/cli": `npm:keri-ts@${keriVersion}/cli`,
       "keri-ts/runtime": `npm:keri-ts@${keriVersion}/runtime`,
       "keri-ts/db": `npm:keri-ts@${keriVersion}/db`,
       "cesr-ts": `npm:cesr-ts@${cesrVersion}`,
@@ -66,7 +67,10 @@ function normalizeBuiltManifest(): void {
       types: NPM_TYPES_PATH,
     },
   };
-  Deno.writeTextFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  Deno.writeTextFileSync(
+    packageJsonPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
 }
 
 if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
@@ -74,8 +78,12 @@ if (!Deno.env.has("NPM_CONFIG_IGNORE_SCRIPTS")) {
 }
 
 await emptyDir(OUT_DIR);
-const keriPackageVersion = resolveWorkspacePackageVersion("../keri/package.json");
-const cesrPackageVersion = resolveWorkspacePackageVersion("../cesr/package.json");
+const keriPackageVersion = resolveWorkspacePackageVersion(
+  "../keri/package.json",
+);
+const cesrPackageVersion = resolveWorkspacePackageVersion(
+  "../cesr/package.json",
+);
 writeDntImportMap(keriPackageVersion, cesrPackageVersion);
 
 try {

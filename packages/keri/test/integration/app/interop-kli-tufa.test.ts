@@ -6,7 +6,7 @@
  * The mailbox handoff relies especially on the two mailbox scenarios in this
  * file:
  * - KLI mailbox operations against a Tufa mailbox host
- * - Tufa mailbox operations against the real local-source KERIpy mailbox host
+ * - Tufa mailbox operations against the pinned KERIpy mailbox host
  *
  * The helper layer exists to keep those subprocess-heavy scenarios readable and
  * debuggable instead of burying the protocol assertions in process plumbing.
@@ -23,12 +23,10 @@ import {
   extractPrefix,
   extractRawSignature,
   inspectCompatHabery,
-  localKeriPySourceEnv,
   normalizeCesr,
   packageRoot,
   randomPort,
   requireSuccess,
-  resolvePythonCommand,
   runCmd,
   runCmdWithTimeout,
   runTufa,
@@ -214,7 +212,9 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
   const base = `interop-rotate-${crypto.randomUUID().slice(0, 8)}`;
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
-  const tufaHeadDir = await Deno.makeTempDir({ prefix: "tufa-interop-rotate-" });
+  const tufaHeadDir = await Deno.makeTempDir({
+    prefix: "tufa-interop-rotate-",
+  });
   const tufaRepoRoot = workspaceRoot();
   const tufaName = `tufa-rotate-${crypto.randomUUID().slice(0, 8)}`;
   const tufaAlias = "alice";
@@ -1258,7 +1258,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
 // @test-lane interop-mailbox-slow
 Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host", async () => {
   const ctx = await createInteropContext();
-  const pythonCommand = await resolvePythonCommand(ctx.env, ctx.kliCommand);
   const base = `interop-mailbox-tufa-${crypto.randomUUID().slice(0, 8)}`;
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
@@ -1537,10 +1536,8 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
   );
 
   const providerHost = spawnChild(
-    pythonCommand,
+    ctx.kliCommand,
     [
-      "-m",
-      "keri.cli.kli",
       "mailbox",
       "start",
       "--name",
@@ -1554,7 +1551,7 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
       "--http",
       String(providerPort),
     ],
-    localKeriPySourceEnv(ctx.env),
+    ctx.env,
   );
   const bobAgent = spawnChild(
     "deno",

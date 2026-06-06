@@ -26,9 +26,10 @@ import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
-import { createHabery, SIGNER } from "../../../src/app/habbing.ts";
+import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import * as parsering from "../../../src/app/parsering.ts";
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
+import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -290,7 +291,13 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       > = [];
       const poster = {
         *sendExchange(
-          hab: { pre: string; endorse: (serder: SerderKERI, options?: { pipelined?: boolean }) => Uint8Array },
+          hab: {
+            pre: string;
+            endorse: (
+              serder: SerderKERI,
+              options?: { pipelined?: boolean },
+            ) => Uint8Array;
+          },
           args: {
             recipient: string;
             route: string;
@@ -372,7 +379,10 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         initial[0] && "to" in initial[0] ? initial[0].to : null,
         "waitingDelegatorAnchor",
       );
-      assertEquals(coordinator.workflowStatus(delegate.pre, "0").proxyDependent, true);
+      assertEquals(
+        coordinator.workflowStatus(delegate.pre, "0").proxyDependent,
+        true,
+      );
       assertEquals(
         sent.map(({ sender, recipient, topic }) => ({
           sender,
@@ -403,7 +413,11 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       assertEquals(queuedQueries, [{
         pre: delegator.pre,
         route: "logs",
-        query: { fn: "0", s: "0", a: { i: delegate.pre, s: "0", d: delegate.kever!.said! } },
+        query: {
+          fn: "0",
+          s: "0",
+          a: { i: delegate.pre, s: "0", d: delegate.kever!.said! },
+        },
         hab: proxy.pre,
         wits: [delegatorWitness.pre],
       }]);
@@ -534,7 +548,9 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
       } as unknown as Poster;
       const querying = {
         watchAnchor() {
-          throw new Error("delegated inception should not query without a proxy");
+          throw new Error(
+            "delegated inception should not query without a proxy",
+          );
         },
       } as unknown as QueryCoordinator;
       const coordinator = new Anchorer(hby, { poster, querying });
@@ -618,7 +634,13 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
       > = [];
       const poster = {
         *sendExchange(
-          hab: { pre: string; endorse: (serder: SerderKERI, options?: { pipelined?: boolean }) => Uint8Array },
+          hab: {
+            pre: string;
+            endorse: (
+              serder: SerderKERI,
+              options?: { pipelined?: boolean },
+            ) => Uint8Array;
+          },
           args: {
             recipient: string;
             route: string;
@@ -840,6 +862,276 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       );
     } finally {
       yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Habery makeGroupHab creates a local group inception and persists member metadata", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-group-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [
+          member1.pre,
+          member2.pre,
+        ],
+        undefined,
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+        },
+      );
+
+      assertEquals(group.hab.pre, group.serder.pre);
+      assertEquals(group.sigers.map((siger) => siger.index), [0, 1]);
+      assertEquals(group.message.length > group.serder.raw.length, true);
+      assertEquals(hby.db.getKever(group.hab.pre)?.sn, 0);
+      assertEquals(hby.db.groups.has(group.hab.pre), true);
+
+      const stored = hby.db.getHab(group.hab.pre);
+      assertEquals(stored?.hid, group.hab.pre);
+      assertEquals(stored?.mid, member1.pre);
+      assertEquals(stored?.smids, [member1.pre, member2.pre]);
+      assertEquals(stored?.rmids, [member1.pre, member2.pre]);
+      assertEquals(
+        hby.ks.getSmids(group.hab.pre).map(([, number]) => number.num),
+        [
+          0n,
+          1n,
+        ],
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("eventReplayMessage includes stored witness indexed signatures", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `habery-replay-src-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `habery-replay-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const witness = source.makeHab("wit", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      const controller = source.makeHab("ctrl", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        wits: [witness.pre],
+        toad: 1,
+      });
+      const event = source.db.getEvtSerder(
+        controller.pre,
+        controller.kever?.said ?? "",
+      );
+      if (!event?.pre || !event.said || event.sn === null) {
+        throw new Error("Expected accepted witnessed controller event.");
+      }
+
+      const kvy = new Kevery(remote.db);
+      kvy.processEvent({
+        serder: event,
+        sigers: controller.sign(event.raw, true) as Siger[],
+        wigers: witness.sign(event.raw, true) as Siger[],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      });
+
+      assertEquals(remote.db.wigs.get(dgKey(event.pre, event.said)).length, 1);
+      const replay = eventReplayMessage(remote, event);
+      const replayAttachments = new TextDecoder().decode(
+        replay.slice(event.size),
+      );
+      const witnessCounter = new TextDecoder().decode(
+        new Counter({
+          code: CtrDexV1.WitnessIdxSigs,
+          count: 1,
+          version: { major: 1, minor: 0 },
+        }).qb64b,
+      );
+      assertStringIncludes(replayAttachments, witnessCounter);
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("eventPayloadMessage can clone a pre-approval delegated event", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-delegated-payload-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [member1.pre, member2.pre],
+        [member1.pre, member2.pre],
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+          delpre: delegator.pre,
+        },
+      );
+
+      if (!group.serder.pre || !group.serder.said) {
+        throw new Error("Expected delegated group event prefix and SAID.");
+      }
+      assertEquals(hby.db.getFelFn(group.serder.pre, group.serder.said), null);
+      assertThrows(
+        () => eventReplayMessage(hby, group.serder),
+        Error,
+        "Missing first-seen ordinal",
+      );
+      const payload = eventPayloadMessage(hby, group.serder);
+      assertStringIncludes(
+        new TextDecoder().decode(payload.slice(group.serder.size)),
+        new TextDecoder().decode(
+          new Counter({
+            code: CtrDexV1.ControllerIdxSigs,
+            count: 2,
+            version: { major: 1, minor: 0 },
+          }).qb64b,
+        ),
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Habery skips pending delegated group records during reopen", async () => {
+  const name = `habery-pending-group-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  let groupPre = "";
+
+  await run(function*() {
+    const hby = yield* createHabery({ name, headDirPath });
+    try {
+      const delegator = hby.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [
+          member1.pre,
+          member2.pre,
+        ],
+        undefined,
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+          delpre: delegator.pre,
+        },
+      );
+      groupPre = group.hab.pre;
+
+      assertEquals(hby.db.getHab(groupPre)?.mid, member1.pre);
+      assertEquals(hby.db.getKever(groupPre), null);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  await run(function*() {
+    const hby = yield* createHabery({ name, headDirPath });
+    try {
+      assertEquals(hby.db.getHab(groupPre)?.name, "team");
+      assertEquals(hby.habs.has(groupPre), false);
+      assertEquals(hby.db.getKever(groupPre), null);
+    } finally {
+      yield* hby.close(true);
     }
   });
 });

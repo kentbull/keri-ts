@@ -618,7 +618,9 @@ function* postCesrMessage(
   }
 
   if (!lastResponse) {
-    throw new ValidationError("No CESR HTTP request was generated for delivery.");
+    throw new ValidationError(
+      "No CESR HTTP request was generated for delivery.",
+    );
   }
 
   return lastResponse;

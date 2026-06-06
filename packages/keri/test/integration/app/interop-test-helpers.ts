@@ -93,6 +93,13 @@ const DEFAULT_TUFA_WITNESS_ALIASES = [
   "twit",
 ] as const;
 
+/** Pinned KERIpy fork commit used by all KLI interop tests. */
+export const KERIPY_INTEROP_COMMIT = "98b88cf73a746813a8719f05264400467a474c05";
+
+const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
+const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}`;
+const KERIPY_INTEROP_RAW_BASE = `https://raw.githubusercontent.com/kentbull/keripy/${KERIPY_INTEROP_COMMIT}`;
+
 /**
  * Runs one command and returns decoded stdout/stderr.
  */
@@ -321,32 +328,44 @@ export function workspaceRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
 }
 
-/** Resolve the sibling KERIpy repo root checked into this workspace. */
-export function keripyRepoRoot(): string {
-  return new URL("../../../../../../keripy/", import.meta.url).pathname;
+function cacheHome(): string {
+  return Deno.env.get("XDG_CACHE_HOME")
+    ?? `${Deno.env.get("HOME") ?? "/tmp"}/.cache`;
 }
 
-/** Resolve the local-source KERIpy Python package root. */
-export function keripySourceRoot(): string {
-  return new URL("../../../../../../keripy/src/", import.meta.url).pathname;
+function keripyInteropCacheRoot(): string {
+  return `${cacheHome()}/tufa-interop/keripy/${KERIPY_INTEROP_COMMIT}`;
+}
+
+function keripyInteropVenvRoot(): string {
+  return `${keripyInteropCacheRoot()}/venv`;
+}
+
+function keripyInteropFixtureRoot(): string {
+  return `${keripyInteropCacheRoot()}/fixtures`;
+}
+
+function keripyInteropVenvBin(name: string): string {
+  return `${keripyInteropVenvRoot()}/bin/${name}`;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Resolve the checked-in KERIpy witness config directory. */
 export function keripyWitnessConfigSourceRoot(): string {
-  return new URL(
-    "../../../../../../keripy/scripts/keri/cf/main/",
-    import.meta.url,
-  )
-    .pathname;
+  return `${keripyInteropFixtureRoot()}/scripts/keri/cf/main/`;
 }
 
 /** Resolve the checked-in KERIpy witness inception sample file. */
 export function keripyWitnessSamplePath(): string {
-  return new URL(
-    "../../../../../../keripy/scripts/demo/data/wil-witness-sample.json",
-    import.meta.url,
-  )
-    .pathname;
+  return `${keripyInteropFixtureRoot()}/scripts/demo/data/wil-witness-sample.json`;
 }
 
 /** Return the last non-empty line from human-oriented CLI output. */
@@ -554,40 +573,191 @@ export async function withStartedChild<T>(
   }
 }
 
-/**
- * Resolve the Python interpreter that matches the active `kli` installation.
- */
-export async function resolvePythonCommand(
+function parsePythonVersion(
+  output: string,
+): { major: number; minor: number } | null {
+  const match = output.match(/Python\s+(\d+)\.(\d+)/);
+  if (!match) {
+    return null;
+  }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+  };
+}
+
+async function canUsePython314(
+  command: string,
   env: Record<string, string>,
-  kliCommand: string,
+): Promise<boolean> {
+  try {
+    const result = await runCmd(command, ["--version"], env);
+    const version = parsePythonVersion(`${result.stdout}\n${result.stderr}`);
+    return result.code === 0 && !!version
+      && (version.major > 3 || (version.major === 3 && version.minor >= 14));
+  } catch {
+    return false;
+  }
+}
+
+async function resolvePython314Command(
+  env: Record<string, string>,
 ): Promise<string> {
   const probeEnv = pyenvProbeEnv(env);
-  if (kliCommand.includes("/")) {
-    try {
-      const first = (await Deno.readTextFile(kliCommand)).split(/\r?\n/, 1)[0] ?? "";
-      if (first.startsWith("#!")) {
-        const parts = first.slice(2).trim().split(/\s+/);
-        const python = parts.at(-1);
-        if (python && python.startsWith("python")) {
-          return python;
-        }
-      }
-    } catch {
-      // Fall through to pyenv/PATH lookup.
-    }
+  const candidates: string[] = [];
+  const explicit = Deno.env.get("KERIPY_INTEROP_PYTHON");
+  if (explicit) {
+    candidates.push(explicit);
   }
 
   try {
     const pyenvWhich = await runCmd("pyenv", ["which", "python"], probeEnv);
     const resolved = pyenvWhich.stdout.trim();
     if (pyenvWhich.code === 0 && resolved.length > 0) {
-      return resolved;
+      candidates.push(resolved);
     }
   } catch {
-    // Fall through to PATH resolution.
+    // Fall through to PATH candidates.
   }
 
-  return "python3";
+  candidates.push("python3.14", "python3");
+  for (const candidate of candidates) {
+    if (await canUsePython314(candidate, probeEnv)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `KERIpy interop requires Python >= 3.14. Tried: ${candidates.join(", ")}`,
+  );
+}
+
+async function canRunCommand(
+  command: string,
+  args: string[],
+  env: Record<string, string>,
+): Promise<boolean> {
+  try {
+    return (await runCmd(command, args, env)).code === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function installKeripyIntoVenv(
+  python: string,
+  venvRoot: string,
+  env: Record<string, string>,
+): Promise<void> {
+  await Deno.mkdir(keripyInteropCacheRoot(), { recursive: true });
+  await requireSuccess(
+    "create pinned KERIpy venv",
+    runCmdWithTimeout(python, ["-m", "venv", venvRoot], env, 120_000),
+  );
+
+  const venvPython = keripyInteropVenvBin("python");
+  if (await canRunCommand("uv", ["--version"], env)) {
+    await requireSuccess(
+      "install pinned KERIpy with uv",
+      runCmdWithTimeout(
+        "uv",
+        [
+          "pip",
+          "install",
+          "--python",
+          venvPython,
+          KERIPY_INTEROP_INSTALL,
+        ],
+        env,
+        600_000,
+      ),
+    );
+  } else {
+    await requireSuccess(
+      "upgrade pinned KERIpy venv packaging tools",
+      runCmdWithTimeout(
+        venvPython,
+        ["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
+        env,
+        240_000,
+      ),
+    );
+    await requireSuccess(
+      "install pinned KERIpy with pip",
+      runCmdWithTimeout(
+        venvPython,
+        ["-m", "pip", "install", KERIPY_INTEROP_INSTALL],
+        env,
+        600_000,
+      ),
+    );
+  }
+}
+
+async function downloadPinnedKeripyFixture(
+  relativePath: string,
+): Promise<void> {
+  const target = `${keripyInteropFixtureRoot()}/${relativePath}`;
+  if (await pathExists(target)) {
+    return;
+  }
+  const url = `${KERIPY_INTEROP_RAW_BASE}/${relativePath}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Unable to fetch pinned KERIpy fixture ${url}: HTTP ${response.status}`,
+    );
+  }
+  await Deno.mkdir(target.slice(0, target.lastIndexOf("/")), {
+    recursive: true,
+  });
+  await Deno.writeFile(target, new Uint8Array(await response.arrayBuffer()));
+}
+
+async function ensurePinnedKeripyFixtures(): Promise<void> {
+  await Promise.all([
+    ...DEFAULT_KERIPY_WITNESS_ALIASES.map((alias) => downloadPinnedKeripyFixture(`scripts/keri/cf/main/${alias}.json`)),
+    downloadPinnedKeripyFixture(
+      "scripts/demo/data/wil-witness-sample.json",
+    ),
+  ]);
+}
+
+async function ensurePinnedKeripyKli(
+  env: Record<string, string>,
+): Promise<string> {
+  const marker = `${keripyInteropCacheRoot()}/PIN`;
+  const kli = keripyInteropVenvBin("kli");
+  const markerMatches = await pathExists(marker)
+    ? (await Deno.readTextFile(marker)).trim() === KERIPY_INTEROP_COMMIT
+    : false;
+
+  if (markerMatches && await canUseKli(kli, env)) {
+    await ensurePinnedKeripyFixtures();
+    return kli;
+  }
+
+  if (await pathExists(keripyInteropVenvRoot())) {
+    await Deno.remove(keripyInteropVenvRoot(), { recursive: true });
+  }
+
+  const python = await resolvePython314Command(env);
+  const installEnv = {
+    ...pyenvProbeEnv(env),
+    PIP_DISABLE_PIP_VERSION_CHECK: "1",
+  };
+  await installKeripyIntoVenv(python, keripyInteropVenvRoot(), installEnv);
+
+  if (!(await canUseKli(kli, env))) {
+    throw new Error(
+      `Pinned KERIpy install did not produce a runnable kli at ${kli}.`,
+    );
+  }
+
+  await Deno.mkdir(keripyInteropCacheRoot(), { recursive: true });
+  await Deno.writeTextFile(marker, `${KERIPY_INTEROP_COMMIT}\n`);
+  await ensurePinnedKeripyFixtures();
+  return kli;
 }
 
 /** Run the local `tufa` CLI from source. */
@@ -626,16 +796,22 @@ export async function runTufaWithTimeout(
 export async function createInteropContext(): Promise<InteropContext> {
   const home = await Deno.makeTempDir({ prefix: "tufa-kli-home-" });
   const denoDir = await detectDenoDir();
-  const env = {
+  const baseEnv: Record<string, string> = {
     ...Deno.env.toObject(),
     HOME: home,
     ...(denoDir ? { DENO_DIR: denoDir } : {}),
+  };
+  const kliCommand = await ensurePinnedKeripyKli(baseEnv);
+  const kliBin = kliCommand.slice(0, kliCommand.lastIndexOf("/"));
+  const env = {
+    ...baseEnv,
+    PATH: `${kliBin}:${baseEnv.PATH ?? ""}`,
   };
   return {
     home,
     env,
     repoRoot: workspaceRoot(),
-    kliCommand: await resolveKliCommand(env),
+    kliCommand,
   };
 }
 
@@ -710,19 +886,6 @@ export function* inspectCompatHabery(
   );
 }
 
-/** Build the env used for local-source KERIpy hosts. */
-export function localKeriPySourceEnv(
-  env: Record<string, string>,
-): Record<string, string> {
-  return {
-    ...env,
-    PYTHONPATH: [
-      keripySourceRoot(),
-      env.PYTHONPATH ?? "",
-    ].filter((item) => item.length > 0).join(":"),
-  };
-}
-
 /**
  * Explicit, randomized KERIpy witness topology used by interop receipt tests.
  *
@@ -743,7 +906,7 @@ export class KeriPyWitnessHarness {
     readonly base: string,
     readonly configRoot: string,
     readonly env: Record<string, string>,
-    readonly pythonCommand: string,
+    readonly kliCommand: string,
     readonly nodes: readonly KeriPyWitnessNode[],
     private readonly children: readonly SpawnedChild[],
   ) {}
@@ -878,7 +1041,6 @@ export async function startKeriPyWitnessHarness(
     ...ctx.env,
     HOME: home,
   };
-  const pythonCommand = await resolvePythonCommand(env, ctx.kliCommand);
 
   const nodes: KeriPyWitnessNode[] = [];
   for (const alias of aliases) {
@@ -908,10 +1070,8 @@ export async function startKeriPyWitnessHarness(
 
   const children = nodes.map((node) =>
     spawnChild(
-      pythonCommand,
+      ctx.kliCommand,
       [
-        "-m",
-        "keri.cli.kli",
         "witness",
         "start",
         "--name",
@@ -929,8 +1089,7 @@ export async function startKeriPyWitnessHarness(
         "--tcp",
         String(node.tcpPort),
       ],
-      localKeriPySourceEnv(env),
-      keripyRepoRoot(),
+      env,
     )
   );
 
@@ -956,7 +1115,7 @@ export async function startKeriPyWitnessHarness(
     base,
     configRoot,
     env,
-    pythonCommand,
+    ctx.kliCommand,
     nodes,
     children,
   );

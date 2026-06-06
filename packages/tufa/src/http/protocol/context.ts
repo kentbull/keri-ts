@@ -11,13 +11,28 @@ export function buildProtocolRequestContext(
   const url = new URL(req.url);
   const pathname = normalizeProtocolPath(url.pathname);
   const hosted = runtime
-    ? resolveHostedEndpointPath(runtime.hby, pathname, "", policy.hostedPrefixes)
+    ? resolveHostedEndpointPath(
+      runtime.hby,
+      pathname,
+      "",
+      policy.hostedPrefixes,
+    )
     : null;
   const mailboxAdmin = runtime
-    ? resolveHostedEndpointPath(runtime.hby, pathname, "/mailboxes", policy.hostedPrefixes)
+    ? resolveHostedEndpointPath(
+      runtime.hby,
+      pathname,
+      "/mailboxes",
+      policy.hostedPrefixes,
+    )
     : null;
   const genericIngress = runtime
-    ? resolveHostedEndpointPath(runtime.hby, pathname, "/", policy.hostedPrefixes)
+    ? resolveHostedEndpointPath(
+      runtime.hby,
+      pathname,
+      "/",
+      policy.hostedPrefixes,
+    )
     : null;
   const oobiPath = hosted?.relativePath ?? pathname;
 

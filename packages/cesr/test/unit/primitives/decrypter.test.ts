@@ -30,8 +30,12 @@ Deno.test("decrypter: decrypts KERIpy stable seed and salt ciphers from cipher, 
   const decrypter = new Decrypter({
     qb64: KERIPY_MATTER_VECTORS.decrypterX25519Private,
   });
-  const seedCipher = new Cipher({ qb64: KERIPY_MATTER_VECTORS.cipherSeedVector });
-  const saltCipher = new Cipher({ qb64: KERIPY_MATTER_VECTORS.cipherSaltVector });
+  const seedCipher = new Cipher({
+    qb64: KERIPY_MATTER_VECTORS.cipherSeedVector,
+  });
+  const saltCipher = new Cipher({
+    qb64: KERIPY_MATTER_VECTORS.cipherSaltVector,
+  });
 
   const signerFromCipher = decrypter.decrypt({ cipher: seedCipher });
   assertInstanceOf(signerFromCipher, Signer);
@@ -79,7 +83,9 @@ Deno.test("decrypter: requires ctor for variable qb64 and qb2 but defaults strea
     qb64: KERIPY_MATTER_VECTORS.decrypterX25519Private,
   });
   const texter = new Texter({
-    raw: new TextEncoder().encode("The quick brown fox jumps over the lazy dog"),
+    raw: new TextEncoder().encode(
+      "The quick brown fox jumps over the lazy dog",
+    ),
     code: MtrDex.Bytes_L0,
   });
   const qb64Cipher = encrypter.encrypt({
@@ -95,8 +101,14 @@ Deno.test("decrypter: requires ctor for variable qb64 and qb2 but defaults strea
     code: MtrDex.X25519_Cipher_L0,
   });
 
-  assertThrows(() => decrypter.decrypt({ cipher: qb64Cipher }), UnknownCodeError);
-  assertThrows(() => decrypter.decrypt({ cipher: qb2Cipher }), UnknownCodeError);
+  assertThrows(
+    () => decrypter.decrypt({ cipher: qb64Cipher }),
+    UnknownCodeError,
+  );
+  assertThrows(
+    () => decrypter.decrypt({ cipher: qb2Cipher }),
+    UnknownCodeError,
+  );
 
   const streamer = decrypter.decrypt({ cipher: streamCipher });
   assertInstanceOf(streamer, Streamer);

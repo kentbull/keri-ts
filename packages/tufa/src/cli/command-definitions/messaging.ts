@@ -11,7 +11,10 @@ export function registerMessagingCmds(
   registerExnCmds(program, dispatch);
 }
 
-function registerExchangeCmds(program: Command, dispatch: CommandDispatch): void {
+function registerExchangeCmds(
+  program: Command,
+  dispatch: CommandDispatch,
+): void {
   registerExnSendSubCmd(
     program.command("exchange").description(
       "Send peer-to-peer exchange messages",

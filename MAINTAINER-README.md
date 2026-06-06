@@ -30,8 +30,8 @@ Local macOS note:
 - `packages/keri/scripts/setup_lmdb_v1.sh` rebuilds every discovered local
   `lmdb` package tree that Node or Deno may actually load, including Deno's
   `.deno/.../node_modules/lmdb` copy when present
-- this is an addon-provenance safeguard, not a global-install requirement:
-  Deno may resolve `npm:lmdb` from its shadow package tree under
+- this is an addon-provenance safeguard, not a global-install requirement: Deno
+  may resolve `npm:lmdb` from its shadow package tree under
   `node_modules/.deno/...`, and that tree can otherwise keep using an optional
   prebuilt native addon even after top-level `node_modules/lmdb` has been
   rebuilt successfully

@@ -40,7 +40,10 @@ export class Signal<T extends SignalAttrs = SignalAttrs> {
   constructor(
     init:
       | { raw: Uint8Array; ckey?: string }
-      | { pad: Omit<Partial<SignalPad<T>>, "a" | "r"> & { a: T; r: string }; ckey?: string },
+      | {
+        pad: Omit<Partial<SignalPad<T>>, "a" | "r"> & { a: T; r: string };
+        ckey?: string;
+      },
   ) {
     if ("raw" in init) {
       this.#ckey = init.ckey;

@@ -56,7 +56,9 @@ Deno.test("matter: exposes KERIpy semantic/readability projections", () => {
   const special = new Matter({ qb64: KERIPY_MATTER_VECTORS.labelerI });
   const digest = new Matter({ qb64: KERIPY_MATTER_VECTORS.digerBlake3 });
   const variable = new Matter({ qb64: KERIPY_MATTER_VECTORS.texterSimple });
-  const prefixer = new Prefixer({ qb64: KERIPY_MATTER_VECTORS.prefixerEd25519N });
+  const prefixer = new Prefixer({
+    qb64: KERIPY_MATTER_VECTORS.prefixerEd25519N,
+  });
   const verfer = new Verfer({ qb64: KERIPY_MATTER_VECTORS.verferEcdsaR1 });
 
   assertEquals(special.name, "Tag1");

@@ -16,7 +16,11 @@ function decimalThreshold(value: bigint): string {
  * - `query` relies on this exact mental model to show "best local view of
  *   external state after bounded convergence work"
  */
-export function printExternal(hby: Habery, pre: string, label = "Identifier"): void {
+export function printExternal(
+  hby: Habery,
+  pre: string,
+  label = "Identifier",
+): void {
   const kever = hby.db.getKever(pre);
   if (!kever) {
     throw new ValidationError(`No known key state for prefix ${pre}.`);

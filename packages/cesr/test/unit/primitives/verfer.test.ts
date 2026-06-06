@@ -67,7 +67,11 @@ Deno.test("verfer: verifies signatures via the verifier-implied crypto suite", (
   ];
 
   for (const testCase of cases) {
-    assertEquals(testCase.verfer.verify(testCase.sig, message), true, testCase.name);
+    assertEquals(
+      testCase.verfer.verify(testCase.sig, message),
+      true,
+      testCase.name,
+    );
     assertEquals(
       testCase.verfer.verify(testCase.sig, wrongMessage),
       false,

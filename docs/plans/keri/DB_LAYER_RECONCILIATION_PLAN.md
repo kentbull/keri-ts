@@ -37,8 +37,8 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
      io-set semantics, dup/io-dup semantics, and KERIpy oracle vectors for
      mixed-key reverse scans,
    - several helper rows remain intentionally `Partial` because the TS API shape
-     still differs from KERIpy (`openLMDB` factory style, key-helper
-     return-type differences, `splitKeyDT` string vs datetime behavior).
+     still differs from KERIpy (`openLMDB` factory style, key-helper return-type
+     differences, `splitKeyDT` string vs datetime behavior).
 3. `D2` is much further along than the earlier bootstrap-only description:
    - all 30 inventoried `subing.py` class families now exist in
      `packages/keri/src/db/subing.ts`,
@@ -50,11 +50,11 @@ Deliver a KERIpy-equivalent LMDB database layer in `keri-ts` that supports:
    - `koming.ts` now includes `KomerBase`, `Komer`, `IoSetKomer`, and
      `DupKomer`,
    - JSON/CBOR/MGPK serializer selection is present at the `KomerBase` seam,
-   - there are no longer any inventoried `koming.py` rows in `Missing`, but
-     the family still remains mostly `Partial` pending broader parity review.
+   - there are no longer any inventoried `koming.py` rows in `Missing`, but the
+     family still remains mostly `Partial` pending broader parity review.
 5. `D4` now has a broad databaser/record-contract foundation in place:
-   - `Baser` binds the large named-subdb surface used by the current runtime
-     arc rather than only a narrow visibility slice,
+   - `Baser` binds the large named-subdb surface used by the current runtime arc
+     rather than only a narrow visibility slice,
    - persisted record contracts now live explicitly in
      `packages/keri/src/core/records.ts` as `FooRecord` runtime classes plus
      `FooRecordShape` stored-shape interfaces,

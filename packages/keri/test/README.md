@@ -63,12 +63,12 @@ deno task test:quality
     `kli witness demo` topology.
 - Repo-root `deno task test:integration:server` now runs the `tufa` package
   server integration seam rather than a `keri-ts`-owned host surface.
-- Parallel lanes auto-detect available CPUs and cap themselves conservatively
-  by default. Override with `KERI_TEST_JOBS` or `DENO_JOBS` when you need a
+- Parallel lanes auto-detect available CPUs and cap themselves conservatively by
+  default. Override with `KERI_TEST_JOBS` or `DENO_JOBS` when you need a
   different worker count locally or in CI. `test:quality:core-fast-parallel`
   splits that worker budget across the two core slices and runs them together.
-- Compat-dependent tests still require a prepared LMDB v1-compatible addon.
-  CI does that during job setup. For local runs, prepare it explicitly with
+- Compat-dependent tests still require a prepared LMDB v1-compatible addon. CI
+  does that during job setup. For local runs, prepare it explicitly with
   `deno task setup:compat-lmdb` before running compat or interop-heavy tests.
 - Maintainer-focused testing and release flows are documented in
   `MAINTAINER-README.md`.

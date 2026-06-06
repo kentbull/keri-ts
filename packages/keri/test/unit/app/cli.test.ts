@@ -1,16 +1,12 @@
 // @file-test-lane app-stateful-a
 
 import { type Operation, run } from "effection";
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { Prefixer } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
-import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
 import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
+import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
@@ -20,11 +16,7 @@ import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { delcept } from "../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import {
-  assertOperationThrows,
-  CLITestHarness,
-  createMockArgs,
-} from "../../../test/utils.ts";
+import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
 
 interface CmdResult {
   code: number;
@@ -33,9 +25,7 @@ interface CmdResult {
 }
 
 function extractPrefixLine(output: string): string {
-  const line = output.split(/\r?\n/).find((line) =>
-    line.trim().startsWith("Prefix")
-  );
+  const line = output.split(/\r?\n/).find((line) => line.trim().startsWith("Prefix"));
   if (!line) {
     throw new Error(`Unable to parse prefix from output:\n${output}`);
   }
@@ -43,9 +33,7 @@ function extractPrefixLine(output: string): string {
 }
 
 function extractRawSignature(output: string): string {
-  const line = output.split(/\r?\n/).find((line) =>
-    /^\d+\.\s+/.test(line.trim())
-  );
+  const line = output.split(/\r?\n/).find((line) => /^\d+\.\s+/.test(line.trim()));
   if (!line) {
     throw new Error(`Unable to parse signature output:\n${output}`);
   }
@@ -344,7 +332,7 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
     })
   );
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -370,7 +358,7 @@ Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async
   );
 
   await assertOperationThrows(
-    (function* () {
+    (function*() {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
         readonly: true,
         skipConfig: true,
@@ -394,7 +382,7 @@ Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores"
     })
   );
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
       skipConfig: true,
@@ -431,7 +419,7 @@ Deno.test("CLI - delegate confirm does not pin aess or accept the delegate befor
       })
     );
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
         skipConfig: true,
       });
@@ -506,7 +494,7 @@ Deno.test("CLI - delegate confirm does not pin aess or accept the delegate befor
       "Runtime did not converge within 128 turns.",
     );
 
-    await run(function* () {
+    await run(function*() {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
         readonly: true,
         skipConfig: true,
@@ -721,7 +709,7 @@ Deno.test("CLI - sign, verify, rotate, and interact commands work for one persis
     name,
     headDirPath,
     alias,
-    data: ['{"anchor":"acdc"}'],
+    data: ["{\"anchor\":\"acdc\"}"],
   }));
   assertEquals(
     interact.code,

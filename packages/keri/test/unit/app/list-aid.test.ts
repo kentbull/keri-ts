@@ -12,7 +12,9 @@ function identifierLines(lines: string[]): string[] {
   return lines.filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim()));
 }
 
-async function captureOutputLines(operation: Operation<void>): Promise<string[]> {
+async function captureOutputLines(
+  operation: Operation<void>,
+): Promise<string[]> {
   const harness = new CLITestHarness();
   harness.captureOutput();
   try {
@@ -57,7 +59,9 @@ Deno.test("CLI - list and aid commands reuse one initialized store across empty 
   assertStringIncludes(joinedInceptOutput, "Prefix");
   const prefixLine = inceptOutput.find((entry) => entry.startsWith("Prefix"));
   if (!prefixLine) {
-    throw new Error(`Unable to parse prefix from output:\n${joinedInceptOutput}`);
+    throw new Error(
+      `Unable to parse prefix from output:\n${joinedInceptOutput}`,
+    );
   }
   const prefix = prefixLine.trim().split(/\s+/).at(-1) ?? "";
 

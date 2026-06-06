@@ -88,7 +88,9 @@ const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
 function isMissingReloadEventError(error: unknown): boolean {
   return error instanceof Error
-    && error.message.startsWith("Missing accepted event for reloaded Kever state ");
+    && error.message.startsWith(
+      "Missing accepted event for reloaded Kever state ",
+    );
 }
 
 type EventSealRecord = ReturnType<typeof SealEvent.fromSad>;
@@ -119,7 +121,10 @@ function normalizeEventSeal(value: unknown): EventSealRecord | null {
   }
 }
 
-function eventSealsEqual(left: EventSealRecord, right: EventSealRecord): boolean {
+function eventSealsEqual(
+  left: EventSealRecord,
+  right: EventSealRecord,
+): boolean {
   return left.i.qb64 === right.i.qb64
     && left.s.numh === right.s.numh
     && left.d.qb64 === right.d.qb64;
@@ -1216,16 +1221,26 @@ export class Baser {
    *
    * This is the TypeScript-native replacement for KERIpy's read-through
    * `db.kevers` dict behavior.
+   *
+   * `refresh` lets long-lived hosts notice current state committed by sibling
+   * CLI processes before answering replay/query requests.
    */
-  getKever(pre: string): Kever | null {
+  getKever(
+    pre: string,
+    options: { refresh?: boolean } = {},
+  ): Kever | null {
     const current = this.kevers.get(pre);
-    if (current) {
+    if (current && !options.refresh) {
       return current;
     }
 
     const state = this.getState(pre);
     if (!state) {
-      return null;
+      return current ?? null;
+    }
+
+    if (current && state.d === current.said) {
+      return current;
     }
 
     const kever = Kever.fromState({ state, db: this });

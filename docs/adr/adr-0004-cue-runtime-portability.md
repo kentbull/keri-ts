@@ -44,14 +44,14 @@ architecture to maintainers and left no honest place to port broader KERIpy cue
 behavior.
 
 This ADR stays normative for `keri-ts` cue-runtime semantics. For the broader
-cross-runtime explainer, including KERIpy doer correspondence, mailbox
-`stream` routing, and end-to-end producer/consumer inventories, read
+cross-runtime explainer, including KERIpy doer correspondence, mailbox `stream`
+routing, and end-to-end producer/consumer inventories, read
 `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
 
 ## Decision
 
-`keri-ts` keeps the shared runtime cue deck, but not as the only cue scope.
-Cue handling is formalized as a dual-scope contract:
+`keri-ts` keeps the shared runtime cue deck, but not as the only cue scope. Cue
+handling is formalized as a dual-scope contract:
 
 1. Runtime cue production
    - `Reactor`, `Revery`, runtime `Kevery`, `Oobiery`, and later `Tevery` /
@@ -98,8 +98,8 @@ belong behind `Oobiery` and in durable DB families such as `oobis.`.
 
 ## Notifications Are Parallel To Cues, Not New Cue Kinds
 
-KERIpy does have a generic host-visible notification path, but it is not part
-of the core cue taxonomy. It lives in the app layer as:
+KERIpy does have a generic host-visible notification path, but it is not part of
+the core cue taxonomy. It lives in the app layer as:
 
 - durable notices in `Noter`
 - signed notice mutation/read logic in `Notifier`
@@ -141,8 +141,8 @@ That means:
 - the habitat owns turning cue semantics into KERI wire messages when possible
 
 This is also why `loc add` belongs in the same architecture. A local
-location-scheme update is not a direct DB mutation; it is a signed
-`/loc/scheme` reply fed back through:
+location-scheme update is not a direct DB mutation; it is a signed `/loc/scheme`
+reply fed back through:
 
 - parser
 - `Revery`
@@ -221,9 +221,9 @@ These are intentional, not accidental:
   host-specific plumbing.
 - Future cue-consuming work should prefer `CueEmission` + `CueSink` over raw
   byte iterators or new root-owned transport queues.
-- Future controller-facing app notifications should prefer `Notifier` /
-  `Noter` / `Signaler` over new cue kinds unless the information is genuinely
-  part of runtime protocol convergence.
+- Future controller-facing app notifications should prefer `Notifier` / `Noter`
+  / `Signaler` over new cue kinds unless the information is genuinely part of
+  runtime protocol convergence.
 - `loc add` and similar local admin commands must continue to mutate local state
   through parser/routing acceptance, not through direct DB writes.
 - Receipt/witness cue parity is still incomplete in current `keri-ts`; the

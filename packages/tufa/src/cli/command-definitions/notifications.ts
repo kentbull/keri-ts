@@ -21,8 +21,18 @@ export function registerNotificationCmds(
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
     .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .option("--start <start>", "Zero-based starting row", (value: string) => Number(value), 0)
-    .option("--limit <limit>", "Maximum rows to return", (value: string) => Number(value), 25)
+    .option(
+      "--start <start>",
+      "Zero-based starting row",
+      (value: string) => Number(value),
+      0,
+    )
+    .option(
+      "--limit <limit>",
+      "Maximum rows to return",
+      (value: string) => Number(value),
+      25,
+    )
     .action((options: Record<string, unknown>) => {
       dispatch({
         name: "notifications.list",

@@ -590,7 +590,11 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
     alias: alias ?? parsed.searchParams.get("name") ?? undefined,
   };
 
-  const wellKnownIndex = findPathSequence(parts, [".well-known", "keri", "oobi"]);
+  const wellKnownIndex = findPathSequence(parts, [
+    ".well-known",
+    "keri",
+    "oobi",
+  ]);
   if (wellKnownIndex >= 0 && wellKnownIndex + 3 < parts.length) {
     job.cid = parts[wellKnownIndex + 3];
     job.role = Roles.controller;

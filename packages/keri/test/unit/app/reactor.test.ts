@@ -92,7 +92,10 @@ Deno.test("app/reactor - cloned events replay attached non-transferable receipt 
         firner: controller.kever?.fner,
         local: true,
       });
-      assertEquals(source.db.rcts.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(
+        source.db.rcts.get(dgKey(controller.pre, event.said)).length,
+        1,
+      );
 
       const reactor = new Reactor(remote);
       for (const msg of source.db.clonePreIter(controller.pre, 0)) {
@@ -100,7 +103,10 @@ Deno.test("app/reactor - cloned events replay attached non-transferable receipt 
       }
       reactor.processOnce();
 
-      assertEquals(remote.db.rcts.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(
+        remote.db.rcts.get(dgKey(controller.pre, event.said)).length,
+        1,
+      );
     } finally {
       yield* remote.close(true);
       yield* source.close(true);
@@ -158,7 +164,10 @@ Deno.test("app/reactor - cloned events replay attached transferable receipt quad
         firner: controller.kever?.fner,
         local: true,
       });
-      assertEquals(source.db.vrcs.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(
+        source.db.vrcs.get(dgKey(controller.pre, event.said)).length,
+        1,
+      );
 
       const reactor = new Reactor(remote);
       for (const msg of source.db.clonePreIter(validator.pre, 0)) {
@@ -169,7 +178,10 @@ Deno.test("app/reactor - cloned events replay attached transferable receipt quad
       }
       reactor.processOnce();
 
-      assertEquals(remote.db.vrcs.get(dgKey(controller.pre, event.said)).length, 1);
+      assertEquals(
+        remote.db.vrcs.get(dgKey(controller.pre, event.said)).length,
+        1,
+      );
     } finally {
       yield* remote.close(true);
       yield* source.close(true);
@@ -473,7 +485,9 @@ Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escr
       assertExists(cue);
       assertEquals(cue.kin, "query");
       if (cue.kin !== "query") {
-        throw new Error("Expected reply escrow to enqueue a follow-on query cue.");
+        throw new Error(
+          "Expected reply escrow to enqueue a follow-on query cue.",
+        );
       }
       assertEquals(cue.pre, alice.pre);
     } finally {

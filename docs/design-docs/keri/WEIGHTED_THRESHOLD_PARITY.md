@@ -4,9 +4,9 @@ Date: 2026-04-02
 
 ## Purpose
 
-Capture the maintainer contract for weighted-threshold support in `keri-ts`
-now that threshold logic is no longer limited to simple numeric `parseInt()`
-checks inside KEL and reply-processing code.
+Capture the maintainer contract for weighted-threshold support in `keri-ts` now
+that threshold logic is no longer limited to simple numeric `parseInt()` checks
+inside KEL and reply-processing code.
 
 ## Design Rules
 
@@ -21,8 +21,8 @@ checks inside KEL and reply-processing code.
    - Weighted thresholds use KERIpy-shaped semantic arrays:
      - flat clause example: `["1/2", "1/2"]`
      - nested group example: `[{"1": ["1/2", "1/2"]}]`
-   - Durable key-state `kt`/`nt` fields may therefore be structured values,
-     not only strings.
+   - Durable key-state `kt`/`nt` fields may therefore be structured values, not
+     only strings.
 
 3. Parsing and authoring must preserve weighted forms.
    - `SerderKERI` and CESR-native threshold fields must hydrate and emit the

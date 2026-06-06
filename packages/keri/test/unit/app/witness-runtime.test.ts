@@ -19,7 +19,9 @@ function randomPort(): number {
   return 20000 + Math.floor(Math.random() * 20000);
 }
 
-function firstEnvelope(bytes: Uint8Array): ReturnType<typeof envelopesFromFrames>[number] {
+function firstEnvelope(
+  bytes: Uint8Array,
+): ReturnType<typeof envelopesFromFrames>[number] {
   const parser = createParser({
     framed: false,
     attachmentDispatchMode: "compat",
@@ -196,7 +198,10 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
         const mailboxAdmin = yield* fetchOp(`${hostUrl}/mailboxes`, {
           method: "POST",
         });
-        assertEquals(mailboxAdmin.status === 406 || mailboxAdmin.status === 400, true);
+        assertEquals(
+          mailboxAdmin.status === 406 || mailboxAdmin.status === 400,
+          true,
+        );
         yield* textOp(mailboxAdmin);
       } finally {
         yield* waitForTaskHalt(serverTask);

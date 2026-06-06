@@ -9,6 +9,7 @@ export interface IndirectHostOptions {
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
   seedHabs?: readonly Hab[];
+  directQueryResponses?: boolean;
   onListen?: (address: { port: number; hostname: string }) => void;
 }
 
@@ -40,6 +41,7 @@ export function* runIndirectHost(
     protocolPolicy: {
       serviceHab: options.serviceHab,
       hostedPrefixes,
+      directQueryResponses: options.directQueryResponses ?? false,
     },
   });
 }

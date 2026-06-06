@@ -1,13 +1,15 @@
-import { Ilks, type SerderKERI } from "cesr-ts";
+import { concatBytes, Ilks, type SerderKERI } from "cesr-ts";
 import { run } from "effection";
 import {
+  type CueEmission,
   type HostedRouteResolution,
   inspectCesrRequest,
   processWitnessIngress,
   readRequiredCesrRequestBytes,
+  runtimeTurn,
 } from "keri-ts/runtime";
-import { jsonNoContentResponse, textResponse } from "../responses.ts";
-import { processRuntimeRequest } from "../runtime-bridge.ts";
+import { cesrResponse, jsonNoContentResponse, textResponse } from "../responses.ts";
+import { drainRuntimeCues, processRuntimeRequest } from "../runtime-bridge.ts";
 import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
 const NONE_HOSTED_ROUTE: HostedRouteResolution = {
@@ -15,6 +17,7 @@ const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   endpoint: null,
   relativePath: null,
 };
+const DIRECT_QUERY_RESPONSE_WAIT_MS = 60_000;
 
 /** Classify generic POST/PUT CESR ingress after all explicit HTTP routes. */
 export function classifyGenericCesrIngressRoute(
@@ -96,6 +99,54 @@ function querySseResponse(
   );
 }
 
+function directQueryResponse(
+  emissions: readonly CueEmission[],
+): Response | null {
+  const messages: Uint8Array[] = [];
+  for (const emission of emissions) {
+    if (
+      emission.kind === "wire"
+      && (emission.cue.kin === "replay" || emission.cue.kin === "reply")
+    ) {
+      messages.push(...emission.msgs);
+    }
+  }
+  return messages.length > 0
+    ? cesrResponse(concatBytes(...messages), 200)
+    : null;
+}
+
+function* deferredDirectQueryResponse(
+  context: ProtocolRequestContext,
+  serder: SerderKERI,
+  emissions: readonly CueEmission[],
+) {
+  if (!context.policy.directQueryResponses) {
+    return null;
+  }
+
+  const immediate = directQueryResponse(emissions);
+  if (immediate || serder.ilk !== Ilks.qry || serder.route !== "logs") {
+    return immediate;
+  }
+
+  const runtime = context.runtime!;
+  const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
+  while (Date.now() < expires) {
+    runtime.reactor.processEscrowsOnce();
+    const replayEmissions = yield* drainRuntimeCues(
+      runtime,
+      context.policy.serviceHab,
+    );
+    const response = directQueryResponse(replayEmissions);
+    if (response) {
+      return response;
+    }
+    yield* runtimeTurn();
+  }
+  return null;
+}
+
 /** Handle one generic POST/PUT CESR ingress request. */
 export async function handleGenericCesrIngress(
   context: ProtocolRequestContext,
@@ -122,16 +173,23 @@ export async function handleGenericCesrIngress(
         });
       });
       return jsonNoContentResponse();
-    case "runtimeIngress":
+    case "runtimeIngress": {
+      let response: Response | null = null;
       await run(function*() {
-        yield* processRuntimeRequest(
+        const emissions = yield* processRuntimeRequest(
           runtime,
           bytes,
           ingressRoute.mailboxAid,
           context.policy.serviceHab,
         );
+        response = yield* deferredDirectQueryResponse(
+          context,
+          serder,
+          emissions,
+        );
       });
-      return jsonNoContentResponse();
+      return response ?? jsonNoContentResponse();
+    }
     case "mailboxQueryStream":
       await run(function*() {
         yield* processRuntimeRequest(

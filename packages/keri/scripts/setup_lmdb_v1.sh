@@ -82,7 +82,12 @@ materialize_deno_lmdb_dir() {
   )
 }
 
-mapfile -t LMDB_DIRS < <(collect_lmdb_dirs)
+LMDB_DIRS=()
+while IFS= read -r LMDB_DIR; do
+  if [[ -n "${LMDB_DIR}" ]]; then
+    LMDB_DIRS+=("${LMDB_DIR}")
+  fi
+done < <(collect_lmdb_dirs)
 if DENO_LMDB_DIR="$(materialize_deno_lmdb_dir)"; then
   DENO_LMDB_DIR="${DENO_LMDB_DIR%/}"
   if [[ -d "${DENO_LMDB_DIR}" ]]; then

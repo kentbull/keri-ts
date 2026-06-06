@@ -188,8 +188,8 @@ export class MailboxDirector {
     const cursors = { ...topicCursor };
     const encoder = new TextEncoder();
     let closed = false;
-    let idleTimer: number | null = null;
-    let pollTimer: number | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
     const cleanup = () => {
       if (closed) {
@@ -286,7 +286,7 @@ export class MailboxDirector {
   ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
     let closed = false;
-    let pollTimer: number | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
     const cleanup = () => {

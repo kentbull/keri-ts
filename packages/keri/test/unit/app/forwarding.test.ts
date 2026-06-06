@@ -165,16 +165,23 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
         mailboxTopicKey(hab.pre, "/challenge"),
         new TextEncoder().encode("hello"),
       );
-      assertEquals(mailboxer.tpcs.cntOn(mailboxTopicKey(hab.pre, "/challenge")), 1);
+      assertEquals(
+        mailboxer.tpcs.cntOn(mailboxTopicKey(hab.pre, "/challenge")),
+        1,
+      );
 
       assertEquals(
-        mailboxQueryTopics(hby, hab.pre, "Bwitness", ["/challenge"])["/challenge"],
+        mailboxQueryTopics(hby, hab.pre, "Bwitness", [
+          "/challenge",
+        ])["/challenge"],
         0,
       );
 
       updateMailboxRemoteCursor(hby, hab.pre, "Bwitness", "/challenge", 7);
       assertEquals(
-        mailboxQueryTopics(hby, hab.pre, "Bwitness", ["/challenge"])["/challenge"],
+        mailboxQueryTopics(hby, hab.pre, "Bwitness", [
+          "/challenge",
+        ])["/challenge"],
         8,
       );
       assertEquals(
@@ -292,8 +299,18 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
 
       const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
       try {
-        ingestKeriBytes(runtime, recipient.makeLocScheme("http://127.0.0.1:9123", recipient.pre, "http"));
-        ingestKeriBytes(runtime, recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true));
+        ingestKeriBytes(
+          runtime,
+          recipient.makeLocScheme(
+            "http://127.0.0.1:9123",
+            recipient.pre,
+            "http",
+          ),
+        );
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
+        );
         yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
         const said = sender.kever?.said;
@@ -326,7 +343,10 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
         assertEquals(delivered.ked?.rp, "");
         assertEquals(delivered.ked?.a, { delpre: recipient.pre });
         assertEquals(
-          ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["i"],
+          ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<
+            string,
+            unknown
+          >)["i"],
           sender.pre,
         );
       } finally {
@@ -394,7 +414,10 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
           mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
         ) ?? [];
         assertEquals(stored.length, 1);
-        assertEquals(new SerderKERI({ raw: stored[0]! }).route, DELEGATE_REQUEST_ROUTE);
+        assertEquals(
+          new SerderKERI({ raw: stored[0]! }).route,
+          DELEGATE_REQUEST_ROUTE,
+        );
       } finally {
         yield* runtime.close();
       }
@@ -464,12 +487,23 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           }
           ingestKeriBytes(
             runtime,
-            remoteWitness.makeLocScheme(`http://127.0.0.1:${port}`, remoteWitness.pre, "http"),
+            remoteWitness.makeLocScheme(
+              `http://127.0.0.1:${port}`,
+              remoteWitness.pre,
+              "http",
+            ),
           );
           yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
-          const message = sender.query(recipient.pre, sender.pre, { s: "0" }, "logs");
-          const expectedIntro = splitCesrStream(introduce(sender, remoteWitness.pre));
+          const message = sender.query(
+            recipient.pre,
+            sender.pre,
+            { s: "0" },
+            "logs",
+          );
+          const expectedIntro = splitCesrStream(
+            introduce(sender, remoteWitness.pre),
+          );
 
           const poster = new Poster(hby);
           const result = yield* poster.sendBytes(sender, {
@@ -484,13 +518,22 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
 
           const delivered = new SerderKERI({ raw: bodies.at(-1)! });
           assertEquals(delivered.route, "/fwd");
-          assertEquals(delivered.ked?.q, { pre: recipient.pre, topic: "/receipt" });
+          assertEquals(delivered.ked?.q, {
+            pre: recipient.pre,
+            topic: "/receipt",
+          });
           assertEquals(
-            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["r"],
+            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<
+              string,
+              unknown
+            >)["r"],
             "logs",
           );
           assertEquals(
-            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<string, unknown>)["q"],
+            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<
+              string,
+              unknown
+            >)["q"],
             { s: "0", i: recipient.pre, src: sender.pre },
           );
         } finally {
@@ -552,8 +595,14 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
       try {
-        ingestKeriBytes(runtime, sender.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true));
-        ingestKeriBytes(runtime, sender.makeEndRole(witness.pre, EndpointRoles.witness, true));
+        ingestKeriBytes(
+          runtime,
+          sender.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
+        );
+        ingestKeriBytes(
+          runtime,
+          sender.makeEndRole(witness.pre, EndpointRoles.witness, true),
+        );
         yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
         const intro = splitCesrStream(introduce(sender, remote.pre))
@@ -720,11 +769,20 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
         );
         ingestKeriBytes(
           runtime,
-          recipient.makeEndRole(controllerHost.pre, EndpointRoles.controller, true),
+          recipient.makeEndRole(
+            controllerHost.pre,
+            EndpointRoles.controller,
+            true,
+          ),
         );
         yield* processRuntimeTurn(runtime, { pollMailbox: false });
 
-        const forwarded = sender.query(recipient.pre, sender.pre, { s: "0" }, "logs");
+        const forwarded = sender.query(
+          recipient.pre,
+          sender.pre,
+          { s: "0" },
+          "logs",
+        );
         const wrapped = makeEmbeddedExchangeMessage("/fwd", {}, {
           sender: sender.pre,
           modifiers: { pre: recipient.pre, topic: "/receipt" },

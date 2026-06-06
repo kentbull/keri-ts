@@ -64,7 +64,9 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     aeid: args.aeid as string | undefined,
     seed: args.seed as string | undefined,
     outboxer: args.outboxer as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
+    cesrBodyMode: normalizeCesrBodyMode(
+      args.cesrBodyMode as string | undefined,
+    ),
   };
 
   // Validate required name

@@ -299,7 +299,9 @@ export class Kever {
    */
   locallyOwned(pre?: string | null): boolean {
     const current = pre ?? this.pre;
-    return this.prefixes.has(current) && !this.groups.has(current);
+    const habord = current ? this.db.getHab(current) : null;
+    return !!current && habord !== null && !habord.mid
+      && !this.groups.has(current);
   }
 
   /**
@@ -311,7 +313,7 @@ export class Kever {
    *   that a local member is still a current signer of the delegator group
    */
   locallyDelegated(pre: string | null | undefined): boolean {
-    return !!pre && this.prefixes.has(pre);
+    return !!pre && this.db.getHab(pre) !== null;
   }
 
   /**
@@ -355,7 +357,7 @@ export class Kever {
         wits = derived.wits;
       }
     }
-    return wits.some((wit) => this.prefixes.has(wit));
+    return wits.some((wit) => this.db.getHab(wit) !== null);
   }
 
   /**
@@ -1207,11 +1209,15 @@ export class Kever {
     // for escrow. Misfit checks come first so locally protected events do not
     // leak into a more permissive partial-signature or partial-delegation
     // class.
+    const localDelegatorApprovalCandidate = (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
+      && this.locallyDelegated(delpre)
+      && !this.locallyOwned();
+
     if (
       !input.local
       && (this.locallyOwned()
         || this.locallyWitnessed({ wits: [...input.wits] })
-        || this.locallyDelegated(delpre))
+        || (this.locallyDelegated(delpre) && !localDelegatorApprovalCandidate))
     ) {
       return this.makeAttachmentEscrowDecision(
         "misfit",
@@ -1373,9 +1379,35 @@ export class Kever {
       };
     }
 
+    // A local delegator without an attached approval seal is not a generic
+    // partial-delegation case. It is specifically waiting for local
+    // out-of-band approval to be attached and reprocessed.
+    const sourceSealApprovesEvent = input.sourceSeal
+      ? this.lookupAcceptedDelegatingEvent(
+        delpre,
+        input.sourceSeal,
+        input.serder,
+      ) !== null
+      : false;
+
+    if (
+      (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
+      && this.locallyDelegated(delpre)
+      && !this.locallyOwned()
+      && !sourceSealApprovesEvent
+    ) {
+      return this.makeAttachmentEscrowDecision(
+        "delegables",
+        input,
+        `Missing local delegator approval for delegated event ${input.serder.said ?? "<unknown>"}.`,
+      );
+    }
+
     // Protected parties to the delegation may accept before full remote-style
     // delegation proof because their local acceptance is what drives later
-    // witness and approval processing.
+    // witness and approval processing. The local-delegator approval gate above
+    // must run first; otherwise a remote delegate request for one of our local
+    // delegator AIDs is accepted instead of entering `delegables`.
     if (
       this.locallyOwned()
       || this.locallyMembered()
@@ -1413,22 +1445,6 @@ export class Kever {
       return Kever.rejectAttachment(
         "delegationPolicyViolation",
         `Delegator ${delpre} does not allow delegation for ${input.serder.said ?? "<unknown>"}.`,
-      );
-    }
-
-    // A local delegator without an attached approval seal is not a generic
-    // partial-delegation case. It is specifically waiting for local
-    // out-of-band approval to be attached and reprocessed.
-    if (
-      (input.serder.ilk === Ilks.dip || input.serder.ilk === Ilks.drt)
-      && this.locallyDelegated(delpre)
-      && !this.locallyOwned()
-      && !input.sourceSeal
-    ) {
-      return this.makeAttachmentEscrowDecision(
-        "delegables",
-        input,
-        `Missing local delegator approval for delegated event ${input.serder.said ?? "<unknown>"}.`,
       );
     }
 
@@ -1745,13 +1761,16 @@ export class Kever {
     sourceSeal: DelegationSourceSeal,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const candidate = this.db.getEvtSerder(delpre, sourceSealDigest(sourceSeal).qb64);
-    if (
-      !candidate || !candidate.said
-      || !this.db.fons.get(dgKey(delpre, candidate.said))
-    ) {
+    const candidate = this.db.getEvtSerder(
+      delpre,
+      sourceSealDigest(sourceSeal).qb64,
+    );
+    if (!candidate || !candidate.said || candidate.sn === null) {
       return null;
     }
+    const accepted = !!this.db.fons.get(dgKey(delpre, candidate.said))
+      || this.db.kels.getLast(delpre, candidate.sn) === candidate.said;
+    if (!accepted) return null;
     return this.delegatingLookup(candidate, serder);
   }
 
@@ -1764,7 +1783,10 @@ export class Kever {
     sourceSeal: DelegationSourceSeal,
     serder: SerderKERI,
   ): DelegatingEventLookup | null {
-    const said = this.db.kels.getLast(delpre, ordinalNumber(sourceSealOrdinal(sourceSeal)));
+    const said = this.db.kels.getLast(
+      delpre,
+      ordinalNumber(sourceSealOrdinal(sourceSeal)),
+    );
     if (!said) {
       return null;
     }

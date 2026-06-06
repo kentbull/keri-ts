@@ -47,7 +47,10 @@ Deno.test("Notifier signs, lists, marks, removes, and signals notices with colla
     const notifier = new Notifier(hby, { noter, signaler });
 
     try {
-      assertEquals(notifier.add({ r: "/delegate/request", src: "EA", delpre: "EB" }), true);
+      assertEquals(
+        notifier.add({ r: "/delegate/request", src: "EA", delpre: "EB" }),
+        true,
+      );
       assertEquals(notifier.count(), 1);
       assertEquals(signaler.count(), 1);
 

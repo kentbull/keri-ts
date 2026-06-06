@@ -93,7 +93,8 @@ function* postQueryMessage(
         `Query delivery to ${url} failed with HTTP ${response.status}.`,
       );
     }
-    const contentType = response.headers.get("Content-Type")?.toLowerCase() ?? "";
+    const contentType = response.headers.get("Content-Type")?.toLowerCase()
+      ?? "";
     if (contentType.startsWith("text/event-stream")) {
       const text = yield* readMailboxSseBody(response, controller, {
         idleTimeoutMs: 500,

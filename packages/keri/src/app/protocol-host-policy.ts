@@ -15,4 +15,13 @@ export interface ProtocolHostPolicy {
   hostedPrefixes?: readonly string[];
   /** Optional hosted witness habitat enabling witness-specific HTTP routes. */
   witnessHab?: Hab;
+  /**
+   * Whether non-`mbx` query POSTs may return immediate CESR reply/replay bodies.
+   *
+   * KERIpy's generic HttpEnd returns 204 for `logs`/`ksn` and relies on mailbox
+   * delivery. Tufa's controller-facing agent surface may opt in for clients
+   * that can consume synchronous query results, while mailbox hosts keep the
+   * KERIpy-compatible default.
+   */
+  directQueryResponses?: boolean;
 }

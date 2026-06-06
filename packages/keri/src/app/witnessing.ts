@@ -34,7 +34,7 @@ import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest, splitCesrStream } from "./cesr-http.ts";
-import type { Hab, Habery } from "./habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopesFromFrames } from "./parsering.ts";
 
@@ -589,31 +589,6 @@ function witnessSchemeReplies(
   return replies.length === 0 ? new Uint8Array() : concatBytes(...replies);
 }
 
-/** Return the exact locally accepted event message at `(pre, sn)`. */
-function ownEventMessage(
-  hby: Habery,
-  pre: string,
-  sn: number,
-): { serder: SerderKERI; message: Uint8Array } {
-  const said = hby.db.kels.getLast(pre, sn);
-  if (!said) {
-    throw new ValidationError(
-      `Missing accepted event at ${pre}:${sn.toString(16)}.`,
-    );
-  }
-  const serder = hby.db.getEvtSerder(pre, said);
-  if (!serder) {
-    throw new ValidationError(
-      `Missing accepted event body for ${pre}:${said}.`,
-    );
-  }
-  const fn = hby.db.getFelFn(pre, said);
-  if (fn === null) {
-    throw new ValidationError(`Missing first-seen ordinal for ${pre}:${said}.`);
-  }
-  return { serder, message: hby.db.cloneEvtMsg(pre, fn, said) };
-}
-
 /** Post one generic witness message using HTTP or TCP according to known URLs. */
 export function* sendWitnessMessage(
   hab: Hab,
@@ -866,7 +841,11 @@ export class Receiptor {
     }
 
     const eventSn = sn ?? kever.sn;
-    const { serder, message } = ownEventMessage(this.hby, pre, eventSn);
+    const { serder, message } = acceptedEventReplayMessage(
+      this.hby,
+      pre,
+      eventSn,
+    );
     const witnesses = [...kever.wits];
     if (witnesses.length === 0) {
       return { witnesses: [], statuses: {} };
