@@ -16,7 +16,7 @@ import { type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
-import { DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
@@ -158,9 +158,7 @@ export class Poster {
     }
 
     const embedded = args.embeds ?? {};
-    const exchangeRecipient = args.exchangeRecipient === null
-      ? undefined
-      : args.exchangeRecipient ?? recipient;
+    const exchangeRecipient = args.exchangeRecipient === null ? undefined : args.exchangeRecipient ?? recipient;
     const [serder, attachments] = exchange(args.route, args.payload, {
       sender: hab.pre,
       recipient: exchangeRecipient,
@@ -176,9 +174,7 @@ export class Poster {
     const deliveries: string[] = [];
     const queued: string[] = [];
     const delivery = args.delivery ?? "auto";
-    const mailboxEndpoints = delivery === "direct"
-      ? []
-      : mailboxDeliveryEndpoints(hab, recipient);
+    const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
 
     if (mailboxEndpoints.length > 0) {
       const failed = new Map<string, string>();
@@ -289,9 +285,7 @@ export class Poster {
     const deliveries: string[] = [];
     const queued: string[] = [];
     const delivery = args.delivery ?? "auto";
-    const mailboxEndpoints = delivery === "direct"
-      ? []
-      : mailboxDeliveryEndpoints(hab, recipient);
+    const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
 
     if (mailboxEndpoints.length > 0) {
       if (topic.length === 0) {
@@ -349,11 +343,11 @@ export class Poster {
     }
 
     if (
-      delivery !== "direct"
-      && topic.length > 0
-      && this.mailboxer
-      && this.hby.db.prefixes.has(hab.pre)
-      && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
+      delivery !== "direct" &&
+      topic.length > 0 &&
+      this.mailboxer &&
+      this.hby.db.prefixes.has(hab.pre) &&
+      this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
     ) {
       this.mailboxer.storeMsg(
         mailboxTopicKey(recipient, topic),
@@ -587,9 +581,9 @@ export class ForwardHandler implements ExchangeRouteHandler {
     attachments: ExchangeAttachment[];
   }): boolean {
     const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
-    return typeof modifiers?.pre === "string"
-      && typeof modifiers?.topic === "string"
-      && extractForwardedMessage(args.serder, args.attachments) !== null;
+    return typeof modifiers?.pre === "string" &&
+      typeof modifiers?.topic === "string" &&
+      extractForwardedMessage(args.serder, args.attachments) !== null;
   }
 
   /**
@@ -1003,9 +997,7 @@ function mailboxReplyPayload(
     return message;
   }
   const introduction = introduce(hab, recipient);
-  return introduction.length === 0
-    ? message
-    : concatBytes(introduction, message);
+  return introduction.length === 0 ? message : concatBytes(introduction, message);
 }
 
 /**
@@ -1081,6 +1073,9 @@ function defaultTopicForRoute(route: string): string {
   }
   if (route === "/oobis") {
     return OOBI_MAILBOX_TOPIC;
+  }
+  if (route.startsWith("/ipex/")) {
+    return CREDENTIAL_MAILBOX_TOPIC;
   }
   const trimmed = route.replace(/^\/+/, "");
   return trimmed.split("/")[0] ?? "";
@@ -1317,9 +1312,7 @@ function positiveTimeoutMs(
   value: number | undefined,
   fallback: number,
 ): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : fallback;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 /**

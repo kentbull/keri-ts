@@ -9,10 +9,10 @@ export function parseOobiRouteRequest(
   const parts = pathname.split("/").filter((part) => part.length > 0);
 
   if (
-    parts.length >= 4
-    && parts[0] === ".well-known"
-    && parts[1] === "keri"
-    && parts[2] === "oobi"
+    parts.length >= 4 &&
+    parts[0] === ".well-known" &&
+    parts[1] === "keri" &&
+    parts[2] === "oobi"
   ) {
     return {
       kind: "wellKnown",
@@ -22,9 +22,19 @@ export function parseOobiRouteRequest(
   }
 
   if (parts[0] === "oobi") {
+    const value = parts[1] ?? null;
+    if (parts.length === 2) {
+      return {
+        kind: "oobi",
+        aid: value,
+        said: value ?? undefined,
+        role: undefined,
+        eid: undefined,
+      };
+    }
     return {
       kind: "oobi",
-      aid: parts[1] ?? null,
+      aid: value,
       role: parts[2],
       eid: parts[3],
     };
@@ -55,6 +65,18 @@ export function handleOobiRoute(
   request: OobiRouteRequest,
 ): Response {
   const runtime = context.runtime!;
+  if (request.said) {
+    const schemer = runtime.hby.db.schema.get(request.said);
+    if (schemer) {
+      return new Response(new Blob([schemer.raw.slice().buffer as ArrayBuffer]), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/schema+json",
+        },
+      });
+    }
+  }
+
   const aid = request.aid ?? defaultOobiAid(
     runtime,
     context.policy.serviceHab,
@@ -76,9 +98,7 @@ export function handleOobiRoute(
     request.eid,
     context.policy.hostedPrefixes,
   );
-  const hab = respondingHabAid
-    ? runtime.hby.habs.get(respondingHabAid)
-    : undefined;
+  const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
   if (!hab) {
     if (hosted.kind === "ambiguous" && context.policy.hostedPrefixes) {
       return textResponse("Ambiguous hosted endpoint path", 409);
@@ -179,18 +199,18 @@ export function selectResponderHab(
     if (hosted.kind === "one") {
       const hostedAid = hosted.endpoint?.eid;
       if (
-        hostedAid
-        && runtime.hby.habs.has(hostedAid)
-        && (aid === hostedAid || eid === hostedAid)
+        hostedAid &&
+        runtime.hby.habs.has(hostedAid) &&
+        (aid === hostedAid || eid === hostedAid)
       ) {
         return hostedAid;
       }
       return undefined;
     }
-    return hostedCandidate(aid)
-      ?? hostedCandidate(eid)
-      ?? rootHostedCandidate(aid)
-      ?? rootHostedCandidate(eid);
+    return hostedCandidate(aid) ??
+      hostedCandidate(eid) ??
+      rootHostedCandidate(aid) ??
+      rootHostedCandidate(eid);
   }
 
   if (runtime.hby.habs.has(aid)) {

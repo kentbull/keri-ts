@@ -3,6 +3,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import {
+  CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
   RECEIPT_MAILBOX_TOPIC,
   REPLAY_MAILBOX_TOPIC,
@@ -24,12 +25,13 @@ import {
   Poster,
 } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { loadIpexHandlers } from "./ipexing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
 import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
-import { Reactor } from "./reactor.ts";
+import { Reactor, type VdrRuntimeServices } from "./reactor.ts";
 import { Respondant } from "./respondant.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -79,6 +81,7 @@ export interface AgentRuntime {
   poster: Poster;
   delegating: Anchorer;
   querying: QueryCoordinator;
+  vdr: VdrRuntimeServices;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -99,6 +102,7 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
+  vdr?: VdrRuntimeServices;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -139,25 +143,27 @@ export function* createAgentRuntime(
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices(options.services);
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
-  const mailboxer = options.mailboxer
-    ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
+  const mailboxer = options.mailboxer ??
+    (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
-  const signaler = options.signaler
-    ?? options.notifier?.signaler
-    ?? (hby.signator ? new Signaler() : null);
-  const noter = options.noter
-    ?? options.notifier?.noter
-    ?? (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
-  const ownsNoter = options.noter === undefined
-    && options.notifier === undefined
-    && noter !== null;
-  const notifier = options.notifier
-    ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
+  const signaler = options.signaler ??
+    options.notifier?.signaler ??
+    (hby.signator ? new Signaler() : null);
+  const noter = options.noter ??
+    options.notifier?.noter ??
+    (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
+  const ownsNoter = options.noter === undefined &&
+    options.notifier === undefined &&
+    noter !== null;
+  const notifier = options.notifier ??
+    (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
   const cues = new Deck<AgentCue>();
-  const reactor = new Reactor(hby, { cues });
+  const vdr = options.vdr ?? {};
+  const reactor = new Reactor(hby, { cues, vdr });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
+  loadIpexHandlers(hby, reactor.exchanger, { notifier });
   const mailboxDirector = new MailboxDirector(
     hby,
     mailboxer ? { mailboxer } : {},
@@ -183,6 +189,7 @@ export function* createAgentRuntime(
   for (
     const topic of [
       DELEGATE_MAILBOX_TOPIC,
+      CREDENTIAL_MAILBOX_TOPIC,
       RECEIPT_MAILBOX_TOPIC,
       REPLAY_MAILBOX_TOPIC,
       REPLY_MAILBOX_TOPIC,
@@ -212,6 +219,7 @@ export function* createAgentRuntime(
     poster,
     delegating,
     querying,
+    vdr,
     services,
     *close(): Operation<void> {
       if (ownsNoter && noter?.opened) {
@@ -382,9 +390,9 @@ export function runtimePendingState(
     authQueued: runtime.hby.db.woobi.cnt() > 0,
     authInFlight: runtime.hby.db.mfa.cnt() > 0,
     outboxPending: runtime.poster.hasPendingWork(),
-    delegationPending: runtime.hby.db.dpwe.cnt() > 0
-      || runtime.hby.db.dune.cnt() > 0
-      || runtime.hby.db.dpub.cnt() > 0,
+    delegationPending: runtime.hby.db.dpwe.cnt() > 0 ||
+      runtime.hby.db.dune.cnt() > 0 ||
+      runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
   };
 }
@@ -392,11 +400,11 @@ export function runtimePendingState(
 /** Return true when any command-local runtime work remains in flight. */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
-  return state.ingress || state.cues || state.replyEscrow
-    || state.oobiQueued || state.oobiInFlight || state.multiPending
-    || state.authQueued || state.authInFlight || state.outboxPending
-    || state.delegationPending
-    || state.queriesPending;
+  return state.ingress || state.cues || state.replyEscrow ||
+    state.oobiQueued || state.oobiInFlight || state.multiPending ||
+    state.authQueued || state.authInFlight || state.outboxPending ||
+    state.delegationPending ||
+    state.queriesPending;
 }
 
 /** Return true when a well-known URL has been authorized into `wkas.`. */
@@ -449,8 +457,8 @@ export function runtimeOobiConverged(
   runtime: AgentRuntime,
   url: string,
 ): boolean {
-  return runtimeOobiTerminalState(runtime, url).status !== "pending"
-    && !runtimeHasPendingWork(runtime);
+  return runtimeOobiTerminalState(runtime, url).status !== "pending" &&
+    !runtimeHasPendingWork(runtime);
 }
 
 /**
@@ -518,46 +526,46 @@ export function* runAgentRuntime(
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* cueDo(runtime, { ...options, sink: runtime.querying });
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.oobiery.oobiDo();
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.authenticator.authDo();
     }),
     ...(runtime.signaler
       ? [
-        yield* spawn(function*() {
+        yield* spawn(function* () {
           yield* runtime.signaler!.signalDo();
         }),
       ]
       : []),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       while (true) {
         yield* runtime.poster.processPending();
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.mailboxPoller.pollDo((batch) => {
         settleMailboxPollBatch(runtime, batch);
       });
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       while (true) {
         yield* runtime.delegating.processAllOnce();
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(function*() {
+    yield* spawn(function* () {
       yield* runtime.querying.queryDo();
     }),
   ];

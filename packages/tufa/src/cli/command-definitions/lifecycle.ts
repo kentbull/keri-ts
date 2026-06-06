@@ -496,11 +496,23 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "CESR HTTP transport mode: header (default) or body",
     )
     .option(
+      "--schema <file>",
+      "Schema JSON file to host as a data OOBI",
+      collectOption,
+      [],
+    )
+    .option(
+      "--schema-dir <dir>",
+      "Directory of schema JSON files to host as data OOBIs",
+      collectOption,
+      [],
+    )
+    .option(
       "-p, --port <port>",
       "Port number for the server (default: 8000)",
       "8000",
     )
-    .action(function(this: Command) {
+    .action(function (this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",
@@ -514,8 +526,15 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
           passcode: options.passcode,
           outboxer: options.outboxer || false,
           cesrBodyMode: options.cesrBodyMode,
+          schema: options.schema || [],
+          schemaDir: options.schemaDir || [],
           port: options.port ? Number(options.port) : 8000,
         },
       });
     });
+}
+
+function collectOption(value: string, previous: string[] = []): string[] {
+  previous.push(value);
+  return previous;
 }

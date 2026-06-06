@@ -9,6 +9,7 @@ import { exchange } from "../core/protocol-exchanging.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import { Schemer } from "../core/scheming.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -149,8 +150,8 @@ export class Oobiery {
 
       const urls = record.urls ?? [];
       if (
-        urls.length === 0
-        || urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
+        urls.length === 0 ||
+        urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
       ) {
         return [url, record];
       }
@@ -208,8 +209,8 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
-    const contentType = response.headers.get("content-type")?.toLowerCase()
-      ?? "";
+    const contentType = response.headers.get("content-type")?.toLowerCase() ??
+      "";
     this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
@@ -217,7 +218,18 @@ export class Oobiery {
       state: "fetched",
     });
 
+    if (mediaType(contentType) === "application/schema+json") {
+      if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
+        return;
+      }
+      this.failFetchedOobi(url, queuedRecord, "invalid-schema-oobi");
+      return;
+    }
+
     if (contentType.includes("json")) {
+      if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
+        return;
+      }
       if (this.processJsonOobiResponse(url, queuedRecord, bytes)) {
         return;
       }
@@ -245,6 +257,40 @@ export class Oobiery {
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
     });
+  }
+
+  /** Handle schema data-OOBIs before generic JSON reply handling. */
+  private processSchemaOobiResponse(
+    url: string,
+    record: OobiRecordShape,
+    bytes: Uint8Array,
+  ): boolean {
+    if (!record.said) {
+      return false;
+    }
+
+    let schemer: Schemer;
+    try {
+      schemer = new Schemer({ raw: bytes });
+    } catch {
+      return false;
+    }
+    if (schemer.said !== record.said) {
+      return false;
+    }
+
+    this.hby.db.schema.pin(schemer.said, schemer);
+    this.hby.db.coobi.rem(url);
+    this.hby.db.roobi.pin(url, {
+      ...record,
+      date: new Date().toISOString(),
+      state: "resolved",
+    });
+    this.cues.push({
+      kin: "oobiResolved",
+      url,
+    });
+    return true;
   }
 
   /** Handle JSON OOBI responses that carry reply bodies instead of CESR streams. */
@@ -281,9 +327,7 @@ export class Oobiery {
     serder: SerderKERI,
   ): void {
     const data = serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.aid === "string"
-      ? new Prefixer({ qb64: data.aid }).qb64
-      : null;
+    const cid = typeof data?.aid === "string" ? new Prefixer({ qb64: data.aid }).qb64 : null;
     const urls = Array.isArray(data?.urls)
       ? [
         ...new Set(
@@ -293,8 +337,8 @@ export class Oobiery {
       : [];
 
     if (
-      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null)
-      || urls.length === 0
+      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null) ||
+      urls.length === 0
     ) {
       this.failFetchedOobi(url, record, "invalid-multi-oobi");
       return;
@@ -318,8 +362,8 @@ export class Oobiery {
   private completeMultiOobi(url: string, record: OobiRecord): void {
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
-    const failed = urls.length === 0
-      || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+    const failed = urls.length === 0 ||
+      urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
 
     this.hby.db.moobi.rem(url);
     if (failed) {
@@ -424,13 +468,9 @@ export class Oobiery {
     }
 
     const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.cid === "string"
-      ? new Prefixer({ qb64: data.cid }).qb64
-      : null;
+    const cid = typeof data?.cid === "string" ? new Prefixer({ qb64: data.cid }).qb64 : null;
     const oobi = typeof data?.oobi === "string" ? data.oobi : null;
-    const dt = typeof args.serder.ked?.dt === "string"
-      ? args.serder.ked.dt
-      : new Date().toISOString();
+    const dt = typeof args.serder.ked?.dt === "string" ? args.serder.ked.dt : new Date().toISOString();
     if (!cid || !oobi) {
       throw new ValidationError("Missing cid/oobi in /introduce reply.");
     }
@@ -607,7 +647,11 @@ export function parseOobiUrl(url: string, alias?: string): OobiJob {
   }
 
   const oobiIndex = parts.lastIndexOf("oobi");
-  if (oobiIndex >= 0 && oobiIndex + 2 < parts.length) {
+  if (oobiIndex >= 0 && oobiIndex + 1 < parts.length) {
+    if (oobiIndex + 2 === parts.length) {
+      job.said = parts[oobiIndex + 1];
+      return job;
+    }
     job.cid = parts[oobiIndex + 1];
     job.role = parts[oobiIndex + 2];
     job.eid = parts[oobiIndex + 3];
@@ -643,6 +687,10 @@ function findPathSequence(parts: string[], sequence: string[]): number {
 
 function queueKindFor(url: string): OobiQueueKind {
   return isWellKnownOobiUrl(url) ? "woobi" : "oobis";
+}
+
+function mediaType(contentType: string): string {
+  return contentType.split(";")[0]?.trim().toLowerCase() ?? "";
 }
 
 export { OOBI_MAILBOX_TOPIC };

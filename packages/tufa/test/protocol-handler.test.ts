@@ -1,11 +1,13 @@
 // @file-test-lane app-fast-parallel
 
 import { Ilks } from "cesr-ts";
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertExists } from "jsr:@std/assert";
 import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
+import { Schemer } from "keri-ts/runtime";
 import {
   classifyCesrIngressRoute,
   classifyProtocolRoute,
+  createProtocolHandler,
   parseOobiRouteRequest,
   type ProtocolRequestContext,
 } from "../src/http/protocol-handler.ts";
@@ -142,6 +144,47 @@ Deno.test("tufa/protocol-handler - parses well-known and explicit OOBI paths", (
       eid: "EWIT",
     },
   );
+  assertEquals(
+    parseOobiRouteRequest("/oobi/Eschema"),
+    {
+      kind: "oobi",
+      aid: "Eschema",
+      said: "Eschema",
+      role: undefined,
+      eid: undefined,
+    },
+  );
+});
+
+Deno.test("tufa/protocol-handler - serves hosted schema data OOBIs before identity fallback", async () => {
+  const schemer = new Schemer({
+    sed: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+    },
+  });
+  const runtime = {
+    hby: {
+      db: {
+        schema: {
+          get: (said: string) => said === schemer.said ? schemer : null,
+        },
+      },
+      habs: new Map(),
+      prefixes: [],
+    },
+  } as unknown as AgentRuntime;
+  const handler = createProtocolHandler(runtime);
+
+  const response = await handler(new Request(`http://127.0.0.1/oobi/${schemer.said}`));
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get("Content-Type"), "application/schema+json");
+  assertEquals(new Uint8Array(await response.arrayBuffer()), schemer.raw);
+
+  const missing = await handler(new Request("http://127.0.0.1/oobi/EnotSchema"));
+  assertEquals(missing.status, 404);
+  assertExists(parseOobiRouteRequest("/oobi/EnotSchema")?.aid);
 });
 
 Deno.test("tufa/protocol-handler - ambiguous hosted paths stay explicit for OOBI and witness hosting", () => {

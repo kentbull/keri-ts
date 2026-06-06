@@ -87,8 +87,8 @@ import {
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
 function isMissingReloadEventError(error: unknown): boolean {
-  return error instanceof Error
-    && error.message.startsWith(
+  return error instanceof Error &&
+    error.message.startsWith(
       "Missing accepted event for reloaded Kever state ",
     );
 }
@@ -96,15 +96,15 @@ function isMissingReloadEventError(error: unknown): boolean {
 type EventSealRecord = ReturnType<typeof SealEvent.fromSad>;
 
 function isEventSealRecord(value: unknown): value is EventSealRecord {
-  return typeof value === "object"
-    && value !== null
-    && !Array.isArray(value)
-    && "i" in value
-    && "s" in value
-    && "d" in value
-    && (value as { i: unknown }).i instanceof Prefixer
-    && (value as { s: unknown }).s instanceof NumberPrimitive
-    && (value as { d: unknown }).d instanceof Diger;
+  return typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "i" in value &&
+    "s" in value &&
+    "d" in value &&
+    (value as { i: unknown }).i instanceof Prefixer &&
+    (value as { s: unknown }).s instanceof NumberPrimitive &&
+    (value as { d: unknown }).d instanceof Diger;
 }
 
 function normalizeEventSeal(value: unknown): EventSealRecord | null {
@@ -125,9 +125,9 @@ function eventSealsEqual(
   left: EventSealRecord,
   right: EventSealRecord,
 ): boolean {
-  return left.i.qb64 === right.i.qb64
-    && left.s.numh === right.s.numh
-    && left.d.qb64 === right.d.qb64;
+  return left.i.qb64 === right.i.qb64 &&
+    left.s.numh === right.s.numh &&
+    left.d.qb64 === right.d.qb64;
 }
 
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
@@ -243,7 +243,7 @@ export class Baser {
   public moobi!: Komer<OobiRecord>; // Multi-OOBI associations for one AID.
   public mfa!: Komer<OobiRecord>; // Multifactor OOBI auth records awaiting processing.
   public rmfa!: Komer<OobiRecord>; // Resolved multifactor OOBI auth records.
-  public schema!: SchemerSuber<SerderKERI>; // JSON Schema SADs keyed by schema SAID.
+  public schema!: SchemerSuber; // JSON Schema SADs keyed by schema SAID.
   public cfld!: Suber; // Contact field values for remote identifiers.
   public hbys!: Suber; // Habery-global settings.
   public cons!: Suber; // Signed contact data keyed by identifier prefix.
@@ -288,9 +288,7 @@ export class Baser {
     this.lmdber = new LMDBer(options, {
       tailDirPath: Baser.TailDirPath,
       cleanTailDirPath: "keri/clean/db",
-      altTailDirPath: compat
-        ? Baser.CompatAltTailDirPath
-        : Baser.AltTailDirPath,
+      altTailDirPath: compat ? Baser.CompatAltTailDirPath : Baser.AltTailDirPath,
       altCleanTailDirPath: compat ? ".keri/clean/db" : ".tufa/clean/db",
       tempPrefix: Baser.TempPrefix,
       maxNamedDBs: Baser.MaxNamedDBs,
@@ -750,7 +748,7 @@ export class Baser {
       });
 
       // JSON Schema SADs keyed by schema SAID.
-      this.schema = new SchemerSuber<SerderKERI>(this.lmdber, {
+      this.schema = new SchemerSuber(this.lmdber, {
         subkey: "schema.",
       });
 

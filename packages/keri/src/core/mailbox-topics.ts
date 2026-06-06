@@ -8,6 +8,8 @@
 
 /** Raw delegated event mailbox topic used for delegation approval flows. */
 export const DELEGATE_MAILBOX_TOPIC = "/delegate";
+/** Registry-backed ACDC and IPEX artifact mailbox topic. */
+export const CREDENTIAL_MAILBOX_TOPIC = "/credential";
 /** Peer OOBI request mailbox topic used by KERIpy `/oobis` EXNs. */
 export const OOBI_MAILBOX_TOPIC = "/oobi";
 /** Core receipt mailbox topic used for witness/controller correspondence. */

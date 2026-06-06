@@ -7,6 +7,7 @@ export type ProtocolHandler = (req: Request) => Promise<Response>;
 export interface OobiRouteRequest {
   kind: "wellKnown" | "oobi";
   aid: string | null;
+  said?: string;
   role?: string;
   eid?: string;
 }
