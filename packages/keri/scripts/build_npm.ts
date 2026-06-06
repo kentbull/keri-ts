@@ -6,13 +6,13 @@ const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const DB_ENTRYPOINT = "./src/npm/db.ts";
 const OUT_DIR = "./npm";
 const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
-const NPM_MAIN_PATH = "./esm/keri/src/npm/index.js";
+const NPM_MAIN_PATH = "./esm/keri/npm/src/keri/src/npm/index.js";
 const NPM_TYPES_PATH = "./types/keri/src/npm/index.d.ts";
-const NPM_CLI_PATH = "./esm/keri/src/npm/cli.js";
+const NPM_CLI_PATH = "./esm/keri/npm/src/keri/src/npm/cli.js";
 const NPM_CLI_TYPES_PATH = "./types/keri/src/npm/cli.d.ts";
-const NPM_RUNTIME_PATH = "./esm/keri/src/npm/runtime.js";
+const NPM_RUNTIME_PATH = "./esm/keri/npm/src/keri/src/npm/runtime.js";
 const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
-const NPM_DB_PATH = "./esm/keri/src/npm/db.js";
+const NPM_DB_PATH = "./esm/keri/npm/src/keri/src/npm/db.js";
 const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
 
 interface PackageManifest {
@@ -138,6 +138,7 @@ try {
     importMap: DNT_IMPORT_MAP_PATH,
     typeCheck: false,
     test: false,
+    skipNpmInstall: true,
     declaration: "separate",
     scriptModule: false,
     package: {

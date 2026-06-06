@@ -34,6 +34,7 @@ await build({
   },
   typeCheck: false,
   test: false,
+  skipNpmInstall: true,
   declaration: "separate",
   scriptModule: false,
   package: {

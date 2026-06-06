@@ -22,19 +22,19 @@ const NPM_MANIFEST_PATH = new URL("../npm/package.json", import.meta.url);
 
 const EXPECTED_EXPORTS: Record<string, ExportTarget> = {
   ".": {
-    import: "./esm/keri/src/npm/index.js",
+    import: "./esm/keri/npm/src/keri/src/npm/index.js",
     types: "./types/keri/src/npm/index.d.ts",
   },
   "./cli": {
-    import: "./esm/keri/src/npm/cli.js",
+    import: "./esm/keri/npm/src/keri/src/npm/cli.js",
     types: "./types/keri/src/npm/cli.d.ts",
   },
   "./runtime": {
-    import: "./esm/keri/src/npm/runtime.js",
+    import: "./esm/keri/npm/src/keri/src/npm/runtime.js",
     types: "./types/keri/src/npm/runtime.d.ts",
   },
   "./db": {
-    import: "./esm/keri/src/npm/db.js",
+    import: "./esm/keri/npm/src/keri/src/npm/db.js",
     types: "./types/keri/src/npm/db.d.ts",
   },
 };
