@@ -21,9 +21,21 @@ async function startTufaAgent(
   port: number,
 ): Promise<SpawnedChild> {
   const child = spawnTufa(args);
+  const ready = waitForHealth(port, 180).then(() => ({ kind: "ready" as const }));
+  const exited = child.status.then((status) => ({
+    kind: "exited" as const,
+    status,
+  }));
 
   try {
-    await waitForHealth(port);
+    const result = await Promise.race([ready, exited]);
+    if (result.kind === "exited") {
+      throw new Error(
+        `Process exited before health check passed: code=${result.status.code}, signal=${
+          result.status.signal ?? "none"
+        }`,
+      );
+    }
     return child;
   } catch (error) {
     const details = await stopChild(child);
