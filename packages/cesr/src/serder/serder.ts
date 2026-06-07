@@ -35,7 +35,7 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
-import { dumpCesrNativeSad, parseCesrNativeKed } from "./native.ts";
+import { dumpCesrNativeSad, parseCesrNativeKed, reapCesrNativeBody } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
 type SadMap = Record<string, unknown>;
@@ -147,9 +147,7 @@ function makeNumberPrimitive(
   if (value === null || value === undefined) {
     return null;
   }
-  const bigint = typeof value === "string"
-    ? BigInt(`0x${value || "0"}`)
-    : typeof value === "number"
+  const bigint = typeof value === "string" ? BigInt(`0x${value || "0"}`) : typeof value === "number"
     ? (() => {
       if (!Number.isInteger(value) || value < 0) {
         throw new SerializeError(`Invalid numeric CESR number=${value}`);
@@ -1412,10 +1410,9 @@ export class Serder implements CesrBody {
     }
 
     if (isRawInit(init)) {
-      const smellage = init.smellage ?? smell(init.raw).smellage;
-      const raw = init.raw.length === smellage.size
-        ? init.raw
-        : init.raw.slice(0, smellage.size);
+      const native = init.smellage ? null : reapCesrNativeBody(init.raw);
+      const smellage = init.smellage ?? native?.smellage ?? smell(init.raw).smellage;
+      const raw = native?.raw ?? (init.raw.length === smellage.size ? init.raw : init.raw.slice(0, smellage.size));
       const parsed = parseRawToKed(raw, smellage);
       this.raw = raw;
       this.kind = smellage.kind;
@@ -1836,9 +1833,7 @@ export class SerderKERI extends Serder {
   }
 
   get traits(): string[] {
-    return Array.isArray(this.ked?.c)
-      ? this.ked.c.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.c) ? this.ked.c.filter((value): value is string => typeof value === "string") : [];
   }
 
   get tholder(): Tholder | null {
@@ -1846,9 +1841,7 @@ export class SerderKERI extends Serder {
   }
 
   get keys(): string[] {
-    return Array.isArray(this.ked?.k)
-      ? this.ked.k.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.k) ? this.ked.k.filter((value): value is string => typeof value === "string") : [];
   }
 
   get verfers(): Verfer[] {
@@ -1856,9 +1849,7 @@ export class SerderKERI extends Serder {
   }
 
   get ndigs(): string[] {
-    return Array.isArray(this.ked?.n)
-      ? this.ked.n.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.n) ? this.ked.n.filter((value): value is string => typeof value === "string") : [];
   }
 
   get ntholder(): Tholder | null {
@@ -1884,9 +1875,7 @@ export class SerderKERI extends Serder {
   }
 
   get backs(): string[] {
-    return Array.isArray(this.ked?.b)
-      ? this.ked.b.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.b) ? this.ked.b.filter((value): value is string => typeof value === "string") : [];
   }
 
   get berfers(): Verfer[] {
@@ -1902,15 +1891,11 @@ export class SerderKERI extends Serder {
   }
 
   get cuts(): string[] {
-    return Array.isArray(this.ked?.br)
-      ? this.ked.br.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.br) ? this.ked.br.filter((value): value is string => typeof value === "string") : [];
   }
 
   get adds(): string[] {
-    return Array.isArray(this.ked?.ba)
-      ? this.ked.ba.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.ba) ? this.ked.ba.filter((value): value is string => typeof value === "string") : [];
   }
 
   get delpre(): string | null {

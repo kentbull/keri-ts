@@ -4,6 +4,7 @@
  * Keep this barrel intentionally narrow. Wider runtime and persistence APIs
  * belong on explicit non-default subpaths.
  */
+export * from "../acdc/index.ts";
 export * from "../core/bytes.ts";
 export * from "../core/cues.ts";
 export * from "../core/deck.ts";

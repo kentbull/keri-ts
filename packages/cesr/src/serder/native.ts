@@ -1,7 +1,8 @@
 import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
-import { DeserializeError, SerializeError } from "../core/errors.ts";
+import { DeserializeError, SerializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
+import { sniff } from "../parser/cold-start.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
@@ -144,26 +145,84 @@ export function canonicalizeCesrNativeRaw(
   return b(codeB2ToB64(raw, nativeQb64Size(raw, version)));
 }
 
+/**
+ * Reap one CESR-native body group and derive the smellage metadata that
+ * non-native bodies expose through `smell()`.
+ */
+export function reapCesrNativeBody(
+  input: Uint8Array,
+  version: Versionage = Vrsn_2_0,
+): { raw: Uint8Array; smellage: Smellage; consumed: number } | null {
+  const cold = sniff(input);
+  if (cold !== "txt" && cold !== "bny") {
+    return null;
+  }
+
+  let counter: ReturnType<typeof parseCounter>;
+  try {
+    counter = parseCounter(input, version, cold);
+  } catch (error) {
+    if (error instanceof ShortageError) {
+      throw error;
+    }
+    if (error instanceof UnknownCodeError || error instanceof DeserializeError) {
+      return null;
+    }
+    throw error;
+  }
+
+  if (
+    counter.code !== CtrDexV2.FixBodyGroup
+    && counter.code !== CtrDexV2.BigFixBodyGroup
+    && counter.code !== CtrDexV2.MapBodyGroup
+    && counter.code !== CtrDexV2.BigMapBodyGroup
+  ) {
+    return null;
+  }
+
+  const consumed = cold === "txt" ? counter.fullSize + counter.count * 4 : counter.fullSizeB2 + counter.count * 3;
+  if (input.length < consumed) {
+    throw new ShortageError(consumed, input.length);
+  }
+
+  const raw = canonicalizeCesrNativeRaw(input.slice(0, consumed), version);
+  const textCounter = parseCounter(raw, version, "txt");
+  let offset = textCounter.fullSize;
+  if (
+    textCounter.code === CtrDexV2.MapBodyGroup
+    || textCounter.code === CtrDexV2.BigMapBodyGroup
+  ) {
+    offset += parseLabeler(raw.slice(offset), "txt").fullSize;
+  }
+  const verser = parseVerser(raw.slice(offset), "txt");
+
+  return {
+    raw,
+    smellage: {
+      proto: verser.proto,
+      pvrsn: verser.pvrsn,
+      gvrsn: verser.gvrsn,
+      kind: Kinds.cesr,
+      size: raw.length,
+    },
+    consumed,
+  };
+}
+
 /** Emit the narrowest fixed-width tag family that can carry `text`. */
 function encodeTag(text: string): string {
   const code = TAG_CODES_BY_LENGTH.get(text.length);
   if (!code) {
     throw new SerializeError(`Unsupported tag length=${text.length}`);
   }
-  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
-    ? "_"
-    : "";
+  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9 ? "_" : "";
   return `${code}${pad}${text}`;
 }
 
 /** Emit base64-safe text through the StrB64/Bexter family. */
 function encodeBext(text: string): string {
   const rem = text.length % 4;
-  const code = rem === 0
-    ? LabelDex.StrB64_L0
-    : rem === 1
-    ? LabelDex.StrB64_L1
-    : LabelDex.StrB64_L2;
+  const code = rem === 0 ? LabelDex.StrB64_L0 : rem === 1 ? LabelDex.StrB64_L1 : LabelDex.StrB64_L2;
   return new Bexter({ code, raw: Bexter.rawify(text) }).qb64;
 }
 
@@ -171,11 +230,7 @@ function encodeBext(text: string): string {
 function encodeBytes(text: string): string {
   const raw = b(text);
   const rem = raw.length % 3;
-  const code = rem === 0
-    ? LabelDex.Bytes_L0
-    : rem === 1
-    ? LabelDex.Bytes_L1
-    : LabelDex.Bytes_L2;
+  const code = rem === 0 ? LabelDex.Bytes_L0 : rem === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2;
   return new Texter({ code, raw }).qb64;
 }
 
@@ -284,9 +339,7 @@ function encodePath(path: string): string {
 function encodeList(entries: string[], gvrsn: Versionage | null): string {
   const frame = entries.join("");
   const count = frame.length / 4;
-  const code = count < 64 ** 2
-    ? CtrDexV2.GenericListGroup
-    : CtrDexV2.BigGenericListGroup;
+  const code = count < 64 ** 2 ? CtrDexV2.GenericListGroup : CtrDexV2.BigGenericListGroup;
   return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
 }
 
@@ -649,9 +702,7 @@ function parseNestedSealOrDataListField(
   const listCounter = parseCounter(raw.slice(offset), gvrsn, "txt");
   const total = listCounter.fullSize + listCounter.count * 4;
   return {
-    value: listCounter.count === 0
-      ? []
-      : decodeList(raw.slice(offset, offset + total), gvrsn),
+    value: listCounter.count === 0 ? [] : decodeList(raw.slice(offset, offset + total), gvrsn),
     nextOffset: offset + total,
   };
 }
@@ -1655,9 +1706,7 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
   const pvrsn: Versionage = sad.v[4] === "1"
     ? { major: 1, minor: Number.parseInt(sad.v[5], 16) }
     : { major: 2, minor: 0 };
-  const gvrsn: Versionage | null = sad.v.includes("CESR") && sad.v.length >= 19
-    ? { major: 2, minor: 0 }
-    : null;
+  const gvrsn: Versionage | null = sad.v.includes("CESR") && sad.v.length >= 19 ? { major: 2, minor: 0 } : null;
   const smellage = {
     proto: sad.v.slice(0, 4) as Protocol,
     pvrsn,
@@ -1694,9 +1743,7 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
         frame += encodeLabel(label);
         frame += encodeNativeFieldValue(sad[label], label, spec, version);
       }
-      const code = frame.length / 4 < 64 ** 2
-        ? CtrDexV2.MapBodyGroup
-        : CtrDexV2.BigMapBodyGroup;
+      const code = frame.length / 4 < 64 ** 2 ? CtrDexV2.MapBodyGroup : CtrDexV2.BigMapBodyGroup;
       return `${new Counter({ code, count: frame.length / 4, version }).qb64}${frame}`;
     })()
     : (() => {
@@ -1715,9 +1762,7 @@ export function dumpCesrNativeSad(sad: SadMap): Uint8Array {
         }
         frame += encodeNativeFieldValue(sad[label], label, spec, version);
       }
-      const code = frame.length / 4 < 64 ** 2
-        ? CtrDexV2.FixBodyGroup
-        : CtrDexV2.BigFixBodyGroup;
+      const code = frame.length / 4 < 64 ** 2 ? CtrDexV2.FixBodyGroup : CtrDexV2.BigFixBodyGroup;
       return `${new Counter({ code, count: frame.length / 4, version }).qb64}${frame}`;
     })();
 

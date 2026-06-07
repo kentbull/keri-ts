@@ -6,6 +6,7 @@
  *   fetch, or LMDB-backed behavior
  * - CLI wiring and HTTP host ownership stay out of this barrel
  */
+export * from "../acdc/index.ts";
 export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
 export * from "../app/cesr-http.ts";
@@ -59,6 +60,6 @@ export * from "../core/records.ts";
 export * from "../core/roles.ts";
 export * from "../core/schemes.ts";
 export * from "../core/scheming.ts";
+export * from "../time/mod.ts";
 export * from "../vdr/credentialing.ts";
 export * from "../vdr/eventing.ts";
-export * from "../time/mod.ts";
