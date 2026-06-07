@@ -53,6 +53,12 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
     durable work is discovered from accepted `/ipex/grant` EXNs, VDR state,
     exchange pathed artifacts, and TEL `revoked` cues; webhook retry/ack state
     belongs in a separate verifier cue sidecar.
+12. Credential presentation proof attachments must not conflate `cancs` and
+    `ancs`: `cancs` stores the ACDC source seal triple from the TEL issue
+    event, while `ancs` stores the KEL anchor for that TEL event.
+13. Verifier delivery and webhook target behavior are separate components:
+    `tufa verifier run` is the Sally-like verifier sender, while `tufa hook
+    demo` is only a Sally `hook demo`-style sample webhook receiver.
 
 ## Use This Doc For
 
@@ -74,6 +80,9 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 4. Extend the registry orchestration services from the local single-sig path to
    KERIpy's full witness/multisig dissemination escrows, and add the VC/IPEX
    CLI command surfaces that drive them.
+5. Expand KLI interop beyond the proven KLI issuer -> Tufa holder -> Tufa
+   verifier direction into bilateral holder/verifier, chain, revocation, and
+   byte-level fixture parity.
 
 ## Milestone Rollup
 
@@ -163,3 +172,15 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
   issuer to holder to verifier: schema import, registry inception, credential
   create/import, holder IPEX grant, verifier webhook issuance, revoke/import,
   verifier webhook revocation, and idempotent repeat processing.
+
+### 2026-06-07 - KLI Issuer Interop Gate Landed
+
+- `tufa saidify` now matches KLI in-place JSON SAD saidification for ordinary
+  `d` and schema `$id` labels.
+- KERIpy-issued credential exports revealed the proof split: the verifier must
+  serialize the TEL source seal from `cancs` and replay the issuer KEL anchor
+  from `ancs`; treating the two as the same seal breaks KLI interoperability.
+- The live interop gate now proves KLI issuer -> Tufa holder -> Tufa verifier
+  for schema import, credential import, holder grant artifact generation,
+  verifier grant import, verifier acceptance, and webhook delivery to a
+  separate `tufa hook demo` target.

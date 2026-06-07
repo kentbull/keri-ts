@@ -9,6 +9,7 @@ export function registerCredentialCmds(
   registerVcCmds(program, dispatch);
   registerIpexCmds(program, dispatch);
   registerVerifierCmds(program, dispatch);
+  registerHookCmds(program, dispatch);
 }
 
 function addStoreOptions(cmd: Command): Command {
@@ -277,4 +278,21 @@ function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "verifier.run", args: dispatchArgs(options) });
   });
+}
+
+function registerHookCmds(program: Command, dispatch: CommandDispatch): void {
+  const hook = program.command("hook").description("Webhook target utilities");
+
+  hook
+    .command("demo")
+    .description("Launch a sample verifier webhook target")
+    .option(
+      "-p, --http <port>",
+      "Port on which to listen for webhook events",
+      (value: string) => Number(value),
+      9923,
+    )
+    .action((options: Record<string, unknown>) => {
+      dispatch({ name: "hook.demo", args: { http: options.http } });
+    });
 }

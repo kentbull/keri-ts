@@ -32,6 +32,7 @@ export { notificationsListCommand, notificationsMarkReadCommand, notificationsRe
 export { oobiGenerateCommand, oobiRequestCommand, oobiResolveCommand } from "./oobi.ts";
 export { queryCommand } from "./query.ts";
 export { rotateCommand } from "./rotate.ts";
+export { saidifyCommand } from "./saidify.ts";
 export { signCommand } from "./sign.ts";
 export { verifyCommand } from "./verify.ts";
 export { verifierRunCommand } from "./verifier.ts";

@@ -127,7 +127,10 @@ export class VerifierAgent {
 
       const artifacts = storedGrantArtifacts(this.hby, grant);
       processCredentialPresentationArtifacts(this.reactor, artifacts);
-      const creder = new SerderACDC({ raw: artifacts.acdc });
+      const creder = this.reger.creds.get([credentialSaid]);
+      if (!creder) {
+        throw new ValidationError(`Credential ${credentialSaid} was not saved after grant artifact processing.`);
+      }
       const issuer = requireString(creder.issuer, "credential issuer");
       this.cdb.snd.pin([credentialSaid], new Prefixer({ qb64: issuer }));
       this.cdb.iss.pin([credentialSaid], nowDater());
@@ -320,15 +323,15 @@ export class VerifierAgent {
   }
 
   private hasQueuedOrSent(said: string): boolean {
-    return this.cdb.iss.get([said]) !== null
-      || this.cdb.ack.get([said]) !== null
-      || this.hasReady(this.cdb.recv, said);
+    return this.cdb.iss.get([said]) !== null ||
+      this.cdb.ack.get([said]) !== null ||
+      this.hasReady(this.cdb.recv, said);
   }
 
   private hasRevocationQueuedOrSent(said: string): boolean {
-    return this.cdb.rev.get([said]) !== null
-      || this.cdb.rack.get([said]) !== null
-      || this.hasReady(this.cdb.revk, said);
+    return this.cdb.rev.get([said]) !== null ||
+      this.cdb.rack.get([said]) !== null ||
+      this.hasReady(this.cdb.revk, said);
   }
 
   private hasAcceptedGrantForCredential(said: string): boolean {
@@ -477,7 +480,7 @@ function acdcRaw(value: unknown, label: string): Uint8Array {
   if (!isRecord(value)) {
     throw new ValidationError(`Grant embedded ${label} is missing.`);
   }
-  return new SerderACDC({ sad: value }).raw;
+  return new SerderACDC({ sad: value, verify: false }).raw;
 }
 
 function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {

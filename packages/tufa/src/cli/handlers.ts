@@ -118,6 +118,7 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       "annotate",
       lazyCommand(() => import("keri-ts/cli"), "annotateCommand"),
     ],
+    ["saidify", lazyCommand(() => import("keri-ts/cli"), "saidifyCommand")],
     [
       "benchmark.cesr",
       lazyCommand(
@@ -156,6 +157,7 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["ipex.list", lazyCommand(() => import("keri-ts/cli"), "ipexListCommand")],
     ["ipex.join", lazyCommand(() => import("keri-ts/cli"), "ipexJoinCommand")],
     ["verifier.run", lazyCommand(() => import("keri-ts/cli"), "verifierRunCommand")],
+    ["hook.demo", lazyCommand(() => import("./hook.ts"), "hookDemoCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     [
       "mailbox.start",

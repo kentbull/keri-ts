@@ -135,23 +135,28 @@ export function credentialPresentationArtifacts(
   if (!iserder.said) {
     throw new ValidationError(`Credential TEL message ${credentialSaidValue} is missing SAID.`);
   }
+  if (iserder.pre !== prefixer.qb64 || iserder.snh !== number.numh || iserder.said !== diger.qb64) {
+    throw new ValidationError(`Credential source seal mismatch for ${credentialSaidValue}.`);
+  }
 
   const telAnchor = reger.ancs.get(dgKey(credentialSaidValue, iserder.said));
-  if (telAnchor) {
-    const [anchorNumber, anchorDiger] = telAnchor;
-    if (anchorNumber.qb64 !== number.qb64 || anchorDiger.qb64 !== diger.qb64) {
-      throw new ValidationError(`Credential anchor mismatch for ${credentialSaidValue}.`);
-    }
+  if (!telAnchor) {
+    throw new ValidationError(`Credential TEL anchor missing for ${credentialSaidValue}.`);
   }
 
-  const sn = Number(number.num);
-  if (!Number.isSafeInteger(sn)) {
-    throw new ValidationError(`Credential anchor sequence is too large for replay: ${number.qb64}.`);
+  const issuer = creder.issuer;
+  if (!issuer) {
+    throw new ValidationError(`Credential ${credentialSaidValue} is missing issuer.`);
   }
-  const replay = acceptedEventReplayMessage(hby, prefixer.qb64, sn);
-  if (replay.serder.said !== diger.qb64) {
+  const [anchorNumber, anchorDiger] = telAnchor;
+  const sn = Number(anchorNumber.num);
+  if (!Number.isSafeInteger(sn)) {
+    throw new ValidationError(`Credential anchor sequence is too large for replay: ${anchorNumber.qb64}.`);
+  }
+  const replay = acceptedEventReplayMessage(hby, issuer, sn);
+  if (replay.serder.said !== anchorDiger.qb64) {
     throw new ValidationError(
-      `Credential anchor event ${replay.serder.said ?? "<missing>"} did not match ${diger.qb64}.`,
+      `Credential anchor event ${replay.serder.said ?? "<missing>"} did not match ${anchorDiger.qb64}.`,
     );
   }
 

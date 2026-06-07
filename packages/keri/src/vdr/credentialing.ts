@@ -163,6 +163,17 @@ function anchorTelEvent(hab: Hab, serder: SerderKERI): AnchorSeal {
   };
 }
 
+function telEventSeal(serder: SerderKERI): AnchorSeal {
+  if (!serder.pre || !serder.snh || !serder.said) {
+    throw new ValidationError("TEL event missing credential seal fields.");
+  }
+  return {
+    prefixer: new Prefixer({ qb64: serder.pre }),
+    seqner: ordinal(parseInt(serder.snh, 16)),
+    saider: new Diger({ qb64: serder.said }),
+  };
+}
+
 function subjectAttributes(
   data: Record<string, unknown> | string | undefined,
   recipient?: string,
@@ -545,15 +556,16 @@ export class Credentialer {
 
   issue(registry: Registry, creder: SerderACDC): CredentialIssueResult {
     const issued = registry.issue(creder);
-    this.reger.cmse.pin([said(creder), issued.seal.seqner.qb64], creder);
+    const credentialSeal = telEventSeal(issued.serder);
+    this.reger.cmse.pin([said(creder), credentialSeal.seqner.qb64], creder);
     const verifierDecision = this.vry.processCredential({
       creder,
-      prefixer: issued.seal.prefixer,
-      seqner: issued.seal.seqner,
-      saider: issued.seal.saider,
+      prefixer: credentialSeal.prefixer,
+      seqner: credentialSeal.seqner,
+      saider: credentialSeal.saider,
     });
     if (verifierDecision.kind === "accept") {
-      this.reger.cmse.rem([said(creder), issued.seal.seqner.qb64]);
+      this.reger.cmse.rem([said(creder), credentialSeal.seqner.qb64]);
       this.reger.ccrd.pin(said(creder), creder);
     }
     return {
