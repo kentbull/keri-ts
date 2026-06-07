@@ -15,6 +15,7 @@ import {
   t,
   Verfer,
 } from "../../../cesr/mod.ts";
+import { Schemer } from "../core/scheming.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 
 type KeyPart = string | Uint8Array;
@@ -24,7 +25,7 @@ type QualifiedCtor<T extends CesrValue> = new(
   init: { qb64b: Uint8Array } | { qb64: string },
 ) => T;
 type SerderCtor<T extends Serder> = {
-  new(init?: unknown): T;
+  new(init?: any): T;
   name: string;
 };
 
@@ -476,6 +477,23 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
 
 /** Concrete exposed-ordinal single-value family. */
 export class OnSuber<T = string> extends OnSuberBase<T> {}
+
+/**
+ * Raw-byte single-value family.
+ *
+ * KERIpy's plain `Suber` stores byte payloads directly when callers provide
+ * bytes. The default TypeScript `Suber<Uint8Array>` would stringify those
+ * bytes, so raw message bodies must use this adapter instead.
+ */
+export class BytesSuber extends Suber<Uint8Array> {
+  protected override _ser(val: Uint8Array): Uint8Array {
+    return asUint8Array(val);
+  }
+
+  protected override _des(val: Uint8Array | null): Uint8Array | null {
+    return val === null ? null : asUint8Array(val);
+  }
+}
 
 /**
  * Base64 tuple value family (`B64*`).
@@ -1059,9 +1077,7 @@ export class CatCesrIoSetSuber<
 
   /** Hydrate one concatenated CESR tuple from stored qb64 bytes. */
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null
-      ? null
-      : splitQualified(val, this.ctors) as unknown as T;
+    return val === null ? null : splitQualified(val, this.ctors) as unknown as T;
   }
 }
 
@@ -1106,9 +1122,7 @@ export class SignerSuber extends CesrSuberBase<Signer> {
     _decrypterOrOptions?: Decrypter | { topive?: boolean },
     maybeOptions: { topive?: boolean } = {},
   ): Generator<[string[], Signer]> {
-    const options = _decrypterOrOptions instanceof Matter
-      ? maybeOptions
-      : _decrypterOrOptions ?? {};
+    const options = _decrypterOrOptions instanceof Matter ? maybeOptions : _decrypterOrOptions ?? {};
     const { topive = false } = options;
     for (
       const [key, val] of this.db.getTopItemIter(
@@ -1229,12 +1243,8 @@ export class CryptSignerSuber extends SignerSuber {
     decrypterOrOptions?: Decrypter | { topive?: boolean },
     maybeOptions: { topive?: boolean } = {},
   ): Generator<[string[], Signer]> {
-    const decrypter = decrypterOrOptions instanceof Matter
-      ? decrypterOrOptions
-      : undefined;
-    const options = decrypter
-      ? maybeOptions
-      : (decrypterOrOptions ?? {}) as { topive?: boolean };
+    const decrypter = decrypterOrOptions instanceof Matter ? decrypterOrOptions : undefined;
+    const options = decrypter ? maybeOptions : (decrypterOrOptions ?? {}) as { topive?: boolean };
     const { topive = false } = options;
     for (
       const [key, val] of this.db.getTopItemIter(
@@ -1290,9 +1300,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
     }
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
-    if (
-      (this.ctor as unknown) === SerderKERI && !(serder instanceof SerderKERI)
-    ) {
+    if (!(serder instanceof this.ctor)) {
       throw new TypeError(
         `Expected ${this.ctor.name}, got ${serder.constructor.name}.`,
       );
@@ -1303,6 +1311,17 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
 
 /** Concrete single-value serder family. */
 export class SerderSuber<T extends Serder = SerderKERI> extends SerderSuberBase<T> {}
+
+/** Raw JSON schema SAD family keyed by schema SAID. */
+export class SchemerSuber extends Suber<Schemer> {
+  protected override _ser(val: Schemer): Uint8Array {
+    return asUint8Array(val.raw);
+  }
+
+  protected override _des(val: Uint8Array | null): Schemer | null {
+    return val === null ? null : new Schemer({ raw: val, verify: this.verify });
+  }
+}
 
 /**
  * Serder family over synthetic insertion-ordered sets.
@@ -1344,9 +1363,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
     }
     const { smellage } = smell(val);
     const serder = parseSerder(val, smellage);
-    if (
-      (this.ctor as unknown) === SerderKERI && !(serder instanceof SerderKERI)
-    ) {
+    if (!(serder instanceof this.ctor)) {
       throw new TypeError(
         `Expected ${this.ctor.name}, got ${serder.constructor.name}.`,
       );
@@ -1356,7 +1373,6 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
 }
 
 /** Concrete schemer-style family built on the single-value serder adapter. */
-export class SchemerSuber<T extends Serder = SerderKERI> extends SerderSuberBase<T> {}
 
 /**
  * Native dupsort duplicate families (`Dup*` / `IoDup*`).
@@ -1525,9 +1541,7 @@ export class CatCesrDupSuber<
   }
 
   protected override _des(val: Uint8Array | null): T | null {
-    return val === null
-      ? null
-      : splitQualified(val, this.ctors) as unknown as T;
+    return val === null ? null : splitQualified(val, this.ctors) as unknown as T;
   }
 }
 

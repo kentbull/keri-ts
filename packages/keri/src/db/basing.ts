@@ -243,7 +243,7 @@ export class Baser {
   public moobi!: Komer<OobiRecord>; // Multi-OOBI associations for one AID.
   public mfa!: Komer<OobiRecord>; // Multifactor OOBI auth records awaiting processing.
   public rmfa!: Komer<OobiRecord>; // Resolved multifactor OOBI auth records.
-  public schema!: SchemerSuber<SerderKERI>; // JSON Schema SADs keyed by schema SAID.
+  public schema!: SchemerSuber; // JSON Schema SADs keyed by schema SAID.
   public cfld!: Suber; // Contact field values for remote identifiers.
   public hbys!: Suber; // Habery-global settings.
   public cons!: Suber; // Signed contact data keyed by identifier prefix.
@@ -257,7 +257,7 @@ export class Baser {
   public dune!: SerderSuber<SerderKERI>; // Delegated unanchored escrow messages.
   public dpub!: SerderSuber<SerderKERI>; // Delegate publication escrow messages.
   public cdel!: CesrOnSuber<Diger>; // Completed group delegated AIDs keyed by ordinal.
-  public meids!: CesrIoSetSuber<Diger>; // Multisig embed payload SAIDs to containing exchange-message SAIDs.
+  public meids!: CesrIoSetSuber<Saider>; // Multisig embed payload SAIDs to containing exchange-message SAIDs.
   public maids!: CesrIoSetSuber<Prefixer>; // Multisig embed payload SAIDs to participant AIDs.
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
@@ -288,9 +288,7 @@ export class Baser {
     this.lmdber = new LMDBer(options, {
       tailDirPath: Baser.TailDirPath,
       cleanTailDirPath: "keri/clean/db",
-      altTailDirPath: compat
-        ? Baser.CompatAltTailDirPath
-        : Baser.AltTailDirPath,
+      altTailDirPath: compat ? Baser.CompatAltTailDirPath : Baser.AltTailDirPath,
       altCleanTailDirPath: compat ? ".keri/clean/db" : ".tufa/clean/db",
       tempPrefix: Baser.TempPrefix,
       maxNamedDBs: Baser.MaxNamedDBs,
@@ -750,7 +748,7 @@ export class Baser {
       });
 
       // JSON Schema SADs keyed by schema SAID.
-      this.schema = new SchemerSuber<SerderKERI>(this.lmdber, {
+      this.schema = new SchemerSuber(this.lmdber, {
         subkey: "schema.",
       });
 
@@ -811,9 +809,9 @@ export class Baser {
 
       // Multisig embed payload SAIDs mapped to containing exchange-message
       // SAIDs across group multisig participants.
-      this.meids = new CesrIoSetSuber<Diger>(this.lmdber, {
+      this.meids = new CesrIoSetSuber<Saider>(this.lmdber, {
         subkey: "meids.",
-        ctor: Diger,
+        ctor: Saider,
       });
 
       // Multisig embed payload SAIDs mapped to group multisig participant AIDs.

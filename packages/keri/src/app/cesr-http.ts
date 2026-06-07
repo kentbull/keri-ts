@@ -18,6 +18,7 @@ import {
   createParser,
   parseSerder,
   SerderKERI,
+  smell,
   type Smellage,
 } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -280,7 +281,13 @@ export async function readMailboxAdminRequest(
 
 /** Parse and return the first CESR message in one request body. */
 export function inspectCesrRequest(bytes: Uint8Array): SerderKERI | null {
-  return inspectCesrStream(bytes).messages[0] ?? null;
+  try {
+    const { smellage } = smell(bytes);
+    const serder = parseSerder(bytes.slice(0, smellage.size), smellage);
+    return serder instanceof SerderKERI ? serder : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Parse and return the final CESR message in one request body. */

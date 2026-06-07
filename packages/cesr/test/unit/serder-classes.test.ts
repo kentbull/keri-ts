@@ -449,10 +449,10 @@ Deno.test("serder: SerderKERI rejects invalid non-transferable inception state",
   );
 });
 
-Deno.test("serder: SerderACDC can preserve expanded sections while computing the compact-form top-level SAID", () => {
-  // This is the key ACDC compactification rule from KERIpy: the visible sad can
-  // remain expanded, while the top-level `d` is still the digest of the most
-  // compact variant.
+Deno.test("serder: SerderACDC can preserve expanded v2 sections while computing the compact-form top-level SAID", () => {
+  // This is the key ACDC v2 compactification rule from KERIpy: the visible sad
+  // can remain expanded, while the top-level `d` is still the digest of the
+  // most compact variant.
   const issuer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
   const regid = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
   const template = {

@@ -35,7 +35,7 @@ import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type Kind, Kinds, Protocols, Vrsn_1_0, Vrsn_2_0 } from "../tables/versions.ts";
 import type { Protocol } from "../tables/versions.ts";
-import { dumpCesrNativeSad, parseCesrNativeKed } from "./native.ts";
+import { dumpCesrNativeSad, parseCesrNativeKed, reapCesrNativeBody } from "./native.ts";
 import { smell, versify } from "./smell.ts";
 
 type SadMap = Record<string, unknown>;
@@ -147,9 +147,7 @@ function makeNumberPrimitive(
   if (value === null || value === undefined) {
     return null;
   }
-  const bigint = typeof value === "string"
-    ? BigInt(`0x${value || "0"}`)
-    : typeof value === "number"
+  const bigint = typeof value === "string" ? BigInt(`0x${value || "0"}`) : typeof value === "number"
     ? (() => {
       if (!Number.isInteger(value) || value < 0) {
         throw new SerializeError(`Invalid numeric CESR number=${value}`);
@@ -1095,10 +1093,12 @@ function computeAcdcSad(
   sad: SadMap,
   {
     kind,
+    pvrsn,
     saids,
     compactify,
   }: {
     kind: Kind;
+    pvrsn: Versionage;
     saids: SaidCodeMap;
     compactify: boolean;
   },
@@ -1113,23 +1113,25 @@ function computeAcdcSad(
   const displaySad = shallowCloneSad(sad);
   const compactSad = shallowCloneSad(sad);
   const ilk = typeof sad.t === "string" ? sad.t : null;
-  const topLevelCompactable = isAcdcCompactiveIlk(ilk);
+  const topLevelCompactable = pvrsn.major >= 2 && isAcdcCompactiveIlk(ilk);
   const partialSection = isAcdcPartialSectionIlk(ilk);
 
-  for (const label of ["s", "a", "A", "e", "r"]) {
-    if (!(label in sad)) {
-      continue;
+  if (pvrsn.major >= 2) {
+    for (const label of ["s", "a", "A", "e", "r"]) {
+      if (!(label in sad)) {
+        continue;
+      }
+      const variants = computeAcdcFieldVariants(
+        label,
+        sad[label],
+        kind,
+        topLevelCompactable,
+        compactify,
+        partialSection,
+      );
+      displaySad[label] = variants.display;
+      compactSad[label] = variants.compact;
     }
-    const variants = computeAcdcFieldVariants(
-      label,
-      sad[label],
-      kind,
-      topLevelCompactable,
-      compactify,
-      partialSection,
-    );
-    displaySad[label] = variants.display;
-    compactSad[label] = variants.compact;
   }
 
   const code = saids.d ?? DigDex.Blake3_256;
@@ -1412,10 +1414,9 @@ export class Serder implements CesrBody {
     }
 
     if (isRawInit(init)) {
-      const smellage = init.smellage ?? smell(init.raw).smellage;
-      const raw = init.raw.length === smellage.size
-        ? init.raw
-        : init.raw.slice(0, smellage.size);
+      const native = init.smellage ? null : reapCesrNativeBody(init.raw);
+      const smellage = init.smellage ?? native?.smellage ?? smell(init.raw).smellage;
+      const raw = native?.raw ?? (init.raw.length === smellage.size ? init.raw : init.raw.slice(0, smellage.size));
       const parsed = parseRawToKed(raw, smellage);
       this.raw = raw;
       this.kind = smellage.kind;
@@ -1456,6 +1457,7 @@ export class Serder implements CesrBody {
       ? resolved.proto === Protocols.acdc
         ? computeAcdcSad(normalized, {
           kind: resolved.kind,
+          pvrsn: resolved.pvrsn,
           saids: resolved.saids,
           compactify: init.compactify ?? false,
         })
@@ -1836,9 +1838,7 @@ export class SerderKERI extends Serder {
   }
 
   get traits(): string[] {
-    return Array.isArray(this.ked?.c)
-      ? this.ked.c.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.c) ? this.ked.c.filter((value): value is string => typeof value === "string") : [];
   }
 
   get tholder(): Tholder | null {
@@ -1846,9 +1846,7 @@ export class SerderKERI extends Serder {
   }
 
   get keys(): string[] {
-    return Array.isArray(this.ked?.k)
-      ? this.ked.k.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.k) ? this.ked.k.filter((value): value is string => typeof value === "string") : [];
   }
 
   get verfers(): Verfer[] {
@@ -1856,9 +1854,7 @@ export class SerderKERI extends Serder {
   }
 
   get ndigs(): string[] {
-    return Array.isArray(this.ked?.n)
-      ? this.ked.n.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.n) ? this.ked.n.filter((value): value is string => typeof value === "string") : [];
   }
 
   get ntholder(): Tholder | null {
@@ -1884,9 +1880,7 @@ export class SerderKERI extends Serder {
   }
 
   get backs(): string[] {
-    return Array.isArray(this.ked?.b)
-      ? this.ked.b.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.b) ? this.ked.b.filter((value): value is string => typeof value === "string") : [];
   }
 
   get berfers(): Verfer[] {
@@ -1902,15 +1896,11 @@ export class SerderKERI extends Serder {
   }
 
   get cuts(): string[] {
-    return Array.isArray(this.ked?.br)
-      ? this.ked.br.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.br) ? this.ked.br.filter((value): value is string => typeof value === "string") : [];
   }
 
   get adds(): string[] {
-    return Array.isArray(this.ked?.ba)
-      ? this.ked.ba.filter((value): value is string => typeof value === "string")
-      : [];
+    return Array.isArray(this.ked?.ba) ? this.ked.ba.filter((value): value is string => typeof value === "string") : [];
   }
 
   get delpre(): string | null {
@@ -1956,6 +1946,7 @@ export class SerderACDC extends Serder {
     const { ked, saids } = validateSadAgainstFieldDom(ctor, this);
     const actual = computeAcdcSad(shallowCloneSad(ked), {
       kind: this.kind,
+      pvrsn: this.pvrsn,
       saids,
       compactify: false,
     });

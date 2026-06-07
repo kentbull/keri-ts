@@ -14,7 +14,6 @@ Deno.test("protocol-vdr-eventing constructors preserve KERIpy field order", () =
   const vcp = incept(ISSUER, {
     baks: [REGISTRY],
     toad: 1,
-    cnfg: ["NB"],
     nonce: SAID,
   });
   const iss = issue(VC, REGISTRY, { dt: "2026-04-10T00:00:00.000000+00:00" });

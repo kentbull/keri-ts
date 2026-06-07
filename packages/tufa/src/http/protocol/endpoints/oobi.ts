@@ -22,9 +22,19 @@ export function parseOobiRouteRequest(
   }
 
   if (parts[0] === "oobi") {
+    const value = parts[1] ?? null;
+    if (parts.length === 2) {
+      return {
+        kind: "oobi",
+        aid: value,
+        said: value ?? undefined,
+        role: undefined,
+        eid: undefined,
+      };
+    }
     return {
       kind: "oobi",
-      aid: parts[1] ?? null,
+      aid: value,
       role: parts[2],
       eid: parts[3],
     };
@@ -55,6 +65,18 @@ export function handleOobiRoute(
   request: OobiRouteRequest,
 ): Response {
   const runtime = context.runtime!;
+  if (request.said) {
+    const schemer = runtime.hby.db.schema.get(request.said);
+    if (schemer) {
+      return new Response(new Blob([schemer.raw.slice().buffer as ArrayBuffer]), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/schema+json",
+        },
+      });
+    }
+  }
+
   const aid = request.aid ?? defaultOobiAid(
     runtime,
     context.policy.serviceHab,
@@ -76,9 +98,7 @@ export function handleOobiRoute(
     request.eid,
     context.policy.hostedPrefixes,
   );
-  const hab = respondingHabAid
-    ? runtime.hby.habs.get(respondingHabAid)
-    : undefined;
+  const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
   if (!hab) {
     if (hosted.kind === "ambiguous" && context.policy.hostedPrefixes) {
       return textResponse("Ambiguous hosted endpoint path", 409);

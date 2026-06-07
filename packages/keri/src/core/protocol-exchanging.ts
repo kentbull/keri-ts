@@ -9,8 +9,8 @@ import {
   makePather,
   NonceDex,
   Noncer,
+  reapSerder,
   Saider,
-  Serder,
   SerderKERI,
   type Versionage,
   Vrsn_1_0,
@@ -45,16 +45,22 @@ function encodePathedEmbeds(
   const e: Record<string, unknown> = {};
   const groups: Uint8Array[] = [];
   for (const [label, msg] of Object.entries(embeds)) {
-    const serder = new Serder({ raw: msg });
+    const { serder, consumed } = reapSerder(msg);
+    if (!serder.ked) {
+      throw new Error(`Embedded ${label} message is missing decoded SAD.`);
+    }
     e[label] = serder.ked;
-    const atc = msg.slice(serder.size);
+    const atc = msg.slice(consumed);
     if (atc.length === 0) {
       continue;
     }
     const pathed = concatBytes(makePather(["e", label]).qb64b, atc);
-    const code = pathed.length / 4 < 4096
-      ? CtrDexV1.PathedMaterialCouples
-      : CtrDexV1.BigPathedMaterialCouples;
+    if (pathed.length % 4 !== 0) {
+      throw new Error(
+        `Embedded ${label} pathed attachment length ${pathed.length} is not quadlet aligned.`,
+      );
+    }
+    const code = pathed.length / 4 < 4096 ? CtrDexV1.PathedMaterialCouples : CtrDexV1.BigPathedMaterialCouples;
     groups.push(
       concatBytes(
         new Counter({

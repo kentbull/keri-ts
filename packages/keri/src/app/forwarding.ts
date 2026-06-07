@@ -12,11 +12,11 @@
  * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import { type Operation, spawn, type Task } from "npm:effection@^3.6.0";
-import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
+import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
+import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
-import { DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
+import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
@@ -158,9 +158,7 @@ export class Poster {
     }
 
     const embedded = args.embeds ?? {};
-    const exchangeRecipient = args.exchangeRecipient === null
-      ? undefined
-      : args.exchangeRecipient ?? recipient;
+    const exchangeRecipient = args.exchangeRecipient === null ? undefined : args.exchangeRecipient ?? recipient;
     const [serder, attachments] = exchange(args.route, args.payload, {
       sender: hab.pre,
       recipient: exchangeRecipient,
@@ -176,9 +174,7 @@ export class Poster {
     const deliveries: string[] = [];
     const queued: string[] = [];
     const delivery = args.delivery ?? "auto";
-    const mailboxEndpoints = delivery === "direct"
-      ? []
-      : mailboxDeliveryEndpoints(hab, recipient);
+    const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
 
     if (mailboxEndpoints.length > 0) {
       const failed = new Map<string, string>();
@@ -289,9 +285,7 @@ export class Poster {
     const deliveries: string[] = [];
     const queued: string[] = [];
     const delivery = args.delivery ?? "auto";
-    const mailboxEndpoints = delivery === "direct"
-      ? []
-      : mailboxDeliveryEndpoints(hab, recipient);
+    const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
 
     if (mailboxEndpoints.length > 0) {
       if (topic.length === 0) {
@@ -1003,9 +997,7 @@ function mailboxReplyPayload(
     return message;
   }
   const introduction = introduce(hab, recipient);
-  return introduction.length === 0
-    ? message
-    : concatBytes(introduction, message);
+  return introduction.length === 0 ? message : concatBytes(introduction, message);
 }
 
 /**
@@ -1082,6 +1074,9 @@ function defaultTopicForRoute(route: string): string {
   if (route === "/oobis") {
     return OOBI_MAILBOX_TOPIC;
   }
+  if (route.startsWith("/ipex/")) {
+    return CREDENTIAL_MAILBOX_TOPIC;
+  }
   const trimmed = route.replace(/^\/+/, "");
   return trimmed.split("/")[0] ?? "";
 }
@@ -1108,8 +1103,8 @@ function extractForwardedMessage(
 
   // Rebuild the embedded event from SAD plus only the attachment material
   // pathed to `/e/evt`; other pathed groups belong to the outer `/fwd` message.
-  const embedded = new SerderKERI({ sad: evt as Record<string, unknown> });
-  const messageParts: Uint8Array[] = [embedded.raw];
+  const embedded = embeddedSerderRaw(evt as Record<string, unknown>);
+  const messageParts: Uint8Array[] = [embedded];
 
   for (const attachment of attachments) {
     const atc = forwardedAttachmentForPath(attachment.raw, "/e/evt");
@@ -1119,6 +1114,14 @@ function extractForwardedMessage(
   }
 
   return concatBytes(...messageParts);
+}
+
+function embeddedSerderRaw(sad: Record<string, unknown>): Uint8Array {
+  const version = typeof sad.v === "string" ? sad.v : "";
+  if (version.startsWith("ACDC")) {
+    return new SerderACDC({ sad, verify: false }).raw;
+  }
+  return new SerderKERI({ sad }).raw;
 }
 
 /**
@@ -1317,9 +1320,7 @@ function positiveTimeoutMs(
   value: number | undefined,
   fallback: number,
 ): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : fallback;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 /**
@@ -1341,7 +1342,7 @@ export function* postCesrMessage(
   services: RuntimeServices = defaultRuntimeServices,
 ): Operation<void> {
   const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
-  for (const currentBody of requests) {
+  for (const [index, currentBody] of requests.entries()) {
     const request = buildCesrRequest(currentBody, {
       bodyMode,
       destination,
@@ -1354,13 +1355,36 @@ export function* postCesrMessage(
       services,
     });
 
-    yield* closeResponseBody(response);
     if (!response.ok) {
+      const responseText = yield* readResponseText(response);
       throw new ValidationError(
-        `Exchange delivery to ${url} failed with HTTP ${response.status}.`,
+        `Exchange delivery to ${url} failed with HTTP ${response.status} on message ${index + 1}/${requests.length} (${
+          describeCesrMessage(currentBody)
+        }): ${responseText}`,
       );
     }
+    yield* closeResponseBody(response);
   }
+}
+
+function describeCesrMessage(bytes: Uint8Array): string {
+  try {
+    const serder = new SerderKERI({ raw: bytes });
+    return [
+      serder.ilk ?? "unknown",
+      serder.route ? `route=${serder.route}` : null,
+      serder.said ? `said=${serder.said}` : null,
+    ].filter((part): part is string => !!part).join(" ");
+  } catch {
+    return `unparsed length=${bytes.length}`;
+  }
+}
+
+function* readResponseText(response: Response): Operation<string> {
+  return yield* action<string>((resolve, reject) => {
+    response.text().then(resolve, reject);
+    return () => {};
+  });
 }
 
 /** Shared EXN send helper used by CLI commands that want KERIpy-style behavior. */

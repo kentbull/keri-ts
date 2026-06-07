@@ -317,9 +317,7 @@ export function interpretMapperBodySyntax(
       label: pendingLabel,
       primitive: entry.primitive,
       isCounter: entry.isCounter,
-      children: entry.children
-        ? interpretMapperBodySyntax(entry.children)
-        : undefined,
+      children: entry.children ? interpretMapperBodySyntax(entry.children) : undefined,
     });
     pendingLabel = null;
   }
@@ -406,20 +404,14 @@ function encodeTag(text: string): string {
   if (!code) {
     throw new SerializeError(`Unsupported mapper tag length=${text.length}`);
   }
-  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9
-    ? "_"
-    : "";
+  const pad = code === LabelDex.Tag1 || code === LabelDex.Tag5 || code === LabelDex.Tag9 ? "_" : "";
   return `${code}${pad}${text}`;
 }
 
 /** Encode base64-safe text through the compact StrB64/Bexter families. */
 function encodeBext(text: string): string {
   const rem = text.length % 4;
-  const code = rem === 0
-    ? LabelDex.StrB64_L0
-    : rem === 1
-    ? LabelDex.StrB64_L1
-    : LabelDex.StrB64_L2;
+  const code = rem === 0 ? LabelDex.StrB64_L0 : rem === 1 ? LabelDex.StrB64_L1 : LabelDex.StrB64_L2;
   const raw = Bexter.rawify(text);
   return new Bexter({ code, raw }).qb64;
 }
@@ -428,12 +420,16 @@ function encodeBext(text: string): string {
 function encodeBytes(text: string): string {
   const raw = b(text);
   const rem = raw.length % 3;
-  const code = rem === 0
-    ? LabelDex.Bytes_L0
-    : rem === 1
-    ? LabelDex.Bytes_L1
-    : LabelDex.Bytes_L2;
+  const code = rem === 0 ? LabelDex.Bytes_L0 : rem === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2;
   return new Texter({ code, raw }).qb64;
+}
+
+function encodeShortLabel(text: string): string {
+  const raw = b(text);
+  return new Matter({
+    code: raw.length === 1 ? LabelDex.Label1 : LabelDex.Label2,
+    raw,
+  }).qb64;
 }
 
 /**
@@ -451,6 +447,27 @@ function encodeText(text: string): string {
   }
   if (/^[A-Za-z0-9_-]+$/.test(text)) {
     return encodeBext(text);
+  }
+  return encodeBytes(text);
+}
+
+/** Encode scalar string values with KERIpy's tag-or-bytes native map policy. */
+function encodeValueText(text: string): string {
+  if (text.length === 0) {
+    return LabelDex.Empty;
+  }
+  if (/^[A-Za-z0-9_-]+$/.test(text)) {
+    if (text.length <= 11) {
+      return encodeTag(text);
+    }
+    const wadSize = (4 - (text.length % 4)) % 4;
+    if (text[0] !== "A" || (wadSize !== 0 && wadSize !== 1)) {
+      return encodeBext(text);
+    }
+    return encodeBytes(text);
+  }
+  if (text.length === 1 || text.length === 2) {
+    return encodeShortLabel(text);
   }
   return encodeBytes(text);
 }
@@ -478,26 +495,24 @@ function serializeValue(
     return new Decimer({ dns: value.toString() }).qb64;
   }
   if (typeof value === "string") {
-    try {
-      const primitive = parseMatter(b(value), "txt");
-      if (primitive.qb64.length === value.length) {
-        const escape = ESCAPE_CODES.has(primitive.code)
-          ? new Matter({ code: MtrDex.Escape, raw: new Uint8Array() }).qb64
-          : "";
-        return `${escape}${primitive.qb64}`;
+    if (/^[A-Za-z0-9_-]+$/.test(value)) {
+      try {
+        const primitive = parseMatter(b(value), "txt");
+        if (primitive.qb64.length === value.length) {
+          const escape = ESCAPE_CODES.has(primitive.code)
+            ? new Matter({ code: MtrDex.Escape, raw: new Uint8Array() }).qb64
+            : "";
+          return `${escape}${primitive.qb64}`;
+        }
+      } catch {
+        // fall through to text encoding
       }
-    } catch {
-      // fall through to text encoding
     }
-    return encodeText(value);
+    return encodeValueText(value);
   }
   if (value instanceof Uint8Array) {
     return new Texter({
-      code: value.length % 3 === 0
-        ? LabelDex.Bytes_L0
-        : value.length % 3 === 1
-        ? LabelDex.Bytes_L1
-        : LabelDex.Bytes_L2,
+      code: value.length % 3 === 0 ? LabelDex.Bytes_L0 : value.length % 3 === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2,
       raw: value,
     }).qb64;
   }
@@ -505,18 +520,14 @@ function serializeValue(
     const payload = value.map((entry) => serializeValue(entry, strict)).join(
       "",
     );
-    const code = payload.length / 4 < 64 ** 2
-      ? CtrDexV2.GenericListGroup
-      : CtrDexV2.BigGenericListGroup;
+    const code = payload.length / 4 < 64 ** 2 ? CtrDexV2.GenericListGroup : CtrDexV2.BigGenericListGroup;
     return `${new Counter({ code, count: payload.length / 4 }).qb64}${payload}`;
   }
   if (value && typeof value === "object") {
     const payload = Object.entries(value as MapperMap).map(([label, entry]) =>
       `${strict ? encodeText(label) : encodeText(label)}${serializeValue(entry, strict)}`
     ).join("");
-    const code = payload.length / 4 < 64 ** 2
-      ? CtrDexV2.GenericMapGroup
-      : CtrDexV2.BigGenericMapGroup;
+    const code = payload.length / 4 < 64 ** 2 ? CtrDexV2.GenericMapGroup : CtrDexV2.BigGenericMapGroup;
     return `${new Counter({ code, count: payload.length / 4 }).qb64}${payload}`;
   }
   throw new SerializeError(`Nonserializable mapper value=${String(value)}`);
@@ -863,9 +874,7 @@ export class Mapper {
         : serializeValue(value, strict);
       return `${encodeText(label)}${rendered}`;
     }).join("");
-    const code = payload.length / 4 < 64 ** 2
-      ? CtrDexV2.GenericMapGroup
-      : CtrDexV2.BigGenericMapGroup;
+    const code = payload.length / 4 < 64 ** 2 ? CtrDexV2.GenericMapGroup : CtrDexV2.BigGenericMapGroup;
     return b(
       `${new Counter({ code, count: payload.length / 4 }).qb64}${payload}`,
     );

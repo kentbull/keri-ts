@@ -7,7 +7,7 @@ import { Kevery } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
-import { dispatchEnvelope, envelopesFromFrames } from "./parsering.ts";
+import { dispatchEnvelope, envelopesFromFrames, type TeveryLike, type VerifierLike } from "./parsering.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 /**
@@ -35,10 +35,19 @@ export class Reactor {
   readonly exchanger: Exchanger;
   readonly parser: CesrParser;
   readonly local: boolean;
+  readonly vdr: VdrRuntimeServices;
 
   constructor(
     hby: Habery,
-    { cues, local = false }: { cues?: Deck<AgentCue>; local?: boolean } = {},
+    {
+      cues,
+      local = false,
+      vdr = {},
+    }: {
+      cues?: Deck<AgentCue>;
+      local?: boolean;
+      vdr?: VdrRuntimeServices;
+    } = {},
   ) {
     this.hby = hby;
     this.cues = cues ?? new Deck();
@@ -55,6 +64,7 @@ export class Reactor {
       attachmentDispatchMode: "compat",
     });
     this.local = local;
+    this.vdr = vdr;
   }
 
   /**
@@ -78,9 +88,35 @@ export class Reactor {
     chunk: Uint8Array,
     { local = this.local }: { local?: boolean } = {},
   ): void {
+    this.dispatchParsedFrames(this.parser.feed(chunk), local);
+  }
+
+  /**
+   * Parse and dispatch one complete CESR/KERI record.
+   *
+   * Mailbox SSE entries are delivered as bounded records rather than an
+   * open-ended stream. A fresh parser plus terminal flush lets body-only
+   * records emit without waiting for a later chunk while keeping the shared
+   * streaming parser untouched for long-lived ingress.
+   */
+  processCompleteChunk(
+    chunk: Uint8Array,
+    { local = this.local }: { local?: boolean } = {},
+  ): void {
+    const parser = createParser({
+      framed: false,
+      attachmentDispatchMode: "compat",
+    });
+    this.dispatchParsedFrames([...parser.feed(chunk), ...parser.flush()], local);
+  }
+
+  private dispatchParsedFrames(
+    frames: ReturnType<CesrParser["feed"]>,
+    local: boolean,
+  ): void {
     for (
       const envelope of envelopesFromFrames(
-        this.parser.feed(chunk),
+        frames,
         local,
       )
     ) {
@@ -89,6 +125,7 @@ export class Reactor {
         this.revery,
         this.kevery,
         this.exchanger,
+        { tvy: this.vdr.tvy, vry: this.vdr.vry },
       );
       if (decision?.kind === "unverified") {
         continue;
@@ -122,6 +159,8 @@ export class Reactor {
   processEscrowsOnce(): void {
     this.kevery.processEscrows();
     this.revery.processEscrowReply();
+    this.vdr.tvy?.processEscrows?.();
+    this.vdr.vry?.processEscrows?.();
     this.exchanger.processEscrows();
   }
 
@@ -151,4 +190,24 @@ export class Reactor {
       yield* runtimeTurn();
     }
   }
+}
+
+/** Registry DB owner seam; Phase 3 supplies the concrete `Reger`. */
+export type RegerRuntimeService = object;
+
+/** TEL state processor seam; Phase 5 supplies the concrete `Tevery`. */
+export type TeveryRuntimeService = TeveryLike;
+
+/** Credential verifier seam; Phase 4/10 supplies the concrete verifier. */
+export type VerifierRuntimeService = VerifierLike;
+
+/** Registry operation seam; Phase 6 supplies the concrete `Regery`. */
+export type RegeryRuntimeService = object;
+
+/** VDR services accepted by `Reactor` and the shared `AgentRuntime`. */
+export interface VdrRuntimeServices {
+  reger?: RegerRuntimeService | null;
+  tvy?: TeveryRuntimeService | null;
+  vry?: VerifierRuntimeService | null;
+  rgy?: RegeryRuntimeService | null;
 }

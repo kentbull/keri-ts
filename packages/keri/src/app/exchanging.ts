@@ -232,6 +232,40 @@ export class Exchanger {
     return this.hby.db.exns.get([said])?.said === said;
   }
 
+  /**
+   * Return true when this local habitat is elected to externally send an EXN.
+   *
+   * KERIpy uses the lowest collected group-signature index as the lead for a
+   * completed multisig business EXN. Single-sig habitats are always the lead.
+   */
+  lead(hab: Hab, said: string): boolean {
+    const record = this.hby.db.getHab(hab.pre);
+    if (!record?.mid) {
+      return true;
+    }
+
+    const groupKever = hab.kever;
+    const member = this.hby.habs.get(record.mid);
+    const memberKever = member?.kever ?? this.hby.db.getKever(record.mid);
+    const memberKey = memberKever?.verfers[0]?.qb64;
+    if (!groupKever || !memberKey) {
+      return false;
+    }
+
+    const indices: number[] = [];
+    for (const [keys, siger] of this.hby.db.esigs.getTopItemIter([said, ""])) {
+      if (keys[0] === said) {
+        indices.push(siger.index);
+      }
+    }
+    if (indices.length === 0) {
+      return false;
+    }
+
+    const leadKey = groupKever.verfers[Math.min(...indices)]?.qb64;
+    return leadKey === memberKey;
+  }
+
   private verifySignatures(args: {
     serder: SerderKERI;
     sender: string;

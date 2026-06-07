@@ -1,12 +1,6 @@
 import { ShortageError } from "../core/errors.ts";
 import type { CesrBody } from "../core/types.ts";
-import { sniff } from "../parser/cold-start.ts";
-import { parseCounter } from "../primitives/counter.ts";
-import { parseLabeler } from "../primitives/labeler.ts";
-import { parseVerser } from "../primitives/verser.ts";
-import { CtrDexV2 } from "../tables/counter-codex.ts";
-import { Vrsn_2_0 } from "../tables/versions.ts";
-import { canonicalizeCesrNativeRaw } from "./native.ts";
+import { reapCesrNativeBody } from "./native.ts";
 import { parseSerder } from "./serder.ts";
 import { smell } from "./smell.ts";
 
@@ -47,46 +41,12 @@ export class Serdery {
    * for that final acceptance decision.
    */
   reap(input: Uint8Array): { serder: CesrBody; consumed: number } {
-    const cold = sniff(input);
-    if (cold === "txt" || cold === "bny") {
-      const counter = parseCounter(input, Vrsn_2_0, cold);
-      if (
-        counter.code === CtrDexV2.FixBodyGroup
-        || counter.code === CtrDexV2.BigFixBodyGroup
-        || counter.code === CtrDexV2.MapBodyGroup
-        || counter.code === CtrDexV2.BigMapBodyGroup
-      ) {
-        const consumed = cold === "txt"
-          ? counter.fullSize + counter.count * 4
-          : counter.fullSizeB2 + counter.count * 3;
-        if (input.length < consumed) {
-          throw new ShortageError(consumed, input.length);
-        }
-        const raw = input.slice(0, consumed);
-        // Native qb2 bodies are canonicalized to qb64 text before hydration so
-        // the serder layer sees one stable native representation.
-        const textRaw = canonicalizeCesrNativeRaw(raw, Vrsn_2_0);
-        const textCounter = parseCounter(textRaw, Vrsn_2_0, "txt");
-        let offset = textCounter.fullSize;
-        if (
-          textCounter.code === CtrDexV2.MapBodyGroup
-          || textCounter.code === CtrDexV2.BigMapBodyGroup
-        ) {
-          offset += parseLabeler(textRaw.slice(offset), "txt").fullSize;
-        }
-        const verser = parseVerser(textRaw.slice(offset), "txt");
-        const smellage = {
-          proto: verser.proto,
-          pvrsn: verser.pvrsn,
-          gvrsn: verser.gvrsn,
-          kind: "CESR" as const,
-          size: textRaw.length,
-        };
-        return {
-          serder: parseSerder(textRaw, smellage),
-          consumed,
-        };
-      }
+    const native = reapCesrNativeBody(input);
+    if (native) {
+      return {
+        serder: parseSerder(native.raw, native.smellage),
+        consumed: native.consumed,
+      };
     }
 
     const { smellage } = smell(input);

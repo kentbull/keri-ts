@@ -118,6 +118,7 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       "annotate",
       lazyCommand(() => import("keri-ts/cli"), "annotateCommand"),
     ],
+    ["saidify", lazyCommand(() => import("keri-ts/cli"), "saidifyCommand")],
     [
       "benchmark.cesr",
       lazyCommand(
@@ -126,6 +127,38 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       ),
     ],
     ["db.dump", lazyCommand(() => import("keri-ts/cli"), "dumpEvts")],
+    [
+      "vc.schema.import",
+      lazyCommand(() => import("keri-ts/cli"), "vcSchemaImportCommand"),
+    ],
+    [
+      "vc.registry.incept",
+      lazyCommand(() => import("keri-ts/cli"), "vcRegistryInceptCommand"),
+    ],
+    [
+      "vc.registry.list",
+      lazyCommand(() => import("keri-ts/cli"), "vcRegistryListCommand"),
+    ],
+    [
+      "vc.registry.status",
+      lazyCommand(() => import("keri-ts/cli"), "vcRegistryStatusCommand"),
+    ],
+    ["vc.create", lazyCommand(() => import("keri-ts/cli"), "vcCreateCommand")],
+    ["vc.list", lazyCommand(() => import("keri-ts/cli"), "vcListCommand")],
+    ["vc.export", lazyCommand(() => import("keri-ts/cli"), "vcExportCommand")],
+    ["vc.import", lazyCommand(() => import("keri-ts/cli"), "vcImportCommand")],
+    ["vc.revoke", lazyCommand(() => import("keri-ts/cli"), "vcRevokeCommand")],
+    ["ipex.apply", lazyCommand(() => import("keri-ts/cli"), "ipexApplyCommand")],
+    ["ipex.offer", lazyCommand(() => import("keri-ts/cli"), "ipexOfferCommand")],
+    ["ipex.agree", lazyCommand(() => import("keri-ts/cli"), "ipexAgreeCommand")],
+    ["ipex.grant", lazyCommand(() => import("keri-ts/cli"), "ipexGrantCommand")],
+    ["ipex.admit", lazyCommand(() => import("keri-ts/cli"), "ipexAdmitCommand")],
+    ["ipex.spurn", lazyCommand(() => import("keri-ts/cli"), "ipexSpurnCommand")],
+    ["ipex.list", lazyCommand(() => import("keri-ts/cli"), "ipexListCommand")],
+    ["ipex.poll", lazyCommand(() => import("keri-ts/cli"), "ipexPollCommand")],
+    ["ipex.join", lazyCommand(() => import("keri-ts/cli"), "ipexJoinCommand")],
+    ["verifier.run", lazyCommand(() => import("keri-ts/cli"), "verifierRunCommand")],
+    ["hook.demo", lazyCommand(() => import("./hook.ts"), "hookDemoCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     [
       "mailbox.start",

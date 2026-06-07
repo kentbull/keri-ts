@@ -1,7 +1,7 @@
-import type { Dater, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import type { Dater, SerderACDC, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
 import type { MbxTopicCursor } from "./mailbox-topics.ts";
-import type { KeyStateRecord } from "./records.ts";
+import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts";
 
 /** Shared `kin` discriminator carried by all cue payloads. */
 export interface CueBase {
@@ -96,6 +96,36 @@ export interface KeyStateSavedCue extends CueBase {
   ksn: KeyStateRecord;
 }
 
+/** Cue emitted after a registry or credential transaction-state notice is saved. */
+export interface TransactionStateSavedCue extends CueBase {
+  kin: "txnStateSaved";
+  record: RegStateRecord | VcStateRecord;
+}
+
+/** Cue requesting TEL replay or transaction-state lookup work. */
+export interface TelQueryCue extends CueBase {
+  kin: "telquery";
+  q: Record<string, unknown>;
+}
+
+/** Cue emitted when a TEL revoke event is accepted. */
+export interface CredentialRevokedCue extends CueBase {
+  kin: "revoked";
+  serder: SerderKERI;
+}
+
+/** Cue requesting source-credential proof recovery for a chained credential. */
+export interface ProofCue extends CueBase {
+  kin: "proof";
+  said: string;
+}
+
+/** Cue emitted when the verifier saves one credential. */
+export interface CredentialSavedCue extends CueBase {
+  kin: "saved";
+  creder: SerderACDC;
+}
+
 /** Cue notifying that a cloned event replay used the wrong first-seen ordinal. */
 export interface NoticeBadCloneFNCue extends CueBase {
   kin: "noticeBadCloneFN";
@@ -186,6 +216,11 @@ export type AgentCue =
   | ReplyCue
   | StreamCue
   | KeyStateSavedCue
+  | TransactionStateSavedCue
+  | TelQueryCue
+  | CredentialRevokedCue
+  | ProofCue
+  | CredentialSavedCue
   | NoticeBadCloneFNCue
   | InvalidCue
   | PartialSigUnescrowCue

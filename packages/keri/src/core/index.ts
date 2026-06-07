@@ -21,3 +21,4 @@ export * as ProtocolVdrEventing from "./protocol-vdr-eventing.ts";
 export * as Records from "./records.ts";
 export * from "./roles.ts";
 export * from "./routing.ts";
+export * from "./scheming.ts";

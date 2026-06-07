@@ -245,6 +245,21 @@ function registerAnnotateCmd(
   dispatch: CommandDispatch,
 ): void {
   program
+    .command("saidify")
+    .description("Saidify a JSON file")
+    .requiredOption("-f, --file <file>", "JSON file to SAIDify")
+    .option("-l, --label <label>", "Field label to SAIDify", "d")
+    .action((options: { file: string; label?: string }) => {
+      dispatch({
+        name: "saidify",
+        args: {
+          file: options.file,
+          label: options.label,
+        },
+      });
+    });
+
+  program
     .command("annotate")
     .description("Annotate CESR stream from file or stdin")
     .option("--in <path>", "Input file path (defaults to stdin)")

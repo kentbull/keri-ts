@@ -6,6 +6,7 @@ import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { ensureCompatLmdbBuild } from "../../../test/utils.ts";
+import { createLocalKeripyKliWrapper } from "./interop-test-helpers.ts";
 
 interface CmdResult {
   code: number;
@@ -76,7 +77,9 @@ async function canUseKli(
   try {
     const res = await runCmd(command, ["--help"], env);
     const text = `${res.stdout}\n${res.stderr}`;
-    return res.code === 0 && /usage:\s*kli\b/i.test(text);
+    return res.code === 0
+      && (/usage:\s*kli\b/i.test(text)
+        || /usage:\s*python\s+-m\s+keri\.cli\.kli\b/i.test(text));
   } catch {
     return false;
   }
@@ -85,25 +88,33 @@ async function canUseKli(
 /**
  * Resolves the concrete `kli` executable to use for interop scenarios.
  *
- * We prefer `pyenv which kli` when available because the desktop environment
- * may expose shims on PATH that do not survive isolated test environments. We
- * then fall back to plain PATH lookup. Each candidate is validated with
- * `canUseKli()` so the harness fails loudly instead of silently skipping.
+ * We prefer the branch-local KERIpy checkout so gate scenarios stay aligned
+ * with the rest of the live interop suite. We then fall back to `pyenv which`
+ * and plain PATH lookup for standalone environments. Each candidate is
+ * validated with `canUseKli()` so the harness fails loudly instead of silently
+ * skipping.
  */
 function pyenvProbeEnv(env: Record<string, string>): Record<string, string> {
   return {
     ...env,
     HOME: Deno.env.get("HOME") ?? env.HOME,
     PATH: Deno.env.get("PATH") ?? env.PATH,
-    ...(Deno.env.get("PYENV_ROOT")
-      ? { PYENV_ROOT: Deno.env.get("PYENV_ROOT")! }
-      : {}),
+    ...(Deno.env.get("PYENV_ROOT") ? { PYENV_ROOT: Deno.env.get("PYENV_ROOT")! } : {}),
   };
 }
 
-async function resolveKliCommand(env: Record<string, string>): Promise<string> {
+async function resolveKliCommand(
+  env: Record<string, string>,
+  workDir: string,
+): Promise<string> {
   const candidates: string[] = [];
   const probeEnv = pyenvProbeEnv(env);
+
+  try {
+    candidates.push(await createLocalKeripyKliWrapper(workDir));
+  } catch {
+    // Fall through to pyenv/PATH resolution.
+  }
 
   try {
     const pyenvWhich = await runCmd("pyenv", ["which", "kli"], probeEnv);
@@ -314,7 +325,7 @@ async function createScenarioContext(): Promise<ScenarioContext> {
   return {
     env,
     packageRoot: packageRoot(),
-    kliCommand: await resolveKliCommand(env),
+    kliCommand: await resolveKliCommand(env, home),
   };
 }
 

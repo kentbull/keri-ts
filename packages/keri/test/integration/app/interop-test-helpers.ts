@@ -135,12 +135,8 @@ export async function runCmdWithTimeout(
   cwd?: string,
 ): Promise<CmdResult> {
   const child = spawnChild(command, args, env, cwd);
-  const stdoutPromise = child.stdout
-    ? new Response(child.stdout).text()
-    : Promise.resolve("");
-  const stderrPromise = child.stderr
-    ? new Response(child.stderr).text()
-    : Promise.resolve("");
+  const stdoutPromise = child.stdout ? new Response(child.stdout).text() : Promise.resolve("");
+  const stderrPromise = child.stderr ? new Response(child.stderr).text() : Promise.resolve("");
 
   const timedOut = Symbol("timedOut");
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -186,7 +182,9 @@ async function canUseKli(
   try {
     const res = await runCmd(command, ["--help"], env);
     const text = `${res.stdout}\n${res.stderr}`;
-    return res.code === 0 && /usage:\s*kli\b/i.test(text);
+    return res.code === 0
+      && (/usage:\s*kli\b/i.test(text)
+        || /usage:\s*python\s+-m\s+keri\.cli\.kli\b/i.test(text));
   } catch {
     return false;
   }
@@ -201,9 +199,7 @@ function pyenvProbeEnv(env: Record<string, string>): Record<string, string> {
     ...env,
     HOME: Deno.env.get("HOME") ?? env.HOME,
     PATH: Deno.env.get("PATH") ?? env.PATH,
-    ...(Deno.env.get("PYENV_ROOT")
-      ? { PYENV_ROOT: Deno.env.get("PYENV_ROOT")! }
-      : {}),
+    ...(Deno.env.get("PYENV_ROOT") ? { PYENV_ROOT: Deno.env.get("PYENV_ROOT")! } : {}),
   };
 }
 
@@ -328,6 +324,60 @@ export function workspaceRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
 }
 
+/** Resolve the sibling local KERIpy checkout used for branch-local interop fixes. */
+export function localKeripyRoot(): string {
+  return new URL("../../../../../../../python/keripy/", import.meta.url).pathname;
+}
+
+/** Create a temp executable that runs KLI from the local KERIpy checkout. */
+export async function createLocalKeripyKliWrapper(workDir: string): Promise<string> {
+  const path = `${workDir}/local-kli`;
+  const root = localKeripyRoot().replace(/'/g, "'\\''");
+  await Deno.writeTextFile(
+    path,
+    [
+      "#!/bin/sh",
+      `KERIPY_ROOT='${root}'`,
+      "exec uv run --project \"$KERIPY_ROOT\" --with-editable \"$KERIPY_ROOT\" python -m keri.cli.kli \"$@\"",
+      "",
+    ].join("\n"),
+  );
+  await Deno.chmod(path, 0o755);
+  return path;
+}
+
+let localKeripyRunnable: Promise<boolean> | undefined;
+
+/** Return true when the branch-local KERIpy checkout can be run through uv. */
+export async function canRunLocalKeripy(
+  env: Record<string, string>,
+): Promise<boolean> {
+  localKeripyRunnable ??= (async () => {
+    try {
+      await Deno.stat(localKeripyRoot());
+      return await canRunCommand("uv", ["--version"], pyenvProbeEnv(env));
+    } catch {
+      return false;
+    }
+  })();
+  return await localKeripyRunnable;
+}
+
+/**
+ * Prefer the branch-local KERIpy checkout when it is runnable, otherwise use
+ * the already-provisioned pinned interop KLI command.
+ */
+export async function resolveLocalKeripyKliCommand(
+  workDir: string,
+  fallbackCommand: string,
+  env: Record<string, string>,
+): Promise<string> {
+  if (await canRunLocalKeripy(env)) {
+    return await createLocalKeripyKliWrapper(workDir);
+  }
+  return fallbackCommand;
+}
+
 function cacheHome(): string {
   return Deno.env.get("XDG_CACHE_HOME")
     ?? `${Deno.env.get("HOME") ?? "/tmp"}/.cache`;
@@ -445,14 +495,8 @@ async function waitForKeriPyWitnessReady(
   } catch (witnessError) {
     throw new Error(
       `KERIpy witness OOBIs never became ready.\ncontroller: ${
-        controllerError instanceof Error
-          ? controllerError.message
-          : String(controllerError)
-      }\nwitness: ${
-        witnessError instanceof Error
-          ? witnessError.message
-          : String(witnessError)
-      }`,
+        controllerError instanceof Error ? controllerError.message : String(controllerError)
+      }\nwitness: ${witnessError instanceof Error ? witnessError.message : String(witnessError)}`,
     );
   }
 }
@@ -474,12 +518,8 @@ export function spawnChild(
     stderr: "piped",
   }).spawn();
 
-  const [liveStdout, stdout] = child.stdout
-    ? child.stdout.tee()
-    : [undefined, undefined];
-  const [liveStderr, stderr] = child.stderr
-    ? child.stderr.tee()
-    : [undefined, undefined];
+  const [liveStdout, stdout] = child.stdout ? child.stdout.tee() : [undefined, undefined];
+  const [liveStderr, stderr] = child.stderr ? child.stderr.tee() : [undefined, undefined];
 
   return {
     status: child.status,
@@ -1099,9 +1139,7 @@ export async function startKeriPyWitnessHarness(
     const details = await Promise.all(
       children.map((child, index) =>
         stopChild(child).then((output) =>
-          output.length > 0
-            ? `# ${nodes[index]?.alias}\n${output}`
-            : `# ${nodes[index]?.alias}\n<no output>`
+          output.length > 0 ? `# ${nodes[index]?.alias}\n${output}` : `# ${nodes[index]?.alias}\n<no output>`
         )
       ),
     );

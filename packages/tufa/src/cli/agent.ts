@@ -10,6 +10,7 @@ import {
   ingestKeriBytes,
   normalizeCesrBodyMode,
   processRuntimeTurn,
+  Schemer,
   Schemes,
   ValidationError,
 } from "keri-ts/runtime";
@@ -28,6 +29,8 @@ interface AgentArgs {
   compat?: boolean;
   outboxer?: boolean;
   cesrBodyMode?: CesrBodyMode;
+  schemas?: string[];
+  schemaDirs?: string[];
 }
 
 function configuredControllerState(hab: Hab): boolean {
@@ -51,6 +54,52 @@ function preferredControllerUrl(hab: Hab): string | null {
 function controllerStartupComplete(hby: Habery, hab: Hab): boolean {
   return controllerRoleEnabled(hby, hab.pre)
     && preferredControllerUrl(hab) !== null;
+}
+
+function schemaInputsFromArgs(args: Record<string, unknown>): {
+  schemas: string[];
+  schemaDirs: string[];
+} {
+  return {
+    schemas: asStringList(args.schema),
+    schemaDirs: asStringList(args.schemaDir),
+  };
+}
+
+function asStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  return typeof value === "string" ? [value] : [];
+}
+
+function schemaFiles(schemaFiles: readonly string[], schemaDirs: readonly string[]): string[] {
+  const files = [...schemaFiles];
+  for (const dir of schemaDirs) {
+    for (const entry of Deno.readDirSync(dir)) {
+      if (entry.isFile) {
+        files.push(`${dir.replace(/\/+$/u, "")}/${entry.name}`);
+      }
+    }
+  }
+  return [...new Set(files)].sort();
+}
+
+function importHostedSchemas(
+  hby: Habery,
+  schemaFilesInput: readonly string[],
+  schemaDirsInput: readonly string[],
+): void {
+  for (const path of schemaFiles(schemaFilesInput, schemaDirsInput)) {
+    try {
+      const schemer = new Schemer({ raw: Deno.readFileSync(path) });
+      hby.db.schema.pin(schemer.said, schemer);
+    } catch (error) {
+      throw new ValidationError(
+        `Unable to import schema ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 }
 
 function* reconcileHostedControllerBootstrap(
@@ -128,6 +177,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
     ),
+    ...schemaInputsFromArgs(args),
   };
   const port = agentArgs.port ?? 8000;
 
@@ -171,6 +221,11 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
 
   try {
     const seedHabs = [...hby.habs.values()];
+    importHostedSchemas(
+      hby,
+      agentArgs.schemas ?? [],
+      agentArgs.schemaDirs ?? [],
+    );
     const cueHab = seedHabs[0];
     if (!cueHab) {
       throw new ValidationError(

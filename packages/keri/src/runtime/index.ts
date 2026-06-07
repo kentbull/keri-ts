@@ -6,6 +6,7 @@
  *   fetch, or LMDB-backed behavior
  * - CLI wiring and HTTP host ownership stay out of this barrel
  */
+export * from "../acdc/index.ts";
 export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
 export * from "../app/cesr-http.ts";
@@ -15,8 +16,11 @@ export * from "../app/cue-runtime.ts";
 export * from "../app/delegating.ts";
 export * from "../app/exchanging.ts";
 export * from "../app/forwarding.ts";
+export * from "../app/grouping.ts";
 export * from "../app/habbing.ts";
 export * from "../app/httping.ts";
+export * from "../app/ipex-credentialing.ts";
+export * from "../app/ipexing.ts";
 export * from "../app/keeping.ts";
 export * from "../app/mailbox-director.ts";
 export * from "../app/mailbox-sse.ts";
@@ -31,7 +35,10 @@ export * from "../app/reactor.ts";
 export * from "../app/respondant.ts";
 export * from "../app/runtime-services.ts";
 export * from "../app/runtime-turn.ts";
+export * from "../app/schema-resolving.ts";
 export * from "../app/signaling.ts";
+export * from "../app/verifier-agent.ts";
+export * from "../app/verifying.ts";
 export { BUILD_METADATA, DISPLAY_VERSION, PACKAGE_VERSION } from "../app/version.ts";
 export {
   processWitnessIngress,
@@ -54,4 +61,8 @@ export * from "../core/mailbox-topics.ts";
 export * from "../core/records.ts";
 export * from "../core/roles.ts";
 export * from "../core/schemes.ts";
+export * from "../core/scheming.ts";
+export * from "../db/verifier-cueing.ts";
 export * from "../time/mod.ts";
+export * from "../vdr/credentialing.ts";
+export * from "../vdr/eventing.ts";

@@ -15,8 +15,9 @@ import { concatBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { ForwardHandler, introduce, Poster } from "../../../src/app/forwarding.ts";
+import { ForwardHandler, introduce, mailboxTopicForRoute, Poster } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import {
   mailboxQueryTopics,
   mailboxTopicKey,
@@ -24,7 +25,7 @@ import {
   updateMailboxRemoteCursor,
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
-import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
+import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import type { Mailboxer } from "../../../src/db/mailboxing.ts";
@@ -45,6 +46,30 @@ function makeEmbeddedExchangeMessage(
   const [serder, attachments] = exchangeMessage(route, payload, args);
   return { serder, attachments };
 }
+
+const ACDC_FIXTURE_RAW = new TextEncoder().encode(
+  "{\"v\":\"ACDC10JSON00018a_\",\"d\":\"EP5-9l2U6Nk4Tay7ZMmE2vMBbyst_wL-X-duR7_5fOYh\",\"i\":\"EAzyYT43995Tzhs4dobIxATUmE6u6MTS87zdeIUxVILK\",\"ri\":\"EC6A-9IZSURHyUHKN3kyabfwJPYeR9oQq2wcoIZAL8L2\",\"s\":\"ENLj1SXm-UWWAHjoBCSDK1XSvlZ0A-yehZFQbdbwBI4V\",\"a\":{\"d\":\"ECZxadZCtRi0BpLMb4JfTjLho40fR1BAkwOxQf2BmqJe\",\"i\":\"EJ0d1ke927FIzyF7M1xRb7n6DBhiOh4GPg8ZMZjvhbPg\",\"dt\":\"2026-06-07T02:23:37.535000+00:00\",\"role\":\"holder\"}}",
+);
+
+/** Proves KERIpy-compatible mailbox topic defaults for credential presentation routes. */
+// @test-lane app-fast-parallel
+Deno.test("mailboxTopicForRoute routes IPEX exchanges to /credential", () => {
+  assertEquals(mailboxTopicForRoute("/ipex/apply"), CREDENTIAL_MAILBOX_TOPIC);
+  assertEquals(mailboxTopicForRoute("/ipex/offer"), CREDENTIAL_MAILBOX_TOPIC);
+  assertEquals(mailboxTopicForRoute("/ipex/grant"), CREDENTIAL_MAILBOX_TOPIC);
+  assertEquals(mailboxTopicForRoute("/ipex/admit"), CREDENTIAL_MAILBOX_TOPIC);
+  assertEquals(mailboxTopicForRoute("/delegate/request"), DELEGATE_MAILBOX_TOPIC);
+  assertEquals(mailboxTopicForRoute("/challenge/response"), "challenge");
+});
+
+/** Proves sender-side `credential` and poll-side `/credential` share one mailbox key. */
+// @test-lane app-fast-parallel
+Deno.test("mailboxTopicKey normalizes credential topic slash forms", () => {
+  assertEquals(
+    mailboxTopicKey("Erecipient", "credential"),
+    mailboxTopicKey("Erecipient", CREDENTIAL_MAILBOX_TOPIC),
+  );
+});
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
 // @test-lane app-fast-parallel
@@ -176,6 +201,12 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
         ])["/challenge"],
         0,
       );
+      assertEquals(
+        mailboxQueryTopics(hby, hab.pre, "Bwitness", [
+          CREDENTIAL_MAILBOX_TOPIC,
+        ])[CREDENTIAL_MAILBOX_TOPIC],
+        0,
+      );
 
       updateMailboxRemoteCursor(hby, hab.pre, "Bwitness", "/challenge", 7);
       assertEquals(
@@ -209,6 +240,36 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
       assertEquals(runtime.mailboxer, null);
       assertEquals(runtime.mailboxDirector.mailboxer, null);
       assertEquals(runtime.poster.mailboxer, null);
+      yield* runtime.close();
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Proves shared runtime construction explicitly carries Phase 1 VDR services. */
+Deno.test("Runtime exposes injected VDR services and registers /credential", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `runtime-vdr-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const vdr = {
+        reger: {},
+        tvy: {},
+        vry: {},
+        rgy: {},
+      };
+      const runtime = yield* createAgentRuntime(hby, { mode: "local", vdr });
+      assertEquals(runtime.vdr, vdr);
+      assertEquals(runtime.reactor.vdr, vdr);
+      assertEquals(
+        runtime.mailboxDirector.registeredTopics().includes(CREDENTIAL_MAILBOX_TOPIC),
+        true,
+      );
       yield* runtime.close();
     } finally {
       yield* hby.close(true);
@@ -353,6 +414,153 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
         yield* runtime.close();
       }
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Proves IPEX delivery defaults to the credential mailbox topic without caller override. */
+// @test-lane app-fast-parallel
+Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `poster-ipex-topic-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "indirect" });
+      try {
+        ingestKeriBytes(
+          runtime,
+          recipient.makeLocScheme(
+            "http://127.0.0.1:9126",
+            recipient.pre,
+            "http",
+          ),
+        );
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const poster = new Poster(hby, { mailboxer: runtime.mailboxer });
+        const { serder } = yield* poster.sendExchange(sender, {
+          recipient: recipient.pre,
+          route: "/ipex/grant",
+          payload: { m: "grant" },
+        });
+
+        assertEquals(serder.route, "/ipex/grant");
+        const stored = runtime.mailboxer?.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, CREDENTIAL_MAILBOX_TOPIC),
+        ) ?? [];
+        assertEquals(stored.length, 1);
+        assertEquals(new SerderKERI({ raw: stored[0]! }).route, "/ipex/grant");
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `forward-acdc-support-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    let mailboxer: Mailboxer | undefined;
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const provider = hby.makeHab("provider", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      mailboxer = yield* openMailboxerForHabery(hby);
+      const director = new MailboxDirector(hby, { mailboxer });
+      const handler = new ForwardHandler(director);
+      const runtime = yield* createAgentRuntime(hby, {
+        mode: "local",
+        mailboxer,
+      });
+      try {
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(provider.pre, EndpointRoles.mailbox, true),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const [serder, rawAttachments] = exchangeMessage("/fwd", {}, {
+          sender: sender.pre,
+          modifiers: {
+            pre: recipient.pre,
+            topic: CREDENTIAL_MAILBOX_TOPIC,
+          },
+          embeds: { evt: ACDC_FIXTURE_RAW },
+        });
+        const attachments = [{
+          raw: rawAttachments,
+          text: new TextDecoder().decode(rawAttachments),
+        }];
+
+        assertEquals(handler.verify({ serder, attachments }), true);
+        director.withActiveMailboxAid(provider.pre, () => {
+          handler.handle({ serder, attachments });
+        });
+
+        const stored = mailboxer!.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, CREDENTIAL_MAILBOX_TOPIC),
+        );
+        assertEquals(stored.length, 1);
+        assertEquals(stored[0], ACDC_FIXTURE_RAW);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      if (mailboxer?.opened) {
+        yield* mailboxer.close();
+      }
       yield* hby.close(true);
     }
   });

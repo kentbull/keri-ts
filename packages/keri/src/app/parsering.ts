@@ -14,6 +14,7 @@ import {
   SealEvent,
   SealKind,
   SealSource,
+  SerderACDC,
   SerderKERI,
   Siger,
   type Smellage,
@@ -40,6 +41,53 @@ export interface ExchangerLike {
     ptds: PathedMaterialGroup[];
     essrs: Texter[];
   }): void;
+}
+
+export interface TelDispatchArgs {
+  serder: SerderKERI;
+  seqner: SealSource["s"] | null;
+  saider: SealSource["d"] | null;
+  attachmentGroups: readonly AttachmentGroup[];
+  local: boolean;
+  sigers: Siger[];
+  wigers: Siger[];
+  cigars: Cigar[];
+  trqs: TransReceiptQuadruple[];
+  tsgs: TransIdxSigGroup[];
+  ssgs: TransLastIdxSigGroup[];
+  frcs: FirstSeenReplayCouple[];
+  sscs: SealSource[];
+  tdcs: SealKind[];
+}
+
+export interface AcdcDispatchArgs {
+  serder: SerderACDC;
+  prefixer: SealEvent["i"] | null;
+  seqner: SealEvent["s"] | null;
+  saider: SealEvent["d"] | null;
+  attachmentGroups: readonly AttachmentGroup[];
+  local: boolean;
+  ptds: PathedMaterialGroup[];
+  essrs: Texter[];
+  ssts: SealEvent[];
+  bsqs: BlindState[];
+  bsss: BoundState[];
+  tmqs: TypeMedia[];
+}
+
+export interface TeveryLike {
+  processEvent?(args: TelDispatchArgs): void;
+  processEscrows?(): void;
+}
+
+export interface VerifierLike {
+  processACDC?(args: AcdcDispatchArgs): void;
+  processEscrows?(): void;
+}
+
+export interface VdrDispatchServices {
+  tvy?: TeveryLike | null;
+  vry?: VerifierLike | null;
 }
 
 /**
@@ -74,11 +122,20 @@ export function dispatchEnvelope(
   revery: Revery,
   kevery: Kevery,
   exchanger?: ExchangerLike,
+  vdr: VdrDispatchServices = {},
 ): ReplyProcessDecision | void {
-  switch (envelope.serder.ilk) {
+  const serder = envelope.serder as SerderKERI | SerderACDC;
+  if (serder instanceof SerderACDC) {
+    if (serder.ilk === null) {
+      vdr.vry?.processACDC?.(acdcEnvelopeFromDispatch(envelope, serder));
+    }
+    return;
+  }
+
+  switch (serder.ilk) {
     case Ilks.rpy:
       return revery.processReply({
-        serder: envelope.serder,
+        serder,
         cigars: envelope.cigars,
         tsgs: envelope.tsgs,
       });
@@ -90,12 +147,20 @@ export function dispatchEnvelope(
       break;
     case Ilks.exn:
       exchanger?.processEvent({
-        serder: envelope.serder,
+        serder,
         tsgs: envelope.tsgs,
         cigars: envelope.cigars,
         ptds: envelope.ptds,
         essrs: envelope.essrs,
       });
+      break;
+    case Ilks.vcp:
+    case Ilks.vrt:
+    case Ilks.iss:
+    case Ilks.rev:
+    case Ilks.bis:
+    case Ilks.brv:
+      vdr.tvy?.processEvent?.(telEnvelopeFromDispatch(envelope, serder));
       break;
     case Ilks.icp:
     case Ilks.dip:
@@ -106,13 +171,13 @@ export function dispatchEnvelope(
         const decision = kevery.processEvent(envelope);
         if (decision.kind === "accept" || decision.kind === "duplicate") {
           kevery.processAttachedReceiptCouples({
-            serder: envelope.serder,
+            serder,
             cigars: envelope.cigars,
             firner: envelope.lastFrc?.firner,
             local: envelope.local,
           });
           kevery.processAttachedReceiptQuadruples({
-            serder: envelope.serder,
+            serder,
             trqs: envelope.trqs,
             firner: envelope.lastFrc?.firner,
             local: envelope.local,
@@ -123,6 +188,50 @@ export function dispatchEnvelope(
     default:
       break;
   }
+}
+
+function telEnvelopeFromDispatch(
+  envelope: KeriDispatchEnvelope,
+  serder: SerderKERI,
+): TelDispatchArgs {
+  const source = envelope.lastSsc;
+  return {
+    serder,
+    seqner: source?.s ?? null,
+    saider: source?.d ?? null,
+    attachmentGroups: envelope.attachmentGroups,
+    local: envelope.local,
+    sigers: [...envelope.sigers],
+    wigers: [...envelope.wigers],
+    cigars: [...envelope.cigars],
+    trqs: [...envelope.trqs],
+    tsgs: [...envelope.tsgs],
+    ssgs: [...envelope.ssgs],
+    frcs: [...envelope.frcs],
+    sscs: [...envelope.sscs],
+    tdcs: [...envelope.tdcs],
+  };
+}
+
+function acdcEnvelopeFromDispatch(
+  envelope: KeriDispatchEnvelope,
+  serder: SerderACDC,
+): AcdcDispatchArgs {
+  const source = envelope.lastSst;
+  return {
+    serder,
+    prefixer: source?.i ?? null,
+    seqner: source?.s ?? null,
+    saider: source?.d ?? null,
+    attachmentGroups: envelope.attachmentGroups,
+    local: envelope.local,
+    ptds: [...envelope.ptds],
+    essrs: [...envelope.essrs],
+    ssts: [...envelope.ssts],
+    bsqs: [...envelope.bsqs],
+    bsss: [...envelope.bsss],
+    tmqs: [...envelope.tmqs],
+  };
 }
 
 function smellageFromMessage(message: CesrMessage): Smellage {

@@ -3,6 +3,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import {
+  CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
   RECEIPT_MAILBOX_TOPIC,
   REPLAY_MAILBOX_TOPIC,
@@ -11,6 +12,9 @@ import {
 import type { OobiRecord } from "../core/records.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
+import { createReger, Reger } from "../db/reger.ts";
+import { Regery } from "../vdr/credentialing.ts";
+import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo, type CueSink, processCuesOnce } from "./cue-runtime.ts";
@@ -23,17 +27,20 @@ import {
   mailboxTopicForRoute,
   Poster,
 } from "./forwarding.ts";
+import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { loadIpexHandlers } from "./ipexing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
 import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
-import { Reactor } from "./reactor.ts";
+import { Reactor, type VdrRuntimeServices } from "./reactor.ts";
 import { Respondant } from "./respondant.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
+import { Verifier } from "./verifying.ts";
 
 /**
  * Shared runtime host mode.
@@ -79,6 +86,7 @@ export interface AgentRuntime {
   poster: Poster;
   delegating: Anchorer;
   querying: QueryCoordinator;
+  vdr: VdrRuntimeServices;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -99,6 +107,7 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
+  vdr?: VdrRuntimeServices;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -154,10 +163,39 @@ export function* createAgentRuntime(
   const notifier = options.notifier
     ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
   const cues = new Deck<AgentCue>();
-  const reactor = new Reactor(hby, { cues });
+  const vdr: VdrRuntimeServices = { ...(options.vdr ?? {}) };
+  let ownsReger = false;
+  if (!vdr.reger && !hby.readonly) {
+    vdr.reger = yield* createReger({
+      name: hby.name,
+      base: hby.base,
+      temp: hby.temp,
+      headDirPath: hby.headDirPath,
+      compat: hby.compat,
+    });
+    ownsReger = true;
+  }
+  const reger = vdr.reger instanceof Reger ? vdr.reger : null;
+  if (reger && !vdr.tvy) {
+    vdr.tvy = new Tevery({ db: hby.db, reger, cues });
+  }
+  if (reger && !vdr.vry) {
+    vdr.vry = new Verifier(hby, { reger, cues });
+  }
+  if (reger && vdr.tvy instanceof Tevery && vdr.vry instanceof Verifier && !vdr.rgy) {
+    vdr.rgy = new Regery(hby, {
+      reger,
+      tvy: vdr.tvy,
+      vry: vdr.vry,
+      cues,
+    });
+  }
+  const reactor = new Reactor(hby, { cues, vdr });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
+  loadMultisigHandlers(hby, reactor.exchanger, { notifier });
+  loadIpexHandlers(hby, reactor.exchanger, { notifier });
   const mailboxDirector = new MailboxDirector(
     hby,
     mailboxer ? { mailboxer } : {},
@@ -183,6 +221,7 @@ export function* createAgentRuntime(
   for (
     const topic of [
       DELEGATE_MAILBOX_TOPIC,
+      CREDENTIAL_MAILBOX_TOPIC,
       RECEIPT_MAILBOX_TOPIC,
       REPLAY_MAILBOX_TOPIC,
       REPLY_MAILBOX_TOPIC,
@@ -212,6 +251,7 @@ export function* createAgentRuntime(
     poster,
     delegating,
     querying,
+    vdr,
     services,
     *close(): Operation<void> {
       if (ownsNoter && noter?.opened) {
@@ -219,6 +259,9 @@ export function* createAgentRuntime(
       }
       if (ownsMailboxer && mailboxer?.opened) {
         yield* mailboxer.close();
+      }
+      if (ownsReger && reger?.opened) {
+        yield* reger.close(hby.temp);
       }
     },
   };
@@ -292,7 +335,10 @@ export function settleMailboxPollBatch(
   runtime: AgentRuntime,
   batch: MailboxPollBatch,
 ): void {
-  settleRuntimeIngress(runtime, batch.messages);
+  for (const message of batch.messages) {
+    runtime.reactor.processCompleteChunk(message);
+  }
+  runtime.reactor.processEscrowsOnce();
 }
 
 /**
