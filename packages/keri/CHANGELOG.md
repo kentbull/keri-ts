@@ -1,5 +1,52 @@
 # keri-ts
 
+## 0.8.0
+
+### Minor Changes
+
+- 6286759: Release the ACDC/TEL/IPEX implementation as v0.8.0 across Tufa, CESR, and
+  KERI packages, including the end-to-end issuer, holder, verifier, KERIpy
+  interop, credential-chain, revocation, and saidification workflows.
+
+### Patch Changes
+
+- b7fb4e0: Add registry-backed VC and IPEX CLI operations for schema import, registry
+  management, credential create/list/export/import/revoke, and single-sig
+  grant/admit artifact workflows.
+- fd9dabd: Add registry and credential issuance orchestration for registry-backed ACDCs,
+  including `Regery`, `Registry`, `Registrar`, `Credentialer`, credential
+  serialization helpers, and a verifier-index-backed credential wallet surface.
+- 9bd9030: Fix ACDC credential presentation proof serialization for KLI-issued
+  credentials, add a separate Sally-style `tufa hook demo` webhook target, and
+  cover KLI issuer -> Tufa holder -> Tufa verifier interop through the public
+  CLI workflow.
+- b0db7b1: Add KLI-holder and mixed KLI/Tufa credential-chain interop support, including
+  bounded `tufa ipex poll` mailbox processing, KERIpy-compatible forwarded ACDC
+  support payload handling, bidirectional revocation propagation, and I2I/NI2I
+  mixed-chain verifier gates with a KERIpy IPEX message-length preflight for the
+  known local `serializeMessage` quadlet-alignment bug.
+- 1f82a5d: Add KERIpy-shaped multisig EXN coordination for registry inception, issue,
+  revoke, replies, and wrapped IPEX proposals, including runtime registration,
+  lead election, and `ipex join --auto` approval support.
+- 053c1fa: Add KERIpy-parity ACDC v2 messaging builders for registry, map, attribute,
+  aggregate, and section messages, and align CESR-native mapper/string and direct
+  native-serder hydration behavior with KERIpy vectors.
+- b9abf12: Add the ACDC/VDR foundation: credential mailbox routing, IPEX route handlers,
+  schema data OOBI resolution and hosting, parser VDR dispatch seams, and the
+  KERIpy-shaped Reger storage owner.
+- 580bf65: Add a Sally-like verifier agent with durable verifier cue storage, grant-driven
+  presentation processing, revocation webhook handling, schema-validator config
+  support, and the `tufa verifier run` command.
+- f52dd7e: Add the registry-backed TEL and ACDC verifier core with KERIpy-compatible TEL
+  state transitions, verifier save indexes, missing registry/schema/chain
+  escrows, chain operator defaults, and schema payload validation.
+- 205a9e9: Persist verifier revocation acknowledgements separately from issuance
+  acknowledgements and rescan saved TEL state so `tufa verifier run --once`
+  emits revocation webhooks correctly after credential imports in prior CLI
+  processes.
+- 9bd9030: Add a KLI-compatible `tufa saidify` command for in-place JSON SAD
+  saidification, including schema `$id` support and KLI output parity coverage.
+
 ## 0.7.0
 
 ### Minor Changes
