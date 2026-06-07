@@ -1,5 +1,19 @@
 # cesr-ts
 
+## 0.8.0
+
+### Minor Changes
+
+- 6286759: Release the ACDC/TEL/IPEX implementation as v0.8.0 across Tufa, CESR, and
+  KERI packages, including the end-to-end issuer, holder, verifier, KERIpy
+  interop, credential-chain, revocation, and saidification workflows.
+
+### Patch Changes
+
+- 053c1fa: Add KERIpy-parity ACDC v2 messaging builders for registry, map, attribute,
+  aggregate, and section messages, and align CESR-native mapper/string and direct
+  native-serder hydration behavior with KERIpy vectors.
+
 ## 0.7.0
 
 ### Minor Changes
