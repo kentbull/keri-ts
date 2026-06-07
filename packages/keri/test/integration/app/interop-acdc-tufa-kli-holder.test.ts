@@ -3,11 +3,11 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   createInteropContext,
-  createLocalKeripyKliWrapper,
   extractLastNonEmptyLine,
   extractPrefix,
   randomPort,
   requireSuccess,
+  resolveLocalKeripyKliCommand,
   runCmd,
   runCmdWithTimeout,
   runTufa,
@@ -198,7 +198,7 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
   const hookPort = randomPort();
   const providerOrigin = `http://127.0.0.1:${providerAgentPort}`;
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
-  const kliCommand = await createLocalKeripyKliWrapper(workDir);
+  const kliCommand = await resolveLocalKeripyKliCommand(workDir, ctx.kliCommand, env);
 
   try {
     await Deno.writeTextFile(schemaPath, JSON.stringify(schemaSed()));

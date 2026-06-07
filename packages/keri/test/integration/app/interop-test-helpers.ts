@@ -346,6 +346,38 @@ export async function createLocalKeripyKliWrapper(workDir: string): Promise<stri
   return path;
 }
 
+let localKeripyRunnable: Promise<boolean> | undefined;
+
+/** Return true when the branch-local KERIpy checkout can be run through uv. */
+export async function canRunLocalKeripy(
+  env: Record<string, string>,
+): Promise<boolean> {
+  localKeripyRunnable ??= (async () => {
+    try {
+      await Deno.stat(localKeripyRoot());
+      return await canRunCommand("uv", ["--version"], pyenvProbeEnv(env));
+    } catch {
+      return false;
+    }
+  })();
+  return await localKeripyRunnable;
+}
+
+/**
+ * Prefer the branch-local KERIpy checkout when it is runnable, otherwise use
+ * the already-provisioned pinned interop KLI command.
+ */
+export async function resolveLocalKeripyKliCommand(
+  workDir: string,
+  fallbackCommand: string,
+  env: Record<string, string>,
+): Promise<string> {
+  if (await canRunLocalKeripy(env)) {
+    return await createLocalKeripyKliWrapper(workDir);
+  }
+  return fallbackCommand;
+}
+
 function cacheHome(): string {
   return Deno.env.get("XDG_CACHE_HOME")
     ?? `${Deno.env.get("HOME") ?? "/tmp"}/.cache`;

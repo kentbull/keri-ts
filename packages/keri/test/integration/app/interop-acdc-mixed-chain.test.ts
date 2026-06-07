@@ -19,13 +19,14 @@ import {
   type TufaMailboxProviderFixture,
 } from "./interop-delegation-helpers.ts";
 import {
+  canRunLocalKeripy,
   createInteropContext,
-  createLocalKeripyKliWrapper,
   extractLastNonEmptyLine,
   type InteropContext,
   localKeripyRoot,
   randomPort,
   requireSuccess,
+  resolveLocalKeripyKliCommand,
   runCmdWithTimeout,
   runTufa,
   runTufaWithTimeout,
@@ -94,37 +95,6 @@ function tufaStoreArgs(store: TufaStore): string[] {
 
 function kliStoreArgs(store: KliStore): string[] {
   return ["--name", store.name, "--base", store.base, "--passcode", store.passcode];
-}
-
-let localKeripyRunnable: Promise<boolean> | undefined;
-
-async function canRunLocalKeripy(ctx: InteropContext): Promise<boolean> {
-  localKeripyRunnable ??= (async () => {
-    try {
-      await Deno.stat(localKeripyRoot());
-      const uv = await runCmdWithTimeout(
-        "uv",
-        ["--version"],
-        ctx.env,
-        10_000,
-        ctx.repoRoot,
-      );
-      return uv.code === 0;
-    } catch {
-      return false;
-    }
-  })();
-  return await localKeripyRunnable;
-}
-
-async function resolveMixedChainKliCommand(
-  ctx: InteropContext,
-  workDir: string,
-): Promise<string> {
-  if (await canRunLocalKeripy(ctx)) {
-    return await createLocalKeripyKliWrapper(workDir);
-  }
-  return ctx.kliCommand;
 }
 
 function pythonCommandForKli(kliCommand: string): string {
@@ -949,7 +919,7 @@ async function alignedKliIpexMessage(
     args.timestamp,
     ...(args.recipient ? ["--recipient", args.recipient] : []),
   ];
-  const useLocalKeripy = await canRunLocalKeripy(ctx);
+  const useLocalKeripy = await canRunLocalKeripy(ctx.env);
   const result = await requireSuccess(
     `${store.name} KLI IPEX alignment preflight`,
     useLocalKeripy
@@ -986,10 +956,9 @@ async function alignedKliIpexMessage(
 Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa verifiers", async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-i2i-" });
-  const kliCommand = await resolveMixedChainKliCommand(baseCtx, workDir);
   const ctx: InteropContext = {
     ...baseCtx,
-    kliCommand,
+    kliCommand: await resolveLocalKeripyKliCommand(workDir, baseCtx.kliCommand, baseCtx.env),
     env: {
       ...baseCtx.env,
       KERI_LMDB_MAP_SIZE: "134217728",
@@ -1209,10 +1178,9 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
 Deno.test("Interop: Tufa NI2I edge verifies when source subject is not the Tufa issuer", async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-ni2i-" });
-  const kliCommand = await resolveMixedChainKliCommand(baseCtx, workDir);
   const ctx: InteropContext = {
     ...baseCtx,
-    kliCommand,
+    kliCommand: await resolveLocalKeripyKliCommand(workDir, baseCtx.kliCommand, baseCtx.env),
     env: {
       ...baseCtx.env,
       KERI_LMDB_MAP_SIZE: "134217728",
