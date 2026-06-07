@@ -27,7 +27,7 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 
 Deno.test("IPEX builders produce KERIpy v1 route payload shapes", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `ipex-builder-${crypto.randomUUID()}`,
       temp: true,
@@ -97,7 +97,7 @@ Deno.test("IPEX builders produce KERIpy v1 route payload shapes", async () => {
 });
 
 Deno.test("IPEX handler enforces KERIpy route graph and one response per prior", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `ipex-verify-${crypto.randomUUID()}`,
       temp: true,
@@ -165,7 +165,7 @@ Deno.test("IPEX handler enforces KERIpy route graph and one response per prior",
 });
 
 Deno.test("accepted IPEX grants create KERIpy-shaped notifier entries", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `ipex-notifier-${crypto.randomUUID()}`,
       temp: true,

@@ -150,8 +150,8 @@ export class Oobiery {
 
       const urls = record.urls ?? [];
       if (
-        urls.length === 0 ||
-        urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
+        urls.length === 0
+        || urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
       ) {
         return [url, record];
       }
@@ -209,8 +209,8 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
-    const contentType = response.headers.get("content-type")?.toLowerCase() ??
-      "";
+    const contentType = response.headers.get("content-type")?.toLowerCase()
+      ?? "";
     this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
@@ -337,8 +337,8 @@ export class Oobiery {
       : [];
 
     if (
-      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null) ||
-      urls.length === 0
+      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null)
+      || urls.length === 0
     ) {
       this.failFetchedOobi(url, record, "invalid-multi-oobi");
       return;
@@ -362,8 +362,8 @@ export class Oobiery {
   private completeMultiOobi(url: string, record: OobiRecord): void {
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
-    const failed = urls.length === 0 ||
-      urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+    const failed = urls.length === 0
+      || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
 
     this.hby.db.moobi.rem(url);
     if (failed) {

@@ -12,8 +12,8 @@
  * - sender retry durability is optional via `Outboxer`
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import { type Operation, spawn, type Task } from "npm:effection@^3.6.0";
-import { concatBytes, Counter, parsePather, SerderKERI } from "../../../cesr/mod.ts";
+import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
+import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -343,11 +343,11 @@ export class Poster {
     }
 
     if (
-      delivery !== "direct" &&
-      topic.length > 0 &&
-      this.mailboxer &&
-      this.hby.db.prefixes.has(hab.pre) &&
-      this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
+      delivery !== "direct"
+      && topic.length > 0
+      && this.mailboxer
+      && this.hby.db.prefixes.has(hab.pre)
+      && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
     ) {
       this.mailboxer.storeMsg(
         mailboxTopicKey(recipient, topic),
@@ -581,9 +581,9 @@ export class ForwardHandler implements ExchangeRouteHandler {
     attachments: ExchangeAttachment[];
   }): boolean {
     const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
-    return typeof modifiers?.pre === "string" &&
-      typeof modifiers?.topic === "string" &&
-      extractForwardedMessage(args.serder, args.attachments) !== null;
+    return typeof modifiers?.pre === "string"
+      && typeof modifiers?.topic === "string"
+      && extractForwardedMessage(args.serder, args.attachments) !== null;
   }
 
   /**
@@ -1103,8 +1103,8 @@ function extractForwardedMessage(
 
   // Rebuild the embedded event from SAD plus only the attachment material
   // pathed to `/e/evt`; other pathed groups belong to the outer `/fwd` message.
-  const embedded = new SerderKERI({ sad: evt as Record<string, unknown> });
-  const messageParts: Uint8Array[] = [embedded.raw];
+  const embedded = embeddedSerderRaw(evt as Record<string, unknown>);
+  const messageParts: Uint8Array[] = [embedded];
 
   for (const attachment of attachments) {
     const atc = forwardedAttachmentForPath(attachment.raw, "/e/evt");
@@ -1114,6 +1114,14 @@ function extractForwardedMessage(
   }
 
   return concatBytes(...messageParts);
+}
+
+function embeddedSerderRaw(sad: Record<string, unknown>): Uint8Array {
+  const version = typeof sad.v === "string" ? sad.v : "";
+  if (version.startsWith("ACDC")) {
+    return new SerderACDC({ sad, verify: false }).raw;
+  }
+  return new SerderKERI({ sad }).raw;
 }
 
 /**
@@ -1334,7 +1342,7 @@ export function* postCesrMessage(
   services: RuntimeServices = defaultRuntimeServices,
 ): Operation<void> {
   const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
-  for (const currentBody of requests) {
+  for (const [index, currentBody] of requests.entries()) {
     const request = buildCesrRequest(currentBody, {
       bodyMode,
       destination,
@@ -1347,13 +1355,36 @@ export function* postCesrMessage(
       services,
     });
 
-    yield* closeResponseBody(response);
     if (!response.ok) {
+      const responseText = yield* readResponseText(response);
       throw new ValidationError(
-        `Exchange delivery to ${url} failed with HTTP ${response.status}.`,
+        `Exchange delivery to ${url} failed with HTTP ${response.status} on message ${index + 1}/${requests.length} (${
+          describeCesrMessage(currentBody)
+        }): ${responseText}`,
       );
     }
+    yield* closeResponseBody(response);
   }
+}
+
+function describeCesrMessage(bytes: Uint8Array): string {
+  try {
+    const serder = new SerderKERI({ raw: bytes });
+    return [
+      serder.ilk ?? "unknown",
+      serder.route ? `route=${serder.route}` : null,
+      serder.said ? `said=${serder.said}` : null,
+    ].filter((part): part is string => !!part).join(" ");
+  } catch {
+    return `unparsed length=${bytes.length}`;
+  }
+}
+
+function* readResponseText(response: Response): Operation<string> {
+  return yield* action<string>((resolve, reject) => {
+    response.text().then(resolve, reject);
+    return () => {};
+  });
 }
 
 /** Shared EXN send helper used by CLI commands that want KERIpy-style behavior. */

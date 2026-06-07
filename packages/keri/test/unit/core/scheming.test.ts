@@ -1,4 +1,4 @@
-// @file-test-lane core-fast-parallel
+// @file-test-lane core-fast-a
 
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { Schemer } from "../../../src/core/scheming.ts";

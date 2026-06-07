@@ -37,7 +37,7 @@ export function* hookDemoCommand(args: Record<string, unknown>): Operation<void>
         console.log(`Tufa hook demo listening on ${port}`);
       },
     },
-    async (request) => handleHookRequest(request, received),
+    (request) => handleHookRequest(request, received),
   );
 
   try {
@@ -88,7 +88,29 @@ async function handleHookRequest(
   if (!isRecord(body) || !isRecord(body.data)) {
     return Response.json({ error: "No data in body" }, { status: 400 });
   }
+  const action = typeof body.action === "string" ? body.action : "";
   const data = body.data;
+  if (action === "rev") {
+    const credential = typeof data.credential === "string" ? data.credential : "";
+    if (!credential) {
+      return Response.json({ error: "No credential in revocation body data" }, { status: 400 });
+    }
+    for (const [holder, presentation] of received) {
+      if (presentation.credential === credential) {
+        received.delete(holder);
+      }
+    }
+    console.log(JSON.stringify({
+      revoked: {
+        credential,
+        issuer: typeof body.actor === "string" ? body.actor : "",
+        schema: typeof data.schema === "string" ? data.schema : "",
+        revocationTimestamp: typeof data.revocationTimestamp === "string" ? data.revocationTimestamp : "",
+      },
+    }));
+    return new Response("", { status: 202 });
+  }
+
   const holder = typeof data.recipient === "string" ? data.recipient : "";
   if (!holder) {
     return Response.json({ error: "No recipient in body data" }, { status: 400 });

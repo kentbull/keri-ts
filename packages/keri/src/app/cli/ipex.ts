@@ -1,10 +1,21 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { concatBytes, Diger, parseSerder, Prefixer, SerderKERI, smell } from "../../../../cesr/mod.ts";
-import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { type AgentRuntime, createAgentRuntime } from "../agent-runtime.ts";
+import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { serializeMessage } from "../../core/protocol-exchanging.ts";
+import { Reger } from "../../db/reger.ts";
+import { type AgentRuntime, createAgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
 import { splitCesrStream } from "../cesr-http.ts";
+import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigPathedAttachment } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
+import {
+  credentialSaidFromGrant,
+  ipexCredentialAdmit,
+  ipexCredentialGrant,
+  processCredentialPresentationArtifacts,
+  storedGrantArtifacts,
+} from "../ipex-credentialing.ts";
 import {
   IPEX_AGREE_ROUTE,
   IPEX_APPLY_ROUTE,
@@ -12,11 +23,6 @@ import {
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
 } from "../ipexing.ts";
-import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigPathedAttachment } from "../grouping.ts";
-import { ipexCredentialAdmit, ipexCredentialGrant } from "../ipex-credentialing.ts";
-import { Reger } from "../../db/reger.ts";
-import { TransIdxSigGroup } from "../../core/dispatch.ts";
-import { serializeMessage } from "../../core/protocol-exchanging.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface IpexBaseArgs {
@@ -191,6 +197,45 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
         prior: exn.ked?.p,
       }));
     }
+  } finally {
+    yield* runtime.close();
+    yield* hby.close();
+  }
+}
+
+export function* ipexPollCommand(args: Record<string, unknown>): Operation<void> {
+  const ipexArgs = ipexBaseArgs(args);
+  const maxTurns = positiveInteger(args.maxTurns, 8, "max turns");
+  const budgetMs = positiveInteger(args.budgetMs, 5_000, "budget milliseconds");
+  const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
+  try {
+    const hab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
+    const beforeExns = new Set(
+      [...hby.db.exns.getTopItemIter()]
+        .map(([, exn]) => exn.said)
+        .filter((said): said is string => typeof said === "string"),
+    );
+    const beforeSaved = savedCredentials(reger);
+    let batchesSeen = 0;
+    let messagesSeen = 0;
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      const batches = yield* processMailboxTurn(runtime, { hab, budgetMs });
+      batchesSeen += batches.length;
+      messagesSeen += batches.reduce((total, batch) => total + batch.messages.length, 0);
+      processStoredCredentialGrants(hby, runtime, reger);
+      runtime.reactor.processEscrowsOnce();
+      if (newIpexMessages(hby, beforeExns).length > 0 || newSavedCredentials(reger, beforeSaved).length > 0) {
+        break;
+      }
+    }
+
+    console.log(JSON.stringify({
+      batches: batchesSeen,
+      messages: messagesSeen,
+      ipex: newIpexMessages(hby, beforeExns),
+      saved: newSavedCredentials(reger, beforeSaved),
+    }));
   } finally {
     yield* runtime.close();
     yield* hby.close();
@@ -389,9 +434,69 @@ function requireString(value: string | undefined, label: string): string {
   return value!;
 }
 
+function positiveInteger(value: unknown, fallback: number, label: string): number {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new ValidationError(`${label} must be a positive integer.`);
+  }
+  return parsed;
+}
+
 function requireNonEmpty(value: string | undefined, label: string): void {
   if (!value) {
     throw new ValidationError(`${label} is required and cannot be empty.`);
+  }
+}
+
+function newIpexMessages(
+  hby: Habery,
+  before: Set<string>,
+): Array<{ said: string; route: string; sender: unknown; prior: unknown }> {
+  const messages: Array<{ said: string; route: string; sender: unknown; prior: unknown }> = [];
+  for (const [, exn] of hby.db.exns.getTopItemIter()) {
+    const said = exn.said;
+    const route = exn.route ?? "";
+    if (!said || before.has(said) || !route.startsWith("/ipex/")) {
+      continue;
+    }
+    messages.push({
+      said,
+      route,
+      sender: exn.ked?.i,
+      prior: exn.ked?.p,
+    });
+  }
+  return messages;
+}
+
+function savedCredentials(reger: Reger): Set<string> {
+  return new Set([...reger.saved.getTopItemIter()].map(([keys]) => keys[0]).filter((key): key is string => !!key));
+}
+
+function newSavedCredentials(reger: Reger, before: Set<string>): string[] {
+  return [...savedCredentials(reger)].filter((said) => !before.has(said));
+}
+
+function processStoredCredentialGrants(
+  hby: Habery,
+  runtime: AgentRuntime,
+  reger: Reger,
+): void {
+  for (const [, grant] of hby.db.exns.getTopItemIter()) {
+    if (grant.route !== IPEX_GRANT_ROUTE) {
+      continue;
+    }
+    const credentialSaid = credentialSaidFromGrant(grant);
+    if (!credentialSaid || reger.saved.get([credentialSaid])) {
+      continue;
+    }
+    processCredentialPresentationArtifacts(
+      runtime.reactor,
+      storedGrantArtifacts(hby, grant),
+    );
   }
 }
 

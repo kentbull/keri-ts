@@ -17,6 +17,7 @@ import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-htt
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { ForwardHandler, introduce, mailboxTopicForRoute, Poster } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import {
   mailboxQueryTopics,
   mailboxTopicKey,
@@ -46,6 +47,10 @@ function makeEmbeddedExchangeMessage(
   return { serder, attachments };
 }
 
+const ACDC_FIXTURE_RAW = new TextEncoder().encode(
+  "{\"v\":\"ACDC10JSON00018a_\",\"d\":\"EP5-9l2U6Nk4Tay7ZMmE2vMBbyst_wL-X-duR7_5fOYh\",\"i\":\"EAzyYT43995Tzhs4dobIxATUmE6u6MTS87zdeIUxVILK\",\"ri\":\"EC6A-9IZSURHyUHKN3kyabfwJPYeR9oQq2wcoIZAL8L2\",\"s\":\"ENLj1SXm-UWWAHjoBCSDK1XSvlZ0A-yehZFQbdbwBI4V\",\"a\":{\"d\":\"ECZxadZCtRi0BpLMb4JfTjLho40fR1BAkwOxQf2BmqJe\",\"i\":\"EJ0d1ke927FIzyF7M1xRb7n6DBhiOh4GPg8ZMZjvhbPg\",\"dt\":\"2026-06-07T02:23:37.535000+00:00\",\"role\":\"holder\"}}",
+);
+
 /** Proves KERIpy-compatible mailbox topic defaults for credential presentation routes. */
 // @test-lane app-fast-parallel
 Deno.test("mailboxTopicForRoute routes IPEX exchanges to /credential", () => {
@@ -69,7 +74,7 @@ Deno.test("mailboxTopicKey normalizes credential topic slash forms", () => {
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
 // @test-lane app-fast-parallel
 Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `poster-resolve-${crypto.randomUUID()}`,
       temp: true,
@@ -110,7 +115,7 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
 /** Proves KERIpy-shaped alias failure messages for missing and ambiguous contacts. */
 // @test-lane app-fast-parallel
 Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `poster-errors-${crypto.randomUUID()}`,
       temp: true,
@@ -156,7 +161,7 @@ Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
 
 /** Proves runtime-owned mailbox sharing and durable `tops.` cursor semantics. */
 Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbox cursors", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `mailboxer-shared-${crypto.randomUUID()}`,
       temp: true,
@@ -223,7 +228,7 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
 
 /** Proves local runtimes stay mailbox-store-free unless callers opt in. */
 Deno.test("Local runtime defaults to no provider mailbox store", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `mailboxer-local-${crypto.randomUUID()}`,
       temp: true,
@@ -244,7 +249,7 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
 
 /** Proves shared runtime construction explicitly carries Phase 1 VDR services. */
 Deno.test("Runtime exposes injected VDR services and registers /credential", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `runtime-vdr-${crypto.randomUUID()}`,
       temp: true,
@@ -274,7 +279,7 @@ Deno.test("Runtime exposes injected VDR services and registers /credential", asy
 
 /** Proves runtime-owned mailbox storage is closed by `runtime.close()`. */
 Deno.test("Indirect runtime closes the mailboxer it opened", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `mailboxer-close-${crypto.randomUUID()}`,
       temp: true,
@@ -298,7 +303,7 @@ Deno.test("Indirect runtime closes the mailboxer it opened", async () => {
 
 /** Proves caller-injected mailbox storage remains caller-owned after runtime cleanup. */
 Deno.test("Runtime close leaves injected mailboxers open", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `mailboxer-injected-${crypto.randomUUID()}`,
       temp: true,
@@ -328,7 +333,7 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
 /** Proves mailbox-first EXN delivery preserves embedded CESR payloads on the wire. */
 // @test-lane app-fast-parallel
 Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-style EXNs", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `poster-embeds-${crypto.randomUUID()}`,
       temp: true,
@@ -417,7 +422,7 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
 /** Proves IPEX delivery defaults to the credential mailbox topic without caller override. */
 // @test-lane app-fast-parallel
 Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `poster-ipex-topic-${crypto.randomUUID()}`,
       temp: true,
@@ -480,10 +485,91 @@ Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () 
   });
 });
 
+Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `forward-acdc-support-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+
+    let mailboxer: Mailboxer | undefined;
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const provider = hby.makeHab("provider", undefined, {
+        transferable: false,
+        icount: 1,
+        isith: "1",
+        toad: 0,
+      });
+      mailboxer = yield* openMailboxerForHabery(hby);
+      const director = new MailboxDirector(hby, { mailboxer });
+      const handler = new ForwardHandler(director);
+      const runtime = yield* createAgentRuntime(hby, {
+        mode: "local",
+        mailboxer,
+      });
+      try {
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(provider.pre, EndpointRoles.mailbox, true),
+        );
+        yield* processRuntimeTurn(runtime, { pollMailbox: false });
+
+        const [serder, rawAttachments] = exchangeMessage("/fwd", {}, {
+          sender: sender.pre,
+          modifiers: {
+            pre: recipient.pre,
+            topic: CREDENTIAL_MAILBOX_TOPIC,
+          },
+          embeds: { evt: ACDC_FIXTURE_RAW },
+        });
+        const attachments = [{
+          raw: rawAttachments,
+          text: new TextDecoder().decode(rawAttachments),
+        }];
+
+        assertEquals(handler.verify({ serder, attachments }), true);
+        director.withActiveMailboxAid(provider.pre, () => {
+          handler.handle({ serder, attachments });
+        });
+
+        const stored = mailboxer!.getTopicMsgs(
+          mailboxTopicKey(recipient.pre, CREDENTIAL_MAILBOX_TOPIC),
+        );
+        assertEquals(stored.length, 1);
+        assertEquals(stored[0], ACDC_FIXTURE_RAW);
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      if (mailboxer?.opened) {
+        yield* mailboxer.close();
+      }
+      yield* hby.close(true);
+    }
+  });
+});
+
 /** Proves EXN delivery falls back to a hosted witness mailbox when no direct or mailbox endpoints exist. */
 // @test-lane app-fast-parallel
 Deno.test("Poster.sendExchange falls back to local witness mailbox storage", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `poster-local-witness-exn-${crypto.randomUUID()}`,
       temp: true,
@@ -565,7 +651,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
   });
 
   try {
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({
         name: `poster-remote-witness-bytes-${crypto.randomUUID()}`,
         temp: true,
@@ -679,7 +765,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
 /** Proves KERIpy-style introduction carries all sender end-role replies. */
 // @test-lane app-fast-parallel
 Deno.test("introduce includes mailbox and witness end-role replies when both are known", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `introduce-end-roles-${crypto.randomUUID()}`,
       temp: true,
@@ -738,17 +824,17 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
 
         assertEquals(
           intro.some((entry) =>
-            entry.route === "/end/role/add" &&
-            entry.role === EndpointRoles.mailbox &&
-            entry.eid === mailbox.pre
+            entry.route === "/end/role/add"
+            && entry.role === EndpointRoles.mailbox
+            && entry.eid === mailbox.pre
           ),
           true,
         );
         assertEquals(
           intro.some((entry) =>
-            entry.route === "/end/role/add" &&
-            entry.role === EndpointRoles.witness &&
-            entry.eid === witness.pre
+            entry.route === "/end/role/add"
+            && entry.role === EndpointRoles.witness
+            && entry.eid === witness.pre
           ),
           true,
         );
@@ -764,7 +850,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
 /** Proves `direct` delivery mode stays strict and does not silently fall back to witnesses. */
 // @test-lane app-fast-parallel
 Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses", async () => {
-  const attempt = run(function* () {
+  const attempt = run(function*() {
     const hby = yield* createHabery({
       name: `poster-direct-strict-${crypto.randomUUID()}`,
       temp: true,
@@ -829,7 +915,7 @@ Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses
 /** Proves inbound `/fwd` storage accepts mailbox-like hosts but not controller-only hosts. */
 // @test-lane app-fast-parallel
 Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects controller-only hosts", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `forward-handler-host-types-${crypto.randomUUID()}`,
       temp: true,

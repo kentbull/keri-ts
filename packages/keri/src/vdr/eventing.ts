@@ -22,16 +22,16 @@ import {
   TraitDex,
   Verfer,
 } from "../../../cesr/mod.ts";
-import type { Baser } from "../db/basing.ts";
-import { dgKey } from "../db/core/keys.ts";
-import type { Reger } from "../db/reger.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { state as registryState, vcstate as credentialState } from "../core/protocol-vdr-eventing.ts";
 import { RegStateRecord, VcStateRecord } from "../core/records.ts";
+import type { Baser } from "../db/basing.ts";
+import { dgKey } from "../db/core/keys.ts";
+import type { Reger } from "../db/reger.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 
 type TelIlk =
   | typeof Ilks.vcp
@@ -523,7 +523,8 @@ export class Tever {
     sn: number,
   ):
     | { kind: "rotated"; toad: number; baks: string[]; cuts: string[]; adds: string[] }
-    | Extract<TelProcessDecision, { kind: "reject" }> {
+    | Extract<TelProcessDecision, { kind: "reject" }>
+  {
     const ked = okKed(serder);
     if (okPre(serder) !== this.prefixer.qb64) {
       return reject("Registry rotation prefix mismatch.", serder, this.regk);
@@ -699,7 +700,8 @@ export class Tever {
     baks: readonly string[];
   }):
     | { kind: "accept"; bigers: Siger[] }
-    | { kind: "escrow"; decision: TelProcessDecision; reason: string } {
+    | { kind: "escrow"; decision: TelProcessDecision; reason: string }
+  {
     const verfers = args.baks.map((bak) => new Verfer({ qb64: bak }));
     const verified = Kever.verifyIndexedSignatures(
       args.serder.raw,
@@ -757,9 +759,9 @@ export class Tever {
       return false;
     }
     const seal = sealRecord(seals[0]);
-    return seal?.i === serder.pre &&
-      seal?.s === serder.snh &&
-      seal?.d === serder.said;
+    return seal?.i === serder.pre
+      && seal?.s === serder.snh
+      && seal?.d === serder.said;
   }
 
   private escrowPWEvent(
@@ -810,7 +812,8 @@ export class Tever {
     serder: SerderKERI,
   ):
     | { kind: "backers"; toad: number; baks: string[] }
-    | Extract<TelProcessDecision, { kind: "reject" }> {
+    | Extract<TelProcessDecision, { kind: "reject" }>
+  {
     const ra = sealRecord(ked.ra);
     const regi = typeof ra?.i === "string" ? ra.i : null;
     const regd = typeof ra?.d === "string" ? ra.d : null;

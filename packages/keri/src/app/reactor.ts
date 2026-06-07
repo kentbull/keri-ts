@@ -88,9 +88,35 @@ export class Reactor {
     chunk: Uint8Array,
     { local = this.local }: { local?: boolean } = {},
   ): void {
+    this.dispatchParsedFrames(this.parser.feed(chunk), local);
+  }
+
+  /**
+   * Parse and dispatch one complete CESR/KERI record.
+   *
+   * Mailbox SSE entries are delivered as bounded records rather than an
+   * open-ended stream. A fresh parser plus terminal flush lets body-only
+   * records emit without waiting for a later chunk while keeping the shared
+   * streaming parser untouched for long-lived ingress.
+   */
+  processCompleteChunk(
+    chunk: Uint8Array,
+    { local = this.local }: { local?: boolean } = {},
+  ): void {
+    const parser = createParser({
+      framed: false,
+      attachmentDispatchMode: "compat",
+    });
+    this.dispatchParsedFrames([...parser.feed(chunk), ...parser.flush()], local);
+  }
+
+  private dispatchParsedFrames(
+    frames: ReturnType<CesrParser["feed"]>,
+    local: boolean,
+  ): void {
     for (
       const envelope of envelopesFromFrames(
-        this.parser.feed(chunk),
+        frames,
         local,
       )
     ) {

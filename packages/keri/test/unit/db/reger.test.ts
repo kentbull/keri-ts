@@ -66,7 +66,7 @@ function makeCredential(
 }
 
 Deno.test("db/reger - binds KERIpy Reger stores and broker subkeys", async () => {
-  await run(function* () {
+  await run(function*() {
     const reger = yield* createReger({
       name: `reger-bind-${crypto.randomUUID()}`,
       temp: true,
@@ -101,7 +101,7 @@ Deno.test("db/reger - binds KERIpy Reger stores and broker subkeys", async () =>
 });
 
 Deno.test("db/reger - logs and clones ACDC credentials with anchors", async () => {
-  await run(function* () {
+  await run(function*() {
     const reger = yield* createReger({
       name: `reger-cred-${crypto.randomUUID()}`,
       temp: true,
@@ -129,7 +129,7 @@ Deno.test("db/reger - logs and clones ACDC credentials with anchors", async () =
 });
 
 Deno.test("db/reger - credential stores enforce SerderACDC hydration", async () => {
-  await run(function* () {
+  await run(function*() {
     const reger = yield* createReger({
       name: `reger-acdc-enforce-${crypto.randomUUID()}`,
       temp: true,
@@ -158,7 +158,7 @@ Deno.test("db/reger - credential stores enforce SerderACDC hydration", async () 
 });
 
 Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async () => {
-  await run(function* () {
+  await run(function*() {
     const reger = yield* createReger({
       name: `reger-clone-tvt-${crypto.randomUUID()}`,
       temp: true,
@@ -217,7 +217,7 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
 });
 
 Deno.test("db/reger - sources returns recursive source credentials with seal triples", async () => {
-  await run(function* () {
+  await run(function*() {
     const reger = yield* createReger({
       name: `reger-sources-${crypto.randomUUID()}`,
       temp: true,

@@ -19,7 +19,7 @@ function v1ifyAcdc(raw: string): string {
 }
 
 Deno.test("serder: parseSerder hydrates SerderKERI for KERI payloads", () => {
-  const body = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"}');
+  const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const raw = b(body);
   const { smellage } = smell(raw);
 
@@ -32,7 +32,7 @@ Deno.test("serder: parseSerder hydrates SerderKERI for KERI payloads", () => {
 });
 
 Deno.test("serder: parseSerder hydrates SerderACDC for ACDC payloads", () => {
-  const body = v1ifyAcdc('{"v":"ACDC10JSON000000_","d":"Eacdcsaid","a":{}}');
+  const body = v1ifyAcdc("{\"v\":\"ACDC10JSON000000_\",\"d\":\"Eacdcsaid\",\"a\":{}}");
   const raw = b(body);
   const { smellage } = smell(raw);
 
@@ -44,7 +44,7 @@ Deno.test("serder: parseSerder hydrates SerderACDC for ACDC payloads", () => {
 });
 
 Deno.test("serder: subtype constructors reject wrong protocol domains", () => {
-  const raw = b('{"v":"KERI20JSON000000_","d":"Eabc"}');
+  const raw = b("{\"v\":\"KERI20JSON000000_\",\"d\":\"Eabc\"}");
   const smellage = {
     proto: "ACDC" as const,
     kind: "JSON" as const,
@@ -77,7 +77,7 @@ Deno.test("serder: subtype constructors reject wrong protocol domains", () => {
 });
 
 Deno.test("serder: structor projection classifies attachment families", () => {
-  const body = v2ify('{"v":"KERI20JSON000000_","t":"ixn","d":"Eabc"}');
+  const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const aggorPayload = `${token("B")}${token("E")}`;
   const aggor = `${counterV2(CtrDexV2.GenericListGroup, aggorPayload.length / 4)}${aggorPayload}`;
   const sealer = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${token("E")}`;
@@ -108,7 +108,7 @@ Deno.test("serder: structor projection classifies attachment families", () => {
 });
 
 Deno.test("serder: projection traverses nested wrapper groups and preserves other families", () => {
-  const body = v2ify('{"v":"KERI20JSON000000_","t":"ixn","d":"Eabc"}');
+  const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const sealerPayload = KERIPY_STRUCTOR_VECTORS.sealerTypedDigestPayload;
   const nestedSealer = `${counterV2(CtrDexV2.TypedDigestSealCouples, 1)}${sealerPayload}`;
   const nestedControllerSigs = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
@@ -137,7 +137,7 @@ Deno.test("serder: projection traverses nested wrapper groups and preserves othe
 });
 
 Deno.test("serder: parseSerder wraps malformed JSON decode failures", () => {
-  const bad = v2ify('{"v":"KERI20JSON000000_","t":"icp","d":"Eabc"');
+  const bad = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"");
   const raw = b(bad);
   const { smellage } = smell(raw);
   assertThrows(() => parseSerder(raw, smellage), DeserializeError);

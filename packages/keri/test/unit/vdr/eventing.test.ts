@@ -56,7 +56,7 @@ function anchorTel(hab: Hab, tel: { pre: string | null; snh: string | null; said
 }
 
 Deno.test("vdr/eventing - accepts backerless registry inception and pins state", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `tvy-vcp-${crypto.randomUUID()}`,
       temp: true,
@@ -92,7 +92,7 @@ Deno.test("vdr/eventing - accepts backerless registry inception and pins state",
 });
 
 Deno.test("vdr/eventing - escrows out-of-order issue and unescrows after registry inception", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `tvy-ooo-${crypto.randomUUID()}`,
       temp: true,
@@ -135,7 +135,7 @@ Deno.test("vdr/eventing - escrows out-of-order issue and unescrows after registr
 });
 
 Deno.test("vdr/eventing - rejects simple issue against a backer registry", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `tvy-mode-${crypto.randomUUID()}`,
       temp: true,
@@ -178,7 +178,7 @@ Deno.test("vdr/eventing - rejects simple issue against a backer registry", async
 });
 
 Deno.test("vdr/eventing - records issue and revoke credential state", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `tvy-vcstate-${crypto.randomUUID()}`,
       temp: true,

@@ -24,6 +24,7 @@ export {
   ipexJoinCommand,
   ipexListCommand,
   ipexOfferCommand,
+  ipexPollCommand,
   ipexSpurnCommand,
 } from "./ipex.ts";
 export { listCommand } from "./list.ts";
@@ -34,8 +35,6 @@ export { queryCommand } from "./query.ts";
 export { rotateCommand } from "./rotate.ts";
 export { saidifyCommand } from "./saidify.ts";
 export { signCommand } from "./sign.ts";
-export { verifyCommand } from "./verify.ts";
-export { verifierRunCommand } from "./verifier.ts";
 export {
   vcCreateCommand,
   vcExportCommand,
@@ -47,3 +46,5 @@ export {
   vcRevokeCommand,
   vcSchemaImportCommand,
 } from "./vc.ts";
+export { verifierRunCommand } from "./verifier.ts";
+export { verifyCommand } from "./verify.ts";

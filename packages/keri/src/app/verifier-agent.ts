@@ -10,7 +10,7 @@
  * `Notifier` rows are intentionally not consumed here; they remain operator
  * visibility, matching the roadmap contract.
  */
-import { concatBytes, Counter, Dater, Ilks, parsePather, Prefixer, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
+import { Dater, Ilks, Prefixer, SerderACDC } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -19,14 +19,16 @@ import type { Reger } from "../db/reger.ts";
 import type { VerifierCueBaser } from "../db/verifier-cueing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { Habery } from "./habbing.ts";
-import { type CredentialPresentationArtifacts, processCredentialPresentationArtifacts } from "./ipex-credentialing.ts";
+import {
+  credentialSaidFromGrant,
+  processCredentialPresentationArtifacts,
+  storedGrantArtifacts,
+} from "./ipex-credentialing.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
 import type { Reactor } from "./reactor.ts";
 import type { RuntimeServices } from "./runtime-services.ts";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
-const textEncoder = new TextEncoder();
-
 export interface VerifierAgentProcessResult {
   grantsQueued: number;
   revocationsQueued: number;
@@ -323,15 +325,15 @@ export class VerifierAgent {
   }
 
   private hasQueuedOrSent(said: string): boolean {
-    return this.cdb.iss.get([said]) !== null ||
-      this.cdb.ack.get([said]) !== null ||
-      this.hasReady(this.cdb.recv, said);
+    return this.cdb.iss.get([said]) !== null
+      || this.cdb.ack.get([said]) !== null
+      || this.hasReady(this.cdb.recv, said);
   }
 
   private hasRevocationQueuedOrSent(said: string): boolean {
-    return this.cdb.rev.get([said]) !== null ||
-      this.cdb.rack.get([said]) !== null ||
-      this.hasReady(this.cdb.revk, said);
+    return this.cdb.rev.get([said]) !== null
+      || this.cdb.rack.get([said]) !== null
+      || this.hasReady(this.cdb.revk, said);
   }
 
   private hasAcceptedGrantForCredential(said: string): boolean {
@@ -383,25 +385,6 @@ export function validatorsFromVerifierConfig(
   return validators;
 }
 
-/** Rebuild grant-embedded `anc`, `iss`, and `acdc` streams from exchange storage. */
-export function storedGrantArtifacts(
-  hby: Habery,
-  grant: SerderKERI,
-): CredentialPresentationArtifacts {
-  if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
-    throw new ValidationError(`Expected stored ${IPEX_GRANT_ROUTE} EXN.`);
-  }
-  const embeds = embeddedSection(grant);
-  if (!embeds) {
-    throw new ValidationError(`Grant ${grant.said} is missing embedded artifacts.`);
-  }
-  return {
-    anc: concatBytes(keriRaw(embeds.anc, "anc"), pathedAttachment(hby, grant.said, "anc")),
-    iss: concatBytes(keriRaw(embeds.iss, "iss"), pathedAttachment(hby, grant.said, "iss")),
-    acdc: concatBytes(acdcRaw(embeds.acdc, "acdc"), pathedAttachment(hby, grant.said, "acdc")),
-  };
-}
-
 function webhookBody(
   reger: Reger,
   creder: SerderACDC,
@@ -449,51 +432,6 @@ function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape |
     return null;
   }
   return (tever.vcState as (vcid: string) => VcStateRecordShape | null)(said);
-}
-
-function credentialSaidFromGrant(grant: SerderKERI): string | null {
-  const embeds = embeddedSection(grant);
-  const acdc = embeds?.acdc;
-  return isRecord(acdc) && typeof acdc.d === "string" ? acdc.d : null;
-}
-
-function embeddedSection(serder: SerderKERI): Record<string, unknown> | null {
-  const ked = serder.ked;
-  if (!ked) {
-    return null;
-  }
-  if (isRecord(ked.e)) {
-    return ked.e;
-  }
-  const attrs = ked.a;
-  return isRecord(attrs) && isRecord(attrs.e) ? attrs.e : null;
-}
-
-function keriRaw(value: unknown, label: string): Uint8Array {
-  if (!isRecord(value)) {
-    throw new ValidationError(`Grant embedded ${label} is missing.`);
-  }
-  return new SerderKERI({ sad: value }).raw;
-}
-
-function acdcRaw(value: unknown, label: string): Uint8Array {
-  if (!isRecord(value)) {
-    throw new ValidationError(`Grant embedded ${label} is missing.`);
-  }
-  return new SerderACDC({ sad: value, verify: false }).raw;
-}
-
-function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {
-  const path = `/e/${label}`;
-  for (const text of hby.db.epath.get([said])) {
-    const raw = textEncoder.encode(text);
-    const counter = new Counter({ qb64b: raw });
-    const pather = parsePather(raw.slice(counter.fullSize), "txt");
-    if (pather.path === path) {
-      return raw.slice(counter.fullSize + pather.fullSize);
-    }
-  }
-  return new Uint8Array();
 }
 
 function nowDater(): Dater {

@@ -12,12 +12,12 @@ import {
   type SerderKERI,
   Vrsn_1_0,
 } from "../../../../cesr/mod.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
+import { encodeHugeNumber } from "../../../src/app/keeping.ts";
 import { type AcdcDispatchArgs, dispatchEnvelope, type TelDispatchArgs } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
 import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
-import { encodeHugeNumber } from "../../../src/app/keeping.ts";
 import { incept } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Revery } from "../../../src/core/routing.ts";
 
@@ -26,7 +26,7 @@ const REGISTRY = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
 const SCHEMA = "EMQWEcCnVRk1hatTNyK3sIykYSrrFvafX3bHQ9Gkk1kC";
 
 Deno.test("dispatchEnvelope routes TEL events with the last source seal couple", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `vdr-tel-dispatch-${crypto.randomUUID()}`,
       temp: true,
@@ -76,7 +76,7 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
 });
 
 Deno.test("dispatchEnvelope routes ACDC messages with the last source seal triple", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `vdr-acdc-dispatch-${crypto.randomUUID()}`,
       temp: true,
@@ -141,7 +141,7 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
 });
 
 Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `vdr-escrow-turn-${crypto.randomUUID()}`,
       temp: true,

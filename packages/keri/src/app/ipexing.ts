@@ -319,12 +319,12 @@ function ipexVerbForRoute(route: string): IpexVerb | null {
 }
 
 function isIpexVerb(value: string): value is IpexVerb {
-  return value === "apply" ||
-    value === "offer" ||
-    value === "agree" ||
-    value === "grant" ||
-    value === "admit" ||
-    value === "spurn";
+  return value === "apply"
+    || value === "offer"
+    || value === "agree"
+    || value === "grant"
+    || value === "admit"
+    || value === "spurn";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -8,6 +8,7 @@ import {
   randomPort,
   requireSuccess,
   runCmd,
+  runCmdWithTimeout,
   runTufa,
   spawnChild,
   withStartedChild,
@@ -150,7 +151,9 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
   const credentialPath = `${workDir}/kli-credential.cesr`;
   const verifierGrantPath = `${workDir}/verifier-grant.cesr`;
   const agentPort = randomPort();
+  const verifierAgentPort = randomPort();
   const hookPort = randomPort();
+  const verifierOrigin = `http://127.0.0.1:${verifierAgentPort}`;
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
 
   try {
@@ -195,205 +198,290 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
         env,
         workspaceRoot(),
       );
+      const verifierAgentChild = spawnChild(
+        Deno.execPath(),
+        [
+          "run",
+          "--allow-all",
+          "--unstable-ffi",
+          "packages/tufa/mod.ts",
+          "agent",
+          ...tufaStoreArgs(verifierName, tufaHeadDir, passcode),
+          "--port",
+          String(verifierAgentPort),
+        ],
+        env,
+        workspaceRoot(),
+      );
 
       await withStartedChild(agentChild, agentPort, async () => {
-        const issuerPre = await initAndInceptKli(ctx.kliCommand, env, kliName, passcode);
-        const holderOobi = `http://127.0.0.1:${agentPort}/oobi/${holderPre}/controller`;
-        const resolve = await requireSuccess(
-          "kli resolve tufa holder",
-          runCmd(ctx.kliCommand, [
-            "oobi",
-            "resolve",
-            ...kliStoreArgs(kliName, passcode),
-            "--oobi",
-            holderOobi,
-            "--oobi-alias",
-            "holder",
-          ], env),
-        );
-        assertStringIncludes(resolve.stdout, "resolved");
-
-        const schemaImport = await requireSuccess(
-          "kli schema import",
-          runCmd(ctx.kliCommand, [
-            "vc",
-            "schema",
-            "import_",
-            ...kliStoreArgs(kliName, passcode),
-            "--schema",
-            schemaPath,
-          ], env),
-        );
-        assertStringIncludes(schemaImport.stdout, schemaSaid);
-
-        await requireSuccess(
-          "kli registry incept",
-          runCmd(ctx.kliCommand, [
-            "vc",
-            "registry",
-            "incept",
-            ...kliStoreArgs(kliName, passcode),
-            "--alias",
-            "issuer",
-            "--registry-name",
-            "issuer-reg",
-            "--no-backers",
-            "true",
-          ], env),
-        );
-
-        const create = await requireSuccess(
-          "kli credential create",
-          runCmd(ctx.kliCommand, [
-            "vc",
-            "create",
-            ...kliStoreArgs(kliName, passcode),
-            "--alias",
-            "issuer",
-            "--registry-name",
-            "issuer-reg",
-            "--schema",
-            schemaSaid,
-            "--recipient",
-            "holder",
-            "--data",
-            JSON.stringify({ role: "holder" }),
-          ], env),
-        );
-        assertStringIncludes(create.stdout, "has been created");
-
-        const issued = await requireSuccess(
-          "kli list issued credential",
-          runCmd(ctx.kliCommand, [
-            "vc",
-            "list",
-            ...kliStoreArgs(kliName, passcode),
-            "--alias",
-            "issuer",
-            "--issued",
-            "--said",
-          ], env),
-        );
-        const credentialSaid = extractLastNonEmptyLine(issued.stdout);
-        assertStringIncludes(create.stdout, credentialSaid);
-
-        const exported = await requireSuccess(
-          "kli credential export",
-          runCmd(ctx.kliCommand, [
-            "vc",
-            "export",
-            ...kliStoreArgs(kliName, passcode),
-            "--alias",
-            "issuer",
-            "--said",
-            credentialSaid,
-            "--full",
-          ], env),
-        );
-        await Deno.writeTextFile(credentialPath, exported.stdout);
-
-        await requireSuccess(
-          "tufa holder schema import",
-          runTufa(
-            ["vc", "schema", "import", ...tufaStoreArgs(holderName, tufaHeadDir, passcode), "--schema", schemaPath],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        const imported = await requireSuccess(
-          "tufa holder credential import",
-          runTufa(
-            ["vc", "import", ...tufaStoreArgs(holderName, tufaHeadDir, passcode), "--in", credentialPath],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        assertEquals(parseJsonLine(imported.stdout).saved, [credentialSaid]);
-
-        const listed = await requireSuccess(
-          "tufa holder credential list",
-          runTufa(
-            ["vc", "list", ...tufaStoreArgs(holderName, tufaHeadDir, passcode), "--alias", "holder"],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        const credential = parseJsonLine(listed.stdout);
-        assertEquals(credential.said, credentialSaid);
-        assertEquals(credential.issuer, issuerPre);
-        assertEquals(credential.issuee, holderPre);
-        assertEquals(credential.schema, schemaSaid);
-        assertEquals(credential.status, "iss");
-
-        const grant = await requireSuccess(
-          "tufa holder ipex grant",
-          runTufa(
-            [
-              "ipex",
-              "grant",
-              ...tufaStoreArgs(holderName, tufaHeadDir, passcode),
-              "--alias",
+        await withStartedChild(verifierAgentChild, verifierAgentPort, async () => {
+          const issuerPre = await initAndInceptKli(ctx.kliCommand, env, kliName, passcode);
+          const holderOobi = `http://127.0.0.1:${agentPort}/oobi/${holderPre}/controller`;
+          const resolve = await requireSuccess(
+            "kli resolve tufa holder",
+            runCmd(ctx.kliCommand, [
+              "oobi",
+              "resolve",
+              ...kliStoreArgs(kliName, passcode),
+              "--oobi",
+              holderOobi,
+              "--oobi-alias",
               "holder",
+            ], env),
+          );
+          assertStringIncludes(resolve.stdout, "resolved");
+
+          const schemaImport = await requireSuccess(
+            "kli schema import",
+            runCmd(ctx.kliCommand, [
+              "vc",
+              "schema",
+              "import_",
+              ...kliStoreArgs(kliName, passcode),
+              "--schema",
+              schemaPath,
+            ], env),
+          );
+          assertStringIncludes(schemaImport.stdout, schemaSaid);
+
+          await requireSuccess(
+            "kli registry incept",
+            runCmd(ctx.kliCommand, [
+              "vc",
+              "registry",
+              "incept",
+              ...kliStoreArgs(kliName, passcode),
+              "--alias",
+              "issuer",
+              "--registry-name",
+              "issuer-reg",
+              "--no-backers",
+              "true",
+            ], env),
+          );
+
+          const create = await requireSuccess(
+            "kli credential create",
+            runCmd(ctx.kliCommand, [
+              "vc",
+              "create",
+              ...kliStoreArgs(kliName, passcode),
+              "--alias",
+              "issuer",
+              "--registry-name",
+              "issuer-reg",
+              "--schema",
+              schemaSaid,
               "--recipient",
-              verifierPre,
+              "holder",
+              "--data",
+              JSON.stringify({ role: "holder" }),
+            ], env),
+          );
+          assertStringIncludes(create.stdout, "has been created");
+
+          const issued = await requireSuccess(
+            "kli list issued credential",
+            runCmd(ctx.kliCommand, [
+              "vc",
+              "list",
+              ...kliStoreArgs(kliName, passcode),
+              "--alias",
+              "issuer",
+              "--issued",
+              "--said",
+            ], env),
+          );
+          const credentialSaid = extractLastNonEmptyLine(issued.stdout);
+          assertStringIncludes(create.stdout, credentialSaid);
+
+          const exported = await requireSuccess(
+            "kli credential export",
+            runCmd(ctx.kliCommand, [
+              "vc",
+              "export",
+              ...kliStoreArgs(kliName, passcode),
+              "--alias",
+              "issuer",
               "--said",
               credentialSaid,
-              "--message",
-              "presentation",
-              "--out",
-              verifierGrantPath,
-            ],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        assertEquals(parseJsonLine(grant.stdout).credential, credentialSaid);
+              "--full",
+            ], env),
+          );
+          await Deno.writeTextFile(credentialPath, exported.stdout);
 
-        await requireSuccess(
-          "tufa verifier schema import",
-          runTufa(
-            ["vc", "schema", "import", ...tufaStoreArgs(verifierName, tufaHeadDir, passcode), "--schema", schemaPath],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        await requireSuccess(
-          "tufa verifier grant import",
-          runTufa(
-            ["vc", "import", ...tufaStoreArgs(verifierName, tufaHeadDir, passcode), "--in", verifierGrantPath],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        const verifierRun = await requireSuccess(
-          "tufa verifier issuance run",
-          runTufa(
-            [
-              "verifier",
-              "run",
-              ...tufaStoreArgs(verifierName, tufaHeadDir, passcode),
-              "--hook",
-              `${hookOrigin}/`,
-              "--once",
-            ],
-            env,
-            workspaceRoot(),
-          ),
-        );
-        const verifierResult = parseJsonLine(verifierRun.stdout).result as Record<string, unknown>;
-        assertEquals(verifierResult.webhooksSent, 1);
+          await requireSuccess(
+            "tufa holder schema import",
+            runTufa(
+              ["vc", "schema", "import", ...tufaStoreArgs(holderName, tufaHeadDir, passcode), "--schema", schemaPath],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          const imported = await requireSuccess(
+            "tufa holder credential import",
+            runTufa(
+              ["vc", "import", ...tufaStoreArgs(holderName, tufaHeadDir, passcode), "--in", credentialPath],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          assertEquals(parseJsonLine(imported.stdout).saved, [credentialSaid]);
 
-        const hookResponse = await fetch(`${hookOrigin}/?holder=${holderPre}`);
-        try {
-          assertEquals(hookResponse.status, 200);
-          const hookPresentation = await hookResponse.json() as Record<string, unknown>;
-          assertEquals(hookPresentation.credential, credentialSaid);
-          assertEquals(hookPresentation.issuer, issuerPre);
-          assertEquals(hookPresentation.holder, holderPre);
-          assertEquals(hookPresentation.schema, schemaSaid);
-        } finally {
-          await hookResponse.body?.cancel().catch(() => undefined);
-        }
+          const listed = await requireSuccess(
+            "tufa holder credential list",
+            runTufa(
+              ["vc", "list", ...tufaStoreArgs(holderName, tufaHeadDir, passcode), "--alias", "holder"],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          const credential = parseJsonLine(listed.stdout);
+          assertEquals(credential.said, credentialSaid);
+          assertEquals(credential.issuer, issuerPre);
+          assertEquals(credential.issuee, holderPre);
+          assertEquals(credential.schema, schemaSaid);
+          assertEquals(credential.status, "iss");
+
+          const grant = await requireSuccess(
+            "tufa holder ipex grant",
+            runTufa(
+              [
+                "ipex",
+                "grant",
+                ...tufaStoreArgs(holderName, tufaHeadDir, passcode),
+                "--alias",
+                "holder",
+                "--recipient",
+                verifierPre,
+                "--said",
+                credentialSaid,
+                "--message",
+                "presentation",
+                "--out",
+                verifierGrantPath,
+              ],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          assertEquals(parseJsonLine(grant.stdout).credential, credentialSaid);
+
+          await requireSuccess(
+            "tufa verifier schema import",
+            runTufa(
+              ["vc", "schema", "import", ...tufaStoreArgs(verifierName, tufaHeadDir, passcode), "--schema", schemaPath],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          await requireSuccess(
+            "tufa verifier grant import",
+            runTufa(
+              ["vc", "import", ...tufaStoreArgs(verifierName, tufaHeadDir, passcode), "--in", verifierGrantPath],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          const verifierRun = await requireSuccess(
+            "tufa verifier issuance run",
+            runTufa(
+              [
+                "verifier",
+                "run",
+                ...tufaStoreArgs(verifierName, tufaHeadDir, passcode),
+                "--hook",
+                `${hookOrigin}/`,
+                "--once",
+              ],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          const verifierResult = parseJsonLine(verifierRun.stdout).result as Record<string, unknown>;
+          assertEquals(verifierResult.webhooksSent, 1);
+
+          const hookResponse = await fetch(`${hookOrigin}/?holder=${holderPre}`);
+          try {
+            assertEquals(hookResponse.status, 200);
+            const hookPresentation = await hookResponse.json() as Record<string, unknown>;
+            assertEquals(hookPresentation.credential, credentialSaid);
+            assertEquals(hookPresentation.issuer, issuerPre);
+            assertEquals(hookPresentation.holder, holderPre);
+            assertEquals(hookPresentation.schema, schemaSaid);
+          } finally {
+            await hookResponse.body?.cancel().catch(() => undefined);
+          }
+
+          const verifierOobi = `${verifierOrigin}/oobi/${verifierPre}/controller`;
+          const resolveVerifier = await requireSuccess(
+            "kli resolve tufa verifier",
+            runCmdWithTimeout(
+              ctx.kliCommand,
+              [
+                "oobi",
+                "resolve",
+                ...kliStoreArgs(kliName, passcode),
+                "--oobi",
+                verifierOobi,
+                "--oobi-alias",
+                "verifier",
+              ],
+              env,
+              30_000,
+            ),
+          );
+          assertStringIncludes(resolveVerifier.stdout, "resolved");
+
+          await requireSuccess(
+            "kli credential revoke send",
+            runCmdWithTimeout(
+              ctx.kliCommand,
+              [
+                "vc",
+                "revoke",
+                ...kliStoreArgs(kliName, passcode),
+                "--alias",
+                "issuer",
+                "--registry-name",
+                "issuer-reg",
+                "--said",
+                credentialSaid,
+                "--send",
+                "verifier",
+              ],
+              env,
+              90_000,
+            ),
+          );
+
+          const revocationRun = await requireSuccess(
+            "tufa verifier revocation run",
+            runTufa(
+              [
+                "verifier",
+                "run",
+                ...tufaStoreArgs(verifierName, tufaHeadDir, passcode),
+                "--hook",
+                `${hookOrigin}/`,
+                "--once",
+              ],
+              env,
+              workspaceRoot(),
+            ),
+          );
+          const revocationResult = parseJsonLine(revocationRun.stdout).result as Record<string, unknown>;
+          assertEquals(revocationResult.revocationsReady, 1);
+          assertEquals(revocationResult.webhooksSent, 1);
+
+          const revokedHookResponse = await fetch(`${hookOrigin}/?holder=${holderPre}`);
+          try {
+            assertEquals(revokedHookResponse.status, 404);
+          } finally {
+            await revokedHookResponse.body?.cancel().catch(() => undefined);
+          }
+        });
       });
     });
   } finally {

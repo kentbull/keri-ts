@@ -7,14 +7,16 @@
  * - keeps EXN route construction in `ipexing.ts`
  * - keeps registry, wallet, and verifier persistence in VDR modules
  */
-import { concatBytes, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
+import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
+import { ValidationError } from "../core/errors.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
 import { CredentialWallet, serializeCredential } from "../vdr/credentialing.ts";
-import type { Reactor } from "./reactor.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { IPEX_GRANT_ROUTE, ipexAdmitExn, type IpexBuilderOptions, ipexGrantExn } from "./ipexing.ts";
-import { ValidationError } from "../core/errors.ts";
+import type { Reactor } from "./reactor.ts";
+
+const textEncoder = new TextEncoder();
 
 export interface CredentialPresentationArtifacts {
   /** ACDC body plus its SealSourceTriples proof attachment. */
@@ -235,6 +237,35 @@ export function processCredentialPresentationArtifacts(
   reactor.processEscrowsOnce();
 }
 
+/** Rebuild grant-embedded `anc`, `iss`, and `acdc` streams from exchange storage. */
+export function storedGrantArtifacts(
+  hby: Habery,
+  grant: SerderKERI,
+): CredentialPresentationArtifacts {
+  if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
+    throw new ValidationError(`Expected stored ${IPEX_GRANT_ROUTE} EXN.`);
+  }
+  const embeds = embeddedSection(grant);
+  if (!embeds) {
+    throw new ValidationError(`Grant ${grant.said} is missing embedded artifacts.`);
+  }
+  return {
+    anc: concatBytes(keriRaw(embeds.anc, "anc"), pathedAttachment(hby, grant.said, "anc")),
+    iss: concatBytes(keriRaw(embeds.iss, "iss"), pathedAttachment(hby, grant.said, "iss")),
+    acdc: concatBytes(acdcRaw(embeds.acdc, "acdc"), pathedAttachment(hby, grant.said, "acdc")),
+  };
+}
+
+export function credentialSaidFromGrant(grant: SerderKERI): string | null {
+  const embeds = embeddedSection(grant);
+  const acdc = embeds?.acdc;
+  if (!acdc || typeof acdc !== "object" || Array.isArray(acdc)) {
+    return null;
+  }
+  const said = (acdc as Record<string, unknown>).d;
+  return typeof said === "string" ? said : null;
+}
+
 /** Return a raw exported credential message by SAID. */
 export function credentialExportMessage(reger: Reger, credentialSaidValue: string): Uint8Array {
   return new CredentialWallet(reger).exportCredential(credentialSaidValue);
@@ -256,16 +287,6 @@ function credentialIssuee(creder: SerderACDC): string | null {
   return null;
 }
 
-function credentialSaidFromGrant(grant: SerderKERI): string | null {
-  const embeds = embeddedSection(grant);
-  const acdc = embeds?.acdc;
-  if (!acdc || typeof acdc !== "object" || Array.isArray(acdc)) {
-    return null;
-  }
-  const said = (acdc as Record<string, unknown>).d;
-  return typeof said === "string" ? said : null;
-}
-
 function embeddedSection(serder: SerderKERI): Record<string, unknown> | null {
   const ked = serder.ked;
   if (!ked) {
@@ -282,4 +303,31 @@ function embeddedSection(serder: SerderKERI): Record<string, unknown> | null {
     }
   }
   return null;
+}
+
+function keriRaw(value: unknown, label: string): Uint8Array {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ValidationError(`Grant embedded ${label} is missing.`);
+  }
+  return new SerderKERI({ sad: value as Record<string, unknown> }).raw;
+}
+
+function acdcRaw(value: unknown, label: string): Uint8Array {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ValidationError(`Grant embedded ${label} is missing.`);
+  }
+  return new SerderACDC({ sad: value as Record<string, unknown>, verify: false }).raw;
+}
+
+function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {
+  const path = `/e/${label}`;
+  for (const text of hby.db.epath.get([said])) {
+    const raw = textEncoder.encode(text);
+    const counter = new Counter({ qb64b: raw });
+    const pather = parsePather(raw.slice(counter.fullSize), "txt");
+    if (pather.path === path) {
+      return raw.slice(counter.fullSize + pather.fullSize);
+    }
+  }
+  return new Uint8Array();
 }

@@ -148,20 +148,20 @@ export function* createAgentRuntime(
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices(options.services);
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
-  const mailboxer = options.mailboxer ??
-    (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
+  const mailboxer = options.mailboxer
+    ?? (enableMailboxStore ? (yield* openMailboxerForHabery(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
-  const signaler = options.signaler ??
-    options.notifier?.signaler ??
-    (hby.signator ? new Signaler() : null);
-  const noter = options.noter ??
-    options.notifier?.noter ??
-    (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
-  const ownsNoter = options.noter === undefined &&
-    options.notifier === undefined &&
-    noter !== null;
-  const notifier = options.notifier ??
-    (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
+  const signaler = options.signaler
+    ?? options.notifier?.signaler
+    ?? (hby.signator ? new Signaler() : null);
+  const noter = options.noter
+    ?? options.notifier?.noter
+    ?? (!hby.readonly && hby.signator ? (yield* openNoterForHabery(hby)) : null);
+  const ownsNoter = options.noter === undefined
+    && options.notifier === undefined
+    && noter !== null;
+  const notifier = options.notifier
+    ?? (noter && signaler ? new Notifier(hby, { noter, signaler }) : null);
   const cues = new Deck<AgentCue>();
   const vdr: VdrRuntimeServices = { ...(options.vdr ?? {}) };
   let ownsReger = false;
@@ -335,7 +335,10 @@ export function settleMailboxPollBatch(
   runtime: AgentRuntime,
   batch: MailboxPollBatch,
 ): void {
-  settleRuntimeIngress(runtime, batch.messages);
+  for (const message of batch.messages) {
+    runtime.reactor.processCompleteChunk(message);
+  }
+  runtime.reactor.processEscrowsOnce();
 }
 
 /**
@@ -425,9 +428,9 @@ export function runtimePendingState(
     authQueued: runtime.hby.db.woobi.cnt() > 0,
     authInFlight: runtime.hby.db.mfa.cnt() > 0,
     outboxPending: runtime.poster.hasPendingWork(),
-    delegationPending: runtime.hby.db.dpwe.cnt() > 0 ||
-      runtime.hby.db.dune.cnt() > 0 ||
-      runtime.hby.db.dpub.cnt() > 0,
+    delegationPending: runtime.hby.db.dpwe.cnt() > 0
+      || runtime.hby.db.dune.cnt() > 0
+      || runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
   };
 }
@@ -435,11 +438,11 @@ export function runtimePendingState(
 /** Return true when any command-local runtime work remains in flight. */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
-  return state.ingress || state.cues || state.replyEscrow ||
-    state.oobiQueued || state.oobiInFlight || state.multiPending ||
-    state.authQueued || state.authInFlight || state.outboxPending ||
-    state.delegationPending ||
-    state.queriesPending;
+  return state.ingress || state.cues || state.replyEscrow
+    || state.oobiQueued || state.oobiInFlight || state.multiPending
+    || state.authQueued || state.authInFlight || state.outboxPending
+    || state.delegationPending
+    || state.queriesPending;
 }
 
 /** Return true when a well-known URL has been authorized into `wkas.`. */
@@ -492,8 +495,8 @@ export function runtimeOobiConverged(
   runtime: AgentRuntime,
   url: string,
 ): boolean {
-  return runtimeOobiTerminalState(runtime, url).status !== "pending" &&
-    !runtimeHasPendingWork(runtime);
+  return runtimeOobiTerminalState(runtime, url).status !== "pending"
+    && !runtimeHasPendingWork(runtime);
 }
 
 /**
@@ -561,46 +564,46 @@ export function* runAgentRuntime(
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* cueDo(runtime, { ...options, sink: runtime.querying });
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.reactor.escrowDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.authenticator.authDo();
     }),
     ...(runtime.signaler
       ? [
-        yield* spawn(function* () {
+        yield* spawn(function*() {
           yield* runtime.signaler!.signalDo();
         }),
       ]
       : []),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       while (true) {
         yield* runtime.poster.processPending();
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.mailboxPoller.pollDo((batch) => {
         settleMailboxPollBatch(runtime, batch);
       });
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       while (true) {
         yield* runtime.delegating.processAllOnce();
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(function* () {
+    yield* spawn(function*() {
       yield* runtime.querying.queryDo();
     }),
   ];

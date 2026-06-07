@@ -28,7 +28,7 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 
 Deno.test("multisig builders produce KERIpy route payload and embed shapes", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `multisig-builders-${crypto.randomUUID()}`,
       temp: true,
@@ -96,7 +96,7 @@ Deno.test("multisig builders produce KERIpy route payload and embed shapes", asy
 });
 
 Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote submitters", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `multisig-mux-${crypto.randomUUID()}`,
       temp: true,
@@ -157,7 +157,7 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
 });
 
 Deno.test("Multiplexor rejects nonlocal group participation proposals", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `multisig-reject-${crypto.randomUUID()}`,
       temp: true,
@@ -209,7 +209,7 @@ Deno.test("Multiplexor rejects nonlocal group participation proposals", async ()
 });
 
 Deno.test("Exchanger lead elects the signer with the lowest group signature index", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `multisig-lead-${crypto.randomUUID()}`,
       temp: true,

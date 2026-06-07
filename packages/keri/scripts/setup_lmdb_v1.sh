@@ -53,7 +53,7 @@ materialize_deno_lmdb_dir() {
   # addon over a stale or incompatible optional prebuild.
   (
     cd "${ROOT_DIR}"
-    deno run --config deno.json --node-modules-dir=auto "${SCRIPT_DIR}/lmdb/resolve-deno-lmdb-dir.ts"
+    deno run --allow-read --config deno.json --node-modules-dir=auto "${SCRIPT_DIR}/lmdb/resolve-deno-lmdb-dir.ts"
   )
 }
 

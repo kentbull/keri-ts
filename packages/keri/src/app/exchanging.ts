@@ -206,8 +206,8 @@ export class Exchanger {
         continue;
       }
       if (
-        Date.now() - new Date(dater.iso8601).getTime() >
-          EXCHANGE_ESCROW_TIMEOUT_MS
+        Date.now() - new Date(dater.iso8601).getTime()
+          > EXCHANGE_ESCROW_TIMEOUT_MS
       ) {
         this.removeEscrow(said);
         continue;
@@ -279,7 +279,8 @@ export class Exchanger {
       tsgs: TransIdxSigGroup[];
       cigars: Cigar[];
     }
-    | ExchangeDecision {
+    | ExchangeDecision
+  {
     if (args.tsgs.length > 0) {
       const verifiedGroups: TransIdxSigGroup[] = [];
 
@@ -486,10 +487,10 @@ export class Exchanger {
         continue;
       }
       if (
-        currentKey &&
-        (currentKey[0] !== groupKey[0] ||
-          currentKey[1] !== groupKey[1] ||
-          currentKey[2] !== groupKey[2])
+        currentKey
+        && (currentKey[0] !== groupKey[0]
+          || currentKey[1] !== groupKey[1]
+          || currentKey[2] !== groupKey[2])
       ) {
         flush();
       }

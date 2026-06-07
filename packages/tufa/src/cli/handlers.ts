@@ -155,6 +155,7 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["ipex.admit", lazyCommand(() => import("keri-ts/cli"), "ipexAdmitCommand")],
     ["ipex.spurn", lazyCommand(() => import("keri-ts/cli"), "ipexSpurnCommand")],
     ["ipex.list", lazyCommand(() => import("keri-ts/cli"), "ipexListCommand")],
+    ["ipex.poll", lazyCommand(() => import("keri-ts/cli"), "ipexPollCommand")],
     ["ipex.join", lazyCommand(() => import("keri-ts/cli"), "ipexJoinCommand")],
     ["verifier.run", lazyCommand(() => import("keri-ts/cli"), "verifierRunCommand")],
     ["hook.demo", lazyCommand(() => import("./hook.ts"), "hookDemoCommand")],

@@ -387,8 +387,8 @@ export function state(
   if (new Set(actualWits).size !== actualWits.length) {
     throw new ValidationError(`Invalid wits = ${actualWits}, has duplicates.`);
   }
-  const actualToad = toad ??
-    (actualWits.length === 0 ? 0 : Math.max(1, Math.ceil(actualWits.length / 2)));
+  const actualToad = toad
+    ?? (actualWits.length === 0 ? 0 : Math.max(1, Math.ceil(actualWits.length / 2)));
   return new RegStateRecord(
     {
       vn: [resolveVersion(version).major, resolveVersion(version).minor],

@@ -512,7 +512,7 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
       "Port number for the server (default: 8000)",
       "8000",
     )
-    .action(function (this: Command) {
+    .action(function(this: Command) {
       const options = this.opts();
       dispatch({
         name: "agent",

@@ -672,6 +672,69 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
       } finally {
         await hookResponse.body?.cancel().catch(() => undefined);
       }
+
+      const revocationProviderAgentChild = spawnChild(
+        Deno.execPath(),
+        [
+          "run",
+          "--allow-all",
+          "--unstable-ffi",
+          "packages/tufa/mod.ts",
+          "agent",
+          ...tufaStoreArgs(providerName, tufaHeadDir, passcode),
+          "--port",
+          String(providerAgentPort),
+        ],
+        env,
+        workspaceRoot(),
+      );
+
+      await withStartedChild(revocationProviderAgentChild, providerAgentPort, async () => {
+        const revoked = await requireSuccess(
+          "tufa issuer revoke send to KLI holder",
+          runTufaWithTimeout(
+            [
+              "vc",
+              "revoke",
+              ...tufaStoreArgs(issuerName, tufaHeadDir, passcode),
+              "--alias",
+              "issuer",
+              "--registry-name",
+              "issuer-reg",
+              "--said",
+              credentialSaid,
+              "--delivery",
+              "indirect",
+            ],
+            env,
+            workspaceRoot(),
+            60_000,
+          ),
+        );
+        const revokedJson = parseJsonLine(revoked.stdout);
+        assertEquals(revokedJson.status, "accept");
+
+        const listedRevoked = await requireSuccess(
+          "kli holder revocation poll",
+          runCmdWithTimeout(
+            kliCommand,
+            [
+              "vc",
+              "list",
+              ...kliStoreArgs(holderName, passcode),
+              "--alias",
+              "holder",
+              "--poll",
+              "--schema",
+              schemaSaid,
+            ],
+            env,
+            45_000,
+          ),
+        );
+        assertStringIncludes(listedRevoked.stdout, credentialSaid);
+        assertStringIncludes(listedRevoked.stdout, "Status: Revoked");
+      });
     });
   } finally {
     await Deno.remove(workDir, { recursive: true }).catch(() => undefined);

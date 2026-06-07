@@ -1,14 +1,16 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { concatBytes, SerderACDC } from "../../../../cesr/mod.ts";
-import { Schemer } from "../../core/scheming.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
-import { credentialStreamMessages } from "../ipex-credentialing.ts";
+import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { Schemer } from "../../core/scheming.ts";
 import { Reger } from "../../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, type Registry } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
-import { Verifier } from "../verifying.ts";
+import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
+import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import type { Hab, Habery } from "../habbing.ts";
+import { credentialStreamMessages } from "../ipex-credentialing.ts";
+import { Verifier } from "../verifying.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface VcBaseArgs {
@@ -33,6 +35,8 @@ interface VcCreateArgs extends VcBaseArgs {
   schemaFile?: string;
   recipient?: string;
   data?: string;
+  edges?: string;
+  rules?: string;
   out?: string;
 }
 
@@ -42,6 +46,8 @@ interface VcSaidArgs extends VcBaseArgs {
   said?: string;
   recipient?: string;
   out?: string;
+  send?: string[];
+  delivery?: ExchangeDeliveryPreference;
 }
 
 interface VcListArgs extends VcBaseArgs {
@@ -142,6 +148,8 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
     schemaFile: args.schemaFile as string | undefined,
     recipient: args.recipient as string | undefined,
     data: args.data as string | undefined,
+    edges: args.edges as string | undefined,
+    rules: args.rules as string | undefined,
     out: args.out as string | undefined,
   };
   requireNonEmpty(vcArgs.alias, "Alias");
@@ -162,7 +170,9 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
       registry,
       schema: schema!,
       recipient,
-      data: parseJsonArg(vcArgs.data) ?? {},
+      data: parseSubjectDataArg(vcArgs.data) ?? {},
+      edges: parseJsonSectionArg(vcArgs.edges, "edges"),
+      rules: parseJsonSectionArg(vcArgs.rules, "rules"),
     });
     const result = credentialer.issue(registry, creder);
     if (vcArgs.out) {
@@ -259,6 +269,8 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
     said: args.said as string | undefined,
     recipient: args.recipient as string | undefined,
     out: args.out as string | undefined,
+    send: asStringList(args.send),
+    delivery: args.delivery as ExchangeDeliveryPreference | undefined,
   };
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
@@ -267,8 +279,28 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
     const rgy = requireRegery(runtime);
     const registry = requireRegistry(rgy, vcArgs.registryName);
     const result = registry.revoke(vcArgs.said!);
+    const [creder] = reger.cloneCred(vcArgs.said!);
+    const sendRecipients = revocationRecipients(creder, vcArgs);
+    const deliveries: string[] = [];
+    const queued: string[] = [];
+    if (sendRecipients.length > 0) {
+      requireNonEmpty(vcArgs.alias, "Alias");
+      const hab = requireHab(hby, vcArgs.alias);
+      const messages = revocationStreamMessages(hby, reger, creder);
+      for (const recipient of sendRecipients) {
+        for (const message of messages) {
+          const sent = yield* runtime.poster.sendBytes(hab, {
+            recipient,
+            message,
+            topic: CREDENTIAL_MAILBOX_TOPIC,
+            delivery: vcArgs.delivery,
+          });
+          deliveries.push(...sent.deliveries);
+          queued.push(...sent.queued);
+        }
+      }
+    }
     if (vcArgs.out) {
-      const [creder] = reger.cloneCred(vcArgs.said!);
       const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : creder.issuee ?? "";
       writeCredentialStream(hby, reger, creder, recipient, vcArgs.out);
     }
@@ -276,11 +308,37 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
       said: vcArgs.said,
       tel: result.serder.said,
       status: result.decision.kind,
+      deliveries,
+      queued,
     }));
   } finally {
     yield* runtime.close();
     yield* hby.close();
   }
+}
+
+function revocationRecipients(creder: SerderACDC, args: VcSaidArgs): string[] {
+  const explicit = args.send ?? [];
+  if (explicit.length > 0 && !args.alias) {
+    throw new ValidationError("Alias is required when sending revocation events.");
+  }
+  const recipients = args.alias && creder.issuee ? [creder.issuee, ...explicit] : explicit;
+  return [...new Set(recipients.filter((recipient) => recipient.length > 0))];
+}
+
+function revocationStreamMessages(
+  hby: Habery,
+  reger: Reger,
+  creder: SerderACDC,
+): Uint8Array[] {
+  const issuer = creder.issuer;
+  if (!issuer) {
+    throw new ValidationError("Credential is missing issuer AID.");
+  }
+  return [
+    ...hby.db.clonePreIter(issuer),
+    ...reger.clonePreIter(creder.said!),
+  ];
 }
 
 function baseArgs(args: Record<string, unknown>): VcBaseArgs {
@@ -393,12 +451,44 @@ function importSchemaFile(
   return schemer.said;
 }
 
-function parseJsonArg(value: string | undefined): Record<string, unknown> | string | undefined {
+function parseJsonArg(value: string | undefined): unknown | undefined {
   if (!value) {
     return undefined;
   }
   const text = value.startsWith("@") ? Deno.readTextFileSync(value.slice(1)) : value;
-  return JSON.parse(text) as Record<string, unknown> | string;
+  return JSON.parse(text) as unknown;
+}
+
+function parseSubjectDataArg(value: string | undefined): Record<string, unknown> | string | undefined {
+  const parsed = parseJsonArg(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (isRecord(parsed) || typeof parsed === "string") {
+    return parsed;
+  }
+  throw new ValidationError("data must be a JSON object or string.");
+}
+
+function parseJsonSectionArg(
+  value: string | undefined,
+  label: string,
+): Record<string, unknown> | Record<string, unknown>[] | undefined {
+  const parsed = parseJsonArg(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  if (isRecord(parsed)) {
+    return parsed;
+  }
+  if (Array.isArray(parsed) && parsed.every(isRecord)) {
+    return parsed;
+  }
+  throw new ValidationError(`${label} must be a JSON object or array of objects.`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function writeCredentialStream(

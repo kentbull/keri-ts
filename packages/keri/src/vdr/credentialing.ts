@@ -29,6 +29,9 @@ import {
   TraitDex,
   type Versionage,
 } from "../../../cesr/mod.ts";
+import type { Hab, Habery } from "../app/habbing.ts";
+import { resolveCachedSchema } from "../app/schema-resolving.ts";
+import { Verifier, type VerifierDecision } from "../app/verifying.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -43,9 +46,6 @@ import {
 import { RegistryRecord } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import type { Hab, Habery } from "../app/habbing.ts";
-import { resolveCachedSchema } from "../app/schema-resolving.ts";
-import { Verifier, type VerifierDecision } from "../app/verifying.ts";
 import { type TelProcessDecision, Tevery } from "./eventing.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);

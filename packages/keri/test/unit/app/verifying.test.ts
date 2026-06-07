@@ -129,7 +129,7 @@ function assertDecision(
 }
 
 Deno.test("Verifier saves direct revoked credentials and KERIpy indexes", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `verifier-save-${crypto.randomUUID()}`,
       temp: true,
@@ -168,7 +168,7 @@ Deno.test("Verifier saves direct revoked credentials and KERIpy indexes", async 
 });
 
 Deno.test("Verifier escrows missing registry and emits telquery cue", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `verifier-mre-${crypto.randomUUID()}`,
       temp: true,
@@ -207,7 +207,7 @@ Deno.test("Verifier escrows missing registry and emits telquery cue", async () =
 });
 
 Deno.test("Verifier replays missing schema escrow after schema arrives", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `verifier-mse-${crypto.randomUUID()}`,
       temp: true,
@@ -251,7 +251,7 @@ Deno.test("Verifier replays missing schema escrow after schema arrives", async (
 });
 
 Deno.test("Verifier escrows missing chains and rejects revoked chains", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `verifier-chain-${crypto.randomUUID()}`,
       temp: true,
@@ -305,7 +305,7 @@ Deno.test("Verifier escrows missing chains and rejects revoked chains", async ()
 });
 
 Deno.test("Verifier supports NI2I chain default when child has no issuee", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `verifier-ni2i-${crypto.randomUUID()}`,
       temp: true,
@@ -348,7 +348,7 @@ Deno.test("Verifier supports NI2I chain default when child has no issuee", async
 });
 
 Deno.test("Verifier rejects DI2I chains explicitly", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `verifier-di2i-${crypto.randomUUID()}`,
       temp: true,

@@ -62,7 +62,7 @@ export * from "../core/records.ts";
 export * from "../core/roles.ts";
 export * from "../core/schemes.ts";
 export * from "../core/scheming.ts";
-export * from "../time/mod.ts";
 export * from "../db/verifier-cueing.ts";
+export * from "../time/mod.ts";
 export * from "../vdr/credentialing.ts";
 export * from "../vdr/eventing.ts";

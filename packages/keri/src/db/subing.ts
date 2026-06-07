@@ -21,11 +21,11 @@ import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 type KeyPart = string | Uint8Array;
 type Keys = KeyPart | Iterable<KeyPart>;
 type CesrValue = Matter | Indexer | Counter;
-type QualifiedCtor<T extends CesrValue> = new (
+type QualifiedCtor<T extends CesrValue> = new(
   init: { qb64b: Uint8Array } | { qb64: string },
 ) => T;
 type SerderCtor<T extends Serder> = {
-  new (init?: any): T;
+  new(init?: any): T;
   name: string;
 };
 
@@ -36,9 +36,9 @@ function isKeysIterable(value: Keys): value is Iterable<KeyPart> {
 function isNonStringIterable<T>(
   value: T | Iterable<T> | null | undefined,
 ): value is Iterable<T> {
-  return value !== null && value !== undefined && typeof value !== "string" &&
-    !(value instanceof Uint8Array) &&
-    Symbol.iterator in Object(value);
+  return value !== null && value !== undefined && typeof value !== "string"
+    && !(value instanceof Uint8Array)
+    && Symbol.iterator in Object(value);
 }
 
 function asIterable<T>(
@@ -51,8 +51,8 @@ function asIterable<T>(
 }
 
 function asUint8Array(value: Uint8Array): Uint8Array {
-  return value instanceof Uint8Array &&
-      Object.getPrototypeOf(value) === Uint8Array.prototype
+  return value instanceof Uint8Array
+      && Object.getPrototypeOf(value) === Uint8Array.prototype
     ? value
     : new Uint8Array(value);
 }
@@ -373,8 +373,8 @@ export class OnSuberBase<T = string> extends SuberBase<T> {
   /** Count ordinal buckets from one starting ordinal under a logical key path. */
   cntOn(keys: Keys = "", on = 0): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return 0;
     }
@@ -843,8 +843,8 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
   /** Count members for one effective key, or the whole subdb when the key is empty. */
   override cnt(keys: Keys = "", { ion = 0 }: { ion?: number } = {}): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -1440,8 +1440,8 @@ export class DupSuber<T = string> extends SuberBase<T> {
   /** Count duplicate values at one key, or the whole subdb when the key is empty. */
   override cnt(keys: Keys = ""): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -1608,8 +1608,8 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
   /** Count insertion-ordered duplicate members at one key or across the whole subdb. */
   override cnt(keys: Keys = ""): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }
@@ -1808,8 +1808,8 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
   /** Count logical duplicate members for one exposed ordinal bucket or branch. */
   cntOn(keys: Keys = "", on = 0): number {
     if (
-      (typeof keys === "string" && keys.length === 0) ||
-      (keys instanceof Uint8Array && keys.length === 0)
+      (typeof keys === "string" && keys.length === 0)
+      || (keys instanceof Uint8Array && keys.length === 0)
     ) {
       return this.db.cntAll(this.sdb);
     }

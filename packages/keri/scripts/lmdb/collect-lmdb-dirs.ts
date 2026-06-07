@@ -33,6 +33,10 @@ if (exists(nodeModulesLm)) {
 const denoRoot = `${root}/node_modules/.deno`;
 if (exists(denoRoot)) {
   for (const entry of Deno.readDirSync(denoRoot)) {
+    if (!entry.isDirectory) {
+      continue;
+    }
+
     const candidate = `${denoRoot}/${entry.name}/node_modules/lmdb`;
     if (exists(candidate)) {
       dirs.add(candidate);

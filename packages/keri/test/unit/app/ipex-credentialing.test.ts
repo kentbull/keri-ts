@@ -42,7 +42,7 @@ function schemaSed(): Record<string, unknown> {
 }
 
 Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifacts", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name: `ipex-credential-grant-${crypto.randomUUID()}`,
       temp: true,
@@ -114,7 +114,7 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
 });
 
 Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit references grant", async () => {
-  await run(function* () {
+  await run(function*() {
     const issuerHby = yield* createHabery({
       name: `ipex-credential-issuer-${crypto.randomUUID()}`,
       temp: true,

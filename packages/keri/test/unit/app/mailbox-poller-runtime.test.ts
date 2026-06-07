@@ -63,6 +63,19 @@ function mailboxMessage(
   return { topic, idx, msg: new TextEncoder().encode(message) };
 }
 
+function mailboxBytes(
+  msg: Uint8Array,
+  {
+    topic = "/challenge",
+    idx = 0,
+  }: {
+    topic?: string;
+    idx?: number;
+  } = {},
+): MailboxSseMessage {
+  return { topic, idx, msg };
+}
+
 function makePollerFixture(
   hby: Habery,
   {
@@ -190,6 +203,57 @@ Deno.test("MailboxPoller.processOnce allows SSE reads to outlive the request-ope
         hby.db.tops.get([hab.pre, endpoints[0]!.eid])?.topics["/challenge"],
         0,
       );
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("processMailboxTurn settles complete body-only mailbox records", async () => {
+  await run(function*(): Operation<void> {
+    const hby = yield* createHabery({
+      name: `mailbox-complete-record-client-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+      skipSignator: true,
+    });
+    const clock = new ManualRuntimeClock();
+    const transport = new FakeMailboxPollTransport([], clock);
+
+    try {
+      const hab = makeTransferableHab(hby, "bob");
+      const endpoint = seedMailboxEndpoint(hby, hab.pre, "remote");
+      transport.enqueue({
+        advanceMs: 40,
+        messages: [
+          mailboxBytes(hab.makeEndRole(hab.pre, Roles.mailbox, true), {
+            topic: "/reply",
+            idx: 0,
+          }),
+        ],
+      });
+      const runtime = yield* createAgentRuntime(hby, {
+        services: fakeRuntimeServices({ clock }),
+        mailboxPollTransport: transport,
+      });
+      try {
+        const batches = yield* processMailboxTurn(runtime, {
+          hab,
+          budgetMs: 150,
+        });
+
+        assertEquals(batches.length, 1);
+        assertEquals(
+          hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"],
+          0,
+        );
+        assertEquals(
+          hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed,
+          true,
+        );
+      } finally {
+        yield* runtime.close();
+      }
     } finally {
       yield* hby.close();
     }

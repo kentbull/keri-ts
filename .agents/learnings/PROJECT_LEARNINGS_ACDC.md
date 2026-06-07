@@ -57,8 +57,7 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
     `ancs`: `cancs` stores the ACDC source seal triple from the TEL issue
     event, while `ancs` stores the KEL anchor for that TEL event.
 13. Verifier delivery and webhook target behavior are separate components:
-    `tufa verifier run` is the Sally-like verifier sender, while `tufa hook
-    demo` is only a Sally `hook demo`-style sample webhook receiver.
+    `tufa verifier run` is the Sally-like verifier sender, while `tufa hook demo` is only a Sally `hook demo`-style sample webhook receiver.
 14. Current KERIpy credential interop is v1 ACDC. Do not apply v2
     most-compact top-level SAID rules to v1 registry credentials; v1 credentials
     must match KERIpy's expanded-body top-level SAID after subject-level
@@ -67,6 +66,14 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
     groups before blaming embedded ACDCs. KERIpy's `serializeMessage` error text
     can report the full framed EXN byte length after the raw JSON body, while
     the `/e/{anc,iss,acdc}` pathed groups themselves are still quadlet-aligned.
+16. KLI holder and mixed KLI/Tufa chain interop now use regular mailbox/IPEX
+    transport only. Tufa must accept KERIpy forwarded raw ACDC support payloads
+    under `/fwd`, and bounded mailbox polling must process complete body-only
+    records plus stored grant artifacts before declaring holder state settled.
+17. KERIpy verifier acceptance is not the same view as KERIpy holder wallet
+    listing. `kli vc list` filters by the local AID as credential subject;
+    a KERIpy/Sally-style verifier target should be checked by saved/exportable
+    credential SAID, not by `vc list` for the verifier's own AID.
 
 ## Use This Doc For
 
@@ -88,9 +95,10 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 4. Extend the registry orchestration services from the local single-sig path to
    KERIpy's full witness/multisig dissemination escrows, and add the VC/IPEX
    CLI command surfaces that drive them.
-5. Expand KLI interop beyond the proven KLI issuer -> Tufa holder -> Tufa
-   verifier direction into bilateral holder/verifier, chain, revocation, and
-   byte-level fixture parity.
+5. Expand Phase 14 beyond the passing live KLI/Tufa holder/verifier and
+   I2I/NI2I mixed-chain gates into KLI-involved revocation propagation,
+   export/import matrix coverage, multisig credential dissemination where
+   KERIpy supports it, and byte-level fixture parity for ACDC DB rows.
 
 ## Milestone Rollup
 
@@ -203,3 +211,37 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 - The live transport gate now proves Tufa issuer -> KLI holder -> Tufa verifier
   over regular mailbox/IPEX grant/admit paths with no KLI API additions and a
   separate `tufa hook demo` webhook target.
+
+### 2026-06-07 - Mixed Chain Interop Gate Landed
+
+- `tufa ipex poll` is the bounded CLI seam for mailbox-driven credential
+  settlement in Tufa stores; after polling it replays stored grant artifacts so
+  accepted KERIpy grants become saved holder credentials without file handoff.
+- Tufa mailbox forwarding now stores embedded ACDC support payloads by protocol
+  instead of assuming every forwarded `evt` SAD is KERI, preserving KERIpy's
+  regular `/fwd` transport shape for credential support streams.
+- KERIpy `serializeMessage(..., framed=True)` can reject its own stored IPEX
+  EXN material when `len(exn.raw + attachments) % 4 != 0`; mixed-chain tests
+  must not patch KERIpy for this, and now preflight only the KLI `--message`
+  length before invoking the public KLI grant/admit command once.
+- The live interop gate now proves KLI A -> Tufa B -> KLI C -> Tufa D I2I
+  chains with final KLI holder presentation to both a KERIpy verifier store and
+  a Tufa verifier webhook, plus a smaller NI2I chain where the source subject is
+  not the Tufa issuer.
+
+### 2026-06-07 - Bidirectional Revocation Interop Gate Landed
+
+- `kli vc revoke --send` delivers issuer KEL plus credential TEL material to a
+  Tufa verifier over ordinary CESR transport; Tufa persists the TEL revocation
+  and `tufa verifier run --once` emits the revocation webhook from durable
+  state.
+- `tufa vc revoke --alias ... --delivery indirect` now mirrors KERIpy's raw
+  `/credential` revocation transport using `Poster.sendBytes`, automatically
+  including the issuee and accepting repeated `--send` recipients.
+- `tufa hook demo` must accept Sally-style revocation webhook bodies, which
+  include `action: "rev"` and credential/timestamp data but no holder
+  `recipient`; the demo removes any stored presentation for that credential.
+- The local KERIpy `kli vc import_` command currently hangs in this checkout, so
+  Tufa -> KLI credential transmission gates use the regular IPEX grant/admit
+  API as instructed instead of adding KLI API surface or relying on file
+  handoff.

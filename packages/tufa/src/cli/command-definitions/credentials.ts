@@ -104,6 +104,8 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
         .option("--schema-file <file>", "Import schema JSON and use its SAID")
         .option("-r, --recipient <aid>", "Recipient AID or local alias")
         .option("--data <json>", "Credential subject data JSON or @file")
+        .option("--edges <json>", "Credential edge/source links JSON or @file")
+        .option("--rules <json>", "Credential rules JSON or @file")
         .option("--out <file>", "Write exportable credential stream"),
     ),
   ).action((options: Record<string, unknown>) => {
@@ -142,13 +144,25 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
     });
   });
 
-  addStoreOptions(
-    vc.command("revoke")
-      .description("Revoke a local credential")
-      .requiredOption("--registry-name <name>", "Registry name")
-      .requiredOption("--said <said>", "Credential SAID")
-      .option("-r, --recipient <aid>", "Recipient AID or local alias")
-      .option("--out <file>", "Write updated credential stream"),
+  addDeliveryOptions(
+    addStoreOptions(
+      vc.command("revoke")
+        .description("Revoke a local credential")
+        .option("-a, --alias <alias>", "Human readable alias for the local identifier")
+        .requiredOption("--registry-name <name>", "Registry name")
+        .requiredOption("--said <said>", "Credential SAID")
+        .option("-r, --recipient <aid>", "Recipient AID or local alias")
+        .option(
+          "--send <recipient>",
+          "Alias or AID to send revocation events to; may be repeated",
+          (value: string, prev: string[] = []) => {
+            prev.push(value);
+            return prev;
+          },
+          [],
+        )
+        .option("--out <file>", "Write updated credential stream"),
+    ),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.revoke", args: dispatchArgs(options) });
   });
@@ -252,6 +266,17 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       .description("List stored IPEX EXNs"),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.list", args: dispatchArgs(options) });
+  });
+
+  addHabOption(
+    addStoreOptions(
+      ipex.command("poll")
+        .description("Poll configured credential mailboxes once")
+        .option("--max-turns <count>", "Maximum bounded mailbox turns")
+        .option("--budget-ms <ms>", "Per-turn mailbox polling budget"),
+    ),
+  ).action((options: Record<string, unknown>) => {
+    dispatch({ name: "ipex.poll", args: dispatchArgs(options) });
   });
 
   addStoreOptions(

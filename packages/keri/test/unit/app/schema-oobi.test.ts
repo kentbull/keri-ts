@@ -41,7 +41,7 @@ Deno.test("schema reference parsing supports bare, sad, oobi, and did forms", ()
 });
 
 Deno.test("Oobiery resolves application/schema+json data OOBIs", async () => {
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name: `schema-oobi-${crypto.randomUUID()}`,
       temp: true,
@@ -78,7 +78,7 @@ Deno.test("Oobiery resolves application/schema+json data OOBIs", async () => {
 });
 
 Deno.test("Oobiery rejects schema data OOBIs with mismatched SAIDs", async () => {
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const hby = yield* createHabery({
       name: `schema-oobi-mismatch-${crypto.randomUUID()}`,
       temp: true,

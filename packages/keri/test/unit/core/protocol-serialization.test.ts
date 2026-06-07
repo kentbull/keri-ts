@@ -1,8 +1,10 @@
+// @file-test-lane core-fast-a
+
 import { assertThrows } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { serializeMessage } from "../../../src/core/protocol-serialization.ts";
-import { ValidationError } from "../../../src/core/errors.ts";
 
 const SENDER = "EDmvqjn9t8x9zkPHCgn_QxTHlP-1v-qqJh-zdg7CrXVe";
 

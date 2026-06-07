@@ -29,9 +29,9 @@ import {
 } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
-import { Broker } from "./escrowing.ts";
 import { dgKey } from "./core/keys.ts";
 import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
+import { Broker } from "./escrowing.ts";
 import { Komer } from "./koming.ts";
 import {
   BytesSuber,

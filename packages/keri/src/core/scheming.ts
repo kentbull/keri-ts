@@ -18,7 +18,7 @@ type SchemaValidator = {
   compile(schema: unknown): DataValidator;
   errorsText(errors?: unknown): string;
 };
-type SchemaValidatorCtor = new (options: { strict: boolean }) => SchemaValidator;
+type SchemaValidatorCtor = new(options: { strict: boolean }) => SchemaValidator;
 
 /** Constructor options for one schema SAD wrapper. */
 export interface SchemerInit {
@@ -106,7 +106,7 @@ export class Schemer {
 
   /** Detect likely JSON Schema bytes using KERIpy's `$schema` heuristic. */
   static detect(raw: Uint8Array): boolean {
-    return new TextDecoder().decode(raw).includes('"$schema"');
+    return new TextDecoder().decode(raw).includes("\"$schema\"");
   }
 }
 
