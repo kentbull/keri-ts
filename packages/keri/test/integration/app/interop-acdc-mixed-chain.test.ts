@@ -96,6 +96,45 @@ function kliStoreArgs(store: KliStore): string[] {
   return ["--name", store.name, "--base", store.base, "--passcode", store.passcode];
 }
 
+let localKeripyRunnable: Promise<boolean> | undefined;
+
+async function canRunLocalKeripy(ctx: InteropContext): Promise<boolean> {
+  localKeripyRunnable ??= (async () => {
+    try {
+      await Deno.stat(localKeripyRoot());
+      const uv = await runCmdWithTimeout(
+        "uv",
+        ["--version"],
+        ctx.env,
+        10_000,
+        ctx.repoRoot,
+      );
+      return uv.code === 0;
+    } catch {
+      return false;
+    }
+  })();
+  return await localKeripyRunnable;
+}
+
+async function resolveMixedChainKliCommand(
+  ctx: InteropContext,
+  workDir: string,
+): Promise<string> {
+  if (await canRunLocalKeripy(ctx)) {
+    return await createLocalKeripyKliWrapper(workDir);
+  }
+  return ctx.kliCommand;
+}
+
+function pythonCommandForKli(kliCommand: string): string {
+  const slash = kliCommand.lastIndexOf("/");
+  if (slash === -1) {
+    return "python";
+  }
+  return `${kliCommand.slice(0, slash)}/python`;
+}
+
 function parseJsonLine(output: string): Record<string, unknown> {
   const line = output
     .split(/\r?\n/)
@@ -890,40 +929,52 @@ async function alignedKliIpexMessage(
   },
 ): Promise<string> {
   const script = await writeKliIpexAlignmentScript(workDir);
+  const scriptArgs = [
+    script,
+    "--mode",
+    args.mode,
+    "--name",
+    store.name,
+    "--base",
+    store.base,
+    "--passcode",
+    store.passcode,
+    "--alias",
+    store.alias,
+    "--said",
+    args.said,
+    "--message",
+    args.message,
+    "--timestamp",
+    args.timestamp,
+    ...(args.recipient ? ["--recipient", args.recipient] : []),
+  ];
+  const useLocalKeripy = await canRunLocalKeripy(ctx);
   const result = await requireSuccess(
     `${store.name} KLI IPEX alignment preflight`,
-    runCmdWithTimeout(
-      "uv",
-      [
-        "run",
-        "--project",
-        localKeripyRoot(),
-        "--with-editable",
-        localKeripyRoot(),
-        "python",
-        script,
-        "--mode",
-        args.mode,
-        "--name",
-        store.name,
-        "--base",
-        store.base,
-        "--passcode",
-        store.passcode,
-        "--alias",
-        store.alias,
-        "--said",
-        args.said,
-        "--message",
-        args.message,
-        "--timestamp",
-        args.timestamp,
-        ...(args.recipient ? ["--recipient", args.recipient] : []),
-      ],
-      ctx.env,
-      30_000,
-      ctx.repoRoot,
-    ),
+    useLocalKeripy
+      ? runCmdWithTimeout(
+        "uv",
+        [
+          "run",
+          "--project",
+          localKeripyRoot(),
+          "--with-editable",
+          localKeripyRoot(),
+          "python",
+          ...scriptArgs,
+        ],
+        ctx.env,
+        30_000,
+        ctx.repoRoot,
+      )
+      : runCmdWithTimeout(
+        pythonCommandForKli(ctx.kliCommand),
+        scriptArgs,
+        ctx.env,
+        30_000,
+        ctx.repoRoot,
+      ),
   );
   const parsed = parseJsonLine(result.stdout);
   if (typeof parsed.message !== "string") {
@@ -935,10 +986,10 @@ async function alignedKliIpexMessage(
 Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa verifiers", async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-i2i-" });
-  const localKli = await createLocalKeripyKliWrapper(workDir);
+  const kliCommand = await resolveMixedChainKliCommand(baseCtx, workDir);
   const ctx: InteropContext = {
     ...baseCtx,
-    kliCommand: localKli,
+    kliCommand,
     env: {
       ...baseCtx.env,
       KERI_LMDB_MAP_SIZE: "134217728",
@@ -1158,10 +1209,10 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
 Deno.test("Interop: Tufa NI2I edge verifies when source subject is not the Tufa issuer", async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-ni2i-" });
-  const localKli = await createLocalKeripyKliWrapper(workDir);
+  const kliCommand = await resolveMixedChainKliCommand(baseCtx, workDir);
   const ctx: InteropContext = {
     ...baseCtx,
-    kliCommand: localKli,
+    kliCommand,
     env: {
       ...baseCtx.env,
       KERI_LMDB_MAP_SIZE: "134217728",
