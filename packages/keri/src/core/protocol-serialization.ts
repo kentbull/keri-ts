@@ -58,9 +58,7 @@ function concatMessageWithAttachmentGroup(
   attachments: readonly Uint8Array[],
   pipelined: boolean,
 ): Uint8Array {
-  const atc = attachments.length === 0
-    ? new Uint8Array()
-    : concatBytes(...attachments);
+  const atc = attachments.length === 0 ? new Uint8Array() : concatBytes(...attachments);
   if (!pipelined) {
     return atc.length === 0 ? body : concatBytes(body, atc);
   }
@@ -296,9 +294,12 @@ export function serializeMessage(
   }
 
   for (const path of pathed) {
-    const raw = typeof path === "string"
-      ? new TextEncoder().encode(path)
-      : path;
+    const raw = typeof path === "string" ? new TextEncoder().encode(path) : path;
+    if (raw.length % 4 !== 0) {
+      throw new ValidationError(
+        `Invalid pathed material size=${raw.length}, nonintegral quadlets.`,
+      );
+    }
     attachments.push(
       new Counter({
         code: CtrDexV1.PathedMaterialCouples,
@@ -333,9 +334,7 @@ export function loadEvent(
     index: siger.index,
     signature: siger.qb64,
   }));
-  event.witnesses = serder.estive
-    ? db.wits.get(dgkey).map((wit) => wit.qb64)
-    : [];
+  event.witnesses = serder.estive ? db.wits.get(dgkey).map((wit) => wit.qb64) : [];
   event.witness_signatures = db.wigs.get(dgkey).map((wiger) => ({
     index: wiger.index,
     signature: wiger.qb64,

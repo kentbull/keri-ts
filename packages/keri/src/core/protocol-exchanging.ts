@@ -55,6 +55,11 @@ function encodePathedEmbeds(
       continue;
     }
     const pathed = concatBytes(makePather(["e", label]).qb64b, atc);
+    if (pathed.length % 4 !== 0) {
+      throw new Error(
+        `Embedded ${label} pathed attachment length ${pathed.length} is not quadlet aligned.`,
+      );
+    }
     const code = pathed.length / 4 < 4096 ? CtrDexV1.PathedMaterialCouples : CtrDexV1.BigPathedMaterialCouples;
     groups.push(
       concatBytes(

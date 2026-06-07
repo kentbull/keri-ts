@@ -8,6 +8,7 @@ import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger } from "../../../src/db/reger.ts";
 import {
+  credential,
   Credentialer,
   CredentialWallet,
   Regery,
@@ -39,6 +40,29 @@ function schemaSed(): Record<string, unknown> {
     },
   };
 }
+
+Deno.test("vdr/credentialing - builds KERIpy-compatible v1 ACDC credentials", () => {
+  const creder = credential({
+    schema: "ENLj1SXm-UWWAHjoBCSDK1XSvlZ0A-yehZFQbdbwBI4V",
+    issuer: "EAzyYT43995Tzhs4dobIxATUmE6u6MTS87zdeIUxVILK",
+    registry: "EC6A-9IZSURHyUHKN3kyabfwJPYeR9oQq2wcoIZAL8L2",
+    recipient: "EJ0d1ke927FIzyF7M1xRb7n6DBhiOh4GPg8ZMZjvhbPg",
+    data: {
+      role: "holder",
+      dt: "2026-06-07T02:23:37.535000+00:00",
+    },
+  });
+
+  assertEquals(creder.said, "EP5-9l2U6Nk4Tay7ZMmE2vMBbyst_wL-X-duR7_5fOYh");
+  assertEquals(
+    (creder.sad?.a as Record<string, unknown>).d,
+    "ECZxadZCtRi0BpLMb4JfTjLho40fR1BAkwOxQf2BmqJe",
+  );
+  assertEquals(
+    new TextDecoder().decode(creder.raw),
+    '{"v":"ACDC10JSON00018a_","d":"EP5-9l2U6Nk4Tay7ZMmE2vMBbyst_wL-X-duR7_5fOYh","i":"EAzyYT43995Tzhs4dobIxATUmE6u6MTS87zdeIUxVILK","ri":"EC6A-9IZSURHyUHKN3kyabfwJPYeR9oQq2wcoIZAL8L2","s":"ENLj1SXm-UWWAHjoBCSDK1XSvlZ0A-yehZFQbdbwBI4V","a":{"d":"ECZxadZCtRi0BpLMb4JfTjLho40fR1BAkwOxQf2BmqJe","i":"EJ0d1ke927FIzyF7M1xRb7n6DBhiOh4GPg8ZMZjvhbPg","dt":"2026-06-07T02:23:37.535000+00:00","role":"holder"}}',
+  );
+});
 
 Deno.test("vdr/credentialing - creates registry and records completion", async () => {
   await run(function* () {

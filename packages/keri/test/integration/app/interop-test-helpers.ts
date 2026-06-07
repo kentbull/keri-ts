@@ -328,6 +328,28 @@ export function workspaceRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
 }
 
+/** Resolve the sibling local KERIpy checkout used for branch-local interop fixes. */
+export function localKeripyRoot(): string {
+  return new URL("../../../../../../../python/keripy/", import.meta.url).pathname;
+}
+
+/** Create a temp executable that runs KLI from the local KERIpy checkout. */
+export async function createLocalKeripyKliWrapper(workDir: string): Promise<string> {
+  const path = `${workDir}/local-kli`;
+  const root = localKeripyRoot().replace(/'/g, "'\\''");
+  await Deno.writeTextFile(
+    path,
+    [
+      "#!/bin/sh",
+      `KERIPY_ROOT='${root}'`,
+      'exec uv run --project "$KERIPY_ROOT" --with-editable "$KERIPY_ROOT" python -m keri.cli.kli "$@"',
+      "",
+    ].join("\n"),
+  );
+  await Deno.chmod(path, 0o755);
+  return path;
+}
+
 function cacheHome(): string {
   return Deno.env.get("XDG_CACHE_HOME")
     ?? `${Deno.env.get("HOME") ?? "/tmp"}/.cache`;

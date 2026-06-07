@@ -14,6 +14,7 @@ import {
   concatBytes,
   Counter,
   CtrDexV1,
+  DigDex,
   Diger,
   Ilks,
   type Kind,
@@ -178,19 +179,35 @@ function subjectAttributes(
   data: Record<string, unknown> | string | undefined,
   recipient?: string,
   dt?: string,
+  privateSubjectNonce?: string,
 ): Record<string, unknown> | string {
   if (typeof data === "string") {
     return data;
   }
-  const attrs: Record<string, unknown> = {
-    d: "",
-    dt: dt ?? makeNowIso8601(),
-    ...(data ?? {}),
-  };
-  if (recipient && typeof attrs.i !== "string") {
+  const attrs: Record<string, unknown> = { d: "" };
+  if (privateSubjectNonce) {
+    attrs.u = privateSubjectNonce;
+  }
+  if (recipient) {
     attrs.i = recipient;
   }
+  attrs.dt = dt ?? (typeof data?.dt === "string" ? data.dt : makeNowIso8601());
+  Object.assign(attrs, data ?? {});
   return attrs;
+}
+
+function saidifySubject(
+  data: Record<string, unknown> | string,
+  kind: Kind,
+): Record<string, unknown> | string {
+  if (typeof data === "string") {
+    return data;
+  }
+  return Saider.saidify(data, {
+    kind,
+    label: "d",
+    code: DigDex.Blake3_256,
+  }).sad;
 }
 
 function optionalSection(
@@ -226,13 +243,18 @@ export function credential({
     i: issuer,
     ri: registry,
     s: schema,
-    a: subjectAttributes(data, recipient, dt),
+    a: saidifySubject(
+      subjectAttributes(
+        data,
+        recipient,
+        dt,
+        privateSubjectNonce ?? (privateCredential ? crypto.randomUUID() : undefined),
+      ),
+      kind,
+    ),
   };
   if (privateCredential || privateCredentialNonce) {
     sad.u = privateCredentialNonce ?? crypto.randomUUID();
-  }
-  if (privateSubjectNonce && typeof sad.a === "object" && sad.a !== null) {
-    (sad.a as Record<string, unknown>).u = privateSubjectNonce;
   }
   const edgeSection = optionalSection(edges);
   if (edgeSection !== undefined) {

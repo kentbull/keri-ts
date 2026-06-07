@@ -59,6 +59,14 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 13. Verifier delivery and webhook target behavior are separate components:
     `tufa verifier run` is the Sally-like verifier sender, while `tufa hook
     demo` is only a Sally `hook demo`-style sample webhook receiver.
+14. Current KERIpy credential interop is v1 ACDC. Do not apply v2
+    most-compact top-level SAID rules to v1 registry credentials; v1 credentials
+    must match KERIpy's expanded-body top-level SAID after subject-level
+    saidification.
+15. When debugging IPEX quadlet errors, measure the actual pathed material
+    groups before blaming embedded ACDCs. KERIpy's `serializeMessage` error text
+    can report the full framed EXN byte length after the raw JSON body, while
+    the `/e/{anc,iss,acdc}` pathed groups themselves are still quadlet-aligned.
 
 ## Use This Doc For
 
@@ -184,3 +192,14 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
   for schema import, credential import, holder grant artifact generation,
   verifier grant import, verifier acceptance, and webhook delivery to a
   separate `tufa hook demo` target.
+
+### 2026-06-07 - KLI Holder Transport Interop Gate Landed
+
+- Tufa v1 credential construction now matches KERIpy's subject field order and
+  subject `d` saidification, and v2 most-compact top-level ACDC hashing is
+  gated to ACDC protocol v2.
+- Tufa IPEX embed encoders now explicitly reject non-quadlet pathed material
+  before counter construction, preserving the CESR invariant at the source.
+- The live transport gate now proves Tufa issuer -> KLI holder -> Tufa verifier
+  over regular mailbox/IPEX grant/admit paths with no KLI API additions and a
+  separate `tufa hook demo` webhook target.
