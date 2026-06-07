@@ -8,6 +8,7 @@ export function registerCredentialCmds(
 ): void {
   registerVcCmds(program, dispatch);
   registerIpexCmds(program, dispatch);
+  registerVerifierCmds(program, dispatch);
 }
 
 function addStoreOptions(cmd: Command): Command {
@@ -259,5 +260,21 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       .option("--auto", "Approve a multisig IPEX proposal without prompting", false),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.join", args: dispatchArgs(options) });
+  });
+}
+
+function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void {
+  const verifier = program.command("verifier").description("Verifier agent operations");
+
+  addStoreOptions(
+    verifier.command("run")
+      .description("Process verifier grants, revocations, and webhook delivery")
+      .requiredOption("--hook <url>", "Webhook URL")
+      .option("--config <file>", "Verifier schema validator config JSON")
+      .option("--once", "Process one bounded verifier turn", false)
+      .option("--interval-ms <ms>", "Loop interval in milliseconds")
+      .option("--timeout-ms <ms>", "Escrow timeout in milliseconds"),
+  ).action((options: Record<string, unknown>) => {
+    dispatch({ name: "verifier.run", args: dispatchArgs(options) });
   });
 }

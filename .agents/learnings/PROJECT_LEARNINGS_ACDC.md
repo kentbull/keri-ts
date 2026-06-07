@@ -49,6 +49,10 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
     fork: `/multisig/*` proposals group wrappers by the saidified embedded
     section SAID in `meids.` and sender AIDs in `maids.`, while actual approval
     remains an ordinary group-signature path over the embedded business EXN.
+11. The Sally-like verifier agent must treat `Notifier` as visibility only:
+    durable work is discovered from accepted `/ipex/grant` EXNs, VDR state,
+    exchange pathed artifacts, and TEL `revoked` cues; webhook retry/ack state
+    belongs in a separate verifier cue sidecar.
 
 ## Use This Doc For
 
@@ -132,3 +136,16 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
   embedded exchange is accepted or still escrowed.
 - External delivery must use lead election over the lowest collected group
   signature index; single-sig habitats are always lead.
+
+### 2026-06-06 - Sally-Like Verifier Agent Landed
+
+- `db/verifier-cueing.ts` ports Sally's cue sidecar shape (`snd`, `iss`, `rev`,
+  `recv`, `revk`, `ack`) outside the KERIpy `Reger` namespace so webhook state
+  does not disturb VDR fixture comparisons.
+- `app/verifier-agent.ts` drives verifier progress from accepted grants and
+  TEL revocation cues, reconstructs grant-embedded `anc`/`iss`/`acdc` artifacts
+  from exchange storage, waits on shared verifier/TEL state, and posts normalized
+  issuance/revocation webhook payloads with durable retry/ack markers.
+- `tufa verifier run --hook ... --once` is the bounded operational surface for
+  tests and cron-style verifier jobs; omitting `--once` runs the same bounded
+  turn in a loop.

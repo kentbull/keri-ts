@@ -34,6 +34,7 @@ export { queryCommand } from "./query.ts";
 export { rotateCommand } from "./rotate.ts";
 export { signCommand } from "./sign.ts";
 export { verifyCommand } from "./verify.ts";
+export { verifierRunCommand } from "./verifier.ts";
 export {
   vcCreateCommand,
   vcExportCommand,
