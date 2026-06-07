@@ -90,18 +90,21 @@ export async function waitForHealth(
   const url = `http://${host}:${port}/health`;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(250),
+      });
       if (response.ok) {
         await response.text();
         return;
       }
+      await response.text();
     } catch {
       // Keep polling until the child is ready or exits.
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
-  throw new Error(`Timed out waiting for ${url}`);
+  throw new Error(`Timed out waiting for ${url} after ${attempts} attempts`);
 }
 
 export async function readChildOutput(child: SpawnedChild): Promise<string> {
