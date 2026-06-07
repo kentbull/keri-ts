@@ -15,14 +15,14 @@ import type { AgentCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { VcStateRecordShape } from "../core/records.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { Reger } from "../db/reger.ts";
 import type { VerifierCueBaser } from "../db/verifier-cueing.ts";
-import type { RuntimeServices } from "./runtime-services.ts";
-import type { Reactor } from "./reactor.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { Habery } from "./habbing.ts";
-import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
 import { type CredentialPresentationArtifacts, processCredentialPresentationArtifacts } from "./ipex-credentialing.ts";
+import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
+import type { Reactor } from "./reactor.ts";
+import type { RuntimeServices } from "./runtime-services.ts";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const textEncoder = new TextEncoder();
@@ -106,6 +106,7 @@ export class VerifierAgent {
     result.grantsQueued += this.scanAcceptedGrants();
     result.revocationsQueued += this.processRevokedCues();
     this.reactor.processEscrowsOnce();
+    result.revocationsQueued += this.scanPersistedRevocations();
     result.presentationsReady += this.processPresentations();
     result.revocationsReady += this.processRevocations();
     result.webhooksSent += await this.processReady(this.cdb.recv, "iss", result);
@@ -159,6 +160,30 @@ export class VerifierAgent {
       queued += 1;
     }
     this.cues.extend(retained);
+    return queued;
+  }
+
+  private scanPersistedRevocations(): number {
+    let queued = 0;
+    for (const [keys] of this.reger.saved.getTopItemIter()) {
+      const said = keys[0];
+      if (!said || this.hasRevocationQueuedOrSent(said)) {
+        continue;
+      }
+      const creder = this.reger.creds.get([said]);
+      if (!creder || !this.hasAcceptedGrantForCredential(said)) {
+        continue;
+      }
+      const state = credentialState(this.reger, creder);
+      if (!state || (state.et !== Ilks.rev && state.et !== Ilks.brv)) {
+        continue;
+      }
+      if (creder.issuer) {
+        this.cdb.snd.pin([said], new Prefixer({ qb64: creder.issuer }));
+      }
+      this.cdb.rev.pin([said], nowDater());
+      queued += 1;
+    }
     return queued;
   }
 
@@ -247,7 +272,11 @@ export class VerifierAgent {
       const response = await this.postWebhook(payload);
       if (response.ok) {
         db.rem([said, daterQb64]);
-        this.cdb.ack.pin([said], creder);
+        if (action === "iss") {
+          this.cdb.ack.pin([said], creder);
+        } else {
+          this.cdb.rack.pin([said], creder);
+        }
         sent += 1;
         continue;
       }
@@ -291,13 +320,24 @@ export class VerifierAgent {
   }
 
   private hasQueuedOrSent(said: string): boolean {
-    return this.cdb.iss.get([said]) !== null ||
-      this.cdb.ack.get([said]) !== null ||
-      this.hasReady(this.cdb.recv, said);
+    return this.cdb.iss.get([said]) !== null
+      || this.cdb.ack.get([said]) !== null
+      || this.hasReady(this.cdb.recv, said);
   }
 
   private hasRevocationQueuedOrSent(said: string): boolean {
-    return this.cdb.rev.get([said]) !== null || this.hasReady(this.cdb.revk, said);
+    return this.cdb.rev.get([said]) !== null
+      || this.cdb.rack.get([said]) !== null
+      || this.hasReady(this.cdb.revk, said);
+  }
+
+  private hasAcceptedGrantForCredential(said: string): boolean {
+    for (const [, grant] of this.hby.db.exns.getTopItemIter()) {
+      if (grant.route === IPEX_GRANT_ROUTE && credentialSaidFromGrant(grant) === said) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private hasReady(

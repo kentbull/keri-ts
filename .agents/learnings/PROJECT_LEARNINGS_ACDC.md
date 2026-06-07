@@ -149,3 +149,17 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 - `tufa verifier run --hook ... --once` is the bounded operational surface for
   tests and cron-style verifier jobs; omitting `--once` runs the same bounded
   turn in a loop.
+
+### 2026-06-07 - Verifier CLI Workflow Gate Landed
+
+- `VerifierAgent` must not rely only on volatile runtime revocation cues. CLI
+  import and `verifier run --once` commonly happen in separate processes, so the
+  agent now rescans persisted saved credentials and TEL state for revoked
+  credentials tied to accepted grants.
+- Revocation webhook idempotence needs a distinct durable ack marker. Issuance
+  `ack` cannot suppress later revocation, and revocation `rack` prevents the
+  same persisted revoked credential from emitting a webhook every bounded run.
+- The operational ACDC workflow gate now exercises public `tufa` commands from
+  issuer to holder to verifier: schema import, registry inception, credential
+  create/import, holder IPEX grant, verifier webhook issuance, revoke/import,
+  verifier webhook revocation, and idempotent repeat processing.

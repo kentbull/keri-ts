@@ -24,6 +24,7 @@ export interface VerifierCueCounts {
   recv: number;
   revk: number;
   ack: number;
+  rack: number;
 }
 
 /** Durable cue DB matching Sally's `CueBaser` store layout. */
@@ -34,6 +35,7 @@ export class VerifierCueBaser extends LMDBer {
   recv!: SerderSuber<SerderACDC>;
   revk!: SerderSuber<SerderACDC>;
   ack!: SerderSuber<SerderACDC>;
+  rack!: SerderSuber<SerderACDC>;
 
   static override readonly TailDirPath = "keri/verifier";
   static override readonly AltTailDirPath = ".tufa/verifier";
@@ -63,6 +65,7 @@ export class VerifierCueBaser extends LMDBer {
     this.recv = new SerderSuber<SerderACDC>(this, { subkey: "recv", ctor: SerderACDC });
     this.revk = new SerderSuber<SerderACDC>(this, { subkey: "revk", ctor: SerderACDC });
     this.ack = new SerderSuber<SerderACDC>(this, { subkey: "ack", ctor: SerderACDC });
+    this.rack = new SerderSuber<SerderACDC>(this, { subkey: "rack", ctor: SerderACDC });
     return true;
   }
 
@@ -72,6 +75,7 @@ export class VerifierCueBaser extends LMDBer {
     this.recv.trim();
     this.revk.trim();
     this.ack.trim();
+    this.rack.trim();
   }
 
   getCounts(): VerifierCueCounts {
@@ -82,6 +86,7 @@ export class VerifierCueBaser extends LMDBer {
       recv: this.recv.cntAll(),
       revk: this.revk.cntAll(),
       ack: this.ack.cntAll(),
+      rack: this.rack.cntAll(),
     };
   }
 }

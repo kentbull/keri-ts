@@ -6,12 +6,12 @@ import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-ru
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
 import { VerifierAgent, type VerifierAgentProcessResult } from "../../../src/app/verifier-agent.ts";
+import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { createVerifierCueBaser, type VerifierCueBaser } from "../../../src/db/verifier-cueing.ts";
 import { Credentialer, Regery, type Registry } from "../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
-import { Verifier } from "../../../src/app/verifying.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -103,7 +103,7 @@ function ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): void {
 }
 
 Deno.test("VerifierAgent scans accepted grants and sends issuance webhook without notifier dependency", async () => {
-  await run(function* () {
+  await run(function*() {
     const issuerHby = yield* createHabery({
       name: `verifier-agent-issuer-${crypto.randomUUID()}`,
       temp: true,
@@ -179,7 +179,7 @@ Deno.test("VerifierAgent scans accepted grants and sends issuance webhook withou
 });
 
 Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", async () => {
-  await run(function* () {
+  await run(function*() {
     const issuerHby = yield* createHabery({
       name: `verifier-agent-rev-issuer-${crypto.randomUUID()}`,
       temp: true,
@@ -246,6 +246,91 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       assertEquals(requests[1]!.action, "rev");
       assertEquals((requests[1]!.data as Record<string, unknown>).credential, fixture.creder.said);
       assertExists((requests[1]!.data as Record<string, unknown>).revocationTimestamp);
+    } finally {
+      yield* runtime.close();
+      yield* cdb.close(true);
+      yield* verifierReger.close(true);
+      yield* verifierHby.close(true);
+      yield* issuerReger.close(true);
+      yield* issuerHby.close(true);
+    }
+  });
+});
+
+Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", async () => {
+  await run(function*() {
+    const issuerHby = yield* createHabery({
+      name: `verifier-agent-persisted-rev-issuer-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const issuerReger = yield* createReger({
+      name: `verifier-agent-persisted-rev-issuer-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const verifierHby = yield* createHabery({
+      name: `verifier-agent-persisted-rev-holder-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const verifierReger = yield* createReger({
+      name: `verifier-agent-persisted-rev-holder-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const cdb = yield* createVerifierCueBaser({
+      name: `verifier-agent-persisted-rev-cdb-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const requests: Array<Record<string, unknown>> = [];
+    const runtime = yield* createAgentRuntime(verifierHby, {
+      mode: "local",
+      vdr: { reger: verifierReger },
+      services: {
+        clock: fixedClock(),
+        http: {
+          fetch: (_url, init) => {
+            requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+            return Promise.resolve(new Response("", { status: 200 }));
+          },
+        },
+      },
+    });
+    try {
+      const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
+      ingestGrant(runtime, fixture);
+      const agent = new VerifierAgent({
+        hby: verifierHby,
+        reger: verifierReger,
+        cdb,
+        reactor: runtime.reactor,
+        cues: runtime.cues,
+        services: runtime.services,
+        hook: "http://example.test/hook",
+      });
+      yield* processAgentOnce(agent);
+      assertExists(cdb.ack.get([fixture.creder.said!]));
+
+      fixture.registry.revoke(fixture.creder.said!);
+      for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
+        runtime.reactor.processChunk(message);
+      }
+      for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
+        runtime.reactor.processChunk(message);
+      }
+      runtime.reactor.processEscrowsOnce();
+      while (!runtime.cues.empty) {
+        runtime.cues.pull();
+      }
+
+      const result = yield* processAgentOnce(agent);
+      const repeat = yield* processAgentOnce(agent);
+
+      assertEquals(result.revocationsQueued, 1);
+      assertEquals(result.revocationsReady, 1);
+      assertEquals(result.webhooksSent, 1);
+      assertEquals(repeat.revocationsQueued, 0);
+      assertEquals(repeat.webhooksSent, 0);
+      assertEquals(requests.length, 2);
+      assertEquals(requests[1]!.action, "rev");
+      assertExists(cdb.rack.get([fixture.creder.said!]));
     } finally {
       yield* runtime.close();
       yield* cdb.close(true);
