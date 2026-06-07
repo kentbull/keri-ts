@@ -27,6 +27,7 @@ import {
   mailboxTopicForRoute,
   Poster,
 } from "./forwarding.ts";
+import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
@@ -193,6 +194,7 @@ export function* createAgentRuntime(
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
+  loadMultisigHandlers(hby, reactor.exchanger, { notifier });
   loadIpexHandlers(hby, reactor.exchanger, { notifier });
   const mailboxDirector = new MailboxDirector(
     hby,

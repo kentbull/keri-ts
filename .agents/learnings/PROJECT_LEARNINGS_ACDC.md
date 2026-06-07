@@ -45,6 +45,10 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
    compose `Reger`, `Tevery`, and `Verifier`; ACDC construction keeps KERIpy's
    subject-level `d`/`dt` handling; local issue/revoke writes TEL completion
    markers and verifier wallet indexes.
+10. Multisig credential coordination is an EXN-indexing layer, not a VDR state
+    fork: `/multisig/*` proposals group wrappers by the saidified embedded
+    section SAID in `meids.` and sender AIDs in `maids.`, while actual approval
+    remains an ordinary group-signature path over the embedded business EXN.
 
 ## Use This Doc For
 
@@ -116,3 +120,15 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
   receipt dissemination, multisig counselor flows, operational `vc` CLI
   commands, grant/admit artifact streaming, and KERIpy golden fixtures remain
   active follow-up work.
+
+### 2026-06-06 - Multisig IPEX Coordination Landed
+
+- `app/grouping.ts` now mirrors KERIpy's `/multisig/icp|rot|ixn|vcp|iss|rev|rpy|exn`
+  route family, builder payloads, `Multiplexor` `meids.`/`maids.` indexing,
+  and notifier wakeups for remote submitters.
+- Group-coordinated IPEX remains two-stage: `/multisig/exn` records the
+  proposal by embedded-section SAID; `ipex join --auto` adds the local member's
+  group-index signature to the embedded `/ipex/*` EXN and reports whether the
+  embedded exchange is accepted or still escrowed.
+- External delivery must use lead election over the lowest collected group
+  signature index; single-sig habitats are always lead.

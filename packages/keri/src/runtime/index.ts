@@ -16,6 +16,7 @@ export * from "../app/cue-runtime.ts";
 export * from "../app/delegating.ts";
 export * from "../app/exchanging.ts";
 export * from "../app/forwarding.ts";
+export * from "../app/grouping.ts";
 export * from "../app/habbing.ts";
 export * from "../app/httping.ts";
 export * from "../app/ipex-credentialing.ts";

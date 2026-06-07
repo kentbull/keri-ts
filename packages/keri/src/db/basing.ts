@@ -257,7 +257,7 @@ export class Baser {
   public dune!: SerderSuber<SerderKERI>; // Delegated unanchored escrow messages.
   public dpub!: SerderSuber<SerderKERI>; // Delegate publication escrow messages.
   public cdel!: CesrOnSuber<Diger>; // Completed group delegated AIDs keyed by ordinal.
-  public meids!: CesrIoSetSuber<Diger>; // Multisig embed payload SAIDs to containing exchange-message SAIDs.
+  public meids!: CesrIoSetSuber<Saider>; // Multisig embed payload SAIDs to containing exchange-message SAIDs.
   public maids!: CesrIoSetSuber<Prefixer>; // Multisig embed payload SAIDs to participant AIDs.
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
@@ -809,9 +809,9 @@ export class Baser {
 
       // Multisig embed payload SAIDs mapped to containing exchange-message
       // SAIDs across group multisig participants.
-      this.meids = new CesrIoSetSuber<Diger>(this.lmdber, {
+      this.meids = new CesrIoSetSuber<Saider>(this.lmdber, {
         subkey: "meids.",
-        ctor: Diger,
+        ctor: Saider,
       });
 
       // Multisig embed payload SAIDs mapped to group multisig participant AIDs.

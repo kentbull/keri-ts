@@ -254,8 +254,9 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
 
   addStoreOptions(
     ipex.command("join")
-      .description("Validate a single-sig IPEX message has no pending group join")
-      .requiredOption("--said <said>", "IPEX EXN SAID"),
+      .description("Approve or validate a single-sig or multisig IPEX message")
+      .requiredOption("--said <said>", "IPEX or multisig wrapper EXN SAID")
+      .option("--auto", "Approve a multisig IPEX proposal without prompting", false),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.join", args: dispatchArgs(options) });
   });

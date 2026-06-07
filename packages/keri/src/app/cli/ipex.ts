@@ -1,5 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { concatBytes, parseSerder, SerderKERI, smell } from "../../../../cesr/mod.ts";
+import { concatBytes, Diger, parseSerder, Prefixer, SerderKERI, smell } from "../../../../cesr/mod.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { type AgentRuntime, createAgentRuntime } from "../agent-runtime.ts";
@@ -12,8 +12,11 @@ import {
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
 } from "../ipexing.ts";
+import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigPathedAttachment } from "../grouping.ts";
 import { ipexCredentialAdmit, ipexCredentialGrant } from "../ipex-credentialing.ts";
 import { Reger } from "../../db/reger.ts";
+import { TransIdxSigGroup } from "../../core/dispatch.ts";
+import { serializeMessage } from "../../core/protocol-exchanging.ts";
 import { setupHby } from "./common/existing.ts";
 
 interface IpexBaseArgs {
@@ -38,6 +41,11 @@ interface IpexAdmitArgs extends IpexBaseArgs {
   said?: string;
   grantFile?: string;
   noWait?: boolean;
+}
+
+interface IpexJoinArgs extends IpexBaseArgs {
+  said?: string;
+  auto?: boolean;
 }
 
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
@@ -190,20 +198,114 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
 }
 
 export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void> {
-  const ipexArgs = ipexBaseArgs(args);
-  const said = args.said as string | undefined;
-  requireNonEmpty(said, "EXN SAID");
+  const ipexArgs: IpexJoinArgs = {
+    ...ipexBaseArgs(args),
+    said: args.said as string | undefined,
+    auto: args.auto as boolean | undefined,
+  };
+  requireNonEmpty(ipexArgs.said, "EXN SAID");
   const { hby, runtime } = yield* openRuntime(ipexArgs);
   try {
-    const exn = hby.db.exns.get([said!]);
-    if (!exn || !exn.route?.startsWith("/ipex/")) {
-      throw new ValidationError(`IPEX message ${said} not found.`);
+    const exn = hby.db.exns.get([ipexArgs.said!]);
+    if (!exn) {
+      throw new ValidationError(`IPEX message ${ipexArgs.said} not found.`);
     }
-    console.log(JSON.stringify({ said, route: exn.route, status: "single-sig" }));
+
+    if (exn.route?.startsWith("/ipex/")) {
+      console.log(JSON.stringify({ said: ipexArgs.said, route: exn.route, status: "single-sig" }));
+      return;
+    }
+
+    if (exn.route !== MULTISIG_EXN_ROUTE) {
+      throw new ValidationError(`EXN ${ipexArgs.said} is not an IPEX or multisig IPEX message.`);
+    }
+
+    const embeddedSad = embeddedBusinessExnSAD(exn);
+    if (!embeddedSad || typeof embeddedSad.r !== "string" || !embeddedSad.r.startsWith("/ipex/")) {
+      throw new ValidationError(`Multisig EXN ${ipexArgs.said} does not wrap an IPEX message.`);
+    }
+
+    const embedded = new SerderKERI({ sad: embeddedSad });
+    const group = embedded.pre;
+    if (!group || !hby.habs.has(group)) {
+      throw new ValidationError(`Multisig IPEX sender ${group ?? "<missing>"} is not a local group AID.`);
+    }
+
+    if (!ipexArgs.auto) {
+      console.log(JSON.stringify({
+        said: ipexArgs.said,
+        route: exn.route,
+        status: "multisig-pending",
+        embedded: embedded.said,
+        embeddedRoute: embedded.route,
+        group,
+      }));
+      return;
+    }
+
+    const approval = approveMultisigIpex(hby, runtime, exn, embedded);
+    console.log(JSON.stringify({
+      said: ipexArgs.said,
+      route: exn.route,
+      status: approval.accepted ? "multisig-approved" : "multisig-escrowed",
+      embedded: embedded.said,
+      embeddedRoute: embedded.route,
+      group,
+      lead: runtime.reactor.exchanger.lead(hby.habs.get(group)!, embedded.said!),
+    }));
   } finally {
     yield* runtime.close();
     yield* hby.close();
   }
+}
+
+function approveMultisigIpex(
+  hby: Habery,
+  runtime: AgentRuntime,
+  wrapper: SerderKERI,
+  embedded: SerderKERI,
+): { accepted: boolean } {
+  const group = embedded.pre;
+  const embeddedSaid = embedded.said;
+  const wrapperSaid = wrapper.said;
+  if (!group || !embeddedSaid || !wrapperSaid) {
+    throw new ValidationError("Multisig IPEX approval requires wrapper, group, and embedded SAIDs.");
+  }
+
+  const groupHab = hby.habs.get(group);
+  const groupRecord = hby.db.getHab(group);
+  const memberPre = groupRecord?.mid;
+  const memberHab = memberPre ? hby.habs.get(memberPre) : null;
+  const groupKever = groupHab?.kever;
+  const memberKey = memberHab?.kever?.verfers[0]?.qb64;
+  if (!groupHab || !groupKever || !memberHab || !memberKey) {
+    throw new ValidationError(`Local group ${group} is missing member signing state.`);
+  }
+
+  const groupIndex = groupKever.verfers.findIndex((verfer) => verfer.qb64 === memberKey);
+  if (groupIndex < 0) {
+    throw new ValidationError(`Local member ${memberHab.pre} is not a current signer for group ${group}.`);
+  }
+
+  const sigers = memberHab.mgr.sign(embedded.raw, {
+    pubs: [memberKey],
+    indexed: true,
+    indices: [groupIndex],
+  });
+  const tsg = new TransIdxSigGroup(
+    new Prefixer({ qb64: group }),
+    groupKever.sner,
+    new Diger({ qb64: groupKever.said }),
+    sigers,
+  );
+  const pathed = multisigPathedAttachment(hby, wrapperSaid, "exn");
+  const approved = concatBytes(
+    serializeMessage(embedded, { tsgs: [tsg], pipelined: true }),
+    pathed,
+  );
+  runtime.reactor.processChunk(approved, { local: true });
+  runtime.reactor.processEscrowsOnce();
+  return { accepted: hby.db.exns.get([embeddedSaid])?.said === embeddedSaid };
 }
 
 function* sendPriorResponse(

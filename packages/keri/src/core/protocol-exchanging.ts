@@ -9,10 +9,9 @@ import {
   makePather,
   NonceDex,
   Noncer,
-  parseSerder,
+  reapSerder,
   Saider,
   SerderKERI,
-  smell,
   type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
@@ -46,11 +45,12 @@ function encodePathedEmbeds(
   const e: Record<string, unknown> = {};
   const groups: Uint8Array[] = [];
   for (const [label, msg] of Object.entries(embeds)) {
-    const { smellage } = smell(msg);
-    const body = msg.slice(0, smellage.size);
-    const serder = parseSerder(body, smellage);
+    const { serder, consumed } = reapSerder(msg);
+    if (!serder.ked) {
+      throw new Error(`Embedded ${label} message is missing decoded SAD.`);
+    }
     e[label] = serder.ked;
-    const atc = msg.slice(smellage.size);
+    const atc = msg.slice(consumed);
     if (atc.length === 0) {
       continue;
     }
