@@ -2,7 +2,14 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
+import {
+  endpointRoleAccepted,
+  isLocalGroupHab,
+  proposeGroupEndpointRole,
+} from "../endpoint-roleing.ts";
 import { setupHby } from "./common/existing.ts";
+
+type MultisigEndpointRoleMode = "propose" | "complete";
 
 /** Parsed arguments for `tufa ends add`. */
 interface EndsAddArgs {
@@ -13,6 +20,7 @@ interface EndsAddArgs {
   alias?: string;
   role?: string;
   eid?: string;
+  multisigMode?: MultisigEndpointRoleMode;
   compat?: boolean;
 }
 
@@ -39,6 +47,7 @@ export function* endsAddCommand(
     alias: args.alias as string | undefined,
     role: args.role as string | undefined,
     eid: args.eid as string | undefined,
+    multisigMode: parseMultisigMode(args.multisigMode as string | undefined),
     compat: args.compat as boolean | undefined,
   };
 
@@ -80,6 +89,40 @@ export function* endsAddCommand(
     }
 
     const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    if (isLocalGroupHab(hby, hab)) {
+      if (!commandArgs.multisigMode) {
+        throw new ValidationError(
+          "Group endpoint role authorization requires --multisig-mode propose or --multisig-mode complete.",
+        );
+      }
+      if (commandArgs.multisigMode === "propose") {
+        const result = yield* proposeGroupEndpointRole(runtime, hab, {
+          eid: commandArgs.eid,
+          role: commandArgs.role,
+          allow: true,
+        });
+        console.log(JSON.stringify({
+          route: result.route,
+          said: result.said,
+          group: result.group,
+          accepted: result.accepted,
+          deliveries: result.deliveries,
+          attachmentBytes: result.attachmentBytes,
+        }));
+        return;
+      }
+      if (!endpointRoleAccepted(hby, hab.pre, commandArgs.role, commandArgs.eid)) {
+        throw new ValidationError(
+          `Endpoint role ${commandArgs.role} for ${commandArgs.eid} is not yet approved for group ${hab.pre}.`,
+        );
+      }
+      console.log(`${commandArgs.role} ${commandArgs.eid}`);
+      return;
+    }
+
+    if (commandArgs.multisigMode) {
+      throw new ValidationError("--multisig-mode is only valid for local group aliases.");
+    }
     ingestKeriBytes(
       runtime,
       hab.makeEndRole(commandArgs.eid, commandArgs.role, true),
@@ -97,4 +140,14 @@ export function* endsAddCommand(
   } finally {
     yield* hby.close();
   }
+}
+
+function parseMultisigMode(value: string | undefined): MultisigEndpointRoleMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "propose" || value === "complete") {
+    return value;
+  }
+  throw new ValidationError("--multisig-mode must be propose or complete.");
 }

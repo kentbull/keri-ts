@@ -265,7 +265,7 @@ async function authorizeMailboxPollTarget(
   mailboxPre: string,
   mailboxUrl: string,
 ): Promise<void> {
-  await run(function* () {
+  await run(function*() {
     const resolved = yield* testCLICommand(
       oobiResolveCommand({
         name,
@@ -347,7 +347,7 @@ async function seedMailboxHost(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -393,7 +393,7 @@ async function seedHostedController(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -435,7 +435,7 @@ async function seedLocalController(
 ): Promise<string> {
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -584,7 +584,7 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
   const origin = `http://mailbox-admin-path-${crypto.randomUUID()}.test`;
   const advertisedUrl = `${origin}/relay`;
 
-  await run(function* () {
+  await run(function*() {
     const providerHby = yield* createHabery({
       name: providerName,
       temp: true,
@@ -702,10 +702,10 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
     }),
   );
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -795,10 +795,10 @@ Deno.test("mailbox start accepts config URLs with non-root paths and serves mail
     }),
   );
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -911,7 +911,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
   const configuredUrl = `http://localhost:${port}`;
   let pre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -936,7 +936,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function* () {
+  await run(function*() {
     const cf = yield* createConfiger({
       name: configFile,
       headDirPath: configDir,
@@ -954,8 +954,8 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function* (): Operation<void> {
-    const serverTask = yield* spawn(function* () {
+  await run(function*(): Operation<void> {
+    const serverTask = yield* spawn(function*() {
       yield* agentCommand({
         name,
         headDirPath,
@@ -1000,7 +1000,7 @@ Deno.test("agent command rejects missing controller curls config", async () => {
   const headDirPath = `/tmp/tufa-agent-${crypto.randomUUID()}`;
   const port = randomPort();
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1037,7 +1037,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
   const startupUrl = `http://127.0.0.1:${port}`;
   let otherPre = "";
 
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1057,10 +1057,10 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
     }
   });
 
-  await run(function* (): Operation<void> {
+  await run(function*(): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function* () {
+    const serverTask = yield* spawn(function*() {
       yield* mailboxStartCommand({
         name,
         alias: "relay",

@@ -65,6 +65,10 @@ export function registerMailboxCmds(
     .option("--compat", "Use KERIpy compatibility-mode path layout")
     .option("--outboxer", "Use the tufa-local durable outbox sidecar", false)
     .option(
+      "--multisig-mode <mode>",
+      "Group mailbox mode: propose or complete",
+    )
+    .option(
       "--head-dir <dir>",
       "Directory override for database and keystore root (default fallback: ~/.tufa)",
     )
@@ -79,6 +83,7 @@ export function registerMailboxCmds(
           base: options.base,
           compat: options.compat || false,
           outboxer: options.outboxer || false,
+          multisigMode: options.multisigMode,
           cesrBodyMode: options.cesrBodyMode,
           headDirPath: options.headDir,
           passcode: options.passcode,

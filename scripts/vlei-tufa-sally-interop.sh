@@ -481,14 +481,20 @@ registry_round() {
   run tufa vc registry status -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}"
 }
 
-multisig_rpy_round() {
+multisig_mailbox_add_round() {
   local store1="$1"
   local store2="$2"
   local group="$3"
-  local eid="$4"
-  run tufa multisig rpy -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --eid "${eid}" --role mailbox --approval-timeout 0
+  local mailbox_oobi="$4"
+  local mailbox_alias="$5"
+  resolve_oobi "${store1}" "${mailbox_oobi}" "${mailbox_alias}"
+  run tufa mailbox add -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" -w "${mailbox_alias}" --multisig-mode propose
   run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -Y --poll-turns 80 --poll-budget-ms 2000
   run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -Y --poll-turns 80 --poll-budget-ms 2000
+  resolve_oobi "${store1}" "${mailbox_oobi}" "${mailbox_alias}"
+  resolve_oobi "${store2}" "${mailbox_oobi}" "${mailbox_alias}"
+  run tufa mailbox add -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" -w "${mailbox_alias}" --multisig-mode complete
+  run tufa mailbox add -n "${store2}" --head-dir "${TUFA_HEAD}" -a "${group}" -w "${mailbox_alias}" --multisig-mode complete
 }
 
 credential_round() {
@@ -859,9 +865,7 @@ JSON
 
   multisig_round geda geda1 geda-m1 geda2 geda-m2 geda "${GEDA_WITS[@]}"
   GEDA_PRE="$(aid geda1 geda)"
-  multisig_rpy_round geda1 geda2 geda "${TW1_PRE}"
-  add_mailbox geda1 geda "${TW1_MAILBOX_OOBI}" geda-witness-mailbox
-  add_mailbox geda2 geda "${TW1_MAILBOX_OOBI}" geda-witness-mailbox
+  multisig_mailbox_add_round geda1 geda2 geda "${TW1_MAILBOX_OOBI}" geda-witness-mailbox
   GEDA_MBOX="$(mailbox_oobi geda1 geda)"
   resolve_oobi qvi1 "${GEDA_MBOX}" geda
   resolve_oobi qvi2 "${GEDA_MBOX}" geda
@@ -872,12 +876,8 @@ JSON
   LE_PRE="$(aid le1 le)"
   OOR_PRE="$(aid oor oor)"
 
-  multisig_rpy_round qvi1 qvi2 qvi "${TW2_PRE}"
-  multisig_rpy_round le1 le2 le "${LE_MAILBOX_PRE}"
-  add_mailbox qvi1 qvi "${TW2_MAILBOX_OOBI}" qvi-witness-mailbox
-  add_mailbox qvi2 qvi "${TW2_MAILBOX_OOBI}" qvi-witness-mailbox
-  add_mailbox le1 le "${LE_MAILBOX_OOBI}" le-keripy-mailbox
-  add_mailbox le2 le "${LE_MAILBOX_OOBI}" le-keripy-mailbox
+  multisig_mailbox_add_round qvi1 qvi2 qvi "${TW2_MAILBOX_OOBI}" qvi-witness-mailbox
+  multisig_mailbox_add_round le1 le2 le "${LE_MAILBOX_OOBI}" le-keripy-mailbox
 
   QVI_MBOX="$(mailbox_oobi qvi1 qvi)"
   LE_MBOX="$(mailbox_oobi le1 le)"

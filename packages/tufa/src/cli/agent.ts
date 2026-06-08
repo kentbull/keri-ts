@@ -45,8 +45,8 @@ function preferredControllerUrl(hab: Hab): string | null {
 }
 
 function controllerStartupComplete(hby: Habery, hab: Hab): boolean {
-  return controllerRoleEnabled(hby, hab.pre) &&
-    preferredControllerUrl(hab) !== null;
+  return controllerRoleEnabled(hby, hab.pre)
+    && preferredControllerUrl(hab) !== null;
 }
 
 function schemaInputsFromArgs(args: Record<string, unknown>): {

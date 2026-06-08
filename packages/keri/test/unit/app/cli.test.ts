@@ -7,6 +7,7 @@ import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
+import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
@@ -160,6 +161,19 @@ Deno.test("CLI - multisig runtime knobs validate before runtime startup", async 
   await assertOperationThrows(
     multisigJoinCommand({ name: "store", pollBudgetMs: 1.5 }),
     "poll budget milliseconds must be a positive integer",
+  );
+});
+
+Deno.test("CLI - endpoint role multisig mode validates before runtime startup", async () => {
+  await assertOperationThrows(
+    endsAddCommand({
+      name: "store",
+      alias: "group",
+      role: "mailbox",
+      eid: "Eendpoint",
+      multisigMode: "invalid",
+    }),
+    "--multisig-mode must be propose or complete",
   );
 });
 

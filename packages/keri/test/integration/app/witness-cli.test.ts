@@ -392,7 +392,7 @@ Deno.test("CLI integration - deployable witness start supports receipt-endpoint 
     );
     assertStringIncludes(mailboxListed.stdout, witness1Pre);
 
-    await run(function* () {
+    await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,
@@ -574,11 +574,11 @@ Deno.test("CLI integration - receipt-endpoint rotation and interaction converge 
         controllerAlias,
         "--receipt-endpoint",
         "--data",
-        '{"anchor":"acdc"}',
+        "{\"anchor\":\"acdc\"}",
       ]),
     );
 
-    await run(function* () {
+    await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,
@@ -761,7 +761,7 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
         args: [
           "--receipt-endpoint",
           "--data",
-          '{"anchor":"step-1"}',
+          "{\"anchor\":\"step-1\"}",
         ],
       },
       {
@@ -777,7 +777,7 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
         args: [
           "--receipt-endpoint",
           "--data",
-          '{"anchor":"step-2"}',
+          "{\"anchor\":\"step-2\"}",
         ],
       },
       {
@@ -793,7 +793,7 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
         args: [
           "--receipt-endpoint",
           "--data",
-          '{"anchor":"step-3"}',
+          "{\"anchor\":\"step-3\"}",
         ],
       },
     ] as const;
@@ -818,7 +818,7 @@ Deno.test("CLI integration - successive rotate and interact events stay fully wi
       );
     }
 
-    await run(function* () {
+    await run(function*() {
       const controllerHby = yield* createHabery({
         name: controllerName,
         headDirPath,

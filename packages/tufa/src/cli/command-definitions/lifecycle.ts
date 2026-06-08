@@ -718,7 +718,7 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
 
   multisig
     .command("rpy")
-    .description("Propose a group multisig endpoint-role reply")
+    .description("Propose a group endpoint-role authorization reply")
     .requiredOption("-n, --name <name>", "Keystore name")
     .option(
       "-a, --alias <alias>",

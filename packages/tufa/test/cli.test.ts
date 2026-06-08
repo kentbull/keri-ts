@@ -7,7 +7,7 @@ import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
-import { mailboxStartCommand } from "../src/cli/mailbox.ts";
+import { mailboxAddCommand, mailboxStartCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
 interface CmdResult {
@@ -228,6 +228,86 @@ Deno.test("tufa/cli - multisig runtime knobs dispatch renamed args", () => {
   assertEquals(rpy.name, "multisig.rpy");
   assertEquals(rpy.args.approvalTimeoutSeconds, 0);
   assertEquals("wait" in rpy.args, false);
+
+  const mailboxPropose = parseCommandSelection([
+    "mailbox",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-w",
+    "mailbox",
+    "--multisig-mode",
+    "propose",
+  ]);
+  assertEquals(mailboxPropose.name, "mailbox.add");
+  assertEquals(mailboxPropose.args.multisigMode, "propose");
+
+  const mailboxComplete = parseCommandSelection([
+    "mailbox",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-w",
+    "mailbox",
+    "--multisig-mode",
+    "complete",
+  ]);
+  assertEquals(mailboxComplete.name, "mailbox.add");
+  assertEquals(mailboxComplete.args.multisigMode, "complete");
+
+  const endsPropose = parseCommandSelection([
+    "ends",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-r",
+    "mailbox",
+    "-e",
+    "Eendpoint",
+    "--multisig-mode",
+    "propose",
+  ]);
+  assertEquals(endsPropose.name, "ends.add");
+  assertEquals(endsPropose.args.multisigMode, "propose");
+
+  const endsComplete = parseCommandSelection([
+    "ends",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-r",
+    "mailbox",
+    "-e",
+    "Eendpoint",
+    "--multisig-mode",
+    "complete",
+  ]);
+  assertEquals(endsComplete.name, "ends.add");
+  assertEquals(endsComplete.args.multisigMode, "complete");
+});
+
+Deno.test("tufa/cli - invalid mailbox multisig mode is rejected", async () => {
+  await assertRejects(
+    () =>
+      run(() =>
+        mailboxAddCommand({
+          name: "store",
+          alias: "group",
+          mailbox: "mailbox",
+          multisigMode: "invalid",
+        })
+      ),
+    ValidationError,
+    "--multisig-mode must be propose or complete",
+  );
 });
 
 Deno.test("tufa/cli - old runtime knob flags are not accepted", () => {

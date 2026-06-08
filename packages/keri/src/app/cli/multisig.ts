@@ -19,12 +19,10 @@ import {
   Seqner,
   SerderACDC,
   SerderKERI,
-  Siger,
   type ThresholdSith,
   TraitDex,
 } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { reply as replyEvent } from "../../core/protocol-eventing.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { RegistryRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";
@@ -35,6 +33,15 @@ import { Tevery } from "../../vdr/eventing.ts";
 import { type AgentRuntime, createAgentRuntime, processMailboxTurn, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import {
+  endpointRoleAccepted,
+  groupEndorseReply,
+  groupEventKeys,
+  groupSigningMembers,
+  localGroupMember,
+  proposeGroupEndpointRole,
+  signLocalGroupEvent,
+} from "../endpoint-roleing.ts";
+import {
   MULTISIG_ICP_ROUTE,
   MULTISIG_ISS_ROUTE,
   MULTISIG_IXN_ROUTE,
@@ -42,7 +49,6 @@ import {
   MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
   multisigPathedAttachment,
-  multisigRpyExn,
 } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../query-transport.ts";
@@ -631,24 +637,10 @@ export function* multisigRpyCommand(
     const { hby, runtime } = yield* openRuntime(commandArgs, name);
     try {
       const groupHab = requireHabByAlias(hby, group);
-      const member = localGroupMember(hby, groupHab.pre);
-      const rpySerder = replyEvent(
-        commandArgs.allow === false ? "/end/role/cut" : "/end/role/add",
-        { cid: groupHab.pre, role, eid },
-        { pre: groupHab.pre },
-      );
-      const localRpy = groupEndorseReply(hby, groupHab.pre, rpySerder);
-      runtime.reactor.processChunk(localRpy, { local: true });
-      runtime.reactor.processEscrowsOnce();
-
-      const [exn, attachments] = multisigRpyExn(groupHab, member, localRpy);
-      const deliveries = yield* publishProposalEmbeds(
+      const result = yield* proposeGroupEndpointRole(
         runtime,
-        member,
-        groupSigningMembers(hby, groupHab.pre),
-        MULTISIG_RPY_ROUTE,
-        { gid: groupHab.pre },
-        { rpy: localRpy },
+        groupHab,
+        { eid, role, allow: commandArgs.allow },
       );
       const accepted = commandArgs.approvalTimeoutSeconds > 0
         ? yield* waitForReplyAcceptance(
@@ -659,15 +651,15 @@ export function* multisigRpyCommand(
           eid,
           commandArgs,
         )
-        : replyRoleAccepted(hby, groupHab.pre, role, eid);
+        : result.accepted;
 
       console.log(JSON.stringify({
-        route: MULTISIG_RPY_ROUTE,
-        said: exn.said,
-        group: groupHab.pre,
+        route: result.route,
+        said: result.said,
+        group: result.group,
         accepted,
-        deliveries,
-        attachmentBytes: attachments.length,
+        deliveries: result.deliveries,
+        attachmentBytes: result.attachmentBytes,
       }));
     } finally {
       yield* runtime.close();
@@ -938,7 +930,7 @@ function* approveRpyProposal(
     payload,
     { rpy: localRpy },
   );
-  const accepted = replyRoleAccepted(hby, attrs.cid, attrs.role, attrs.eid);
+  const accepted = endpointRoleAccepted(hby, attrs.cid, attrs.role, attrs.eid);
 
   return {
     route,
@@ -1367,27 +1359,6 @@ function requireVerifier(runtime: AgentRuntime): Verifier {
   return runtime.vdr.vry;
 }
 
-function groupEndorseReply(
-  hby: Habery,
-  groupPre: string,
-  serder: SerderKERI,
-): Uint8Array {
-  const keys = groupEventKeys(hby, groupPre, serder);
-  const sigers = signLocalGroupEvent(hby, serder, groupSigningMembers(hby, groupPre), keys);
-  const kever = hby.db.getKever(groupPre);
-  const estSaid = kever?.lastEst.d || kever?.said;
-  const estEvent = estSaid ? hby.db.getEvtSerder(groupPre, estSaid) : null;
-  const seqner = estEvent?.sner;
-  if (!kever || !estSaid || !seqner) {
-    throw new ValidationError(`Missing group establishment state for ${groupPre}.`);
-  }
-  return messagize(serder, {
-    sigers,
-    seal: { i: kever.prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
-    pipelined: true,
-  });
-}
-
 function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {
   const attrs = serder.ked?.a as Record<string, unknown> | undefined;
   const cid = typeof attrs?.cid === "string" ? attrs.cid : "";
@@ -1399,15 +1370,6 @@ function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string 
   return { cid, role, eid };
 }
 
-function replyRoleAccepted(
-  hby: Habery,
-  cid: string,
-  role: string,
-  eid: string,
-): boolean {
-  return hby.db.ends.get([cid, role, eid])?.allowed === true;
-}
-
 function* waitForReplyAcceptance(
   hby: Habery,
   runtime: AgentRuntime,
@@ -1416,7 +1378,7 @@ function* waitForReplyAcceptance(
   eid: string,
   args: MultisigRpyArgs,
 ): Operation<boolean> {
-  if (replyRoleAccepted(hby, groupPre, role, eid)) {
+  if (endpointRoleAccepted(hby, groupPre, role, eid)) {
     return true;
   }
   const pollTurns = approvalTimeoutTurns(args.approvalTimeoutSeconds);
@@ -1428,36 +1390,14 @@ function* waitForReplyAcceptance(
       pollTurns: 1,
       pollBudgetMs: 1_000,
     });
-    if (replyRoleAccepted(hby, groupPre, role, eid)) {
+    if (endpointRoleAccepted(hby, groupPre, role, eid)) {
       return true;
     }
     yield* processMailboxTurn(runtime, { budgetMs: 1_000 });
     runtime.reactor.processEscrowsOnce();
     yield* sleep(250);
   }
-  return replyRoleAccepted(hby, groupPre, role, eid);
-}
-
-function groupEventKeys(
-  hby: Habery,
-  groupPre: string,
-  serder: SerderKERI,
-): string[] {
-  if (
-    serder.ilk === Ilks.icp
-    || serder.ilk === Ilks.dip
-    || serder.ilk === Ilks.rot
-    || serder.ilk === Ilks.drt
-  ) {
-    return serder.verfers.map((verfer) => verfer.qb64);
-  }
-  const kever = hby.db.getKever(groupPre);
-  if (!kever) {
-    throw new ValidationError(
-      `Group ${groupPre} must be accepted before joining interaction proposals.`,
-    );
-  }
-  return kever.verfers.map((verfer) => verfer.qb64);
+  return endpointRoleAccepted(hby, groupPre, role, eid);
 }
 
 function eventAccepted(hby: Habery, serder: SerderKERI): boolean {
@@ -1497,33 +1437,6 @@ function routeForKelEvent(serder: SerderKERI): MultisigKelRoute | null {
   }
 }
 
-function signLocalGroupEvent(
-  hby: Habery,
-  serder: SerderKERI,
-  smids: readonly string[],
-  keys: readonly string[],
-): Siger[] {
-  const sigers: Siger[] = [];
-  for (const [index, mid] of smids.entries()) {
-    const member = hby.habs.get(mid);
-    const key = keys[index];
-    if (!member || !key) {
-      continue;
-    }
-    sigers.push(
-      ...(member.mgr.sign(serder.raw, {
-        pubs: [key],
-        indexed: true,
-        indices: [index],
-      }) as Siger[]),
-    );
-  }
-  if (sigers.length === 0) {
-    throw new ValidationError("No local member key can sign this group event.");
-  }
-  return sigers;
-}
-
 function findLocalMember(hby: Habery, members: readonly string[]): Hab | null {
   for (const member of members) {
     const hab = hby.habs.get(member);
@@ -1532,24 +1445,6 @@ function findLocalMember(hby: Habery, members: readonly string[]): Hab | null {
     }
   }
   return null;
-}
-
-function localGroupMember(hby: Habery, groupPre: string): Hab {
-  const record = hby.db.getHab(groupPre);
-  const member = record?.mid ? hby.habs.get(record.mid) : null;
-  if (!member) {
-    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
-  }
-  return member;
-}
-
-function groupSigningMembers(hby: Habery, groupPre: string): string[] {
-  const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);
-  if (stored.length > 0) {
-    return stored;
-  }
-  const record = hby.db.getHab(groupPre);
-  return record?.smids ?? [];
 }
 
 function uniqueMembers(members: readonly string[]): string[] {

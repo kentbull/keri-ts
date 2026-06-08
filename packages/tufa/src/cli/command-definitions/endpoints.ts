@@ -23,6 +23,10 @@ function registerEndsCmds(program: Command, dispatch: CommandDispatch): void {
     .requiredOption("-a, --alias <alias>", "Local identifier alias")
     .requiredOption("-r, --role <role>", "Endpoint role")
     .requiredOption("-e, --eid <eid>", "Endpoint AID")
+    .option(
+      "--multisig-mode <mode>",
+      "Group endpoint role mode: propose or complete",
+    )
     .option("-b, --base <base>", "Optional base path prefix")
     .option("--compat", "Use KERIpy compatibility-mode path layout")
     .option(
@@ -38,6 +42,7 @@ function registerEndsCmds(program: Command, dispatch: CommandDispatch): void {
           alias: options.alias,
           role: options.role,
           eid: options.eid,
+          multisigMode: options.multisigMode,
           base: options.base,
           compat: options.compat || false,
           headDirPath: options.headDir,

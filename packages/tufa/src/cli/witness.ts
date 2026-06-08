@@ -369,10 +369,10 @@ function resolveWitnessStartupMaterial(
       source: "config" as const,
     };
     if (
-      cli &&
-      (cli.httpUrl !== configured.httpUrl ||
-        cli.tcpUrl !== configured.tcpUrl ||
-        cli.datetime !== configured.datetime)
+      cli
+      && (cli.httpUrl !== configured.httpUrl
+        || cli.tcpUrl !== configured.tcpUrl
+        || cli.datetime !== configured.datetime)
     ) {
       throw new ValidationError(
         `Config section '${args
@@ -408,8 +408,8 @@ function validateWitnessHabitat(hby: Habery, hab: Hab): void {
     );
   }
   if (
-    record?.mid || (record?.smids?.length ?? 0) > 0 ||
-    (record?.rmids?.length ?? 0) > 0
+    record?.mid || (record?.smids?.length ?? 0) > 0
+    || (record?.rmids?.length ?? 0) > 0
   ) {
     throw new ValidationError(
       `Witness alias ${hab.name} must be a local single-identifier habitat.`,
@@ -466,12 +466,12 @@ function witnessIdentityComplete(
   startup: WitnessStartupMaterial,
 ): boolean {
   const stored = storedWitnessStartupMaterial(hby, pre);
-  return !!stored &&
-    stored.httpUrl === normalizeHttpUrl(startup.httpUrl) &&
-    stored.tcpUrl === normalizeTcpUrl(startup.tcpUrl) &&
-    roleEnabled(hby, pre, EndpointRoles.controller, pre) &&
-    roleEnabled(hby, pre, EndpointRoles.witness, pre) &&
-    roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
+  return !!stored
+    && stored.httpUrl === normalizeHttpUrl(startup.httpUrl)
+    && stored.tcpUrl === normalizeTcpUrl(startup.tcpUrl)
+    && roleEnabled(hby, pre, EndpointRoles.controller, pre)
+    && roleEnabled(hby, pre, EndpointRoles.witness, pre)
+    && roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
 }
 
 /** Persist self location and role replies required before serving witness traffic. */
@@ -665,12 +665,12 @@ function bindableAdvertiseHost(host?: string): string {
 }
 
 function isBindableLiteralHost(hostname: string): boolean {
-  return hostname === "localhost" ||
-    hostname === "0.0.0.0" ||
-    hostname === "::" ||
-    hostname === "::1" ||
-    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
-    hostname.includes(":");
+  return hostname === "localhost"
+    || hostname === "0.0.0.0"
+    || hostname === "::"
+    || hostname === "::1"
+    || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
+    || hostname.includes(":");
 }
 
 function canonicalOrigin(url: string): string {
