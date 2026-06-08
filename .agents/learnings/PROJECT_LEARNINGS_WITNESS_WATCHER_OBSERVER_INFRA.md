@@ -67,6 +67,9 @@ release, and interoperability operations.
     correctness. `@keri-ts/tufa` can build, smoke, dry-run, and sign provenance
     successfully while still failing publish until the npm token has permission
     for the `@keri-ts` scope.
+22. Package smoke CI should install the local npm tarballs once per runtime
+    image and exercise both library and CLI surfaces from that installed graph.
+    Keep LMDB-v1 interop `node_modules` cached behind its own key boundary.
 
 ## Use This Doc For
 
@@ -144,3 +147,10 @@ release, and interoperability operations.
 - `@keri-ts/tufa@0.6.0` remains blocked at npm publish by `@keri-ts` scope
   authorization despite passing quality, build, npm dry-run, Docker smoke, and
   artifact upload in CI.
+
+### 2026-06-08 - CI Cache And Package Smoke Boundaries Were Split
+
+- PR CI now keeps Deno deps, normal `node_modules`, and LMDB-v1 interop
+  `node_modules` in separate cache families.
+- Package smoke checks install the local tarballs once per Node image and then
+  exercise both `keri-ts` exports and the `@keri-ts/tufa` CLI from that graph.

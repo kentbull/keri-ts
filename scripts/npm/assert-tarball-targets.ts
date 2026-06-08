@@ -29,6 +29,7 @@ function parseArgs(args: string[]): { tarballPath: string; includeBin: boolean }
 async function runTar(args: string[]): Promise<TarOutput> {
   const output = await new Deno.Command("tar", {
     args,
+    clearEnv: true,
     stdout: "piped",
     stderr: "piped",
   }).output();
