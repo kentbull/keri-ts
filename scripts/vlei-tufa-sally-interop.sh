@@ -18,6 +18,12 @@ SALLY_IMAGE="${SALLY_IMAGE:-tufa/sally-cli:local}"
 SALLY_BASE_IMAGE="${SALLY_BASE_IMAGE:-w3c-crosswalk/isomer-python:local}"
 SALLY_LOGLEVEL="${SALLY_LOGLEVEL:-DEBUG}"
 SALLY_COUNTER_PROFILE="${SALLY_COUNTER_PROFILE:-legacy}"
+SALLY_NAME="${SALLY_NAME:-sally}"
+SALLY_ALIAS="${SALLY_ALIAS:-${SALLY_NAME}}"
+SALLY_CONFIG_FILE="${SALLY_CONFIG_FILE:-${SALLY_NAME}}"
+SALLY_SALT="${SALLY_SALT:-0ABVqAtad0CBkhDhCEPd514T}"
+SALLY_PASSCODE="${SALLY_PASSCODE:-4TBjjhmKu9oeDp49J7Xdy}"
+SALLY_PRE="${SALLY_PRE:-EBbCO10AWGD9OPEEEbC0iYaxFuilR4hA6-xEyjJTjd6K}"
 
 TUFACMD=(deno run --allow-all --unstable-ffi "${ROOT_DIR}/packages/tufa/mod.ts")
 
@@ -42,6 +48,7 @@ WES_OOBI="http://127.0.0.1:5644/oobi/${WES_PRE}/controller"
 PIDS=()
 PID_NAMES=()
 DOCKER_CONTAINERS=()
+RESERVED_DOCKER_PORTS=()
 DOCKER_NETWORK=""
 
 log() {
@@ -215,6 +222,47 @@ random_port() {
   fail "could not allocate an unused local port"
 }
 
+docker_port_is_listed() {
+  local port="$1"
+  docker ps --format '{{.Ports}}' 2>/dev/null | grep -Eq "(^|[, ])([0-9.]+|\\[::\\]|:::):${port}->"
+}
+
+docker_can_publish_port() {
+  local port="$1"
+  local probe="tufa-port-probe-${RUN_ID##*-}-${port}"
+  docker rm -f "${probe}" >/dev/null 2>&1 || true
+  if ! docker run -d --rm --name "${probe}" -p "${port}:9" --entrypoint /bin/sh "${SALLY_IMAGE}" -c 'sleep 2' >/dev/null 2>&1; then
+    docker rm -f "${probe}" >/dev/null 2>&1 || true
+    return 1
+  fi
+  docker rm -f "${probe}" >/dev/null 2>&1 || true
+}
+
+docker_port_is_reserved() {
+  local port="$1"
+  local reserved
+  for reserved in "${RESERVED_DOCKER_PORTS[@]:-}"; do
+    [[ "${reserved}" != "${port}" ]] || return 0
+  done
+  return 1
+}
+
+random_docker_port() {
+  local port
+  for _ in {1..80}; do
+    port="$(random_port)"
+    if docker_port_is_reserved "${port}" || docker_port_is_listed "${port}"; then
+      continue
+    fi
+    if docker_can_publish_port "${port}"; then
+      RESERVED_DOCKER_PORTS+=("${port}")
+      printf '%s\n' "${port}"
+      return 0
+    fi
+  done
+  fail "could not allocate a Docker-publishable local port"
+}
+
 tufa() {
   "${TUFACMD[@]}" "$@"
 }
@@ -374,9 +422,9 @@ multisig_round() {
     '{aids: [$a, $b], isith: "2", nsith: "2", toad: 2, wits: $wits}' \
     >"${cfg}"
 
-  run tufa multisig incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${member1}" -g "${group}" -f "${cfg}" --wait 1
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --max-turns 80 --budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --max-turns 80 --budget-ms 2000 --receipt-endpoint
+  run tufa multisig incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${member1}" -g "${group}" -f "${cfg}" --approval-timeout 1
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
 }
 
 delegated_qvi_multisig_round() {
@@ -398,15 +446,15 @@ delegated_qvi_multisig_round() {
 
   qvi1_log="${LOG_DIR}/qvi-delegated-incept-qvi1.log"
   start_cmd_bg qvi1_pid qvi-delegated-incept-qvi1 "${qvi1_log}" \
-    tufa multisig incept -n qvi1 --head-dir "${TUFA_HEAD}" -a qvi-m1 -g qvi -f "${cfg}" --proxy qvi-m1 --wait 120
+    tufa multisig incept -n qvi1 --head-dir "${TUFA_HEAD}" -a qvi-m1 -g qvi -f "${cfg}" --proxy qvi-m1 --approval-timeout 120
 
   qvi2_log="${LOG_DIR}/qvi-delegated-join-qvi2.log"
   start_cmd_bg qvi2_pid qvi-delegated-join-qvi2 "${qvi2_log}" \
-    tufa multisig join -n qvi2 --head-dir "${TUFA_HEAD}" -g qvi -Y --max-turns 120 --budget-ms 2000 --receipt-endpoint --proxy qvi-m2
+    tufa multisig join -n qvi2 --head-dir "${TUFA_HEAD}" -g qvi -Y --poll-turns 120 --poll-budget-ms 2000 --receipt-endpoint --proxy qvi-m2
 
   run tufa delegate confirm -n geda1 --head-dir "${TUFA_HEAD}" -a geda --interact --auto
-  run tufa multisig join -n geda2 --head-dir "${TUFA_HEAD}" -g geda -Y --max-turns 120 --budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n geda1 --head-dir "${TUFA_HEAD}" -g geda -Y --max-turns 120 --budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n geda2 --head-dir "${TUFA_HEAD}" -g geda -Y --poll-turns 120 --poll-budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n geda1 --head-dir "${TUFA_HEAD}" -g geda -Y --poll-turns 120 --poll-budget-ms 2000 --receipt-endpoint
   run tufa delegate confirm -n geda1 --head-dir "${TUFA_HEAD}" -a geda --interact --auto
   run tufa delegate confirm -n geda2 --head-dir "${TUFA_HEAD}" -a geda --interact --auto
   wait_cmd_bg "${qvi2_pid}" "${qvi2_log}"
@@ -427,8 +475,8 @@ registry_round() {
   local group="$3"
   local registry="$4"
   run tufa vc registry incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --registry-name "${registry}" --usage "${registry}"
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --max-turns 80 --budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --max-turns 80 --budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
   run tufa vc registry status -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}"
   run tufa vc registry status -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}"
 }
@@ -438,9 +486,9 @@ multisig_rpy_round() {
   local store2="$2"
   local group="$3"
   local eid="$4"
-  run tufa multisig rpy -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --eid "${eid}" --role mailbox --wait 0
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -Y --max-turns 80 --budget-ms 2000
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -Y --max-turns 80 --budget-ms 2000
+  run tufa multisig rpy -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --eid "${eid}" --role mailbox --approval-timeout 0
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -Y --poll-turns 80 --poll-budget-ms 2000
+  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -Y --poll-turns 80 --poll-budget-ms 2000
 }
 
 credential_round() {
@@ -460,8 +508,8 @@ credential_round() {
   [[ -n "${rules_file}" ]] && args+=(--rules "@${rules_file}")
   capture output tufa "${args[@]}"
   printf '%s\n' "${output}"
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --max-turns 80 --budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --max-turns 80 --budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
+  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
   printf -v "${__said_var}" '%s' "$(json_field "${output}" '.said')"
 }
 
@@ -472,7 +520,7 @@ poll_saved() {
   local out
   local i
   for i in $(seq 1 30); do
-    capture out tufa ipex poll -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" --max-turns 8 --budget-ms 2000
+    capture out tufa ipex poll -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" --poll-turns 8 --poll-budget-ms 2000
     printf '%s\n' "${out}"
     if printf '%s\n' "${out}" | awk '/^\{/ { line=$0 } END { print line }' | jq -e --arg said "${said}" '.saved | index($said)' >/dev/null 2>&1; then
       return 0
@@ -489,9 +537,9 @@ grant_group_credential() {
   local recipient="$4"
   local said="$5"
   log "starting group IPEX grant ${said} from ${group} to ${recipient}"
-  run tufa ipex grant -n "${issuer1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${recipient}" --said "${said}" --delivery indirect --wait 0
-  run tufa ipex join -n "${issuer2}" --head-dir "${TUFA_HEAD}" --auto --max-turns 100 --budget-ms 2000
-  run tufa ipex join -n "${issuer1}" --head-dir "${TUFA_HEAD}" --auto --max-turns 100 --budget-ms 2000
+  run tufa ipex grant -n "${issuer1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${recipient}" --said "${said}" --delivery indirect --approval-timeout 0
+  run tufa ipex join -n "${issuer2}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000
+  run tufa ipex join -n "${issuer1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000
 }
 
 present_group_to_sally() {
@@ -501,9 +549,9 @@ present_group_to_sally() {
   local said="$4"
   local expected="$5"
   log "presenting ${expected} ${said} from ${group} to Sally"
-  run tufa ipex grant -n "${holder1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${SALLY_PRE}" --said "${said}" --delivery direct --wait 0 --counter-profile "${SALLY_COUNTER_PROFILE}"
-  run tufa ipex join -n "${holder2}" --head-dir "${TUFA_HEAD}" --auto --max-turns 100 --budget-ms 2000 --counter-profile "${SALLY_COUNTER_PROFILE}"
-  run tufa ipex join -n "${holder1}" --head-dir "${TUFA_HEAD}" --auto --max-turns 100 --budget-ms 2000 --delivery direct --counter-profile "${SALLY_COUNTER_PROFILE}"
+  run tufa ipex grant -n "${holder1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${SALLY_PRE}" --said "${said}" --delivery direct --approval-timeout 0 --counter-profile "${SALLY_COUNTER_PROFILE}"
+  run tufa ipex join -n "${holder2}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --counter-profile "${SALLY_COUNTER_PROFILE}"
+  run tufa ipex join -n "${holder1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --delivery direct --counter-profile "${SALLY_COUNTER_PROFILE}"
   wait_hook "${expected}"
 }
 
@@ -540,13 +588,52 @@ wait_hook() {
   fail "Sally hook did not record ${expected}"
 }
 
+assert_sally_oobi_endpoint_replies() {
+  local bytes="${RUN_DIR}/sally-oobi.cesr"
+  local annotated="${RUN_DIR}/sally-oobi.annotated"
+
+  log "verifying Sally OOBI includes signed endpoint replies"
+  if ! curl -fsS -o "${bytes}" "${SALLY_OOBI}"; then
+    capture_docker_logs
+    fail "unable to fetch Sally OOBI ${SALLY_OOBI}"
+  fi
+  if ! "${TUFACMD[@]}" annotate --in "${bytes}" --out "${annotated}" --pretty; then
+    capture_docker_logs
+    fail "unable to annotate Sally OOBI ${SALLY_OOBI}"
+  fi
+
+  if ! grep -Eq '"r"[[:space:]]*:[[:space:]]*"/loc/scheme"' "${annotated}"; then
+    sed -n '1,220p' "${annotated}" >&2 || true
+    capture_docker_logs
+    fail "Sally OOBI ${SALLY_OOBI} is missing /loc/scheme"
+  fi
+  if ! grep -Eq '"url"[[:space:]]*:[[:space:]]*"http://127\.0\.0\.1:'"${SALLY_PORT}"'/"' "${annotated}"; then
+    sed -n '1,220p' "${annotated}" >&2 || true
+    capture_docker_logs
+    fail "Sally /loc/scheme does not advertise host-reachable curl http://127.0.0.1:${SALLY_PORT}/"
+  fi
+  if ! grep -Eq '"r"[[:space:]]*:[[:space:]]*"/end/role/add"' "${annotated}"; then
+    sed -n '1,220p' "${annotated}" >&2 || true
+    capture_docker_logs
+    fail "Sally OOBI ${SALLY_OOBI} is missing /end/role/add"
+  fi
+  if ! grep -Eq '"role"[[:space:]]*:[[:space:]]*"controller"' "${annotated}"; then
+    sed -n '1,220p' "${annotated}" >&2 || true
+    capture_docker_logs
+    fail "Sally /end/role/add does not advertise the controller role"
+  fi
+}
+
 start_sally_stack() {
   local conf_dir="${RUN_DIR}/sally-conf"
+  local conf_cf_dir="${conf_dir}/keri/cf"
   local sally_var="${RUN_DIR}/sally-var"
-  mkdir -p "${conf_dir}" "${sally_var}"
-  SALLY_VLEI_PORT="$(random_port)"
-  SALLY_HOOK_PORT="$(random_port)"
-  SALLY_PORT="$(random_port)"
+  mkdir -p "${conf_cf_dir}" "${sally_var}"
+  ensure_sally_image
+  SALLY_VLEI_PORT="$(random_docker_port)"
+  SALLY_HOOK_PORT="$(random_docker_port)"
+  SALLY_PORT="$(random_docker_port)"
+  log "Sally ports vLEI=${SALLY_VLEI_PORT} hook=${SALLY_HOOK_PORT} server=${SALLY_PORT}"
   local suffix="${RUN_ID##*-}"
   DOCKER_NETWORK="tufa-sally-${suffix}"
   SALLY_VLEI_CONTAINER="tufa-vlei-${suffix}"
@@ -554,12 +641,15 @@ start_sally_stack() {
   SALLY_CONTAINER="tufa-sally-${suffix}"
   DOCKER_CONTAINERS=("${SALLY_CONTAINER}" "${SALLY_HOOK_CONTAINER}" "${SALLY_VLEI_CONTAINER}")
 
-  cat >"${conf_dir}/direct-sally.json" <<JSON
+  [[ "${SALLY_NAME}" == "${SALLY_ALIAS}" ]] || fail "Sally name ${SALLY_NAME} must match alias ${SALLY_ALIAS} for deterministic config loading"
+  [[ "${SALLY_CONFIG_FILE}" == "${SALLY_NAME}" ]] || fail "Sally config file ${SALLY_CONFIG_FILE} must match name/alias ${SALLY_NAME}"
+
+  cat >"${conf_cf_dir}/${SALLY_CONFIG_FILE}.json" <<JSON
 {
   "dt": "2022-10-31T12:59:57.823350+00:00",
-  "direct-sally": {
+  "${SALLY_NAME}": {
     "dt": "2022-01-20T12:57:59.823350+00:00",
-    "curls": ["http://sally:9723/"]
+    "curls": ["http://127.0.0.1:${SALLY_PORT}/"]
   },
   "iurls": [],
   "durls": [
@@ -594,18 +684,11 @@ JSON
   cat >"${conf_dir}/entry-point.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-kli init --name "${SALLY}" --salt "${SALLY_SALT}" --passcode "${SALLY_PASSCODE}" --config-dir /sally/conf --config-file direct-sally.json
-kli incept --name "${SALLY}" --alias "${SALLY}" --passcode "${SALLY_PASSCODE}" --file /sally/conf/sally-incept-no-wits.json
-while IFS= read -r oobi; do
-  [[ -n "${oobi}" ]] || continue
-  kli oobi resolve --name "${SALLY}" --passcode "${SALLY_PASSCODE}" --oobi "${oobi}"
-done </sally/conf/schema-oobis.txt
-sally server start --name "${SALLY}" --alias "${SALLY}" --passcode "${SALLY_PASSCODE}" --config-dir /sally/conf --config-file direct-sally.json --web-hook "${WEBHOOK_HOST}" --auth "${GEDA_PRE}" --loglevel "${SALLY_LOGLEVEL}" --direct
+sally server start --name "${SALLY_NAME}" --alias "${SALLY_ALIAS}" --passcode "${SALLY_PASSCODE}" --salt "${SALLY_SALT}" --config-dir /sally/conf --config-file "${SALLY_CONFIG_FILE}" --incept-file sally-incept-no-wits.json --web-hook "${WEBHOOK_HOST}" --auth "${GEDA_PRE}" --loglevel "${SALLY_LOGLEVEL}" --direct
 SH
   chmod +x "${conf_dir}/entry-point.sh"
 
   run docker network create "${DOCKER_NETWORK}"
-  ensure_sally_image
   run docker run -d --rm --name "${SALLY_VLEI_CONTAINER}" --network "${DOCKER_NETWORK}" -p "${SALLY_VLEI_PORT}:7723" \
     "${SALLY_VLEI_IMAGE}" vLEI-server -s /vLEI/schema -c /vLEI/credentials -o /vLEI/oobis
   wait_http "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${QVI_SCHEMA}" 120
@@ -617,9 +700,11 @@ SH
   run docker run -d --rm --name "${SALLY_CONTAINER}" --network "${DOCKER_NETWORK}" -p "${SALLY_PORT}:9723" \
     -v "${conf_dir}:/sally/conf" \
     -v "${sally_var}:/usr/local/var/keri" \
-    -e SALLY=direct-sally \
-    -e SALLY_SALT=0ABVqAtad0CBkhDhCEPd514T \
-    -e SALLY_PASSCODE=4TBjjhmKu9oeDp49J7Xdy \
+    -e "SALLY_NAME=${SALLY_NAME}" \
+    -e "SALLY_ALIAS=${SALLY_ALIAS}" \
+    -e "SALLY_CONFIG_FILE=${SALLY_CONFIG_FILE}" \
+    -e "SALLY_SALT=${SALLY_SALT}" \
+    -e "SALLY_PASSCODE=${SALLY_PASSCODE}" \
     -e "SALLY_LOGLEVEL=${SALLY_LOGLEVEL}" \
     -e "WEBHOOK_HOST=http://${SALLY_HOOK_CONTAINER}:9923/" \
     -e "GEDA_PRE=${GEDA_PRE}" \
@@ -627,17 +712,19 @@ SH
     "${SALLY_IMAGE}" /sally/conf/entry-point.sh
   wait_http "http://127.0.0.1:${SALLY_PORT}/health" 120
 
-  local i logs
+  local i logs observed_sally_pre
   for i in $(seq 1 60); do
     logs="$(docker logs "${SALLY_CONTAINER}" 2>&1 || true)"
-    SALLY_PRE="$(printf '%s\n' "${logs}" | sed -nE 's/.*Using hab [^:[:space:]]+:(E[A-Za-z0-9_-]+).*/\1/p' | tail -1)"
-    [[ -n "${SALLY_PRE:-}" ]] && break
+    observed_sally_pre="$(printf '%s\n' "${logs}" | sed -nE 's/.*Using hab [^:[:space:]]+:(E[A-Za-z0-9_-]+).*/\1/p' | tail -1)"
+    [[ -n "${observed_sally_pre:-}" ]] && break
     sleep 1
   done
-  [[ -n "${SALLY_PRE:-}" ]] || fail "unable to parse Sally AID from logs"
+  [[ -n "${observed_sally_pre:-}" ]] || fail "unable to parse Sally AID from logs"
+  [[ "${observed_sally_pre}" == "${SALLY_PRE}" ]] || fail "Sally AID ${observed_sally_pre} did not match expected deterministic AID ${SALLY_PRE}"
   SALLY_OOBI="http://127.0.0.1:${SALLY_PORT}/oobi/${SALLY_PRE}/controller"
   log "Sally AID ${SALLY_PRE}"
   log "Sally delivery counter profile ${SALLY_COUNTER_PROFILE}"
+  assert_sally_oobi_endpoint_replies
 }
 
 main() {

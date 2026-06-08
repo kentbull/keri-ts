@@ -150,8 +150,8 @@ export class Oobiery {
 
       const urls = record.urls ?? [];
       if (
-        urls.length === 0
-        || urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
+        urls.length === 0 ||
+        urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
       ) {
         return [url, record];
       }
@@ -209,8 +209,8 @@ export class Oobiery {
     }
 
     const bytes = yield* readResponseBytes(response);
-    const contentType = response.headers.get("content-type")?.toLowerCase()
-      ?? "";
+    const contentType = response.headers.get("content-type")?.toLowerCase() ??
+      "";
     this.remQueueStore(kind, url);
     this.hby.db.coobi.pin(url, {
       ...queuedRecord,
@@ -254,7 +254,6 @@ export class Oobiery {
   ): void {
     this.reactor.ingest(bytes);
     this.reactor.processOnce();
-    this.persistEndpointHint(url, meta);
 
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, {
@@ -272,53 +271,6 @@ export class Oobiery {
       cid: meta.cid ?? undefined,
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
-    });
-  }
-
-  /**
-   * Persist the endpoint projection carried by an endpoint OOBI URL itself.
-   *
-   * Some direct-mode agents, including Sally, serve a controller OOBI as the
-   * bootstrap contract for both key-state and HTTP delivery discovery. Their
-   * CESR response may contain only the controller KEL, not signed
-   * `/end/role/add` and `/loc/scheme` replies. After the KEL has been accepted,
-   * the OOBI URL still authoritatively identifies the endpoint being resolved:
-   *
-   *   /oobi/{cid}/controller     -> cid authorizes cid as controller endpoint
-   *   /oobi/{cid}/{role}/{eid}   -> cid authorizes eid for role
-   *
-   * Keep this separate from reply-state stores (`eans.`/`lans.`) because no
-   * reply SAID was accepted; this is an OOBI-derived endpoint projection.
-   */
-  private persistEndpointHint(
-    url: string,
-    meta: { cid?: string | null; role?: string | null; eid?: string | null },
-  ): void {
-    const endpoint = endpointHintFromOobiUrl(url, meta);
-    if (!endpoint || !this.hby.db.getKever(endpoint.cid)) {
-      return;
-    }
-
-    const existingEnd = this.hby.db.ends.get([
-      endpoint.cid,
-      endpoint.role,
-      endpoint.eid,
-    ]);
-    if (existingEnd?.allowed === false) {
-      return;
-    }
-    this.hby.db.ends.pin([endpoint.cid, endpoint.role, endpoint.eid], {
-      ...existingEnd,
-      allowed: true,
-    });
-
-    const existingLoc = this.hby.db.locs.get([
-      endpoint.eid,
-      endpoint.scheme,
-    ]);
-    this.hby.db.locs.pin([endpoint.eid, endpoint.scheme], {
-      ...existingLoc,
-      url: endpoint.url,
     });
   }
 
@@ -400,8 +352,8 @@ export class Oobiery {
       : [];
 
     if (
-      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null)
-      || urls.length === 0
+      !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null) ||
+      urls.length === 0
     ) {
       this.failFetchedOobi(url, record, "invalid-multi-oobi");
       return;
@@ -425,8 +377,8 @@ export class Oobiery {
   private completeMultiOobi(url: string, record: OobiRecord): void {
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
-    const failed = urls.length === 0
-      || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+    const failed = urls.length === 0 ||
+      urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
 
     this.hby.db.moobi.rem(url);
     if (failed) {
@@ -758,48 +710,6 @@ function mediaType(contentType: string): string {
 
 function isCesrMediaType(type: string): boolean {
   return type === "application/cesr" || type.endsWith("+cesr");
-}
-
-function endpointHintFromOobiUrl(
-  url: string,
-  meta: { cid?: string | null; role?: string | null; eid?: string | null },
-): { cid: string; role: Role; eid: string; scheme: string; url: string } | null {
-  if (!meta.cid || !meta.role || !isEndpointOobiRole(meta.role)) {
-    return null;
-  }
-
-  let cid: string;
-  let eid: string;
-  try {
-    cid = new Prefixer({ qb64: meta.cid }).qb64;
-    eid = new Prefixer({ qb64: meta.eid ?? cid }).qb64;
-  } catch {
-    return null;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return null;
-  }
-
-  const scheme = parsed.protocol.slice(0, -1);
-  parsed.pathname = "/";
-  parsed.search = "";
-  parsed.hash = "";
-
-  return { cid, role: meta.role, eid, scheme, url: parsed.toString() };
-}
-
-function isEndpointOobiRole(role: string): role is Role {
-  return role === Roles.controller
-    || role === Roles.agent
-    || role === Roles.mailbox
-    || role === Roles.witness;
 }
 
 export { OOBI_MAILBOX_TOPIC };

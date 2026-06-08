@@ -46,7 +46,7 @@ import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { reserveTcpPort } from "../../http-test-support.ts";
 import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-service-fakes.ts";
-import { CLITestHarness, testCLICommand } from "../../utils.ts";
+import { assertOperationThrows, CLITestHarness, testCLICommand } from "../../utils.ts";
 
 /** Return a random localhost port for ephemeral mailbox and OOBI hosts. */
 function randomPort(): number {
@@ -265,7 +265,7 @@ async function authorizeMailboxPollTarget(
   mailboxPre: string,
   mailboxUrl: string,
 ): Promise<void> {
-  await run(function*() {
+  await run(function* () {
     const resolved = yield* testCLICommand(
       oobiResolveCommand({
         name,
@@ -347,7 +347,7 @@ async function seedMailboxHost(
 ): Promise<string> {
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -393,7 +393,7 @@ async function seedHostedController(
   let pre = "";
   let controllerBytes = new Uint8Array();
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -435,7 +435,7 @@ async function seedLocalController(
 ): Promise<string> {
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -584,7 +584,7 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
   const origin = `http://mailbox-admin-path-${crypto.randomUUID()}.test`;
   const advertisedUrl = `${origin}/relay`;
 
-  await run(function*() {
+  await run(function* () {
     const providerHby = yield* createHabery({
       name: providerName,
       temp: true,
@@ -702,10 +702,10 @@ Deno.test("mailbox start provisions a mailbox from config and serves root mailbo
     }),
   );
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -795,10 +795,10 @@ Deno.test("mailbox start accepts config URLs with non-root paths and serves mail
     }),
   );
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
@@ -911,7 +911,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
   const configuredUrl = `http://localhost:${port}`;
   let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -936,7 +936,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function*() {
+  await run(function* () {
     const cf = yield* createConfiger({
       name: configFile,
       headDirPath: configDir,
@@ -954,8 +954,8 @@ Deno.test("agent command uses explicit config-file controller curls and does not
     }
   });
 
-  await run(function*(): Operation<void> {
-    const serverTask = yield* spawn(function*() {
+  await run(function* (): Operation<void> {
+    const serverTask = yield* spawn(function* () {
       yield* agentCommand({
         name,
         headDirPath,
@@ -995,21 +995,19 @@ Deno.test("agent command uses explicit config-file controller curls and does not
   });
 });
 
-Deno.test("agent command falls back to synthesized controller state only when config is absent", async () => {
-  const name = `agent-fallback-${crypto.randomUUID()}`;
+Deno.test("agent command rejects missing controller curls config", async () => {
+  const name = `agent-missing-config-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-agent-${crypto.randomUUID()}`;
   const port = randomPort();
-  const fallbackUrl = `http://127.0.0.1:${port}`;
-  let pre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
       skipConfig: true,
     });
     try {
-      const hab = hby.makeHab("alice", undefined, {
+      hby.makeHab("alice", undefined, {
         transferable: true,
         icount: 1,
         isith: "1",
@@ -1017,49 +1015,19 @@ Deno.test("agent command falls back to synthesized controller state only when co
         nsith: "1",
         toad: 0,
       });
-      pre = hab.pre;
     } finally {
       yield* hby.close();
     }
   });
 
-  await run(function*(): Operation<void> {
-    const serverTask = yield* spawn(function*() {
-      yield* agentCommand({
-        name,
-        headDirPath,
-        port,
-      });
-    });
-    yield* waitForServer(port, { host: "127.0.0.1", maxAttempts: 30 });
-
-    try {
-      const hosted = yield* fetchOp(`${fallbackUrl}/oobi/${pre}/controller`);
-      assertEquals(hosted.status, 200);
-      yield* textOp(hosted);
-
-      const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
-        readonly: true,
-        skipConfig: true,
-        skipSignator: true,
-      });
-      try {
-        assertEquals(fetchEndpointUrls(hby, pre, "http").http, fallbackUrl);
-        assertEquals(
-          hby.db.ends.get([pre, EndpointRoles.controller, pre])?.allowed,
-          true,
-        );
-        assertEquals(
-          hby.db.ends.get([pre, EndpointRoles.agent, pre]),
-          null,
-        );
-      } finally {
-        yield* hby.close();
-      }
-    } finally {
-      yield* waitForTaskHalt(serverTask, 100);
-    }
-  });
+  await assertOperationThrows(
+    agentCommand({
+      name,
+      headDirPath,
+      port,
+    }),
+    "missing controller curls config",
+  );
 });
 
 Deno.test("mailbox start on a multi-AID keystore serves only the selected local mailbox alias", async () => {
@@ -1069,7 +1037,7 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
   const startupUrl = `http://127.0.0.1:${port}`;
   let otherPre = "";
 
-  await run(function*() {
+  await run(function* () {
     const hby = yield* createHabery({
       name,
       headDirPath,
@@ -1089,10 +1057,10 @@ Deno.test("mailbox start on a multi-AID keystore serves only the selected local 
     }
   });
 
-  await run(function*(): Operation<void> {
+  await run(function* (): Operation<void> {
     const harness = new CLITestHarness();
     harness.captureOutput();
-    const serverTask = yield* spawn(function*() {
+    const serverTask = yield* spawn(function* () {
       yield* mailboxStartCommand({
         name,
         alias: "relay",
