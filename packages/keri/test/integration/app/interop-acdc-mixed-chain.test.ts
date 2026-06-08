@@ -226,8 +226,8 @@ function grantSaidFromPoll(output: string): string | null {
   }
   for (const entry of ipex) {
     if (
-      isRecord(entry) && entry.route === "/ipex/grant" &&
-      typeof entry.said === "string"
+      isRecord(entry) && entry.route === "/ipex/grant"
+      && typeof entry.said === "string"
     ) {
       return entry.said;
     }
