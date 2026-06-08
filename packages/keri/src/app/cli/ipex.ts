@@ -59,7 +59,7 @@ interface IpexBaseArgs {
 interface IpexGrantArgs extends IpexBaseArgs {
   said?: string;
   agree?: string;
-  wait?: number;
+  approvalTimeoutSeconds: number;
 }
 
 interface IpexAdmitArgs extends IpexBaseArgs {
@@ -71,8 +71,8 @@ interface IpexAdmitArgs extends IpexBaseArgs {
 interface IpexJoinArgs extends IpexBaseArgs {
   said?: string;
   auto?: boolean;
-  maxTurns?: number;
-  budgetMs?: number;
+  pollTurns?: number;
+  pollBudgetMs?: number;
 }
 
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
@@ -139,7 +139,11 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     ...ipexBaseArgs(args),
     said: args.said as string | undefined,
     agree: args.agree as string | undefined,
-    wait: args.wait as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(
+      args.approvalTimeoutSeconds,
+      120,
+      "approval timeout seconds",
+    ),
   };
   requireNonEmpty(ipexArgs.said, "Credential SAID");
   const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
@@ -172,9 +176,8 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
         hab,
         partialGrant,
       );
-      const waitSeconds = ipexArgs.wait ?? 120;
-      const complete = waitSeconds > 0
-        ? yield* waitForMultisigIpexCompletion(hby, runtime, hab, grant.grant.said!, waitSeconds)
+      const complete = ipexArgs.approvalTimeoutSeconds > 0
+        ? yield* waitForMultisigIpexCompletion(hby, runtime, hab, grant.grant.said!, ipexArgs.approvalTimeoutSeconds)
         : runtime.reactor.exchanger.complete(grant.grant.said!);
 
       if (!complete) {
@@ -285,8 +288,8 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
 
 export function* ipexPollCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const maxTurns = positiveInteger(args.maxTurns, 8, "max turns");
-  const budgetMs = positiveInteger(args.budgetMs, 5_000, "budget milliseconds");
+  const pollTurns = positiveInteger(args.pollTurns, 8, "poll turns");
+  const pollBudgetMs = positiveInteger(args.pollBudgetMs, 5_000, "poll budget milliseconds");
   const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
   try {
     const hab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
@@ -299,8 +302,8 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
     let batchesSeen = 0;
     let messagesSeen = 0;
 
-    for (let turn = 0; turn < maxTurns; turn++) {
-      const batches = yield* processMailboxTurn(runtime, { hab, budgetMs });
+    for (let turn = 0; turn < pollTurns; turn++) {
+      const batches = yield* processMailboxTurn(runtime, { hab, budgetMs: pollBudgetMs });
       batchesSeen += batches.length;
       messagesSeen += batches.reduce((total, batch) => total + batch.messages.length, 0);
       processStoredCredentialGrants(hby, runtime, reger);
@@ -327,14 +330,16 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     ...ipexBaseArgs(args),
     said: args.said as string | undefined,
     auto: args.auto as boolean | undefined,
-    maxTurns: args.maxTurns as number | undefined,
-    budgetMs: args.budgetMs as number | undefined,
+    pollTurns: args.pollTurns as number | undefined,
+    pollBudgetMs: args.pollBudgetMs as number | undefined,
   };
+  const pollTurns = positiveInteger(ipexArgs.pollTurns, 32, "poll turns");
+  const pollBudgetMs = positiveInteger(ipexArgs.pollBudgetMs, 2000, "poll budget milliseconds");
   const { hby, runtime } = yield* openRuntime(ipexArgs);
   try {
     const exn = ipexArgs.said
       ? hby.db.exns.get([ipexArgs.said])
-      : yield* nextPendingMultisigIpex(hby, runtime, ipexArgs);
+      : yield* nextPendingMultisigIpex(hby, runtime, { ...ipexArgs, pollTurns, pollBudgetMs });
     if (!exn) {
       throw new ValidationError(
         ipexArgs.said
@@ -554,10 +559,10 @@ function* waitForMultisigIpexCompletion(
   runtime: AgentRuntime,
   groupHab: Hab,
   embeddedSaid: string,
-  waitSeconds: number,
+  approvalTimeoutSeconds: number,
 ): Operation<boolean> {
   const member = localGroupMember(hby, groupHab.pre);
-  const deadline = Date.now() + waitSeconds * 1000;
+  const deadline = Date.now() + approvalTimeoutSeconds * 1000;
   while (Date.now() <= deadline) {
     yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
     runtime.reactor.processEscrowsOnce();
@@ -602,15 +607,15 @@ function* nextPendingMultisigIpex(
   runtime: AgentRuntime,
   args: IpexJoinArgs,
 ): Operation<SerderKERI | null> {
-  const maxTurns = positiveInteger(args.maxTurns, 32, "max turns");
-  const budgetMs = positiveInteger(args.budgetMs, 2000, "budget milliseconds");
+  const pollTurns = positiveInteger(args.pollTurns, 32, "poll turns");
+  const pollBudgetMs = positiveInteger(args.pollBudgetMs, 2000, "poll budget milliseconds");
   const hab = args.alias ? requireHab(hby, args.alias) : undefined;
-  for (let turn = 0; turn < maxTurns; turn += 1) {
+  for (let turn = 0; turn < pollTurns; turn += 1) {
     const found = findPendingMultisigIpex(hby, runtime);
     if (found) {
       return found;
     }
-    yield* processMailboxTurn(runtime, { hab, budgetMs });
+    yield* processMailboxTurn(runtime, { hab, budgetMs: pollBudgetMs });
     runtime.reactor.processEscrowsOnce();
     const afterPoll = findPendingMultisigIpex(hby, runtime);
     if (afterPoll) {
@@ -913,6 +918,17 @@ function positiveInteger(value: unknown, fallback: number, label: string): numbe
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new ValidationError(`${label} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function nonNegativeNumber(value: unknown, fallback: number, label: string): number {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new ValidationError(`${label} must be a finite nonnegative number.`);
   }
   return parsed;
 }

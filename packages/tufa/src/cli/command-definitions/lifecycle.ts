@@ -452,7 +452,7 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
     .option("--code-time <time>", "Time the witness codes were captured.")
     .option("--proxy <alias>", "Alias for delegation communication proxy")
     .option(
-      "-w, --wait <seconds>",
+      "--approval-timeout <seconds>",
       "Maximum wait for delegated multisig completion",
       (value: string) => Number(value),
       10,
@@ -474,7 +474,7 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
           code: options.code || [],
           codeTime: options.codeTime,
           proxy: options.proxy,
-          wait: options.wait,
+          approvalTimeoutSeconds: options.approvalTimeout,
         },
       });
     });
@@ -561,13 +561,13 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
       false,
     )
     .option(
-      "--max-turns <turns>",
+      "--poll-turns <turns>",
       "Maximum mailbox polling turns before failing",
       (value: string) => Number(value),
       32,
     )
     .option(
-      "--budget-ms <milliseconds>",
+      "--poll-budget-ms <milliseconds>",
       "Mailbox polling budget per turn",
       (value: string) => Number(value),
       2000,
@@ -603,8 +603,8 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
           registryName: options.registryName,
           said: options.said,
           auto: options.auto || false,
-          maxTurns: options.maxTurns,
-          budgetMs: options.budgetMs,
+          pollTurns: options.pollTurns,
+          pollBudgetMs: options.pollBudgetMs,
           endpoint: options.receiptEndpoint || false,
           authenticate: options.authenticate || false,
           code: options.code || [],
@@ -736,7 +736,7 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
     )
     .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
     .option(
-      "--wait <seconds>",
+      "--approval-timeout <seconds>",
       "Maximum wait for multisig reply completion",
       (value: string) => Number(value),
       0,
@@ -755,7 +755,7 @@ function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void 
           compat: options.compat || false,
           headDirPath: options.headDir,
           passcode: options.passcode,
-          wait: options.wait,
+          approvalTimeoutSeconds: options.approvalTimeout,
         },
       });
     });

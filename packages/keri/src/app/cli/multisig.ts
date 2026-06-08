@@ -74,13 +74,13 @@ interface MultisigBaseArgs {
 
 interface MultisigInceptArgs extends MultisigBaseArgs {
   file?: string;
-  wait?: number;
+  approvalTimeoutSeconds: number;
   proxy?: string;
 }
 
 interface MultisigInteractArgs extends MultisigBaseArgs {
   data?: string[];
-  wait?: number;
+  approvalTimeoutSeconds: number;
 }
 
 interface MultisigRotateArgs extends MultisigBaseArgs {
@@ -95,22 +95,22 @@ interface MultisigRotateArgs extends MultisigBaseArgs {
   smids?: string[];
   rmids?: string[];
   proxy?: string;
-  wait?: number;
+  approvalTimeoutSeconds: number;
 }
 
 interface MultisigRpyArgs extends MultisigBaseArgs {
   eid?: string;
   role?: string;
   allow?: boolean;
-  wait?: number;
+  approvalTimeoutSeconds: number;
 }
 
 interface MultisigJoinArgs extends MultisigBaseArgs {
   auto?: boolean;
   said?: string;
   registryName?: string;
-  maxTurns?: number;
-  budgetMs?: number;
+  pollTurns?: number;
+  pollBudgetMs?: number;
   proxy?: string;
 }
 
@@ -232,7 +232,11 @@ export function* multisigInceptCommand(
     code: args.code as string[] | undefined,
     codeTime: args.codeTime as string | undefined,
     file: args.file as string | undefined,
-    wait: args.wait as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(
+      args.approvalTimeoutSeconds,
+      10,
+      "approval timeout seconds",
+    ),
     proxy: args.proxy as string | undefined,
   };
   const name = requireText(commandArgs.name, "Name");
@@ -282,8 +286,8 @@ export function* multisigInceptCommand(
           ...commandArgs,
           group,
           auto: true,
-          maxTurns: waitTurns(commandArgs.wait),
-          budgetMs: 1_000,
+          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
+          pollBudgetMs: 1_000,
         },
       );
       let delegationPhase: string | null = null;
@@ -332,10 +336,12 @@ export function* multisigJoinCommand(
     auto: args.auto as boolean | undefined,
     registryName: args.registryName as string | undefined,
     said: args.said as string | undefined,
-    maxTurns: args.maxTurns as number | undefined,
-    budgetMs: args.budgetMs as number | undefined,
+    pollTurns: args.pollTurns as number | undefined,
+    pollBudgetMs: args.pollBudgetMs as number | undefined,
     proxy: args.proxy as string | undefined,
   };
+  const pollTurns = positiveInteger(commandArgs.pollTurns, 32, "poll turns");
+  const pollBudgetMs = positiveInteger(commandArgs.pollBudgetMs, 2_000, "poll budget milliseconds");
   const name = requireText(commandArgs.name, "Name");
 
   const doer = yield* spawn(function*() {
@@ -343,14 +349,14 @@ export function* multisigJoinCommand(
     try {
       const result = yield* waitForOneApproval(hby, runtime, {
         ...commandArgs,
-        maxTurns: positiveInteger(commandArgs.maxTurns, 32, "max turns"),
-        budgetMs: positiveInteger(commandArgs.budgetMs, 2_000, "budget milliseconds"),
+        pollTurns,
+        pollBudgetMs,
       });
       if (!result) {
         const local = yield* waitForLocalGroupCompletion(hby, runtime, {
           ...commandArgs,
-          maxTurns: positiveInteger(commandArgs.maxTurns, 32, "max turns"),
-          budgetMs: positiveInteger(commandArgs.budgetMs, 2_000, "budget milliseconds"),
+          pollTurns,
+          pollBudgetMs,
         });
         if (!local) {
           throw new ValidationError("No matching multisig notification was available to join.");
@@ -436,7 +442,11 @@ export function* multisigInteractCommand(
     code: args.code as string[] | undefined,
     codeTime: args.codeTime as string | undefined,
     data: args.data as string[] | undefined,
-    wait: args.wait as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(
+      args.approvalTimeoutSeconds,
+      10,
+      "approval timeout seconds",
+    ),
   };
   const name = requireText(commandArgs.name, "Name");
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
@@ -465,8 +475,8 @@ export function* multisigInteractCommand(
           ...commandArgs,
           group,
           auto: true,
-          maxTurns: waitTurns(commandArgs.wait),
-          budgetMs: 1_000,
+          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
+          pollBudgetMs: 1_000,
         },
       );
       if (accepted) {
@@ -515,7 +525,11 @@ export function* multisigRotateCommand(
     smids: args.smids as string[] | undefined,
     rmids: args.rmids as string[] | undefined,
     proxy: args.proxy as string | undefined,
-    wait: args.wait as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(
+      args.approvalTimeoutSeconds,
+      10,
+      "approval timeout seconds",
+    ),
   };
   const name = requireText(commandArgs.name, "Name");
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
@@ -557,8 +571,8 @@ export function* multisigRotateCommand(
           ...commandArgs,
           group,
           auto: true,
-          maxTurns: waitTurns(commandArgs.wait),
-          budgetMs: 1_000,
+          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
+          pollBudgetMs: 1_000,
         },
       );
       let delegationPhase: string | null = null;
@@ -602,7 +616,11 @@ export function* multisigRpyCommand(
     eid: args.eid as string | undefined,
     role: args.role as string | undefined,
     allow: args.allow as boolean | undefined,
-    wait: args.wait as number | undefined,
+    approvalTimeoutSeconds: nonNegativeNumber(
+      args.approvalTimeoutSeconds,
+      0,
+      "approval timeout seconds",
+    ),
   };
   const name = requireText(commandArgs.name, "Name");
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
@@ -632,7 +650,7 @@ export function* multisigRpyCommand(
         { gid: groupHab.pre },
         { rpy: localRpy },
       );
-      const accepted = commandArgs.wait && commandArgs.wait > 0
+      const accepted = commandArgs.approvalTimeoutSeconds > 0
         ? yield* waitForReplyAcceptance(
           hby,
           runtime,
@@ -773,14 +791,14 @@ function* waitForGroupAcceptance(
   if (eventAccepted(hby, serder)) {
     return true;
   }
-  const maxTurns = positiveInteger(args.maxTurns, 10, "max turns");
-  for (let turn = 0; turn < maxTurns; turn++) {
+  const pollTurns = positiveInteger(args.pollTurns, 10, "poll turns");
+  for (let turn = 0; turn < pollTurns; turn++) {
     yield* processOnePendingApproval(hby, runtime, args);
     if (eventAccepted(hby, serder)) {
       return true;
     }
     yield* processMailboxTurn(runtime, {
-      budgetMs: positiveInteger(args.budgetMs, 1_000, "budget milliseconds"),
+      budgetMs: positiveInteger(args.pollBudgetMs, 1_000, "poll budget milliseconds"),
     });
     runtime.reactor.processEscrowsOnce();
     yield* sleep(250);
@@ -793,14 +811,14 @@ function* waitForOneApproval(
   runtime: AgentRuntime,
   args: MultisigJoinArgs,
 ): Operation<ApprovalResult | null> {
-  const maxTurns = positiveInteger(args.maxTurns, 32, "max turns");
-  const budgetMs = positiveInteger(args.budgetMs, 2_000, "budget milliseconds");
-  for (let turn = 0; turn < maxTurns; turn++) {
+  const pollTurns = positiveInteger(args.pollTurns, 32, "poll turns");
+  const pollBudgetMs = positiveInteger(args.pollBudgetMs, 2_000, "poll budget milliseconds");
+  for (let turn = 0; turn < pollTurns; turn++) {
     const result = yield* processOnePendingApproval(hby, runtime, args);
     if (result) {
       return result;
     }
-    yield* processMailboxTurn(runtime, { budgetMs });
+    yield* processMailboxTurn(runtime, { budgetMs: pollBudgetMs });
     runtime.reactor.processEscrowsOnce();
     yield* sleep(250);
   }
@@ -1401,14 +1419,14 @@ function* waitForReplyAcceptance(
   if (replyRoleAccepted(hby, groupPre, role, eid)) {
     return true;
   }
-  const maxTurns = waitTurns(args.wait);
-  for (let turn = 0; turn < maxTurns; turn++) {
+  const pollTurns = approvalTimeoutTurns(args.approvalTimeoutSeconds);
+  for (let turn = 0; turn < pollTurns; turn++) {
     yield* processOnePendingApproval(hby, runtime, {
       ...args,
       group: groupPre,
       auto: true,
-      maxTurns: 1,
-      budgetMs: 1_000,
+      pollTurns: 1,
+      pollBudgetMs: 1_000,
     });
     if (replyRoleAccepted(hby, groupPre, role, eid)) {
       return true;
@@ -1668,11 +1686,22 @@ function positiveInteger(value: unknown, fallback: number, label: string): numbe
   return parsed;
 }
 
-function waitTurns(wait: number | undefined): number {
-  if (wait === undefined || wait === null) {
+function nonNegativeNumber(value: unknown, fallback: number, label: string): number {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new ValidationError(`${label} must be a finite nonnegative number.`);
+  }
+  return parsed;
+}
+
+function approvalTimeoutTurns(approvalTimeoutSeconds: number | undefined): number {
+  if (approvalTimeoutSeconds === undefined || approvalTimeoutSeconds === null) {
     return 40;
   }
-  return Math.max(1, Math.floor(Number(wait) * 4));
+  return Math.max(1, Math.floor(Number(approvalTimeoutSeconds) * 4));
 }
 
 function* sleep(ms: number): Operation<void> {

@@ -43,9 +43,11 @@ function addCounterProfileOption(cmd: Command): Command {
 }
 
 function dispatchArgs(options: Record<string, unknown>): Record<string, unknown> {
+  const { headDir, approvalTimeout, ...rest } = options;
   return {
-    ...options,
-    headDirPath: options.headDir,
+    ...rest,
+    headDirPath: headDir,
+    ...(approvalTimeout === undefined ? {} : { approvalTimeoutSeconds: approvalTimeout }),
   };
 }
 
@@ -235,7 +237,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
             .option("--agree <said>", "Prior agree EXN SAID")
             .option("-m, --message <text>", "Human-readable message")
             .option(
-              "--wait <seconds>",
+              "--approval-timeout <seconds>",
               "Seconds to wait for multisig IPEX approval before returning",
               (value: string) => Number(value),
             )
@@ -288,8 +290,8 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
     addStoreOptions(
       ipex.command("poll")
         .description("Poll configured credential mailboxes once")
-        .option("--max-turns <count>", "Maximum bounded mailbox turns")
-        .option("--budget-ms <ms>", "Per-turn mailbox polling budget"),
+        .option("--poll-turns <count>", "Maximum bounded mailbox polling turns", (value: string) => Number(value))
+        .option("--poll-budget-ms <ms>", "Per-turn mailbox polling budget", (value: string) => Number(value)),
     ),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.poll", args: dispatchArgs(options) });
@@ -302,8 +304,8 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .description("Approve or validate a single-sig or multisig IPEX message")
           .option("--said <said>", "IPEX or multisig wrapper EXN SAID")
           .option("--auto", "Approve a multisig IPEX proposal without prompting", false)
-          .option("--max-turns <count>", "Maximum bounded mailbox turns")
-          .option("--budget-ms <ms>", "Per-turn mailbox polling budget"),
+          .option("--poll-turns <count>", "Maximum bounded mailbox polling turns", (value: string) => Number(value))
+          .option("--poll-budget-ms <ms>", "Per-turn mailbox polling budget", (value: string) => Number(value)),
       ),
     ),
   ).action((options: Record<string, unknown>) => {
