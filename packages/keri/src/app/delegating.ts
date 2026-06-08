@@ -92,6 +92,13 @@ function eventKey(serder: SerderKERI): [string, string] {
   return [pre, snh];
 }
 
+function workflowPre(serder: SerderKERI): string {
+  if (!serder.pre) {
+    throw new ValidationError("Delegated workflow event is missing a prefix.");
+  }
+  return serder.pre;
+}
+
 /** Build the anchor seal shape a delegator must embed in its approving event. */
 function eventAnchor(serder: SerderKERI): { i: string; s: string; d: string } {
   if (!serder.pre || !serder.snh || !serder.said) {
@@ -123,6 +130,11 @@ function localHabByPre(hby: Habery, pre: string, context: string): Hab {
     throw new ValidationError(`${context}: missing local habitat ${pre}.`);
   }
   return hab;
+}
+
+function localGroupMember(hby: Habery, groupPre: string): Hab | null {
+  const record = hby.db.getHab(groupPre);
+  return record?.mid ? hby.habs.get(record.mid) ?? null : null;
 }
 
 function workflowSaid(serder: SerderKERI): string {
@@ -208,9 +220,7 @@ function approvingEvent(
   hab?: Hab,
 ): SerderKERI | null {
   const delpre = delegatedWorkflowDelpre(hby, serder, hab);
-  return delpre
-    ? hby.db.fetchLastSealingEventByEventSeal(delpre, eventAnchor(serder))
-    : null;
+  return delpre ? hby.db.fetchLastSealingEventByEventSeal(delpre, eventAnchor(serder)) : null;
 }
 
 function preferredWitnessQueryUrl(hab: Hab, witness: string): string | null {
@@ -302,9 +312,7 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
     const src = args.serder.pre;
     const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
     const embeds = args.serder.ked?.e as Record<string, unknown> | undefined;
-    const delpre = typeof payload?.["delpre"] === "string"
-      ? payload.delpre
-      : null;
+    const delpre = typeof payload?.["delpre"] === "string" ? payload.delpre : null;
     const evt = embeds?.["evt"];
     if (!src || !delpre || !evt || !this.hby.habs.has(delpre)) {
       return;
@@ -654,7 +662,7 @@ export class Anchorer {
       };
     }
 
-    yield* this.publishDelegator(pre);
+    yield* this.publishDelegator(serder);
     this.hby.db.dpub.pin(keys, serder);
     return {
       kind: "advance",
@@ -800,8 +808,22 @@ export class Anchorer {
     this.anchorQueryRetryPasses.delete(id);
   }
 
-  private *publishDelegator(pre: string): Operation<void> {
+  private publicationTransportHab(serder: SerderKERI, hab: Hab): Hab {
+    const pinned = this.communicationHabPins.get(workflowId(serder));
+    if (pinned) {
+      return localHabByPre(
+        this.hby,
+        pinned,
+        `Delegation workflow ${workflowId(serder)}`,
+      );
+    }
+    return localGroupMember(this.hby, hab.pre) ?? this.communicationHab(serder, hab);
+  }
+
+  private *publishDelegator(serder: SerderKERI): Operation<void> {
+    const pre = workflowPre(serder);
     const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
+    const transportHab = this.publicationTransportHab(serder, hab);
     const kever = hab.kever;
     if (!kever) {
       throw new ValidationError(
@@ -813,20 +835,20 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(hab, witness, msg);
+        yield* sendWitnessMessage(transportHab, witness, msg);
       }
     }
 
     const approvedEvent = eventReplayMessage(this.hby, kever.serder);
     if (kever.delpre) {
-      yield* this.poster.sendBytes(hab, {
+      yield* this.poster.sendBytes(transportHab, {
         recipient: kever.delpre,
         topic: REPLAY_MAILBOX_TOPIC,
         message: approvedEvent,
       });
     }
     for (const witness of kever.wits) {
-      yield* sendWitnessMessage(hab, witness, approvedEvent);
+      yield* sendWitnessMessage(transportHab, witness, approvedEvent);
     }
   }
 }

@@ -12,8 +12,6 @@
  */
 import {
   concatBytes,
-  Counter,
-  CtrDexV1,
   DigDex,
   Diger,
   Ilks,
@@ -32,6 +30,7 @@ import {
 import type { Hab, Habery } from "../app/habbing.ts";
 import { resolveCachedSchema } from "../app/schema-resolving.ts";
 import { Verifier, type VerifierDecision } from "../app/verifying.ts";
+import { attachmentCounterPayloadQb64b, type AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -47,8 +46,6 @@ import { RegistryRecord } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type TelProcessDecision, Tevery } from "./eventing.ts";
-
-const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
 export interface RegeryOptions {
   reger: Reger;
@@ -278,18 +275,23 @@ export function serializeCredential(
   prefixer: Prefixer,
   seqner: NumberPrimitive | Seqner,
   saider: Diger,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
   const actualSeqner = seqner instanceof Seqner ? seqner : new Seqner({ code: NumDex.Huge, raw: seqner.raw });
-  return concatBytes(
-    creder.raw,
-    new Counter({
-      code: CtrDexV1.SealSourceTriples,
-      count: 1,
-      version: KERI_V1,
-    }).qb64b,
+  const sealPayload = [
     prefixer.qb64b,
     actualSeqner.qb64b,
     saider.qb64b,
+  ];
+  return concatBytes(
+    creder.raw,
+    attachmentCounterPayloadQb64b(
+      "SealSourceTriples",
+      1,
+      sealPayload,
+      counterProfile,
+    ),
+    ...sealPayload,
   );
 }
 

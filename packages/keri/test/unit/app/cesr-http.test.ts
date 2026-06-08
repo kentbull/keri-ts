@@ -10,6 +10,7 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { concatBytes } from "../../../../cesr/mod.ts";
+import { acdcatt } from "../../../src/acdc/messaging.ts";
 import {
   buildCesrRequest,
   buildCesrStreamRequest,
@@ -74,6 +75,35 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
   assertExists(request.headers[CESR_ATTACHMENT_HEADER]);
   assertEquals(request.headers[CESR_DESTINATION_HEADER], destination);
   assertEquals(request.body.byteLength < message.length, true);
+  assertEquals(
+    await readCesrRequestBytes(
+      new Request("http://example.test", {
+        method: "POST",
+        headers: request.headers,
+        body: request.body,
+      }),
+    ),
+    message,
+  );
+});
+
+/** Proves header mode can split ACDC-led credential support streams. */
+Deno.test("CESR HTTP - header mode splits ACDC messages without assuming KERI protocol", async () => {
+  const issuer = "EA2X8Lfrl9lZbCGz8cfKIvM_cqLyTYVLSFLhnttezlzQ";
+  const issuee = "EAKCxMOuoRzREVHsHCkLilBrUXTvyenBiuM2QtV8BB0C";
+  const creder = acdcatt(issuer, {
+    uuid: "0AAxyHwW6htOZ_rANOaZb2N2",
+    regid: "EM1hJSHgqklxe-SFOWkGRKRTIzbSh7yd0inf8RZ8paR8",
+    issuee,
+    attribute: { LEI: "5493001KJTIIGC8Y1R12" },
+  });
+  const attachment = new TextEncoder().encode("-AABfake");
+  const message = concatBytes(creder.raw, attachment);
+
+  const request = buildCesrRequest(message, { bodyMode: "header" });
+
+  assertEquals(new Uint8Array(request.body), creder.raw);
+  assertEquals(request.headers[CESR_ATTACHMENT_HEADER], "-AABfake");
   assertEquals(
     await readCesrRequestBytes(
       new Request("http://example.test", {

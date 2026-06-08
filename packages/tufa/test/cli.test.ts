@@ -1,10 +1,13 @@
 // @file-test-lane app-fast-isolated
 
 import { run } from "effection";
-import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { DISPLAY_VERSION as KERI_DISPLAY_VERSION, ValidationError } from "keri-ts/runtime";
+import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
-import { mailboxStartCommand } from "../src/cli/mailbox.ts";
+import { registerCmds } from "../src/cli/command-definitions.ts";
+import type { CommandSelection } from "../src/cli/command-types.ts";
+import { mailboxAddCommand, mailboxStartCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
 interface CmdResult {
@@ -30,6 +33,20 @@ async function runTufa(args: string[]): Promise<CmdResult> {
     stdout: new TextDecoder().decode(out.stdout),
     stderr: new TextDecoder().decode(out.stderr),
   };
+}
+
+function parseCommandSelection(args: string[]): CommandSelection {
+  let selection: CommandSelection | undefined;
+  const program = new Command();
+  program.exitOverride();
+  registerCmds(program, (next) => {
+    selection = next;
+  });
+  program.parse(args, { from: "user" });
+  if (!selection) {
+    throw new Error(`No command selection for ${args.join(" ")}`);
+  }
+  return selection;
 }
 
 async function captureConsoleLog(
@@ -108,6 +125,239 @@ Deno.test("tufa/cli - interact help advertises the Tufa-owned interact surface",
   assertStringIncludes(text, "-z, --authenticate");
   assertStringIncludes(text, "--code <code>");
   assertStringIncludes(text, "--code-time <time>");
+});
+
+Deno.test("tufa/cli - IPEX runtime knobs dispatch renamed args", () => {
+  const grant = parseCommandSelection([
+    "ipex",
+    "grant",
+    "-n",
+    "store",
+    "-a",
+    "issuer",
+    "-r",
+    "holder",
+    "--said",
+    "Ecredential",
+    "--approval-timeout",
+    "0",
+  ]);
+  assertEquals(grant.name, "ipex.grant");
+  assertEquals(grant.args.approvalTimeoutSeconds, 0);
+  assertEquals("approvalTimeout" in grant.args, false);
+  assertEquals("wait" in grant.args, false);
+
+  const poll = parseCommandSelection([
+    "ipex",
+    "poll",
+    "-n",
+    "store",
+    "-a",
+    "holder",
+    "--poll-turns",
+    "3",
+    "--poll-budget-ms",
+    "1000",
+  ]);
+  assertEquals(poll.name, "ipex.poll");
+  assertEquals(poll.args.pollTurns, 3);
+  assertEquals(poll.args.pollBudgetMs, 1000);
+  assertEquals("maxTurns" in poll.args, false);
+  assertEquals("budgetMs" in poll.args, false);
+
+  const join = parseCommandSelection([
+    "ipex",
+    "join",
+    "-n",
+    "store",
+    "--poll-turns",
+    "5",
+    "--poll-budget-ms",
+    "1500",
+  ]);
+  assertEquals(join.name, "ipex.join");
+  assertEquals(join.args.pollTurns, 5);
+  assertEquals(join.args.pollBudgetMs, 1500);
+});
+
+Deno.test("tufa/cli - multisig runtime knobs dispatch renamed args", () => {
+  const incept = parseCommandSelection([
+    "multisig",
+    "incept",
+    "-n",
+    "store",
+    "-a",
+    "alice",
+    "-g",
+    "group",
+    "-f",
+    "group.json",
+    "--approval-timeout",
+    "7",
+  ]);
+  assertEquals(incept.name, "multisig.incept");
+  assertEquals(incept.args.approvalTimeoutSeconds, 7);
+  assertEquals("wait" in incept.args, false);
+
+  const join = parseCommandSelection([
+    "multisig",
+    "join",
+    "-n",
+    "store",
+    "--poll-turns",
+    "6",
+    "--poll-budget-ms",
+    "700",
+  ]);
+  assertEquals(join.name, "multisig.join");
+  assertEquals(join.args.pollTurns, 6);
+  assertEquals(join.args.pollBudgetMs, 700);
+  assertEquals("maxTurns" in join.args, false);
+  assertEquals("budgetMs" in join.args, false);
+
+  const rpy = parseCommandSelection([
+    "multisig",
+    "rpy",
+    "-n",
+    "store",
+    "--eid",
+    "Eendpoint",
+    "--approval-timeout",
+    "0",
+  ]);
+  assertEquals(rpy.name, "multisig.rpy");
+  assertEquals(rpy.args.approvalTimeoutSeconds, 0);
+  assertEquals("wait" in rpy.args, false);
+
+  const mailboxPropose = parseCommandSelection([
+    "mailbox",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-w",
+    "mailbox",
+    "--multisig-mode",
+    "propose",
+  ]);
+  assertEquals(mailboxPropose.name, "mailbox.add");
+  assertEquals(mailboxPropose.args.multisigMode, "propose");
+
+  const mailboxComplete = parseCommandSelection([
+    "mailbox",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-w",
+    "mailbox",
+    "--multisig-mode",
+    "complete",
+  ]);
+  assertEquals(mailboxComplete.name, "mailbox.add");
+  assertEquals(mailboxComplete.args.multisigMode, "complete");
+
+  const endsPropose = parseCommandSelection([
+    "ends",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-r",
+    "mailbox",
+    "-e",
+    "Eendpoint",
+    "--multisig-mode",
+    "propose",
+  ]);
+  assertEquals(endsPropose.name, "ends.add");
+  assertEquals(endsPropose.args.multisigMode, "propose");
+
+  const endsComplete = parseCommandSelection([
+    "ends",
+    "add",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "-r",
+    "mailbox",
+    "-e",
+    "Eendpoint",
+    "--multisig-mode",
+    "complete",
+  ]);
+  assertEquals(endsComplete.name, "ends.add");
+  assertEquals(endsComplete.args.multisigMode, "complete");
+});
+
+Deno.test("tufa/cli - invalid mailbox multisig mode is rejected", async () => {
+  await assertRejects(
+    () =>
+      run(() =>
+        mailboxAddCommand({
+          name: "store",
+          alias: "group",
+          mailbox: "mailbox",
+          multisigMode: "invalid",
+        })
+      ),
+    ValidationError,
+    "--multisig-mode must be propose or complete",
+  );
+});
+
+Deno.test("tufa/cli - old runtime knob flags are not accepted", () => {
+  assertThrows(
+    () =>
+      parseCommandSelection([
+        "ipex",
+        "grant",
+        "-n",
+        "store",
+        "-a",
+        "issuer",
+        "-r",
+        "holder",
+        "--said",
+        "Ecredential",
+        "--wait",
+        "1",
+      ]),
+    Error,
+    "unknown option '--wait'",
+  );
+  assertThrows(
+    () =>
+      parseCommandSelection([
+        "ipex",
+        "poll",
+        "-n",
+        "store",
+        "-a",
+        "holder",
+        "--max-turns",
+        "1",
+      ]),
+    Error,
+    "unknown option '--max-turns'",
+  );
+  assertThrows(
+    () =>
+      parseCommandSelection([
+        "multisig",
+        "join",
+        "-n",
+        "store",
+        "--budget-ms",
+        "1000",
+      ]),
+    Error,
+    "unknown option '--budget-ms'",
+  );
 });
 
 Deno.test("tufa/cli - interact reaches the real command body through the Tufa binary surface", async () => {

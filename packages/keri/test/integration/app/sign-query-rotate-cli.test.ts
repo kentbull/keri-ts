@@ -206,12 +206,38 @@ function randomPort(): number {
   return 20000 + Math.floor(Math.random() * 20000);
 }
 
+async function writeAgentControllerConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 Deno.test("CLI integration - stale tufa verify fails before query and succeeds after query following rotate", async () => {
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-query-rotate-" });
   const aliceName = `alice-${crypto.randomUUID()}`;
   const bobName = `bob-${crypto.randomUUID()}`;
   const aliceAlias = "alice";
   const bobAlias = "bob";
+  const aliceAgentConfig = "alice-agent";
   const message = "query after rotate";
   const alicePort = randomPort();
   const aliceOrigin = `http://127.0.0.1:${alicePort}`;
@@ -353,9 +379,20 @@ Deno.test("CLI integration - stale tufa verify fails before query and succeeds a
         headDirPath,
         "--port",
         String(alicePort),
+        "--config-dir",
+        headDirPath,
+        "--config-file",
+        aliceAgentConfig,
       ],
       packageRoot(),
     );
+
+  await writeAgentControllerConfig(
+    headDirPath,
+    aliceAgentConfig,
+    aliceAlias,
+    alicePort,
+  );
 
   await withStartedChild(startAliceAgent(), alicePort, async () => {
     await requireSuccess(

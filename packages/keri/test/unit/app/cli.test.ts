@@ -7,9 +7,12 @@ import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
+import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
+import { ipexGrantCommand, ipexJoinCommand, ipexPollCommand } from "../../../src/app/cli/ipex.ts";
+import { multisigInceptCommand, multisigJoinCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
@@ -92,6 +95,85 @@ Deno.test("CLI - init command with valid arguments", async () => {
       temp: true,
       nopasscode: true,
     })
+  );
+});
+
+Deno.test("CLI - IPEX runtime knobs validate before runtime startup", async () => {
+  await assertOperationThrows(
+    ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: -1 }),
+    "approval timeout seconds must be a finite nonnegative number",
+  );
+  await assertOperationThrows(
+    ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: Number.NaN }),
+    "approval timeout seconds must be a finite nonnegative number",
+  );
+  await assertOperationThrows(
+    ipexGrantCommand({ approvalTimeoutSeconds: 0 }),
+    "Credential SAID is required and cannot be empty",
+  );
+  await assertOperationThrows(
+    ipexPollCommand({ pollTurns: 0 }),
+    "poll turns must be a positive integer",
+  );
+  await assertOperationThrows(
+    ipexPollCommand({ pollTurns: 1.5 }),
+    "poll turns must be a positive integer",
+  );
+  await assertOperationThrows(
+    ipexPollCommand({ pollTurns: Number.NaN }),
+    "poll turns must be a positive integer",
+  );
+  await assertOperationThrows(
+    ipexPollCommand({ pollBudgetMs: 0 }),
+    "poll budget milliseconds must be a positive integer",
+  );
+  await assertOperationThrows(
+    ipexPollCommand({ pollBudgetMs: -1 }),
+    "poll budget milliseconds must be a positive integer",
+  );
+  await assertOperationThrows(
+    ipexPollCommand({ pollBudgetMs: 1.5 }),
+    "poll budget milliseconds must be a positive integer",
+  );
+  await assertOperationThrows(
+    ipexJoinCommand({ pollTurns: -1 }),
+    "poll turns must be a positive integer",
+  );
+});
+
+Deno.test("CLI - multisig runtime knobs validate before runtime startup", async () => {
+  await assertOperationThrows(
+    multisigInceptCommand({ approvalTimeoutSeconds: -1 }),
+    "approval timeout seconds must be a finite nonnegative number",
+  );
+  await assertOperationThrows(
+    multisigInceptCommand({ approvalTimeoutSeconds: Number.NaN }),
+    "approval timeout seconds must be a finite nonnegative number",
+  );
+  await assertOperationThrows(
+    multisigRpyCommand({ approvalTimeoutSeconds: 0 }),
+    "Name is required and cannot be empty",
+  );
+  await assertOperationThrows(
+    multisigJoinCommand({ name: "store", pollTurns: 0 }),
+    "poll turns must be a positive integer",
+  );
+  await assertOperationThrows(
+    multisigJoinCommand({ name: "store", pollBudgetMs: 1.5 }),
+    "poll budget milliseconds must be a positive integer",
+  );
+});
+
+Deno.test("CLI - endpoint role multisig mode validates before runtime startup", async () => {
+  await assertOperationThrows(
+    endsAddCommand({
+      name: "store",
+      alias: "group",
+      role: "mailbox",
+      eid: "Eendpoint",
+      multisigMode: "invalid",
+    }),
+    "--multisig-mode must be propose or complete",
   );
 });
 

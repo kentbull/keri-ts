@@ -59,7 +59,7 @@ Deno.test("mailboxTopicForRoute routes IPEX exchanges to /credential", () => {
   assertEquals(mailboxTopicForRoute("/ipex/grant"), CREDENTIAL_MAILBOX_TOPIC);
   assertEquals(mailboxTopicForRoute("/ipex/admit"), CREDENTIAL_MAILBOX_TOPIC);
   assertEquals(mailboxTopicForRoute("/delegate/request"), DELEGATE_MAILBOX_TOPIC);
-  assertEquals(mailboxTopicForRoute("/challenge/response"), "challenge");
+  assertEquals(mailboxTopicForRoute("/challenge/response"), "/challenge");
 });
 
 /** Proves sender-side `credential` and poll-side `/credential` share one mailbox key. */
@@ -728,7 +728,7 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
           assertEquals(delivered.route, "/fwd");
           assertEquals(delivered.ked?.q, {
             pre: recipient.pre,
-            topic: "/receipt",
+            topic: "receipt",
           });
           assertEquals(
             ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<

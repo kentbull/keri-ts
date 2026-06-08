@@ -16,6 +16,38 @@ function inceptConfigPath(): string {
   ).pathname;
 }
 
+const AGENT_CONFIG_FILE = "agent-start";
+
+async function writeAgentControllerConfig(
+  {
+    headDirPath,
+    alias,
+    port,
+  }: {
+    headDirPath: string;
+    alias: string;
+    port: number;
+  },
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${AGENT_CONFIG_FILE}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${AGENT_CONFIG_FILE}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 async function startTufaAgent(
   args: string[],
   port: number,
@@ -118,8 +150,21 @@ Deno.test("tufa/agent-cli - starts unencrypted stores with -n before or after po
   await initAndInceptStore({ name, headDirPath, alias });
 
   const firstPort = reserveTcpPort();
+  await writeAgentControllerConfig({ headDirPath, alias, port: firstPort });
   const firstChild = await startTufaAgent(
-    ["agent", "-n", name, "--head-dir", headDirPath, "-p", `${firstPort}`],
+    [
+      "agent",
+      "-n",
+      name,
+      "--head-dir",
+      headDirPath,
+      "--config-dir",
+      headDirPath,
+      "--config-file",
+      AGENT_CONFIG_FILE,
+      "-p",
+      `${firstPort}`,
+    ],
     firstPort,
   );
   try {
@@ -131,8 +176,21 @@ Deno.test("tufa/agent-cli - starts unencrypted stores with -n before or after po
   }
 
   const secondPort = reserveTcpPort();
+  await writeAgentControllerConfig({ headDirPath, alias, port: secondPort });
   const secondChild = await startTufaAgent(
-    ["agent", "--port", `${secondPort}`, "-n", name, "--head-dir", headDirPath],
+    [
+      "agent",
+      "--port",
+      `${secondPort}`,
+      "-n",
+      name,
+      "--head-dir",
+      headDirPath,
+      "--config-dir",
+      headDirPath,
+      "--config-file",
+      AGENT_CONFIG_FILE,
+    ],
     secondPort,
   );
   try {
@@ -152,6 +210,7 @@ Deno.test("tufa/agent-cli - reopens encrypted stores with -P and --passcode", as
   await initAndInceptStore({ name, headDirPath, alias, passcode });
 
   const firstPort = reserveTcpPort();
+  await writeAgentControllerConfig({ headDirPath, alias, port: firstPort });
   const firstChild = await startTufaAgent(
     [
       "agent",
@@ -159,6 +218,10 @@ Deno.test("tufa/agent-cli - reopens encrypted stores with -P and --passcode", as
       name,
       "--head-dir",
       headDirPath,
+      "--config-dir",
+      headDirPath,
+      "--config-file",
+      AGENT_CONFIG_FILE,
       "-p",
       `${firstPort}`,
       "-P",
@@ -175,6 +238,7 @@ Deno.test("tufa/agent-cli - reopens encrypted stores with -P and --passcode", as
   }
 
   const secondPort = reserveTcpPort();
+  await writeAgentControllerConfig({ headDirPath, alias, port: secondPort });
   const secondChild = await startTufaAgent(
     [
       "agent",
@@ -184,6 +248,10 @@ Deno.test("tufa/agent-cli - reopens encrypted stores with -P and --passcode", as
       name,
       "--head-dir",
       headDirPath,
+      "--config-dir",
+      headDirPath,
+      "--config-file",
+      AGENT_CONFIG_FILE,
       "--passcode",
       passcode,
     ],

@@ -33,16 +33,37 @@ log_agent_process() {
   echo "--- end tufa-agent process ---" >&2
 }
 
-npm install -g "$@" >/dev/null
+CESR_TARBALL="${1:-}"
+KERI_TARBALL="${2:-}"
+TUFA_TARBALL="${3:-}"
+if [ -z "${CESR_TARBALL}" ] || [ -z "${KERI_TARBALL}" ] || [ -z "${TUFA_TARBALL}" ]; then
+  echo "Usage: smoke-pr-packages-container.sh <cesr-ts.tgz> <keri-ts.tgz> <keri-ts-tufa.tgz>" >&2
+  exit 1
+fi
+
+WORK_DIR="$(mktemp -d)"
+cd "${WORK_DIR}"
+npm init -y >/dev/null 2>&1
+npm install "${CESR_TARBALL}" "${KERI_TARBALL}" "${TUFA_TARBALL}" >/dev/null
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
-V1="$(tufa version | tr -d "\r")"
-V2="$(tufa --version | tr -d "\r")"
+
+cp /smoke-scripts/package-targets.mjs /smoke-scripts/smoke-keri-installed.mjs "${WORK_DIR}/"
+node ./smoke-keri-installed.mjs
+
+TUFA_BIN="${WORK_DIR}/node_modules/.bin/tufa"
+if [ ! -x "${TUFA_BIN}" ]; then
+  echo "tufa bin not found or not executable: ${TUFA_BIN}" >&2
+  exit 1
+fi
+
+V1="$("${TUFA_BIN}" version | tr -d "\r")"
+V2="$("${TUFA_BIN}" --version | tr -d "\r")"
 if [ "${V1}" != "${V2}" ]; then
   echo "Version mismatch: tufa version=${V1}, tufa --version=${V2}" >&2
   exit 1
 fi
 
-OUT="$(tufa annotate --in "/samples/${SAMPLE_STREAM_REL}" | awk "NR==1{print; exit}")"
+OUT="$("${TUFA_BIN}" annotate --in "/samples/${SAMPLE_STREAM_REL}" | awk "NR==1{print; exit}")"
 echo "${OUT}" | grep -q "SERDER KERI JSON"
 
 HEAD_DIR=/tmp/tufa-smoke
@@ -62,11 +83,11 @@ cat >"${CONFIG_DIR}/keri/cf/${CONFIG_FILE}/${CONFIG_FILE}.json" <<EOF
   }
 }
 EOF
-tufa init --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
-tufa incept --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
+"${TUFA_BIN}" init --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
+"${TUFA_BIN}" incept --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
 rm -f /tmp/tufa-agent.exitcode
 (
-  tufa agent --name "${NAME}" --head-dir "${HEAD_DIR}" --config-dir "${CONFIG_DIR}" --config-file "${CONFIG_FILE}" -p "${PORT}" -P "${PASSCODE}" >/tmp/tufa-agent.log 2>&1
+  "${TUFA_BIN}" agent --name "${NAME}" --head-dir "${HEAD_DIR}" --config-dir "${CONFIG_DIR}" --config-file "${CONFIG_FILE}" -p "${PORT}" -P "${PASSCODE}" >/tmp/tufa-agent.log 2>&1
   status=$?
   printf "%s\n" "${status}" >/tmp/tufa-agent.exitcode
   exit "${status}"
@@ -92,4 +113,4 @@ TUFA_SMOKE_PORT="${PORT}" \
   TUFA_SMOKE_AGENT_LOG="/tmp/tufa-agent.log" \
   node /smoke-scripts/wait-for-tufa-health.mjs >/dev/null
 
-echo "Smoke test passed for @keri-ts/tufa ${V1} on ${SMOKE_NODE_IMAGE:-node}"
+echo "Combined smoke test passed for keri-ts and @keri-ts/tufa ${V1} on ${SMOKE_NODE_IMAGE:-node}"

@@ -82,11 +82,10 @@ and KERIpy interoperability.
     group inception can be approved by KERIpy and completed in Tufa. Tufa-only
     true group delegation coverage now proves single->2-of-2 group, 2-of-2
     group->single, 2-of-2 group->2-of-2 group, and witnessed 2-of-3
-    group->witnessed 2-of-3 group approval. Tufa now has a narrow production
-    `Habery.makeGroupHab(...)` inception surface for locally available members,
-    but this is not a full distributed group workflow; Tufa still lacks
-    KERIpy-style `Counselor` / `Multiplexor` coordination and group rotation
-    orchestration.
+    group->witnessed 2-of-3 group approval. Tufa now has public CLI multisig
+    `incept`, `join`, `interact`, and `rotate` surfaces over the real
+    grouping/multiplexing path; interop workflows should use those CLI seams
+    instead of private `Habery.makeGroupHab(...)` shortcuts.
 25. Delegation source-seal repair has two cases. Pending delegated events in
     `pdes` / `delegables` still use explicit delegation escrow promotion, but
     already accepted local delegated events must also pin `aess` when a later
@@ -248,3 +247,14 @@ and KERIpy interoperability.
   same store that command-local Tufa CLI confirmation is mutating. Use witnessed
   mailbox/OOBI transport for the cross-implementation workflow instead of a
   same-store direct Tufa host.
+
+### 2026-06-08 - Public Multisig CLI Boundary Landed
+
+- Tufa group workflows now have public `tufa multisig incept`, `join`,
+  `interact`, and `rotate` commands. Tests and seed workflows should mirror KLI
+  by using `tufa multisig join` for Tufa-generated group AIDs instead of
+  invoking internal group habitat APIs.
+- Delegated group inception must keep the delegator proof explicit: create the
+  delegated group event with `delpre`, anchor it from the delegator, then query
+  the delegator KEL with the delegated event anchor and assert the delegate's
+  stored delegator field.

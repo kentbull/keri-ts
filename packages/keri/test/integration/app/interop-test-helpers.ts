@@ -100,6 +100,29 @@ const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
 const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}`;
 const KERIPY_INTEROP_RAW_BASE = `https://raw.githubusercontent.com/kentbull/keripy/${KERIPY_INTEROP_COMMIT}`;
 
+/** Pinned interop verifier fixture used by mixed KERIpy/Tufa ACDC tests. */
+export const INTEROP_VERIFIER_COMMIT = "fef457d65df1ca72bd44d52bea57d28cc78e62d0";
+
+const INTEROP_VERIFIER_RAW_BASE =
+  `https://raw.githubusercontent.com/kentbull/interop-verifier/${INTEROP_VERIFIER_COMMIT}`;
+const INTEROP_VERIFIER_FIXTURE_FILES = [
+  "scripts/interop-verifier-incept-no-wits.json",
+  "src/interop_verifier/__init__.py",
+  "src/interop_verifier/app/__init__.py",
+  "src/interop_verifier/app/cli.py",
+  "src/interop_verifier/core/__init__.py",
+  "src/interop_verifier/core/basing.py",
+  "src/interop_verifier/core/credentials.py",
+  "src/interop_verifier/core/handling.py",
+  "src/interop_verifier/core/httping.py",
+  "src/interop_verifier/core/monitoring.py",
+  "src/interop_verifier/core/policy.py",
+  "src/interop_verifier/core/serving.py",
+  "src/interop_verifier/core/verifying.py",
+  "src/interop_verifier/data/__init__.py",
+  "src/interop_verifier/data/interop-verifier-incept-no-wits.json",
+] as const;
+
 /**
  * Runs one command and returns decoded stdout/stderr.
  */
@@ -397,6 +420,10 @@ function keripyInteropFixtureRoot(): string {
 
 function keripyInteropVenvBin(name: string): string {
   return `${keripyInteropVenvRoot()}/bin/${name}`;
+}
+
+function interopVerifierCacheRoot(): string {
+  return `${cacheHome()}/tufa-interop/interop-verifier/${INTEROP_VERIFIER_COMMIT}`;
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -752,6 +779,34 @@ async function downloadPinnedKeripyFixture(
     recursive: true,
   });
   await Deno.writeFile(target, new Uint8Array(await response.arrayBuffer()));
+}
+
+async function downloadPinnedInteropVerifierFixture(
+  relativePath: string,
+): Promise<void> {
+  const target = `${interopVerifierCacheRoot()}/${relativePath}`;
+  if (await pathExists(target)) {
+    return;
+  }
+  const url = `${INTEROP_VERIFIER_RAW_BASE}/${relativePath}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Unable to fetch pinned interop-verifier fixture ${url}: HTTP ${response.status}`,
+    );
+  }
+  await Deno.mkdir(target.slice(0, target.lastIndexOf("/")), {
+    recursive: true,
+  });
+  await Deno.writeFile(target, new Uint8Array(await response.arrayBuffer()));
+}
+
+/** Resolve the pinned interop-verifier fixture root, downloading it if needed. */
+export async function ensureInteropVerifierFixtureRoot(): Promise<string> {
+  await Promise.all(
+    INTEROP_VERIFIER_FIXTURE_FILES.map((relativePath) => downloadPinnedInteropVerifierFixture(relativePath)),
+  );
+  return interopVerifierCacheRoot();
 }
 
 async function ensurePinnedKeripyFixtures(): Promise<void> {

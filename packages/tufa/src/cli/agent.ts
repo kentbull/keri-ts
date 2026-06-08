@@ -2,14 +2,11 @@ import type { Operation } from "effection";
 import {
   type CesrBodyMode,
   type Configer,
-  createAgentRuntime,
   createConfiger,
   EndpointRoles,
   type Hab,
   type Habery,
-  ingestKeriBytes,
   normalizeCesrBodyMode,
-  processRuntimeTurn,
   Schemer,
   Schemes,
   ValidationError,
@@ -31,10 +28,6 @@ interface AgentArgs {
   cesrBodyMode?: CesrBodyMode;
   schemas?: string[];
   schemaDirs?: string[];
-}
-
-function configuredControllerState(hab: Hab): boolean {
-  return hab.hasConfigSection();
 }
 
 function controllerRoleEnabled(hby: Habery, pre: string): boolean {
@@ -102,45 +95,21 @@ function importHostedSchemas(
   }
 }
 
-function* reconcileHostedControllerBootstrap(
+function validateHostedControllerBootstrap(
   hby: Habery,
   seedHabs: readonly Hab[],
-  synthesizeRootUrl: string,
-): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-  try {
-    for (const hab of seedHabs) {
-      if (configuredControllerState(hab)) {
-        if (!controllerStartupComplete(hby, hab)) {
-          throw new ValidationError(
-            `Configured controller endpoint state for alias ${hab.name} is incomplete.`,
-          );
-        }
-        continue;
-      }
-
-      if (!controllerRoleEnabled(hby, hab.pre)) {
-        ingestKeriBytes(
-          runtime,
-          hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
-        );
-      }
-      if (!preferredControllerUrl(hab)) {
-        ingestKeriBytes(
-          runtime,
-          hab.makeLocScheme(synthesizeRootUrl, hab.pre, Schemes.http),
-        );
-      }
-      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-
-      if (!controllerStartupComplete(hby, hab)) {
-        throw new ValidationError(
-          `Fallback controller endpoint bootstrap failed for alias ${hab.name}.`,
-        );
-      }
+): void {
+  for (const hab of seedHabs) {
+    if (!hab.hasConfigSection()) {
+      throw new ValidationError(
+        `Agent alias ${hab.name} is missing controller curls config.`,
+      );
     }
-  } finally {
-    yield* runtime.close();
+    if (!controllerStartupComplete(hby, hab)) {
+      throw new ValidationError(
+        `Configured controller endpoint state for alias ${hab.name} is incomplete.`,
+      );
+    }
   }
 }
 
@@ -220,7 +189,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   );
 
   try {
-    const seedHabs = [...hby.habs.values()];
+    const seedHabs = [...hby.habs.values()].filter((hab) => !hby.db.getHab(hab.pre)?.mid);
     importHostedSchemas(
       hby,
       agentArgs.schemas ?? [],
@@ -232,11 +201,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
         "Agent host requires at least one local identifier.",
       );
     }
-    yield* reconcileHostedControllerBootstrap(
-      hby,
-      seedHabs,
-      `http://127.0.0.1:${port}`,
-    );
+    validateHostedControllerBootstrap(hby, seedHabs);
     yield* runIndirectHost(hby, {
       port,
       listenHost: "127.0.0.1",

@@ -8,6 +8,7 @@
  * - keeps registry, wallet, and verifier persistence in VDR modules
  */
 import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
+import type { AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
 import { ValidationError } from "../core/errors.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
@@ -56,6 +57,7 @@ export function credentialSupportMessages(
   reger: Reger,
   creder: SerderACDC,
   recipient: string,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array[] {
   const messages: Uint8Array[] = [];
   const issuer = creder.issuer;
@@ -67,8 +69,8 @@ export function credentialSupportMessages(
   if (!issuerKever) {
     throw new ValidationError(`Missing issuer KEL state for ${issuer}.`);
   }
-  messages.push(...hby.db.cloneDelegation(issuerKever));
-  messages.push(...hby.db.clonePreIter(issuer));
+  messages.push(...hby.db.cloneDelegation(issuerKever, counterProfile));
+  messages.push(...hby.db.clonePreIter(issuer, 0, counterProfile));
 
   const issuee = credentialIssuee(creder);
   if (issuee && issuee !== recipient) {
@@ -76,17 +78,17 @@ export function credentialSupportMessages(
     if (!issueeKever) {
       throw new ValidationError(`Missing issuee KEL state for ${issuee}.`);
     }
-    messages.push(...hby.db.cloneDelegation(issueeKever));
-    messages.push(...hby.db.clonePreIter(issuee));
+    messages.push(...hby.db.cloneDelegation(issueeKever, counterProfile));
+    messages.push(...hby.db.clonePreIter(issuee, 0, counterProfile));
   }
 
   const registry = creder.regid;
   if (registry) {
-    messages.push(...reger.clonePreIter(registry));
+    messages.push(...reger.clonePreIter(registry, 0, counterProfile));
   }
 
   const said = credentialSaid(creder);
-  messages.push(...reger.clonePreIter(said));
+  messages.push(...reger.clonePreIter(said, 0, counterProfile));
   return messages;
 }
 
@@ -102,9 +104,16 @@ export function credentialStreamMessages(
   reger: Reger,
   creder: SerderACDC,
   recipient: string,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array[] {
   return [
-    ...credentialPresentationSupportMessages(hby, reger, creder, recipient),
+    ...credentialPresentationSupportMessages(
+      hby,
+      reger,
+      creder,
+      recipient,
+      counterProfile,
+    ),
     credentialExportMessage(reger, credentialSaid(creder)),
   ];
 }
@@ -115,10 +124,17 @@ export function credentialPresentationSupportMessages(
   reger: Reger,
   creder: SerderACDC,
   recipient: string,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array[] {
-  const messages = credentialSupportMessages(hby, reger, creder, recipient);
-  for (const [source, atc] of reger.sources(hby.db, creder)) {
-    messages.push(...credentialSupportMessages(hby, reger, source, recipient));
+  const messages = credentialSupportMessages(
+    hby,
+    reger,
+    creder,
+    recipient,
+    counterProfile,
+  );
+  for (const [source, atc] of reger.sources(hby.db, creder, counterProfile)) {
+    messages.push(...credentialSupportMessages(hby, reger, source, recipient, counterProfile));
     messages.push(concatBytes(source.raw, atc));
   }
   return messages;
@@ -129,10 +145,11 @@ export function credentialPresentationArtifacts(
   hby: Habery,
   reger: Reger,
   credentialSaidValue: string,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): CredentialPresentationArtifacts {
   const [creder, prefixer, number, diger] = reger.cloneCred(credentialSaidValue);
-  const acdc = serializeCredential(creder, prefixer, number, diger);
-  const iss = reger.cloneTvtAt(credentialSaidValue, 0);
+  const acdc = serializeCredential(creder, prefixer, number, diger, counterProfile);
+  const iss = reger.cloneTvtAt(credentialSaidValue, 0, counterProfile);
   const iserder = new SerderKERI({ raw: iss });
   if (!iserder.said) {
     throw new ValidationError(`Credential TEL message ${credentialSaidValue} is missing SAID.`);
@@ -155,7 +172,7 @@ export function credentialPresentationArtifacts(
   if (!Number.isSafeInteger(sn)) {
     throw new ValidationError(`Credential anchor sequence is too large for replay: ${anchorNumber.qb64}.`);
   }
-  const replay = acceptedEventReplayMessage(hby, issuer, sn);
+  const replay = acceptedEventReplayMessage(hby, issuer, sn, counterProfile);
   if (replay.serder.said !== anchorDiger.qb64) {
     throw new ValidationError(
       `Credential anchor event ${replay.serder.said ?? "<missing>"} did not match ${anchorDiger.qb64}.`,
@@ -174,10 +191,23 @@ export function ipexCredentialGrant(args: {
   credentialSaid: string;
   message?: string;
   options?: IpexCredentialGrantOptions;
+  sign?: boolean;
 }): CredentialGrantMessage {
   const [creder] = args.reger.cloneCred(args.credentialSaid);
-  const artifacts = credentialPresentationArtifacts(args.hby, args.reger, args.credentialSaid);
-  const support = credentialPresentationSupportMessages(args.hby, args.reger, creder, args.recipient);
+  const counterProfile = args.options?.counterProfile ?? "legacy";
+  const artifacts = credentialPresentationArtifacts(
+    args.hby,
+    args.reger,
+    args.credentialSaid,
+    counterProfile,
+  );
+  const support = credentialPresentationSupportMessages(
+    args.hby,
+    args.reger,
+    creder,
+    args.recipient,
+    counterProfile,
+  );
   const [grant, attachments] = ipexGrantExn(
     args.hab,
     args.recipient,
@@ -193,7 +223,10 @@ export function ipexCredentialGrant(args: {
   return {
     grant,
     attachments,
-    wire: concatBytes(args.hab.endorse(grant, { pipelined: false }), attachments),
+    wire: args.sign === false ? new Uint8Array() : concatBytes(
+      args.hab.endorse(grant, { pipelined: false, counterProfile }),
+      attachments,
+    ),
     artifacts,
     support,
   };
@@ -231,9 +264,9 @@ export function processCredentialPresentationArtifacts(
   reactor: Reactor,
   artifacts: CredentialPresentationArtifacts,
 ): void {
-  reactor.processChunk(artifacts.anc);
-  reactor.processChunk(artifacts.iss);
-  reactor.processChunk(artifacts.acdc);
+  reactor.processCompleteChunk(artifacts.anc);
+  reactor.processCompleteChunk(artifacts.iss);
+  reactor.processCompleteChunk(artifacts.acdc);
   reactor.processEscrowsOnce();
 }
 
@@ -322,12 +355,28 @@ function acdcRaw(value: unknown, label: string): Uint8Array {
 function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {
   const path = `/e/${label}`;
   for (const text of hby.db.epath.get([said])) {
-    const raw = textEncoder.encode(text);
-    const counter = new Counter({ qb64b: raw });
-    const pather = parsePather(raw.slice(counter.fullSize), "txt");
-    if (pather.path === path) {
-      return raw.slice(counter.fullSize + pather.fullSize);
+    const attachment = pathedAttachmentFromRaw(textEncoder.encode(text), path);
+    if (attachment) {
+      return attachment;
     }
   }
   return new Uint8Array();
+}
+
+function pathedAttachmentFromRaw(raw: Uint8Array, path: string): Uint8Array | null {
+  if (raw.length === 0) {
+    return null;
+  }
+  const counter = new Counter({ qb64b: raw });
+  const body = raw.slice(counter.fullSize);
+  try {
+    const pather = parsePather(body, "txt");
+    if (pather.path === path) {
+      return body.slice(pather.fullSize);
+    }
+  } catch {
+    // A multisig wrapper can preserve the grant's own pathed-material group as
+    // the counted payload. In that case unwrap one group layer and retry.
+  }
+  return body[0] === "-".charCodeAt(0) ? pathedAttachmentFromRaw(body, path) : null;
 }

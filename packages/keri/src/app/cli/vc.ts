@@ -1,17 +1,33 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { concatBytes, SerderACDC } from "../../../../cesr/mod.ts";
+import {
+  concatBytes,
+  Diger,
+  Ilks,
+  NumberPrimitive,
+  NumDex,
+  Prefixer,
+  Saider,
+  Seqner,
+  SerderACDC,
+  TraitDex,
+} from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { incept as inceptRegistryEvent, issue as issueEvent } from "../../core/protocol-vdr-eventing.ts";
+import { RegistryRecord } from "../../core/records.ts";
 import { Schemer } from "../../core/scheming.ts";
 import { Reger } from "../../db/reger.ts";
-import { Credentialer, CredentialWallet, Regery, type Registry } from "../../vdr/credentialing.ts";
+import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
 import type { ExchangeDeliveryPreference } from "../forwarding.ts";
+import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { credentialStreamMessages } from "../ipex-credentialing.ts";
 import { Verifier } from "../verifying.ts";
 import { setupHby } from "./common/existing.ts";
+
+const MULTISIG_TOPIC = "multisig";
 
 interface VcBaseArgs {
   name?: string;
@@ -26,6 +42,7 @@ interface VcRegistryArgs extends VcBaseArgs {
   registryName?: string;
   noBackers?: boolean;
   estOnly?: boolean;
+  usage?: string;
 }
 
 interface VcCreateArgs extends VcBaseArgs {
@@ -86,6 +103,11 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
   try {
     const hab = requireHab(hby, vcArgs.alias);
     const rgy = requireRegery(runtime);
+    if (isGroupHab(hby, hab)) {
+      const result = yield* proposeGroupRegistryIncept(hby, runtime, rgy, hab, vcArgs);
+      console.log(JSON.stringify(result));
+      return;
+    }
     const registry = rgy.makeRegistry(vcArgs.registryName!, hab, {
       noBackers: vcArgs.noBackers ?? true,
       estOnly: vcArgs.estOnly ?? false,
@@ -174,6 +196,14 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
       edges: parseJsonSectionArg(vcArgs.edges, "edges"),
       rules: parseJsonSectionArg(vcArgs.rules, "rules"),
     });
+    if (isGroupHab(hby, registry.hab)) {
+      const result = yield* proposeGroupCredentialIssue(hby, runtime, reger, registry, creder);
+      if (vcArgs.out && result.saved) {
+        writeCredentialStream(hby, reger, creder, recipient ?? creder.issuee ?? "", vcArgs.out);
+      }
+      console.log(JSON.stringify(result));
+      return;
+    }
     const result = credentialer.issue(registry, creder);
     if (vcArgs.out) {
       writeCredentialStream(hby, reger, creder, recipient ?? creder.issuee ?? "", vcArgs.out);
@@ -361,6 +391,7 @@ function registryArgs(
     registryName: args.registryName as string | undefined,
     noBackers: args.noBackers as boolean | undefined,
     estOnly: args.estOnly as boolean | undefined,
+    usage: args.usage as string | undefined,
   };
   if (aliasRequired) {
     requireNonEmpty(parsed.alias, "Alias");
@@ -499,6 +530,321 @@ function writeCredentialStream(
   path: string,
 ): void {
   Deno.writeFileSync(path, concatBytes(...credentialStreamMessages(hby, reger, creder, recipient)));
+}
+
+function* proposeGroupRegistryIncept(
+  hby: Habery,
+  runtime: AgentRuntime,
+  rgy: Regery,
+  hab: Hab,
+  args: VcRegistryArgs,
+) {
+  const noBackers = args.noBackers ?? true;
+  const estOnly = args.estOnly ?? false;
+  if (!noBackers) {
+    throw new ValidationError("Group registry inception currently requires a no-backers registry.");
+  }
+  const cnfg = [
+    ...(noBackers ? [TraitDex.NoBackers] : []),
+    ...(estOnly ? [TraitDex.EstOnly] : []),
+  ];
+  const vcp = inceptRegistryEvent(hab.pre, { cnfg });
+  const anchor = hby.interactGroupHab(args.alias!, undefined, {
+    data: [eventSeal(vcp)],
+  });
+  const seal = sourceSeal(anchor.serder);
+  const decision = requireTevery(runtime).processEvent({
+    serder: vcp,
+    seqner: seal.seqner,
+    saider: seal.saider,
+  });
+  requireRegery(runtime).processEscrows();
+
+  const regk = requireSerderPrefix(vcp, "registry inception");
+  registerRegistry(rgy, args.registryName!, hab, regk, { noBackers, estOnly });
+  if (telAccepted(runtime, regk, 0, requireSerderSaid(vcp, "registry inception"))) {
+    markTelComplete(runtime, regk, 0, requireSerderSaid(vcp, "registry inception"));
+  }
+
+  const deliveries = yield* publishGroupVcProposal(runtime, hab, MULTISIG_VCP_ROUTE, {
+    gid: hab.pre,
+    usage: args.usage ?? args.registryName ?? "credential registry",
+  }, {
+    vcp: vcp.raw,
+    anc: anchor.message,
+  });
+
+  return {
+    name: args.registryName,
+    registry: regk,
+    issuer: hab.pre,
+    route: MULTISIG_VCP_ROUTE,
+    status: decision.kind,
+    accepted: telAccepted(runtime, regk, 0, requireSerderSaid(vcp, "registry inception")),
+    deliveries,
+  };
+}
+
+function* proposeGroupCredentialIssue(
+  hby: Habery,
+  runtime: AgentRuntime,
+  reger: Reger,
+  registry: Registry,
+  creder: SerderACDC,
+) {
+  const regk = requireRegistryKey(registry);
+  const iss = issueEvent(requireCredentialSaid(creder), regk);
+  const anchor = hby.interactGroupHab(registry.hab.name, undefined, {
+    data: [eventSeal(iss)],
+  });
+  const seal = sourceSeal(anchor.serder);
+  const telDecision = requireTevery(runtime).processEvent({
+    serder: iss,
+    seqner: seal.seqner,
+    saider: seal.saider,
+  });
+  requireRegery(runtime).processEscrows();
+  const credentialer = new Credentialer(hby, {
+    reger,
+    vry: requireVerifier(runtime),
+  });
+  credentialer.validate(creder);
+  const credentialSeal = telCredentialSeal(iss);
+  const verifierDecision = requireVerifier(runtime).processCredential({
+    creder,
+    prefixer: credentialSeal.prefixer,
+    seqner: credentialSeal.seqner,
+    saider: credentialSeal.saider,
+  });
+  if (verifierDecision.kind === "accept") {
+    reger.ccrd.pin(requireCredentialSaid(creder), creder);
+  }
+  requireVerifier(runtime).processEscrows();
+  if (
+    telAccepted(
+      runtime,
+      requireSerderPrefix(iss, "credential issue"),
+      iss.sn ?? 0,
+      requireSerderSaid(iss, "credential issue"),
+    )
+  ) {
+    markTelComplete(runtime, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
+  }
+
+  const deliveries = yield* publishGroupVcProposal(runtime, registry.hab, MULTISIG_ISS_ROUTE, {
+    gid: registry.hab.pre,
+  }, {
+    acdc: serializeCredential(
+      creder,
+      credentialSeal.prefixer,
+      credentialSeal.seqner,
+      credentialSeal.saider,
+    ),
+    iss: iss.raw,
+    anc: anchor.message,
+  });
+
+  return {
+    said: creder.said,
+    registry: creder.regid,
+    issuer: creder.issuer,
+    issuee: creder.issuee,
+    schema: creder.schema,
+    tel: iss.said,
+    route: MULTISIG_ISS_ROUTE,
+    status: verifierDecision.kind,
+    telStatus: telDecision.kind,
+    saved: credentialSaved(reger, creder),
+    deliveries,
+  };
+}
+
+function* publishGroupVcProposal(
+  runtime: AgentRuntime,
+  groupHab: Hab,
+  route: typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE,
+  payload: Record<string, unknown>,
+  embeds: Record<string, Uint8Array>,
+) {
+  const member = localGroupMember(runtime.hby, groupHab.pre);
+  const deliveries: string[] = [];
+  for (const recipient of groupSigningMembers(runtime.hby, groupHab.pre)) {
+    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
+      continue;
+    }
+    const result = yield* runtime.poster.sendExchange(member, {
+      recipient,
+      route,
+      payload,
+      embeds,
+      topic: MULTISIG_TOPIC,
+    });
+    deliveries.push(...result.deliveries, ...result.queued);
+  }
+  return deliveries;
+}
+
+function registerRegistry(
+  rgy: Regery,
+  name: string,
+  hab: Hab,
+  regk: string,
+  options: { noBackers: boolean; estOnly: boolean },
+): void {
+  rgy.reger.registries.add(regk);
+  rgy.reger.regs.pin(
+    name,
+    new RegistryRecord({
+      registryKey: regk,
+      prefix: hab.pre,
+    }),
+  );
+  if (!rgy.registries.has(name)) {
+    rgy.registries.set(
+      name,
+      new Registry({
+        name,
+        hab,
+        reger: rgy.reger,
+        tvy: rgy.tvy,
+        cues: rgy.cues,
+        regk,
+        noBackers: options.noBackers,
+        estOnly: options.estOnly,
+      }),
+    );
+  }
+}
+
+function isGroupHab(hby: Habery, hab: Hab): boolean {
+  return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
+}
+
+function localGroupMember(hby: Habery, groupPre: string): Hab {
+  const record = hby.db.getHab(groupPre);
+  const member = record?.mid ? hby.habs.get(record.mid) : null;
+  if (!member) {
+    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
+  }
+  return member;
+}
+
+function groupSigningMembers(hby: Habery, groupPre: string): string[] {
+  const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);
+  if (stored.length > 0) {
+    return stored;
+  }
+  const record = hby.db.getHab(groupPre);
+  return record?.smids ?? [];
+}
+
+function eventSeal(
+  serder: { pre: string | null; snh?: string | null; sn: number | null; said: string | null },
+): Record<string, string> {
+  const pre = requireSerderPrefix(serder, "TEL event");
+  const sn = serder.snh ?? (serder.sn ?? 0).toString(16);
+  const dig = requireSerderSaid(serder, "TEL event");
+  return { i: pre, s: sn, d: dig };
+}
+
+function sourceSeal(serder: { pre: string | null; sn: number | null; said: string | null }) {
+  return {
+    prefixer: new Prefixer({ qb64: requireSerderPrefix(serder, "anchor event") }),
+    seqner: ordinal(serder.sn ?? 0),
+    saider: new Diger({ qb64: requireSerderSaid(serder, "anchor event") }),
+  };
+}
+
+function telCredentialSeal(serder: { pre: string | null; sn: number | null; said: string | null }) {
+  return {
+    prefixer: new Prefixer({ qb64: requireSerderPrefix(serder, "credential TEL event") }),
+    seqner: ordinal(serder.sn ?? 0),
+    saider: new Diger({ qb64: requireSerderSaid(serder, "credential TEL event") }),
+  };
+}
+
+function ordinal(num: number | bigint): NumberPrimitive {
+  const raw = new Uint8Array(16);
+  let value = BigInt(num);
+  for (let i = raw.length - 1; i >= 0; i--) {
+    raw[i] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+  return new NumberPrimitive({ code: NumDex.Huge, raw });
+}
+
+function seqner(num: number | bigint): Seqner {
+  const raw = new Uint8Array(16);
+  let value = BigInt(num);
+  for (let i = raw.length - 1; i >= 0; i--) {
+    raw[i] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+  return new Seqner({ code: NumDex.Huge, raw });
+}
+
+function requireRegistryKey(registry: Registry): string {
+  if (!registry.regk) {
+    throw new ValidationError(`Registry ${registry.name} has not been incepted.`);
+  }
+  return registry.regk;
+}
+
+function requireCredentialSaid(creder: SerderACDC): string {
+  if (!creder.said) {
+    throw new ValidationError("Credential is missing SAID.");
+  }
+  return creder.said;
+}
+
+function credentialSaved(reger: Reger, creder: SerderACDC): boolean {
+  const said = requireCredentialSaid(creder);
+  return reger.saved.get([said]) !== null || reger.ccrd.get(said) !== null;
+}
+
+function requireSerderPrefix(
+  serder: { pre: string | null },
+  label: string,
+): string {
+  if (!serder.pre) {
+    throw new ValidationError(`${label} is missing prefix.`);
+  }
+  return serder.pre;
+}
+
+function requireSerderSaid(
+  serder: { said: string | null },
+  label: string,
+): string {
+  if (!serder.said) {
+    throw new ValidationError(`${label} is missing SAID.`);
+  }
+  return serder.said;
+}
+
+function telAccepted(
+  runtime: AgentRuntime,
+  pre: string,
+  sn: number,
+  eventSaid: string,
+): boolean {
+  return requireReger(runtime).tels.getOn(pre, sn)?.qb64 === eventSaid;
+}
+
+function markTelComplete(
+  runtime: AgentRuntime,
+  pre: string,
+  sn: number,
+  eventSaid: string,
+): void {
+  requireReger(runtime).ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
+}
+
+function requireReger(runtime: AgentRuntime): Reger {
+  if (!(runtime.vdr.reger instanceof Reger)) {
+    throw new ValidationError("VDR runtime did not open Reger.");
+  }
+  return runtime.vdr.reger;
 }
 
 function savedCredentials(reger: Reger): Set<string> {

@@ -74,6 +74,15 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
     listing. `kli vc list` filters by the local AID as credential subject;
     a KERIpy/Sally-style verifier target should be checked by saved/exportable
     credential SAID, not by `vc list` for the verifier's own AID.
+18. The vLEI Sally interop gate is public-CLI only: Tufa creates GEDA ->
+    delegated-QVI -> LE -> OOR credentials, with multisig GEDA/QVI/LE,
+    mixed Tufa/KLI witnesses, witness mailboxes for GEDA/QVI, separate KERIpy
+    LE mailbox, separate Tufa OOR mailbox, and final direct presentation of
+    QVI/LE/OOR to a Dockerized Sally plus `sally hook demo`.
+19. CESR-over-HTTP header framing for credential presentation support must be
+    protocol-aware. Direct delivery can start with ACDC bodies, so request
+    splitting must smell/parse the first SAD instead of constructing
+    `SerderKERI` unconditionally.
 
 ## Use This Doc For
 
@@ -97,8 +106,9 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
    CLI command surfaces that drive them.
 5. Expand Phase 14 beyond the passing live KLI/Tufa holder/verifier and
    I2I/NI2I mixed-chain gates into KLI-involved revocation propagation,
-   export/import matrix coverage, multisig credential dissemination where
-   KERIpy supports it, and byte-level fixture parity for ACDC DB rows.
+   export/import matrix coverage, broader delegated multisig credential
+   dissemination/revocation coverage, and byte-level fixture parity for ACDC DB
+   rows.
 
 ## Milestone Rollup
 
@@ -245,3 +255,15 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
   Tufa -> KLI credential transmission gates use the regular IPEX grant/admit
   API as instructed instead of adding KLI API surface or relying on file
   handoff.
+
+### 2026-06-08 - vLEI Sally Interop Gate Landed
+
+- `scripts/vlei-tufa-sally-interop.sh` is the public CLI gate for a Tufa-created
+  vLEI chain: multisig GEDA -> delegated multisig QVI -> multisig LE -> OOR
+  holder, with at least three mixed Tufa/KLI witnesses per AID and TOAD 2.
+- The gate proves mailbox interoperability in the same chain: GEDA/QVI use
+  witness mailboxes, LE uses a separate KERIpy mailbox, and OOR uses a separate
+  Tufa mailbox.
+- Sally 1.0.4/KERIpy 1.2.13 direct delivery requires legacy attachment counter
+  framing, and Sally schema OOBIs should be resolved without `--force` because
+  schema OOBIs do not yield controller CIDs.

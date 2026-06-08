@@ -21,6 +21,7 @@ import {
 import {
   canRunLocalKeripy,
   createInteropContext,
+  ensureInteropVerifierFixtureRoot,
   extractLastNonEmptyLine,
   type InteropContext,
   localKeripyRoot,
@@ -31,6 +32,7 @@ import {
   runTufa,
   runTufaWithTimeout,
   spawnChild,
+  type SpawnedChild,
   stopChild,
   withStartedChild,
   workspaceRoot,
@@ -103,6 +105,122 @@ function pythonCommandForKli(kliCommand: string): string {
     return "python";
   }
   return `${kliCommand.slice(0, slash)}/python`;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function interopVerifierRoot(ctx: InteropContext): Promise<string> {
+  const localRoot = `${ctx.repoRoot.replace(/\/$/, "")}/../../../verifier/apps/interop-verifier`;
+  if (
+    await pathExists(`${localRoot}/src/interop_verifier/app/cli.py`)
+    && await pathExists(`${localRoot}/scripts/interop-verifier-incept-no-wits.json`)
+  ) {
+    return localRoot;
+  }
+  return await ensureInteropVerifierFixtureRoot();
+}
+
+function withPythonPath(
+  env: Record<string, string>,
+  path: string,
+): Record<string, string> {
+  const current = env.PYTHONPATH ?? "";
+  return {
+    ...env,
+    PYTHONPATH: current ? `${path}:${current}` : path,
+  };
+}
+
+async function startInteropVerifier(
+  ctx: InteropContext,
+  workDir: string,
+  args: {
+    name: string;
+    alias: string;
+    port: number;
+    hook: string;
+    schemas?: string[];
+  },
+): Promise<SpawnedChild> {
+  const root = await interopVerifierRoot(ctx);
+  const verifierArgs = [
+    "-m",
+    "interop_verifier.app.cli",
+    "start",
+    "--name",
+    args.name,
+    "--head-dir",
+    `${workDir}/interop-verifier`,
+    "--alias",
+    args.alias,
+    "--http",
+    String(args.port),
+    "--web-hook",
+    args.hook,
+    "--incept-file",
+    `${root}/scripts/interop-verifier-incept-no-wits.json`,
+  ];
+  for (const schema of args.schemas ?? []) {
+    verifierArgs.push("--schema", schema);
+  }
+  const env = withPythonPath(ctx.env, `${root}/src`);
+  if (await canRunLocalKeripy(ctx.env)) {
+    return spawnChild(
+      "uv",
+      [
+        "run",
+        "--project",
+        localKeripyRoot(),
+        "--with-editable",
+        localKeripyRoot(),
+        "python",
+        ...verifierArgs,
+      ],
+      env,
+      ctx.repoRoot,
+    );
+  }
+  return spawnChild(
+    pythonCommandForKli(ctx.kliCommand),
+    verifierArgs,
+    env,
+    ctx.repoRoot,
+  );
+}
+
+async function interopVerifierPre(port: number): Promise<string> {
+  const response = await fetch(`http://127.0.0.1:${port}/health`);
+  if (!response.ok) {
+    throw new Error(`interop-verifier health failed: HTTP ${response.status}`);
+  }
+  const health = await response.json() as Record<string, unknown>;
+  if (typeof health.pre !== "string" || health.pre.length === 0) {
+    throw new Error(`interop-verifier health did not expose an AID: ${JSON.stringify(health)}`);
+  }
+  return health.pre;
+}
+
+async function waitForInteropVerifierPre(port: number): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      return await interopVerifierPre(port);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  throw new Error(
+    `interop-verifier did not become healthy: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
 }
 
 function parseJsonLine(output: string): Record<string, unknown> {
@@ -580,9 +698,9 @@ async function pollTufaGrant(
           ...tufaStoreArgs(store),
           "--alias",
           store.alias,
-          "--max-turns",
+          "--poll-turns",
           "3",
-          "--budget-ms",
+          "--poll-budget-ms",
           "1000",
         ],
         ctx.env,
@@ -723,31 +841,6 @@ async function assertKliCredentialListed(
   }
 }
 
-async function assertKliCredentialExportable(
-  ctx: InteropContext,
-  store: KliStore,
-  credentialSaid: string,
-): Promise<void> {
-  const exported = await requireSuccess(
-    `${store.name} credential export`,
-    runCmdWithTimeout(
-      ctx.kliCommand,
-      [
-        "vc",
-        "export",
-        ...kliStoreArgs(store),
-        "--alias",
-        store.alias,
-        "--said",
-        credentialSaid,
-      ],
-      ctx.env,
-      30_000,
-    ),
-  );
-  assertStringIncludes(exported.stdout, credentialSaid);
-}
-
 async function assertTufaHookPresentation(
   hookOrigin: string,
   holderPre: string,
@@ -768,6 +861,33 @@ async function assertTufaHookPresentation(
   } finally {
     await response.body?.cancel().catch(() => undefined);
   }
+}
+
+async function waitForTufaHookPresentation(
+  hookOrigin: string,
+  holderPre: string,
+  expected: {
+    credential: string;
+    issuer: string;
+    schema: string;
+  },
+): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      await assertTufaHookPresentation(hookOrigin, holderPre, expected);
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw new Error(
+    `Timed out waiting for hook presentation from ${holderPre}: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
 }
 
 function chainEdge(
@@ -953,7 +1073,7 @@ async function alignedKliIpexMessage(
   return parsed.message;
 }
 
-Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa verifiers", async () => {
+Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to interop and Tufa verifiers", async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-i2i-" });
   const ctx: InteropContext = {
@@ -968,6 +1088,7 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
   const schemaPath = `${workDir}/schema.json`;
   const base = "";
   const providerPort = randomPort();
+  const interopVerifierPort = randomPort();
   const tufaVerifierPort = randomPort();
   const hookPort = randomPort();
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
@@ -1029,11 +1150,6 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
           base,
           alias: "holder",
         });
-        const kliVerifier = await createKliStore(ctx, {
-          name: `chain-kli-verifier-${unique}`,
-          base,
-          alias: "kli-verifier",
-        });
         const tufaVerifier = await createTufaStore(ctx, {
           name: `chain-tufa-verifier-${unique}`,
           base,
@@ -1041,7 +1157,7 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
           alias: "tufa-verifier",
         });
 
-        for (const store of [issuerA, issuerC, holder, kliVerifier]) {
+        for (const store of [issuerA, issuerC, holder]) {
           await importSchemaToKli(ctx, store, schemaPath);
         }
         for (const store of [issuerB, issuerD, tufaVerifier]) {
@@ -1058,7 +1174,6 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
         const issuerCMailbox = await configureKliMailbox(ctx, issuerC, "provider", provider.mailboxOobi);
         const issuerDMailbox = await configureTufaMailbox(ctx, issuerD, "provider", provider.mailboxOobi);
         const holderMailbox = await configureKliMailbox(ctx, holder, "provider", provider.mailboxOobi);
-        const kliVerifierMailbox = await configureKliMailbox(ctx, kliVerifier, "provider", provider.mailboxOobi);
 
         await resolveKliOobi(ctx, { ...issuerA, oobi: issuerBMailbox, alias: "issuer-b" });
         await resolveTufaOobi(ctx, { ...issuerB, url: issuerAMailbox, alias: "issuer-a" });
@@ -1068,8 +1183,6 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
         await resolveTufaOobi(ctx, { ...issuerD, url: issuerCMailbox, alias: "issuer-c" });
         await resolveTufaOobi(ctx, { ...issuerD, url: holderMailbox, alias: "holder" });
         await resolveKliOobi(ctx, { ...holder, oobi: issuerDMailbox, alias: "issuer-d" });
-        await resolveKliOobi(ctx, { ...holder, oobi: kliVerifierMailbox, alias: "kli-verifier" });
-        await resolveKliOobi(ctx, { ...kliVerifier, oobi: holderMailbox, alias: "holder" });
 
         const credentialA = await createKliCredential(ctx, issuerA, {
           registryName: "reg-a",
@@ -1121,10 +1234,46 @@ Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to KLI and Tufa 
         await admitKliGrant(ctx, workDir, holder, grantD, "accepted ok");
         await assertKliCredentialListed(ctx, holder, schemaSaid, credentialD);
 
-        await grantFromKli(ctx, workDir, holder, "kli-verifier", credentialD, "presentation ok");
-        const kliVerifierGrant = await pollKliGrant(ctx, kliVerifier);
-        await admitKliGrant(ctx, workDir, kliVerifier, kliVerifierGrant, "verified ok");
-        await assertKliCredentialExportable(ctx, kliVerifier, credentialD);
+        const interopVerifier = await startInteropVerifier(ctx, workDir, {
+          name: `chain-interop-verifier-${unique}`,
+          alias: "interop-verifier",
+          port: interopVerifierPort,
+          hook: `${hookOrigin}/`,
+          schemas: [schemaPath],
+        });
+        let interopVerifierStopped = false;
+        try {
+          const verifierPre = await waitForInteropVerifierPre(interopVerifierPort);
+          const verifierOobi = `http://127.0.0.1:${interopVerifierPort}/oobi/${verifierPre}/controller`;
+          await resolveKliOobi(ctx, {
+            ...holder,
+            oobi: verifierOobi,
+            alias: "interop-verifier",
+          });
+          await grantFromKli(ctx, workDir, holder, "interop-verifier", credentialD, "presentation ok");
+          await waitForTufaHookPresentation(hookOrigin, holder.pre, {
+            credential: credentialD,
+            issuer: issuerD.pre,
+            schema: schemaSaid,
+          }).catch(async (error) => {
+            const health = await fetch(`http://127.0.0.1:${interopVerifierPort}/health`)
+              .then((response) => response.text())
+              .catch((healthError) => String(healthError));
+            throw new Error(
+              `${error instanceof Error ? error.message : String(error)}\n\ninterop-verifier health:\n${health}`,
+            );
+          });
+        } catch (error) {
+          const output = await stopChild(interopVerifier);
+          interopVerifierStopped = true;
+          throw new Error(
+            `${error instanceof Error ? error.message : String(error)}\n\ninterop-verifier output:\n${output}`,
+          );
+        } finally {
+          if (!interopVerifierStopped) {
+            await stopChild(interopVerifier);
+          }
+        }
 
         const tufaVerifierAgent = await startTufaAgentHost(ctx, {
           ...tufaVerifier,

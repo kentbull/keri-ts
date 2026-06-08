@@ -1,8 +1,6 @@
 import {
   type Cigar,
   concatBytes,
-  Counter,
-  CtrDexV1,
   Diger,
   NON_TRANSFERABLE_CODES,
   type NumberPrimitive,
@@ -15,10 +13,15 @@ import {
 } from "../../../cesr/mod.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
+import {
+  attachmentCounterPayloadQb64b,
+  type AttachmentCounterProfile,
+  attachmentCounterQb64b,
+  pathedMaterialCounterQb64b,
+} from "./attachment-counter-profile.ts";
 import { type TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 
-const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 type SealEventLike = Readonly<{
   i: Prefixer;
   s: NumberPrimitive | Seqner | string;
@@ -57,6 +60,7 @@ function concatMessageWithAttachmentGroup(
   body: Uint8Array,
   attachments: readonly Uint8Array[],
   pipelined: boolean,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
   const atc = attachments.length === 0 ? new Uint8Array() : concatBytes(...attachments);
   if (!pipelined) {
@@ -69,11 +73,7 @@ function concatMessageWithAttachmentGroup(
   }
   return concatBytes(
     body,
-    new Counter({
-      code: CtrDexV1.AttachmentGroup,
-      count: atc.length / 4,
-      version: KERI_V1,
-    }).qb64b,
+    attachmentCounterQb64b("AttachmentGroup", atc.length / 4, counterProfile),
     atc,
   );
 }
@@ -99,11 +99,13 @@ export function messagize(
     wigers?: readonly Siger[];
     cigars?: readonly Cigar[];
     pipelined?: boolean;
+    counterProfile?: AttachmentCounterProfile;
   },
 ): Uint8Array;
 export function messagize(
   creder: SerderACDC,
   proof: Uint8Array,
+  args?: { counterProfile?: AttachmentCounterProfile },
 ): Uint8Array;
 export function messagize(
   serderOrCreder: SerderKERI | SerderACDC,
@@ -114,8 +116,10 @@ export function messagize(
       wigers?: readonly Siger[];
       cigars?: readonly Cigar[];
       pipelined?: boolean;
+      counterProfile?: AttachmentCounterProfile;
     }
     | Uint8Array = {},
+  proofOptions: { counterProfile?: AttachmentCounterProfile } = {},
 ): Uint8Array {
   if (argsOrProof instanceof Uint8Array) {
     if (argsOrProof.length % 4 !== 0) {
@@ -125,11 +129,11 @@ export function messagize(
     }
     return concatBytes(
       serderOrCreder.raw,
-      new Counter({
-        code: CtrDexV1.AttachmentGroup,
-        count: argsOrProof.length / 4,
-        version: KERI_V1,
-      }).qb64b,
+      attachmentCounterQb64b(
+        "AttachmentGroup",
+        argsOrProof.length / 4,
+        proofOptions.counterProfile,
+      ),
       argsOrProof,
     );
   }
@@ -140,6 +144,7 @@ export function messagize(
     wigers = [],
     cigars = [],
     pipelined = false,
+    counterProfile = "legacy",
   } = argsOrProof;
   if (sigers.length === 0 && wigers.length === 0 && cigars.length === 0) {
     throw new ValidationError(
@@ -149,67 +154,85 @@ export function messagize(
 
   const attachments: Uint8Array[] = [];
   if (sigers.length > 0) {
+    const sigerPayload = sigers.map((siger) => siger.qb64b);
+    const sigerGroup = [
+      attachmentCounterPayloadQb64b(
+        "ControllerIdxSigs",
+        sigers.length,
+        sigerPayload,
+        counterProfile,
+      ),
+      ...sigerPayload,
+    ];
     if (seal && "s" in seal && "d" in seal) {
-      attachments.push(
-        new Counter({
-          code: CtrDexV1.TransIdxSigGroups,
-          count: 1,
-          version: KERI_V1,
-        }).qb64b,
+      const transPayload = [
         seal.i.qb64b,
         encodeSealSeqnerQb64b(seal.s),
         seal.d.qb64b,
+        ...sigerGroup,
+      ];
+      attachments.push(
+        attachmentCounterPayloadQb64b(
+          "TransIdxSigGroups",
+          1,
+          transPayload,
+          counterProfile,
+        ),
+        ...transPayload,
       );
     } else if (seal && "i" in seal) {
-      attachments.push(
-        new Counter({
-          code: CtrDexV1.TransLastIdxSigGroups,
-          count: 1,
-          version: KERI_V1,
-        }).qb64b,
+      const transLastPayload = [
         seal.i.qb64b,
+        ...sigerGroup,
+      ];
+      attachments.push(
+        attachmentCounterPayloadQb64b(
+          "TransLastIdxSigGroups",
+          1,
+          transLastPayload,
+          counterProfile,
+        ),
+        ...transLastPayload,
       );
+    } else {
+      attachments.push(...sigerGroup);
     }
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.ControllerIdxSigs,
-        count: sigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...sigers.map((siger) => siger.qb64b),
-    );
   }
 
   if (wigers.length > 0) {
+    const wigerPayload = wigers.map((wiger) => {
+      const verfer = wiger.verfer;
+      if (verfer && !NON_TRANSFERABLE_CODES.has(verfer.code)) {
+        throw new ValidationError(
+          `Attempt to use transferable prefix=${verfer.qb64} for receipt.`,
+        );
+      }
+      return wiger.qb64b;
+    });
     attachments.push(
-      new Counter({
-        code: CtrDexV1.WitnessIdxSigs,
-        count: wigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...wigers.map((wiger) => {
-        const verfer = wiger.verfer;
-        if (verfer && !NON_TRANSFERABLE_CODES.has(verfer.code)) {
-          throw new ValidationError(
-            `Attempt to use transferable prefix=${verfer.qb64} for receipt.`,
-          );
-        }
-        return wiger.qb64b;
-      }),
+      attachmentCounterPayloadQb64b(
+        "WitnessIdxSigs",
+        wigers.length,
+        wigerPayload,
+        counterProfile,
+      ),
+      ...wigerPayload,
     );
   }
 
   if (cigars.length > 0) {
+    const cigarPayload = cigars.flatMap((cigar) => {
+      const verfer = requireCigarVerfer(cigar);
+      return [verfer.qb64b, cigar.qb64b];
+    });
     attachments.push(
-      new Counter({
-        code: CtrDexV1.NonTransReceiptCouples,
-        count: cigars.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...cigars.flatMap((cigar) => {
-        const verfer = requireCigarVerfer(cigar);
-        return [verfer.qb64b, cigar.qb64b];
-      }),
+      attachmentCounterPayloadQb64b(
+        "NonTransReceiptCouples",
+        cigars.length,
+        cigarPayload,
+        counterProfile,
+      ),
+      ...cigarPayload,
     );
   }
 
@@ -217,6 +240,7 @@ export function messagize(
     serderOrCreder.raw,
     attachments,
     pipelined,
+    counterProfile,
   );
 }
 
@@ -225,22 +249,32 @@ export function buildProof(
   seqner: Seqner,
   diger: Diger,
   sigers: readonly Siger[],
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
-  return concatBytes(
-    new Counter({
-      code: CtrDexV1.TransIdxSigGroups,
-      count: 1,
-      version: KERI_V1,
-    }).qb64b,
+  const sigerPayload = sigers.map((siger) => siger.qb64b);
+  const sigerGroup = [
+    attachmentCounterPayloadQb64b(
+      "ControllerIdxSigs",
+      sigers.length,
+      sigerPayload,
+      counterProfile,
+    ),
+    ...sigerPayload,
+  ];
+  const transPayload = [
     prefixer.qb64b,
     seqner.qb64b,
     diger.qb64b,
-    new Counter({
-      code: CtrDexV1.ControllerIdxSigs,
-      count: sigers.length,
-      version: KERI_V1,
-    }).qb64b,
-    ...sigers.map((siger) => siger.qb64b),
+    ...sigerGroup,
+  ];
+  return concatBytes(
+    attachmentCounterPayloadQb64b(
+      "TransIdxSigGroups",
+      1,
+      transPayload,
+      counterProfile,
+    ),
+    ...transPayload,
   );
 }
 
@@ -251,45 +285,58 @@ export function serializeMessage(
     cigars = [],
     pathed = [],
     pipelined = false,
+    counterProfile = "legacy",
   }: {
     tsgs?: readonly TransIdxSigGroup[];
     cigars?: readonly Cigar[];
     pathed?: readonly (string | Uint8Array)[];
     pipelined?: boolean;
+    counterProfile?: AttachmentCounterProfile;
   } = {},
 ): Uint8Array {
   const attachments: Uint8Array[] = [];
 
   for (const tsg of tsgs) {
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.TransIdxSigGroups,
-        count: 1,
-        version: KERI_V1,
-      }).qb64b,
+    const sigerPayload = tsg.sigers.map((siger) => siger.qb64b);
+    const sigerGroup = [
+      attachmentCounterPayloadQb64b(
+        "ControllerIdxSigs",
+        tsg.sigers.length,
+        sigerPayload,
+        counterProfile,
+      ),
+      ...sigerPayload,
+    ];
+    const transPayload = [
       tsg.prefixer.qb64b,
       encodeSealSeqnerQb64b(tsg.seqner),
       tsg.diger.qb64b,
-      new Counter({
-        code: CtrDexV1.ControllerIdxSigs,
-        count: tsg.sigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...tsg.sigers.map((siger) => siger.qb64b),
+      ...sigerGroup,
+    ];
+    attachments.push(
+      attachmentCounterPayloadQb64b(
+        "TransIdxSigGroups",
+        1,
+        transPayload,
+        counterProfile,
+      ),
+      ...transPayload,
     );
   }
 
   if (cigars.length > 0) {
+    const cigarPayload = cigars.flatMap((cigar) => {
+      const verfer = requireCigarVerfer(cigar);
+      return [verfer.qb64b, cigar.qb64b];
+    });
     attachments.push(
-      new Counter({
-        code: CtrDexV1.NonTransReceiptCouples,
-        count: cigars.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...cigars.flatMap((cigar) => {
-        const verfer = requireCigarVerfer(cigar);
-        return [verfer.qb64b, cigar.qb64b];
-      }),
+      attachmentCounterPayloadQb64b(
+        "NonTransReceiptCouples",
+        cigars.length,
+        cigarPayload,
+        counterProfile,
+      ),
+      ...cigarPayload,
     );
   }
 
@@ -301,16 +348,17 @@ export function serializeMessage(
       );
     }
     attachments.push(
-      new Counter({
-        code: CtrDexV1.PathedMaterialCouples,
-        count: raw.length / 4,
-        version: KERI_V1,
-      }).qb64b,
+      pathedMaterialCounterQb64b(raw.length / 4, counterProfile),
       raw,
     );
   }
 
-  return concatMessageWithAttachmentGroup(serder.raw, attachments, pipelined);
+  return concatMessageWithAttachmentGroup(
+    serder.raw,
+    attachments,
+    pipelined,
+    counterProfile,
+  );
 }
 
 export function loadEvent(

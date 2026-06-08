@@ -13,8 +13,6 @@ import { type Operation } from "npm:effection@^3.6.0";
 import {
   Cigar,
   concatBytes,
-  Counter,
-  CtrDexV1,
   Dater,
   Diger,
   NumberPrimitive,
@@ -27,6 +25,11 @@ import {
   t,
   Verfer,
 } from "../../../cesr/mod.ts";
+import {
+  attachmentCounterPayloadQb64b,
+  type AttachmentCounterProfile,
+  attachmentCounterQb64b,
+} from "../core/attachment-counter-profile.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
 import { dgKey } from "./core/keys.ts";
@@ -45,8 +48,6 @@ import {
   OnIoDupSuber,
   SerderSuber,
 } from "./subing.ts";
-
-const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 
 type KeyPart = string | Uint8Array;
 type TelAnchorTuple = [NumberPrimitive, Diger];
@@ -290,25 +291,37 @@ export class Reger extends LMDBer {
   }
 
   /** Iterate TEL event messages for `pre` from ordinal `fn`, with attachments. */
-  *clonePreIter(pre: KeyPart, fn = 0): Generator<Uint8Array> {
+  *clonePreIter(
+    pre: KeyPart,
+    fn = 0,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): Generator<Uint8Array> {
     for (const [, , diger] of this.tels.getAllItemIter(pre, fn)) {
-      yield this.cloneTvt(pre, diger);
+      yield this.cloneTvt(pre, diger, counterProfile);
     }
   }
 
   /** Clone one TEL event message at sequence number `sn`, with attachments. */
-  cloneTvtAt(pre: KeyPart, sn = 0): Uint8Array {
+  cloneTvtAt(
+    pre: KeyPart,
+    sn = 0,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): Uint8Array {
     const diger = this.tels.getOn(pre, sn);
     if (diger === null) {
       throw new ValidationError(
         `Missing event digest for pre=${keyText(pre)} sn=${sn}.`,
       );
     }
-    return this.cloneTvt(pre, diger);
+    return this.cloneTvt(pre, diger, counterProfile);
   }
 
   /** Clone one TEL event message by digest, including KERIpy attachment groups. */
-  cloneTvt(pre: KeyPart, dig: string | Uint8Array | Diger | Saider): Uint8Array {
+  cloneTvt(
+    pre: KeyPart,
+    dig: string | Uint8Array | Diger | Saider,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): Uint8Array {
     const preText = keyText(pre);
     const digText = digestText(dig);
     const dgkey = dgKey(preText, digText);
@@ -320,27 +333,33 @@ export class Reger extends LMDBer {
     const attachments: Uint8Array[] = [];
     const tibs = this.tibs.get([preText, digText]);
     if (tibs.length > 0) {
+      const tibPayload = tibs.map((tib) => tib.qb64b);
       attachments.push(
-        new Counter({
-          code: CtrDexV1.WitnessIdxSigs,
-          count: tibs.length,
-          version: KERI_V1,
-        }).qb64b,
-        ...tibs.map((tib) => tib.qb64b),
+        attachmentCounterPayloadQb64b(
+          "WitnessIdxSigs",
+          tibs.length,
+          tibPayload,
+          counterProfile,
+        ),
+        ...tibPayload,
       );
     }
 
     const couple = this.ancs.get(dgkey);
     if (couple !== null) {
       const [number, diger] = couple;
-      attachments.push(
-        new Counter({
-          code: CtrDexV1.SealSourceCouples,
-          count: 1,
-          version: KERI_V1,
-        }).qb64b,
+      const sealPayload = [
         seqnerFromNumber(number).qb64b,
         saiderFromDigest(diger).qb64b,
+      ];
+      attachments.push(
+        attachmentCounterPayloadQb64b(
+          "SealSourceCouples",
+          1,
+          sealPayload,
+          counterProfile,
+        ),
+        ...sealPayload,
       );
     }
 
@@ -352,17 +371,17 @@ export class Reger extends LMDBer {
     }
     return concatBytes(
       raw,
-      new Counter({
-        code: CtrDexV1.AttachmentGroup,
-        count: atc.length / 4,
-        version: KERI_V1,
-      }).qb64b,
+      attachmentCounterQb64b("AttachmentGroup", atc.length / 4, counterProfile),
       atc,
     );
   }
 
   /** Return recursive source credentials with `SealSourceTriples` attachments. */
-  sources(_db: unknown, creder: SerderACDC): CredentialSource[] {
+  sources(
+    _db: unknown,
+    creder: SerderACDC,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): CredentialSource[] {
     const chains = isRecord(creder.edge) ? creder.edge : {};
     const saids: string[] = [];
     for (const [key, source] of Object.entries(chains)) {
@@ -375,18 +394,22 @@ export class Reger extends LMDBer {
     const sources: CredentialSource[] = [];
     for (const said of saids) {
       const [sourceCreder, prefixer, number, diger] = this.cloneCred(said);
-      const atc = concatBytes(
-        new Counter({
-          code: CtrDexV1.SealSourceTriples,
-          count: 1,
-          version: KERI_V1,
-        }).qb64b,
+      const sealPayload = [
         prefixer.qb64b,
         number.qb64b,
         saiderFromDigest(diger).qb64b,
+      ];
+      const atc = concatBytes(
+        attachmentCounterPayloadQb64b(
+          "SealSourceTriples",
+          1,
+          sealPayload,
+          counterProfile,
+        ),
+        ...sealPayload,
       );
       sources.push([sourceCreder, atc]);
-      sources.push(...this.sources(_db, sourceCreder));
+      sources.push(...this.sources(_db, sourceCreder, counterProfile));
     }
 
     return sources;

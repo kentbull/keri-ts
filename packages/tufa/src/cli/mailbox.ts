@@ -14,16 +14,21 @@ import {
   buildCesrStreamRequest,
   type CesrBodyMode,
   createAgentRuntime,
+  endpointRoleAccepted,
   EndpointRoles,
   fetchEndpointUrls,
   fetchResponseHandle,
+  type Hab,
   type Habery,
   ingestKeriBytes,
+  isLocalGroupHab,
+  loadAcceptedEndpointRole,
   makeNowIso8601,
   normalizeCesrBodyMode,
   Organizer,
   preferredUrl,
   processRuntimeTurn,
+  proposeGroupEndpointRole,
   readMailboxSseBody,
   Roles,
   TopicsRecord,
@@ -31,6 +36,8 @@ import {
 } from "keri-ts/runtime";
 import { runMailboxHost } from "../roles/mailbox.ts";
 import { ensureHby, setupHby } from "./support/existing.ts";
+
+type MultisigMailboxMode = "propose" | "complete";
 
 interface MailboxBaseArgs {
   name?: string;
@@ -54,6 +61,7 @@ interface MailboxStartArgs extends MailboxBaseArgs {
 /** Shared mailbox add/remove CLI inputs. */
 interface MailboxAddRemoveArgs extends MailboxBaseArgs {
   mailbox?: string;
+  multisigMode?: MultisigMailboxMode;
 }
 
 /** Mailbox topic cursor override inputs for `mailbox update`. */
@@ -207,9 +215,7 @@ export function* mailboxListCommand(
       const contact = organizer.get(eid);
       const alias = typeof contact?.alias === "string" ? contact.alias : "";
       const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
-      const oobi = url.length > 0
-        ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}`
-        : "";
+      const oobi = url.length > 0 ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}` : "";
       const fields: string[] = [
         alias,
         eid,
@@ -394,42 +400,105 @@ function* withMailboxWorkflow(
       );
     }
 
+    if (isLocalGroupHab(hby, hab)) {
+      if (!allow) {
+        throw new ValidationError(
+          "Group mailbox removal is not supported by mailbox remove; use multisig endpoint-role cut workflow.",
+        );
+      }
+      if (!args.multisigMode) {
+        throw new ValidationError(
+          "Group mailbox add requires --multisig-mode propose or --multisig-mode complete.",
+        );
+      }
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      if (args.multisigMode === "propose") {
+        const result = yield* proposeGroupEndpointRole(runtime, hab, {
+          eid: mailboxAid,
+          role: Roles.mailbox,
+          allow: true,
+        });
+        console.log(JSON.stringify({
+          route: result.route,
+          said: result.said,
+          group: result.group,
+          accepted: result.accepted,
+          deliveries: result.deliveries,
+          attachmentBytes: result.attachmentBytes,
+        }));
+        return;
+      }
+      if (!endpointRoleAccepted(hby, hab.pre, Roles.mailbox, mailboxAid)) {
+        throw new ValidationError(
+          `Mailbox role for ${mailboxAid} is not yet approved for group ${hab.pre}.`,
+        );
+      }
+      const rpy = loadAcceptedEndpointRole(hab, mailboxAid, Roles.mailbox);
+      yield* completeMailboxAdmin(hby, hab, mailboxAid, endpointUrl, rpy, allow);
+      console.log(`added ${mailboxAid}`);
+      return;
+    }
+
+    if (args.multisigMode) {
+      throw new ValidationError("--multisig-mode is only valid for local group aliases.");
+    }
+
     const submission = collectMailboxAdminSubmission(hby, hab.pre);
-    const rpy = hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
-    const response = yield* postMailboxAdmin(
-      endpointUrl,
-      submission,
-      rpy,
-    );
-    if (!response.ok) {
+    const existing = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
+    const rpy = allow && existing?.allowed
+      ? hab.loadEndRole(hab.pre, mailboxAid, Roles.mailbox)
+      : hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
+    if (rpy.length === 0) {
       throw new ValidationError(
-        `Mailbox admin request failed with HTTP ${response.status}: ${response.body}`,
+        `No accepted mailbox role reply is available for ${hab.pre}.`,
       );
     }
-
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    ingestKeriBytes(runtime, rpy);
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-
-    const end = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
-    if (allow && !end?.allowed) {
-      throw new ValidationError(
-        "Mailbox add was not accepted into local state.",
-      );
-    }
-    if (!allow && (!end || end.allowed)) {
-      throw new ValidationError(
-        "Mailbox removal was not accepted into local state.",
-      );
-    }
-
-    if (!allow) {
-      hby.obx.cancelMailbox(mailboxAid, makeNowIso8601());
-    }
+    yield* completeMailboxAdmin(hby, hab, mailboxAid, endpointUrl, rpy, allow);
 
     console.log(`${allow ? "added" : "removed"} ${mailboxAid}`);
   } finally {
     yield* hby.close();
+  }
+}
+
+function* completeMailboxAdmin(
+  hby: Habery,
+  hab: Hab,
+  mailboxAid: string,
+  endpointUrl: string,
+  rpy: Uint8Array,
+  allow: boolean,
+): Operation<void> {
+  const submission = collectMailboxAdminSubmission(hby, hab.pre);
+  const response = yield* postMailboxAdmin(
+    endpointUrl,
+    submission,
+    rpy,
+  );
+  if (!response.ok) {
+    throw new ValidationError(
+      `Mailbox admin request failed with HTTP ${response.status}: ${response.body}`,
+    );
+  }
+
+  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+  ingestKeriBytes(runtime, rpy);
+  yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+
+  const end = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
+  if (allow && !end?.allowed) {
+    throw new ValidationError(
+      "Mailbox add was not accepted into local state.",
+    );
+  }
+  if (!allow && (!end || end.allowed)) {
+    throw new ValidationError(
+      "Mailbox removal was not accepted into local state.",
+    );
+  }
+
+  if (!allow) {
+    hby.obx.cancelMailbox(mailboxAid, makeNowIso8601());
   }
 }
 
@@ -456,11 +525,22 @@ function parseMailboxAddRemoveArgs(
   const parsed = {
     ...parseMailboxBaseArgs(args),
     mailbox: args.mailbox as string | undefined,
+    multisigMode: parseMultisigMode(args.multisigMode as string | undefined),
   };
   if (!parsed.mailbox) {
     throw new ValidationError("Mailbox AID or alias is required.");
   }
   return parsed;
+}
+
+function parseMultisigMode(value: string | undefined): MultisigMailboxMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "propose" || value === "complete") {
+    return value;
+  }
+  throw new ValidationError("--multisig-mode must be propose or complete.");
 }
 
 /** Parse `mailbox start` arguments and enforce CLI pairwise invariants. */
@@ -538,9 +618,7 @@ function mailboxConfigCandidates(
   headDirPath?: string,
   compat = false,
 ): string[] {
-  const fileName = configFile.endsWith(".json")
-    ? configFile
-    : `${configFile}.json`;
+  const fileName = configFile.endsWith(".json") ? configFile : `${configFile}.json`;
   const candidates = new Set<string>();
   candidates.add(configFile);
   candidates.add(fileName);
@@ -932,9 +1010,7 @@ function collectMailboxAdminSubmission(
   delkel: Uint8Array;
 } {
   const kever = hby.db.getKever(pre);
-  const delkel = kever
-    ? concatBytes(...hby.db.cloneDelegation(kever))
-    : new Uint8Array();
+  const delkel = kever ? concatBytes(...hby.db.cloneDelegation(kever)) : new Uint8Array();
   const kel = concatBytes(...hby.db.clonePreIter(pre));
   return {
     replay: concatBytes(delkel, kel),

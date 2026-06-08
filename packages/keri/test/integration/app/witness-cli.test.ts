@@ -1,7 +1,7 @@
 // @file-test-lane interop-witness
 
 import { run } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -230,6 +230,31 @@ async function initController(
     ]),
   );
 }
+
+Deno.test("CLI integration - witness start rejects missing startup curls instead of synthesizing endpoint state", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "tufa-witness-cli-" });
+  const name = `wit-missing-${crypto.randomUUID()}`;
+  const alias = "wit";
+
+  await createWitnessIdentity(name, alias, headDirPath);
+
+  const result = await runTufa([
+    "witness",
+    "start",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--alias",
+    alias,
+  ]);
+
+  assertNotEquals(result.code, 0);
+  assertStringIncludes(
+    `${result.stdout}\n${result.stderr}`,
+    "no config or CLI startup material",
+  );
+});
 
 Deno.test("CLI integration - deployable witness start supports receipt-endpoint inception and combined mailbox hosting", async () => {
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-witness-cli-" });

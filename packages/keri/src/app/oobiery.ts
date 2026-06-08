@@ -218,7 +218,8 @@ export class Oobiery {
       state: "fetched",
     });
 
-    if (mediaType(contentType) === "application/schema+json") {
+    const type = mediaType(contentType);
+    if (type === "application/schema+json") {
       if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
         return;
       }
@@ -226,7 +227,12 @@ export class Oobiery {
       return;
     }
 
-    if (contentType.includes("json")) {
+    if (isCesrMediaType(type)) {
+      this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
+      return;
+    }
+
+    if (type.includes("json")) {
       if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
         return;
       }
@@ -237,6 +243,15 @@ export class Oobiery {
       return;
     }
 
+    this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
+  }
+
+  private resolveCesrOobiResponse(
+    url: string,
+    queuedRecord: OobiRecordShape,
+    meta: { cid?: string | null; role?: string | null; eid?: string | null },
+    bytes: Uint8Array,
+  ): void {
     this.reactor.ingest(bytes);
     this.reactor.processOnce();
 
@@ -691,6 +706,10 @@ function queueKindFor(url: string): OobiQueueKind {
 
 function mediaType(contentType: string): string {
   return contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+function isCesrMediaType(type: string): boolean {
+  return type === "application/cesr" || type.endsWith("+cesr");
 }
 
 export { OOBI_MAILBOX_TOPIC };

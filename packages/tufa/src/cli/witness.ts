@@ -62,7 +62,7 @@ interface WitnessStartupMaterial {
   httpUrl: string;
   tcpUrl: string;
   datetime?: string;
-  source: "cli" | "config" | "state" | "default";
+  source: "cli" | "config" | "state";
 }
 
 /** Start one combined witness+mailbox host after identity reconciliation. */
@@ -288,9 +288,7 @@ function witnessConfigCandidates(
   headDirPath?: string,
   compat = false,
 ): string[] {
-  const fileName = configFile.endsWith(".json")
-    ? configFile
-    : `${configFile}.json`;
+  const fileName = configFile.endsWith(".json") ? configFile : `${configFile}.json`;
   const candidates = new Set<string>();
   candidates.add(configFile);
   candidates.add(fileName);
@@ -320,7 +318,6 @@ function witnessConfigCandidates(
  * - explicit CLI URL/TCP URL input
  * - alias-scoped config section
  * - already accepted local endpoint state
- * - synthesized localhost defaults for first-run convenience
  */
 function resolveWitnessStartupMaterial(
   hby: Habery,
@@ -330,15 +327,9 @@ function resolveWitnessStartupMaterial(
 ): WitnessStartupMaterial {
   const cli = args.url || args.tcpUrl
     ? {
-      httpUrl: args.url
-        ? normalizeHttpUrl(args.url)
-        : synthesizeHttpUrl(args.http ?? 5631, args.listenHost),
-      tcpUrl: args.tcpUrl
-        ? normalizeTcpUrl(args.tcpUrl)
-        : synthesizeTcpUrl(args.tcp ?? 5632, args.listenHost),
-      datetime: args.datetime
-        ? validateIsoDatetime(args.datetime)
-        : makeNowIso8601(),
+      httpUrl: args.url ? normalizeHttpUrl(args.url) : synthesizeHttpUrl(args.http ?? 5631, args.listenHost),
+      tcpUrl: args.tcpUrl ? normalizeTcpUrl(args.tcpUrl) : synthesizeTcpUrl(args.tcp ?? 5632, args.listenHost),
+      datetime: args.datetime ? validateIsoDatetime(args.datetime) : makeNowIso8601(),
       source: "cli" as const,
     }
     : null;
@@ -356,9 +347,7 @@ function resolveWitnessStartupMaterial(
       );
     }
     const data = section as Record<string, unknown>;
-    const dt = typeof data.dt === "string"
-      ? validateIsoDatetime(data.dt)
-      : makeNowIso8601();
+    const dt = typeof data.dt === "string" ? validateIsoDatetime(data.dt) : makeNowIso8601();
     const curls = Array.isArray(data.curls)
       ? data.curls.filter((entry): entry is string => typeof entry === "string")
       : [];
@@ -401,12 +390,9 @@ function resolveWitnessStartupMaterial(
     return cli;
   }
 
-  return {
-    httpUrl: synthesizeHttpUrl(args.http ?? 5631, args.listenHost),
-    tcpUrl: synthesizeTcpUrl(args.tcp ?? 5632, args.listenHost),
-    datetime: makeNowIso8601(),
-    source: "default",
-  };
+  throw new ValidationError(
+    "Selected alias does not have complete witness startup state and no config or CLI startup material was provided.",
+  );
 }
 
 function validateWitnessHabitat(hby: Habery, hab: Hab): void {

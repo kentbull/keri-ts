@@ -14,6 +14,7 @@ export * from "../app/challenging.ts";
 export * from "../app/configing.ts";
 export * from "../app/cue-runtime.ts";
 export * from "../app/delegating.ts";
+export * from "../app/endpoint-roleing.ts";
 export * from "../app/exchanging.ts";
 export * from "../app/forwarding.ts";
 export * from "../app/grouping.ts";

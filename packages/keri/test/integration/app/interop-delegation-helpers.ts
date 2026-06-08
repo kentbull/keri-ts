@@ -635,6 +635,31 @@ export async function generateKliMailboxOobi(
   return extractLastNonEmptyLine(result.stdout);
 }
 
+async function writeTufaAgentControllerConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 /** Start a Tufa agent host and fail with captured output if health never opens. */
 export async function startTufaAgentHost(
   ctx: InteropContext,
@@ -643,9 +668,17 @@ export async function startTufaAgentHost(
     base: string;
     headDirPath: string;
     passcode: string;
+    alias: string;
     port: number;
   },
 ): Promise<SpawnedChild> {
+  const configFile = `${args.alias}-agent`;
+  await writeTufaAgentControllerConfig(
+    args.headDirPath,
+    configFile,
+    args.alias,
+    args.port,
+  );
   const child = spawnChild(
     "deno",
     [
@@ -664,6 +697,10 @@ export async function startTufaAgentHost(
       args.passcode,
       "--port",
       String(args.port),
+      "--config-dir",
+      args.headDirPath,
+      "--config-file",
+      configFile,
     ],
     ctx.env,
     ctx.repoRoot,
@@ -773,6 +810,7 @@ export async function setupTufaMailboxProvider(
     base: args.base,
     headDirPath: args.headDirPath,
     passcode: args.passcode,
+    alias,
     port: args.port,
   });
   return {
