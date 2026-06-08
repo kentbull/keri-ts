@@ -1,0 +1,27 @@
+{
+  "name": "effection",
+  "version": "3.6.1",
+  "description": "Structured concurrency and effects for JavaScript",
+  "author": "engineering@frontside.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thefrontside/effection.git"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/thefrontside/effection/issues"
+  },
+  "main": "./script/mod.js",
+  "module": "./esm/mod.js",
+  "exports": {
+    ".": {
+      "import": "./esm/mod.js",
+      "require": "./script/mod.js"
+    }
+  },
+  "engines": {
+    "node": ">= 16"
+  },
+  "sideEffects": false,
+  "_generatedBy": "dnt@dev"
+}

@@ -1,0 +1,43 @@
+import type { Operation } from "./types.js";
+/**
+ * Run the given function or operation when the current operation
+ * shuts down. This is equivalent to running the function or operation
+ * in a `finally {}` block, but it can help you avoid rightward drift.
+ *
+ * @example
+ *
+ * ```javascript
+ * import { main, ensure } from 'effection';
+ * import { createServer } from 'http';
+ *
+ * await main(function*() {
+ *   let server = createServer(...);
+ *   yield* ensure(() => { server.close() });
+ * });
+ * ```
+ *
+ * Note that you should wrap the function body in braces, so the function
+ * returns `undefined`.
+ *
+ * @example
+ *
+ * ```javascript
+ * import { main, ensure, once } from 'effection';
+ * import { createServer } from 'http';
+ *
+ * await main(function*() {
+ *   let server = createServer(...);
+ *   yield* ensure(function* () {
+ *     server.close();
+ *     yield* once(server, 'closed');
+ *   });
+ * });
+ * ```
+ *
+ * Your ensure function should return an operation whenever you need to do
+ * asynchronous cleanup. Otherwise, you can return `void`
+ *
+ * @param fn - a function which returns an {@link Operation} or void
+ */
+export declare function ensure(fn: () => Operation<unknown> | void): Operation<void>;
+//# sourceMappingURL=ensure.d.ts.map
