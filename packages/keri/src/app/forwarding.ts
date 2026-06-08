@@ -23,7 +23,7 @@ import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { buildCesrRequest, splitCesrStream } from "./cesr-http.ts";
+import { buildCesrRequest, CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE, splitCesrStream } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
@@ -278,6 +278,7 @@ export class Poster {
       message: Uint8Array;
       topic?: string;
       delivery?: ExchangeDeliveryPreference;
+      split?: boolean;
     },
   ): Operation<RawCesrSendResult> {
     const recipient = this.resolveRecipient(args.recipient);
@@ -366,6 +367,7 @@ export class Poster {
           this.hby.cesrBodyMode,
           endpoint.eid,
           this.services,
+          { split: args.split },
         );
         deliveries.push(endpoint.url);
       }
@@ -756,15 +758,15 @@ export class MailboxPoller {
       }
     }
 
-    for (const hab of this.hby.habs.values()) {
-      const remoteEndpoints = mailboxPollEndpoints(this.hby, hab);
+    for (const target of this.remotePollTargets()) {
+      const remoteEndpoints = mailboxPollEndpoints(this.hby, target.hab);
       for (const endpoint of remoteEndpoints) {
         const remainingBudgetMs = deadline - this.services.clock.now();
         if (remainingBudgetMs <= 0) {
           return batches;
         }
         const batch = yield* this.pollRemoteEndpointOnce(
-          hab,
+          target,
           endpoint,
           remainingBudgetMs,
         );
@@ -862,16 +864,17 @@ export class MailboxPoller {
    * - long-lived workers pass the normal mailbox long-poll duration
    */
   private *pollRemoteEndpointOnce(
-    hab: Hab,
+    target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     budgetMs: number,
   ): Operation<MailboxPollBatch | null> {
     const cursor = this.mailboxDirector.remoteQueryCursor(
-      hab.pre,
+      target.targetPre,
       endpoint.eid,
     );
     const messages = yield* this.pollTransport.poll({
-      hab,
+      hab: target.signerHab,
+      targetPre: target.targetPre,
       endpoint,
       topics: cursor,
       bodyMode: this.hby.cesrBodyMode,
@@ -883,7 +886,7 @@ export class MailboxPoller {
     }
     for (const message of messages) {
       this.mailboxDirector.updateRemoteCursor(
-        hab.pre,
+        target.targetPre,
         endpoint.eid,
         message.topic,
         message.idx,
@@ -891,7 +894,7 @@ export class MailboxPoller {
     }
     return {
       source: "remote",
-      pre: hab.pre,
+      pre: target.targetPre,
       eid: endpoint.eid,
       messages: messages.map((message) => message.msg),
     };
@@ -905,15 +908,15 @@ export class MailboxPoller {
   ): Operation<void> {
     const active = new Set<string>();
     if (topics.length > 0) {
-      for (const hab of this.hby.habs.values()) {
-        for (const endpoint of mailboxPollEndpoints(this.hby, hab)) {
-          const workerKey = `${hab.pre}:${endpoint.key}`;
+      for (const target of this.remotePollTargets()) {
+        for (const endpoint of mailboxPollEndpoints(this.hby, target.hab)) {
+          const workerKey = `${target.targetPre}:${endpoint.key}`;
           active.add(workerKey);
           if (remoteWorkers.has(workerKey)) {
             continue;
           }
 
-          const task = yield* spawn(() => this.remoteEndpointWorker(hab, endpoint, onBatch));
+          const task = yield* spawn(() => this.remoteEndpointWorker(target, endpoint, onBatch));
           remoteWorkers.set(workerKey, task);
         }
       }
@@ -935,13 +938,13 @@ export class MailboxPoller {
    * `keri-ts`'s split between mailbox transport and runtime parser ownership.
    */
   private *remoteEndpointWorker(
-    hab: Hab,
+    target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void,
   ): Operation<never> {
     while (true) {
       const batch = yield* this.pollRemoteEndpointOnce(
-        hab,
+        target,
         endpoint,
         this.timeoutPolicy.maxPollDurationMs,
       );
@@ -951,6 +954,35 @@ export class MailboxPoller {
       yield* runtimeTurn();
     }
   }
+
+  private remotePollTargets(): MailboxPollTarget[] {
+    const targets: MailboxPollTarget[] = [];
+    for (const hab of this.hby.habs.values()) {
+      const signerHab = this.pollSignerHab(hab);
+      if (!signerHab) {
+        continue;
+      }
+      targets.push({ hab, targetPre: hab.pre, signerHab });
+    }
+    return targets;
+  }
+
+  private pollSignerHab(hab: Hab): Hab | null {
+    if (!this.hby.db.groups.has(hab.pre)) {
+      return hab;
+    }
+    const mid = this.hby.db.getHab(hab.pre)?.mid;
+    if (!mid) {
+      return null;
+    }
+    return this.hby.habs.get(mid) ?? null;
+  }
+}
+
+interface MailboxPollTarget {
+  hab: Hab;
+  targetPre: string;
+  signerHab: Hab;
 }
 
 /**
@@ -972,7 +1004,7 @@ function buildForwardedDelivery(
     {},
     {
       sender: hab.pre,
-      modifiers: { pre: args.recipient, topic: args.topic },
+      modifiers: { pre: args.recipient, topic: transportMailboxTopic(args.topic) },
       embeds: { evt: args.message },
     },
   );
@@ -1081,6 +1113,19 @@ function defaultTopicForRoute(route: string): string {
   return trimmed.split("/")[0] ?? "";
 }
 
+/** KERIpy pollers query protocol mailbox topics with a leading slash. */
+function pollMailboxTopic(topic: string): string {
+  if (topic.length === 0 || topic.startsWith("/")) {
+    return topic;
+  }
+  return `/${topic}`;
+}
+
+/** KERIpy `/fwd` modifiers use the bare topic name, e.g. `multisig`. */
+function transportMailboxTopic(topic: string): string {
+  return topic.replace(/^\/+/, "");
+}
+
 /**
  * Public helper for deriving mailbox topic defaults from one EXN route.
  *
@@ -1088,7 +1133,7 @@ function defaultTopicForRoute(route: string): string {
  * answer for "which mailbox topic should this route land in by default?"
  */
 export function mailboxTopicForRoute(route: string): string {
-  return defaultTopicForRoute(route);
+  return pollMailboxTopic(defaultTopicForRoute(route));
 }
 
 function extractForwardedMessage(
@@ -1173,6 +1218,7 @@ export interface MailboxFetchTimeoutPolicy {
 
 export interface MailboxPollTransportRequest {
   hab: Hab;
+  targetPre: string;
   endpoint: { eid: string; url: string };
   topics: Record<string, number>;
   bodyMode: "header" | "body";
@@ -1188,6 +1234,7 @@ const defaultMailboxPollTransport: MailboxPollTransport = {
   *poll(args): Operation<MailboxSseMessage[]> {
     return yield* fetchMailboxMessages(
       args.hab,
+      args.targetPre,
       args.endpoint.eid,
       args.endpoint.url,
       args.topics,
@@ -1206,6 +1253,7 @@ const defaultMailboxPollTransport: MailboxPollTransport = {
  */
 function* fetchMailboxMessages(
   hab: Hab,
+  targetPre: string,
   src: string,
   url: string,
   topics: Record<string, number>,
@@ -1213,7 +1261,7 @@ function* fetchMailboxMessages(
   timeouts: MailboxFetchTimeoutPolicy,
   services: RuntimeServices = defaultRuntimeServices,
 ): Operation<MailboxSseMessage[]> {
-  const query = hab.query(hab.pre, src, { topics }, "mbx");
+  const query = hab.query(targetPre, src, { topics }, "mbx");
   const handle = yield* fetchMailboxQueryResponse(
     url,
     query,
@@ -1340,30 +1388,58 @@ export function* postCesrMessage(
   bodyMode: "header" | "body",
   destination?: string,
   services: RuntimeServices = defaultRuntimeServices,
+  options: { split?: boolean } = {},
 ): Operation<void> {
-  const requests = bodyMode === "header" ? splitCesrStream(body) : [body];
+  const requests = bodyMode === "header" && (options.split ?? true) ? splitCesrStream(body) : [body];
   for (const [index, currentBody] of requests.entries()) {
-    const request = buildCesrRequest(currentBody, {
-      bodyMode,
-      destination,
-    });
-    const { response } = yield* fetchResponseHandle(url, {
-      method: "POST",
-      headers: request.headers,
-      body: request.body,
-    }, {
-      services,
-    });
+    const contentTypes = bodyMode === "header"
+      ? [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE]
+      : [CESR_CONTENT_TYPE];
+    let delivered = false;
+    let lastStatus = 0;
+    let lastText = "";
+    for (const contentType of contentTypes) {
+      const request = buildCesrRequest(currentBody, {
+        bodyMode,
+        contentType,
+        destination,
+      });
+      const { response } = yield* fetchResponseHandle(url, {
+        method: "POST",
+        headers: request.headers,
+        body: request.body,
+      }, {
+        services,
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        yield* closeResponseBody(response);
+        delivered = true;
+        break;
+      }
       const responseText = yield* readResponseText(response);
+      lastStatus = response.status;
+      lastText = responseText;
+      if (
+        response.status === 406
+        && contentType === CESR_CONTENT_TYPE
+        && responseText.toLowerCase().includes("content type")
+      ) {
+        continue;
+      }
       throw new ValidationError(
         `Exchange delivery to ${url} failed with HTTP ${response.status} on message ${index + 1}/${requests.length} (${
           describeCesrMessage(currentBody)
         }): ${responseText}`,
       );
     }
-    yield* closeResponseBody(response);
+    if (!delivered) {
+      throw new ValidationError(
+        `Exchange delivery to ${url} failed with HTTP ${lastStatus} on message ${index + 1}/${requests.length} (${
+          describeCesrMessage(currentBody)
+        }): ${lastText}`,
+      );
+    }
   }
 }
 
