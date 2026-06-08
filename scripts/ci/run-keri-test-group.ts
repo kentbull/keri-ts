@@ -125,6 +125,17 @@ const laneConfigs: Record<string, LaneConfig> = {
     description: "Representative KERIpy/TUFA parity coverage.",
     allowAll: true,
   },
+  "interop-acdc-extended": {
+    description: "Extended reverse-direction ACDC KLI/Tufa parity coverage.",
+    allowAll: true,
+  },
+  "interop-acdc-deep": {
+    description: "Deep mixed-chain ACDC KLI/Tufa parity coverage.",
+    allowAll: true,
+    parallelFullFiles: true,
+    maxFilesPerRun: 2,
+    maxJobs: 2,
+  },
   "interop-witness": {
     description: "Witness interop and witness CLI coverage.",
     allowAll: true,
@@ -186,8 +197,19 @@ const groupDefinitions: Record<string, GroupDefinition> = {
   slow: {
     description: "Explicit slow mailbox/runtime/interop coverage.",
     lanes: [
+      "interop-acdc-extended",
+      "interop-acdc-deep",
       "interop-delegation",
       "runtime-slow",
+      "interop-mailbox-slow",
+    ],
+  },
+  "extended-interop": {
+    description: "Manual long-running interop coverage.",
+    lanes: [
+      "interop-acdc-extended",
+      "interop-acdc-deep",
+      "interop-delegation",
       "interop-mailbox-slow",
     ],
   },
@@ -206,6 +228,8 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "interop-witness",
       "interop-gates-b",
       "interop-gates-c",
+      "interop-acdc-extended",
+      "interop-acdc-deep",
       "interop-delegation",
       "runtime-slow",
       "interop-mailbox-slow",

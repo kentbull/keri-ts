@@ -1,4 +1,4 @@
-// @file-test-lane interop-parity
+// @file-test-lane interop-acdc-extended
 
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {

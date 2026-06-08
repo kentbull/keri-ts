@@ -37,6 +37,9 @@ deno task test:quality:app-stateful-b
 
 # Interop lanes
 deno task test:quality:interop-parity
+deno task test:quality:interop-acdc-extended
+deno task test:quality:interop-acdc-deep
+deno task test:quality:extended-interop
 deno task test:quality:interop-witness
 deno task test:quality:interop-gates-b
 deno task test:quality:interop-gates-c
@@ -58,6 +61,12 @@ deno task test:quality
     stores run one file at a time.
   - Interop tests are split into their own lanes because they are the slowest
     tests and require pinned KERIpy plus LMDB v1 compatibility in CI.
+  - `interop-parity` is the required PR lane. It keeps cheap KLI/Tufa parity,
+    KEL/query parity, and one representative ACDC direction on the default
+    path.
+  - `interop-acdc-extended` and `interop-acdc-deep` are longer ACDC parity
+    lanes for manual or explicit slow runs. Use `extended-interop` to run the
+    long interop bundle from one target.
   - `interop-witness` is the dedicated witness receipting parity lane. It uses
     explicit randomized KERIpy witness processes instead of the fixed-port
     `kli witness demo` topology.
@@ -70,5 +79,8 @@ deno task test:quality
 - Compat-dependent tests still require a prepared LMDB v1-compatible addon. CI
   does that during job setup. For local runs, prepare it explicitly with
   `deno task setup:compat-lmdb` before running compat or interop-heavy tests.
+- The `KERI Extended Interop` GitHub Actions workflow can be triggered manually
+  when you need the long ACDC/delegation/mailbox interop suite without blocking
+  normal PR CI.
 - Maintainer-focused testing and release flows are documented in
   `MAINTAINER-README.md`.

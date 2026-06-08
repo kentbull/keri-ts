@@ -56,6 +56,7 @@ env:
   NODE_MODULES_CACHE_KEY_PREFIX: ci-node-modules-v1
   INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v3
   KERIPY_CACHE_KEY_PREFIX: keripy-v2-mailbox-impl
+  KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
   # Fast, deterministic gate. Nothing here should depend on KERIpy being
@@ -678,6 +679,15 @@ jobs:
       - name: run interop parity test
         run: deno task test:quality:keri:interop-parity
 
+      - name: upload interop parity timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
+          path: .test-timings/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
   keri-interop-gates-b-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -758,6 +768,15 @@ jobs:
       - name: run interop gate B scenarios
         run: deno task test:quality:keri:interop-gates-b
 
+      - name: upload interop gate B timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: keri-interop-gates-b-timings-pr-${{ github.event.pull_request.number }}
+          path: .test-timings/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
   keri-interop-gates-c-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -837,6 +856,15 @@ jobs:
 
       - name: run interop gate C scenarios
         run: deno task test:quality:keri:interop-gates-c
+
+      - name: upload interop gate C timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: keri-interop-gates-c-timings-pr-${{ github.event.pull_request.number }}
+          path: .test-timings/*.json
+          if-no-files-found: warn
+          retention-days: 14
 
   # CESR remains a separate job because it is fast and independent; splitting it
   # out improves feedback latency and makes failures easier to localize.
