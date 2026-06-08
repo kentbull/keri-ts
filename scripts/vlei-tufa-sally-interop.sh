@@ -3,19 +3,30 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKSPACE_ROOT="$(cd "${ROOT_DIR}/../../.." && pwd)"
-KERIPY_DIR="${KERIPY_DIR:-${WORKSPACE_ROOT}/core/python/keripy}"
-KLI_CMD="${KLI_CMD:-${KERIPY_DIR}/venv/bin/kli}"
+KERIPY_INTEROP_REPO="${KERIPY_INTEROP_REPO:-https://github.com/kentbull/keripy.git}"
+KERIPY_INTEROP_COMMIT="${KERIPY_INTEROP_COMMIT:-98b88cf73a746813a8719f05264400467a474c05}"
+KERIPY_INTEROP_INSTALL="git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
+KERIPY_INTEROP_CACHE_ROOT="${KERIPY_INTEROP_CACHE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/tufa-interop/keripy/${KERIPY_INTEROP_COMMIT}}"
+KERIPY_INTEROP_VENV="${KERIPY_INTEROP_VENV:-${KERIPY_INTEROP_CACHE_ROOT}/venv}"
+KLI_CMD="${KLI_CMD:-}"
 
 RUN_ID="${RUN_ID:-vlei-tufa-sally-$(date +%Y%m%d%H%M%S)-$RANDOM}"
-RUN_DIR="${RUN_DIR:-/Users/kbull/tmp/${RUN_ID}}"
+RUN_DIR="${RUN_DIR:-${TMPDIR:-/tmp}/${RUN_ID}}"
 LOG_DIR="${RUN_DIR}/logs"
 TUFA_HEAD="${RUN_DIR}/tufa"
 KLI_CONFIG_DIR="${RUN_DIR}/keripy-config"
+TUFA_NPM_PREFIX="${TUFA_NPM_PREFIX:-${RUN_DIR}/npm-prefix}"
+TUFA_INSTALL_MODE="${TUFA_INSTALL_MODE:-tarball}"
+TUFA_BIN="${TUFA_BIN:-}"
+CESR_TARBALL_PATH="${CESR_TARBALL_PATH:-}"
+KERI_TARBALL_PATH="${KERI_TARBALL_PATH:-}"
+TUFA_TARBALL_PATH="${TUFA_TARBALL_PATH:-}"
 KERI_BASE="${KERI_BASE:-${RUN_ID}}"
 KEEP_RUN_DIR="${KEEP_RUN_DIR:-true}"
 SALLY_VLEI_IMAGE="${SALLY_VLEI_IMAGE:-gleif/vlei:1.0.3}"
-SALLY_IMAGE="${SALLY_IMAGE:-tufa/sally-cli:local}"
-SALLY_BASE_IMAGE="${SALLY_BASE_IMAGE:-w3c-crosswalk/isomer-python:local}"
+SALLY_IMAGE="${SALLY_IMAGE:-gleif/sally:0.9.0}"
+SALLY_BASE_IMAGE="${SALLY_BASE_IMAGE:-gleif/sally:0.9.0}"
+SALLY_BUILD_LOCAL="${SALLY_BUILD_LOCAL:-false}"
 SALLY_LOGLEVEL="${SALLY_LOGLEVEL:-DEBUG}"
 SALLY_COUNTER_PROFILE="${SALLY_COUNTER_PROFILE:-legacy}"
 SALLY_NAME="${SALLY_NAME:-sally}"
@@ -25,7 +36,18 @@ SALLY_SALT="${SALLY_SALT:-0ABVqAtad0CBkhDhCEPd514T}"
 SALLY_PASSCODE="${SALLY_PASSCODE:-4TBjjhmKu9oeDp49J7Xdy}"
 SALLY_PRE="${SALLY_PRE:-EBbCO10AWGD9OPEEEbC0iYaxFuilR4hA6-xEyjJTjd6K}"
 
-TUFACMD=(deno run --allow-all --unstable-ffi "${ROOT_DIR}/packages/tufa/mod.ts")
+VLEI_SCHEMA_REPO="${VLEI_SCHEMA_REPO:-https://github.com/GLEIF-IT/vLEI-schema.git}"
+VLEI_SCHEMA_COMMIT="${VLEI_SCHEMA_COMMIT:-97850396f504bf8c4e19a42af3290e4b2618f50e}"
+VLEI_SCHEMA_RAW_BASE="${VLEI_SCHEMA_RAW_BASE:-https://raw.githubusercontent.com/GLEIF-IT/vLEI-schema/${VLEI_SCHEMA_COMMIT}}"
+VLEI_RULES_REPO="${VLEI_RULES_REPO:-https://github.com/WebOfTrust/signifypy.git}"
+VLEI_RULES_COMMIT="${VLEI_RULES_COMMIT:-294b5ba6a325b39a209bfd58f6751d17dde56296}"
+VLEI_RULES_RAW_BASE="${VLEI_RULES_RAW_BASE:-https://raw.githubusercontent.com/WebOfTrust/signifypy/${VLEI_RULES_COMMIT}}"
+VLEI_SCHEMA_DIR="${VLEI_SCHEMA_DIR:-}"
+VLEI_RULES_DIR="${VLEI_RULES_DIR:-}"
+MATERIALIZED_VLEI_SCHEMA_DIR="${VLEI_SCHEMA_DIR}"
+MATERIALIZED_VLEI_RULES_DIR="${VLEI_RULES_DIR}"
+
+TUFACMD=()
 
 QVI_SCHEMA="EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao"
 LE_SCHEMA="ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY"
@@ -122,6 +144,181 @@ capture() {
   printf -v "${__var}" '%s' "$__capture_out"
 }
 
+can_run_command() {
+  "$@" >/dev/null 2>&1
+}
+
+download_file() {
+  local url="$1"
+  local target="$2"
+  [[ -f "${target}" ]] && return 0
+  mkdir -p "$(dirname "${target}")"
+  log "download ${url} -> ${target}"
+  curl -fsSL "${url}" -o "${target}"
+}
+
+prepare_vlei_fixtures() {
+  if [[ -n "${VLEI_SCHEMA_DIR}" ]]; then
+    MATERIALIZED_VLEI_SCHEMA_DIR="${VLEI_SCHEMA_DIR}"
+    log "using override vLEI schema dir: ${MATERIALIZED_VLEI_SCHEMA_DIR}"
+  else
+    MATERIALIZED_VLEI_SCHEMA_DIR="${RUN_DIR}/vlei/schema"
+    log "materializing vLEI schemas from ${VLEI_SCHEMA_REPO}@${VLEI_SCHEMA_COMMIT}"
+    download_file "${VLEI_SCHEMA_RAW_BASE}/qualified-vLEI-issuer-vLEI-credential.json" \
+      "${MATERIALIZED_VLEI_SCHEMA_DIR}/qualified-vLEI-issuer-vLEI-credential.schema.json"
+    download_file "${VLEI_SCHEMA_RAW_BASE}/legal-entity-vLEI-credential.json" \
+      "${MATERIALIZED_VLEI_SCHEMA_DIR}/legal-entity-vLEI-credential.schema.json"
+    download_file "${VLEI_SCHEMA_RAW_BASE}/oor-authorization-vlei-credential.json" \
+      "${MATERIALIZED_VLEI_SCHEMA_DIR}/oor-authorization-vlei-credential.schema.json"
+    download_file "${VLEI_SCHEMA_RAW_BASE}/legal-entity-official-organizational-role-vLEI-credential.json" \
+      "${MATERIALIZED_VLEI_SCHEMA_DIR}/legal-entity-official-organizational-role-vLEI-credential.schema.json"
+    download_file "${VLEI_SCHEMA_RAW_BASE}/ecr-authorization-vlei-credential.json" \
+      "${MATERIALIZED_VLEI_SCHEMA_DIR}/ecr-authorization-vlei-credential.schema.json"
+    download_file "${VLEI_SCHEMA_RAW_BASE}/legal-entity-engagement-context-role-vLEI-credential.json" \
+      "${MATERIALIZED_VLEI_SCHEMA_DIR}/legal-entity-engagement-context-role-vLEI-credential.schema.json"
+  fi
+
+  if [[ -n "${VLEI_RULES_DIR}" ]]; then
+    MATERIALIZED_VLEI_RULES_DIR="${VLEI_RULES_DIR}"
+    log "using override vLEI rules dir: ${MATERIALIZED_VLEI_RULES_DIR}"
+  else
+    MATERIALIZED_VLEI_RULES_DIR="${RUN_DIR}/vlei/rules"
+    log "materializing vLEI rules from ${VLEI_RULES_REPO}@${VLEI_RULES_COMMIT}"
+    download_file "${VLEI_RULES_RAW_BASE}/scripts/data/rules.json" \
+      "${MATERIALIZED_VLEI_RULES_DIR}/rules.json"
+    download_file "${VLEI_RULES_RAW_BASE}/tests/schema/rules/oor-rules.json" \
+      "${MATERIALIZED_VLEI_RULES_DIR}/oor-rules.json"
+  fi
+}
+
+python_supports_314() {
+  local python="$1"
+  local version major minor
+  if ! version="$("${python}" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)"; then
+    return 1
+  fi
+  major="${version%%.*}"
+  minor="${version#*.}"
+  [[ "${major}" =~ ^[0-9]+$ && "${minor}" =~ ^[0-9]+$ ]] || return 1
+  (( major > 3 || (major == 3 && minor >= 14) ))
+}
+
+resolve_python314() {
+  local candidates=()
+  local pyenv_python candidate
+  [[ -z "${KERIPY_INTEROP_PYTHON:-}" ]] || candidates+=("${KERIPY_INTEROP_PYTHON}")
+  if can_run_command pyenv which python; then
+    pyenv_python="$(pyenv which python)"
+    [[ -z "${pyenv_python}" ]] || candidates+=("${pyenv_python}")
+  fi
+  candidates+=(python3.14 python3)
+  for candidate in "${candidates[@]}"; do
+    if python_supports_314 "${candidate}"; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  fail "KERIpy interop requires Python >= 3.14. Tried: ${candidates[*]}"
+}
+
+can_use_kli() {
+  local kli="$1"
+  [[ -x "${kli}" ]] || return 1
+  "${kli}" --help >/dev/null 2>&1
+}
+
+prepare_pinned_keripy() {
+  if [[ -n "${KLI_CMD}" ]]; then
+    can_use_kli "${KLI_CMD}" || fail "KLI_CMD is not executable/runnable: ${KLI_CMD}"
+    log "using override KLI command: ${KLI_CMD}"
+    return 0
+  fi
+
+  if [[ -n "${KERIPY_DIR:-}" ]]; then
+    KLI_CMD="${KERIPY_DIR}/venv/bin/kli"
+    can_use_kli "${KLI_CMD}" || fail "KERIPY_DIR did not provide runnable KLI: ${KLI_CMD}"
+    log "using override KERIpy dir: ${KERIPY_DIR}"
+    return 0
+  fi
+
+  local marker="${KERIPY_INTEROP_CACHE_ROOT}/PIN"
+  local kli="${KERIPY_INTEROP_VENV}/bin/kli"
+  if [[ -f "${marker}" ]] && [[ "$(tr -d '\r\n' <"${marker}")" == "${KERIPY_INTEROP_COMMIT}" ]] && can_use_kli "${kli}"; then
+    KLI_CMD="${kli}"
+    log "using cached pinned KERIpy ${KERIPY_INTEROP_COMMIT}: ${KLI_CMD}"
+    return 0
+  fi
+
+  local python
+  python="$(resolve_python314)"
+  rm -rf "${KERIPY_INTEROP_VENV}"
+  mkdir -p "${KERIPY_INTEROP_CACHE_ROOT}"
+  log "creating pinned KERIpy venv with ${python}: ${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
+  run "${python}" -m venv "${KERIPY_INTEROP_VENV}"
+  if can_run_command uv --version; then
+    run uv pip install --python "${KERIPY_INTEROP_VENV}/bin/python" "${KERIPY_INTEROP_INSTALL}"
+  else
+    run "${KERIPY_INTEROP_VENV}/bin/python" -m pip install --upgrade pip setuptools wheel
+    run "${KERIPY_INTEROP_VENV}/bin/python" -m pip install "${KERIPY_INTEROP_INSTALL}"
+  fi
+  can_use_kli "${kli}" || fail "Pinned KERIpy install did not produce runnable KLI: ${kli}"
+  printf '%s\n' "${KERIPY_INTEROP_COMMIT}" >"${marker}"
+  KLI_CMD="${kli}"
+}
+
+pack_package_tarball() {
+  local package_dir="$1"
+  local __result_var="$2"
+  local tarball
+  tarball="$(cd "${package_dir}" && npm pack --silent | tail -n1)"
+  printf -v "${__result_var}" '%s/%s' "${package_dir}" "${tarball}"
+}
+
+prepare_tufa_command() {
+  if [[ -n "${TUFA_BIN}" ]]; then
+    [[ -x "${TUFA_BIN}" ]] || fail "TUFA_BIN is not executable: ${TUFA_BIN}"
+    TUFACMD=("${TUFA_BIN}")
+    log "using override Tufa binary: ${TUFA_BIN}"
+    return 0
+  fi
+
+  case "${TUFA_INSTALL_MODE}" in
+    source)
+      TUFACMD=(deno run --allow-all --unstable-ffi "${ROOT_DIR}/packages/tufa/mod.ts")
+      log "using source Tufa command: ${TUFACMD[*]}"
+      return 0
+      ;;
+    tarball)
+      ;;
+    *)
+      fail "Unknown TUFA_INSTALL_MODE=${TUFA_INSTALL_MODE}; expected tarball or source"
+      ;;
+  esac
+
+  require_cmd npm
+  require_cmd node
+  if [[ -z "${CESR_TARBALL_PATH}" || -z "${KERI_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" ]]; then
+    run deno task npm:build:all
+  fi
+  [[ -n "${CESR_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/cesr/npm" CESR_TARBALL_PATH
+  [[ -n "${KERI_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/keri/npm" KERI_TARBALL_PATH
+  [[ -n "${TUFA_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/tufa/npm" TUFA_TARBALL_PATH
+  [[ -f "${CESR_TARBALL_PATH}" ]] || fail "CESR tarball not found: ${CESR_TARBALL_PATH}"
+  [[ -f "${KERI_TARBALL_PATH}" ]] || fail "keri-ts tarball not found: ${KERI_TARBALL_PATH}"
+  [[ -f "${TUFA_TARBALL_PATH}" ]] || fail "Tufa tarball not found: ${TUFA_TARBALL_PATH}"
+
+  mkdir -p "${TUFA_NPM_PREFIX}"
+  log "installing Tufa tarballs into ${TUFA_NPM_PREFIX}"
+  run npm install -g --prefix "${TUFA_NPM_PREFIX}" --force \
+    "${CESR_TARBALL_PATH}" \
+    "${KERI_TARBALL_PATH}" \
+    "${TUFA_TARBALL_PATH}"
+  TUFACMD=("${TUFA_NPM_PREFIX}/bin/tufa")
+  [[ -x "${TUFACMD[0]}" ]] || fail "Tarball install did not produce executable ${TUFACMD[0]}"
+  export PATH="${TUFA_NPM_PREFIX}/bin:${PATH}"
+  log "using tarball-installed Tufa command: ${TUFACMD[0]}"
+}
+
 start_bg() {
   local name="$1"
   local log_file="$2"
@@ -192,11 +389,21 @@ docker_image_exists() {
 }
 
 ensure_sally_image() {
+  if [[ "${SALLY_BASE_IMAGE}" == w3c-crosswalk/isomer-python* ]]; then
+    fail "SALLY_BASE_IMAGE must not use w3c-crosswalk/isomer-python; use a gleif/sally image or another public Sally artifact"
+  fi
+
   if docker_image_exists "${SALLY_IMAGE}"; then
     return 0
   fi
+
+  if [[ "${SALLY_BUILD_LOCAL}" != "true" ]]; then
+    run docker pull "${SALLY_IMAGE}"
+    return 0
+  fi
+
   if ! docker_image_exists "${SALLY_BASE_IMAGE}"; then
-    fail "missing Sally image ${SALLY_IMAGE} and fallback base ${SALLY_BASE_IMAGE}; set SALLY_IMAGE to a local Sally image or build ${SALLY_BASE_IMAGE}"
+    run docker pull "${SALLY_BASE_IMAGE}"
   fi
 
   local dockerfile="${RUN_DIR}/sally-local.Dockerfile"
@@ -313,11 +520,11 @@ assert_delegated_from() {
 }
 
 schema_path() {
-  printf '%s/credentials/schema-tools/schema/vLEI/%s\n' "${WORKSPACE_ROOT}" "$1"
+  printf '%s/%s\n' "${MATERIALIZED_VLEI_SCHEMA_DIR}" "$1"
 }
 
 rules_path() {
-  printf '%s\n' "/Users/kbull/tmp/qvi-software-inspect/qvi-workflow/kli_docker/acdc-info/rules/$1"
+  printf '%s/%s\n' "${MATERIALIZED_VLEI_RULES_DIR}" "$1"
 }
 
 resolve_oobi() {
@@ -737,13 +944,19 @@ main() {
   require_cmd jq
   require_cmd curl
   require_cmd docker
-  require_cmd python3
-  [[ -x "${KLI_CMD}" ]] || fail "KLI command is not executable: ${KLI_CMD}"
+  require_cmd deno
   mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${TUFA_HEAD}" "${KLI_CONFIG_DIR}/keri/cf"
   log "run dir: ${RUN_DIR}"
+  prepare_vlei_fixtures
+  prepare_pinned_keripy
+  prepare_tufa_command
+  log "KERIpy source ${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
+  log "KLI command ${KLI_CMD}"
+  log "Tufa command ${TUFACMD[*]}"
+  log "Sally image ${SALLY_IMAGE}"
 
   log "starting KERIpy demo witnesses"
-  start_bg kli-witness-demo "${LOG_DIR}/kli-witness-demo.log" bash -lc "cd '${KERIPY_DIR}' && '${KLI_CMD}' witness demo --base '${KERI_BASE}'"
+  start_bg kli-witness-demo "${LOG_DIR}/kli-witness-demo.log" "${KLI_CMD}" witness demo --base "${KERI_BASE}"
   wait_http "${WAN_OOBI}" 90
 
   local tw1_http tw1_tcp tw2_http tw2_tcp tw1_log tw2_log
