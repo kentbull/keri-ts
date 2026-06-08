@@ -74,6 +74,7 @@ interface IpexJoinArgs extends IpexBaseArgs {
   pollBudgetMs?: number;
 }
 
+/** Implement `tufa ipex apply` by sending a schema/attribute request EXN. */
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
   const schema = args.schema as string | undefined;
@@ -101,6 +102,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
   }
 }
 
+/** Implement `tufa ipex offer` with one embedded ACDC stream reference. */
 export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
   const acdcFile = args.acdc as string | undefined;
@@ -125,14 +127,17 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
   }
 }
 
+/** Implement `tufa ipex agree` as a response to an accepted offer EXN. */
 export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<void> {
   yield* sendPriorResponse(args, IPEX_AGREE_ROUTE, "offer");
 }
 
+/** Implement `tufa ipex spurn` as a rejection response in an IPEX thread. */
 export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void> {
   yield* sendPriorResponse(args, IPEX_SPURN_ROUTE, "prior");
 }
 
+/** Implement `tufa ipex grant` and optional grant artifact export/delivery. */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexGrantArgs = {
     ...ipexBaseArgs(args),
@@ -232,6 +237,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
   }
 }
 
+/** Implement `tufa ipex admit` and holder-side grant artifact processing. */
 export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexAdmitArgs = {
     ...ipexBaseArgs(args),
@@ -263,6 +269,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
   }
 }
 
+/** Implement `tufa ipex list` by printing locally accepted IPEX EXNs. */
 export function* ipexListCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
   const { hby, runtime } = yield* openRuntime(ipexArgs);
@@ -285,6 +292,7 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
   }
 }
 
+/** Implement bounded mailbox polling plus stored grant replay for holders. */
 export function* ipexPollCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
   const pollTurns = positiveInteger(args.pollTurns, 8, "poll turns");
@@ -324,6 +332,7 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
   }
 }
 
+/** Implement multisig IPEX approval over a pending `/multisig/exn` wrapper. */
 export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexJoinArgs = {
     ...ipexBaseArgs(args),

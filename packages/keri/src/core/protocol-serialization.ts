@@ -121,6 +121,14 @@ function requireCigarVerfer(cigar: Cigar): Verfer {
   return verfer;
 }
 
+/**
+ * Serialize one KERI event or ACDC credential body with CESR attachments.
+ *
+ * KERI event callers pass signature/receipt/seal material. ACDC callers pass a
+ * prebuilt proof attachment group. Live serialization may promote attachment
+ * counter `gvrsn`; replay clone APIs should preserve their stored counter
+ * version instead of rebuilding through this helper.
+ */
 export function messagize(
   serder: SerderKERI,
   args?: {
@@ -287,6 +295,10 @@ export function messagize(
   );
 }
 
+/**
+ * Build the SealSourceTriples proof used to bind one credential body to its TEL
+ * event.
+ */
 export function buildProof(
   prefixer: Prefixer,
   seqner: Seqner,
@@ -321,6 +333,14 @@ export function buildProof(
   );
 }
 
+/**
+ * Serialize one KERI message with transferable indexed signatures,
+ * non-transferable receipts, and optional pathed material.
+ *
+ * This is the general-purpose live-message serializer used by exchange and
+ * credential flows. It owns counter selection for constructed attachments, but
+ * not stored KEL/TEL replay byte preservation.
+ */
 export function serializeMessage(
   serder: SerderKERI,
   {
@@ -411,6 +431,10 @@ export function serializeMessage(
   );
 }
 
+/**
+ * Project one stored KEL event plus local receipt/signature metadata into a
+ * command-facing JSON record.
+ */
 export function loadEvent(
   db: Baser,
   pre: string,

@@ -10,6 +10,15 @@ internal-only implementation areas so refactors can preserve stable contracts.
 - `docs/adr/adr-0001-parser-atomic-bounded-first.md`
 - `docs/adr/adr-0011-three-package-architecture.md`
 
+## Current Maintainer Guides
+
+- `docs/design-docs/keri/ATTACHMENT_COUNTER_GVRSN_MAINTAINER_GUIDE.md`
+- `docs/design-docs/keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md`
+- `docs/design-docs/keri/DELEGATION_MULTISIG_ENDPOINT_ROLES_MAINTAINER_GUIDE.md`
+- `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
+- `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`
+- `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`
+
 ## Top-Level Boundaries
 
 - Dependency graph:
@@ -174,5 +183,15 @@ internal-only implementation areas so refactors can preserve stable contracts.
   - `packages/cesr/src/annotate`
 - Runtime persistence/LMDB:
   - `packages/keri/src/db/core`, `packages/keri/src/db/basing.ts`
+- ACDC/TEL/IPEX/verifier behavior:
+  - `packages/keri/src/vdr`, `packages/keri/src/app/ipexing.ts`,
+    `packages/keri/src/app/ipex-credentialing.ts`,
+    `packages/keri/src/app/verifying.ts`,
+    `packages/keri/src/app/verifier-agent.ts`
+- Delegation, multisig, and endpoint-role workflow:
+  - `packages/keri/src/app/delegating.ts`,
+    `packages/keri/src/app/grouping.ts`,
+    `packages/keri/src/app/endpoint-roleing.ts`,
+    `packages/keri/src/app/cli/multisig.ts`
 - CLI/server orchestration:
   - `packages/tufa/**`

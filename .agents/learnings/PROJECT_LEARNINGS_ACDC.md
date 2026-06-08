@@ -93,6 +93,8 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 ## Key Reference
 
 1. `docs/design-docs/db/db-architecture.md`
+2. `docs/design-docs/keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md`
+3. `docs/design-docs/keri/ATTACHMENT_COUNTER_GVRSN_MAINTAINER_GUIDE.md`
 
 ## Current Follow-Ups
 

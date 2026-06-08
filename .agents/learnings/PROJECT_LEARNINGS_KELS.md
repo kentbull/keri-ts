@@ -153,6 +153,8 @@ and KERIpy interoperability.
 4. `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
 5. `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`
 6. `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`
+7. `docs/design-docs/keri/DELEGATION_MULTISIG_ENDPOINT_ROLES_MAINTAINER_GUIDE.md`
+8. `docs/design-docs/keri/ATTACHMENT_COUNTER_GVRSN_MAINTAINER_GUIDE.md`
 
 ## Current Follow-Ups
 

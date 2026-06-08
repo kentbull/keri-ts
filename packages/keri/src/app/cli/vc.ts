@@ -82,6 +82,7 @@ interface VcSchemaImportArgs extends VcBaseArgs {
   schema?: string[];
 }
 
+/** Implement `tufa vc schema import` by pinning JSON schemas into `schema.`. */
 export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = baseArgs(args) as VcSchemaImportArgs;
   vcArgs.schema = asStringList(args.schema);
@@ -97,6 +98,7 @@ export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation
   }
 }
 
+/** Implement `tufa vc registry incept` for single-sig or group registries. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args);
   const { hby, runtime } = yield* openRuntime(vcArgs);
@@ -123,6 +125,7 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
   }
 }
 
+/** Implement `tufa vc registry list` from local `Reger.regs` state. */
 export function* vcRegistryListCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = baseArgs(args);
   const { hby, runtime, reger } = yield* openRuntime(vcArgs);
@@ -140,6 +143,7 @@ export function* vcRegistryListCommand(args: Record<string, unknown>): Operation
   }
 }
 
+/** Implement `tufa vc registry status` from current TEL registry state. */
 export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args, { aliasRequired: false });
   const { hby, runtime, reger } = yield* openRuntime(vcArgs);
@@ -161,6 +165,7 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
   }
 }
 
+/** Implement `tufa vc create` by constructing and issuing one registry-backed ACDC. */
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcCreateArgs = {
     ...baseArgs(args),
@@ -223,6 +228,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
   }
 }
 
+/** Implement `tufa vc list` over verifier-backed wallet indexes. */
 export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcListArgs = {
     ...baseArgs(args),
@@ -253,6 +259,7 @@ export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
   }
 }
 
+/** Implement `tufa vc export` as a KERIpy-compatible credential support stream. */
 export function* vcExportCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcSaidArgs = {
     ...baseArgs(args),
@@ -273,6 +280,7 @@ export function* vcExportCommand(args: Record<string, unknown>): Operation<void>
   }
 }
 
+/** Implement `tufa vc import` by ingesting one CESR credential stream. */
 export function* vcImportCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcImportArgs = {
     ...baseArgs(args),
@@ -291,6 +299,7 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
   }
 }
 
+/** Implement `tufa vc revoke`, including optional revocation delivery/export. */
 export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcSaidArgs = {
     ...baseArgs(args),
