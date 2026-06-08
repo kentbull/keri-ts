@@ -2,7 +2,10 @@
 
 import { run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { CtrDexV1, parseCounterFromText, Siger, Signer, Vrsn_1_0 } from "../../../../cesr/mod.ts";
+import { incept } from "../../../src/core/protocol-eventing.ts";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
 Deno.test("db/basing - Baser binds DB-backed state and record stores", async () => {
@@ -82,4 +85,41 @@ Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on
   });
 
   await assertRejects(() => Deno.stat(tempPath!));
+});
+
+Deno.test("db/basing - cloneEvtMsg emits v1 replay counters", async () => {
+  await run(function*() {
+    const baser = yield* createBaser({
+      name: `baser-clone-evt-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const signer = Signer.random({ transferable: true });
+      const serder = incept([signer.verfer.qb64]);
+      const pre = serder.pre!;
+      const said = serder.said!;
+      const key = dgKey(pre, said);
+      const siger = signer.sign(serder.raw, { index: 0 }) as Siger;
+      const dater = encodeDateTimeToDater("2026-03-16T12:34:56.000000+00:00");
+
+      assertEquals(baser.evts.put(key, serder), true);
+      assertEquals(baser.sigs.put(key, [siger]), true);
+      assertEquals(baser.appendFel(pre, said), 0);
+      assertEquals(baser.putDts(pre, said, dater), true);
+
+      const message = baser.cloneEvtMsg(pre, 0, said);
+      let offset = serder.raw.length;
+      const group = parseCounterFromText(message.slice(offset), Vrsn_1_0);
+      offset += group.fullSize;
+      const signatures = parseCounterFromText(message.slice(offset), Vrsn_1_0);
+      offset += signatures.fullSize + siger.qb64b.length;
+      const firstSeen = parseCounterFromText(message.slice(offset), Vrsn_1_0);
+
+      assertEquals(group.code, CtrDexV1.AttachmentGroup);
+      assertEquals(signatures.code, CtrDexV1.ControllerIdxSigs);
+      assertEquals(firstSeen.code, CtrDexV1.FirstSeenReplayCouples);
+    } finally {
+      yield* baser.close(true);
+    }
+  });
 });

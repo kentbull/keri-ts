@@ -1,7 +1,10 @@
 import {
   type Cigar,
   concatBytes,
+  Counter,
   Diger,
+  Kinds,
+  LabelDex,
   NON_TRANSFERABLE_CODES,
   type NumberPrimitive,
   Prefixer,
@@ -9,16 +12,19 @@ import {
   type SerderACDC,
   type SerderKERI,
   type Siger,
+  Texter,
   type Verfer,
+  type Versionage,
+  Vrsn_1_0,
 } from "../../../cesr/mod.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import {
   attachmentCounterPayloadQb64b,
-  type AttachmentCounterProfile,
   attachmentCounterQb64b,
   pathedMaterialCounterQb64b,
-} from "./attachment-counter-profile.ts";
+  resolveAttachmentGvrsn,
+} from "./attachment-countering.ts";
 import { type TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 
@@ -57,14 +63,32 @@ function encodeSealSeqnerQb64b(
 }
 
 function concatMessageWithAttachmentGroup(
-  body: Uint8Array,
+  serder: SerderKERI | SerderACDC,
   attachments: readonly Uint8Array[],
   pipelined: boolean,
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage,
+  nested: boolean,
+  genusify: boolean,
 ): Uint8Array {
   const atc = attachments.length === 0 ? new Uint8Array() : concatBytes(...attachments);
+  const prefix = genusify ? Counter.makeGVC(gvrsn) : new Uint8Array();
+  if (nested) {
+    const body = serder.kind === Kinds.cesr ? serder.raw : Counter.enclose({
+      qb64: new Texter({ code: texterCodeForRaw(serder.raw), raw: serder.raw }).qb64b,
+      code: "NonNativeBodyGroup",
+      version: gvrsn,
+    });
+    return concatBytes(
+      prefix,
+      Counter.enclose({
+        qb64: concatBytes(body, atc),
+        code: "BodyWithAttachmentGroup",
+        version: gvrsn,
+      }),
+    );
+  }
   if (!pipelined) {
-    return atc.length === 0 ? body : concatBytes(body, atc);
+    return concatBytes(prefix, atc.length === 0 ? serder.raw : concatBytes(serder.raw, atc));
   }
   if (atc.length % 4 !== 0) {
     throw new ValidationError(
@@ -72,10 +96,16 @@ function concatMessageWithAttachmentGroup(
     );
   }
   return concatBytes(
-    body,
-    attachmentCounterQb64b("AttachmentGroup", atc.length / 4, counterProfile),
+    prefix,
+    serder.raw,
+    attachmentCounterQb64b("AttachmentGroup", atc.length / 4, gvrsn),
     atc,
   );
+}
+
+function texterCodeForRaw(raw: Uint8Array): string {
+  const rem = raw.length % 3;
+  return rem === 0 ? LabelDex.Bytes_L0 : rem === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2;
 }
 
 function requireCigarVerfer(cigar: Cigar): Verfer {
@@ -99,13 +129,15 @@ export function messagize(
     wigers?: readonly Siger[];
     cigars?: readonly Cigar[];
     pipelined?: boolean;
-    counterProfile?: AttachmentCounterProfile;
+    gvrsn?: Versionage;
+    nested?: boolean;
+    genusify?: boolean;
   },
 ): Uint8Array;
 export function messagize(
   creder: SerderACDC,
   proof: Uint8Array,
-  args?: { counterProfile?: AttachmentCounterProfile },
+  args?: { gvrsn?: Versionage; nested?: boolean; genusify?: boolean },
 ): Uint8Array;
 export function messagize(
   serderOrCreder: SerderKERI | SerderACDC,
@@ -116,10 +148,12 @@ export function messagize(
       wigers?: readonly Siger[];
       cigars?: readonly Cigar[];
       pipelined?: boolean;
-      counterProfile?: AttachmentCounterProfile;
+      gvrsn?: Versionage;
+      nested?: boolean;
+      genusify?: boolean;
     }
     | Uint8Array = {},
-  proofOptions: { counterProfile?: AttachmentCounterProfile } = {},
+  proofOptions: { gvrsn?: Versionage; nested?: boolean; genusify?: boolean } = {},
 ): Uint8Array {
   if (argsOrProof instanceof Uint8Array) {
     if (argsOrProof.length % 4 !== 0) {
@@ -127,14 +161,18 @@ export function messagize(
         `Invalid attachments size=${argsOrProof.length}, nonintegral quadlets.`,
       );
     }
-    return concatBytes(
-      serderOrCreder.raw,
-      attachmentCounterQb64b(
-        "AttachmentGroup",
-        argsOrProof.length / 4,
-        proofOptions.counterProfile,
-      ),
-      argsOrProof,
+    const gvrsn = resolveAttachmentGvrsn(
+      serderOrCreder,
+      proofOptions.gvrsn ?? Vrsn_1_0,
+      proofOptions.nested ?? false,
+    );
+    return concatMessageWithAttachmentGroup(
+      serderOrCreder,
+      [argsOrProof],
+      true,
+      gvrsn,
+      proofOptions.nested ?? false,
+      proofOptions.genusify ?? false,
     );
   }
 
@@ -144,8 +182,11 @@ export function messagize(
     wigers = [],
     cigars = [],
     pipelined = false,
-    counterProfile = "legacy",
+    gvrsn: requestedGvrsn = Vrsn_1_0,
+    nested = false,
+    genusify = false,
   } = argsOrProof;
+  const gvrsn = resolveAttachmentGvrsn(serderOrCreder, requestedGvrsn, nested);
   if (sigers.length === 0 && wigers.length === 0 && cigars.length === 0) {
     throw new ValidationError(
       `Missing attached signatures on message = ${JSON.stringify(serderOrCreder.ked)}.`,
@@ -160,7 +201,7 @@ export function messagize(
         "ControllerIdxSigs",
         sigers.length,
         sigerPayload,
-        counterProfile,
+        gvrsn,
       ),
       ...sigerPayload,
     ];
@@ -176,7 +217,7 @@ export function messagize(
           "TransIdxSigGroups",
           1,
           transPayload,
-          counterProfile,
+          gvrsn,
         ),
         ...transPayload,
       );
@@ -190,7 +231,7 @@ export function messagize(
           "TransLastIdxSigGroups",
           1,
           transLastPayload,
-          counterProfile,
+          gvrsn,
         ),
         ...transLastPayload,
       );
@@ -214,7 +255,7 @@ export function messagize(
         "WitnessIdxSigs",
         wigers.length,
         wigerPayload,
-        counterProfile,
+        gvrsn,
       ),
       ...wigerPayload,
     );
@@ -230,17 +271,19 @@ export function messagize(
         "NonTransReceiptCouples",
         cigars.length,
         cigarPayload,
-        counterProfile,
+        gvrsn,
       ),
       ...cigarPayload,
     );
   }
 
   return concatMessageWithAttachmentGroup(
-    serderOrCreder.raw,
+    serderOrCreder,
     attachments,
     pipelined,
-    counterProfile,
+    gvrsn,
+    nested,
+    genusify,
   );
 }
 
@@ -249,7 +292,7 @@ export function buildProof(
   seqner: Seqner,
   diger: Diger,
   sigers: readonly Siger[],
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
   const sigerPayload = sigers.map((siger) => siger.qb64b);
   const sigerGroup = [
@@ -257,7 +300,7 @@ export function buildProof(
       "ControllerIdxSigs",
       sigers.length,
       sigerPayload,
-      counterProfile,
+      gvrsn,
     ),
     ...sigerPayload,
   ];
@@ -272,7 +315,7 @@ export function buildProof(
       "TransIdxSigGroups",
       1,
       transPayload,
-      counterProfile,
+      gvrsn,
     ),
     ...transPayload,
   );
@@ -285,16 +328,21 @@ export function serializeMessage(
     cigars = [],
     pathed = [],
     pipelined = false,
-    counterProfile = "legacy",
+    gvrsn: requestedGvrsn = Vrsn_1_0,
+    nested = false,
+    genusify = false,
   }: {
     tsgs?: readonly TransIdxSigGroup[];
     cigars?: readonly Cigar[];
     pathed?: readonly (string | Uint8Array)[];
     pipelined?: boolean;
-    counterProfile?: AttachmentCounterProfile;
+    gvrsn?: Versionage;
+    nested?: boolean;
+    genusify?: boolean;
   } = {},
 ): Uint8Array {
   const attachments: Uint8Array[] = [];
+  const gvrsn = resolveAttachmentGvrsn(serder, requestedGvrsn, nested);
 
   for (const tsg of tsgs) {
     const sigerPayload = tsg.sigers.map((siger) => siger.qb64b);
@@ -303,7 +351,7 @@ export function serializeMessage(
         "ControllerIdxSigs",
         tsg.sigers.length,
         sigerPayload,
-        counterProfile,
+        gvrsn,
       ),
       ...sigerPayload,
     ];
@@ -318,7 +366,7 @@ export function serializeMessage(
         "TransIdxSigGroups",
         1,
         transPayload,
-        counterProfile,
+        gvrsn,
       ),
       ...transPayload,
     );
@@ -334,7 +382,7 @@ export function serializeMessage(
         "NonTransReceiptCouples",
         cigars.length,
         cigarPayload,
-        counterProfile,
+        gvrsn,
       ),
       ...cigarPayload,
     );
@@ -348,16 +396,18 @@ export function serializeMessage(
       );
     }
     attachments.push(
-      pathedMaterialCounterQb64b(raw.length / 4, counterProfile),
+      pathedMaterialCounterQb64b(raw.length / 4, gvrsn),
       raw,
     );
   }
 
   return concatMessageWithAttachmentGroup(
-    serder.raw,
+    serder,
     attachments,
     pipelined,
-    counterProfile,
+    gvrsn,
+    nested,
+    genusify,
   );
 }
 

@@ -72,6 +72,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
     model: auxiliary four-char tags such as `OCSR` must remain accepted because
     KERIpy uses them in typed-digest seal families even though native message
     bodies still only speak `KERI|ACDC`.
+22. KERIpy attachment parity belongs in `Counter` for generic CESR framing:
+    `Counter.makeGVC(version)` emits the genus-version selector, and
+    `Counter.enclose(...)` owns text/binary alignment checks, quadlet/triplet
+    count derivation, and small-to-big counter promotion.
 
 ## Use This Doc For
 

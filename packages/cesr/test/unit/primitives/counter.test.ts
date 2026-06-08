@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { decodeB64 } from "../../../src/core/bytes.ts";
+import { b, decodeB64 } from "../../../src/core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import {
   Counter,
@@ -7,6 +7,7 @@ import {
   parseCounterFromBinary,
   parseCounterFromText,
 } from "../../../src/primitives/counter.ts";
+import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import type { Versionage } from "../../../src/tables/table-types.ts";
 import { KERIPY_COUNTER_VECTORS, KERIPY_MAIN_BASELINE } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
@@ -58,6 +59,55 @@ Deno.test("counter: constructor from code/count roundtrips", () => {
 
   const parsed = parseCounter(c2.qb2, V2, "bny");
   assertEquals(parsed.qb64, c2.qb64);
+});
+
+Deno.test("counter: makeGVC builds KERIpy genus-version selectors", () => {
+  assertEquals(
+    new TextDecoder().decode(Counter.makeGVC(V1)),
+    "-_AAABAA",
+  );
+  assertEquals(
+    new TextDecoder().decode(Counter.makeGVC(V2)),
+    "-_AAACAA",
+  );
+
+  const parsed = parseCounterFromText(Counter.makeGVC(V2), V2);
+  assertEquals(parsed.code, CtrDexV2.KERIACDCGenusVersion);
+  assertEquals(parsed.qb64.endsWith("CAA"), true);
+});
+
+Deno.test("counter: enclose frames qb64 and qb2 payloads", () => {
+  assertEquals(
+    Counter.enclose({ qb64: b("ABCD"), code: "GenericGroup", version: V2 }),
+    b("-AABABCD"),
+  );
+
+  const payload = new Uint8Array([0, 0, 0]);
+  const enclosed = Counter.enclose({ qb2: payload, code: "GenericGroup", version: V2 });
+  const counter = new Counter({ code: CtrDexV2.GenericGroup, count: 1, version: V2 });
+  assertEquals(enclosed.slice(0, counter.qb2.length), counter.qb2);
+  assertEquals(enclosed.slice(counter.qb2.length), payload);
+});
+
+Deno.test("counter: enclose rejects misaligned payloads", () => {
+  assertThrows(
+    () => Counter.enclose({ qb64: b("ABC"), code: "GenericGroup", version: V2 }),
+    DeserializeError,
+    "Bad enclosed qb64",
+  );
+  assertThrows(
+    () => Counter.enclose({ qb2: new Uint8Array([0, 0]), code: "GenericGroup", version: V2 }),
+    DeserializeError,
+    "Bad enclosed qb2",
+  );
+});
+
+Deno.test("counter: enclose promotes to big counter codes", () => {
+  const payload = new Uint8Array(4096 * 4);
+  const enclosed = Counter.enclose({ qb64: payload, code: "GenericGroup", version: V2 });
+  const counter = parseCounterFromText(enclosed, V2);
+  assertEquals(counter.code, CtrDexV2.BigGenericGroup);
+  assertEquals(counter.count, 4096);
 });
 
 Deno.test("counter: trims trailing input and rejects shortages", () => {

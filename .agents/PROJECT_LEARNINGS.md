@@ -90,7 +90,10 @@ stay short enough to reread at session start.
     names. Keep lane ownership explicit and keep default CI truthful.
 19. `packages/tufa` now owns the runnable host/CLI edge; `keri-ts` root,
     `keri-ts/runtime`, and `keri-ts/db` are the supported library entrypoints.
-20. The learnings layer is part of project hygiene: compact docs when they grow
+20. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
+    `Counter` owns KERIpy genus/enclosure helpers, live serialization may use
+    requested `gvrsn`, and replay clone streams stay v1.
+21. The learnings layer is part of project hygiene: compact docs when they grow
     noisy instead of preserving every step as prose.
 
 ## Current Follow-Ups

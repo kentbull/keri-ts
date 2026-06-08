@@ -16,11 +16,14 @@ import {
   concatBytes,
   Counter,
   CtrDexV1,
+  CtrDexV2,
   Diger,
+  parseCounterFromText,
   SerderKERI,
   Siger,
   smell,
   Verfer,
+  Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
@@ -169,9 +172,7 @@ Deno.test("Hab.interact advances accepted state, preserves keys, and commits anc
       const msg = acceptedHab.interact({ data: committed });
       const nextState = hby.db.getState(acceptedHab.pre);
       const nextKever = acceptedHab.kever;
-      const event = nextState?.d
-        ? hby.db.getEvtSerder(acceptedHab.pre, nextState.d)
-        : null;
+      const event = nextState?.d ? hby.db.getEvtSerder(acceptedHab.pre, nextState.d) : null;
 
       assertEquals(nextKever?.sn, 1);
       assertEquals(nextState?.s, "1");
@@ -1438,6 +1439,41 @@ Deno.test("Hab endorse matches KERIpy EXN pipelining modes", async () => {
 
       assertEquals(pipelinedCtr.code, CtrDexV1.AttachmentGroup);
       assertEquals(unpipelinedCtr.code, CtrDexV1.TransIdxSigGroups);
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Hab endorse emits v2 live counters when gvrsn is requested", async () => {
+  const name = `habery-endorse-gvrsn-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+
+  await run(function*() {
+    const hby = yield* createHabery({
+      name,
+      headDirPath,
+      skipConfig: true,
+    });
+    try {
+      const hab = hby.makeHab("alice", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const serder = makeExchangeSerder(
+        "/challenge/response",
+        { i: hab.pre, words: ["able", "baker"] },
+        { sender: hab.pre, recipient: hab.pre },
+      );
+
+      const message = hab.endorse(serder, { gvrsn: Vrsn_2_0 });
+      const counter = parseCounterFromText(message.slice(serder.size), Vrsn_2_0);
+
+      assertEquals(counter.code, CtrDexV2.AttachmentGroup);
     } finally {
       yield* hby.close();
     }

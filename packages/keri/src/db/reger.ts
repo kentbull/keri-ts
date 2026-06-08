@@ -24,12 +24,10 @@ import {
   Siger,
   t,
   Verfer,
+  type Versionage,
+  Vrsn_1_0,
 } from "../../../cesr/mod.ts";
-import {
-  attachmentCounterPayloadQb64b,
-  type AttachmentCounterProfile,
-  attachmentCounterQb64b,
-} from "../core/attachment-counter-profile.ts";
+import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
 import { dgKey } from "./core/keys.ts";
@@ -294,10 +292,9 @@ export class Reger extends LMDBer {
   *clonePreIter(
     pre: KeyPart,
     fn = 0,
-    counterProfile: AttachmentCounterProfile = "legacy",
   ): Generator<Uint8Array> {
     for (const [, , diger] of this.tels.getAllItemIter(pre, fn)) {
-      yield this.cloneTvt(pre, diger, counterProfile);
+      yield this.cloneTvt(pre, diger);
     }
   }
 
@@ -305,7 +302,6 @@ export class Reger extends LMDBer {
   cloneTvtAt(
     pre: KeyPart,
     sn = 0,
-    counterProfile: AttachmentCounterProfile = "legacy",
   ): Uint8Array {
     const diger = this.tels.getOn(pre, sn);
     if (diger === null) {
@@ -313,14 +309,13 @@ export class Reger extends LMDBer {
         `Missing event digest for pre=${keyText(pre)} sn=${sn}.`,
       );
     }
-    return this.cloneTvt(pre, diger, counterProfile);
+    return this.cloneTvt(pre, diger);
   }
 
   /** Clone one TEL event message by digest, including KERIpy attachment groups. */
   cloneTvt(
     pre: KeyPart,
     dig: string | Uint8Array | Diger | Saider,
-    counterProfile: AttachmentCounterProfile = "legacy",
   ): Uint8Array {
     const preText = keyText(pre);
     const digText = digestText(dig);
@@ -339,7 +334,6 @@ export class Reger extends LMDBer {
           "WitnessIdxSigs",
           tibs.length,
           tibPayload,
-          counterProfile,
         ),
         ...tibPayload,
       );
@@ -357,7 +351,6 @@ export class Reger extends LMDBer {
           "SealSourceCouples",
           1,
           sealPayload,
-          counterProfile,
         ),
         ...sealPayload,
       );
@@ -371,7 +364,7 @@ export class Reger extends LMDBer {
     }
     return concatBytes(
       raw,
-      attachmentCounterQb64b("AttachmentGroup", atc.length / 4, counterProfile),
+      attachmentCounterQb64b("AttachmentGroup", atc.length / 4),
       atc,
     );
   }
@@ -380,7 +373,7 @@ export class Reger extends LMDBer {
   sources(
     _db: unknown,
     creder: SerderACDC,
-    counterProfile: AttachmentCounterProfile = "legacy",
+    gvrsn: Versionage = Vrsn_1_0,
   ): CredentialSource[] {
     const chains = isRecord(creder.edge) ? creder.edge : {};
     const saids: string[] = [];
@@ -404,12 +397,12 @@ export class Reger extends LMDBer {
           "SealSourceTriples",
           1,
           sealPayload,
-          counterProfile,
+          gvrsn,
         ),
         ...sealPayload,
       );
       sources.push([sourceCreder, atc]);
-      sources.push(...this.sources(_db, sourceCreder, counterProfile));
+      sources.push(...this.sources(_db, sourceCreder, gvrsn));
     }
 
     return sources;
