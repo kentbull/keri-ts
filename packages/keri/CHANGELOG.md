@@ -1,5 +1,17 @@
 # keri-ts
 
+## 0.9.0
+
+### Minor Changes
+
+- 888bd90: Rename IPEX and multisig runtime CLI controls to `--approval-timeout`, `--poll-turns`, and `--poll-budget-ms`, and validate those values before command runtime startup.
+- 888bd90: Add KERIpy-compatible attachment counter profiles, group habitat lifecycle helpers, multisig-aware delegation and credential presentation support, and CESR HTTP/OOBI interop fixes.
+
+### Patch Changes
+
+- 888bd90: Remove OOBI URL-derived endpoint hint persistence and reject missing Tufa startup endpoint config instead of synthesizing `/loc/scheme` or `/end/role/add` state.
+- 888bd90: Add explicit multisig mailbox authorization support through `tufa mailbox add --multisig-mode` and share the group endpoint-role proposal path with `tufa ends add` and `tufa multisig rpy`.
+
 ## 0.8.0
 
 ### Minor Changes

@@ -13,6 +13,8 @@ packages/tufa/npm
 /npm
 .awcache
 .rpt2_cache
+.cache/
 data.mdb*
 .home/
 .tmp/
+.deno-cache/
