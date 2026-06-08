@@ -28,8 +28,9 @@ import {
   type Tier,
   Tiers,
   Verfer,
+  type Versionage,
+  Vrsn_1_0,
 } from "../../../cesr/mod.ts";
-import type { AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
@@ -330,7 +331,6 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
 export function eventReplayMessage(
   hby: Habery,
   serder: SerderKERI,
-  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
   const pre = serder.pre;
   const said = serder.said;
@@ -345,7 +345,7 @@ export function eventReplayMessage(
       `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, fn, said, counterProfile);
+  return hby.db.cloneEvtMsg(pre, fn, said);
 }
 
 /**
@@ -358,7 +358,6 @@ export function eventReplayMessage(
 export function eventPayloadMessage(
   hby: Habery,
   serder: SerderKERI,
-  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
   const pre = serder.pre;
   const said = serder.said;
@@ -375,7 +374,7 @@ export function eventPayloadMessage(
       `Missing replay ordinal for stored event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, ordinal, said, counterProfile);
+  return hby.db.cloneEvtMsg(pre, ordinal, said);
 }
 
 /** Return the exact accepted event replay message at `(pre, sn)`. */
@@ -383,7 +382,6 @@ export function acceptedEventReplayMessage(
   hby: Habery,
   pre: string,
   sn: number,
-  counterProfile: AttachmentCounterProfile = "legacy",
 ): { serder: SerderKERI; message: Uint8Array } {
   const said = hby.db.kels.getLast(pre, sn);
   if (!said) {
@@ -397,7 +395,7 @@ export function acceptedEventReplayMessage(
       `Missing accepted event body for ${pre}:${said}.`,
     );
   }
-  return { serder, message: eventReplayMessage(hby, serder, counterProfile) };
+  return { serder, message: eventReplayMessage(hby, serder) };
 }
 
 /**
@@ -830,7 +828,9 @@ export class Hab {
     serder: SerderKERI,
     options: {
       pipelined?: boolean;
-      counterProfile?: AttachmentCounterProfile;
+      gvrsn?: Versionage;
+      nested?: boolean;
+      genusify?: boolean;
     } = {},
   ): Uint8Array {
     if (!this.pre) {
@@ -842,12 +842,14 @@ export class Hab {
     }
     const prefixer = kever.prefixer;
     const pipelined = options.pipelined ?? true;
-    const counterProfile = options.counterProfile ?? "legacy";
+    const gvrsn = options.gvrsn ?? Vrsn_1_0;
     if (!kever.transferable) {
       return messagize(serder, {
         cigars: this.sign(serder.raw, false) as Cigar[],
         pipelined,
-        counterProfile,
+        gvrsn,
+        nested: options.nested,
+        genusify: options.genusify,
       });
     }
 
@@ -857,7 +859,9 @@ export class Hab {
         sigers,
         seal: SealLast.fromTuple([prefixer]),
         pipelined,
-        counterProfile,
+        gvrsn,
+        nested: options.nested,
+        genusify: options.genusify,
       });
     }
 
@@ -874,7 +878,9 @@ export class Hab {
       sigers,
       seal: { i: prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
       pipelined,
-      counterProfile,
+      gvrsn,
+      nested: options.nested,
+      genusify: options.genusify,
     });
   }
 

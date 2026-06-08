@@ -10,7 +10,6 @@
  * - credential/TEL artifact ingestion remains VDR/runtime work
  */
 import type { Kind, SerderKERI, Versionage } from "../../../cesr/mod.ts";
-import type { AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -63,7 +62,6 @@ export interface IpexBuilderOptions {
   pvrsn?: Versionage;
   gvrsn?: Versionage | null;
   kind?: Kind;
-  counterProfile?: AttachmentCounterProfile;
 }
 
 export type IpexMessage = readonly [serder: SerderKERI, attachments: Uint8Array];
@@ -292,7 +290,6 @@ function exchangeOptions(hab: Hab, options: IpexBuilderOptions) {
     pvrsn: options.pvrsn,
     gvrsn: options.gvrsn,
     kind: options.kind,
-    counterProfile: options.counterProfile,
   };
 }
 

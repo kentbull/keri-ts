@@ -7,8 +7,15 @@
  * - keeps EXN route construction in `ipexing.ts`
  * - keeps registry, wallet, and verifier persistence in VDR modules
  */
-import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "../../../cesr/mod.ts";
-import type { AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
+import {
+  concatBytes,
+  Counter,
+  parsePather,
+  SerderACDC,
+  SerderKERI,
+  type Versionage,
+  Vrsn_1_0,
+} from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
@@ -57,7 +64,6 @@ export function credentialSupportMessages(
   reger: Reger,
   creder: SerderACDC,
   recipient: string,
-  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array[] {
   const messages: Uint8Array[] = [];
   const issuer = creder.issuer;
@@ -69,8 +75,8 @@ export function credentialSupportMessages(
   if (!issuerKever) {
     throw new ValidationError(`Missing issuer KEL state for ${issuer}.`);
   }
-  messages.push(...hby.db.cloneDelegation(issuerKever, counterProfile));
-  messages.push(...hby.db.clonePreIter(issuer, 0, counterProfile));
+  messages.push(...hby.db.cloneDelegation(issuerKever));
+  messages.push(...hby.db.clonePreIter(issuer, 0));
 
   const issuee = credentialIssuee(creder);
   if (issuee && issuee !== recipient) {
@@ -78,17 +84,17 @@ export function credentialSupportMessages(
     if (!issueeKever) {
       throw new ValidationError(`Missing issuee KEL state for ${issuee}.`);
     }
-    messages.push(...hby.db.cloneDelegation(issueeKever, counterProfile));
-    messages.push(...hby.db.clonePreIter(issuee, 0, counterProfile));
+    messages.push(...hby.db.cloneDelegation(issueeKever));
+    messages.push(...hby.db.clonePreIter(issuee, 0));
   }
 
   const registry = creder.regid;
   if (registry) {
-    messages.push(...reger.clonePreIter(registry, 0, counterProfile));
+    messages.push(...reger.clonePreIter(registry, 0));
   }
 
   const said = credentialSaid(creder);
-  messages.push(...reger.clonePreIter(said, 0, counterProfile));
+  messages.push(...reger.clonePreIter(said, 0));
   return messages;
 }
 
@@ -104,7 +110,7 @@ export function credentialStreamMessages(
   reger: Reger,
   creder: SerderACDC,
   recipient: string,
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array[] {
   return [
     ...credentialPresentationSupportMessages(
@@ -112,7 +118,7 @@ export function credentialStreamMessages(
       reger,
       creder,
       recipient,
-      counterProfile,
+      gvrsn,
     ),
     credentialExportMessage(reger, credentialSaid(creder)),
   ];
@@ -124,17 +130,16 @@ export function credentialPresentationSupportMessages(
   reger: Reger,
   creder: SerderACDC,
   recipient: string,
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array[] {
   const messages = credentialSupportMessages(
     hby,
     reger,
     creder,
     recipient,
-    counterProfile,
   );
-  for (const [source, atc] of reger.sources(hby.db, creder, counterProfile)) {
-    messages.push(...credentialSupportMessages(hby, reger, source, recipient, counterProfile));
+  for (const [source, atc] of reger.sources(hby.db, creder, gvrsn)) {
+    messages.push(...credentialSupportMessages(hby, reger, source, recipient));
     messages.push(concatBytes(source.raw, atc));
   }
   return messages;
@@ -145,11 +150,11 @@ export function credentialPresentationArtifacts(
   hby: Habery,
   reger: Reger,
   credentialSaidValue: string,
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
 ): CredentialPresentationArtifacts {
   const [creder, prefixer, number, diger] = reger.cloneCred(credentialSaidValue);
-  const acdc = serializeCredential(creder, prefixer, number, diger, counterProfile);
-  const iss = reger.cloneTvtAt(credentialSaidValue, 0, counterProfile);
+  const acdc = serializeCredential(creder, prefixer, number, diger, gvrsn);
+  const iss = reger.cloneTvtAt(credentialSaidValue, 0);
   const iserder = new SerderKERI({ raw: iss });
   if (!iserder.said) {
     throw new ValidationError(`Credential TEL message ${credentialSaidValue} is missing SAID.`);
@@ -172,7 +177,7 @@ export function credentialPresentationArtifacts(
   if (!Number.isSafeInteger(sn)) {
     throw new ValidationError(`Credential anchor sequence is too large for replay: ${anchorNumber.qb64}.`);
   }
-  const replay = acceptedEventReplayMessage(hby, issuer, sn, counterProfile);
+  const replay = acceptedEventReplayMessage(hby, issuer, sn);
   if (replay.serder.said !== anchorDiger.qb64) {
     throw new ValidationError(
       `Credential anchor event ${replay.serder.said ?? "<missing>"} did not match ${anchorDiger.qb64}.`,
@@ -194,19 +199,19 @@ export function ipexCredentialGrant(args: {
   sign?: boolean;
 }): CredentialGrantMessage {
   const [creder] = args.reger.cloneCred(args.credentialSaid);
-  const counterProfile = args.options?.counterProfile ?? "legacy";
+  const gvrsn = args.options?.gvrsn ?? Vrsn_1_0;
   const artifacts = credentialPresentationArtifacts(
     args.hby,
     args.reger,
     args.credentialSaid,
-    counterProfile,
+    gvrsn,
   );
   const support = credentialPresentationSupportMessages(
     args.hby,
     args.reger,
     creder,
     args.recipient,
-    counterProfile,
+    gvrsn,
   );
   const [grant, attachments] = ipexGrantExn(
     args.hab,
@@ -224,7 +229,7 @@ export function ipexCredentialGrant(args: {
     grant,
     attachments,
     wire: args.sign === false ? new Uint8Array() : concatBytes(
-      args.hab.endorse(grant, { pipelined: false, counterProfile }),
+      args.hab.endorse(grant, { pipelined: false, gvrsn }),
       attachments,
     ),
     artifacts,
@@ -255,7 +260,10 @@ export function ipexCredentialAdmit(args: {
   return {
     admit,
     attachments,
-    wire: concatBytes(args.hab.endorse(admit, { pipelined: false }), attachments),
+    wire: concatBytes(
+      args.hab.endorse(admit, { pipelined: false, gvrsn: args.options?.gvrsn ?? undefined }),
+      attachments,
+    ),
   };
 }
 

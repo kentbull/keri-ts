@@ -133,6 +133,11 @@ and KERIpy interoperability.
 38. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
     library/runtime surface, not the home of host composition, command
     registration, or transport middleware policy.
+39. Attachment counter genus-version handling is split by message class: live
+    message serialization may follow caller/requested `gvrsn` and KERIpy v2
+    enclosure rules, but replay clone APIs (`Baser.clone*`, `Reger.cloneTvt*`,
+    KEL/TEL replay helpers) are fixed to v1 counters because they replay stored
+    KEL/TEL events rather than constructing new live attachment envelopes.
 
 ## Use This Doc For
 

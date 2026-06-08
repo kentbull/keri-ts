@@ -10,11 +10,10 @@ import {
   SerderKERI,
   type Siger,
   smell,
+  type Versionage,
+  Vrsn_1_0,
 } from "../../../../cesr/mod.ts";
-import {
-  type AttachmentCounterProfile,
-  normalizeAttachmentCounterProfile,
-} from "../../core/attachment-counter-profile.ts";
+import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
@@ -53,7 +52,7 @@ interface IpexBaseArgs {
   message?: string;
   out?: string;
   delivery?: "auto" | "direct" | "indirect";
-  counterProfile?: AttachmentCounterProfile;
+  gvrsn?: Versionage;
 }
 
 interface IpexGrantArgs extends IpexBaseArgs {
@@ -161,7 +160,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       message: ipexArgs.message ?? "",
       options: {
         agree: ipexArgs.agree ? hby.db.exns.get([ipexArgs.agree]) : null,
-        counterProfile: ipexArgs.counterProfile,
+        gvrsn: ipexArgs.gvrsn,
       },
       sign: !isGroupHab(hby, hab),
     });
@@ -195,7 +194,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       const completedGrantWire = storedExchangeMessage(
         hby,
         completedGrant,
-        ipexArgs.counterProfile,
+        ipexArgs.gvrsn,
       );
       const stream = concatBytes(...grant.support, completedGrantWire);
       if (ipexArgs.out) {
@@ -383,7 +382,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     const approval = yield* approveMultisigIpex(hby, runtime, exn, embedded, {
       publish: true,
       delivery: ipexArgs.delivery,
-      counterProfile: ipexArgs.counterProfile,
+      gvrsn: ipexArgs.gvrsn,
     });
     console.log(JSON.stringify({
       said: ipexArgs.said,
@@ -410,7 +409,7 @@ function* approveMultisigIpex(
     publish?: boolean;
     delivery?: "auto" | "direct" | "indirect";
     sendLead?: boolean;
-    counterProfile?: AttachmentCounterProfile;
+    gvrsn?: Versionage;
   } = {},
 ): Operation<{ accepted: boolean; deliveries: string[]; approved: Uint8Array }> {
   const group = embedded.pre;
@@ -447,7 +446,7 @@ function* approveMultisigIpex(
         groupHab,
         embedded,
         options.delivery,
-        options.counterProfile,
+        options.gvrsn,
       )),
     );
   }
@@ -648,7 +647,7 @@ function* sendCompletedGroupIpex(
   groupHab: Hab,
   embedded: SerderKERI,
   delivery?: "auto" | "direct" | "indirect",
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
 ): Operation<string[]> {
   if (!embedded.said) {
     throw new ValidationError("Completed group IPEX message is missing a SAID.");
@@ -672,7 +671,7 @@ function* sendCompletedGroupIpex(
         runtime.hby,
         reger,
         credentialSaid,
-        counterProfile,
+        gvrsn,
       );
       grantPathed = grantPathedMaterials(artifacts);
       messages.push(...credentialPresentationSupportMessages(
@@ -680,7 +679,7 @@ function* sendCompletedGroupIpex(
         reger,
         creder,
         recipient,
-        counterProfile,
+        gvrsn,
       ));
     }
   }
@@ -688,7 +687,7 @@ function* sendCompletedGroupIpex(
   messages.push(storedExchangeMessage(
     runtime.hby,
     requireStoredExchange(runtime.hby, embedded.said),
-    counterProfile,
+    gvrsn,
     grantPathed,
   ));
   return yield* sendCredentialBytes(
@@ -727,7 +726,7 @@ function requireStoredExchange(hby: Habery, said: string): SerderKERI {
 function storedExchangeMessage(
   hby: Habery,
   serder: SerderKERI,
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
   pathedOverride?: readonly Uint8Array[],
 ): Uint8Array {
   if (!serder.said) {
@@ -739,7 +738,7 @@ function storedExchangeMessage(
     cigars,
     pathed: pathedOverride ?? hby.db.epath.get([serder.said]),
     pipelined: false,
-    counterProfile,
+    gvrsn,
   });
 }
 
@@ -868,7 +867,7 @@ function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {
     message: args.message as string | undefined,
     out: args.out as string | undefined,
     delivery: args.delivery as "auto" | "direct" | "indirect" | undefined,
-    counterProfile: normalizeAttachmentCounterProfile(args.counterProfile),
+    gvrsn: parseGvrsn(args.gvrsn),
   };
 }
 

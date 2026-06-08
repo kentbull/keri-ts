@@ -35,10 +35,10 @@ function addDeliveryOptions(cmd: Command): Command {
   return cmd.option("--delivery <mode>", "Delivery mode: auto, direct, or indirect");
 }
 
-function addCounterProfileOption(cmd: Command): Command {
+function addGvrsnOption(cmd: Command): Command {
   return cmd.option(
-    "--counter-profile <profile>",
-    "Attachment counter profile: legacy or keripy-current",
+    "--gvrsn <version>",
+    "Attachment counter genus version: 1.0 or 2.0",
   );
 }
 
@@ -227,7 +227,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   });
 
   addDeliveryOptions(
-    addCounterProfileOption(
+    addGvrsnOption(
       addHabOption(
         addStoreOptions(
           ipex.command("grant")
@@ -298,7 +298,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   });
 
   addDeliveryOptions(
-    addCounterProfileOption(
+    addGvrsnOption(
       addStoreOptions(
         ipex.command("join")
           .description("Approve or validate a single-sig or multisig IPEX message")

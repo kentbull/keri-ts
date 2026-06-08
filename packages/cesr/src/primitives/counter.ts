@@ -1,6 +1,7 @@
-import { b, b64ToInt, codeB2ToB64, codeB64ToB2, intToB64, nabSextets, sceil } from "../core/bytes.ts";
+import { b, b64ToInt, codeB2ToB64, codeB64ToB2, concatBytes, intToB64, nabSextets, sceil } from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
+import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { resolveCounterCodeNameTable, resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
 import { COUNTER_HARDS } from "../tables/counter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -19,6 +20,13 @@ export interface CounterInit {
   qb64b?: Uint8Array;
   qb64?: string;
   qb2?: Uint8Array;
+  version?: Versionage;
+}
+
+export interface CounterEncloseInit {
+  qb64?: Uint8Array | string | null;
+  qb2?: Uint8Array | null;
+  code?: string;
   version?: Versionage;
 }
 
@@ -194,6 +202,42 @@ function encodeCounterFromFields(
   };
 }
 
+function semanticNameForCode(code: string, version: Versionage): string | null {
+  const nameTable = resolveCounterCodeNameTable(version);
+  return nameTable[code] ?? null;
+}
+
+function codeForSemanticName(name: string, version: Versionage): string | null {
+  const nameTable = resolveCounterCodeNameTable(version);
+  for (const [code, candidate] of Object.entries(nameTable)) {
+    if (candidate === name) {
+      return code;
+    }
+  }
+  return null;
+}
+
+function promoteCounterCodeForCount(code: string, count: number, version: Versionage): string {
+  const sizeTable = resolveCounterSizeTable(version);
+  const sizage = sizeTable.get(code);
+  if (!sizage) {
+    throw new UnknownCodeError(`Unsupported counter code for version: ${code}`);
+  }
+  if (count <= (64 ** sizage.ss) - 1) {
+    return code;
+  }
+
+  const name = semanticNameForCode(code, version);
+  if (!name || name.startsWith("Big")) {
+    throw new DeserializeError(`Invalid count=${count} for code=${code}`);
+  }
+  const bigCode = codeForSemanticName(`Big${name}`, version);
+  if (!bigCode) {
+    throw new DeserializeError(`Counter code=${code} has no Big${name} form.`);
+  }
+  return bigCode;
+}
+
 /** Normalize the supported constructor variants into one shared counter payload. */
 function parseCounterInit(init: CounterInit): CounterData {
   const version = init.version ?? { major: 2, minor: 0 };
@@ -237,12 +281,57 @@ export class Counter {
   protected readonly _name: string;
   protected readonly _version: Versionage;
 
+  static makeGVC(version: Versionage): Uint8Array {
+    return new Counter({
+      code: CtrDexV2.KERIACDCGenusVersion,
+      countB64: `${intToB64(version.major, 1)}${intToB64(version.minor, 2)}`,
+      version,
+    }).qb64b;
+  }
+
+  static enclose({
+    qb64 = undefined,
+    qb2 = undefined,
+    code = "AttachmentGroup",
+    version = { major: 2, minor: 0 },
+  }: CounterEncloseInit = {}): Uint8Array {
+    const actualQb64 = typeof qb64 === "string" ? b(qb64) : qb64;
+    if (actualQb64 !== undefined && actualQb64 !== null) {
+      if (actualQb64.length % 4 !== 0) {
+        throw new DeserializeError(`Bad enclosed qb64 length=${actualQb64.length}`);
+      }
+      const count = actualQb64.length / 4;
+      const counterCode = promoteCounterCodeForCount(
+        codeForSemanticName(code, version) ?? code,
+        count,
+        version,
+      );
+      return concatBytes(new Counter({ code: counterCode, count, version }).qb64b, actualQb64);
+    }
+
+    if (qb2 !== undefined && qb2 !== null) {
+      if (qb2.length % 3 !== 0) {
+        throw new DeserializeError(`Bad enclosed qb2 length=${qb2.length}`);
+      }
+      const count = qb2.length / 3;
+      const counterCode = promoteCounterCodeForCount(
+        codeForSemanticName(code, version) ?? code,
+        count,
+        version,
+      );
+      return concatBytes(new Counter({ code: counterCode, count, version }).qb2, qb2);
+    }
+
+    const counterCode = promoteCounterCodeForCount(
+      codeForSemanticName(code, version) ?? code,
+      0,
+      version,
+    );
+    return new Counter({ code: counterCode, count: 0, version }).qb64b;
+  }
+
   constructor(init: Counter | CounterData | CounterInit) {
-    const data = init instanceof Counter
-      ? init.toCounterData()
-      : isCounterData(init)
-      ? init
-      : parseCounterInit(init);
+    const data = init instanceof Counter ? init.toCounterData() : isCounterData(init) ? init : parseCounterInit(init);
 
     this._code = data.code;
     this._count = data.count;
@@ -348,7 +437,5 @@ export function parseCounter(
   version: Versionage,
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Counter {
-  return cold === "bny"
-    ? parseCounterFromBinary(input, version)
-    : parseCounterFromText(input, version);
+  return cold === "bny" ? parseCounterFromBinary(input, version) : parseCounterFromText(input, version);
 }

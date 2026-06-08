@@ -2,7 +2,15 @@
 
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { SerderACDC } from "../../../../cesr/mod.ts";
+import {
+  CtrDexV1,
+  CtrDexV2,
+  parseCounterFromText,
+  SerderACDC,
+  SerderKERI,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import {
   credentialPresentationArtifacts,
@@ -104,6 +112,30 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
         grant.artifacts,
         credentialPresentationArtifacts(hby, reger, creder.said!),
       );
+      const v2Artifacts = credentialPresentationArtifacts(
+        hby,
+        reger,
+        creder.said!,
+        Vrsn_2_0,
+      );
+      const acdcProofCounter = parseCounterFromText(
+        v2Artifacts.acdc.slice(creder.raw.length),
+        Vrsn_2_0,
+      );
+      const issSerder = new SerderKERI({ raw: v2Artifacts.iss });
+      const issReplayCounter = parseCounterFromText(
+        v2Artifacts.iss.slice(issSerder.size),
+        Vrsn_1_0,
+      );
+      const ancSerder = new SerderKERI({ raw: v2Artifacts.anc });
+      const ancReplayCounter = parseCounterFromText(
+        v2Artifacts.anc.slice(ancSerder.size),
+        Vrsn_1_0,
+      );
+
+      assertEquals(acdcProofCounter.code, CtrDexV2.SealSourceTriples);
+      assertEquals(issReplayCounter.code, CtrDexV1.AttachmentGroup);
+      assertEquals(ancReplayCounter.code, CtrDexV1.AttachmentGroup);
       assertEquals(grant.support.length > 0, true);
       assertEquals(grant.wire.length > grant.grant.raw.length, true);
     } finally {

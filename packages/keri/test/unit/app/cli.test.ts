@@ -1,8 +1,8 @@
 // @file-test-lane app-stateful-a
 
 import { type Operation, run } from "effection";
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { Prefixer } from "../../../../cesr/mod.ts";
+import { assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
+import { Prefixer, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
@@ -17,6 +17,7 @@ import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { parseGvrsn } from "../../../src/core/attachment-countering.ts";
 import { delcept } from "../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
@@ -680,6 +681,21 @@ Deno.test("CLI - exn send help mirrors exchange send help", async () => {
   assertStringIncludes(res.stdout, "--sender <alias>");
   assertStringIncludes(res.stdout, "--recipient <recipient>");
   assertStringIncludes(res.stdout, "--data <item>");
+});
+
+Deno.test("CLI - ipex grant help exposes gvrsn attachment counter option", async () => {
+  const res = await runTufa(["ipex", "grant", "--help"]);
+
+  assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(res.stdout, "--gvrsn <version>");
+  assertEquals(res.stdout.includes("--counter-profile"), false);
+});
+
+Deno.test("CLI - gvrsn parser accepts KERIpy values and rejects legacy profiles", () => {
+  assertEquals(parseGvrsn("2.0"), Vrsn_2_0);
+  assertEquals(parseGvrsn("2"), Vrsn_2_0);
+  assertThrows(() => parseGvrsn("keripy-current"));
+  assertThrows(() => parseGvrsn("legacy"));
 });
 
 Deno.test("CLI - exchange send rejects removed legacy flags", async () => {

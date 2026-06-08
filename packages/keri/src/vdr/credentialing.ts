@@ -26,11 +26,12 @@ import {
   SerderKERI,
   TraitDex,
   type Versionage,
+  Vrsn_1_0,
 } from "../../../cesr/mod.ts";
 import type { Hab, Habery } from "../app/habbing.ts";
 import { resolveCachedSchema } from "../app/schema-resolving.ts";
 import { Verifier, type VerifierDecision } from "../app/verifying.ts";
-import { attachmentCounterPayloadQb64b, type AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
+import { attachmentCounterPayloadQb64b } from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
@@ -275,7 +276,7 @@ export function serializeCredential(
   prefixer: Prefixer,
   seqner: NumberPrimitive | Seqner,
   saider: Diger,
-  counterProfile: AttachmentCounterProfile = "legacy",
+  gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
   const actualSeqner = seqner instanceof Seqner ? seqner : new Seqner({ code: NumDex.Huge, raw: seqner.raw });
   const sealPayload = [
@@ -289,7 +290,7 @@ export function serializeCredential(
       "SealSourceTriples",
       1,
       sealPayload,
-      counterProfile,
+      gvrsn,
     ),
     ...sealPayload,
   );

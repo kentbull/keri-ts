@@ -23,11 +23,7 @@ import {
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
-import {
-  attachmentCounterPayloadQb64b,
-  type AttachmentCounterProfile,
-  attachmentCounterQb64b,
-} from "../core/attachment-counter-profile.ts";
+import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
@@ -1281,7 +1277,6 @@ export class Baser {
     pre: string,
     fn: number,
     said: string,
-    counterProfile: AttachmentCounterProfile = "legacy",
   ): Uint8Array {
     const dgkey = dgKey(pre, said);
     const serder = this.evts.get(dgkey);
@@ -1304,7 +1299,6 @@ export class Baser {
         "ControllerIdxSigs",
         sigers.length,
         sigerPayload,
-        counterProfile,
       ),
       ...sigerPayload,
     ];
@@ -1317,7 +1311,6 @@ export class Baser {
           "WitnessIdxSigs",
           wigers.length,
           wigerPayload,
-          counterProfile,
         ),
         ...wigerPayload,
       );
@@ -1335,7 +1328,6 @@ export class Baser {
           "SealSourceCouples",
           1,
           sealPayload,
-          counterProfile,
         ),
         ...sealPayload,
       );
@@ -1354,7 +1346,6 @@ export class Baser {
           "TransReceiptQuadruples",
           vrcs.length,
           vrcPayload,
-          counterProfile,
         ),
         ...vrcPayload,
       );
@@ -1371,7 +1362,6 @@ export class Baser {
           "NonTransReceiptCouples",
           rcts.length,
           receiptPayload,
-          counterProfile,
         ),
         ...receiptPayload,
       );
@@ -1392,7 +1382,6 @@ export class Baser {
         "FirstSeenReplayCouples",
         1,
         firstSeenPayload,
-        counterProfile,
       ),
       ...firstSeenPayload,
     );
@@ -1406,7 +1395,7 @@ export class Baser {
 
     return concatBytes(
       serder.raw,
-      attachmentCounterQb64b("AttachmentGroup", atc.length / 4, counterProfile),
+      attachmentCounterQb64b("AttachmentGroup", atc.length / 4),
       atc,
     );
   }
@@ -1423,11 +1412,10 @@ export class Baser {
   *clonePreIter(
     pre: string,
     fn = 0,
-    counterProfile: AttachmentCounterProfile = "legacy",
   ): Generator<Uint8Array> {
     for (const [, currentFn, said] of this.fels.getAllItemIter(pre, fn)) {
       try {
-        yield this.cloneEvtMsg(pre, currentFn, said, counterProfile);
+        yield this.cloneEvtMsg(pre, currentFn, said);
       } catch {
         continue;
       }
@@ -1442,7 +1430,6 @@ export class Baser {
    */
   *cloneDelegation(
     kever: Kever,
-    counterProfile: AttachmentCounterProfile = "legacy",
   ): Generator<Uint8Array> {
     if (!kever.delegated || !kever.delpre) {
       return;
@@ -1451,8 +1438,8 @@ export class Baser {
     if (!delegator) {
       return;
     }
-    yield* this.cloneDelegation(delegator, counterProfile);
-    yield* this.clonePreIter(kever.delpre, 0, counterProfile);
+    yield* this.cloneDelegation(delegator);
+    yield* this.clonePreIter(kever.delpre, 0);
   }
 
   /** Insert one habitat metadata record in `habs.` if absent. */
