@@ -105,15 +105,17 @@ export function buildCesrRequest(
   message: Uint8Array,
   {
     bodyMode = DEFAULT_CESR_BODY_MODE,
+    contentType = CESR_CONTENT_TYPE,
     destination,
   }: {
     bodyMode?: CesrBodyMode;
+    contentType?: string;
     destination?: string;
   } = {},
 ): { headers: Record<string, string>; body: ArrayBuffer } {
   const mode = normalizeCesrBodyMode(bodyMode);
   const headers: Record<string, string> = {
-    "Content-Type": CESR_CONTENT_TYPE,
+    "Content-Type": contentType,
   };
 
   if (destination) {
@@ -127,7 +129,8 @@ export function buildCesrRequest(
     };
   }
 
-  const serder = new SerderKERI({ raw: message });
+  const { smellage } = smell(message);
+  const serder = parseSerder(message.slice(0, smellage.size), smellage);
   headers[CESR_ATTACHMENT_HEADER] = textDecoder.decode(
     message.slice(serder.size),
   );

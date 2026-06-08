@@ -1,7 +1,5 @@
 import {
   concatBytes,
-  Counter,
-  CtrDexV1,
   type Diger,
   Ilks,
   type Kind,
@@ -18,6 +16,7 @@ import {
 } from "../../../cesr/mod.ts";
 import { type Cigar } from "../../../cesr/mod.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
+import { type AttachmentCounterProfile, pathedMaterialCounterQb64b } from "./attachment-counter-profile.ts";
 import { type TransIdxSigGroup } from "./dispatch.ts";
 import { serializeMessage as serializeExchangeMessage } from "./protocol-serialization.ts";
 
@@ -41,6 +40,7 @@ function resolveVersion(
 
 function encodePathedEmbeds(
   embeds: Record<string, Uint8Array>,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): { e: Record<string, unknown>; end: Uint8Array } {
   const e: Record<string, unknown> = {};
   const groups: Uint8Array[] = [];
@@ -60,14 +60,9 @@ function encodePathedEmbeds(
         `Embedded ${label} pathed attachment length ${pathed.length} is not quadlet aligned.`,
       );
     }
-    const code = pathed.length / 4 < 4096 ? CtrDexV1.PathedMaterialCouples : CtrDexV1.BigPathedMaterialCouples;
     groups.push(
       concatBytes(
-        new Counter({
-          code,
-          count: pathed.length / 4,
-          version: Vrsn_1_0,
-        }).qb64b,
+        pathedMaterialCounterQb64b(pathed.length / 4, counterProfile),
         pathed,
       ),
     );
@@ -147,6 +142,7 @@ export function exchange(
     pvrsn,
     gvrsn,
     kind,
+    counterProfile,
   }: {
     sender: string;
     diger?: Diger | null;
@@ -161,11 +157,12 @@ export function exchange(
     pvrsn?: Versionage;
     gvrsn?: Versionage | null;
     kind?: Kind;
+    counterProfile?: AttachmentCounterProfile;
   },
 ): readonly [SerderKERI, Uint8Array] {
   const resolved = resolveVersion(version, pvrsn, gvrsn, kind);
   const dt = date ?? stamp ?? makeNowIso8601();
-  const { e, end } = encodePathedEmbeds(embeds ?? {});
+  const { e, end } = encodePathedEmbeds(embeds ?? {}, counterProfile);
   const actualModifiers = { ...(modifiers ?? {}) };
 
   if (resolved.pvrsn.major === 1) {
@@ -231,12 +228,20 @@ export function serializeMessage(
     cigars,
     pathed,
     pipelined = false,
+    counterProfile = "legacy",
   }: {
     tsgs?: readonly TransIdxSigGroup[];
     cigars?: readonly Cigar[];
     pathed?: readonly (string | Uint8Array)[];
     pipelined?: boolean;
+    counterProfile?: AttachmentCounterProfile;
   } = {},
 ): Uint8Array {
-  return serializeExchangeMessage(serder, { tsgs, cigars, pathed, pipelined });
+  return serializeExchangeMessage(serder, {
+    tsgs,
+    cigars,
+    pathed,
+    pipelined,
+    counterProfile,
+  });
 }

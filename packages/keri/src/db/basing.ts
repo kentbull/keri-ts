@@ -6,8 +6,6 @@ import {
   b,
   Cigar,
   concatBytes,
-  Counter,
-  CtrDexV1,
   Dater,
   Diger,
   Labeler,
@@ -17,6 +15,7 @@ import {
   Prefixer,
   Saider,
   SealEvent,
+  Seqner,
   SerderKERI,
   Siger,
   t,
@@ -24,6 +23,11 @@ import {
   Verfer,
   Verser,
 } from "../../../cesr/mod.ts";
+import {
+  attachmentCounterPayloadQb64b,
+  type AttachmentCounterProfile,
+  attachmentCounterQb64b,
+} from "../core/attachment-counter-profile.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
@@ -84,8 +88,6 @@ import {
   Suber,
 } from "./subing.ts";
 
-const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
-
 function isMissingReloadEventError(error: unknown): boolean {
   return error instanceof Error
     && error.message.startsWith(
@@ -132,13 +134,21 @@ function eventSealsEqual(
 
 /** Encode a replay/first-seen ordinal using the huge CESR number code family. */
 function encodeHugeOrdinal(num: number): NumberPrimitive {
+  return new NumberPrimitive({ code: NumDex.Huge, raw: hugeOrdinalRaw(num) });
+}
+
+function hugeOrdinalRaw(num: number | bigint): Uint8Array {
   const raw = new Uint8Array(16);
   let value = BigInt(num);
   for (let i = raw.length - 1; i >= 0; i--) {
     raw[i] = Number(value & 0xffn);
     value >>= 8n;
   }
-  return new NumberPrimitive({ code: NumDex.Huge, raw });
+  return raw;
+}
+
+function seqnerFromNumber(number: NumberPrimitive): Seqner {
+  return new Seqner({ code: NumDex.Huge, raw: hugeOrdinalRaw(number.num) });
 }
 
 /** Options for opening a `Baser` LMDB environment and its named subdb surface. */
@@ -1267,7 +1277,12 @@ export class Baser {
    * from the companion stores that hold controller signatures, witness
    * signatures, source seals, receipts, and first-seen replay metadata.
    */
-  cloneEvtMsg(pre: string, fn: number, said: string): Uint8Array {
+  cloneEvtMsg(
+    pre: string,
+    fn: number,
+    said: string,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): Uint8Array {
     const dgkey = dgKey(pre, said);
     const serder = this.evts.get(dgkey);
     if (serder === null) {
@@ -1283,70 +1298,82 @@ export class Baser {
       );
     }
 
+    const sigerPayload = sigers.map((siger) => siger.qb64b);
     const attachments: Uint8Array[] = [
-      new Counter({
-        code: CtrDexV1.ControllerIdxSigs,
-        count: sigers.length,
-        version: KERI_V1,
-      }).qb64b,
-      ...sigers.map((siger) => siger.qb64b),
+      attachmentCounterPayloadQb64b(
+        "ControllerIdxSigs",
+        sigers.length,
+        sigerPayload,
+        counterProfile,
+      ),
+      ...sigerPayload,
     ];
 
     const wigers = this.wigs.get(dgkey);
     if (wigers.length > 0) {
+      const wigerPayload = wigers.map((wiger) => wiger.qb64b);
       attachments.push(
-        new Counter({
-          code: CtrDexV1.WitnessIdxSigs,
-          count: wigers.length,
-          version: KERI_V1,
-        }).qb64b,
-        ...wigers.map((wiger) => wiger.qb64b),
+        attachmentCounterPayloadQb64b(
+          "WitnessIdxSigs",
+          wigers.length,
+          wigerPayload,
+          counterProfile,
+        ),
+        ...wigerPayload,
       );
     }
 
     const seal = this.aess.get(dgkey);
     if (seal !== null) {
       const [number, diger] = seal;
-      attachments.push(
-        new Counter({
-          code: CtrDexV1.SealSourceCouples,
-          count: 1,
-          version: KERI_V1,
-        }).qb64b,
-        number.qb64b,
+      const sealPayload = [
+        seqnerFromNumber(number).qb64b,
         diger.qb64b,
+      ];
+      attachments.push(
+        attachmentCounterPayloadQb64b(
+          "SealSourceCouples",
+          1,
+          sealPayload,
+          counterProfile,
+        ),
+        ...sealPayload,
       );
     }
 
     const vrcs = this.vrcs.get(dgkey);
     if (vrcs.length > 0) {
+      const vrcPayload = vrcs.flatMap(([prefixer, snu, diger, siger]) => [
+        prefixer.qb64b,
+        seqnerFromNumber(snu).qb64b,
+        diger.qb64b,
+        siger.qb64b,
+      ]);
       attachments.push(
-        new Counter({
-          code: CtrDexV1.TransReceiptQuadruples,
-          count: vrcs.length,
-          version: KERI_V1,
-        }).qb64b,
-        ...vrcs.flatMap(([prefixer, snu, diger, siger]) => [
-          prefixer.qb64b,
-          snu.qb64b,
-          diger.qb64b,
-          siger.qb64b,
-        ]),
+        attachmentCounterPayloadQb64b(
+          "TransReceiptQuadruples",
+          vrcs.length,
+          vrcPayload,
+          counterProfile,
+        ),
+        ...vrcPayload,
       );
     }
 
     const rcts = this.rcts.get(dgkey);
     if (rcts.length > 0) {
+      const receiptPayload = rcts.flatMap(([prefixer, cigar]) => [
+        prefixer.qb64b,
+        cigar.qb64b,
+      ]);
       attachments.push(
-        new Counter({
-          code: CtrDexV1.NonTransReceiptCouples,
-          count: rcts.length,
-          version: KERI_V1,
-        }).qb64b,
-        ...rcts.flatMap(([prefixer, cigar]) => [
-          prefixer.qb64b,
-          cigar.qb64b,
-        ]),
+        attachmentCounterPayloadQb64b(
+          "NonTransReceiptCouples",
+          rcts.length,
+          receiptPayload,
+          counterProfile,
+        ),
+        ...receiptPayload,
       );
     }
 
@@ -1356,14 +1383,18 @@ export class Baser {
         `Missing datetime stamp for ${pre}:${said}`,
       );
     }
-    attachments.push(
-      new Counter({
-        code: CtrDexV1.FirstSeenReplayCouples,
-        count: 1,
-        version: KERI_V1,
-      }).qb64b,
+    const firstSeenPayload = [
       encodeHugeOrdinal(fn).qb64b,
       dater.qb64b,
+    ];
+    attachments.push(
+      attachmentCounterPayloadQb64b(
+        "FirstSeenReplayCouples",
+        1,
+        firstSeenPayload,
+        counterProfile,
+      ),
+      ...firstSeenPayload,
     );
 
     const atc = concatBytes(...attachments);
@@ -1373,12 +1404,11 @@ export class Baser {
       );
     }
 
-    const group = new Counter({
-      code: CtrDexV1.AttachmentGroup,
-      count: atc.length / 4,
-      version: KERI_V1,
-    });
-    return concatBytes(serder.raw, group.qb64b, atc);
+    return concatBytes(
+      serder.raw,
+      attachmentCounterQb64b("AttachmentGroup", atc.length / 4, counterProfile),
+      atc,
+    );
   }
 
   /**
@@ -1390,10 +1420,14 @@ export class Baser {
    * Errors rebuilding individual events are skipped so export/replay callers
    * can continue streaming later entries, matching KERIpy's clone behavior.
    */
-  *clonePreIter(pre: string, fn = 0): Generator<Uint8Array> {
+  *clonePreIter(
+    pre: string,
+    fn = 0,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): Generator<Uint8Array> {
     for (const [, currentFn, said] of this.fels.getAllItemIter(pre, fn)) {
       try {
-        yield this.cloneEvtMsg(pre, currentFn, said);
+        yield this.cloneEvtMsg(pre, currentFn, said, counterProfile);
       } catch {
         continue;
       }
@@ -1406,7 +1440,10 @@ export class Baser {
    * KERIpy correspondence:
    * - mirrors `Baser.cloneDelegation(...)`
    */
-  *cloneDelegation(kever: Kever): Generator<Uint8Array> {
+  *cloneDelegation(
+    kever: Kever,
+    counterProfile: AttachmentCounterProfile = "legacy",
+  ): Generator<Uint8Array> {
     if (!kever.delegated || !kever.delpre) {
       return;
     }
@@ -1414,8 +1451,8 @@ export class Baser {
     if (!delegator) {
       return;
     }
-    yield* this.cloneDelegation(delegator);
-    yield* this.clonePreIter(kever.delpre, 0);
+    yield* this.cloneDelegation(delegator, counterProfile);
+    yield* this.clonePreIter(kever.delpre, 0, counterProfile);
   }
 
   /** Insert one habitat metadata record in `habs.` if absent. */
