@@ -29,6 +29,13 @@ export {
 } from "./ipex.ts";
 export { listCommand } from "./list.ts";
 export { locAddCommand } from "./loc.ts";
+export {
+  multisigInceptCommand,
+  multisigInteractCommand,
+  multisigJoinCommand,
+  multisigRotateCommand,
+  multisigRpyCommand,
+} from "./multisig.ts";
 export { notificationsListCommand, notificationsMarkReadCommand, notificationsRemoveCommand } from "./notifications.ts";
 export { oobiGenerateCommand, oobiRequestCommand, oobiResolveCommand } from "./oobi.ts";
 export { queryCommand } from "./query.ts";

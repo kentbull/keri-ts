@@ -220,7 +220,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   );
 
   try {
-    const seedHabs = [...hby.habs.values()];
+    const seedHabs = [...hby.habs.values()].filter((hab) => !hby.db.getHab(hab.pre)?.mid);
     importHostedSchemas(
       hby,
       agentArgs.schemas ?? [],

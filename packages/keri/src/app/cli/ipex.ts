@@ -1,5 +1,20 @@
-import { type Operation } from "npm:effection@^3.6.0";
-import { concatBytes, Diger, parseSerder, Prefixer, SerderKERI, smell } from "../../../../cesr/mod.ts";
+import { action, type Operation } from "npm:effection@^3.6.0";
+import {
+  type Cigar,
+  concatBytes,
+  Diger,
+  makePather,
+  parseSerder,
+  Prefixer,
+  Seqner,
+  SerderKERI,
+  type Siger,
+  smell,
+} from "../../../../cesr/mod.ts";
+import {
+  type AttachmentCounterProfile,
+  normalizeAttachmentCounterProfile,
+} from "../../core/attachment-counter-profile.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
@@ -10,6 +25,8 @@ import { splitCesrStream } from "../cesr-http.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigPathedAttachment } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import {
+  credentialPresentationArtifacts,
+  credentialPresentationSupportMessages,
   credentialSaidFromGrant,
   ipexCredentialAdmit,
   ipexCredentialGrant,
@@ -36,11 +53,13 @@ interface IpexBaseArgs {
   message?: string;
   out?: string;
   delivery?: "auto" | "direct" | "indirect";
+  counterProfile?: AttachmentCounterProfile;
 }
 
 interface IpexGrantArgs extends IpexBaseArgs {
   said?: string;
   agree?: string;
+  wait?: number;
 }
 
 interface IpexAdmitArgs extends IpexBaseArgs {
@@ -52,6 +71,8 @@ interface IpexAdmitArgs extends IpexBaseArgs {
 interface IpexJoinArgs extends IpexBaseArgs {
   said?: string;
   auto?: boolean;
+  maxTurns?: number;
+  budgetMs?: number;
 }
 
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
@@ -118,6 +139,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     ...ipexBaseArgs(args),
     said: args.said as string | undefined,
     agree: args.agree as string | undefined,
+    wait: args.wait as number | undefined,
   };
   requireNonEmpty(ipexArgs.said, "Credential SAID");
   const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
@@ -135,8 +157,66 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       message: ipexArgs.message ?? "",
       options: {
         agree: ipexArgs.agree ? hby.db.exns.get([ipexArgs.agree]) : null,
+        counterProfile: ipexArgs.counterProfile,
       },
+      sign: !isGroupHab(hby, hab),
     });
+    const group = isGroupHab(hby, hab);
+    if (group) {
+      const partialGrant = groupIpexPartial(hby, hab, grant.grant, undefined, grant.attachments);
+      runtime.reactor.processCompleteChunk(partialGrant, { local: true });
+      runtime.reactor.processEscrowsOnce();
+
+      const deliveries = yield* publishGroupIpexProposal(
+        runtime,
+        hab,
+        partialGrant,
+      );
+      const waitSeconds = ipexArgs.wait ?? 120;
+      const complete = waitSeconds > 0
+        ? yield* waitForMultisigIpexCompletion(hby, runtime, hab, grant.grant.said!, waitSeconds)
+        : runtime.reactor.exchanger.complete(grant.grant.said!);
+
+      if (!complete) {
+        console.log(JSON.stringify({
+          said: grant.grant.said,
+          credential: ipexArgs.said,
+          support: grant.support.length,
+          status: "multisig-pending",
+          deliveries,
+        }));
+        return;
+      }
+
+      const completedGrant = requireStoredExchange(hby, grant.grant.said!);
+      const completedGrantWire = storedExchangeMessage(
+        hby,
+        completedGrant,
+        ipexArgs.counterProfile,
+      );
+      const stream = concatBytes(...grant.support, completedGrantWire);
+      if (ipexArgs.out) {
+        Deno.writeFileSync(ipexArgs.out, stream);
+      } else if (runtime.reactor.exchanger.lead(hab, completedGrant.said!)) {
+        yield* sendCredentialBytes(
+          runtime,
+          localGroupMember(hby, hab.pre),
+          recipient,
+          [...grant.support, completedGrantWire],
+          ipexArgs.delivery,
+        );
+      }
+      console.log(JSON.stringify({
+        said: completedGrant.said,
+        credential: ipexArgs.said,
+        support: grant.support.length,
+        status: "multisig-complete",
+        lead: runtime.reactor.exchanger.lead(hab, completedGrant.said!),
+        deliveries,
+      }));
+      return;
+    }
+
     const stream = concatBytes(...grant.support, grant.wire);
     if (ipexArgs.out) {
       Deno.writeFileSync(ipexArgs.out, stream);
@@ -247,17 +327,24 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     ...ipexBaseArgs(args),
     said: args.said as string | undefined,
     auto: args.auto as boolean | undefined,
+    maxTurns: args.maxTurns as number | undefined,
+    budgetMs: args.budgetMs as number | undefined,
   };
-  requireNonEmpty(ipexArgs.said, "EXN SAID");
   const { hby, runtime } = yield* openRuntime(ipexArgs);
   try {
-    const exn = hby.db.exns.get([ipexArgs.said!]);
+    const exn = ipexArgs.said
+      ? hby.db.exns.get([ipexArgs.said])
+      : yield* nextPendingMultisigIpex(hby, runtime, ipexArgs);
     if (!exn) {
-      throw new ValidationError(`IPEX message ${ipexArgs.said} not found.`);
+      throw new ValidationError(
+        ipexArgs.said
+          ? `IPEX message ${ipexArgs.said} not found.`
+          : "No pending multisig IPEX proposal was available to join.",
+      );
     }
 
     if (exn.route?.startsWith("/ipex/")) {
-      console.log(JSON.stringify({ said: ipexArgs.said, route: exn.route, status: "single-sig" }));
+      console.log(JSON.stringify({ said: exn.said, route: exn.route, status: "single-sig" }));
       return;
     }
 
@@ -288,7 +375,11 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       return;
     }
 
-    const approval = approveMultisigIpex(hby, runtime, exn, embedded);
+    const approval = yield* approveMultisigIpex(hby, runtime, exn, embedded, {
+      publish: true,
+      delivery: ipexArgs.delivery,
+      counterProfile: ipexArgs.counterProfile,
+    });
     console.log(JSON.stringify({
       said: ipexArgs.said,
       route: exn.route,
@@ -297,6 +388,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       embeddedRoute: embedded.route,
       group,
       lead: runtime.reactor.exchanger.lead(hby.habs.get(group)!, embedded.said!),
+      deliveries: approval.deliveries,
     }));
   } finally {
     yield* runtime.close();
@@ -304,12 +396,18 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
   }
 }
 
-function approveMultisigIpex(
+function* approveMultisigIpex(
   hby: Habery,
   runtime: AgentRuntime,
   wrapper: SerderKERI,
   embedded: SerderKERI,
-): { accepted: boolean } {
+  options: {
+    publish?: boolean;
+    delivery?: "auto" | "direct" | "indirect";
+    sendLead?: boolean;
+    counterProfile?: AttachmentCounterProfile;
+  } = {},
+): Operation<{ accepted: boolean; deliveries: string[]; approved: Uint8Array }> {
   const group = embedded.pre;
   const embeddedSaid = embedded.said;
   const wrapperSaid = wrapper.said;
@@ -318,13 +416,62 @@ function approveMultisigIpex(
   }
 
   const groupHab = hby.habs.get(group);
+  if (!groupHab) {
+    throw new ValidationError(`Local group ${group} is missing member signing state.`);
+  }
+  const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "exn");
+  if (peerAttachment.length > 0) {
+    runtime.reactor.processCompleteChunk(
+      concatBytes(embedded.raw, peerAttachment),
+      { local: true },
+    );
+    runtime.reactor.processEscrowsOnce();
+  }
+  const approved = groupIpexPartial(hby, groupHab, embedded, wrapperSaid);
+  runtime.reactor.processCompleteChunk(approved, { local: true });
+  runtime.reactor.processEscrowsOnce();
+  const deliveries = options.publish ? yield* publishGroupIpexProposal(runtime, groupHab, approved) : [];
+  if (
+    (options.sendLead ?? true)
+    && hby.db.exns.get([embeddedSaid])?.said === embeddedSaid
+    && runtime.reactor.exchanger.lead(groupHab, embeddedSaid)
+  ) {
+    deliveries.push(
+      ...(yield* sendCompletedGroupIpex(
+        runtime,
+        groupHab,
+        embedded,
+        options.delivery,
+        options.counterProfile,
+      )),
+    );
+  }
+  return {
+    accepted: hby.db.exns.get([embeddedSaid])?.said === embeddedSaid,
+    deliveries,
+    approved,
+  };
+}
+
+function isGroupHab(hby: Habery, hab: Hab): boolean {
+  return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
+}
+
+function groupIpexPartial(
+  hby: Habery,
+  groupHab: Hab,
+  embedded: SerderKERI,
+  wrapperSaid?: string,
+  attachments: Uint8Array = new Uint8Array(),
+): Uint8Array {
+  const group = groupHab.pre;
   const groupRecord = hby.db.getHab(group);
   const memberPre = groupRecord?.mid;
   const memberHab = memberPre ? hby.habs.get(memberPre) : null;
-  const groupKever = groupHab?.kever;
+  const groupKever = groupHab.kever;
   const memberKey = memberHab?.kever?.verfers[0]?.qb64;
-  if (!groupHab || !groupKever || !memberHab || !memberKey) {
-    throw new ValidationError(`Local group ${group} is missing member signing state.`);
+  if (!group || !groupKever || !memberHab || !memberKey) {
+    throw new ValidationError(`Local group ${group || "<missing>"} is missing member signing state.`);
   }
 
   const groupIndex = groupKever.verfers.findIndex((verfer) => verfer.qb64 === memberKey);
@@ -337,20 +484,344 @@ function approveMultisigIpex(
     indexed: true,
     indices: [groupIndex],
   });
+  const estSaid = groupKever.lastEst.d || groupKever.said;
+  const estEvent = estSaid ? hby.db.getEvtSerder(group, estSaid) : null;
+  const seqner = estEvent?.sner;
+  if (!estSaid || !seqner) {
+    throw new ValidationError(`Missing establishment event material for group ${group}.`);
+  }
   const tsg = new TransIdxSigGroup(
     new Prefixer({ qb64: group }),
-    groupKever.sner,
-    new Diger({ qb64: groupKever.said }),
+    seqner,
+    new Diger({ qb64: estSaid }),
     sigers,
   );
-  const pathed = multisigPathedAttachment(hby, wrapperSaid, "exn");
-  const approved = concatBytes(
-    serializeMessage(embedded, { tsgs: [tsg], pipelined: true }),
-    pathed,
+  const message = concatBytes(
+    serializeMessage(embedded, { tsgs: [tsg], pipelined: false }),
+    attachments,
   );
-  runtime.reactor.processChunk(approved, { local: true });
-  runtime.reactor.processEscrowsOnce();
-  return { accepted: hby.db.exns.get([embeddedSaid])?.said === embeddedSaid };
+  if (!wrapperSaid) {
+    return message;
+  }
+  return concatBytes(message, multisigPathedAttachment(hby, wrapperSaid, "exn"));
+}
+
+function localGroupMember(hby: Habery, groupPre: string): Hab {
+  const record = hby.db.getHab(groupPre);
+  const member = record?.mid ? hby.habs.get(record.mid) : null;
+  if (!member) {
+    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
+  }
+  return member;
+}
+
+function groupSigningMembers(hby: Habery, groupPre: string): string[] {
+  const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);
+  if (stored.length > 0) {
+    return stored;
+  }
+  const record = hby.db.getHab(groupPre);
+  return record?.smids ?? [];
+}
+
+function* publishGroupIpexProposal(
+  runtime: AgentRuntime,
+  groupHab: Hab,
+  embedded: Uint8Array,
+  delivery?: "auto" | "direct" | "indirect",
+): Operation<string[]> {
+  const member = localGroupMember(runtime.hby, groupHab.pre);
+  const deliveries: string[] = [];
+  for (const recipient of groupSigningMembers(runtime.hby, groupHab.pre)) {
+    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
+      continue;
+    }
+    const result = yield* runtime.poster.sendExchange(member, {
+      recipient,
+      route: MULTISIG_EXN_ROUTE,
+      payload: { gid: groupHab.pre },
+      embeds: { exn: embedded },
+      topic: "multisig",
+      delivery,
+    });
+    deliveries.push(...result.deliveries, ...result.queued);
+  }
+  return deliveries;
+}
+
+function* waitForMultisigIpexCompletion(
+  hby: Habery,
+  runtime: AgentRuntime,
+  groupHab: Hab,
+  embeddedSaid: string,
+  waitSeconds: number,
+): Operation<boolean> {
+  const member = localGroupMember(hby, groupHab.pre);
+  const deadline = Date.now() + waitSeconds * 1000;
+  while (Date.now() <= deadline) {
+    yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
+    runtime.reactor.processEscrowsOnce();
+    if (runtime.reactor.exchanger.complete(embeddedSaid)) {
+      return true;
+    }
+
+    yield* processMailboxTurn(runtime, { hab: member, budgetMs: 1000 });
+    yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
+    runtime.reactor.processEscrowsOnce();
+    if (runtime.reactor.exchanger.complete(embeddedSaid)) {
+      return true;
+    }
+    yield* sleep(250);
+  }
+  return runtime.reactor.exchanger.complete(embeddedSaid);
+}
+
+function* approveStoredMultisigIpexWrappers(
+  hby: Habery,
+  runtime: AgentRuntime,
+  embeddedSaid: string,
+): Operation<void> {
+  for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
+    if (wrapper.route !== MULTISIG_EXN_ROUTE) {
+      continue;
+    }
+    const embeddedSad = embeddedBusinessExnSAD(wrapper);
+    if (!embeddedSad || embeddedSad.d !== embeddedSaid) {
+      continue;
+    }
+    const embedded = new SerderKERI({ sad: embeddedSad });
+    yield* approveMultisigIpex(hby, runtime, wrapper, embedded, {
+      publish: false,
+      sendLead: false,
+    });
+  }
+}
+
+function* nextPendingMultisigIpex(
+  hby: Habery,
+  runtime: AgentRuntime,
+  args: IpexJoinArgs,
+): Operation<SerderKERI | null> {
+  const maxTurns = positiveInteger(args.maxTurns, 32, "max turns");
+  const budgetMs = positiveInteger(args.budgetMs, 2000, "budget milliseconds");
+  const hab = args.alias ? requireHab(hby, args.alias) : undefined;
+  for (let turn = 0; turn < maxTurns; turn += 1) {
+    const found = findPendingMultisigIpex(hby, runtime);
+    if (found) {
+      return found;
+    }
+    yield* processMailboxTurn(runtime, { hab, budgetMs });
+    runtime.reactor.processEscrowsOnce();
+    const afterPoll = findPendingMultisigIpex(hby, runtime);
+    if (afterPoll) {
+      return afterPoll;
+    }
+  }
+  return null;
+}
+
+function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): SerderKERI | null {
+  for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
+    if (wrapper.route !== MULTISIG_EXN_ROUTE) {
+      continue;
+    }
+    const embeddedSad = embeddedBusinessExnSAD(wrapper);
+    if (!embeddedSad || typeof embeddedSad.r !== "string" || !embeddedSad.r.startsWith("/ipex/")) {
+      continue;
+    }
+    const embeddedSaid = embeddedSad.d;
+    if (typeof embeddedSaid !== "string" || runtime.reactor.exchanger.complete(embeddedSaid)) {
+      continue;
+    }
+    return wrapper;
+  }
+  return null;
+}
+
+function* sendCompletedGroupIpex(
+  runtime: AgentRuntime,
+  groupHab: Hab,
+  embedded: SerderKERI,
+  delivery?: "auto" | "direct" | "indirect",
+  counterProfile: AttachmentCounterProfile = "legacy",
+): Operation<string[]> {
+  if (!embedded.said) {
+    throw new ValidationError("Completed group IPEX message is missing a SAID.");
+  }
+  const recipient = ipexRecipient(embedded);
+  if (!recipient) {
+    throw new ValidationError(`Unable to find recipient for ${embedded.route ?? "<unknown>"} ${embedded.said}.`);
+  }
+
+  const messages: Uint8Array[] = [];
+  let grantPathed: Uint8Array[] | undefined;
+  const reger = runtime.vdr.reger;
+  if (embedded.route === IPEX_GRANT_ROUTE) {
+    if (!(reger instanceof Reger)) {
+      throw new ValidationError("VDR runtime did not open Reger.");
+    }
+    const credentialSaid = credentialSaidFromGrant(embedded);
+    if (credentialSaid) {
+      const [creder] = reger.cloneCred(credentialSaid);
+      const artifacts = credentialPresentationArtifacts(
+        runtime.hby,
+        reger,
+        credentialSaid,
+        counterProfile,
+      );
+      grantPathed = grantPathedMaterials(artifacts);
+      messages.push(...credentialPresentationSupportMessages(
+        runtime.hby,
+        reger,
+        creder,
+        recipient,
+        counterProfile,
+      ));
+    }
+  }
+
+  messages.push(storedExchangeMessage(
+    runtime.hby,
+    requireStoredExchange(runtime.hby, embedded.said),
+    counterProfile,
+    grantPathed,
+  ));
+  return yield* sendCredentialBytes(
+    runtime,
+    localGroupMember(runtime.hby, groupHab.pre),
+    recipient,
+    messages,
+    delivery,
+  );
+}
+
+function ipexRecipient(exn: SerderKERI): string | null {
+  const rp = exn.ked?.rp;
+  if (typeof rp === "string" && rp.length > 0) {
+    return rp;
+  }
+  const attrs = exn.ked?.a;
+  if (isRecord(attrs) && typeof attrs.i === "string" && attrs.i.length > 0) {
+    return attrs.i;
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireStoredExchange(hby: Habery, said: string): SerderKERI {
+  const stored = hby.db.exns.get([said]);
+  if (!stored) {
+    throw new ValidationError(`Exchange ${said} is not stored as accepted.`);
+  }
+  return stored;
+}
+
+function storedExchangeMessage(
+  hby: Habery,
+  serder: SerderKERI,
+  counterProfile: AttachmentCounterProfile = "legacy",
+  pathedOverride?: readonly Uint8Array[],
+): Uint8Array {
+  if (!serder.said) {
+    throw new ValidationError("Exchange message is missing a SAID.");
+  }
+  const cigars = hby.db.ecigs.get([serder.said]).map(([, cigar]) => cigar) as Cigar[];
+  return serializeMessage(serder, {
+    tsgs: rebuildStoredExchangeGroups(hby, serder.said),
+    cigars,
+    pathed: pathedOverride ?? hby.db.epath.get([serder.said]),
+    pipelined: false,
+    counterProfile,
+  });
+}
+
+function grantPathedMaterials(
+  artifacts: ReturnType<typeof credentialPresentationArtifacts>,
+): Uint8Array[] {
+  return [
+    pathedMaterial("anc", artifacts.anc),
+    pathedMaterial("iss", artifacts.iss),
+    pathedMaterial("acdc", artifacts.acdc),
+  ];
+}
+
+function pathedMaterial(label: string, message: Uint8Array): Uint8Array {
+  const { smellage } = smell(message);
+  const atc = message.slice(smellage.size);
+  if (atc.length === 0) {
+    return makePather(["e", label]).qb64b;
+  }
+  return concatBytes(makePather(["e", label]).qb64b, atc);
+}
+
+function rebuildStoredExchangeGroups(hby: Habery, said: string): TransIdxSigGroup[] {
+  const groups: TransIdxSigGroup[] = [];
+  let currentKey: string[] | null = null;
+  let currentSigers: Siger[] = [];
+
+  const flush = () => {
+    if (!currentKey || currentSigers.length === 0) {
+      return;
+    }
+    groups.push(
+      new TransIdxSigGroup(
+        new Prefixer({ qb64: currentKey[0] }),
+        seqnerFromSnh(currentKey[1]),
+        new Diger({ qb64: currentKey[2] }),
+        currentSigers,
+      ),
+    );
+    currentSigers = [];
+  };
+
+  for (const [keys, siger] of hby.db.esigs.getTopItemIter([said, ""])) {
+    const groupKey = keys.slice(1);
+    if (!groupKey[0] || !groupKey[1] || !groupKey[2]) {
+      continue;
+    }
+    if (
+      currentKey
+      && (currentKey[0] !== groupKey[0] || currentKey[1] !== groupKey[1] || currentKey[2] !== groupKey[2])
+    ) {
+      flush();
+    }
+    currentKey = [groupKey[0], groupKey[1], groupKey[2]];
+    currentSigers.push(siger);
+  }
+
+  flush();
+  return groups;
+}
+
+function seqnerFromSnh(snh: string): Seqner {
+  return new Seqner({ code: "0A", raw: hexToFixedBytes(snh, 16) });
+}
+
+function hexToFixedBytes(hex: string, size: number): Uint8Array {
+  const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
+  if (!/^[0-9a-f]+$/i.test(normalized)) {
+    throw new ValidationError(`Invalid hex ordinal ${hex}`);
+  }
+  if (normalized.length > size * 2) {
+    throw new ValidationError(`Hex ordinal ${hex} exceeds ${size} bytes.`);
+  }
+
+  const raw = new Uint8Array(size);
+  const padded = normalized.padStart(size * 2, "0");
+  for (let index = 0; index < size; index += 1) {
+    raw[index] = Number.parseInt(padded.slice(index * 2, (index * 2) + 2), 16);
+  }
+  return raw;
+}
+
+function* sleep(ms: number): Operation<void> {
+  yield* action<void>((resolve) => {
+    const timeout = setTimeout(resolve, ms);
+    return () => clearTimeout(timeout);
+  });
 }
 
 function* sendPriorResponse(
@@ -392,6 +863,7 @@ function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {
     message: args.message as string | undefined,
     out: args.out as string | undefined,
     delivery: args.delivery as "auto" | "direct" | "indirect" | undefined,
+    counterProfile: normalizeAttachmentCounterProfile(args.counterProfile),
   };
 }
 
@@ -542,13 +1014,17 @@ function* sendCredentialBytes(
   recipient: string,
   messages: Uint8Array[],
   delivery: "auto" | "direct" | "indirect" | undefined,
-): Operation<void> {
+): Operation<string[]> {
+  const sent: string[] = [];
   for (const message of messages) {
-    yield* runtime.poster.sendBytes(hab, {
+    const result = yield* runtime.poster.sendBytes(hab, {
       recipient,
       message,
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery,
+      split: false,
     });
+    sent.push(...result.deliveries, ...result.queued);
   }
+  return sent;
 }

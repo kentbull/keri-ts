@@ -157,6 +157,26 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
     ["ipex.list", lazyCommand(() => import("keri-ts/cli"), "ipexListCommand")],
     ["ipex.poll", lazyCommand(() => import("keri-ts/cli"), "ipexPollCommand")],
     ["ipex.join", lazyCommand(() => import("keri-ts/cli"), "ipexJoinCommand")],
+    [
+      "multisig.incept",
+      lazyCommand(() => import("keri-ts/cli"), "multisigInceptCommand"),
+    ],
+    [
+      "multisig.interact",
+      lazyCommand(() => import("keri-ts/cli"), "multisigInteractCommand"),
+    ],
+    [
+      "multisig.join",
+      lazyCommand(() => import("keri-ts/cli"), "multisigJoinCommand"),
+    ],
+    [
+      "multisig.rpy",
+      lazyCommand(() => import("keri-ts/cli"), "multisigRpyCommand"),
+    ],
+    [
+      "multisig.rotate",
+      lazyCommand(() => import("keri-ts/cli"), "multisigRotateCommand"),
+    ],
     ["verifier.run", lazyCommand(() => import("keri-ts/cli"), "verifierRunCommand")],
     ["hook.demo", lazyCommand(() => import("./hook.ts"), "hookDemoCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],

@@ -35,6 +35,13 @@ function addDeliveryOptions(cmd: Command): Command {
   return cmd.option("--delivery <mode>", "Delivery mode: auto, direct, or indirect");
 }
 
+function addCounterProfileOption(cmd: Command): Command {
+  return cmd.option(
+    "--counter-profile <profile>",
+    "Attachment counter profile: legacy or keripy-current",
+  );
+}
+
 function dispatchArgs(options: Record<string, unknown>): Record<string, unknown> {
   return {
     ...options,
@@ -68,6 +75,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
       registry.command("incept")
         .description("Create a local credential registry")
         .requiredOption("--registry-name <name>", "Registry name")
+        .option("--usage <text>", "Human-readable registry usage for multisig proposals")
         .option("--backers", "Create a backer-enabled registry", false)
         .option("--est-only", "Anchor TEL events only in establishment events", false),
     ),
@@ -78,6 +86,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
         ...dispatchArgs(options),
         noBackers: !(options.backers || false),
         estOnly: options.estOnly || false,
+        usage: options.usage,
       },
     });
   });
@@ -216,15 +225,22 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   });
 
   addDeliveryOptions(
-    addHabOption(
-      addStoreOptions(
-        ipex.command("grant")
-          .description("Send or write an IPEX credential grant")
-          .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
-          .requiredOption("--said <said>", "Credential SAID")
-          .option("--agree <said>", "Prior agree EXN SAID")
-          .option("-m, --message <text>", "Human-readable message")
-          .option("--out <file>", "Write support artifacts plus grant wire"),
+    addCounterProfileOption(
+      addHabOption(
+        addStoreOptions(
+          ipex.command("grant")
+            .description("Send or write an IPEX credential grant")
+            .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
+            .requiredOption("--said <said>", "Credential SAID")
+            .option("--agree <said>", "Prior agree EXN SAID")
+            .option("-m, --message <text>", "Human-readable message")
+            .option(
+              "--wait <seconds>",
+              "Seconds to wait for multisig IPEX approval before returning",
+              (value: string) => Number(value),
+            )
+            .option("--out <file>", "Write support artifacts plus grant wire"),
+        ),
       ),
     ),
   ).action((options: Record<string, unknown>) => {
@@ -279,11 +295,17 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
     dispatch({ name: "ipex.poll", args: dispatchArgs(options) });
   });
 
-  addStoreOptions(
-    ipex.command("join")
-      .description("Approve or validate a single-sig or multisig IPEX message")
-      .requiredOption("--said <said>", "IPEX or multisig wrapper EXN SAID")
-      .option("--auto", "Approve a multisig IPEX proposal without prompting", false),
+  addDeliveryOptions(
+    addCounterProfileOption(
+      addStoreOptions(
+        ipex.command("join")
+          .description("Approve or validate a single-sig or multisig IPEX message")
+          .option("--said <said>", "IPEX or multisig wrapper EXN SAID")
+          .option("--auto", "Approve a multisig IPEX proposal without prompting", false)
+          .option("--max-turns <count>", "Maximum bounded mailbox turns")
+          .option("--budget-ms <ms>", "Per-turn mailbox polling budget"),
+      ),
+    ),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.join", args: dispatchArgs(options) });
   });

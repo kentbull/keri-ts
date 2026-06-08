@@ -207,9 +207,7 @@ export function* mailboxListCommand(
       const contact = organizer.get(eid);
       const alias = typeof contact?.alias === "string" ? contact.alias : "";
       const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
-      const oobi = url.length > 0
-        ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}`
-        : "";
+      const oobi = url.length > 0 ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}` : "";
       const fields: string[] = [
         alias,
         eid,
@@ -395,7 +393,15 @@ function* withMailboxWorkflow(
     }
 
     const submission = collectMailboxAdminSubmission(hby, hab.pre);
-    const rpy = hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
+    const existing = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
+    const rpy = allow && existing?.allowed
+      ? hab.loadEndRole(hab.pre, mailboxAid, Roles.mailbox)
+      : hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
+    if (rpy.length === 0) {
+      throw new ValidationError(
+        `No accepted mailbox role reply is available for ${hab.pre}.`,
+      );
+    }
     const response = yield* postMailboxAdmin(
       endpointUrl,
       submission,
@@ -538,9 +544,7 @@ function mailboxConfigCandidates(
   headDirPath?: string,
   compat = false,
 ): string[] {
-  const fileName = configFile.endsWith(".json")
-    ? configFile
-    : `${configFile}.json`;
+  const fileName = configFile.endsWith(".json") ? configFile : `${configFile}.json`;
   const candidates = new Set<string>();
   candidates.add(configFile);
   candidates.add(fileName);
@@ -932,9 +936,7 @@ function collectMailboxAdminSubmission(
   delkel: Uint8Array;
 } {
   const kever = hby.db.getKever(pre);
-  const delkel = kever
-    ? concatBytes(...hby.db.cloneDelegation(kever))
-    : new Uint8Array();
+  const delkel = kever ? concatBytes(...hby.db.cloneDelegation(kever)) : new Uint8Array();
   const kel = concatBytes(...hby.db.clonePreIter(pre));
   return {
     replay: concatBytes(delkel, kel),

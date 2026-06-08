@@ -24,6 +24,7 @@ import {
   processRuntimeTurn,
   processRuntimeUntil,
 } from "../agent-runtime.ts";
+import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../query-transport.ts";
 import { type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
@@ -127,6 +128,17 @@ function anchorData(serder: SerderKERI): { i: string; s: string; d: string } {
   return { i: serder.pre, s: serder.snh, d: serder.said };
 }
 
+function approvingEvent(
+  hby: Habery,
+  serder: SerderKERI,
+  delegator: Hab,
+): SerderKERI | null {
+  return hby.db.fetchLastSealingEventByEventSeal(
+    delegator.pre,
+    anchorData(serder),
+  );
+}
+
 /** Resolve delegate witnesses for either delegated inception or rotation. */
 function delegateWitnesses(
   hby: Habery,
@@ -177,6 +189,73 @@ function delegateWitnessLogsQuery(
     },
     msgs: [hab.query(serder.pre, witness, query, "logs")],
   };
+}
+
+function isGroupHab(hby: Habery, hab: Hab): boolean {
+  return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
+}
+
+function groupSigningMembers(hby: Habery, groupPre: string): string[] {
+  const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);
+  if (stored.length > 0) {
+    return stored;
+  }
+  return hby.db.getHab(groupPre)?.smids ?? [];
+}
+
+function localGroupMember(hby: Habery, groupPre: string): Hab {
+  const record = hby.db.getHab(groupPre);
+  const member = record?.mid ? hby.habs.get(record.mid) : null;
+  if (!member) {
+    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
+  }
+  return member;
+}
+
+function* publishGroupDelegationApproval(
+  runtime: AgentRuntime,
+  hby: Habery,
+  groupHab: Hab,
+  message: Uint8Array,
+): Operation<string[]> {
+  const member = localGroupMember(hby, groupHab.pre);
+  const smids = groupSigningMembers(hby, groupHab.pre);
+  const deliveries: string[] = [];
+  for (const recipient of smids) {
+    if (recipient === member.pre || hby.habs.has(recipient)) {
+      continue;
+    }
+    const result = yield* runtime.poster.sendExchange(member, {
+      recipient,
+      route: MULTISIG_IXN_ROUTE,
+      payload: { gid: groupHab.pre, smids },
+      embeds: { ixn: message },
+      topic: "multisig",
+    });
+    deliveries.push(...result.deliveries, ...result.queued);
+  }
+  return deliveries;
+}
+
+function eventAccepted(hby: Habery, serder: SerderKERI): boolean {
+  return !!serder.pre && serder.said !== undefined
+    && hby.db.kels.getLast(serder.pre, serder.sn ?? 0) === serder.said;
+}
+
+function pinApprovalSeal(
+  hby: Habery,
+  hab: Hab,
+  delegated: SerderKERI,
+  approving: SerderKERI,
+): void {
+  if (!approving.sner || !approving.said || !delegated.pre || !delegated.said) {
+    throw new ValidationError("Approving event material is incomplete.");
+  }
+  hby.db.aess.pin(dgKey(delegated.pre, delegated.said), [
+    approving.sner,
+    new Diger({ qb64: approving.said }),
+  ]);
+  hab.kvy.processEscrowDelegables();
 }
 
 /** Route query cues through query transport and other cues through Respondant. */
@@ -277,6 +356,80 @@ export function* delegateConfirmCommand(
 
         for (const serder of selected) {
           const anchor = anchorData(serder);
+          if (isGroupHab(hby, hab)) {
+            if (!interactionApproval) {
+              throw new ValidationError(
+                "Multisig delegated approval currently requires --interact.",
+              );
+            }
+
+            const approving = approvingEvent(hby, serder, hab);
+            if (!approving) {
+              const created = hby.interactGroupHab(confirmArgs.alias!, undefined, { data: [anchor] });
+              const deliveries = yield* publishGroupDelegationApproval(
+                runtime,
+                hby,
+                created.hab,
+                created.message,
+              );
+              console.log(JSON.stringify({
+                status: eventAccepted(hby, created.serder) ? "accepted" : "multisig-pending",
+                route: MULTISIG_IXN_ROUTE,
+                group: created.hab.pre,
+                delegated: serder.pre,
+                said: serder.said,
+                anchor: created.serder.said,
+                deliveries,
+              }));
+              continue;
+            }
+
+            const witnesses = delegateWitnesses(hby, serder).sort();
+            const selectedWitness = witnesses[0];
+            const member = localGroupMember(hby, hab.pre);
+            const memberSink = delegateConfirmSink(runtime, hby, member);
+
+            pinApprovalSeal(hby, hab, serder, approving);
+            yield* processRuntimeTurn(runtime, {
+              hab: member,
+              pollMailbox: true,
+              sink: memberSink,
+            });
+
+            if (!delegateCommitted(hby, serder) && selectedWitness) {
+              yield* memberSink.send(
+                delegateWitnessLogsQuery(member, serder, selectedWitness),
+              );
+              yield* processRuntimeUntil(
+                runtime,
+                () => delegateCommitted(hby, serder),
+                { hab: member, maxTurns: 128, pollMailbox: true, sink: memberSink },
+              );
+            }
+            pinApprovalSeal(hby, hab, serder, approving);
+            yield* processRuntimeTurn(runtime, {
+              hab: member,
+              pollMailbox: true,
+              sink: memberSink,
+            });
+
+            if (serder.pre && serder.said) {
+              const stillPending = hby.db.delegables.get([serder.pre]).includes(
+                serder.said,
+              );
+              if (stillPending) {
+                throw new ValidationError(
+                  `Delegated event ${serder.said} remained in delegables escrow after approval.`,
+                );
+              }
+            }
+
+            console.log(
+              `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${serder.pre ?? ""} using multisig ixn.`,
+            );
+            continue;
+          }
+
           // KERIpy permits either interaction or rotation approval. Keep this
           // explicit because the chosen approving event type affects later
           // replay, but the embedded anchor seal is the same.
@@ -295,20 +448,11 @@ export function* delegateConfirmCommand(
           }
 
           const approving = hby.db.getEvtSerder(hab.pre, hab.kever!.said);
-          if (
-            !approving?.sner || !approving.said || !serder.pre || !serder.said
-          ) {
+          if (!approving) {
             throw new ValidationError(
               "Approving event material is incomplete.",
             );
           }
-          const pinApprovalSeal = () => {
-            hby.db.aess.pin(dgKey(serder.pre!, serder.said!), [
-              approving.sner!,
-              new Diger({ qb64: approving.said! }),
-            ]);
-            hab.kvy.processEscrowDelegables();
-          };
           const witnesses = delegateWitnesses(hby, serder).sort();
           const selectedWitness = witnesses[0];
           if (selectedWitness) {
@@ -325,14 +469,14 @@ export function* delegateConfirmCommand(
             );
           } else {
             const querier = runtime.querying.watchSeqNo(
-              serder.pre,
+              serder.pre!,
               serder.sn ?? 0,
               { hab },
             );
             // No delegate witness exists to query. Process the local delegable
             // after the delegator has anchored approval; the delegate still
             // discovers approval through its own delegator-KEL query path.
-            pinApprovalSeal();
+            pinApprovalSeal(hby, hab, serder, approving);
             yield* processRuntimeUntil(
               runtime,
               () => querier.done,
@@ -345,7 +489,7 @@ export function* delegateConfirmCommand(
           // delegated unescrow after the delegate event has been observed as
           // locally committed through the witness-backed query/replay path.
           if (selectedWitness) {
-            pinApprovalSeal();
+            pinApprovalSeal(hby, hab, serder, approving);
           }
 
           if (serder.pre && serder.said) {
