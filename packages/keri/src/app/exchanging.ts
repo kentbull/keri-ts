@@ -283,8 +283,9 @@ export class Exchanger {
   {
     if (args.tsgs.length > 0) {
       const verifiedGroups: TransIdxSigGroup[] = [];
+      const grouped = aggregateTransIdxSigGroups(args.tsgs);
 
-      for (const tsg of args.tsgs) {
+      for (const tsg of grouped) {
         if (tsg.pre !== args.sender) {
           return {
             kind: "reject",
@@ -340,7 +341,12 @@ export class Exchanger {
         }
 
         verifiedGroups.push(
-          new PathedTransIdxSigGroup(tsg, verified.sigers).group,
+          new TransIdxSigGroup(
+            tsg.prefixer,
+            tsg.seqner,
+            tsg.diger,
+            verified.sigers,
+          ),
         );
       }
 
@@ -680,19 +686,26 @@ function seqnerFromSnh(snh: string): Seqner {
   return new Seqner({ code: "0A", raw: hexToFixedBytes(snh, 16) });
 }
 
-/**
- * Small helper that keeps group reconstruction intent readable when replacing
- * one raw parser group with its verified signature subset.
- */
-class PathedTransIdxSigGroup {
-  readonly group: TransIdxSigGroup;
-
-  constructor(group: TransIdxSigGroup, sigers: readonly Siger[]) {
-    this.group = new TransIdxSigGroup(
-      group.prefixer,
-      group.seqner,
-      group.diger,
-      sigers,
+function aggregateTransIdxSigGroups(
+  groups: readonly TransIdxSigGroup[],
+): TransIdxSigGroup[] {
+  const aggregated = new Map<string, TransIdxSigGroup>();
+  for (const group of groups) {
+    const key = `${group.pre}\0${group.snh}\0${group.said}`;
+    const existing = aggregated.get(key);
+    if (!existing) {
+      aggregated.set(key, group);
+      continue;
+    }
+    aggregated.set(
+      key,
+      new TransIdxSigGroup(
+        existing.prefixer,
+        existing.seqner,
+        existing.diger,
+        [...existing.sigers, ...group.sigers],
+      ),
     );
   }
+  return [...aggregated.values()];
 }

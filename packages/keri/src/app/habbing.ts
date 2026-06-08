@@ -29,6 +29,7 @@ import {
   Tiers,
   Verfer,
 } from "../../../cesr/mod.ts";
+import type { AttachmentCounterProfile } from "../core/attachment-counter-profile.ts";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
@@ -132,6 +133,22 @@ export interface GroupHabCreation {
   message: Uint8Array;
 }
 
+/** Result of rotating one locally membered group habitat. */
+export interface GroupHabRotation {
+  hab: Hab;
+  serder: SerderKERI;
+  sigers: Siger[];
+  message: Uint8Array;
+}
+
+/** Result of creating one locally signed group interaction event. */
+export interface GroupHabInteraction {
+  hab: Hab;
+  serder: SerderKERI;
+  sigers: Siger[];
+  message: Uint8Array;
+}
+
 /**
  * Fixed KERI version tuple used when emitting bootstrap counters.
  *
@@ -187,9 +204,7 @@ function ample(count: number, faults?: number, weak = true): number {
 }
 
 function loadConfigUrls(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function requireConfigDatetime(alias: string, value: unknown): string {
@@ -315,6 +330,7 @@ function loadReplyMessageBySaid(db: Baser, said: string): Uint8Array {
 export function eventReplayMessage(
   hby: Habery,
   serder: SerderKERI,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
   const pre = serder.pre;
   const said = serder.said;
@@ -329,7 +345,7 @@ export function eventReplayMessage(
       `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, fn, said);
+  return hby.db.cloneEvtMsg(pre, fn, said, counterProfile);
 }
 
 /**
@@ -342,6 +358,7 @@ export function eventReplayMessage(
 export function eventPayloadMessage(
   hby: Habery,
   serder: SerderKERI,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): Uint8Array {
   const pre = serder.pre;
   const said = serder.said;
@@ -358,7 +375,7 @@ export function eventPayloadMessage(
       `Missing replay ordinal for stored event ${pre}:${said}.`,
     );
   }
-  return hby.db.cloneEvtMsg(pre, ordinal, said);
+  return hby.db.cloneEvtMsg(pre, ordinal, said, counterProfile);
 }
 
 /** Return the exact accepted event replay message at `(pre, sn)`. */
@@ -366,6 +383,7 @@ export function acceptedEventReplayMessage(
   hby: Habery,
   pre: string,
   sn: number,
+  counterProfile: AttachmentCounterProfile = "legacy",
 ): { serder: SerderKERI; message: Uint8Array } {
   const said = hby.db.kels.getLast(pre, sn);
   if (!said) {
@@ -379,7 +397,7 @@ export function acceptedEventReplayMessage(
       `Missing accepted event body for ${pre}:${said}.`,
     );
   }
-  return { serder, message: eventReplayMessage(hby, serder) };
+  return { serder, message: eventReplayMessage(hby, serder, counterProfile) };
 }
 
 /**
@@ -531,9 +549,7 @@ export class Hab {
     ];
     for (const url of loadConfigUrls(conf.curls)) {
       const parsed = new URL(url);
-      const scheme = parsed.protocol.length > 0
-        ? parsed.protocol.slice(0, -1)
-        : Schemes.http;
+      const scheme = parsed.protocol.length > 0 ? parsed.protocol.slice(0, -1) : Schemes.http;
       messages.push(this.makeLocScheme(url, this.pre, scheme, dt));
     }
     this.ingestLocalCesr(concatMessages(messages));
@@ -701,9 +717,7 @@ export class Hab {
     const currentSith = args.isith ?? kever.ntholder?.sith;
     const nextSith = args.nsith ?? currentSith;
     const preservedToad = args.toad
-      ?? ((args.cuts?.length ?? 0) === 0 && (args.adds?.length ?? 0) === 0
-        ? Number(kever.toader.num)
-        : undefined);
+      ?? ((args.cuts?.length ?? 0) === 0 && (args.adds?.length ?? 0) === 0 ? Number(kever.toader.num) : undefined);
     const keys = verfers.map((verfer) => verfer.qb64);
     const ndigs = digers.map((diger) => diger.qb64);
 
@@ -816,6 +830,7 @@ export class Hab {
     serder: SerderKERI,
     options: {
       pipelined?: boolean;
+      counterProfile?: AttachmentCounterProfile;
     } = {},
   ): Uint8Array {
     if (!this.pre) {
@@ -827,10 +842,12 @@ export class Hab {
     }
     const prefixer = kever.prefixer;
     const pipelined = options.pipelined ?? true;
+    const counterProfile = options.counterProfile ?? "legacy";
     if (!kever.transferable) {
       return messagize(serder, {
         cigars: this.sign(serder.raw, false) as Cigar[],
         pipelined,
+        counterProfile,
       });
     }
 
@@ -840,6 +857,7 @@ export class Hab {
         sigers,
         seal: SealLast.fromTuple([prefixer]),
         pipelined,
+        counterProfile,
       });
     }
 
@@ -856,6 +874,7 @@ export class Hab {
       sigers,
       seal: { i: prefixer, s: seqner, d: new Diger({ qb64: estSaid }) },
       pipelined,
+      counterProfile,
     });
   }
 
@@ -1225,9 +1244,7 @@ export class Hab {
         }
         appendClone(eid);
         messages.push(
-          eid === this.pre
-            ? this.replyLocScheme(eid, scheme)
-            : this.loadLocScheme(eid, scheme),
+          eid === this.pre ? this.replyLocScheme(eid, scheme) : this.loadLocScheme(eid, scheme),
         );
         if (cid === this.pre) {
           messages.push(this.makeEndRole(eid, Roles.witness, true));
@@ -1347,9 +1364,7 @@ export class Hab {
           yield {
             cue,
             msgs: [
-              cue.serder
-                ? this.endorse(cue.serder)
-                : this.reply(cue.route, cue.data ?? {}),
+              cue.serder ? this.endorse(cue.serder) : this.reply(cue.route, cue.data ?? {}),
             ],
             kind: "wire",
           };
@@ -1696,7 +1711,7 @@ export class Habery {
    *   rotation member, matching KERIpy's `extractMerfersMigers()`
    *
    * Current scope:
-   * - all signing members must be local habitats in this `Habery`
+   * - at least one signing member must be local to this `Habery`
    * - delegated groups may remain escrowed until the delegator anchor arrives
    * - rotation/counselor orchestration is intentionally outside this method
    */
@@ -1709,9 +1724,7 @@ export class Habery {
     args: MakeGroupHabArgs = {},
   ): GroupHabCreation {
     const signingMembers = [...smids];
-    const rotationMembers = rmids === undefined
-      ? [...signingMembers]
-      : [...rmids];
+    const rotationMembers = rmids === undefined ? [...signingMembers] : [...rmids];
     if (
       !mhab.pre
       || (!signingMembers.includes(mhab.pre)
@@ -1757,7 +1770,11 @@ export class Habery {
       ns,
       pre,
     );
-    const sigers = this.signGroupInception(serder, signingMembers, keys);
+    const sigers = this.signGroupEventWithLocalMembers(
+      serder,
+      signingMembers,
+      keys,
+    );
 
     if (!args.hidden) {
       this.persistGroupHabRecord(
@@ -1770,6 +1787,7 @@ export class Habery {
       );
     }
 
+    this.habs.set(pre, hab);
     const decision = this.kevery.processEvent({
       serder,
       sigers,
@@ -1783,6 +1801,7 @@ export class Habery {
       if (!args.hidden) {
         this.removeGroupHabRecord(pre, group, ns);
       }
+      this.habs.delete(pre);
       throw new ValidationError(decision.message, decision.context);
     }
 
@@ -1791,6 +1810,245 @@ export class Habery {
       this.habs.set(pre, hab);
     }
 
+    return {
+      hab,
+      serder,
+      sigers,
+      message: messagize(serder, { sigers, pipelined: true }),
+    };
+  }
+
+  /**
+   * Bind local metadata for a remotely proposed group event.
+   *
+   * KERIpy correspondence:
+   * - this is the TypeScript analogue of `Habery.joinGroupHab()`
+   * - it does not fabricate key state; accepted KEL state must still arrive
+   *   through `Kevery.processEvent()`
+   */
+  joinGroupHab(
+    pre: string,
+    group: string,
+    mhab: Hab,
+    smids: string[],
+    rmids?: string[],
+    ns?: string,
+  ): Hab {
+    if (!pre) {
+      throw new ValidationError("Group prefix is required.");
+    }
+    if (!group) {
+      throw new ValidationError("Group alias is required.");
+    }
+    if (!mhab.pre) {
+      throw new ValidationError("Local member habitat is missing a prefix.");
+    }
+
+    const signingMembers = [...smids];
+    const rotationMembers = rmids === undefined ? [...signingMembers] : [...rmids];
+    if (
+      !signingMembers.includes(mhab.pre)
+      && !rotationMembers.includes(mhab.pre)
+    ) {
+      throw new ValidationError(
+        `Local member identifier ${mhab.pre} must be a group member.`,
+      );
+    }
+
+    const existingName = this.db.getName(ns ?? "", group);
+    if (existingName && existingName !== pre) {
+      throw new ValidationError(
+        `Group alias ${group} is already bound to ${existingName}.`,
+      );
+    }
+    const existingRecord = this.db.getHab(pre);
+    if (existingRecord?.mid && existingRecord.mid !== mhab.pre) {
+      throw new ValidationError(
+        `Group prefix ${pre} is already joined as ${existingRecord.name}.`,
+      );
+    }
+
+    const hab = this.habs.get(pre) ?? new Hab(
+      group,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      pre,
+    );
+    this.persistGroupHabRecord(
+      pre,
+      group,
+      mhab.pre,
+      signingMembers,
+      rotationMembers,
+      ns,
+    );
+    this.db.groups.add(pre);
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(pre);
+    }
+    this.habs.set(pre, hab);
+    return hab;
+  }
+
+  /**
+   * Rotate a locally membered group identifier from member habitat state.
+   *
+   * Current scope:
+   * - all signing members must be local habitats in this `Habery`
+   * - member AIDs should already be in the key state intended for the new
+   *   group key list, matching KLI's operator workflow of rotating members
+   *   before rotating the group
+   */
+  rotateGroupHab(
+    group: string,
+    smids?: string[],
+    rmids?: string[],
+    args: {
+      isith?: ThresholdSith;
+      nsith?: ThresholdSith;
+      toad?: number;
+      cuts?: string[];
+      adds?: string[];
+      data?: unknown[];
+    } = {},
+  ): GroupHabRotation {
+    const hab = this.habByName(group);
+    if (!hab?.pre || !hab.kever) {
+      throw new ValidationError(`Group alias ${group} is invalid.`);
+    }
+    const record = this.db.getHab(hab.pre);
+    if (!record?.mid) {
+      throw new ValidationError(`Alias ${group} is not a local group habitat.`);
+    }
+
+    const signingMembers = smids?.length ? [...smids] : this.ks.getSmids(hab.pre).map((tuple) => tuple[0].qb64);
+    const rotationMembers = rmids?.length ? [...rmids] : this.ks.getRmids(hab.pre).map((tuple) => tuple[0].qb64);
+    if (!signingMembers.includes(record.mid)) {
+      throw new ValidationError(
+        `Local member identifier ${record.mid} must be a group signing member.`,
+      );
+    }
+
+    const keys = this.extractGroupMemberKeys(signingMembers);
+    const ndigs = this.extractGroupMemberNextDigests(rotationMembers);
+    const kever = hab.kever;
+    const serder = rotateEvent(
+      hab.pre,
+      keys,
+      kever.serder.said ?? kever.said,
+      {
+        ilk: kever.delpre !== null ? Ilks.drt : Ilks.rot,
+        sn: kever.sn + 1,
+        isith: args.isith,
+        ndigs,
+        nsith: args.nsith,
+        toad: args.toad,
+        wits: [...kever.wits],
+        cuts: args.cuts,
+        adds: args.adds,
+        data: args.data,
+      },
+    );
+    const sigers = this.signGroupEventWithLocalMembers(
+      serder,
+      signingMembers,
+      keys,
+    );
+    const decision = this.kevery.processEvent({
+      serder,
+      sigers,
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind === "reject") {
+      throw new ValidationError(decision.message, decision.context);
+    }
+
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(hab.pre);
+    }
+    this.ks.pinSmids(hab.pre, this.groupMemberTuples(signingMembers));
+    this.ks.pinRmids(hab.pre, this.groupMemberTuples(rotationMembers));
+    this.db.pinHab(
+      hab.pre,
+      new HabitatRecord({
+        hid: hab.pre,
+        name: group,
+        domain: record.domain,
+        mid: record.mid,
+        smids: [...signingMembers],
+        rmids: [...rotationMembers],
+      }),
+    );
+
+    return {
+      hab,
+      serder,
+      sigers,
+      message: messagize(serder, { sigers, pipelined: true }),
+    };
+  }
+
+  /** Create a locally signed group interaction event. */
+  interactGroupHab(
+    group: string,
+    smids?: string[],
+    args: { data?: unknown[] } = {},
+  ): GroupHabInteraction {
+    const hab = this.habByName(group);
+    if (!hab?.pre || !hab.kever) {
+      throw new ValidationError(`Group alias ${group} is invalid.`);
+    }
+    const record = this.db.getHab(hab.pre);
+    if (!record?.mid) {
+      throw new ValidationError(`Alias ${group} is not a local group habitat.`);
+    }
+
+    const signingMembers = smids?.length ? [...smids] : this.ks.getSmids(hab.pre).map((tuple) => tuple[0].qb64);
+    if (!signingMembers.includes(record.mid)) {
+      throw new ValidationError(
+        `Local member identifier ${record.mid} must be a group signing member.`,
+      );
+    }
+
+    const kever = hab.kever;
+    const serder = interactEvent(
+      hab.pre,
+      kever.serder.said ?? kever.said,
+      kever.sn + 1,
+      args.data ?? [],
+    );
+    const keys = kever.verfers.map((verfer) => verfer.qb64);
+    const sigers = this.signGroupEventWithLocalMembers(
+      serder,
+      signingMembers,
+      keys,
+    );
+    const decision = this.kevery.processEvent({
+      serder,
+      sigers,
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind === "reject") {
+      throw new ValidationError(decision.message, decision.context);
+    }
+
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(hab.pre);
+    }
     return {
       hab,
       serder,
@@ -1842,8 +2100,8 @@ export class Habery {
     return ndigs;
   }
 
-  /** Sign a group inception with each local member at its group-key index. */
-  private signGroupInception(
+  /** Sign a group event with every listed member that is local to this habery. */
+  private signGroupEventWithLocalMembers(
     serder: SerderKERI,
     smids: readonly string[],
     keys: readonly string[],
@@ -1852,9 +2110,7 @@ export class Habery {
     for (const [index, mid] of smids.entries()) {
       const member = this.habs.get(mid);
       if (!member) {
-        throw new ValidationError(
-          `Signing member ${mid} is not a local habitat in this Habery.`,
-        );
+        continue;
       }
       sigers.push(
         ...(member.mgr.sign(serder.raw, {
@@ -1862,6 +2118,11 @@ export class Habery {
           indexed: true,
           indices: [index],
         }) as Siger[]),
+      );
+    }
+    if (sigers.length === 0) {
+      throw new ValidationError(
+        "Group event requires at least one local signing member.",
       );
     }
     return sigers;
@@ -2021,18 +2282,16 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
     );
   }
-  const obx = outboxer === "disabled"
-    ? new DisabledOutboxer()
-    : (yield* createOutboxer({
-      name,
-      base,
-      temp,
-      headDirPath,
-      compat,
-      reopen: true,
-      readonly,
-      mustExist: outboxer === "open",
-    }));
+  const obx = outboxer === "disabled" ? new DisabledOutboxer() : (yield* createOutboxer({
+    name,
+    base,
+    temp,
+    headDirPath,
+    compat,
+    reopen: true,
+    readonly,
+    mustExist: outboxer === "open",
+  }));
 
   const cf = providedCf
     ?? (skipConfig ? undefined : (yield* createConfiger({
