@@ -66,6 +66,31 @@ function parseJsonLine(output: string): Record<string, unknown> {
   return JSON.parse(line) as Record<string, unknown>;
 }
 
+async function writeTufaAgentControllerConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 async function assertKliCredentialListed(
   kliCommand: string,
   env: Record<string, string>,
@@ -196,6 +221,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
   const providerAgentPort = randomPort();
   const agentPort = randomPort();
   const hookPort = randomPort();
+  const providerAgentConfig = "provider-agent";
+  const verifierAgentConfig = "verifier-agent";
   const providerOrigin = `http://127.0.0.1:${providerAgentPort}`;
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
   const kliCommand = await resolveLocalKeripyKliCommand(workDir, ctx.kliCommand, env);
@@ -354,6 +381,12 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
       );
       assertStringIncludes(schemaImport.stdout, schemaSaid);
 
+      await writeTufaAgentControllerConfig(
+        tufaHeadDir,
+        providerAgentConfig,
+        "provider",
+        providerAgentPort,
+      );
       const providerAgentChild = spawnChild(
         Deno.execPath(),
         [
@@ -365,6 +398,10 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
           ...tufaStoreArgs(providerName, tufaHeadDir, passcode),
           "--port",
           String(providerAgentPort),
+          "--config-dir",
+          tufaHeadDir,
+          "--config-file",
+          providerAgentConfig,
         ],
         env,
         workspaceRoot(),
@@ -587,6 +624,12 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
         await assertKliCredentialListed(kliCommand, env, holderName, passcode, schemaSaid, credentialSaid);
       });
 
+      await writeTufaAgentControllerConfig(
+        tufaHeadDir,
+        verifierAgentConfig,
+        "verifier",
+        agentPort,
+      );
       const agentChild = spawnChild(
         Deno.execPath(),
         [
@@ -598,6 +641,10 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
           ...tufaStoreArgs(verifierName, tufaHeadDir, passcode),
           "--port",
           String(agentPort),
+          "--config-dir",
+          tufaHeadDir,
+          "--config-file",
+          verifierAgentConfig,
         ],
         env,
         workspaceRoot(),
@@ -673,6 +720,12 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
         await hookResponse.body?.cancel().catch(() => undefined);
       }
 
+      await writeTufaAgentControllerConfig(
+        tufaHeadDir,
+        providerAgentConfig,
+        "provider",
+        providerAgentPort,
+      );
       const revocationProviderAgentChild = spawnChild(
         Deno.execPath(),
         [
@@ -684,6 +737,10 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
           ...tufaStoreArgs(providerName, tufaHeadDir, passcode),
           "--port",
           String(providerAgentPort),
+          "--config-dir",
+          tufaHeadDir,
+          "--config-file",
+          providerAgentConfig,
         ],
         env,
         workspaceRoot(),

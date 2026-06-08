@@ -464,6 +464,31 @@ function spawnTufaProcess(
   }).spawn();
 }
 
+async function writeTufaAgentControllerConfig(
+  configRoot: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${configRoot}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 /** Best-effort host cleanup for one child stdio stream after shutdown. */
 async function cancelChildStream(
   stream: ReadableStream<Uint8Array> | null,
@@ -1212,6 +1237,10 @@ async function runGateEBootstrapParity(
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
   const port = 8915;
+  const tufaConfigDir = await Deno.makeTempDir({
+    prefix: "tufa-gate-agent-config-",
+  });
+  const tufaAgentConfig = "interop-aid-agent";
   const url = `http://127.0.0.1:${port}`;
   const kliSourceName = `kli-src-${crypto.randomUUID().slice(0, 8)}`;
   const tufaSourceName = `tufa-src-${crypto.randomUUID().slice(0, 8)}`;
@@ -1503,6 +1532,12 @@ async function runGateEBootstrapParity(
   const kliMailboxUrl = extractLastNonEmptyLine(kliOobi.stdout);
   const tufaMailboxUrl = extractLastNonEmptyLine(tufaOobi.stdout);
   assertEquals(tufaMailboxUrl, kliMailboxUrl);
+  await writeTufaAgentControllerConfig(
+    tufaConfigDir,
+    tufaAgentConfig,
+    alias,
+    port,
+  );
 
   await run(function*(): Operation<void> {
     yield* withTufaAgent(
@@ -1517,6 +1552,10 @@ async function runGateEBootstrapParity(
         passcode,
         "--port",
         String(port),
+        "--config-dir",
+        tufaConfigDir,
+        "--config-file",
+        tufaAgentConfig,
       ],
       port,
       function*() {

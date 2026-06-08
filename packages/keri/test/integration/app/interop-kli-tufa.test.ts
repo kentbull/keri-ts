@@ -37,6 +37,31 @@ import {
   workspaceRoot,
 } from "./interop-test-helpers.ts";
 
+async function writeTufaAgentControllerConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL stream", async () => {
   const ctx = await createInteropContext();
   const env = ctx.env;
@@ -222,6 +247,7 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
   const kliAlias = "bob";
   const message = "interop rotate";
   const tufaPort = randomPort();
+  const tufaAgentConfig = "alice-agent";
   const tufaOrigin = `http://127.0.0.1:${tufaPort}`;
   let rotatedSignature = "";
   const runTufaFromRoot = (args: string[]) =>
@@ -408,10 +434,21 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
         passcode,
         "--port",
         String(tufaPort),
+        "--config-dir",
+        tufaHeadDir,
+        "--config-file",
+        tufaAgentConfig,
       ],
       ctx.env,
       tufaRepoRoot,
     );
+
+  await writeTufaAgentControllerConfig(
+    tufaHeadDir,
+    tufaAgentConfig,
+    tufaAlias,
+    tufaPort,
+  );
 
   await withStartedChild(startTufaAgent(), tufaPort, async () => {
     await requireSuccess(
@@ -912,6 +949,18 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     ),
   );
 
+  await writeTufaAgentControllerConfig(
+    tufaHeadDir,
+    "provider-agent",
+    providerAlias,
+    providerPort,
+  );
+  await writeTufaAgentControllerConfig(
+    tufaHeadDir,
+    "bob-agent",
+    bobAlias,
+    bobPort,
+  );
   const providerAgent = spawnChild(
     "deno",
     [
@@ -930,6 +979,10 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
       passcode,
       "--port",
       String(providerPort),
+      "--config-dir",
+      tufaHeadDir,
+      "--config-file",
+      "provider-agent",
     ],
     ctx.env,
     ctx.repoRoot,
@@ -954,6 +1007,10 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
       passcode,
       "--port",
       String(bobPort),
+      "--config-dir",
+      tufaHeadDir,
+      "--config-file",
+      "bob-agent",
     ],
     ctx.env,
     ctx.repoRoot,
@@ -1553,6 +1610,12 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     ],
     ctx.env,
   );
+  await writeTufaAgentControllerConfig(
+    tufaHeadDir,
+    "bob-agent",
+    bobAlias,
+    bobPort,
+  );
   const bobAgent = spawnChild(
     "deno",
     [
@@ -1571,6 +1634,10 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
       passcode,
       "--port",
       String(bobPort),
+      "--config-dir",
+      tufaHeadDir,
+      "--config-file",
+      "bob-agent",
     ],
     ctx.env,
     ctx.repoRoot,

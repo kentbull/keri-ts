@@ -64,6 +64,31 @@ function parseJsonLine(output: string): Record<string, unknown> {
   return JSON.parse(line) as Record<string, unknown>;
 }
 
+async function writeTufaAgentControllerConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+}
+
 async function initAndInceptTufa(
   env: Record<string, string>,
   name: string,
@@ -153,6 +178,8 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
   const agentPort = randomPort();
   const verifierAgentPort = randomPort();
   const hookPort = randomPort();
+  const holderAgentConfig = "holder-agent";
+  const verifierAgentConfig = "verifier-agent";
   const verifierOrigin = `http://127.0.0.1:${verifierAgentPort}`;
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
 
@@ -183,6 +210,18 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
     await withStartedChild(hookChild, hookPort, async () => {
       const holderPre = await initAndInceptTufa(env, holderName, tufaHeadDir, passcode, "holder");
       const verifierPre = await initAndInceptTufa(env, verifierName, tufaHeadDir, passcode, "verifier");
+      await writeTufaAgentControllerConfig(
+        tufaHeadDir,
+        holderAgentConfig,
+        "holder",
+        agentPort,
+      );
+      await writeTufaAgentControllerConfig(
+        tufaHeadDir,
+        verifierAgentConfig,
+        "verifier",
+        verifierAgentPort,
+      );
       const agentChild = spawnChild(
         Deno.execPath(),
         [
@@ -194,6 +233,10 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
           ...tufaStoreArgs(holderName, tufaHeadDir, passcode),
           "--port",
           String(agentPort),
+          "--config-dir",
+          tufaHeadDir,
+          "--config-file",
+          holderAgentConfig,
         ],
         env,
         workspaceRoot(),
@@ -209,6 +252,10 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
           ...tufaStoreArgs(verifierName, tufaHeadDir, passcode),
           "--port",
           String(verifierAgentPort),
+          "--config-dir",
+          tufaHeadDir,
+          "--config-file",
+          verifierAgentConfig,
         ],
         env,
         workspaceRoot(),

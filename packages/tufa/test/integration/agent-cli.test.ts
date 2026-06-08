@@ -33,12 +33,18 @@ async function writeAgentControllerConfig(
   await Deno.mkdir(configDir, { recursive: true });
   await Deno.writeTextFile(
     `${configDir}/${AGENT_CONFIG_FILE}.json`,
-    `${JSON.stringify({
-      [alias]: {
-        dt: "2026-06-08T00:00:00.000Z",
-        curls: [`http://127.0.0.1:${port}/`],
-      },
-    }, null, 2)}\n`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
   );
 }
 
