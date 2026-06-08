@@ -21,6 +21,7 @@ import {
 import {
   canRunLocalKeripy,
   createInteropContext,
+  ensureInteropVerifierFixtureRoot,
   extractLastNonEmptyLine,
   type InteropContext,
   localKeripyRoot,
@@ -106,8 +107,24 @@ function pythonCommandForKli(kliCommand: string): string {
   return `${kliCommand.slice(0, slash)}/python`;
 }
 
-function interopVerifierRoot(ctx: InteropContext): string {
-  return `${ctx.repoRoot.replace(/\/$/, "")}/../../../verifier/apps/interop-verifier`;
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function interopVerifierRoot(ctx: InteropContext): Promise<string> {
+  const localRoot = `${ctx.repoRoot.replace(/\/$/, "")}/../../../verifier/apps/interop-verifier`;
+  if (
+    await pathExists(`${localRoot}/src/interop_verifier/app/cli.py`)
+    && await pathExists(`${localRoot}/scripts/interop-verifier-incept-no-wits.json`)
+  ) {
+    return localRoot;
+  }
+  return await ensureInteropVerifierFixtureRoot();
 }
 
 function withPythonPath(
@@ -132,7 +149,7 @@ async function startInteropVerifier(
     schemas?: string[];
   },
 ): Promise<SpawnedChild> {
-  const root = interopVerifierRoot(ctx);
+  const root = await interopVerifierRoot(ctx);
   const verifierArgs = [
     "-m",
     "interop_verifier.app.cli",
