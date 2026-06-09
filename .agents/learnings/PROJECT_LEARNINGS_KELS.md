@@ -138,6 +138,10 @@ and KERIpy interoperability.
     enclosure rules, but replay clone APIs (`Baser.clone*`, `Reger.cloneTvt*`,
     KEL/TEL replay helpers) are fixed to v1 counters because they replay stored
     KEL/TEL events rather than constructing new live attachment envelopes.
+40. `did:webs` `keri.cesr` artifact generation is not an OOBI reply bundle:
+    replay the controller delegation/KEL once, then append stored witness,
+    agent, mailbox `/loc/scheme` and `/end/role` replies directly. Calling
+    `Hab.replyEndRole(...)` per role repeats the controller KEL.
 
 ## Use This Doc For
 
