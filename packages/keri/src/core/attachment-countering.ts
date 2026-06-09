@@ -1,6 +1,13 @@
 import { Counter, CtrDexV1, CtrDexV2, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "../../../cesr/mod.ts";
 import { ValidationError } from "./errors.ts";
 
+/**
+ * Semantic attachment counter families used by KERI/TEL/ACDC message builders.
+ *
+ * The names intentionally track CESR counter codex names rather than local
+ * storage names so callers choose protocol meaning first and let this module
+ * choose the v1/v2 code family.
+ */
 export type AttachmentCounterName =
   | "AttachmentGroup"
   | "ControllerIdxSigs"
@@ -20,6 +27,13 @@ type VersionedSerder = Readonly<{
   gvrsn?: Versionage | null;
 }>;
 
+/**
+ * Resolve the attachment genus version for one live message envelope.
+ *
+ * Caller-requested `gvrsn` is a floor, nested/enclosed messages require v2,
+ * and a serder's own `gvrsn`/`pvrsn` can raise the result. Replay clone APIs
+ * should not use this helper when they are preserving stored v1 KEL/TEL bytes.
+ */
 export function resolveAttachmentGvrsn(
   serder: VersionedSerder,
   gvrsn: Versionage = Vrsn_1_0,
@@ -37,6 +51,7 @@ export function resolveAttachmentGvrsn(
   return resolved;
 }
 
+/** Build one bare attachment counter using the code family for `gvrsn`. */
 export function attachmentCounterQb64b(
   name: AttachmentCounterName,
   count: number,
@@ -50,6 +65,10 @@ export function attachmentCounterQb64b(
   }).qb64b;
 }
 
+/**
+ * Build a counter for a payload group, using item count for v1 and quadlet
+ * payload length for v2.
+ */
 export function attachmentCounterPayloadQb64b(
   name: AttachmentCounterName,
   itemCount: number,
@@ -66,6 +85,10 @@ export function attachmentCounterPayloadQb64b(
   return attachmentCounterQb64b(name, count, gvrsn);
 }
 
+/**
+ * Wrap a payload with CESR enclosure framing for nested/body-with-attachment
+ * groups.
+ */
 export function encloseAttachmentPayloadQb64b(
   name: AttachmentCounterName,
   payload: Uint8Array | readonly Uint8Array[],
@@ -80,6 +103,7 @@ export function encloseAttachmentPayloadQb64b(
   return Counter.enclose({ qb64: raw, code: name, version: gvrsn });
 }
 
+/** Build the counter that prefixes one pathed material couple/group. */
 export function pathedMaterialCounterQb64b(
   count: number,
   gvrsn: Versionage = Vrsn_1_0,
@@ -92,6 +116,7 @@ export function pathedMaterialCounterQb64b(
   }).qb64b;
 }
 
+/** Parse CLI/config `gvrsn` input into the supported CESR attachment versions. */
 export function parseGvrsn(value: unknown): Versionage {
   if (value === undefined || value === null || value === "") {
     return Vrsn_1_0;

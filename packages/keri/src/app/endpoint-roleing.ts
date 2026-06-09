@@ -158,6 +158,12 @@ function* publishEndpointRoleProposal(
   return deliveries;
 }
 
+/**
+ * Resolve the public keys that should sign one group event or reply.
+ *
+ * Inception/rotation-style events carry their signing keys in the event body;
+ * reply endorsements use the currently accepted group key state.
+ */
 export function groupEventKeys(
   hby: Habery,
   groupPre: string,
@@ -180,6 +186,10 @@ export function groupEventKeys(
   return kever.verfers.map((verfer) => verfer.qb64);
 }
 
+/**
+ * Sign a group event with every locally available member key in signing-index
+ * order.
+ */
 export function signLocalGroupEvent(
   hby: Habery,
   serder: SerderKERI,

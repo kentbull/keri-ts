@@ -26,6 +26,7 @@ import type { Reactor } from "./reactor.ts";
 
 const textEncoder = new TextEncoder();
 
+/** Grant-embedded presentation streams required by KERIpy verifier import. */
 export interface CredentialPresentationArtifacts {
   /** ACDC body plus its SealSourceTriples proof attachment. */
   acdc: Uint8Array;
@@ -35,6 +36,7 @@ export interface CredentialPresentationArtifacts {
   anc: Uint8Array;
 }
 
+/** Complete `/ipex/grant` message plus credential support material. */
 export interface CredentialGrantMessage {
   grant: SerderKERI;
   attachments: Uint8Array;
@@ -43,16 +45,19 @@ export interface CredentialGrantMessage {
   support: Uint8Array[];
 }
 
+/** Complete `/ipex/admit` response message for an accepted credential grant. */
 export interface CredentialAdmitMessage {
   admit: SerderKERI;
   attachments: Uint8Array;
   wire: Uint8Array;
 }
 
+/** Builder options for credential-bearing grants. */
 export interface IpexCredentialGrantOptions extends IpexBuilderOptions {
   agree?: SerderKERI | null;
 }
 
+/** Builder options for grant admits and holder-side save behavior. */
 export interface IpexCredentialAdmitOptions extends IpexBuilderOptions {
   /** Require the credential embedded in the grant to already be saved locally. */
   requireSaved?: boolean;
@@ -297,6 +302,7 @@ export function storedGrantArtifacts(
   };
 }
 
+/** Extract the embedded credential SAID from an accepted `/ipex/grant`. */
 export function credentialSaidFromGrant(grant: SerderKERI): string | null {
   const embeds = embeddedSection(grant);
   const acdc = embeds?.acdc;

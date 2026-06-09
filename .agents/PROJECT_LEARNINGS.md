@@ -93,7 +93,10 @@ stay short enough to reread at session start.
 20. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
     `Counter` owns KERIpy genus/enclosure helpers, live serialization may use
     requested `gvrsn`, and replay clone streams stay v1.
-21. The learnings layer is part of project hygiene: compact docs when they grow
+21. Maintainer docs now have a ratcheted export-surface check for selected
+    recent modules; expand that list as future documentation slices close more
+    exported API gaps.
+22. The learnings layer is part of project hygiene: compact docs when they grow
     noisy instead of preserving every step as prose.
 
 ## Current Follow-Ups
