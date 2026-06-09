@@ -15,6 +15,14 @@ export interface ProtocolHostPolicy {
   hostedPrefixes?: readonly string[];
   /** Optional hosted witness habitat enabling witness-specific HTTP routes. */
   witnessHab?: Hab;
+  /** Static did:webs artifact root used by `tufa dws resolver --static-files-dir`. */
+  dwsStaticFilesDir?: string;
+  /** DID path prefix used by static and dynamic did:webs artifact routes. */
+  dwsDidPath?: string;
+  /** Whether dynamic did:webs artifact generation is enabled for hosted AIDs. */
+  dwsDynamic?: boolean;
+  /** Use http:// when this host resolves did:webs artifacts, for local workflows. */
+  dwsInsecureHttp?: boolean;
   /**
    * Whether non-`mbx` query POSTs may return immediate CESR reply/replay bodies.
    *

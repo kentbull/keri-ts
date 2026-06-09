@@ -1,0 +1,46 @@
+name: DID Webs TS Docker
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Push images to GHCR after the interop container passes"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DID_WEBS_TS_IMAGE_NAMESPACE: ghcr.io/kentbull
+  DID_WEBS_TS_TAG: ${{ github.sha }}
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: build DID Webs TS images
+        run: bash scripts/docker/did-webs-ts.sh build
+
+      - name: run DID Webs interop matrix in Docker
+        run: |
+          mkdir -p .test-timings
+          docker run --rm \
+            --volume "${PWD}/.test-timings:/app/.test-timings" \
+            "${DID_WEBS_TS_IMAGE_NAMESPACE}/did-webs-ts-interop:${DID_WEBS_TS_TAG}"
+
+      - name: log in to GHCR
+        if: ${{ inputs.push == 'true' }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: push DID Webs TS images
+        if: ${{ inputs.push == 'true' }}
+        run: bash scripts/docker/did-webs-ts.sh push

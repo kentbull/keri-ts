@@ -1,0 +1,15 @@
+.git
+.deno-cache
+.test-timings
+.cache
+.pytest_cache
+coverage
+dist
+build
+node_modules
+packages/*/node_modules
+packages/*/npm
+packages/*/dist
+packages/*/coverage
+*.log
+Dockerfile

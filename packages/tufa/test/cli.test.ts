@@ -180,6 +180,68 @@ Deno.test("tufa/cli - IPEX runtime knobs dispatch renamed args", () => {
   assertEquals(join.args.pollBudgetMs, 1500);
 });
 
+Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers", () => {
+  const bind = parseCommandSelection([
+    "dws",
+    "bind",
+    "-n",
+    "store",
+    "-a",
+    "issuer",
+    "--did",
+    "did:webs:example.com:EAid",
+    "--did",
+    "did:keri:EAid",
+  ]);
+  assertEquals(bind.name, "dws.bind");
+  assertEquals(bind.args.did, ["did:webs:example.com:EAid", "did:keri:EAid"]);
+
+  const generate = parseCommandSelection([
+    "dws",
+    "generate",
+    "-n",
+    "store",
+    "-a",
+    "issuer",
+    "--did",
+    "did:webs:example.com:dws:EAid",
+    "--output-dir",
+    "/tmp/dws",
+  ]);
+  assertEquals(generate.name, "dws.generate");
+  assertEquals(generate.args.outputDir, "/tmp/dws");
+
+  const resolver = parseCommandSelection([
+    "dws",
+    "resolver",
+    "-n",
+    "store",
+    "--port",
+    "7676",
+    "--static-files-dir",
+    "/tmp/web",
+    "--did-path",
+    "dws",
+    "--insecure-http",
+  ]);
+  assertEquals(resolver.name, "dws.resolver");
+  assertEquals(resolver.args.port, 7676);
+  assertEquals(resolver.args.insecureHttp, true);
+
+  const dkr = parseCommandSelection([
+    "dkr",
+    "resolve",
+    "-n",
+    "store",
+    "--did",
+    "did:keri:EAid",
+    "--oobi",
+    "http://127.0.0.1:5642/oobi/EAid",
+  ]);
+  assertEquals(dkr.name, "dkr.resolve");
+  assertEquals(dkr.args.oobi, ["http://127.0.0.1:5642/oobi/EAid"]);
+});
+
 Deno.test("tufa/cli - multisig runtime knobs dispatch renamed args", () => {
   const incept = parseCommandSelection([
     "multisig",

@@ -10,6 +10,7 @@ export { benchmarkCommand } from "./benchmark.ts";
 export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "./challenge.ts";
 export { dumpEvts } from "./db-dump.ts";
 export { delegateConfirmCommand } from "./delegate.ts";
+export { dkrResolveCommand, dwsBindCommand, dwsGenerateCommand, dwsResolveCommand } from "./did.ts";
 export { endsAddCommand } from "./ends.ts";
 export { exchangeSendCommand } from "./exchange.ts";
 export { exportCommand } from "./export.ts";

@@ -8,6 +8,8 @@
  */
 import type { AgentRuntime, ProtocolHostPolicy } from "keri-ts/runtime";
 import { buildProtocolRequestContext } from "./protocol/context.ts";
+import { classifyDidResolutionRoute, handleDidResolutionRoute } from "./protocol/endpoints/did-resolution.ts";
+import { classifyDwsArtifactRoute, handleDwsArtifactRoute } from "./protocol/endpoints/dws-artifacts.ts";
 import {
   classifyCesrIngressRoute,
   classifyGenericCesrIngressRoute,
@@ -52,6 +54,8 @@ export function classifyProtocolRoute(
   context: ProtocolRequestContext,
 ): ProtocolRoute {
   return classifyHealthRoute(context)
+    ?? classifyDidResolutionRoute(context)
+    ?? classifyDwsArtifactRoute(context)
     ?? classifyMailboxAdminRoute(context)
     ?? classifyWitnessHttpRoute(context)
     ?? classifyOobiRoute(context)
@@ -67,6 +71,10 @@ async function dispatchProtocolRoute(
   switch (route.kind) {
     case "health":
       return handleHealthRoute();
+    case "didResolution":
+      return await handleDidResolutionRoute(context, route.did);
+    case "dwsArtifact":
+      return await handleDwsArtifactRoute(context, route);
     case "ambiguousHostedPath":
       return new Response(route.message, {
         status: 409,

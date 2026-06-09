@@ -178,6 +178,11 @@ export function createCmdHandlers(): Map<string, CommandHandler> {
       lazyCommand(() => import("keri-ts/cli"), "multisigRotateCommand"),
     ],
     ["verifier.run", lazyCommand(() => import("keri-ts/cli"), "verifierRunCommand")],
+    ["dws.bind", lazyCommand(() => import("keri-ts/cli"), "dwsBindCommand")],
+    ["dws.generate", lazyCommand(() => import("keri-ts/cli"), "dwsGenerateCommand")],
+    ["dws.resolve", lazyCommand(() => import("keri-ts/cli"), "dwsResolveCommand")],
+    ["dws.resolver", lazyCommand(() => import("./dws.ts"), "dwsResolverCommand")],
+    ["dkr.resolve", lazyCommand(() => import("keri-ts/cli"), "dkrResolveCommand")],
     ["hook.demo", lazyCommand(() => import("./hook.ts"), "hookDemoCommand")],
     ["agent", lazyCommand(() => import("./agent.ts"), "agentCommand")],
     [
