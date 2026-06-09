@@ -140,6 +140,10 @@ const laneConfigs: Record<string, LaneConfig> = {
     description: "Witness interop and witness CLI coverage.",
     allowAll: true,
   },
+  "interop-did-webs": {
+    description: "Pinned Python did-webs-resolver interop matrix.",
+    allowAll: true,
+  },
   "interop-gates-b": {
     description: "Gate B ready scenarios.",
     allowAll: true,

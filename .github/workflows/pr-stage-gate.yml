@@ -49,6 +49,10 @@ env:
   KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
   KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
+  DID_WEBS_RESOLVER_GIT_URL: https://github.com/kentbull/did-webs-resolver.git
+  DID_WEBS_RESOLVER_GIT_REF: refs/heads/clean-up-deps
+  DID_WEBS_RESOLVER_GIT_SHA: 8395277f32b37129fa6ef734c9f3902bb6cbbcbc
+  DID_WEBS_RESOLVER_PYTHON_VERSION: "3.13"
   LMDB_DATA_V1: "true"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
@@ -56,6 +60,7 @@ env:
   NODE_MODULES_CACHE_KEY_PREFIX: ci-node-modules-v1
   INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v3
   KERIPY_CACHE_KEY_PREFIX: keripy-v2-mailbox-impl
+  DID_WEBS_RESOLVER_CACHE_KEY_PREFIX: did-webs-resolver-v1
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
@@ -866,6 +871,136 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  keri-interop-did-webs-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: restore Deno dependency cache
+        id: deno-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
+
+      - name: restore interop LMDB node_modules cache
+        id: interop-node-modules-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: capture KERIpy Python
+        run: echo "KERIPY_INTEROP_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+
+      - name: rebuild LMDB-js with data v1 compatibility
+        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+        run: |
+          cd packages/keri
+          deno task setup:compat-lmdb
+
+      - name: restore KERIpy virtualenv cache
+        id: keripy-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.KERIPY_VENV }}
+          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
+
+      - name: install pinned KERIpy CLI
+        if: steps.keripy-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv "${KERIPY_VENV}"
+          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
+          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
+
+      - name: add KERIpy CLI to PATH
+        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.DID_WEBS_RESOLVER_PYTHON_VERSION }}
+
+      - name: capture did-webs-resolver Python
+        run: echo "DID_WEBS_RESOLVER_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+
+      - name: restore pinned did-webs-resolver cache
+        id: did-webs-resolver-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/tufa-interop/did-webs-resolver/${{ env.DID_WEBS_RESOLVER_GIT_SHA }}
+          key: ${{ runner.os }}-${{ env.DID_WEBS_RESOLVER_CACHE_KEY_PREFIX }}-python-${{ env.DID_WEBS_RESOLVER_PYTHON_VERSION }}-${{ env.DID_WEBS_RESOLVER_GIT_SHA }}
+
+      - name: assert environment
+        env:
+          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
+          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
+          EXPECT_KLI: "true"
+        run: |
+          bash scripts/ci/assert-environment.sh
+          echo "did-webs-resolver ref: ${DID_WEBS_RESOLVER_GIT_URL}@${DID_WEBS_RESOLVER_GIT_REF}"
+          echo "did-webs-resolver sha: ${DID_WEBS_RESOLVER_GIT_SHA}"
+          "${DID_WEBS_RESOLVER_PYTHON}" --version
+
+      - name: run DID Webs interop matrix
+        run: deno task test:quality:keri:interop-did-webs
+
+      - name: upload DID Webs interop timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: keri-interop-did-webs-timings-pr-${{ github.event.pull_request.number }}
+          path: .test-timings/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  keri-interop-did-webs-docker-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: build DID Webs TS interop image
+        run: docker build --file docker/did-webs-ts/Dockerfile --target interop --tag did-webs-ts-interop:ci .
+
+      - name: run DID Webs interop matrix in Docker
+        run: |
+          mkdir -p .test-timings
+          docker run --rm \
+            --volume "${PWD}/.test-timings:/app/.test-timings" \
+            did-webs-ts-interop:ci
+
+      - name: upload Docker DID Webs interop timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: keri-interop-did-webs-docker-timings-pr-${{ github.event.pull_request.number }}
+          path: .test-timings/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
   # CESR remains a separate job because it is fast and independent; splitting it
   # out improves feedback latency and makes failures easier to localize.
   cesr-tests:
@@ -1050,6 +1185,8 @@ jobs:
       - keri-interop-parity-tests
       - keri-interop-gates-b-tests
       - keri-interop-gates-c-tests
+      - keri-interop-did-webs-tests
+      - keri-interop-did-webs-docker-tests
       - cesr-tests
       - package-smoke
     runs-on: ubuntu-latest
@@ -1073,6 +1210,8 @@ jobs:
           KERI_INTEROP_PARITY_TESTS: ${{ needs.keri-interop-parity-tests.result }}
           KERI_INTEROP_GATES_B_TESTS: ${{ needs.keri-interop-gates-b-tests.result }}
           KERI_INTEROP_GATES_C_TESTS: ${{ needs.keri-interop-gates-c-tests.result }}
+          KERI_INTEROP_DID_WEBS_TESTS: ${{ needs.keri-interop-did-webs-tests.result }}
+          KERI_INTEROP_DID_WEBS_DOCKER_TESTS: ${{ needs.keri-interop-did-webs-docker-tests.result }}
           CESR_TESTS: ${{ needs.cesr-tests.result }}
           PACKAGE_SMOKE: ${{ needs.package-smoke.result }}
         run: |
@@ -1090,6 +1229,8 @@ jobs:
           echo "keri-interop-parity-tests=${KERI_INTEROP_PARITY_TESTS}"
           echo "keri-interop-gates-b-tests=${KERI_INTEROP_GATES_B_TESTS}"
           echo "keri-interop-gates-c-tests=${KERI_INTEROP_GATES_C_TESTS}"
+          echo "keri-interop-did-webs-tests=${KERI_INTEROP_DID_WEBS_TESTS}"
+          echo "keri-interop-did-webs-docker-tests=${KERI_INTEROP_DID_WEBS_DOCKER_TESTS}"
           echo "cesr-tests=${CESR_TESTS}"
           echo "package-smoke=${PACKAGE_SMOKE}"
           [[ "${STATIC_CHECKS}" == "success" ]]
@@ -1106,5 +1247,7 @@ jobs:
           [[ "${KERI_INTEROP_PARITY_TESTS}" == "success" ]]
           [[ "${KERI_INTEROP_GATES_B_TESTS}" == "success" ]]
           [[ "${KERI_INTEROP_GATES_C_TESTS}" == "success" ]]
+          [[ "${KERI_INTEROP_DID_WEBS_TESTS}" == "success" ]]
+          [[ "${KERI_INTEROP_DID_WEBS_DOCKER_TESTS}" == "success" ]]
           [[ "${CESR_TESTS}" == "success" ]]
           [[ "${PACKAGE_SMOKE}" == "success" ]]

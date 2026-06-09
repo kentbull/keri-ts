@@ -75,6 +75,11 @@ export interface TufaWitnessHarnessOptions {
   headDirPath?: string;
 }
 
+export interface KeriPyWitnessDemoHarnessOptions {
+  readonly kliCommand?: string;
+  readonly useBase?: boolean;
+}
+
 /** Default KERIpy witness aliases shipped in the reference config set. */
 const DEFAULT_KERIPY_WITNESS_ALIASES = [
   "wan",
@@ -92,6 +97,51 @@ const DEFAULT_TUFA_WITNESS_ALIASES = [
   "twes",
   "twit",
 ] as const;
+
+const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
+  {
+    alias: "wan",
+    name: "wan",
+    pre: "BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha",
+    httpPort: 5642,
+    tcpPort: 5632,
+    httpOrigin: "http://127.0.0.1:5642",
+    tcpUrl: "tcp://127.0.0.1:5632",
+    controllerOobi: "http://127.0.0.1:5642/oobi/BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha/controller",
+    witnessOobi:
+      "http://127.0.0.1:5642/oobi/BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha/witness/BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha",
+    mailboxOobi:
+      "http://127.0.0.1:5642/oobi/BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha/mailbox/BBilc4-L3tFUnfM_wJr4S4OJanAv_VmF_dJNN6vkf2Ha",
+  },
+  {
+    alias: "wil",
+    name: "wil",
+    pre: "BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM",
+    httpPort: 5643,
+    tcpPort: 5633,
+    httpOrigin: "http://127.0.0.1:5643",
+    tcpUrl: "tcp://127.0.0.1:5633",
+    controllerOobi: "http://127.0.0.1:5643/oobi/BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM/controller",
+    witnessOobi:
+      "http://127.0.0.1:5643/oobi/BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM/witness/BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM",
+    mailboxOobi:
+      "http://127.0.0.1:5643/oobi/BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM/mailbox/BLskRTInXnMxWaGqcpSyMgo0nYbalW99cGZESrz3zapM",
+  },
+  {
+    alias: "wes",
+    name: "wes",
+    pre: "BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX",
+    httpPort: 5644,
+    tcpPort: 5634,
+    httpOrigin: "http://127.0.0.1:5644",
+    tcpUrl: "tcp://127.0.0.1:5634",
+    controllerOobi: "http://127.0.0.1:5644/oobi/BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX/controller",
+    witnessOobi:
+      "http://127.0.0.1:5644/oobi/BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX/witness/BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX",
+    mailboxOobi:
+      "http://127.0.0.1:5644/oobi/BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX/mailbox/BIKKuvBwpmDVA4Ds-EpL5bt9OqPzWPja2LigFYZN2YfX",
+  },
+];
 
 /** Pinned KERIpy fork commit used by all KLI interop tests. */
 export const KERIPY_INTEROP_COMMIT = "98b88cf73a746813a8719f05264400467a474c05";
@@ -122,6 +172,18 @@ const INTEROP_VERIFIER_FIXTURE_FILES = [
   "src/interop_verifier/data/__init__.py",
   "src/interop_verifier/data/interop-verifier-incept-no-wits.json",
 ] as const;
+
+/** Pinned Python did-webs-resolver checkout used by DID interop tests. */
+export const DID_WEBS_RESOLVER_INTEROP_REPO = "https://github.com/kentbull/did-webs-resolver.git";
+export const DID_WEBS_RESOLVER_INTEROP_REF = "refs/heads/clean-up-deps";
+export const DID_WEBS_RESOLVER_INTEROP_COMMIT = "8395277f32b37129fa6ef734c9f3902bb6cbbcbc";
+export const DID_WEBS_RESOLVER_HIO_PIN = "hio==0.6.14";
+
+export interface DidWebsResolverTooling {
+  readonly root: string;
+  readonly dwsCommand: string;
+  readonly pythonCommand: string;
+}
 
 /**
  * Runs one command and returns decoded stdout/stderr.
@@ -426,6 +488,22 @@ function interopVerifierCacheRoot(): string {
   return `${cacheHome()}/tufa-interop/interop-verifier/${INTEROP_VERIFIER_COMMIT}`;
 }
 
+function didWebsResolverCacheRoot(): string {
+  return `${cacheHome()}/tufa-interop/did-webs-resolver/${DID_WEBS_RESOLVER_INTEROP_COMMIT}`;
+}
+
+function didWebsResolverCheckoutRoot(): string {
+  return `${didWebsResolverCacheRoot()}/checkout`;
+}
+
+function didWebsResolverVenvRoot(): string {
+  return `${didWebsResolverCacheRoot()}/venv`;
+}
+
+function didWebsResolverVenvBin(name: string): string {
+  return `${didWebsResolverVenvRoot()}/bin/${name}`;
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await Deno.stat(path);
@@ -433,6 +511,189 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function gitHead(path: string): Promise<string | null> {
+  if (!(await pathExists(`${path}/.git`))) {
+    return null;
+  }
+  const result = await runCmd("git", ["rev-parse", "HEAD"], Deno.env.toObject(), path);
+  return result.code === 0 ? result.stdout.trim() : null;
+}
+
+async function ensurePinnedDidWebsResolverCheckout(
+  env: Record<string, string>,
+): Promise<string> {
+  const checkout = didWebsResolverCheckoutRoot();
+  if (await gitHead(checkout) === DID_WEBS_RESOLVER_INTEROP_COMMIT) {
+    return checkout;
+  }
+
+  if (await pathExists(checkout)) {
+    await Deno.remove(checkout, { recursive: true });
+  }
+  await Deno.mkdir(checkout, { recursive: true });
+  await requireSuccess(
+    "initialize did-webs-resolver checkout",
+    runCmdWithTimeout("git", ["init"], env, 30_000, checkout),
+  );
+  await requireSuccess(
+    "fetch pinned did-webs-resolver ref",
+    runCmdWithTimeout(
+      "git",
+      [
+        "fetch",
+        "--depth",
+        "1",
+        DID_WEBS_RESOLVER_INTEROP_REPO,
+        DID_WEBS_RESOLVER_INTEROP_REF,
+      ],
+      env,
+      120_000,
+      checkout,
+    ),
+  );
+  await requireSuccess(
+    "checkout pinned did-webs-resolver commit",
+    runCmdWithTimeout(
+      "git",
+      ["checkout", "--detach", DID_WEBS_RESOLVER_INTEROP_COMMIT],
+      env,
+      30_000,
+      checkout,
+    ),
+  );
+  const head = await gitHead(checkout);
+  if (head !== DID_WEBS_RESOLVER_INTEROP_COMMIT) {
+    throw new Error(
+      `Expected did-webs-resolver ${DID_WEBS_RESOLVER_INTEROP_COMMIT}, got ${head ?? "<unknown>"}.`,
+    );
+  }
+  return checkout;
+}
+
+async function canUseDws(
+  command: string,
+  env: Record<string, string>,
+): Promise<boolean> {
+  try {
+    const result = await runCmd(command, ["--help"], env);
+    return result.code === 0 && `${result.stdout}\n${result.stderr}`.includes("dws");
+  } catch {
+    return false;
+  }
+}
+
+async function installDidWebsResolverIntoVenv(
+  python: string,
+  checkout: string,
+  env: Record<string, string>,
+): Promise<void> {
+  const venv = didWebsResolverVenvRoot();
+  if (await pathExists(venv)) {
+    await Deno.remove(venv, { recursive: true });
+  }
+  await requireSuccess(
+    "create did-webs-resolver venv",
+    runCmdWithTimeout(python, ["-m", "venv", venv], env, 120_000),
+  );
+  const venvPython = didWebsResolverVenvBin("python");
+  if (await canRunCommand("uv", ["--version"], env)) {
+    await requireSuccess(
+      "install pinned did-webs-resolver with uv",
+      runCmdWithTimeout(
+        "uv",
+        [
+          "pip",
+          "install",
+          "--python",
+          venvPython,
+          "-e",
+          checkout,
+        ],
+        env,
+        600_000,
+      ),
+    );
+    await requireSuccess(
+      "pin did-webs-resolver hio dependency with uv",
+      runCmdWithTimeout(
+        "uv",
+        [
+          "pip",
+          "install",
+          "--python",
+          venvPython,
+          DID_WEBS_RESOLVER_HIO_PIN,
+        ],
+        env,
+        240_000,
+      ),
+    );
+  } else {
+    await requireSuccess(
+      "upgrade did-webs-resolver venv packaging tools",
+      runCmdWithTimeout(
+        venvPython,
+        ["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
+        env,
+        240_000,
+      ),
+    );
+    await requireSuccess(
+      "install pinned did-webs-resolver with pip",
+      runCmdWithTimeout(
+        venvPython,
+        ["-m", "pip", "install", "-e", checkout],
+        env,
+        600_000,
+      ),
+    );
+    await requireSuccess(
+      "pin did-webs-resolver hio dependency with pip",
+      runCmdWithTimeout(
+        venvPython,
+        ["-m", "pip", "install", DID_WEBS_RESOLVER_HIO_PIN],
+        env,
+        240_000,
+      ),
+    );
+  }
+}
+
+/** Resolve a pinned Python `dws` executable for did:webs interop. */
+export async function ensurePinnedDidWebsResolver(
+  env: Record<string, string>,
+): Promise<DidWebsResolverTooling> {
+  const checkout = await ensurePinnedDidWebsResolverCheckout(env);
+  const marker = `${didWebsResolverCacheRoot()}/PIN`;
+  const markerValue = `${DID_WEBS_RESOLVER_INTEROP_COMMIT}\n${DID_WEBS_RESOLVER_HIO_PIN}`;
+  const dws = didWebsResolverVenvBin("dws");
+  const markerMatches = await pathExists(marker) ? (await Deno.readTextFile(marker)).trim() === markerValue : false;
+  if (markerMatches && await canUseDws(dws, env)) {
+    return {
+      root: checkout,
+      dwsCommand: dws,
+      pythonCommand: didWebsResolverVenvBin("python"),
+    };
+  }
+
+  const python = await resolveDidWebsResolverPython(env);
+  const installEnv = {
+    ...pyenvProbeEnv(env),
+    PIP_DISABLE_PIP_VERSION_CHECK: "1",
+  };
+  await installDidWebsResolverIntoVenv(python, checkout, installEnv);
+  if (!(await canUseDws(dws, env))) {
+    throw new Error(`Pinned did-webs-resolver install did not produce a runnable dws at ${dws}.`);
+  }
+  await Deno.mkdir(didWebsResolverCacheRoot(), { recursive: true });
+  await Deno.writeTextFile(marker, `${markerValue}\n`);
+  return {
+    root: checkout,
+    dwsCommand: dws,
+    pythonCommand: didWebsResolverVenvBin("python"),
+  };
 }
 
 /** Resolve the checked-in KERIpy witness config directory. */
@@ -482,7 +743,7 @@ export async function waitForHealth(port: number): Promise<void> {
 }
 
 /** Wait until one specific HTTP URL responds with any 2xx status. */
-async function waitForHttpOk(url: string): Promise<void> {
+export async function waitForHttpOk(url: string): Promise<void> {
   const deadline = Date.now() + 15_000;
   let lastError = `HTTP probe did not return 2xx for ${url}`;
   while (Date.now() < deadline) {
@@ -502,6 +763,36 @@ async function waitForHttpOk(url: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error(lastError);
+}
+
+async function tcpPortIsListening(port: number): Promise<boolean> {
+  try {
+    const connection = await Deno.connect({
+      hostname: "127.0.0.1",
+      port,
+    });
+    connection.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function assertTcpPortsFree(
+  ports: readonly number[],
+  label: string,
+): Promise<void> {
+  const occupied: number[] = [];
+  for (const port of ports) {
+    if (await tcpPortIsListening(port)) {
+      occupied.push(port);
+    }
+  }
+  if (occupied.length > 0) {
+    throw new Error(
+      `${label} expected free ports but these are already listening: ${occupied.join(", ")}`,
+    );
+  }
 }
 
 /** Wait until a KERIpy witness exposes either controller or witness OOBI HTTP. */
@@ -696,6 +987,54 @@ async function resolvePython314Command(
 
   throw new Error(
     `KERIpy interop requires Python >= 3.14. Tried: ${candidates.join(", ")}`,
+  );
+}
+
+async function canUsePythonForDidWebsResolver(
+  command: string,
+  env: Record<string, string>,
+): Promise<boolean> {
+  try {
+    const result = await runCmd(command, ["--version"], env);
+    const version = parsePythonVersion(`${result.stdout}\n${result.stderr}`);
+    return result.code === 0 && !!version
+      && version.major === 3
+      && version.minor >= 12
+      && version.minor < 14;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveDidWebsResolverPython(
+  env: Record<string, string>,
+): Promise<string> {
+  const probeEnv = pyenvProbeEnv(env);
+  const candidates: string[] = [];
+  const explicit = Deno.env.get("DID_WEBS_RESOLVER_PYTHON");
+  if (explicit) {
+    candidates.push(explicit);
+  }
+
+  try {
+    const pyenvWhich = await runCmd("pyenv", ["which", "python"], probeEnv);
+    const resolved = pyenvWhich.stdout.trim();
+    if (pyenvWhich.code === 0 && resolved.length > 0) {
+      candidates.push(resolved);
+    }
+  } catch {
+    // Fall through to PATH candidates.
+  }
+
+  candidates.push("python3.13", "python3.12", "python3");
+  for (const candidate of candidates) {
+    if (await canUsePythonForDidWebsResolver(candidate, probeEnv)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `did-webs-resolver requires Python >= 3.12 and < 3.14. Tried: ${candidates.join(", ")}`,
   );
 }
 
@@ -1211,6 +1550,59 @@ export async function startKeriPyWitnessHarness(
     ctx.kliCommand,
     nodes,
     children,
+  );
+}
+
+/** Start KERIpy's fixed-port demo witness topology with its built-in curls config. */
+export async function startKeriPyWitnessDemoHarness(
+  ctx: InteropContext,
+  options: KeriPyWitnessDemoHarnessOptions = {},
+): Promise<KeriPyWitnessHarness> {
+  await ensurePinnedKeripyFixtures();
+  const home = await Deno.makeTempDir({ prefix: "keripy-witness-demo-home-" });
+  const base = `interop-demo-wits-${crypto.randomUUID().slice(0, 8)}`;
+  const kliCommand = options.kliCommand ?? ctx.kliCommand;
+  const useBase = options.useBase ?? true;
+  const env = {
+    ...ctx.env,
+    HOME: home,
+  };
+  await assertTcpPortsFree(
+    KERIPY_DEMO_WITNESS_NODES.flatMap((node) => [node.httpPort, node.tcpPort]),
+    "KERIpy witness demo",
+  );
+  const args = ["witness", "demo"];
+  if (useBase) {
+    args.push("--base", base);
+  }
+  const child = spawnChild(
+    kliCommand,
+    args,
+    env,
+    keripyInteropFixtureRoot(),
+  );
+
+  try {
+    for (const node of KERIPY_DEMO_WITNESS_NODES) {
+      await waitForHttpOk(`${node.httpOrigin}/oobi/${node.pre}`);
+      await waitForHttpOk(node.controllerOobi);
+      await waitForHttpOk(node.witnessOobi);
+    }
+  } catch (error) {
+    const details = await stopChild(child);
+    throw new Error(
+      `KERIpy witness demo did not become ready: ${error instanceof Error ? error.message : String(error)}\n${details}`,
+    );
+  }
+
+  return new KeriPyWitnessHarness(
+    home,
+    useBase ? base : "",
+    "",
+    env,
+    kliCommand,
+    KERIPY_DEMO_WITNESS_NODES,
+    [child],
   );
 }
 

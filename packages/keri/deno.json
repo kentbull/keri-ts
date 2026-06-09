@@ -45,6 +45,7 @@
     "test:quality:interop-delegation": "bash ../../scripts/ci/run-keri-test-group.sh interop-delegation",
     "test:quality:interop-mailbox-slow": "bash ../../scripts/ci/run-keri-test-group.sh interop-mailbox-slow",
     "test:quality:interop-witness": "bash ../../scripts/ci/run-keri-test-group.sh interop-witness",
+    "test:quality:interop-did-webs": "bash ../../scripts/ci/run-keri-test-group.sh interop-did-webs",
     "test:quality:interop-gates-b": "bash ../../scripts/ci/run-keri-test-group.sh interop-gates-b",
     "test:quality:interop-gates-c": "bash ../../scripts/ci/run-keri-test-group.sh interop-gates-c",
     "test:slow:runtime": "bash ../../scripts/ci/run-keri-test-group.sh runtime-slow",
