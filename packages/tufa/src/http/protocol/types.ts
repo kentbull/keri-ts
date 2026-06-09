@@ -29,6 +29,8 @@ export interface ProtocolRequestContext {
 /** Path-level route decision before any request body is read. */
 export type ProtocolRoute =
   | { kind: "health" }
+  | { kind: "didResolution"; did: string }
+  | { kind: "dwsArtifact"; aid: string; artifact: "did.json" | "keri.cesr" }
   | { kind: "mailboxAdmin"; mailboxAid: string }
   | { kind: "witnessReceiptsPost"; witnessHab: Hab }
   | { kind: "witnessReceiptsGet"; witnessHab: Hab }

@@ -33,7 +33,13 @@ import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "./agent-runtime.ts";
-import { buildCesrRequest, inspectCesrRequest, splitCesrStream } from "./cesr-http.ts";
+import {
+  buildCesrRequest,
+  CESR_CONTENT_TYPE,
+  inspectCesrRequest,
+  KERIPY_CESR_JSON_CONTENT_TYPE,
+  splitCesrStream,
+} from "./cesr-http.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopesFromFrames } from "./parsering.ts";
@@ -41,6 +47,11 @@ import { envelopesFromFrames } from "./parsering.ts";
 const WitnessReceiptPollAttempts = 20;
 const WitnessReceiptPollDelayMs = 100;
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
+const KERIPY_CONTENT_TYPE_ERROR = "content type";
+const WITNESS_HTTP_CONTENT_TYPES = [
+  CESR_CONTENT_TYPE,
+  KERIPY_CESR_JSON_CONTENT_TYPE,
+] as const;
 
 /** Supported witness-auth payloads keyed by witness AID. */
 export type WitnessAuthMap = Record<string, string>;
@@ -610,25 +621,53 @@ export function* sendWitnessMessage(
   }
 
   for (const part of splitCesrStream(bytes)) {
-    const request = buildCesrRequest(part, {
-      destination: witness,
-    });
-    const { response } = yield* fetchResponseHandle(url, {
-      method: "POST",
-      headers: {
-        ...request.headers,
-        ...(auth ? { Authorization: auth } : {}),
-      },
-      body: request.body,
-    });
-    if (!response.ok) {
+    let delivered = false;
+    let lastStatus = 0;
+    let lastText = "";
+    for (const contentType of WITNESS_HTTP_CONTENT_TYPES) {
+      const request = buildCesrRequest(part, {
+        contentType,
+        destination: witness,
+      });
+      const { response } = yield* fetchResponseHandle(url, {
+        method: "POST",
+        headers: {
+          ...request.headers,
+          ...(auth ? { Authorization: auth } : {}),
+        },
+        body: request.body,
+      });
+      if (response.ok) {
+        yield* closeResponseBody(response);
+        delivered = true;
+        break;
+      }
       const body = yield* readResponseBytes(response);
+      lastStatus = response.status;
+      lastText = new TextDecoder().decode(body);
+      if (isKeripyContentTypeRejection(response.status, contentType, lastText)) {
+        continue;
+      }
       throw new ValidationError(
-        `Witness delivery to ${witness} failed with HTTP ${response.status}: ${new TextDecoder().decode(body)}`,
+        `Witness delivery to ${witness} failed with HTTP ${response.status}: ${lastText}`,
       );
     }
-    yield* closeResponseBody(response);
+    if (!delivered) {
+      throw new ValidationError(
+        `Witness delivery to ${witness} failed with HTTP ${lastStatus}: ${lastText}`,
+      );
+    }
   }
+}
+
+function isKeripyContentTypeRejection(
+  status: number,
+  contentType: string,
+  responseText: string,
+): boolean {
+  return status === 406
+    && contentType === CESR_CONTENT_TYPE
+    && responseText.toLowerCase().includes(KERIPY_CONTENT_TYPE_ERROR);
 }
 
 /** Send one raw CESR stream to a TCP witness and close the socket after flush. */
@@ -722,39 +761,50 @@ function* postWitnessReceiptEndpoint(
     };
   }
 
-  const request = buildCesrRequest(message, {
-    destination: witness,
-  });
   const responseUrl = new URL(url);
   responseUrl.pathname = `${responseUrl.pathname.replace(/\/+$/, "") || ""}/receipts`;
-  const { response } = yield* fetchResponseHandle(responseUrl.toString(), {
-    method: "POST",
-    headers: {
-      ...request.headers,
-      ...(auth ? { Authorization: auth } : {}),
-    },
-    body: request.body,
-  });
-  if (response.status === 202) {
-    yield* closeResponseBody(response);
-    return { kind: "escrow", status: 202 };
-  }
-  if (response.status !== 200) {
+  let lastStatus = 0;
+  let lastText = "";
+  for (const contentType of WITNESS_HTTP_CONTENT_TYPES) {
+    const request = buildCesrRequest(message, {
+      contentType,
+      destination: witness,
+    });
+    const { response } = yield* fetchResponseHandle(responseUrl.toString(), {
+      method: "POST",
+      headers: {
+        ...request.headers,
+        ...(auth ? { Authorization: auth } : {}),
+      },
+      body: request.body,
+    });
+    if (response.status === 202) {
+      yield* closeResponseBody(response);
+      return { kind: "escrow", status: 202 };
+    }
+    if (response.status === 200) {
+      const body = yield* readResponseBytes(response);
+      const inspected = inspectReceiptMessage(body);
+      return {
+        kind: "accepted",
+        status: 200,
+        body,
+        wigers: inspected.wigers,
+        cigars: inspected.cigars,
+      };
+    }
     const body = yield* readResponseBytes(response);
-    return {
-      kind: "reject",
-      status: response.status,
-      message: new TextDecoder().decode(body),
-    };
+    lastStatus = response.status;
+    lastText = new TextDecoder().decode(body);
+    if (isKeripyContentTypeRejection(response.status, contentType, lastText)) {
+      continue;
+    }
+    return { kind: "reject", status: response.status, message: lastText };
   }
-  const body = yield* readResponseBytes(response);
-  const inspected = inspectReceiptMessage(body);
   return {
-    kind: "accepted",
-    status: 200,
-    body,
-    wigers: inspected.wigers,
-    cigars: inspected.cigars,
+    kind: "reject",
+    status: lastStatus,
+    message: lastText,
   };
 }
 
@@ -895,9 +945,7 @@ export class Receiptor {
         }
         statuses[witness] = response.status;
         if (response.kind !== "accepted") {
-          const detail = response.kind === "reject"
-            ? response.message
-            : "receipt remained escrowed";
+          const detail = response.kind === "reject" ? response.message : "receipt remained escrowed";
           throw new ValidationError(
             `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
           );
@@ -1061,9 +1109,7 @@ export class WitnessReceiptor {
     }
     const eventSn = sn ?? kever.sn;
     const said = this.hby.db.kels.getLast(pre, eventSn);
-    const currentWitnessCount = said
-      ? this.hby.db.wigs.get(dgKey(pre, said)).length
-      : 0;
+    const currentWitnessCount = said ? this.hby.db.wigs.get(dgKey(pre, said)).length : 0;
     if (!this.force && currentWitnessCount >= kever.wits.length) {
       const statuses = Object.fromEntries(
         kever.wits.map((witness: string) => [witness, 200]),
