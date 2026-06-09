@@ -60,6 +60,7 @@
     "test:quality:keri:interop-delegation": "cd packages/keri && deno task test:quality:interop-delegation",
     "test:quality:keri:interop-mailbox-slow": "cd packages/keri && deno task test:quality:interop-mailbox-slow",
     "test:quality:keri:interop-witness": "cd packages/keri && deno task test:quality:interop-witness",
+    "test:quality:keri:interop-did-webs": "cd packages/keri && deno task test:quality:interop-did-webs",
     "test:quality:keri:interop-gates-b": "cd packages/keri && deno task test:quality:interop-gates-b",
     "test:quality:keri:interop-gates-c": "cd packages/keri && deno task test:quality:interop-gates-c",
     "test:integration:server": "cd packages/tufa && deno task test:integration:server",
@@ -69,7 +70,11 @@
     "tephra:annotate": "cd packages/cesr && deno task annotate",
     "tephra:validate": "cd packages/cesr && deno task validate",
     "tephra:build:npm": "deno task version:generate && cd packages/cesr && deno task build:npm",
-    "npm:build:all": "deno task build:npm && deno task tephra:build:npm && deno task tufa:build:npm"
+    "npm:build:all": "deno task build:npm && deno task tephra:build:npm && deno task tufa:build:npm",
+    "docker:did-webs-ts:build": "bash scripts/docker/did-webs-ts.sh build",
+    "docker:did-webs-ts:test": "bash scripts/docker/did-webs-ts.sh test",
+    "docker:did-webs-ts:push": "bash scripts/docker/did-webs-ts.sh push",
+    "docker:did-webs-ts:build-push": "bash scripts/docker/did-webs-ts.sh build-push"
   },
   "fmt": {
     "include": [
