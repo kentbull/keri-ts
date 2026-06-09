@@ -1,5 +1,12 @@
 # cesr-ts
 
+## 0.9.0
+
+### Minor Changes
+
+- Align attachment counter serialization with KERIpy genus-version handling,
+  including `Counter.makeGVC` and `Counter.enclose`.
+
 ## 0.8.0
 
 ### Minor Changes
