@@ -4,11 +4,15 @@
 
 ### Minor Changes
 
+- Add `tufa dws bind`, `tufa dws generate`, `tufa dws resolve`,
+  `tufa dws resolver`, `tufa dkr resolve`, static/dynamic did:webs artifact
+  hosting, and Universal Resolver `/1.0/identifiers` routing.
 - 888bd90: Rename IPEX and multisig runtime CLI controls to `--approval-timeout`, `--poll-turns`, and `--poll-budget-ms`, and validate those values before command runtime startup.
 - 888bd90: Add public multisig lifecycle commands plus multisig-aware VC and IPEX workflows, including group registry inception, credential issuance, grant approval, and counter profile selection.
 
 ### Patch Changes
 
+- Add documentation for IPEX and VC features.
 - 888bd90: Remove OOBI URL-derived endpoint hint persistence and reject missing Tufa startup endpoint config instead of synthesizing `/loc/scheme` or `/end/role/add` state.
 - 888bd90: Add explicit multisig mailbox authorization support through `tufa mailbox add --multisig-mode` and share the group endpoint-role proposal path with `tufa ends add` and `tufa multisig rpy`.
 
