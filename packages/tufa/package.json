@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/tufa",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Trust Utilities for Agents CLI application package",
   "license": "Apache-2.0",
   "repository": {

@@ -1,5 +1,11 @@
 # keri-ts
 
+## 0.9.1
+
+### Patch Changes
+
+- 961ddd7: Align did:webs keri.cesr generation with the Python did-webs-resolver artifact shape so controller KEL replay is emitted once before endpoint and designated-alias material.
+
 ## 0.9.0
 
 ### Minor Changes
