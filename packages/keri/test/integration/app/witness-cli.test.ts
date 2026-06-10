@@ -1,4 +1,4 @@
-// @file-test-lane interop-witness
+// @file-test-lane interop-witness-cli
 
 import { run } from "effection";
 import { assertEquals, assertExists, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";

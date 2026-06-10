@@ -136,8 +136,12 @@ const laneConfigs: Record<string, LaneConfig> = {
     maxFilesPerRun: 2,
     maxJobs: 2,
   },
-  "interop-witness": {
-    description: "Witness interop and witness CLI coverage.",
+  "interop-witness-main": {
+    description: "Witness interop (main KLI/Tufa receipting scenarios).",
+    allowAll: true,
+  },
+  "interop-witness-cli": {
+    description: "Witness CLI integration coverage.",
     allowAll: true,
   },
   "interop-did-webs": {
@@ -181,6 +185,14 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "app-fast-isolated",
     ],
   },
+  "interop-witness": {
+    description:
+      "Public group alias over the split witness interop lanes (main + cli) for local command and backward compatibility.",
+    lanes: [
+      "interop-witness-main",
+      "interop-witness-cli",
+    ],
+  },
   quality: {
     description: "Truthful default path with representative runtime and interop coverage.",
     lanes: [
@@ -193,7 +205,8 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "app-stateful-a",
       "app-stateful-b",
       "interop-parity",
-      "interop-witness",
+      "interop-witness-main",
+      "interop-witness-cli",
       "interop-gates-b",
       "interop-gates-c",
     ],
@@ -229,7 +242,8 @@ const groupDefinitions: Record<string, GroupDefinition> = {
       "app-stateful-a",
       "app-stateful-b",
       "interop-parity",
-      "interop-witness",
+      "interop-witness-main",
+      "interop-witness-cli",
       "interop-gates-b",
       "interop-gates-c",
       "interop-acdc-extended",
