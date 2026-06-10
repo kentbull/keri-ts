@@ -70,6 +70,10 @@ release, and interoperability operations.
 22. Package smoke CI should install the local npm tarballs once per runtime
     image and exercise both library and CLI surfaces from that installed graph.
     Keep LMDB-v1 interop `node_modules` cached behind its own key boundary.
+23. DID Webs hosting belongs at the Tufa edge. The Universal Resolver route
+    `/1.0/identifiers/{did}` and `did.json`/`keri.cesr` artifact routes share
+    the protocol handler, while dynamic DID Webs hosting requires explicit
+    hosted-prefix selection.
 
 ## Use This Doc For
 
@@ -105,6 +109,9 @@ release, and interoperability operations.
 9. Before retrying `@keri-ts/tufa` publication, fix npm registry ownership or
    token permissions for the `@keri-ts` scope; repository-side release checks
    are already capable of proving the package artifact.
+10. Keep Python did:webs and did:keri interop rows opt-in unless the CI job
+    provisions the external Python resolver/KERIpy topology required for real
+    witnessed-AID evidence.
 
 ## Milestone Rollup
 
@@ -154,3 +161,15 @@ release, and interoperability operations.
   `node_modules` in separate cache families.
 - Package smoke checks install the local tarballs once per Node image and then
   exercise both `keri-ts` exports and the `@keri-ts/tufa` CLI from that graph.
+
+### 2026-06-09 - DID Resolver Hosting Landed In Tufa
+
+- Tufa now has a long-lived `dws resolver` service with Universal Resolver
+  `/1.0/identifiers` dispatch plus static and explicit dynamic artifact
+  hosting for DID Webs.
+- Resolver route parsing must tolerate both raw DID path parameters and fully
+  URI-encoded DID parameters without decoding a method-specific host-port `%3A`
+  into a raw DID colon.
+- Cross-implementation DID Webs and lower-priority DID KERI resolver rows are
+  present as opt-in command-driven interop gates until a Python resolver harness
+  is wired into CI.

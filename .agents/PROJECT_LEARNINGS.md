@@ -11,7 +11,10 @@ stay short enough to reread at session start.
    readability, and regression preservation, not parser re-architecture.
 2. KERI Phase 2 is parity-first around DB closure, runtime/key-management
    behavior, and practical `kli`/`tufa` interoperability.
-3. The learnings layer itself should stay compact; when it grows noisy, rewrite
+3. DID Webs work is now a first-class hosted identity surface: KERI/VDR state
+   generates `did.json` plus `keri.cesr`, Tufa owns static/dynamic hosting, and
+   the DA ACDC set is the source for `alsoKnownAs`.
+4. The learnings layer itself should stay compact; when it grows noisy, rewrite
    it instead of appending another diary section.
 
 ## Topic Learnings Index
@@ -96,7 +99,11 @@ stay short enough to reread at session start.
 21. Maintainer docs now have a ratcheted export-surface check for selected
     recent modules; expand that list as future documentation slices close more
     exported API gaps.
-22. The learnings layer is part of project hygiene: compact docs when they grow
+22. DID Webs resolution is not just hosted JSON lookup: resolution must ingest
+    `keri.cesr`, rebuild the DID document from KERI/VDR state, and compare it
+    with the hosted `did.json`; Universal Resolver path decoding must preserve
+    method-specific `%3A` host-port encodings.
+23. The learnings layer is part of project hygiene: compact docs when they grow
     noisy instead of preserving every step as prose.
 
 ## Current Follow-Ups
@@ -153,6 +160,17 @@ stay short enough to reread at session start.
   kinds.
 - This learnings layer was compacted so startup context stays small enough to
   reread every thread.
+
+### 2026-06-09 - DID Webs Became A Tufa Runtime Surface
+
+- `keri-ts/runtime` now exposes DID Webs and DID KERI resolver/generator helpers,
+  while `packages/tufa` owns the user-facing `dws`/`dkr` CLI and Universal
+  Resolver HTTP edge.
+- Static artifacts and dynamic hosting share the same generator; dynamic hosting
+  must remain explicit by hosted prefix so a long-lived host does not publish
+  every local AID by accident.
+- DID Webs `alsoKnownAs` is derived only from active, unrevoked designated-alias
+  ACDCs issued from the bound AID.
 
 ## Templates
 

@@ -83,6 +83,10 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
     protocol-aware. Direct delivery can start with ACDC bodies, so request
     splitting must smell/parse the first SAD instead of constructing
     `SerderKERI` unconditionally.
+20. DID Webs designated aliases are ordinary registry-backed ACDCs. The public
+    DA schema must live as a JSON resource, active aliases come only from
+    accepted `iss`/`bis` TEL state, and rebinding means revoking currently
+    active DA credentials before issuing the replacement.
 
 ## Use This Doc For
 
@@ -269,3 +273,11 @@ Keep this file focused on durable ACDC rules, not step-by-step task history.
 - Sally 1.0.4/KERIpy 1.2.13 direct delivery requires legacy attachment counter
   framing, and Sally schema OOBIs should be resolved without `--force` because
   schema OOBIs do not yield controller CIDs.
+
+### 2026-06-09 - Designated-Alias Binding Joined The VDR Flow
+
+- DID Webs DA binding uses the normal `Regery`/`Registry`/`Credentialer`
+  orchestration path instead of a DID-specific credential side channel.
+- The DA schema is checked from a regular JSON resource by SAID before pinning,
+  and both DID document generation and `keri.cesr` artifact generation query
+  only unrevoked active DA credentials.

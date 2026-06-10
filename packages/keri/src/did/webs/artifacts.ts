@@ -4,15 +4,11 @@
  * `did.json` is a hosted projection. `keri.cesr` is the replay stream a clean
  * resolver needs to rebuild the same DID document from KERI/VDR state.
  */
-import {
-  concatBytes,
-  Diger,
-  Prefixer,
-} from "../../../../cesr/mod.ts";
+import { concatBytes, Diger, Prefixer } from "../../../../cesr/mod.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Hab } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { Roles } from "../../core/roles.ts";
+import { type Role, Roles } from "../../core/roles.ts";
 import { Reger } from "../../db/reger.ts";
 import { serializeCredential } from "../../vdr/credentialing.ts";
 import { listActiveDesignatedAliasCredentials, pinDesignatedAliasesSchema } from "./designated-aliases.ts";
@@ -84,8 +80,29 @@ export function generateDidWebsCesr(
 
 function endpointMessages(hab: Hab, aid: string): Uint8Array[] {
   const messages: Uint8Array[] = [];
-  for (const role of [Roles.witness, Roles.agent, Roles.mailbox, Roles.controller]) {
-    messages.push(hab.replyEndRole(aid, role));
+  const kever = hab.db.getKever(aid, { refresh: true });
+  for (const eid of kever?.wits ?? []) {
+    messages.push(hab.loadLocScheme(eid));
+    messages.push(hab.loadEndRole(eid, eid, Roles.controller));
+  }
+  messages.push(...storedEndpointMessages(hab, aid, Roles.agent));
+  messages.push(...storedEndpointMessages(hab, aid, Roles.mailbox));
+  return messages;
+}
+
+function storedEndpointMessages(hab: Hab, aid: string, role: Role): Uint8Array[] {
+  const messages: Uint8Array[] = [];
+  for (
+    const [keys, end] of hab.db.ends.getTopItemIter([aid, role], {
+      topive: true,
+    })
+  ) {
+    const eid = keys[2];
+    if (!eid || !(end.allowed || end.enabled)) {
+      continue;
+    }
+    messages.push(hab.loadLocScheme(eid));
+    messages.push(hab.loadEndRole(aid, eid, role));
   }
   return messages;
 }
