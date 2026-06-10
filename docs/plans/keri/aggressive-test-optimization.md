@@ -209,7 +209,7 @@
 - `interop-parity`
   - basic KERIpy/TUFA parity slice from `interop-kli-tufa.test.ts`
 - `interop-witness`
-  - witness interop plus local witness CLI integration coverage
+  - witness interop plus local witness CLI integration coverage (public group alias over the split concrete lanes `interop-witness-main` and `interop-witness-cli` for CI parallelization; public commands unchanged)
 - `interop-gates-b`
   - Gate B ready scenarios
 - `interop-gates-c`

@@ -67,9 +67,7 @@ deno task test:quality
   - `interop-acdc-extended` and `interop-acdc-deep` are longer ACDC parity
     lanes for manual or explicit slow runs. Use `extended-interop` to run the
     long interop bundle from one target.
-  - `interop-witness` is the dedicated witness receipting parity lane. It uses
-    explicit randomized KERIpy witness processes instead of the fixed-port
-    `kli witness demo` topology.
+  - `interop-witness` is the dedicated witness receipting parity lane (now a public `GroupDefinition` alias over `interop-witness-main` + `interop-witness-cli` for CI parallelization). It uses explicit randomized KERIpy witness processes instead of the fixed-port `kli witness demo` topology. Public commands/behavior unchanged.
 - Repo-root `deno task test:integration:server` now runs the `tufa` package
   server integration seam rather than a `keri-ts`-owned host surface.
 - Parallel lanes auto-detect available CPUs and cap themselves conservatively by

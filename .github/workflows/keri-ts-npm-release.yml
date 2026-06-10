@@ -988,3 +988,47 @@ jobs:
             exit 1
           fi
           npm publish "$TARBALL" --access public
+
+  # Create GitHub Release *after* successful npm publish, using the exact bytes
+  # that were published to npm (via npm pack of the published version).
+  # This ensures the GH release is a post-publish record/attachment of the
+  # successful npm artifact.
+  create-github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/keri/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: fetch the tarball that was successfully published to npm
+        id: published
+        shell: bash
+        run: |
+          npm pack keri-ts@${{ steps.package.outputs.version }} --pack-destination ./from-npm/
+          TARBALL=$(ls ./from-npm/keri-ts-*.tgz | head -1)
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: create GitHub Release with the published tarball attached
+        # On tag push: full release.
+        # The tarball attached is the one obtained from the npm registry post-publish.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TITLE="keri-ts ${{ steps.package.outputs.version }}"
+          # Use the published tarball
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --generate-notes \
+            --attach "${{ steps.published.outputs.tarball }}"
+
+      # Note: for workflow_dispatch publish=false, this job would not run (since publish job skips).
+      # For publish=true on dispatch, it would create the release.
