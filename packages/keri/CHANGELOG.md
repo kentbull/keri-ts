@@ -1,5 +1,17 @@
 # keri-ts
 
+## 0.10.0
+
+### Minor Changes
+
+- 1c31b6e: Use new lifecycle context helpers for managing Habery, Regery, Hab, Runtime, and other objects CLI commands depend on'
+- 85d5a53: Clean up mailbox and witness CLI and workflow architectural layering.
+
+### Patch Changes
+
+- d1ebfb6: Refactored the CLI layer to use a unified dispatch function, registerDispatchedCommand, for consistency of approach and style.
+- 1f14f5c: Fixed the build process to use explicit public package boundaries and upgraded libsodium-wrappers to 0.8.4
+
 ## 0.9.1
 
 ### Patch Changes
