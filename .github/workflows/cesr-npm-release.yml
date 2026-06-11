@@ -216,6 +216,6 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           TITLE="cesr-ts ${{ steps.package.outputs.version }}"
           gh release create "$TAG" \
+            "${{ steps.published.outputs.tarball }}" \
             --title "$TITLE" \
-            --generate-notes \
-            --attach "${{ steps.published.outputs.tarball }}"
+            --generate-notes

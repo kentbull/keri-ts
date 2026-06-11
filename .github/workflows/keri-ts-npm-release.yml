@@ -1035,9 +1035,9 @@ jobs:
           TITLE="keri-ts ${{ steps.package.outputs.version }}"
           # Use the published tarball
           gh release create "$TAG" \
+            "${{ steps.published.outputs.tarball }}" \
             --title "$TITLE" \
-            --generate-notes \
-            --attach "${{ steps.published.outputs.tarball }}"
+            --generate-notes
 
       # Note: for workflow_dispatch publish=false, this job would not run (since publish job skips).
       # For publish=true on dispatch, it would create the release.

@@ -250,6 +250,6 @@ jobs:
           # Write notes to file for gh
           echo -e "$NOTES" > /tmp/release-notes.md
           gh release create "$TAG" \
+            "${{ steps.published.outputs.tarball }}" \
             --title "$TITLE" \
-            --notes-file /tmp/release-notes.md \
-            --attach "${{ steps.published.outputs.tarball }}"
+            --notes-file /tmp/release-notes.md
