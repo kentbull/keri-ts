@@ -11,7 +11,7 @@
  * - approval ordering and event selection come from the delegated-event escrows
  *   and the delegator's own KEL state
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { Diger, type SerderKERI } from "../../../../cesr/mod.ts";
 import type { CueEmission } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -19,7 +19,6 @@ import { dgKey } from "../../db/core/keys.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import {
   type AgentRuntime,
-  createAgentRuntime,
   type CueSink,
   processRuntimeTurn,
   processRuntimeUntil,
@@ -32,7 +31,7 @@ import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../query-transport.ts";
 import { type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withHabAndAgentRuntime } from "./common/context.ts";
 
 function isGroupHab(hby: Habery, hab: Hab): boolean {
   return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
@@ -485,39 +484,15 @@ export function* delegateConfirmCommand(
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      confirmArgs.name!,
-      confirmArgs.base ?? "",
-      confirmArgs.passcode,
-      false,
-      confirmArgs.headDirPath,
-      {
-        compat: confirmArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(confirmArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${confirmArgs.alias!} is invalid`);
-      }
-      if (!hab.kever) {
-        throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
-      }
-
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      try {
-        yield* performDelegationApproval(hby, hab, runtime, confirmArgs);
-      } finally {
-        yield* runtime.close();
-      }
-    } finally {
-      yield* hby.close();
+  yield* withHabAndAgentRuntime(confirmArgs, confirmArgs.alias, {
+    compat: confirmArgs.compat ?? false,
+    readonly: false,
+    skipConfig: true,
+    skipSignator: true,
+  }, function*({ hby, hab, runtime }) {
+    if (!hab.kever) {
+      throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
     }
+    yield* performDelegationApproval(hby, hab, runtime, confirmArgs);
   });
-
-  yield* doer;
 }

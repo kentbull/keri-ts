@@ -229,6 +229,46 @@ Deno.test("tufa/cli - interact help advertises the Tufa-owned interact surface",
   assertStringIncludes(text, "--code-time <time>");
 });
 
+Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => {
+  const confirm = parseCommandSelection([
+    "delegate",
+    "confirm",
+    "-n",
+    "store",
+    "-a",
+    "delegator",
+    "-b",
+    "base",
+    "--compat",
+    "--head-dir",
+    "/tmp/tufa",
+    "-p",
+    "passcode",
+    "--interact",
+    "--auto",
+    "-z",
+    "--code",
+    "Bwitness:123456",
+    "--code-time",
+    "2026-06-11T17:00:00.000Z",
+  ]);
+
+  assertEquals(confirm.name, "delegate.confirm");
+  assertEquals(confirm.args, {
+    name: "store",
+    alias: "delegator",
+    base: "base",
+    compat: true,
+    headDirPath: "/tmp/tufa",
+    passcode: "passcode",
+    interact: true,
+    auto: true,
+    authenticate: true,
+    code: ["Bwitness:123456"],
+    codeTime: "2026-06-11T17:00:00.000Z",
+  });
+});
+
 Deno.test("tufa/cli - IPEX runtime knobs dispatch renamed args", () => {
   const grant = parseCommandSelection([
     "ipex",
