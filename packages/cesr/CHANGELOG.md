@@ -1,5 +1,11 @@
 # cesr-ts
 
+## 0.9.1
+
+### Patch Changes
+
+- 1f14f5c: Fixed the build process to use explicit public package boundaries and upgraded libsodium-wrappers to 0.8.4
+
 ## 0.9.0
 
 ### Minor Changes
