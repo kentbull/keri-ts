@@ -1008,10 +1008,9 @@ jobs:
           fi
           npm publish "$TARBALL" --access public
 
-  # Create GitHub Release *after* successful npm publish, using the exact bytes
-  # that were published to npm (via npm pack of the published version).
-  # This ensures the GH release is a post-publish record/attachment of the
-  # successful npm artifact.
+  # Create GitHub Release *after* successful npm publish, using the exact
+  # artifact consumed by the publish job. This keeps the GH release as a
+  # post-publish record without racing npm registry propagation.
   create-github-release:
     needs: publish
     runs-on: ubuntu-latest
@@ -1027,32 +1026,31 @@ jobs:
           VERSION=$(node -p "require('./packages/keri/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: fetch the tarball that was successfully published to npm
+      - name: download the exact published artifact tarball
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: keri-ts-npm-${{ steps.package.outputs.version }}
+          path: ./release-tarball
+
+      - name: select release artifact tarball
         id: published
         shell: bash
         run: |
-          mkdir -p ./from-npm
-          for attempt in {1..12}; do
-            if npm pack keri-ts@${{ steps.package.outputs.version }} --pack-destination ./from-npm/; then
-              break
-            fi
-            if [[ "${attempt}" == "12" ]]; then
-              exit 1
-            fi
-            sleep 10
-          done
-          TARBALL=$(ls ./from-npm/keri-ts-*.tgz | head -1)
+          TARBALL=$(ls ./release-tarball/keri-ts-*.tgz 2>/dev/null | head -1)
+          if [[ -z "$TARBALL" ]]; then
+            echo "No tarball found in downloaded artifact."
+            exit 1
+          fi
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
       - name: create GitHub Release with the published tarball attached
         # On tag push: full release.
-        # The tarball attached is the one obtained from the npm registry post-publish.
+        # The tarball attached is the one published by the preceding job.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           TITLE="keri-ts ${{ steps.package.outputs.version }}"
-          # Use the published tarball
           gh release create "$TAG" \
             "${{ steps.published.outputs.tarball }}" \
             --title "$TITLE" \

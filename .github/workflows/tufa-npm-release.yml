@@ -214,21 +214,21 @@ jobs:
           VERSION=$(node -p "require('./packages/tufa/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: fetch the tufa tarball that was successfully published to npm
+      - name: download the exact published tufa artifact tarball
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: tufa-npm-${{ steps.package.outputs.version }}
+          path: ./release-tarball
+
+      - name: select release artifact tarball
         id: published
         shell: bash
         run: |
-          mkdir -p ./from-npm
-          for attempt in {1..12}; do
-            if npm pack @keri-ts/tufa@${{ steps.package.outputs.version }} --pack-destination ./from-npm/; then
-              break
-            fi
-            if [[ "${attempt}" == "12" ]]; then
-              exit 1
-            fi
-            sleep 10
-          done
-          TARBALL=$(ls ./from-npm/@keri-ts-tufa-*.tgz 2>/dev/null | head -1 || ls ./from-npm/tufa-*.tgz 2>/dev/null | head -1)
+          TARBALL=$(ls ./release-tarball/@keri-ts-tufa-*.tgz 2>/dev/null | head -1 || ls ./release-tarball/tufa-*.tgz 2>/dev/null | head -1)
+          if [[ -z "$TARBALL" ]]; then
+            echo "No tufa tarball found in downloaded artifact."
+            exit 1
+          fi
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
       - name: read dependency versions for linking (from built tufa manifest or verification)
@@ -246,7 +246,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           TITLE="@keri-ts/tufa ${{ steps.package.outputs.version }}"
-          NOTES="## @keri-ts/tufa ${{ steps.package.outputs.version }}\n\nThis release was published to npm first. The attached tarball is the one successfully published to the npm registry.\n\n### Dependency releases\n- keri-ts: https://www.npmjs.com/package/keri-ts/v/${{ steps.deps.outputs.keri_ver }}\n- cesr-ts: https://www.npmjs.com/package/cesr-ts/v/${{ steps.deps.outputs.cesr_ver }}\n\n( GitHub releases for dependencies: keri-v${{ steps.deps.outputs.keri_ver }} and cesr-v${{ steps.deps.outputs.cesr_ver }} if they exist. )"
+          NOTES="## @keri-ts/tufa ${{ steps.package.outputs.version }}\n\nThis release was published to npm first. The attached tarball is the exact artifact consumed by the publish job.\n\n### Dependency releases\n- keri-ts: https://www.npmjs.com/package/keri-ts/v/${{ steps.deps.outputs.keri_ver }}\n- cesr-ts: https://www.npmjs.com/package/cesr-ts/v/${{ steps.deps.outputs.cesr_ver }}\n\n( GitHub releases for dependencies: keri-v${{ steps.deps.outputs.keri_ver }} and cesr-v${{ steps.deps.outputs.cesr_ver }} if they exist. )"
           # Write notes to file for gh
           echo -e "$NOTES" > /tmp/release-notes.md
           gh release create "$TAG" \
