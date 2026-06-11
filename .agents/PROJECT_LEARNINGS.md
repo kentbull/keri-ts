@@ -121,9 +121,10 @@ stay short enough to reread at session start.
    rather than reintroducing duplicate wrapper families.
 6. Treat source-vs-npm drift in `tufa` as a release blocker; smoke the packed
    artifact when CLI or Node-host behavior changes.
-7. Treat scoped npm package publication as its own release seam:
-   `@keri-ts/tufa` needs `@keri-ts` scope ownership/token permission before tag
-   publish can succeed, even when artifact build/smoke/dry-run all pass.
+7. Treat scoped npm package publication and GitHub Release creation as separate
+   release seams. `@keri-ts/tufa` now publishes under the `@keri-ts` scope, and
+   tag reruns must skip already-published npm versions while idempotently
+   editing/uploading the GitHub Release.
 8. Keep bootstrap config on honest CLI/file seams rather than hidden default
    paths or ad hoc store mutation in scripts.
 9. Keep host-prefix selection explicit and conservative; do not leak

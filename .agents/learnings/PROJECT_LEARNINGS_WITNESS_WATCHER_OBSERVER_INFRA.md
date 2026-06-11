@@ -63,10 +63,10 @@ release, and interoperability operations.
     helpers, generated module bodies belong in source templates/renderers, and
     `deno task inline-code:check` should block regressions such as `node`
     heredocs or `deno eval`.
-21. Scoped package publication is a separate registry-auth seam from artifact
-    correctness. `@keri-ts/tufa` can build, smoke, dry-run, and sign provenance
-    successfully while still failing publish until the npm token has permission
-    for the `@keri-ts` scope.
+21. Scoped package publication and GitHub Release creation are separate seams
+    from artifact correctness. `@keri-ts/tufa` can build, smoke, dry-run, and
+    publish successfully while the release job still fails if it depends on
+    generated workspace paths that are absent in a clean release-job checkout.
 22. Package smoke CI should install the local npm tarballs once per runtime
     image and exercise both library and CLI surfaces from that installed graph.
     Keep LMDB-v1 interop `node_modules` cached behind its own key boundary.
@@ -110,9 +110,10 @@ release, and interoperability operations.
    broadening a different test.
 8. Keep new host/integration tests pointed at `packages/tufa` surfaces so
    package-boundary drift is caught where users actually run the code.
-9. Before retrying `@keri-ts/tufa` publication, fix npm registry ownership or
-   token permissions for the `@keri-ts` scope; repository-side release checks
-   are already capable of proving the package artifact.
+9. Keep Tufa release reruns idempotent: skip `npm publish` when the exact
+   version already exists, read release-note dependency links from the tarball
+   manifest, and edit/upload the GitHub Release with `--draft=false` instead of
+   assuming a fresh release object.
 10. Keep Python did:webs and did:keri interop rows opt-in unless the CI job
     provisions the external Python resolver/KERIpy topology required for real
     witnessed-AID evidence.
@@ -177,3 +178,15 @@ release, and interoperability operations.
 - Cross-implementation DID Webs and lower-priority DID KERI resolver rows are
   present as opt-in command-driven interop gates until a Python resolver harness
   is wired into CI.
+
+### 2026-06-11 - Tufa 0.10.0 Release Reruns Became Idempotent
+
+- `@keri-ts/tufa@0.10.0` published successfully once npm scope permissions were
+  correct; the remaining release failure was GitHub Release creation, not
+  package publication.
+- Tufa release jobs now use the uploaded tarball as the release-note dependency
+  source, because generated `packages/tufa/npm/**` files are not present in the
+  clean release-job checkout.
+- Tufa tag reruns must tolerate already-published npm versions and existing
+  release objects by skipping publish, clearing draft state, preserving the tag,
+  and uploading assets with clobber semantics.
