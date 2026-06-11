@@ -6,6 +6,7 @@ import type { AgentRuntime, AgentRuntimeOptions } from "../../../src/app/agent-r
 import {
   type CommandContextDependencies,
   withAgentRuntime,
+  withExistingHab,
   withExistingHabery,
   withHabAndAgentRuntime,
 } from "../../../src/app/cli/common/context.ts";
@@ -86,6 +87,95 @@ Deno.test("cli context - withExistingHabery closes hby when callback throws", as
   );
 
   assertEquals(events, ["setup:store", "use", "hby.close"]);
+});
+
+Deno.test("cli context - withExistingHab passes selected hab and closes hby", async () => {
+  const events: string[] = [];
+  const hby = fakeHabery(events, fakeHab());
+
+  const result = await run(() =>
+    withExistingHab(
+      { name: "store" },
+      "alice",
+      { dependencies: fakeDependencies(events, hby) },
+      function*({ hab }) {
+        events.push(`use:${hab.pre}`);
+        return hab.pre;
+      },
+    )
+  );
+
+  assertEquals(result, "Ealice");
+  assertEquals(events, ["setup:store", "use:Ealice", "hby.close"]);
+});
+
+Deno.test("cli context - withExistingHab closes hby when callback throws", async () => {
+  const events: string[] = [];
+  const hby = fakeHabery(events, fakeHab());
+
+  await assertRejects(
+    () =>
+      run(() =>
+        withExistingHab(
+          { name: "store" },
+          "alice",
+          { dependencies: fakeDependencies(events, hby) },
+          function*({ hab }) {
+            events.push(`use:${hab.pre}`);
+            throw new Error("hab failed");
+          },
+        )
+      ),
+    Error,
+    "hab failed",
+  );
+
+  assertEquals(events, ["setup:store", "use:Ealice", "hby.close"]);
+});
+
+Deno.test("cli context - withExistingHab rejects missing alias before opening resources", async () => {
+  const events: string[] = [];
+
+  await assertRejects(
+    () =>
+      run(() =>
+        withExistingHab(
+          { name: "store" },
+          undefined,
+          { dependencies: fakeDependencies(events, fakeHabery(events)) },
+          function*() {
+            events.push("use");
+          },
+        )
+      ),
+    ValidationError,
+    "Alias is required and cannot be empty",
+  );
+
+  assertEquals(events, []);
+});
+
+Deno.test("cli context - withExistingHab rejects invalid alias and closes hby", async () => {
+  const events: string[] = [];
+  const hby = fakeHabery(events);
+
+  await assertRejects(
+    () =>
+      run(() =>
+        withExistingHab(
+          { name: "store" },
+          "missing",
+          { dependencies: fakeDependencies(events, hby) },
+          function*() {
+            events.push("use");
+          },
+        )
+      ),
+    ValidationError,
+    "Alias missing is invalid",
+  );
+
+  assertEquals(events, ["setup:store", "hby.close"]);
 });
 
 Deno.test("cli context - withAgentRuntime closes runtime before hby", async () => {

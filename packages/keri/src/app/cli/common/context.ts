@@ -46,6 +46,11 @@ export interface AgentRuntimeContext extends HaberyContext {
   runtime: AgentRuntime;
 }
 
+/** Opened existing habery and selected local habitat context. */
+export interface HabContext extends HaberyContext {
+  hab: Hab;
+}
+
 /** Opened existing habery, command-local runtime, and selected local habitat. */
 export interface HabAgentRuntimeContext extends AgentRuntimeContext {
   hab: Hab;
@@ -78,6 +83,23 @@ export function* withExistingHabery<TResult>(
   } finally {
     yield* hby.close();
   }
+}
+
+/** Open an existing Habery and required local habitat alias for one CLI command. */
+export function* withExistingHab<TResult>(
+  args: CommandStoreArgs,
+  alias: string | undefined,
+  options: CommandHaberyOptions,
+  use: ContextUse<HabContext, TResult>,
+): Operation<TResult> {
+  const requiredAlias = requireAlias(alias);
+  return yield* withExistingHabery(args, options, function*({ hby }) {
+    const hab = hby.habByName(requiredAlias);
+    if (!hab?.pre) {
+      throw new ValidationError(`Alias ${requiredAlias} is invalid`);
+    }
+    return yield* use({ hby, hab });
+  });
 }
 
 /** Open an existing Habery plus local AgentRuntime and close runtime before Habery. */

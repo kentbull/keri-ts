@@ -11,8 +11,10 @@ export {
   type CommandHaberyOptions,
   type CommandStoreArgs,
   type HabAgentRuntimeContext,
+  type HabContext,
   type HaberyContext,
   withAgentRuntime,
+  withExistingHab,
   withExistingHabery,
   withHabAndAgentRuntime,
 } from "keri-ts/cli";

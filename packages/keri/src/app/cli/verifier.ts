@@ -1,11 +1,10 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
-import { createVerifierCueBaser, type VerifierCueBaser } from "../../db/verifier-cueing.ts";
-import { type AgentRuntime, createAgentRuntime } from "../agent-runtime.ts";
-import type { Habery } from "../habbing.ts";
+import { createVerifierCueBaser } from "../../db/verifier-cueing.ts";
+import type { AgentRuntime } from "../agent-runtime.ts";
 import { validatorsFromVerifierConfig, VerifierAgent, type VerifierAgentProcessResult } from "../verifier-agent.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime } from "./common/context.ts";
 
 interface VerifierRunArgs {
   name?: string;
@@ -35,39 +34,54 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
   };
   requireNonEmpty(runArgs.name, "Name");
   requireNonEmpty(runArgs.hook, "Webhook URL");
+  const hook = runArgs.hook!;
 
-  const { hby, runtime, reger, cdb } = yield* openVerifierRuntime(runArgs);
-  try {
-    const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
-    const agent = new VerifierAgent({
-      hby,
-      reger,
-      cdb,
-      reactor: runtime.reactor,
-      cues: runtime.cues,
-      services: runtime.services,
-      hook: runArgs.hook!,
-      timeoutMs: runArgs.timeoutMs,
-      validators: validatorsFromVerifierConfig(config),
-      requireKnownSchemas: isRecord(config) && config.requireKnownSchemas === true,
-    });
+  yield* withAgentRuntime(
+    runArgs,
+    {
+      compat: runArgs.compat ?? false,
+      skipConfig: true,
+    },
+    function*({ hby, runtime }) {
+      const reger = requireReger(runtime);
+      const cdb = yield* createVerifierCueBaser({
+        name: hby.name,
+        base: hby.base,
+        temp: hby.temp,
+        headDirPath: hby.headDirPath,
+        compat: hby.compat,
+      });
+      try {
+        const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
+        const agent = new VerifierAgent({
+          hby,
+          reger,
+          cdb,
+          reactor: runtime.reactor,
+          cues: runtime.cues,
+          services: runtime.services,
+          hook,
+          timeoutMs: runArgs.timeoutMs,
+          validators: validatorsFromVerifierConfig(config),
+          requireKnownSchemas: isRecord(config) && config.requireKnownSchemas === true,
+        });
 
-    if (runArgs.once ?? false) {
-      const result = yield* processAgentOnce(agent);
-      console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
-      return;
-    }
+        if (runArgs.once ?? false) {
+          const result = yield* processAgentOnce(agent);
+          console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
+          return;
+        }
 
-    while (true) {
-      const result = yield* processAgentOnce(agent);
-      console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
-      yield* sleep(runArgs.intervalMs ?? 1000);
-    }
-  } finally {
-    yield* cdb.close();
-    yield* runtime.close();
-    yield* hby.close();
-  }
+        while (true) {
+          const result = yield* processAgentOnce(agent);
+          console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
+          yield* sleep(runArgs.intervalMs ?? 1000);
+        }
+      } finally {
+        yield* cdb.close();
+      }
+    },
+  );
 }
 
 function* processAgentOnce(agent: VerifierAgent): Operation<VerifierAgentProcessResult> {
@@ -77,33 +91,12 @@ function* processAgentOnce(agent: VerifierAgent): Operation<VerifierAgentProcess
   });
 }
 
-function* openVerifierRuntime(
-  args: VerifierRunArgs,
-): Operation<{ hby: Habery; runtime: AgentRuntime; reger: Reger; cdb: VerifierCueBaser }> {
-  const hby = yield* setupHby(
-    args.name!,
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
-    {
-      compat: args.compat ?? false,
-      skipConfig: true,
-    },
-  );
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+function requireReger(runtime: AgentRuntime): Reger {
   const reger = runtime.vdr.reger;
   if (!(reger instanceof Reger)) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
-  const cdb = yield* createVerifierCueBaser({
-    name: hby.name,
-    base: hby.base,
-    temp: hby.temp,
-    headDirPath: hby.headDirPath,
-    compat: hby.compat,
-  });
-  return { hby, runtime, reger, cdb };
+  return reger;
 }
 
 function* sleep(ms: number): Operation<void> {

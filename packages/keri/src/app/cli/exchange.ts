@@ -2,7 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../forwarding.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHab } from "./common/context.ts";
 import { parseExnDataItems } from "./common/parsing.ts";
 
 interface ExnSendArgs {
@@ -62,13 +62,12 @@ export function* exchangeSendCommand(
     throw new ValidationError("Exchange route is required.");
   }
 
+  const recipient = commandArgs.recipient;
+  const route = commandArgs.route;
   const payload = parseExnDataItems(commandArgs.data);
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.sender,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
@@ -77,25 +76,17 @@ export function* exchangeSendCommand(
       outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
+    function*({ hby, hab }) {
+      const { serder } = yield* sendExchangeMessage(hby, hab, {
+        recipient,
+        route,
+        topic: commandArgs.topic,
+        payload,
+      });
+      console.log("Sent EXN message");
+      console.log(serder.pretty());
+    },
   );
-
-  try {
-    const hab = hby.habByName(commandArgs.sender);
-    if (!hab) {
-      throw new ValidationError(`invalid sender alias ${commandArgs.sender}`);
-    }
-
-    const { serder } = yield* sendExchangeMessage(hby, hab, {
-      recipient: commandArgs.recipient,
-      route: commandArgs.route,
-      topic: commandArgs.topic,
-      payload,
-    });
-    console.log("Sent EXN message");
-    console.log(serder.pretty());
-  } finally {
-    yield* hby.close();
-  }
 }
 
 function normalizeDataArgs(value: unknown): string[] {

@@ -1,6 +1,6 @@
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHab } from "./common/context.ts";
 
 interface AidArgs {
   name?: string;
@@ -29,33 +29,17 @@ export function* aidCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      aidArgs.name!,
-      aidArgs.base ?? "",
-      aidArgs.passcode,
-      false,
-      aidArgs.headDirPath,
-      {
-        compat: aidArgs.compat ?? false,
-        readonly: true,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(aidArgs.alias!);
-      if (!hab || !hab.pre) {
-        throw new ValidationError(
-          `No local AID found for alias ${aidArgs.alias}`,
-        );
-      }
-
+  yield* withExistingHab(
+    aidArgs,
+    aidArgs.alias,
+    {
+      compat: aidArgs.compat ?? false,
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hab }) {
       console.log(hab.pre);
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

@@ -7,9 +7,8 @@
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import type { Habery } from "../habbing.ts";
 import { Notifier, openNoterForHabery } from "../notifying.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHabery } from "./common/context.ts";
 
 interface NotificationsOpenArgs {
   name?: string;
@@ -43,28 +42,33 @@ function requireRid(rid?: string): string {
 }
 
 /** Open the signed notification facade for one CLI invocation. */
-function* openNotifier(args: NotificationsOpenArgs): Operation<{
-  hby: Habery;
-  notifier: Notifier;
-}> {
-  const hby = yield* setupHby(
-    requireName(args.name),
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
+function* withNotifier<TResult>(
+  args: NotificationsOpenArgs,
+  use: (context: {
+    notifier: Notifier;
+  }) => Operation<TResult>,
+): Operation<TResult> {
+  const name = requireName(args.name);
+  return yield* withExistingHabery(
+    { ...args, name },
     {
       compat: args.compat ?? false,
       readonly: false,
       skipConfig: true,
       skipSignator: false,
     },
+    function*({ hby }) {
+      const noter = yield* openNoterForHabery(hby);
+      const notifier = new Notifier(hby, { noter });
+      try {
+        return yield* use({ notifier });
+      } finally {
+        if (notifier.noter.opened) {
+          yield* notifier.noter.close();
+        }
+      }
+    },
   );
-  const noter = yield* openNoterForHabery(hby);
-  return {
-    hby,
-    notifier: new Notifier(hby, { noter }),
-  };
 }
 
 /** Print verified local controller notices as JSON for operator inspection. */
@@ -81,8 +85,7 @@ export function* notificationsListCommand(
     limit: args.limit as number | undefined,
   };
 
-  const { hby, notifier } = yield* openNotifier(commandArgs);
-  try {
+  yield* withNotifier(commandArgs, function*({ notifier }) {
     const start = commandArgs.start ?? 0;
     const limit = commandArgs.limit ?? 25;
     const notices = notifier.list(start, limit).map((note) => ({
@@ -101,12 +104,7 @@ export function* notificationsListCommand(
       null,
       2,
     ));
-  } finally {
-    if (notifier.noter.opened) {
-      yield* notifier.noter.close();
-    }
-    yield* hby.close();
-  }
+  });
 }
 
 /** Mark one verified notice as read and persist its new detached signature. */
@@ -122,17 +120,11 @@ export function* notificationsMarkReadCommand(
     rid: args.rid as string | undefined,
   };
 
-  const { hby, notifier } = yield* openNotifier(commandArgs);
-  try {
+  yield* withNotifier(commandArgs, function*({ notifier }) {
     const rid = requireRid(commandArgs.rid);
     const changed = notifier.markRead(rid);
     console.log(changed ? `marked-read ${rid}` : `already-read ${rid}`);
-  } finally {
-    if (notifier.noter.opened) {
-      yield* notifier.noter.close();
-    }
-    yield* hby.close();
-  }
+  });
 }
 
 /** Remove one verified notice from the notification sidecar. */
@@ -148,15 +140,9 @@ export function* notificationsRemoveCommand(
     rid: args.rid as string | undefined,
   };
 
-  const { hby, notifier } = yield* openNotifier(commandArgs);
-  try {
+  yield* withNotifier(commandArgs, function*({ notifier }) {
     const rid = requireRid(commandArgs.rid);
     const removed = notifier.remove(rid);
     console.log(removed ? `removed ${rid}` : `missing ${rid}`);
-  } finally {
-    if (notifier.noter.opened) {
-      yield* notifier.noter.close();
-    }
-    yield* hby.close();
-  }
+  });
 }

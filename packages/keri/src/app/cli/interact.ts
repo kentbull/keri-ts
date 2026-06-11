@@ -7,11 +7,11 @@
  *   witness receipts using the same receipting helpers already shared by
  *   `incept` and `rotate`
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHab } from "./common/context.ts";
 import { parseDataItems } from "./common/parsing.ts";
 
 /** Parsed command arguments for one `tufa interact` invocation. */
@@ -97,25 +97,16 @@ export function* interactCommand(
 
   const data = parseDataItems(interactArgs.data);
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      interactArgs.name!,
-      interactArgs.base ?? "",
-      interactArgs.passcode,
-      false,
-      interactArgs.headDirPath,
-      {
-        compat: interactArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(interactArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${interactArgs.alias!} is invalid`);
-      }
+  yield* withExistingHab(
+    interactArgs,
+    interactArgs.alias,
+    {
+      compat: interactArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby, hab }) {
       if (!hab.kever) {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
@@ -150,10 +141,6 @@ export function* interactCommand(
       for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

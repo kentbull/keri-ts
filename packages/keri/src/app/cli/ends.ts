@@ -1,13 +1,9 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
-import {
-  endpointRoleAccepted,
-  isLocalGroupHab,
-  proposeGroupEndpointRole,
-} from "../endpoint-roleing.ts";
-import { setupHby } from "./common/existing.ts";
+import { ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
+import { endpointRoleAccepted, isLocalGroupHab, proposeGroupEndpointRole } from "../endpoint-roleing.ts";
+import { withHabAndAgentRuntime } from "./common/context.ts";
 
 type MultisigEndpointRoleMode = "propose" | "complete";
 
@@ -65,81 +61,69 @@ export function* endsAddCommand(
   if (!commandArgs.eid) {
     throw new ValidationError("Endpoint AID is required and cannot be empty");
   }
+  const eid = commandArgs.eid;
+  const role = commandArgs.role;
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withHabAndAgentRuntime(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
       skipSignator: false,
     },
-  );
-
-  try {
-    const hab = hby.habByName(commandArgs.alias);
-    if (!hab) {
-      throw new ValidationError(
-        `No local AID found for alias ${commandArgs.alias}`,
-      );
-    }
-
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    if (isLocalGroupHab(hby, hab)) {
-      if (!commandArgs.multisigMode) {
-        throw new ValidationError(
-          "Group endpoint role authorization requires --multisig-mode propose or --multisig-mode complete.",
-        );
-      }
-      if (commandArgs.multisigMode === "propose") {
-        const result = yield* proposeGroupEndpointRole(runtime, hab, {
-          eid: commandArgs.eid,
-          role: commandArgs.role,
-          allow: true,
-        });
-        console.log(JSON.stringify({
-          route: result.route,
-          said: result.said,
-          group: result.group,
-          accepted: result.accepted,
-          deliveries: result.deliveries,
-          attachmentBytes: result.attachmentBytes,
-        }));
+    function*({ hby, hab, runtime }) {
+      if (isLocalGroupHab(hby, hab)) {
+        if (!commandArgs.multisigMode) {
+          throw new ValidationError(
+            "Group endpoint role authorization requires --multisig-mode propose or --multisig-mode complete.",
+          );
+        }
+        if (commandArgs.multisigMode === "propose") {
+          const result = yield* proposeGroupEndpointRole(runtime, hab, {
+            eid,
+            role,
+            allow: true,
+          });
+          console.log(JSON.stringify({
+            route: result.route,
+            said: result.said,
+            group: result.group,
+            accepted: result.accepted,
+            deliveries: result.deliveries,
+            attachmentBytes: result.attachmentBytes,
+          }));
+          return;
+        }
+        if (!endpointRoleAccepted(hby, hab.pre, role, eid)) {
+          throw new ValidationError(
+            `Endpoint role ${role} for ${eid} is not yet approved for group ${hab.pre}.`,
+          );
+        }
+        console.log(`${role} ${eid}`);
         return;
       }
-      if (!endpointRoleAccepted(hby, hab.pre, commandArgs.role, commandArgs.eid)) {
+
+      if (commandArgs.multisigMode) {
+        throw new ValidationError("--multisig-mode is only valid for local group aliases.");
+      }
+      ingestKeriBytes(
+        runtime,
+        hab.makeEndRole(eid, role, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+
+      const end = hby.db.ends.get([hab.pre, role, eid]);
+      if (!end?.allowed) {
         throw new ValidationError(
-          `Endpoint role ${commandArgs.role} for ${commandArgs.eid} is not yet approved for group ${hab.pre}.`,
+          `Endpoint role ${role} for ${eid} was not accepted into local state.`,
         );
       }
-      console.log(`${commandArgs.role} ${commandArgs.eid}`);
-      return;
-    }
 
-    if (commandArgs.multisigMode) {
-      throw new ValidationError("--multisig-mode is only valid for local group aliases.");
-    }
-    ingestKeriBytes(
-      runtime,
-      hab.makeEndRole(commandArgs.eid, commandArgs.role, true),
-    );
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-
-    const end = hby.db.ends.get([hab.pre, commandArgs.role, commandArgs.eid]);
-    if (!end?.allowed) {
-      throw new ValidationError(
-        `Endpoint role ${commandArgs.role} for ${commandArgs.eid} was not accepted into local state.`,
-      );
-    }
-
-    console.log(`${commandArgs.role} ${commandArgs.eid}`);
-  } finally {
-    yield* hby.close();
-  }
+      console.log(`${role} ${eid}`);
+    },
+  );
 }
 
 function parseMultisigMode(value: string | undefined): MultisigEndpointRoleMode | undefined {

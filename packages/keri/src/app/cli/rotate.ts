@@ -11,14 +11,14 @@
  * - witness replacement/cut/add math plus witness-auth/receipt convergence
  * - KLI-compatible success output
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import { queryTransportSink } from "../query-transport.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHab } from "./common/context.ts";
 import {
   loadRotateFileOptions,
   parseDataItems,
@@ -63,9 +63,7 @@ function emptyRotateOptions(): RotateFileOptions {
  * - absent CLI `--next-count` still forces `1`
  */
 function mergeWithFile(args: RotateArgs): RotateFileOptions {
-  const options = args.file && args.file !== ""
-    ? loadRotateFileOptions(args.file)
-    : emptyRotateOptions();
+  const options = args.file && args.file !== "" ? loadRotateFileOptions(args.file) : emptyRotateOptions();
 
   if (args.isith !== undefined) {
     options.isith = parseThresholdOption(args.isith);
@@ -182,25 +180,16 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
 
   const options = mergeWithFile(rotateArgs);
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      rotateArgs.name!,
-      rotateArgs.base ?? "",
-      rotateArgs.passcode,
-      false,
-      rotateArgs.headDirPath,
-      {
-        compat: rotateArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(rotateArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${rotateArgs.alias!} is invalid`);
-      }
+  yield* withExistingHab(
+    rotateArgs,
+    rotateArgs.alias,
+    {
+      compat: rotateArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby, hab }) {
       const kever = hab.kever;
       if (!kever) {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
@@ -287,10 +276,6 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
       if (delegationPhase) {
         console.log(`Delegation status  ${delegationPhase}`);
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

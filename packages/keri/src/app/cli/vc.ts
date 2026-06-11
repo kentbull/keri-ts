@@ -19,13 +19,13 @@ import { Schemer } from "../../core/scheming.ts";
 import { Reger } from "../../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
-import { type AgentRuntime, createAgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
+import { type AgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
 import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { credentialStreamMessages } from "../ipex-credentialing.ts";
 import { Verifier } from "../verifying.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime, withExistingHabery } from "./common/context.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -86,23 +86,19 @@ interface VcSchemaImportArgs extends VcBaseArgs {
 export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = baseArgs(args) as VcSchemaImportArgs;
   vcArgs.schema = asStringList(args.schema);
-  const { hby } = yield* openHabery(vcArgs);
-  try {
+  yield* withVcHabery(vcArgs, function*({ hby }) {
     for (const path of vcArgs.schema ?? []) {
       const schemer = new Schemer({ raw: Deno.readFileSync(path) });
       hby.db.schema.pin(schemer.said, schemer);
       console.log(JSON.stringify({ schema: schemer.said, path }));
     }
-  } finally {
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc registry incept` for single-sig or group registries. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args);
-  const { hby, runtime } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, vcArgs.alias);
     const rgy = requireRegery(runtime);
     if (isGroupHab(hby, hab)) {
@@ -119,17 +115,13 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
       registry: registry.regk,
       issuer: hab.pre,
     }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc registry list` from local `Reger.regs` state. */
 export function* vcRegistryListCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = baseArgs(args);
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ reger }) {
     for (const [keys, record] of reger.regs.getTopItemIter()) {
       console.log(JSON.stringify({
         name: keys[0],
@@ -137,17 +129,13 @@ export function* vcRegistryListCommand(args: Record<string, unknown>): Operation
         issuer: record.prefix,
       }));
     }
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc registry status` from current TEL registry state. */
 export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args, { aliasRequired: false });
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
     const record = reger.regs.get(vcArgs.registryName!);
     if (!record?.registryKey) {
       throw new ValidationError(`Registry ${vcArgs.registryName} not found.`);
@@ -159,10 +147,7 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
       issuer: record.prefix,
       state: tever?.state() ?? null,
     }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc create` by constructing and issuing one registry-backed ACDC. */
@@ -182,8 +167,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
   requireNonEmpty(vcArgs.alias, "Alias");
   requireNonEmpty(vcArgs.registryName, "Registry name");
 
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
     const rgy = requireRegery(runtime);
     const registry = requireRegistry(rgy, vcArgs.registryName);
     const schema = vcArgs.schemaFile ? importSchemaFile(hby, vcArgs.schemaFile) : vcArgs.schema;
@@ -222,10 +206,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
       tel: result.tel.said,
       status: result.verifierDecision.kind,
     }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc list` over verifier-backed wallet indexes. */
@@ -237,8 +218,7 @@ export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
     schema: args.schema as string | undefined,
     issued: args.issued as boolean | undefined,
   };
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
     const aid = vcArgs.aid ?? (vcArgs.alias ? requireHab(hby, vcArgs.alias).pre : undefined);
     const wallet = new CredentialWallet(reger);
     const tvy = requireTevery(runtime);
@@ -253,10 +233,7 @@ export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
         status: tever?.vcState(said)?.et ?? null,
       }));
     }
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc export` as a KERIpy-compatible credential support stream. */
@@ -268,16 +245,12 @@ export function* vcExportCommand(args: Record<string, unknown>): Operation<void>
     out: args.out as string | undefined,
   };
   requireNonEmpty(vcArgs.said, "Credential SAID");
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ hby, reger }) {
     const [creder] = reger.cloneCred(vcArgs.said!);
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : creder.issuee ?? "";
     const bytes = concatBytes(...credentialStreamMessages(hby, reger, creder, recipient));
     writeBytes(bytes, vcArgs.out);
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc import` by ingesting one CESR credential stream. */
@@ -286,17 +259,13 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
     ...baseArgs(args),
     inPath: args.inPath as string | undefined,
   };
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
     const before = savedCredentials(reger);
     settleRuntimeIngress(runtime, [readBytes(vcArgs.inPath)]);
     runtime.reactor.processEscrowsOnce();
     const after = [...savedCredentials(reger)].filter((said) => !before.has(said));
     console.log(JSON.stringify({ saved: after }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa vc revoke`, including optional revocation delivery/export. */
@@ -313,8 +282,7 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
   };
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
-  const { hby, runtime, reger } = yield* openRuntime(vcArgs);
-  try {
+  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
     const rgy = requireRegery(runtime);
     const registry = requireRegistry(rgy, vcArgs.registryName);
     const result = registry.revoke(vcArgs.said!);
@@ -350,10 +318,7 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
       deliveries,
       queued,
     }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 function revocationRecipients(creder: SerderACDC, args: VcSaidArgs): string[] {
@@ -409,30 +374,39 @@ function registryArgs(
   return parsed;
 }
 
-function* openHabery(args: VcBaseArgs) {
-  requireNonEmpty(args.name, "Name");
-  const hby = yield* setupHby(
-    args.name!,
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
-    {
-      compat: args.compat ?? false,
-      skipConfig: true,
-    },
-  );
-  return { hby };
+interface VcHaberyContext {
+  hby: Habery;
 }
 
-function* openRuntime(args: VcBaseArgs): Operation<{ hby: Habery; runtime: AgentRuntime; reger: Reger }> {
-  const { hby } = yield* openHabery(args);
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-  const reger = runtime.vdr.reger;
-  if (!(reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return { hby, runtime, reger };
+interface VcRuntimeContext extends VcHaberyContext {
+  runtime: AgentRuntime;
+  reger: Reger;
+}
+
+function* withVcHabery<TResult>(
+  args: VcBaseArgs,
+  use: (context: VcHaberyContext) => Operation<TResult>,
+): Operation<TResult> {
+  requireNonEmpty(args.name, "Name");
+  return yield* withExistingHabery(args, vcOpenOptions(args), use);
+}
+
+function* withVcRuntime<TResult>(
+  args: VcBaseArgs,
+  use: (context: VcRuntimeContext) => Operation<TResult>,
+): Operation<TResult> {
+  requireNonEmpty(args.name, "Name");
+  return yield* withAgentRuntime(args, vcOpenOptions(args), function*({ hby, runtime }) {
+    const reger = requireReger(runtime);
+    return yield* use({ hby, runtime, reger });
+  });
+}
+
+function vcOpenOptions(args: VcBaseArgs) {
+  return {
+    compat: args.compat ?? false,
+    skipConfig: true,
+  };
 }
 
 function requireRegery(runtime: AgentRuntime): Regery {

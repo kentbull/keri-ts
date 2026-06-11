@@ -19,7 +19,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
 import { serializeMessage } from "../../core/protocol-exchanging.ts";
 import { Reger } from "../../db/reger.ts";
-import { type AgentRuntime, createAgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
+import { type AgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
 import { splitCesrStream } from "../cesr-http.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigPathedAttachment } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -39,7 +39,7 @@ import {
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
 } from "../ipexing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime } from "./common/context.ts";
 
 interface IpexBaseArgs {
   name?: string;
@@ -79,8 +79,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
   const ipexArgs = ipexBaseArgs(args);
   const schema = args.schema as string | undefined;
   requireNonEmpty(schema, "Schema");
-  const { hby, runtime } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const result = yield* runtime.poster.sendExchange(hab, {
@@ -96,10 +95,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
       delivery: ipexArgs.delivery,
     });
     console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries, queued: result.queued }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa ipex offer` with one embedded ACDC stream reference. */
@@ -107,8 +103,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
   const ipexArgs = ipexBaseArgs(args);
   const acdcFile = args.acdc as string | undefined;
   requireNonEmpty(acdcFile, "ACDC file");
-  const { hby, runtime } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const result = yield* runtime.poster.sendExchange(hab, {
@@ -121,10 +116,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
       delivery: ipexArgs.delivery,
     });
     console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries, queued: result.queued }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa ipex agree` as a response to an accepted offer EXN. */
@@ -150,8 +142,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     ),
   };
   requireNonEmpty(ipexArgs.said, "Credential SAID");
-  const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = ipexArgs.out
       ? resolveAid(hby, requireString(ipexArgs.recipient, "Recipient"))
@@ -231,10 +222,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       yield* sendCredentialBytes(runtime, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
     }
     console.log(JSON.stringify({ said: grant.grant.said, credential: ipexArgs.said, support: grant.support.length }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa ipex admit` and holder-side grant artifact processing. */
@@ -245,8 +233,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
     grantFile: args.grantFile as string | undefined,
     noWait: args.noWait as boolean | undefined,
   };
-  const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const grant = loadGrant(hby, ipexArgs);
     const admit = ipexCredentialAdmit({
@@ -263,17 +250,13 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
       yield* sendCredentialBytes(runtime, hab, recipient, [admit.wire], ipexArgs.delivery);
     }
     console.log(JSON.stringify({ said: admit.admit.said, grant: grant.said }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement `tufa ipex list` by printing locally accepted IPEX EXNs. */
 export function* ipexListCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const { hby, runtime } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby }) {
     for (const [, exn] of hby.db.exns.getTopItemIter()) {
       const route = exn.route ?? "";
       if (!route.startsWith("/ipex/")) {
@@ -286,10 +269,7 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
         prior: exn.ked?.p,
       }));
     }
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement bounded mailbox polling plus stored grant replay for holders. */
@@ -297,8 +277,7 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
   const ipexArgs = ipexBaseArgs(args);
   const pollTurns = positiveInteger(args.pollTurns, 8, "poll turns");
   const pollBudgetMs = positiveInteger(args.pollBudgetMs, 5_000, "poll budget milliseconds");
-  const { hby, runtime, reger } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
     const beforeExns = new Set(
       [...hby.db.exns.getTopItemIter()]
@@ -326,10 +305,7 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
       ipex: newIpexMessages(hby, beforeExns),
       saved: newSavedCredentials(reger, beforeSaved),
     }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 /** Implement multisig IPEX approval over a pending `/multisig/exn` wrapper. */
@@ -343,8 +319,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
   };
   const pollTurns = positiveInteger(ipexArgs.pollTurns, 32, "poll turns");
   const pollBudgetMs = positiveInteger(ipexArgs.pollBudgetMs, 2000, "poll budget milliseconds");
-  const { hby, runtime } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const exn = ipexArgs.said
       ? hby.db.exns.get([ipexArgs.said])
       : yield* nextPendingMultisigIpex(hby, runtime, { ...ipexArgs, pollTurns, pollBudgetMs });
@@ -403,10 +378,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       lead: runtime.reactor.exchanger.lead(hby.habs.get(group)!, embedded.said!),
       deliveries: approval.deliveries,
     }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 function* approveMultisigIpex(
@@ -845,8 +817,7 @@ function* sendPriorResponse(
   const ipexArgs = ipexBaseArgs(args);
   const prior = args[priorLabel] as string | undefined;
   requireNonEmpty(prior, priorLabel);
-  const { hby, runtime } = yield* openRuntime(ipexArgs);
-  try {
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = runtime.poster.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const result = yield* runtime.poster.sendExchange(hab, {
@@ -858,10 +829,7 @@ function* sendPriorResponse(
       delivery: ipexArgs.delivery,
     });
     console.log(JSON.stringify({ said: result.serder.said, deliveries: result.deliveries, queued: result.queued }));
-  } finally {
-    yield* runtime.close();
-    yield* hby.close();
-  }
+  });
 }
 
 function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {
@@ -880,25 +848,36 @@ function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {
   };
 }
 
-function* openRuntime(args: IpexBaseArgs): Operation<{ hby: Habery; runtime: AgentRuntime; reger: Reger }> {
+interface IpexRuntimeContext {
+  hby: Habery;
+  runtime: AgentRuntime;
+  reger: Reger;
+}
+
+function* withIpexRuntime<TResult>(
+  args: IpexBaseArgs,
+  use: (context: IpexRuntimeContext) => Operation<TResult>,
+): Operation<TResult> {
   requireNonEmpty(args.name, "Name");
-  const hby = yield* setupHby(
-    args.name!,
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
+  return yield* withAgentRuntime(
+    args,
     {
       compat: args.compat ?? false,
       skipConfig: true,
     },
+    function*({ hby, runtime }) {
+      const reger = requireReger(runtime);
+      return yield* use({ hby, runtime, reger });
+    },
   );
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+}
+
+function requireReger(runtime: AgentRuntime): Reger {
   const reger = runtime.vdr.reger;
   if (!(reger instanceof Reger)) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
-  return { hby, runtime, reger };
+  return reger;
 }
 
 function requireHab(hby: Habery, alias: string | undefined): Hab {

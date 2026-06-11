@@ -27,7 +27,8 @@ import {
   WitnessReceiptor,
 } from "keri-ts/runtime";
 import { runWitnessHost } from "../roles/witness.ts";
-import { ensureHby, setupHby } from "./support/existing.ts";
+import { withExistingHab } from "./support/context.ts";
+import { ensureHby } from "./support/existing.ts";
 
 interface WitnessBaseArgs {
   name?: string;
@@ -171,45 +172,39 @@ export function* witnessSubmitCommand(
     codeTime: args.codeTime as string | undefined,
   };
 
-  const hby = yield* setupHby(
-    commandArgs.name!,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: true,
       skipSignator: true,
     },
-  );
-  try {
-    const hab = requireWitnessHab(hby, commandArgs.alias);
-    const auths = resolveWitnessAuths(
-      hab.kever?.wits ?? [],
-      commandArgs.code ?? [],
-      commandArgs.codeTime,
-      commandArgs.authenticate ?? false,
-    );
-    if (commandArgs.endpoint) {
-      const receiptor = new Receiptor(hby);
-      yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
-    } else {
-      const witDoer = new WitnessReceiptor(hby, {
-        force: commandArgs.force ?? false,
-      });
-      yield* witDoer.submit(hab.pre, {
-        sn: hab.kever?.sn,
-        auths,
-      });
-    }
+    function*({ hby, hab }) {
+      const auths = resolveWitnessAuths(
+        hab.kever?.wits ?? [],
+        commandArgs.code ?? [],
+        commandArgs.codeTime,
+        commandArgs.authenticate ?? false,
+      );
+      if (commandArgs.endpoint) {
+        const receiptor = new Receiptor(hby);
+        yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
+      } else {
+        const witDoer = new WitnessReceiptor(hby, {
+          force: commandArgs.force ?? false,
+        });
+        yield* witDoer.submit(hab.pre, {
+          sn: hab.kever?.sn,
+          auths,
+        });
+      }
 
-    console.log(`Prefix  ${hab.pre}`);
-    console.log(`Sequence No.  ${hab.kever?.sn ?? ""}`);
-  } finally {
-    yield* hby.close();
-  }
+      console.log(`Prefix  ${hab.pre}`);
+      console.log(`Sequence No.  ${hab.kever?.sn ?? ""}`);
+    },
+  );
 }
 
 function parseWitnessStartArgs(
@@ -514,14 +509,6 @@ function* reconcileWitnessIdentity(
       "Witness startup reconciliation did not produce accepted self location/controller/witness/mailbox state.",
     );
   }
-}
-
-function requireWitnessHab(hby: Habery, alias?: string): Hab {
-  const hab = hby.habByName(alias ?? "");
-  if (!hab) {
-    throw new ValidationError(`No local AID found for alias ${alias}`);
-  }
-  return hab;
 }
 
 function resolveWitnessAuths(

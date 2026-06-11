@@ -7,7 +7,7 @@
  * - `join` polls mailbox notifications, signs the embedded event with local
  *   member keys, and republishes the approval EXN
  */
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import {
   concatBytes,
   Diger,
@@ -30,7 +30,7 @@ import { Reger } from "../../db/reger.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
-import { type AgentRuntime, createAgentRuntime, processMailboxTurn, processRuntimeUntil } from "../agent-runtime.ts";
+import { type AgentRuntime, processMailboxTurn, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import {
   endpointRoleAccepted,
@@ -54,7 +54,7 @@ import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../query-transport.ts";
 import { Verifier } from "../verifying.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime } from "./common/context.ts";
 import {
   loadRotateFileOptions,
   parseDataItems,
@@ -256,71 +256,63 @@ export function* multisigInceptCommand(
     throw new ValidationError("Multisig inception config must include non-empty aids.");
   }
 
-  const doer = yield* spawn(function*() {
-    const { hby, runtime } = yield* openRuntime(commandArgs, name);
-    try {
-      const member = requireHabByAlias(hby, alias);
-      const created = hby.makeGroupHab(group, member, smids, rmids, undefined, {
-        isith: options.isith,
-        nsith: options.nsith,
-        toad: options.toad,
-        wits: options.wits ?? [],
-        delpre: options.delpre,
-        data: options.data ?? [],
-      });
-      const payload = {
-        gid: created.hab.pre,
-        smids,
-        rmids,
-        ...(options.delpre ? { delegator: options.delpre } : {}),
-      };
-      const deliveries = yield* publishProposal(
-        runtime,
-        member,
-        uniqueMembers([...smids, ...rmids]),
-        MULTISIG_ICP_ROUTE,
-        "icp",
-        payload,
-        created.message,
-      );
+  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const member = requireHabByAlias(hby, alias);
+    const created = hby.makeGroupHab(group, member, smids, rmids, undefined, {
+      isith: options.isith,
+      nsith: options.nsith,
+      toad: options.toad,
+      wits: options.wits ?? [],
+      delpre: options.delpre,
+      data: options.data ?? [],
+    });
+    const payload = {
+      gid: created.hab.pre,
+      smids,
+      rmids,
+      ...(options.delpre ? { delegator: options.delpre } : {}),
+    };
+    const deliveries = yield* publishProposal(
+      runtime,
+      member,
+      uniqueMembers([...smids, ...rmids]),
+      MULTISIG_ICP_ROUTE,
+      "icp",
+      payload,
+      created.message,
+    );
 
-      const accepted = yield* waitForGroupAcceptance(
+    const accepted = yield* waitForGroupAcceptance(
+      hby,
+      runtime,
+      created.serder,
+      {
+        ...commandArgs,
+        group,
+        auto: true,
+        pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
+        pollBudgetMs: 1_000,
+      },
+    );
+    let delegationPhase: string | null = null;
+    if (accepted) {
+      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs);
+      delegationPhase = yield* completeDelegationIfNeeded(
         hby,
         runtime,
-        created.serder,
-        {
-          ...commandArgs,
-          group,
-          auto: true,
-          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-          pollBudgetMs: 1_000,
-        },
+        created.hab.pre,
+        commandArgs.proxy,
       );
-      let delegationPhase: string | null = null;
-      if (accepted) {
-        yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs);
-        delegationPhase = yield* completeDelegationIfNeeded(
-          hby,
-          runtime,
-          created.hab.pre,
-          commandArgs.proxy,
-        );
-      }
-
-      printIdentifier(hby, created.hab.pre, delegationPhase);
-      console.log(JSON.stringify({
-        route: MULTISIG_ICP_ROUTE,
-        group: created.hab.pre,
-        accepted,
-        deliveries,
-      }));
-    } finally {
-      yield* runtime.close();
-      yield* hby.close();
     }
-  });
 
-  yield* doer;
+    printIdentifier(hby, created.hab.pre, delegationPhase);
+    console.log(JSON.stringify({
+      route: MULTISIG_ICP_ROUTE,
+      group: created.hab.pre,
+      accepted,
+      deliveries,
+    }));
+  });
 }
 
 /** Poll for and approve one pending group multisig event. */
@@ -350,48 +342,40 @@ export function* multisigJoinCommand(
   const pollBudgetMs = positiveInteger(commandArgs.pollBudgetMs, 2_000, "poll budget milliseconds");
   const name = requireText(commandArgs.name, "Name");
 
-  const doer = yield* spawn(function*() {
-    const { hby, runtime } = yield* openRuntime(commandArgs, name);
-    try {
-      const result = yield* waitForOneApproval(hby, runtime, {
+  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const result = yield* waitForOneApproval(hby, runtime, {
+      ...commandArgs,
+      pollTurns,
+      pollBudgetMs,
+    });
+    if (!result) {
+      const local = yield* waitForLocalGroupCompletion(hby, runtime, {
         ...commandArgs,
         pollTurns,
         pollBudgetMs,
       });
-      if (!result) {
-        const local = yield* waitForLocalGroupCompletion(hby, runtime, {
-          ...commandArgs,
-          pollTurns,
-          pollBudgetMs,
-        });
-        if (!local) {
-          throw new ValidationError("No matching multisig notification was available to join.");
-        }
-        console.log(JSON.stringify(local));
-        return;
+      if (!local) {
+        throw new ValidationError("No matching multisig notification was available to join.");
       }
-      if (result.accepted) {
-        yield* receiptAcceptedEvent(hby, result.group, commandArgs);
-        if (
-          result.route === MULTISIG_ICP_ROUTE
-          || result.route === MULTISIG_ROT_ROUTE
-        ) {
-          yield* completeDelegationIfNeeded(
-            hby,
-            runtime,
-            result.group,
-            commandArgs.proxy,
-          );
-        }
-      }
-      console.log(JSON.stringify(result));
-    } finally {
-      yield* runtime.close();
-      yield* hby.close();
+      console.log(JSON.stringify(local));
+      return;
     }
+    if (result.accepted) {
+      yield* receiptAcceptedEvent(hby, result.group, commandArgs);
+      if (
+        result.route === MULTISIG_ICP_ROUTE
+        || result.route === MULTISIG_ROT_ROUTE
+      ) {
+        yield* completeDelegationIfNeeded(
+          hby,
+          runtime,
+          result.group,
+          commandArgs.proxy,
+        );
+      }
+    }
+    console.log(JSON.stringify(result));
   });
-
-  yield* doer;
 }
 
 function* waitForLocalGroupCompletion(
@@ -458,50 +442,42 @@ export function* multisigInteractCommand(
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
   const data = parseDataItems(commandArgs.data);
 
-  const doer = yield* spawn(function*() {
-    const { hby, runtime } = yield* openRuntime(commandArgs, name);
-    try {
-      const created = hby.interactGroupHab(group, undefined, { data });
-      const smids = groupSigningMembers(hby, created.hab.pre);
-      const payload = { gid: created.hab.pre, smids };
-      const deliveries = yield* publishProposal(
-        runtime,
-        localGroupMember(hby, created.hab.pre),
-        smids,
-        MULTISIG_IXN_ROUTE,
-        "ixn",
-        payload,
-        created.message,
-      );
-      const accepted = yield* waitForGroupAcceptance(
-        hby,
-        runtime,
-        created.serder,
-        {
-          ...commandArgs,
-          group,
-          auto: true,
-          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-          pollBudgetMs: 1_000,
-        },
-      );
-      if (accepted) {
-        yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs);
-      }
-      printIdentifier(hby, created.hab.pre);
-      console.log(JSON.stringify({
-        route: MULTISIG_IXN_ROUTE,
-        group: created.hab.pre,
-        accepted,
-        deliveries,
-      }));
-    } finally {
-      yield* runtime.close();
-      yield* hby.close();
+  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const created = hby.interactGroupHab(group, undefined, { data });
+    const smids = groupSigningMembers(hby, created.hab.pre);
+    const payload = { gid: created.hab.pre, smids };
+    const deliveries = yield* publishProposal(
+      runtime,
+      localGroupMember(hby, created.hab.pre),
+      smids,
+      MULTISIG_IXN_ROUTE,
+      "ixn",
+      payload,
+      created.message,
+    );
+    const accepted = yield* waitForGroupAcceptance(
+      hby,
+      runtime,
+      created.serder,
+      {
+        ...commandArgs,
+        group,
+        auto: true,
+        pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
+        pollBudgetMs: 1_000,
+      },
+    );
+    if (accepted) {
+      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs);
     }
+    printIdentifier(hby, created.hab.pre);
+    console.log(JSON.stringify({
+      route: MULTISIG_IXN_ROUTE,
+      group: created.hab.pre,
+      accepted,
+      deliveries,
+    }));
   });
-
-  yield* doer;
 }
 
 /** Rotate or begin rotation of one group identifier. */
@@ -541,70 +517,62 @@ export function* multisigRotateCommand(
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
   const options = mergeRotateOptions(commandArgs);
 
-  const doer = yield* spawn(function*() {
-    const { hby, runtime } = yield* openRuntime(commandArgs, name);
-    try {
-      const rotated = hby.rotateGroupHab(
+  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const rotated = hby.rotateGroupHab(
+      group,
+      commandArgs.smids,
+      commandArgs.rmids,
+      {
+        isith: options.isith,
+        nsith: options.nsith,
+        toad: options.toad,
+        cuts: options.witsCut,
+        adds: options.witsAdd,
+        data: options.data ?? [],
+      },
+    );
+    const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);
+    const rmids = commandArgs.rmids?.length ? commandArgs.rmids : smids;
+    const payload = { gid: rotated.hab.pre, smids, rmids };
+    const deliveries = yield* publishProposal(
+      runtime,
+      localGroupMember(hby, rotated.hab.pre),
+      uniqueMembers([...smids, ...rmids]),
+      MULTISIG_ROT_ROUTE,
+      "rot",
+      payload,
+      rotated.message,
+    );
+    const accepted = yield* waitForGroupAcceptance(
+      hby,
+      runtime,
+      rotated.serder,
+      {
+        ...commandArgs,
         group,
-        commandArgs.smids,
-        commandArgs.rmids,
-        {
-          isith: options.isith,
-          nsith: options.nsith,
-          toad: options.toad,
-          cuts: options.witsCut,
-          adds: options.witsAdd,
-          data: options.data ?? [],
-        },
-      );
-      const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);
-      const rmids = commandArgs.rmids?.length ? commandArgs.rmids : smids;
-      const payload = { gid: rotated.hab.pre, smids, rmids };
-      const deliveries = yield* publishProposal(
-        runtime,
-        localGroupMember(hby, rotated.hab.pre),
-        uniqueMembers([...smids, ...rmids]),
-        MULTISIG_ROT_ROUTE,
-        "rot",
-        payload,
-        rotated.message,
-      );
-      const accepted = yield* waitForGroupAcceptance(
+        auto: true,
+        pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
+        pollBudgetMs: 1_000,
+      },
+    );
+    let delegationPhase: string | null = null;
+    if (accepted) {
+      yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs);
+      delegationPhase = yield* completeDelegationIfNeeded(
         hby,
         runtime,
-        rotated.serder,
-        {
-          ...commandArgs,
-          group,
-          auto: true,
-          pollTurns: approvalTimeoutTurns(commandArgs.approvalTimeoutSeconds),
-          pollBudgetMs: 1_000,
-        },
+        rotated.hab.pre,
+        commandArgs.proxy,
       );
-      let delegationPhase: string | null = null;
-      if (accepted) {
-        yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs);
-        delegationPhase = yield* completeDelegationIfNeeded(
-          hby,
-          runtime,
-          rotated.hab.pre,
-          commandArgs.proxy,
-        );
-      }
-      printIdentifier(hby, rotated.hab.pre, delegationPhase);
-      console.log(JSON.stringify({
-        route: MULTISIG_ROT_ROUTE,
-        group: rotated.hab.pre,
-        accepted,
-        deliveries,
-      }));
-    } finally {
-      yield* runtime.close();
-      yield* hby.close();
     }
+    printIdentifier(hby, rotated.hab.pre, delegationPhase);
+    console.log(JSON.stringify({
+      route: MULTISIG_ROT_ROUTE,
+      group: rotated.hab.pre,
+      accepted,
+      deliveries,
+    }));
   });
-
-  yield* doer;
 }
 
 /** Propose one group multisig reply such as `/end/role/add`. */
@@ -633,62 +601,55 @@ export function* multisigRpyCommand(
   const eid = requireText(commandArgs.eid, "Endpoint identifier");
   const role = commandArgs.role ?? Roles.mailbox;
 
-  const doer = yield* spawn(function*() {
-    const { hby, runtime } = yield* openRuntime(commandArgs, name);
-    try {
-      const groupHab = requireHabByAlias(hby, group);
-      const result = yield* proposeGroupEndpointRole(
+  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const groupHab = requireHabByAlias(hby, group);
+    const result = yield* proposeGroupEndpointRole(
+      runtime,
+      groupHab,
+      { eid, role, allow: commandArgs.allow },
+    );
+    const accepted = commandArgs.approvalTimeoutSeconds > 0
+      ? yield* waitForReplyAcceptance(
+        hby,
         runtime,
-        groupHab,
-        { eid, role, allow: commandArgs.allow },
-      );
-      const accepted = commandArgs.approvalTimeoutSeconds > 0
-        ? yield* waitForReplyAcceptance(
-          hby,
-          runtime,
-          groupHab.pre,
-          role,
-          eid,
-          commandArgs,
-        )
-        : result.accepted;
+        groupHab.pre,
+        role,
+        eid,
+        commandArgs,
+      )
+      : result.accepted;
 
-      console.log(JSON.stringify({
-        route: result.route,
-        said: result.said,
-        group: result.group,
-        accepted,
-        deliveries: result.deliveries,
-        attachmentBytes: result.attachmentBytes,
-      }));
-    } finally {
-      yield* runtime.close();
-      yield* hby.close();
-    }
+    console.log(JSON.stringify({
+      route: result.route,
+      said: result.said,
+      group: result.group,
+      accepted,
+      deliveries: result.deliveries,
+      attachmentBytes: result.attachmentBytes,
+    }));
   });
-
-  yield* doer;
 }
 
-function* openRuntime(
+interface MultisigRuntimeContext {
+  hby: Habery;
+  runtime: AgentRuntime;
+}
+
+function* withMultisigRuntime<TResult>(
   args: MultisigBaseArgs,
   name: string,
-): Operation<{ hby: Habery; runtime: AgentRuntime }> {
-  const hby = yield* setupHby(
-    name,
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
+  use: (context: MultisigRuntimeContext) => Operation<TResult>,
+): Operation<TResult> {
+  return yield* withAgentRuntime(
+    { ...args, name },
     {
       compat: args.compat ?? false,
       readonly: false,
       skipConfig: true,
       skipSignator: false,
     },
+    use,
   );
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-  return { hby, runtime };
 }
 
 function requireHabByAlias(hby: Habery, alias: string): Hab {
