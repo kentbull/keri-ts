@@ -1,7 +1,7 @@
 /** Commander registrations for EXN and exchange messaging commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { registerCommandHandler } from "./shared.ts";
+import { registerDispatchedCommand } from "./shared.ts";
 
 /** Register exchange and EXN messaging commands. */
 export function registerMessagingCmds(
@@ -41,58 +41,60 @@ function registerExnSendSubCmd(
   // `exchange send` and `exn send` are CLI aliases over the same handler.
   // Keeping the registration shared prevents their forwarding/topic options
   // from drifting.
-  root
-    .command("send")
-    .description("Send one signed EXN message to a resolved remote identifier")
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-s, --sender <alias>", "Local identifier alias (sender)")
-    .requiredOption(
-      "-r, --recipient <recipient>",
-      "Recipient alias/contact or prefix",
-    )
-    .requiredOption("-R, --route <route>", "Exchange route")
-    .option(
-      "--topic <topic>",
-      "Mailbox forwarding topic; defaults to the first segment of route",
-    )
-    .option(
-      "--data <item>",
-      "Payload item: key=value, JSON object string, or @file.json",
-      (value: string, prev: string[] = []) => {
-        prev.push(value);
-        return prev;
-      },
-      [],
-    )
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--cesr-body-mode <mode>",
-      "CESR HTTP transport mode: header (default) or body",
-    )
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root (default fallback: ~/.tufa)",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .action((options: Record<string, unknown>) => {
-      dispatch({
-        name,
-        args: {
-          name: options.name,
-          sender: options.sender,
-          recipient: options.recipient,
-          route: options.route,
-          topic: options.topic,
-          data: options.data,
-          base: options.base,
-          compat: options.compat || false,
-          cesrBodyMode: options.cesrBodyMode,
-          outboxer: options.outboxer || false,
-          headDirPath: options.headDir,
-          passcode: options.passcode,
+  registerDispatchedCommand(
+    root
+      .command("send")
+      .description("Send one signed EXN message to a resolved remote identifier")
+      .requiredOption("-n, --name <name>", "Keystore name")
+      .requiredOption("-s, --sender <alias>", "Local identifier alias (sender)")
+      .requiredOption(
+        "-r, --recipient <recipient>",
+        "Recipient alias/contact or prefix",
+      )
+      .requiredOption("-R, --route <route>", "Exchange route")
+      .option(
+        "--topic <topic>",
+        "Mailbox forwarding topic; defaults to the first segment of route",
+      )
+      .option(
+        "--data <item>",
+        "Payload item: key=value, JSON object string, or @file.json",
+        (value: string, prev: string[] = []) => {
+          prev.push(value);
+          return prev;
         },
-      });
-    });
-  registerCommandHandler(name, () => import("keri-ts/cli"), "exchangeSendCommand");
+        [],
+      )
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option(
+        "--cesr-body-mode <mode>",
+        "CESR HTTP transport mode: header (default) or body",
+      )
+      .option(
+        "--head-dir <dir>",
+        "Directory override for database and keystore root (default fallback: ~/.tufa)",
+      )
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+    dispatch,
+    {
+      name,
+      load: () => import("keri-ts/cli"),
+      exportName: "exchangeSendCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        sender: options.sender,
+        recipient: options.recipient,
+        route: options.route,
+        topic: options.topic,
+        data: options.data,
+        base: options.base,
+        compat: options.compat || false,
+        cesrBodyMode: options.cesrBodyMode,
+        outboxer: options.outboxer || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+      }),
+    },
+  );
 }

@@ -7,6 +7,7 @@ import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
+import { createCmdHandlers } from "../src/cli/handlers.ts";
 import { mailboxAddCommand, mailboxStartCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
@@ -49,6 +50,89 @@ function parseCommandSelection(args: string[]): CommandSelection {
   return selection;
 }
 
+function leafCommandNames(command: Command, prefix: string[] = []): string[] {
+  const leaves: string[] = [];
+  for (const child of command.commands) {
+    const next = [...prefix, child.name()];
+    if (child.commands.length === 0) {
+      leaves.push(next.join(" "));
+    } else {
+      leaves.push(...leafCommandNames(child, next));
+    }
+  }
+  return leaves;
+}
+
+const CLI_COMMAND_EXAMPLES: string[][] = [
+  ["init", "-n", "store"],
+  ["incept", "-n", "store", "-a", "aid"],
+  ["rotate", "-n", "store", "-a", "aid"],
+  ["interact", "-n", "store", "-a", "aid"],
+  ["delegate", "confirm", "-n", "store", "-a", "delegator"],
+  ["agent", "-n", "store"],
+  ["multisig", "incept", "-n", "store", "-a", "aid", "-g", "group", "-f", "group.json"],
+  ["multisig", "interact", "-n", "store", "-a", "group"],
+  ["multisig", "join", "-n", "store"],
+  ["multisig", "rotate", "-n", "store", "-a", "group"],
+  ["multisig", "rpy", "-n", "store", "--eid", "mailbox"],
+  ["sign", "-n", "store", "-a", "aid", "-t", "hello"],
+  ["verify", "-n", "store", "--prefix", "Eaid", "-t", "hello", "-s", "0sig"],
+  ["query", "-n", "store", "-a", "aid", "--prefix", "Eremote"],
+  ["export", "-n", "store", "-a", "aid"],
+  ["list", "-n", "store"],
+  ["aid", "-n", "store", "-a", "aid"],
+  ["saidify", "-f", "sad.json"],
+  ["annotate"],
+  ["challenge", "generate"],
+  ["challenge", "respond", "-n", "store", "-a", "aid", "-r", "peer", "-w", "one two"],
+  ["challenge", "verify", "-n", "store", "-s", "peer", "-w", "one two"],
+  ["vc", "schema", "import", "-n", "store", "--schema", "schema.json"],
+  ["vc", "registry", "incept", "-n", "store", "-a", "issuer", "--registry-name", "vlei"],
+  ["vc", "registry", "list", "-n", "store"],
+  ["vc", "registry", "status", "-n", "store", "--registry-name", "vlei"],
+  ["vc", "create", "-n", "store", "-a", "issuer", "--registry-name", "vlei"],
+  ["vc", "list", "-n", "store"],
+  ["vc", "export", "-n", "store", "--said", "Ecredential"],
+  ["vc", "import", "-n", "store"],
+  ["vc", "revoke", "-n", "store", "--registry-name", "vlei", "--said", "Ecredential"],
+  ["ipex", "apply", "-n", "store", "-a", "aid", "-r", "peer", "--schema", "Eschema"],
+  ["ipex", "offer", "-n", "store", "-a", "aid", "-r", "peer", "--acdc", "acdc.cesr"],
+  ["ipex", "agree", "-n", "store", "-a", "aid", "-r", "peer", "--offer", "Eoffer"],
+  ["ipex", "grant", "-n", "store", "-a", "aid", "-r", "peer", "--said", "Ecredential"],
+  ["ipex", "admit", "-n", "store", "-a", "aid"],
+  ["ipex", "spurn", "-n", "store", "-a", "aid", "-r", "peer", "--prior", "Eprior"],
+  ["ipex", "list", "-n", "store"],
+  ["ipex", "poll", "-n", "store", "-a", "aid"],
+  ["ipex", "join", "-n", "store"],
+  ["verifier", "run", "-n", "store", "--hook", "http://127.0.0.1:9923"],
+  ["hook", "demo"],
+  ["dws", "bind", "-n", "store", "-a", "aid", "--did", "did:keri:Eaid"],
+  ["dws", "generate", "-n", "store", "-a", "aid", "--did", "did:webs:example.com:Eaid", "--output-dir", "/tmp/dws"],
+  ["dws", "resolve", "-n", "store", "--did", "did:webs:example.com:Eaid"],
+  ["dws", "resolver", "-n", "store"],
+  ["dkr", "resolve", "-n", "store", "--did", "did:keri:Eaid"],
+  ["exchange", "send", "-n", "store", "-s", "aid", "-r", "peer", "-R", "/route"],
+  ["exn", "send", "-n", "store", "-s", "aid", "-r", "peer", "-R", "/route"],
+  ["ends", "add", "-n", "store", "-a", "aid", "-r", "mailbox", "-e", "Eendpoint"],
+  ["loc", "add", "-n", "store", "-a", "aid", "-u", "http://127.0.0.1:7723"],
+  ["oobi", "generate", "-n", "store", "-a", "aid", "-r", "controller"],
+  ["oobi", "resolve", "-n", "store", "-u", "http://127.0.0.1:7723/oobi/Eaid"],
+  ["oobi", "request", "-n", "store", "-a", "aid", "-r", "peer", "-u", "http://127.0.0.1:7723/oobi/Eaid"],
+  ["notifications", "list", "-n", "store"],
+  ["notifications", "mark-read", "-n", "store", "rid"],
+  ["notifications", "remove", "-n", "store", "rid"],
+  ["mailbox", "start", "-n", "store", "-a", "mailbox"],
+  ["mailbox", "add", "-n", "store", "-a", "aid", "-w", "mailbox"],
+  ["mailbox", "remove", "-n", "store", "-a", "aid", "-w", "mailbox"],
+  ["mailbox", "list", "-n", "store", "-a", "aid"],
+  ["mailbox", "update", "-n", "store", "-a", "aid", "-w", "mailbox", "-t", "/receipt", "-i", "1"],
+  ["mailbox", "debug", "-n", "store", "-a", "aid", "-w", "mailbox"],
+  ["witness", "start", "-n", "store", "-a", "witness"],
+  ["witness", "submit", "-n", "store", "-a", "aid"],
+  ["benchmark", "cesr"],
+  ["db", "dump", "-n", "store"],
+];
+
 async function captureConsoleLog(
   runCommand: () => Promise<void>,
 ): Promise<string[]> {
@@ -73,6 +157,24 @@ function extractPrefix(output: string): string {
   }
   return line.trim().split(/\s+/).at(-1) ?? "";
 }
+
+Deno.test("tufa/cli - parsed command names all have registered handlers", () => {
+  const program = new Command();
+  program.exitOverride();
+  registerCmds(program, () => {});
+  const dispatchedNames = leafCommandNames(program)
+    .filter((name) => name !== "version")
+    .map((name) => name.replaceAll(" ", "."))
+    .sort();
+  assertEquals(dispatchedNames.length, 67);
+
+  const selections = CLI_COMMAND_EXAMPLES.map(parseCommandSelection);
+  const selectedNames = [...new Set(selections.map((selection) => selection.name))].sort();
+  assertEquals(selectedNames, dispatchedNames);
+
+  const handlerNames = [...createCmdHandlers().keys()].sort();
+  assertEquals(handlerNames, dispatchedNames);
+});
 
 Deno.test("tufa/cli - version command prints display version", async () => {
   const captured = await captureConsoleLog(() => run(() => tufa(["version"])));

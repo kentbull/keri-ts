@@ -45,6 +45,36 @@ export function addGvrsnOption(cmd: Command): Command {
   );
 }
 
+export function addWitnessAuthOptions(cmd: Command): Command {
+  return cmd
+    .option(
+      "--receipt-endpoint",
+      "Attempt to connect to witness receipt endpoint for witness receipts.",
+      false,
+    )
+    .option(
+      "-z, --authenticate",
+      "Prompt the controller for authentication codes for each witness",
+      false,
+    )
+    .option(
+      "--code <code>",
+      "<Witness AID>:<code> formatted witness auth codes",
+      collectOption,
+      [],
+    )
+    .option("--code-time <time>", "Time the witness codes were captured.");
+}
+
+export function witnessAuthArgs(options: Record<string, unknown>): Record<string, unknown> {
+  return {
+    endpoint: options.receiptEndpoint || false,
+    authenticate: options.authenticate || false,
+    code: options.code || [],
+    codeTime: options.codeTime,
+  };
+}
+
 /** Normalize common option renames (headDir -> headDirPath, approvalTimeout, etc.). */
 export function dispatchArgs(options: Record<string, unknown>): Record<string, unknown> {
   const { headDir, approvalTimeout, ...rest } = options;

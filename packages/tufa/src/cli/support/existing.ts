@@ -5,8 +5,4 @@
  * common layer. This shim removes the prior near-duplicate copy while
  * preserving the import sites used by tufa command modules.
  */
-export {
-  type EnsuredHabery,
-  ensureHby,
-  setupHby,
-} from "../../../../keri/src/app/cli/common/existing.ts";
+export { type EnsuredHabery, ensureHby, setupHby } from "../../../../keri/src/app/cli/common/existing.ts";

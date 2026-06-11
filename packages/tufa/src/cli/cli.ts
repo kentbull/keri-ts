@@ -101,7 +101,7 @@ function* runCmd(
 
   const handler = commandHandlers.get(selection.name);
   if (!handler) {
-    return;
+    throw new Error(`No handler registered for command '${selection.name}'`);
   }
 
   yield* handler(selection.args);

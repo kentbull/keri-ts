@@ -1,4 +1,5 @@
 import type { ThresholdSith } from "../../../../../cesr/mod.ts";
+import { ValidationError } from "../../../core/index.ts";
 
 /**
  * JSON file schema for `tufa incept --file` option loading.
