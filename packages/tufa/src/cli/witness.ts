@@ -7,27 +7,19 @@
  * rather than process-local defaults.
  */
 import type { Operation } from "effection";
-import { join } from "jsr:@std/path";
 import {
   type Configer,
-  createAgentRuntime,
   createConfiger,
-  EndpointRoles,
-  fetchEndpointUrls,
-  type Hab,
-  type Habery,
-  ingestKeriBytes,
-  makeNowIso8601,
-  processRuntimeTurn,
   Receiptor,
-  type Scheme,
-  Schemes,
   ValidationError,
   WitnessReceiptor,
 } from "keri-ts/runtime";
+import { configFileCandidates, validateIsoDatetime } from "../operator/host-planning.ts";
+import { reconcileWitnessHostStartup, resolveWitnessHostStartup } from "../operator/witness-startup.ts";
 import { runWitnessHost } from "../roles/witness.ts";
 import { withExistingHab } from "./support/context.ts";
 import { ensureHby } from "./support/existing.ts";
+import { writeTextLines } from "./support/rendering.ts";
 import { resolveWitnessAuths } from "./support/witness-auth.ts";
 
 interface WitnessBaseArgs {
@@ -58,14 +50,6 @@ interface WitnessSubmitArgs extends WitnessBaseArgs {
   codeTime?: string;
 }
 
-/** Resolved startup material and its authority source for one witness host. */
-interface WitnessStartupMaterial {
-  httpUrl: string;
-  tcpUrl: string;
-  datetime?: string;
-  source: "cli" | "config" | "state";
-}
-
 /** Start one combined witness+mailbox host after identity reconciliation. */
 export function* witnessStartCommand(
   args: Record<string, unknown>,
@@ -87,67 +71,34 @@ export function* witnessStartCommand(
     },
   );
   const hby = ensured.hby;
-  let aidCreated = false;
 
   try {
-    let hab = hby.habByName(commandArgs.alias!);
-    if (!hab) {
-      hab = hby.makeHab(commandArgs.alias!, undefined, {
-        transferable: false,
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      aidCreated = true;
-    }
-
-    validateWitnessHabitat(hby, hab);
-    const startup = resolveWitnessStartupMaterial(
+    const startup = resolveWitnessHostStartup(
       hby,
-      hab.pre,
       commandArgs,
-      startConfig,
+      startConfig?.get<Record<string, unknown>>() ?? null,
     );
-    if (startup.source !== "state") {
-      yield* reconcileWitnessIdentity(hby, hab, startup);
-    } else if (!witnessIdentityComplete(hby, hab.pre, startup)) {
-      throw new ValidationError(
-        "Selected alias does not have complete witness startup state and no authoritative startup material was provided.",
-      );
-    }
+    yield* reconcileWitnessHostStartup(hby, startup);
 
-    const httpListenHost = resolveListenHost(
-      commandArgs.listenHost,
-      startup.httpUrl,
-    );
-    const httpPort = resolveHttpPort(commandArgs.http, startup.httpUrl);
-    const tcpListenHost = resolveListenHost(
-      commandArgs.listenHost,
-      startup.tcpUrl,
-    );
-    const tcpPort = resolveTcpPort(commandArgs.tcp, startup.tcpUrl);
-
-    console.log(`Witness Prefix  ${hab.pre}`);
-    console.log(`HTTP URL        ${startup.httpUrl}`);
-    console.log(`TCP URL         ${startup.tcpUrl}`);
-    console.log(`Mailbox Admin   ${adminUrl(startup.httpUrl)}`);
-    console.log(
-      `Witness OOBI    ${canonicalOrigin(startup.httpUrl)}/oobi/${hab.pre}/witness/${hab.pre}`,
-    );
-    console.log(
-      `Mailbox OOBI    ${canonicalOrigin(startup.httpUrl)}/oobi/${hab.pre}/mailbox/${hab.pre}`,
-    );
-    console.log(`HTTP Listen     ${httpListenHost}:${httpPort}`);
-    console.log(`TCP Listen      ${tcpListenHost}:${tcpPort}`);
-    console.log(`Keystore        ${ensured.created ? "created" : "reused"}`);
-    console.log(`Witness AID     ${aidCreated ? "created" : "reused"}`);
+    writeTextLines([
+      `Witness Prefix  ${startup.hab.pre}`,
+      `HTTP URL        ${startup.startup.httpUrl}`,
+      `TCP URL         ${startup.startup.tcpUrl}`,
+      `Mailbox Admin   ${startup.mailboxAdminUrl}`,
+      `Witness OOBI    ${startup.witnessOobi}`,
+      `Mailbox OOBI    ${startup.mailboxOobi}`,
+      `HTTP Listen     ${startup.httpListenHost}:${startup.httpPort}`,
+      `TCP Listen      ${startup.tcpListenHost}:${startup.tcpPort}`,
+      `Keystore        ${ensured.created ? "created" : "reused"}`,
+      `Witness AID     ${startup.aidCreated ? "created" : "reused"}`,
+    ]);
 
     yield* runWitnessHost(hby, {
-      serviceHab: hab,
-      httpPort,
-      httpListenHost,
-      tcpPort,
-      tcpListenHost,
+      serviceHab: startup.hab,
+      httpPort: startup.httpPort,
+      httpListenHost: startup.httpListenHost,
+      tcpPort: startup.tcpPort,
+      tcpListenHost: startup.tcpListenHost,
     });
   } finally {
     yield* hby.close();
@@ -257,11 +208,11 @@ function* loadWitnessStartConfig(
     });
   } catch {
     for (
-      const candidate of witnessConfigCandidates(
-        args.configFile,
-        args.headDirPath,
-        args.compat ?? false,
-      )
+      const candidate of configFileCandidates(args.configFile, {
+        headDirPath: args.headDirPath,
+        compat: args.compat ?? false,
+        home: Deno.env.get("HOME") ?? undefined,
+      })
     ) {
       try {
         return yield* createConfiger({
@@ -278,365 +229,4 @@ function* loadWitnessStartConfig(
   }
 
   throw new ValidationError(`Config file '${args.configFile}' was not found.`);
-}
-
-/** Candidate config locations accepted for KLI-compatible operator workflows. */
-function witnessConfigCandidates(
-  configFile: string,
-  headDirPath?: string,
-  compat = false,
-): string[] {
-  const fileName = configFile.endsWith(".json") ? configFile : `${configFile}.json`;
-  const candidates = new Set<string>();
-  candidates.add(configFile);
-  candidates.add(fileName);
-
-  const homes = [Deno.env.get("HOME")].filter((value): value is string => !!value);
-  const suffixes = compat ? [".keri/cf"] : [".tufa/cf", "keri/cf"];
-
-  if (headDirPath) {
-    for (const suffix of suffixes) {
-      candidates.add(join(headDirPath, suffix, fileName));
-    }
-  }
-  for (const home of homes) {
-    for (const suffix of suffixes) {
-      candidates.add(join(home, suffix, fileName));
-    }
-  }
-  candidates.add(join("/usr/local/var/keri/cf", fileName));
-
-  return [...candidates];
-}
-
-/**
- * Resolve witness startup material in authority order.
- *
- * Precedence:
- * - explicit CLI URL/TCP URL input
- * - alias-scoped config section
- * - already accepted local endpoint state
- */
-function resolveWitnessStartupMaterial(
-  hby: Habery,
-  pre: string,
-  args: WitnessStartArgs,
-  configer?: Configer,
-): WitnessStartupMaterial {
-  const cli = args.url || args.tcpUrl
-    ? {
-      httpUrl: args.url ? normalizeHttpUrl(args.url) : synthesizeHttpUrl(args.http ?? 5631, args.listenHost),
-      tcpUrl: args.tcpUrl ? normalizeTcpUrl(args.tcpUrl) : synthesizeTcpUrl(args.tcp ?? 5632, args.listenHost),
-      datetime: args.datetime ? validateIsoDatetime(args.datetime) : makeNowIso8601(),
-      source: "cli" as const,
-    }
-    : null;
-
-  const config = configer?.get<Record<string, unknown>>() ?? null;
-  if (config) {
-    const section = config[args.alias!];
-    if (!section || typeof section !== "object") {
-      if (cli) {
-        return cli;
-      }
-      throw new ValidationError(
-        `Config file does not contain a '${args
-          .alias!}' witness startup section.`,
-      );
-    }
-    const data = section as Record<string, unknown>;
-    const dt = typeof data.dt === "string" ? validateIsoDatetime(data.dt) : makeNowIso8601();
-    const curls = Array.isArray(data.curls)
-      ? data.curls.filter((entry): entry is string => typeof entry === "string")
-      : [];
-    const httpUrl = curls.find((entry) => {
-      const protocol = new URL(entry).protocol;
-      return protocol === "http:" || protocol === "https:";
-    });
-    const tcpUrl = curls.find((entry) => new URL(entry).protocol === "tcp:");
-    if (!httpUrl || !tcpUrl) {
-      throw new ValidationError(
-        `Config section '${args
-          .alias!}' must provide one HTTP(S) url and one tcp url.`,
-      );
-    }
-    const configured = {
-      httpUrl: normalizeHttpUrl(httpUrl),
-      tcpUrl: normalizeTcpUrl(tcpUrl),
-      datetime: dt,
-      source: "config" as const,
-    };
-    if (
-      cli
-      && (cli.httpUrl !== configured.httpUrl
-        || cli.tcpUrl !== configured.tcpUrl
-        || cli.datetime !== configured.datetime)
-    ) {
-      throw new ValidationError(
-        `Config section '${args
-          .alias!}' conflicts with explicit witness startup material.`,
-      );
-    }
-    return configured;
-  }
-
-  const state = storedWitnessStartupMaterial(hby, pre);
-  if (state) {
-    return state;
-  }
-  if (cli) {
-    return cli;
-  }
-
-  throw new ValidationError(
-    "Selected alias does not have complete witness startup state and no config or CLI startup material was provided.",
-  );
-}
-
-function validateWitnessHabitat(hby: Habery, hab: Hab): void {
-  const record = hby.db.getHab(hab.pre);
-  if (!hab.kever) {
-    throw new ValidationError(
-      `Witness alias ${hab.name} is missing accepted key state.`,
-    );
-  }
-  if (hab.kever.transferable) {
-    throw new ValidationError(
-      `Witness alias ${hab.name} must be non-transferable.`,
-    );
-  }
-  if (
-    record?.mid || (record?.smids?.length ?? 0) > 0
-    || (record?.rmids?.length ?? 0) > 0
-  ) {
-    throw new ValidationError(
-      `Witness alias ${hab.name} must be a local single-identifier habitat.`,
-    );
-  }
-}
-
-function roleEnabled(
-  hby: Habery,
-  cid: string,
-  role: string,
-  eid: string,
-): boolean {
-  const end = hby.db.ends.get([cid, role, eid]);
-  return !!(end?.allowed || end?.enabled);
-}
-
-function storedWitnessStartupMaterial(
-  hby: Habery,
-  pre: string,
-): WitnessStartupMaterial | null {
-  // Stored state is authoritative only when there is exactly one HTTP(S) URL
-  // and exactly one TCP URL; ambiguity would make advertised OOBIs unstable.
-  const urls = fetchEndpointUrls(hby, pre);
-  const httpEntries = [urls.https, urls.http]
-    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
-    .map(normalizeHttpUrl);
-  const tcpEntries = [urls.tcp]
-    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
-    .map(normalizeTcpUrl);
-  if (httpEntries.length === 0 || tcpEntries.length === 0) {
-    return null;
-  }
-  if (httpEntries.length > 1) {
-    throw new ValidationError(
-      `Local witness alias ${pre} has more than one HTTP(S) URL; use one authoritative URL.`,
-    );
-  }
-  if (tcpEntries.length > 1) {
-    throw new ValidationError(
-      `Local witness alias ${pre} has more than one tcp URL; use one authoritative URL.`,
-    );
-  }
-  return {
-    httpUrl: httpEntries[0]!,
-    tcpUrl: tcpEntries[0]!,
-    source: "state",
-  };
-}
-
-function witnessIdentityComplete(
-  hby: Habery,
-  pre: string,
-  startup: WitnessStartupMaterial,
-): boolean {
-  const stored = storedWitnessStartupMaterial(hby, pre);
-  return !!stored
-    && stored.httpUrl === normalizeHttpUrl(startup.httpUrl)
-    && stored.tcpUrl === normalizeTcpUrl(startup.tcpUrl)
-    && roleEnabled(hby, pre, EndpointRoles.controller, pre)
-    && roleEnabled(hby, pre, EndpointRoles.witness, pre)
-    && roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
-}
-
-/** Persist self location and role replies required before serving witness traffic. */
-function* reconcileWitnessIdentity(
-  hby: Habery,
-  hab: Hab,
-  startup: WitnessStartupMaterial,
-): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-  ingestKeriBytes(
-    runtime,
-    hab.makeLocScheme(
-      startup.httpUrl,
-      hab.pre,
-      schemeForUrl(startup.httpUrl),
-      startup.datetime,
-    ),
-  );
-  ingestKeriBytes(
-    runtime,
-    hab.makeLocScheme(startup.tcpUrl, hab.pre, Schemes.tcp, startup.datetime),
-  );
-  ingestKeriBytes(
-    runtime,
-    hab.makeEndRole(hab.pre, EndpointRoles.controller, true, startup.datetime),
-  );
-  ingestKeriBytes(
-    runtime,
-    hab.makeEndRole(hab.pre, EndpointRoles.witness, true, startup.datetime),
-  );
-  ingestKeriBytes(
-    runtime,
-    hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true, startup.datetime),
-  );
-  yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-  yield* runtime.close();
-
-  if (!witnessIdentityComplete(hby, hab.pre, startup)) {
-    throw new ValidationError(
-      "Witness startup reconciliation did not produce accepted self location/controller/witness/mailbox state.",
-    );
-  }
-}
-
-/** Normalize the advertised HTTP(S) witness URL while preserving path prefix. */
-function normalizeHttpUrl(url: string): string {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new ValidationError(`Witness HTTP URL must be HTTP(S): ${url}`);
-  }
-  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-  return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}${parsed.hash}`;
-}
-
-/** Normalize the advertised TCP witness URL used by witness receipt transport. */
-function normalizeTcpUrl(url: string): string {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "tcp:") {
-    throw new ValidationError(`Witness TCP URL must use tcp: ${url}`);
-  }
-  const pathname = parsed.pathname.replace(/\/+$/, "");
-  return `${parsed.protocol}//${parsed.host}${pathname}`;
-}
-
-function schemeForUrl(url: string): Scheme {
-  const protocol = new URL(url).protocol;
-  if (protocol === "https:") {
-    return Schemes.https;
-  }
-  if (protocol === "tcp:") {
-    return Schemes.tcp;
-  }
-  return Schemes.http;
-}
-
-function validateIsoDatetime(dt: string): string {
-  const parsed = new Date(dt);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new ValidationError(`Invalid ISO8601 datetime: ${dt}`);
-  }
-  const y = parsed.getUTCFullYear().toString().padStart(4, "0");
-  const m = (parsed.getUTCMonth() + 1).toString().padStart(2, "0");
-  const d = parsed.getUTCDate().toString().padStart(2, "0");
-  const hh = parsed.getUTCHours().toString().padStart(2, "0");
-  const mm = parsed.getUTCMinutes().toString().padStart(2, "0");
-  const ss = parsed.getUTCSeconds().toString().padStart(2, "0");
-  const micros = (parsed.getUTCMilliseconds() * 1000).toString().padStart(
-    6,
-    "0",
-  );
-  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
-}
-
-/** Choose a bind address from explicit input or the advertised endpoint. */
-function resolveListenHost(
-  explicit: string | undefined,
-  advertisedUrl: string,
-): string {
-  if (explicit && explicit.length > 0) {
-    return explicit;
-  }
-  const hostname = new URL(advertisedUrl).hostname;
-  return isBindableLiteralHost(hostname) ? hostname : "0.0.0.0";
-}
-
-function resolveHttpPort(
-  explicit: number | undefined,
-  advertisedUrl: string,
-): number {
-  if (explicit !== undefined) {
-    return explicit;
-  }
-  const parsed = new URL(advertisedUrl);
-  return parsed.port.length > 0 ? Number(parsed.port) : 5631;
-}
-
-function resolveTcpPort(
-  explicit: number | undefined,
-  advertisedUrl: string,
-): number {
-  if (explicit !== undefined) {
-    return explicit;
-  }
-  const parsed = new URL(advertisedUrl);
-  return parsed.port.length > 0 ? Number(parsed.port) : 5632;
-}
-
-function synthesizeHttpUrl(
-  port: number,
-  listenHost?: string,
-): string {
-  const host = bindableAdvertiseHost(listenHost);
-  return normalizeHttpUrl(`http://${host}:${port}`);
-}
-
-function synthesizeTcpUrl(
-  port: number,
-  listenHost?: string,
-): string {
-  const host = bindableAdvertiseHost(listenHost);
-  return normalizeTcpUrl(`tcp://${host}:${port}`);
-}
-
-function bindableAdvertiseHost(host?: string): string {
-  if (!host || host === "0.0.0.0" || host === "::") {
-    return "127.0.0.1";
-  }
-  return host;
-}
-
-function isBindableLiteralHost(hostname: string): boolean {
-  return hostname === "localhost"
-    || hostname === "0.0.0.0"
-    || hostname === "::"
-    || hostname === "::1"
-    || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
-    || hostname.includes(":");
-}
-
-function canonicalOrigin(url: string): string {
-  const parsed = new URL(url);
-  return `${parsed.protocol}//${parsed.host}`;
-}
-
-function adminUrl(url: string): string {
-  const parsed = new URL(url);
-  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-  const base = pathname === "/" ? "" : pathname;
-  return `${parsed.protocol}//${parsed.host}${base}/mailboxes`;
 }

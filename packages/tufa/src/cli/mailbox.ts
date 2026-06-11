@@ -8,15 +8,11 @@
  */
 import { concatBytes } from "cesr-ts";
 import { action, type Operation } from "effection";
-import { join } from "jsr:@std/path";
 import {
   type AgentRuntime,
-  buildCesrRequest,
   buildCesrStreamRequest,
   type CesrBodyMode,
-  createAgentRuntime,
   endpointRoleAccepted,
-  EndpointRoles,
   fetchEndpointUrls,
   fetchResponseHandle,
   type Hab,
@@ -30,14 +26,22 @@ import {
   preferredUrl,
   processRuntimeTurn,
   proposeGroupEndpointRole,
-  readMailboxSseBody,
   Roles,
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
+import { canonicalOrigin, configFileCandidates, mailboxAdminUrl } from "../operator/host-planning.ts";
+import {
+  collectConfiguredMailboxes,
+  collectMailboxDebugReport,
+  type MailboxDebugReport,
+  normalizeMailboxTopic,
+} from "../operator/mailbox-debug.ts";
+import { reconcileMailboxHostStartup, resolveMailboxHostStartup } from "../operator/mailbox-startup.ts";
 import { runMailboxHost } from "../roles/mailbox.ts";
 import { type CommandHaberyOptions, withExistingHab, withHabAndAgentRuntime } from "./support/context.ts";
 import { ensureHby } from "./support/existing.ts";
+import { writeJsonLine, writeTextLines } from "./support/rendering.ts";
 
 type MultisigMailboxMode = "propose" | "complete";
 
@@ -79,12 +83,6 @@ interface MailboxDebugArgs extends MailboxBaseArgs {
   verbose?: boolean;
 }
 
-interface MailboxStartupMaterial {
-  url: string;
-  datetime?: string;
-  source: "cli" | "config" | "state";
-}
-
 /** Authorize one remote mailbox for the selected local controller. */
 export function* mailboxAddCommand(
   args: Record<string, unknown>,
@@ -109,7 +107,7 @@ export function* mailboxStartCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs = parseMailboxStartArgs(args);
-  const startConfig = yield* loadMailboxStartConfig(commandArgs);
+  const startConfig = loadMailboxStartConfig(commandArgs);
   const ensured = yield* ensureHby(
     commandArgs.name!,
     commandArgs.base ?? "",
@@ -125,62 +123,27 @@ export function* mailboxStartCommand(
     },
   );
   const hby = ensured.hby;
-  let aidCreated = false;
 
   try {
-    let hab = hby.habByName(commandArgs.alias!);
-    const configured = resolveConfiguredStartup(
-      commandArgs,
-      startConfig,
-      commandArgs.alias!,
-    );
+    const startup = resolveMailboxHostStartup(hby, commandArgs, startConfig);
+    yield* reconcileMailboxHostStartup(hby, startup);
 
-    if (!hab && !configured) {
-      throw new ValidationError(
-        "Mailbox startup requires --url and --datetime, or a matching config alias section, when the alias does not already exist.",
-      );
-    }
-
-    if (!hab) {
-      hab = hby.makeHab(commandArgs.alias!, undefined, {
-        transferable: false,
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      aidCreated = true;
-    }
-
-    validateMailboxHabitat(hby, hab);
-    const startup = resolveEffectiveStartupMaterial(hby, hab.pre, configured);
-
-    if (startup.source !== "state") {
-      yield* reconcileMailboxIdentity(hby, hab, startup);
-    } else if (!mailboxIdentityComplete(hby, hab.pre, startup.url)) {
-      throw new ValidationError(
-        "Selected alias does not have complete mailbox startup state and no authoritative --url/--datetime or config material was provided.",
-      );
-    }
-
-    const listenHost = resolveListenHost(commandArgs.listenHost, startup.url);
-    const port = resolveListenPort(commandArgs.port, startup.url);
-
-    console.log(`Mailbox Prefix  ${hab.pre}`);
-    console.log(`Advertised URL  ${startup.url}`);
-    console.log(`Mailbox Admin  ${adminUrl(startup.url)}`);
-    console.log(
-      `Mailbox OOBI   ${canonicalMailboxOrigin(startup.url)}/oobi/${hab.pre}/mailbox/${hab.pre}`,
-    );
-    console.log(`Listening On   ${listenHost}:${port}`);
-    console.log(`Keystore       ${ensured.created ? "created" : "reused"}`);
-    console.log(`Mailbox AID    ${aidCreated ? "created" : "reused"}`);
+    writeTextLines([
+      `Mailbox Prefix  ${startup.hab.pre}`,
+      `Advertised URL  ${startup.startup.url}`,
+      `Mailbox Admin  ${startup.mailboxAdminUrl}`,
+      `Mailbox OOBI   ${startup.mailboxOobi}`,
+      `Listening On   ${startup.listenHost}:${startup.port}`,
+      `Keystore       ${ensured.created ? "created" : "reused"}`,
+      `Mailbox AID    ${startup.aidCreated ? "created" : "reused"}`,
+    ]);
 
     yield* runMailboxHost(hby, {
-      port,
-      listenHost,
-      serviceHab: hab,
-      hostedPrefixes: [hab.pre],
-      seedHabs: [hab],
+      port: startup.port,
+      listenHost: startup.listenHost,
+      serviceHab: startup.hab,
+      hostedPrefixes: [startup.hab.pre],
+      seedHabs: [startup.hab],
     });
   } finally {
     yield* hby.close();
@@ -203,27 +166,12 @@ export function* mailboxListCommand(
     commandArgs.alias,
     mailboxOpenOptions(commandArgs),
     function*({ hby, hab }) {
-      const organizer = new Organizer(hby);
-      for (
-        const [keys, end] of hby.db.ends.getTopItemIter(
-          [hab.pre, Roles.mailbox],
-          {
-            topive: true,
-          },
-        )
-      ) {
-        const eid = keys[2];
-        if (!eid || !end.allowed) {
-          continue;
-        }
-        const contact = organizer.get(eid);
-        const alias = typeof contact?.alias === "string" ? contact.alias : "";
-        const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
-        const oobi = url.length > 0 ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}` : "";
+      for (const row of collectConfiguredMailboxes(hby, hab)) {
+        const oobi = row.url.length > 0 ? `${canonicalOrigin(row.url)}/oobi/${hab.pre}/mailbox/${row.eid}` : "";
         const fields: string[] = [
-          alias,
-          eid,
-          url,
+          row.alias,
+          row.eid,
+          row.url,
           oobi,
         ].filter((item) => item.length > 0);
         console.log(fields.join(" "));
@@ -258,7 +206,7 @@ export function* mailboxUpdateCommand(
 
   const witness = commandArgs.witness;
   const index = Number(commandArgs.index);
-  const topic = normalizeTopic(commandArgs.topic);
+  const topic = normalizeMailboxTopic(commandArgs.topic);
 
   yield* withExistingHab(
     commandArgs,
@@ -301,95 +249,54 @@ export function* mailboxDebugCommand(
     commandArgs.alias,
     mailboxOpenOptions(commandArgs),
     function*({ hby, hab }) {
-      console.log("Configured Mailboxes");
-      const organizer = new Organizer(hby);
-      for (
-        const [keys, end] of hby.db.ends.getTopItemIter(
-          [hab.pre, Roles.mailbox],
-          {
-            topive: true,
-          },
-        )
-      ) {
-        const eid = keys[2];
-        if (!eid || !end.allowed) {
-          continue;
-        }
-        const contact = organizer.get(eid);
-        const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
-        console.log(`${contact?.alias ?? ""} ${eid} ${url}`.trim());
-      }
-
-      console.log("");
-      console.log("Local Index per Topic");
-      const witrec = hby.db.tops.get([hab.pre, witness]);
-      if (witrec) {
-        for (const [topic, idx] of Object.entries(witrec.topics)) {
-          console.log(`Topic ${topic}: ${idx}`);
-        }
-      } else {
-        console.log("No local index");
-      }
-
-      console.log("");
-      console.log("Outbox Pending");
-      if (!hby.obx.enabled) {
-        console.log("Outboxer disabled");
-      } else {
-        for (const pending of hby.obx.iterPending()) {
-          if (pending.target.eid !== witness) {
-            continue;
-          }
-          console.log(
-            `${pending.message.topic} ${pending.target.eid} attempts=${pending.target.attempts ?? 0}`,
-          );
-        }
-      }
-
-      const endpointUrl = preferredUrl(
-        fetchEndpointUrls(hby, witness),
-      );
-      if (!endpointUrl) {
-        return;
-      }
-
-      const topics = witrec?.topics ?? {
-        "/challenge": 0,
-        "/reply": 0,
-        "/receipt": 0,
-        "/replay": 0,
-      };
-      const cursor: Record<string, number> = {};
-      for (const [topic, idx] of Object.entries(topics)) {
-        cursor[topic] = idx + 1;
-      }
-
-      const response = yield* fetchMailboxDebug(
-        endpointUrl,
-        hab.query(
-          hab.pre,
-          witness,
-          { topics: cursor },
-          "mbx",
-        ),
-        hby.cesrBodyMode,
-        witness,
-      );
-
-      console.log("");
-      console.log("Messages");
-      for (const event of parseMailboxSse(response)) {
-        if (!commandArgs.verbose) {
-          console.log(`${event.topic} ${event.idx}: ${event.msg.slice(0, 20)}`);
-        } else {
-          console.log(`Topic: ${event.topic}`);
-          console.log(`Index: ${event.idx}`);
-          console.log(event.msg);
-          console.log("");
-        }
-      }
+      const report = yield* collectMailboxDebugReport(hby, hab, witness);
+      renderMailboxDebugReport(report, commandArgs.verbose ?? false);
     },
   );
+}
+
+function renderMailboxDebugReport(
+  report: MailboxDebugReport,
+  verbose: boolean,
+): void {
+  const lines: string[] = ["Configured Mailboxes"];
+  for (const row of report.configuredMailboxes) {
+    lines.push(`${row.alias} ${row.eid} ${row.url}`.trim());
+  }
+
+  lines.push("", "Local Index per Topic");
+  if (report.localTopics) {
+    for (const [topic, idx] of Object.entries(report.localTopics)) {
+      lines.push(`Topic ${topic}: ${idx}`);
+    }
+  } else {
+    lines.push("No local index");
+  }
+
+  lines.push("", "Outbox Pending");
+  if (!report.outboxEnabled) {
+    lines.push("Outboxer disabled");
+  } else {
+    for (const pending of report.outboxPending) {
+      lines.push(`${pending.topic} ${pending.eid} attempts=${pending.attempts}`);
+    }
+  }
+
+  if (report.messages) {
+    lines.push("", "Messages");
+    for (const event of report.messages) {
+      if (!verbose) {
+        lines.push(`${event.topic} ${event.idx}: ${event.msg.slice(0, 20)}`);
+      } else {
+        lines.push(`Topic: ${event.topic}`);
+        lines.push(`Index: ${event.idx}`);
+        lines.push(event.msg);
+        lines.push("");
+      }
+    }
+  }
+
+  writeTextLines(lines);
 }
 
 function* withMailboxWorkflow(
@@ -426,14 +333,14 @@ function* withMailboxWorkflow(
             role: Roles.mailbox,
             allow: true,
           });
-          console.log(JSON.stringify({
+          writeJsonLine({
             route: result.route,
             said: result.said,
             group: result.group,
             accepted: result.accepted,
             deliveries: result.deliveries,
             attachmentBytes: result.attachmentBytes,
-          }));
+          });
           return;
         }
         if (!endpointRoleAccepted(hby, hab.pre, Roles.mailbox, mailboxAid)) {
@@ -451,7 +358,6 @@ function* withMailboxWorkflow(
         throw new ValidationError("--multisig-mode is only valid for local group aliases.");
       }
 
-      const submission = collectMailboxAdminSubmission(hby, hab.pre);
       const existing = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
       const rpy = allow && existing?.allowed
         ? hab.loadEndRole(hab.pre, mailboxAid, Roles.mailbox)
@@ -588,19 +494,19 @@ function parseMailboxStartArgs(
  * `mailbox start` treats config as read-only preload input, so it resolves a
  * small set of likely config paths and only reads when one already exists.
  */
-function* loadMailboxStartConfig(
+function loadMailboxStartConfig(
   args: MailboxStartArgs,
-): Operation<Record<string, unknown> | null> {
+): Record<string, unknown> | null {
   if (!args.configFile) {
     return null;
   }
 
   for (
-    const path of mailboxConfigCandidates(
-      args.configFile,
-      args.headDirPath,
-      args.compat ?? false,
-    )
+    const path of configFileCandidates(args.configFile, {
+      headDirPath: args.headDirPath,
+      compat: args.compat ?? false,
+      home: Deno.env.get("HOME") ?? undefined,
+    })
   ) {
     try {
       return JSON.parse(Deno.readTextFileSync(path)) as Record<string, unknown>;
@@ -620,303 +526,6 @@ function* loadMailboxStartConfig(
   throw new ValidationError(`Config file '${args.configFile}' was not found.`);
 }
 
-function mailboxConfigCandidates(
-  configFile: string,
-  headDirPath?: string,
-  compat = false,
-): string[] {
-  const fileName = configFile.endsWith(".json") ? configFile : `${configFile}.json`;
-  const candidates = new Set<string>();
-  candidates.add(configFile);
-  candidates.add(fileName);
-
-  const homes = [Deno.env.get("HOME")].filter((value): value is string => !!value);
-  const suffixes = compat ? [".keri/cf"] : [".tufa/cf", "keri/cf"];
-
-  if (headDirPath) {
-    for (const suffix of suffixes) {
-      candidates.add(join(headDirPath, suffix, fileName));
-    }
-  }
-  for (const home of homes) {
-    for (const suffix of suffixes) {
-      candidates.add(join(home, suffix, fileName));
-    }
-  }
-  candidates.add(join("/usr/local/var/keri/cf", fileName));
-
-  return [...candidates];
-}
-
-/**
- * Resolve explicit or config-provided mailbox startup material.
- *
- * Unlike witness startup, mailbox startup does not synthesize a new URL for a
- * missing existing alias; operators must provide either config/CLI material or
- * already accepted endpoint state.
- */
-function resolveConfiguredStartup(
-  args: MailboxStartArgs,
-  config: Record<string, unknown> | null,
-  alias: string,
-): MailboxStartupMaterial | null {
-  const cli = args.url && args.datetime
-    ? {
-      url: normalizeMailboxUrl(args.url),
-      datetime: validateStartupDatetime(args.datetime),
-      source: "cli" as const,
-    }
-    : null;
-
-  if (!config) {
-    return cli;
-  }
-  const section = config[alias];
-  if (!section || typeof section !== "object") {
-    if (cli) {
-      return cli;
-    }
-    throw new ValidationError(
-      `Config file does not contain a '${alias}' mailbox startup section.`,
-    );
-  }
-
-  const data = section as Record<string, unknown>;
-  const dt = typeof data.dt === "string" ? data.dt : null;
-  if (!dt) {
-    throw new ValidationError(
-      `Config section '${alias}' is missing dt.`,
-    );
-  }
-  const curls = Array.isArray(data.curls)
-    ? data.curls.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  const httpUrls = curls
-    .map((url) => normalizeMailboxUrl(url))
-    .filter((url) => {
-      const parsed = new URL(url);
-      return parsed.protocol === "http:" || parsed.protocol === "https:";
-    });
-  if (httpUrls.length !== 1) {
-    throw new ValidationError(
-      `Config section '${alias}' must provide exactly one HTTP(S) curl.`,
-    );
-  }
-  const configured = {
-    url: httpUrls[0]!,
-    datetime: validateStartupDatetime(dt),
-    source: "config" as const,
-  };
-  if (
-    cli
-    && (cli.url !== configured.url || cli.datetime !== configured.datetime)
-  ) {
-    throw new ValidationError(
-      `Config section '${alias}' conflicts with explicit --url/--datetime startup material.`,
-    );
-  }
-  return configured;
-}
-
-/** Resolve the final startup material, falling back to accepted endpoint state. */
-function resolveEffectiveStartupMaterial(
-  hby: Habery,
-  pre: string,
-  configured: MailboxStartupMaterial | null,
-): MailboxStartupMaterial {
-  if (configured) {
-    return configured;
-  }
-  const url = storedMailboxUrl(hby, pre);
-  if (!url) {
-    throw new ValidationError(
-      "Selected alias does not have complete mailbox startup state and no config or CLI startup material was provided.",
-    );
-  }
-  return { url, source: "state" };
-}
-
-function validateMailboxHabitat(
-  hby: Habery,
-  hab: ReturnType<typeof requireHab>,
-): void {
-  const record = hby.db.getHab(hab.pre);
-  if (!hab.kever) {
-    throw new ValidationError(
-      `Mailbox alias ${hab.name} is missing accepted key state.`,
-    );
-  }
-  if (hab.kever.transferable) {
-    throw new ValidationError(
-      `Mailbox alias ${hab.name} must be non-transferable.`,
-    );
-  }
-  if (
-    record?.mid || (record?.smids?.length ?? 0) > 0
-    || (record?.rmids?.length ?? 0) > 0
-  ) {
-    throw new ValidationError(
-      `Mailbox alias ${hab.name} must be a local single-identifier habitat.`,
-    );
-  }
-}
-
-/** Return true when self location plus controller/mailbox roles are accepted. */
-function mailboxIdentityComplete(
-  hby: Habery,
-  pre: string,
-  url: string,
-): boolean {
-  return storedMailboxUrl(hby, pre) === normalizeMailboxUrl(url)
-    && roleEnabled(hby, pre, EndpointRoles.controller, pre)
-    && roleEnabled(hby, pre, EndpointRoles.mailbox, pre);
-}
-
-function roleEnabled(
-  hby: Habery,
-  cid: string,
-  role: string,
-  eid: string,
-): boolean {
-  const end = hby.db.ends.get([cid, role, eid]);
-  return !!(end?.allowed || end?.enabled);
-}
-
-function storedMailboxUrl(
-  hby: Habery,
-  pre: string,
-): string | null {
-  // Treat multiple stored HTTP(S) URLs as an operator error. A mailbox host
-  // needs one canonical advertised origin for admin and OOBI URLs.
-  const urls = fetchEndpointUrls(hby, pre);
-  const candidates = [urls.https, urls.http]
-    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
-    .map((url) => normalizeMailboxUrl(url));
-  if (candidates.length === 0) {
-    return null;
-  }
-  if (candidates.length > 1) {
-    throw new ValidationError(
-      `Local mailbox alias ${pre} has more than one HTTP(S) URL; use one authoritative URL for mailbox start.`,
-    );
-  }
-  return candidates[0]!;
-}
-
-function* reconcileMailboxIdentity(
-  hby: Habery,
-  hab: ReturnType<typeof requireHab>,
-  startup: MailboxStartupMaterial,
-): Operation<void> {
-  // Feed self-authored location and role replies through the normal runtime
-  // path instead of mutating `locs.` or `ends.` directly.
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-  try {
-    const scheme = new URL(startup.url).protocol === "https:" ? "https" : "http";
-    ingestKeriBytes(
-      runtime,
-      hab.makeLocScheme(startup.url, hab.pre, scheme, startup.datetime),
-    );
-    ingestKeriBytes(
-      runtime,
-      hab.makeEndRole(hab.pre, EndpointRoles.controller, true, startup.datetime),
-    );
-    ingestKeriBytes(
-      runtime,
-      hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true, startup.datetime),
-    );
-    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-  } finally {
-    yield* runtime.close();
-  }
-
-  if (!mailboxIdentityComplete(hby, hab.pre, startup.url)) {
-    throw new ValidationError(
-      "Mailbox startup reconciliation did not produce accepted self location/controller/mailbox state.",
-    );
-  }
-}
-
-function normalizeMailboxUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new ValidationError(`Mailbox URL must be HTTP(S): ${url}`);
-    }
-    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}${parsed.hash}`;
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new ValidationError(`Invalid mailbox URL: ${url}`);
-  }
-}
-
-function canonicalMailboxOrigin(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new ValidationError(`Mailbox URL must be HTTP(S): ${url}`);
-    }
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new ValidationError(`Invalid mailbox URL: ${url}`);
-  }
-}
-
-function validateStartupDatetime(dt: string): string {
-  const parsed = new Date(dt);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new ValidationError(`Invalid ISO8601 datetime: ${dt}`);
-  }
-  const y = parsed.getUTCFullYear().toString().padStart(4, "0");
-  const m = (parsed.getUTCMonth() + 1).toString().padStart(2, "0");
-  const d = parsed.getUTCDate().toString().padStart(2, "0");
-  const hh = parsed.getUTCHours().toString().padStart(2, "0");
-  const mm = parsed.getUTCMinutes().toString().padStart(2, "0");
-  const ss = parsed.getUTCSeconds().toString().padStart(2, "0");
-  const micros = (parsed.getUTCMilliseconds() * 1000).toString().padStart(
-    6,
-    "0",
-  );
-  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
-}
-
-function resolveListenPort(
-  explicit: number | undefined,
-  advertisedUrl: string,
-): number {
-  if (explicit !== undefined) {
-    return explicit;
-  }
-  const parsed = new URL(advertisedUrl);
-  return parsed.port.length > 0 ? Number(parsed.port) : 8000;
-}
-
-function resolveListenHost(
-  explicit: string | undefined,
-  advertisedUrl: string,
-): string {
-  if (explicit && explicit.length > 0) {
-    return explicit;
-  }
-  const hostname = new URL(advertisedUrl).hostname;
-  return isBindableLiteralHost(hostname) ? hostname : "0.0.0.0";
-}
-
-function isBindableLiteralHost(hostname: string): boolean {
-  return hostname === "localhost"
-    || hostname === "0.0.0.0"
-    || hostname === "::"
-    || hostname === "::1"
-    || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
-    || hostname.includes(":");
-}
-
 function mailboxOpenOptions(args: MailboxBaseArgs): CommandHaberyOptions {
   return {
     compat: args.compat ?? false,
@@ -926,18 +535,6 @@ function mailboxOpenOptions(args: MailboxBaseArgs): CommandHaberyOptions {
     outboxer: args.outboxer ?? false,
     cesrBodyMode: args.cesrBodyMode,
   };
-}
-
-/** Resolve the selected local habitat and fail fast when the alias is missing. */
-function requireHab(
-  hby: Habery,
-  alias?: string,
-) {
-  const hab = hby.habByName(alias ?? "");
-  if (!hab) {
-    throw new ValidationError(`No local AID found for alias ${alias}`);
-  }
-  return hab;
 }
 
 /**
@@ -968,23 +565,6 @@ function resolveMailboxAid(
 }
 
 /**
- * Collect the local controller replay material submitted to remote mailbox
- * admin endpoints.
- */
-function collectReplay(
-  hby: Habery,
-  pre: string,
-): Uint8Array {
-  const parts: Uint8Array[] = [];
-  const kever = hby.db.getKever(pre);
-  if (kever) {
-    parts.push(...hby.db.cloneDelegation(kever));
-  }
-  parts.push(...hby.db.clonePreIter(pre));
-  return parts.length === 0 ? new Uint8Array() : concatBytes(...parts);
-}
-
-/**
  * Collect mailbox-admin replay material in both normalized and legacy shapes.
  *
  * `replay` is the verifier-ready stream used by raw CESR ingress.
@@ -1007,26 +587,6 @@ function collectMailboxAdminSubmission(
     kel,
     delkel,
   };
-}
-
-/** Normalize CLI topic input into the stored mailbox topic form. */
-function normalizeTopic(topic: string): string {
-  return topic.startsWith("/") ? topic : `/${topic}`;
-}
-
-/** Derive the mailbox-admin URL relative to one stored mailbox endpoint path. */
-function adminUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    const base = pathname === "/" ? "" : pathname;
-    return `${parsed.protocol}//${parsed.host}${base}/mailboxes`;
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new ValidationError(`Invalid mailbox URL: ${url}`);
-  }
 }
 
 /**
@@ -1061,7 +621,7 @@ function* postMailboxAdminCesr(
   bytes: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
   const request = buildCesrStreamRequest(bytes);
-  const { response } = yield* fetchResponseHandle(adminUrl(url), {
+  const { response } = yield* fetchResponseHandle(mailboxAdminUrl(url), {
     method: "POST",
     headers: request.headers,
     body: request.body,
@@ -1089,7 +649,7 @@ function* postMailboxAdminMultipart(
   }
   form.append("rpy", new TextDecoder().decode(rpy));
 
-  const { response } = yield* fetchResponseHandle(adminUrl(url), {
+  const { response } = yield* fetchResponseHandle(mailboxAdminUrl(url), {
     method: "POST",
     body: form,
   });
@@ -1099,66 +659,4 @@ function* postMailboxAdminMultipart(
     return () => {};
   });
   return { ok: response.ok, status: response.status, body };
-}
-
-/**
- * Issue one remote `mbx` query used by `mailbox debug`.
- *
- * The response body remains textual here because the command wants to print the
- * raw SSE event view after parsing.
- */
-function* fetchMailboxDebug(
-  url: string,
-  query: Uint8Array,
-  bodyMode: CesrBodyMode,
-  destination: string,
-): Operation<string> {
-  const request = buildCesrRequest(query, {
-    bodyMode,
-    destination,
-  });
-  const { response, controller } = yield* fetchResponseHandle(url, {
-    method: "POST",
-    headers: request.headers,
-    body: request.body,
-  });
-  if (!response.ok) {
-    throw new ValidationError(
-      `Mailbox debug query failed with HTTP ${response.status}.`,
-    );
-  }
-
-  // KERIpy mailbox iterables are long-poll SSE streams, not finite HTTP bodies.
-  return yield* readMailboxSseBody(response, controller, {
-    idleTimeoutMs: 500,
-    maxDurationMs: 5_000,
-  });
-}
-
-/** Parse mailbox SSE output into CLI-friendly rows. */
-function parseMailboxSse(
-  text: string,
-): Array<{ idx: number; topic: string; msg: string }> {
-  const messages: Array<{ idx: number; topic: string; msg: string }> = [];
-  for (const block of text.split("\n\n")) {
-    if (block.trim().length === 0) {
-      continue;
-    }
-    let idx = -1;
-    let topic = "";
-    const data: string[] = [];
-    for (const line of block.split("\n")) {
-      if (line.startsWith("id:")) {
-        idx = Number(line.slice(3).trim());
-      } else if (line.startsWith("event:")) {
-        topic = line.slice(6).trim();
-      } else if (line.startsWith("data:")) {
-        data.push(line.slice(5).trimStart());
-      }
-    }
-    if (idx >= 0 && topic.length > 0 && data.length > 0) {
-      messages.push({ idx, topic, msg: data.join("\n") });
-    }
-  }
-  return messages;
 }
