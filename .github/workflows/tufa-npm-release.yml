@@ -189,8 +189,18 @@ jobs:
           name: tufa-npm-${{ steps.package.outputs.version }}
           path: ./release-tarball
 
+      - name: check whether tufa version is already published
+        id: npm_package
+        shell: bash
+        run: |
+          if npm view "@keri-ts/tufa@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: publish the downloaded tufa tarball to npm
-        if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
+        if: ${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && steps.npm_package.outputs.exists != 'true' }}
         run: |
           TARBALL=$(find ./release-tarball -type f \( -name "@keri-ts-tufa-*.tgz" -o -name "keri-ts-tufa-*.tgz" -o -name "tufa-*.tgz" \) | sort | head -1)
           if [[ -z "$TARBALL" ]]; then
@@ -198,6 +208,10 @@ jobs:
             exit 1
           fi
           npm publish "$TARBALL" --access public
+
+      - name: report already published tufa package
+        if: ${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && steps.npm_package.outputs.exists == 'true' }}
+        run: echo "@keri-ts/tufa@${{ steps.package.outputs.version }} is already published; skipping npm publish."
 
   create-github-release:
     needs: publish
@@ -250,7 +264,16 @@ jobs:
           NOTES="## @keri-ts/tufa ${{ steps.package.outputs.version }}\n\nThis release was published to npm first. The attached tarball is the exact artifact consumed by the publish job.\n\n### Dependency releases\n- keri-ts: https://www.npmjs.com/package/keri-ts/v/${{ steps.deps.outputs.keri_ver }}\n- cesr-ts: https://www.npmjs.com/package/cesr-ts/v/${{ steps.deps.outputs.cesr_ver }}\n\n( GitHub releases for dependencies: keri-v${{ steps.deps.outputs.keri_ver }} and cesr-v${{ steps.deps.outputs.cesr_ver }} if they exist. )"
           # Write notes to file for gh
           echo -e "$NOTES" > /tmp/release-notes.md
-          gh release create "$TAG" \
-            "${{ steps.published.outputs.tarball }}" \
-            --title "$TITLE" \
-            --notes-file /tmp/release-notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md
+            gh release upload "$TAG" \
+              "${{ steps.published.outputs.tarball }}" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "${{ steps.published.outputs.tarball }}" \
+              --title "$TITLE" \
+              --notes-file /tmp/release-notes.md
+          fi
