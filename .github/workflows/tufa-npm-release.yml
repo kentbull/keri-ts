@@ -266,8 +266,12 @@ jobs:
           echo -e "$NOTES" > /tmp/release-notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
+              --draft=false \
+              --tag "$TAG" \
+              --target "$GITHUB_SHA" \
               --title "$TITLE" \
-              --notes-file /tmp/release-notes.md
+              --notes-file /tmp/release-notes.md \
+              --verify-tag
             gh release upload "$TAG" \
               "${{ steps.published.outputs.tarball }}" \
               --clobber
@@ -275,5 +279,7 @@ jobs:
             gh release create "$TAG" \
               "${{ steps.published.outputs.tarball }}" \
               --title "$TITLE" \
-              --notes-file /tmp/release-notes.md
+              --notes-file /tmp/release-notes.md \
+              --target "$GITHUB_SHA" \
+              --verify-tag
           fi
