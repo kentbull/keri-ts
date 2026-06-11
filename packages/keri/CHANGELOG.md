@@ -9,6 +9,7 @@
 
 ### Patch Changes
 
+- de60f83: Pin the Deno LMDB import to `lmdb@3.5.3` so local and CI Deno runtimes use the cleanup-hook-safe native package.
 - d1ebfb6: Refactored the CLI layer to use a unified dispatch function, registerDispatchedCommand, for consistency of approach and style.
 - 1f14f5c: Fixed the build process to use explicit public package boundaries and upgraded libsodium-wrappers to 0.8.4
 
