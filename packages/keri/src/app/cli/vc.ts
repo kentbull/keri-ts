@@ -1,33 +1,25 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import {
-  concatBytes,
-  Diger,
-  Ilks,
-  NumberPrimitive,
-  NumDex,
-  Prefixer,
-  Saider,
-  Seqner,
-  SerderACDC,
-  TraitDex,
-} from "../../../../cesr/mod.ts";
+import { concatBytes } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
-import { incept as inceptRegistryEvent, issue as issueEvent } from "../../core/protocol-vdr-eventing.ts";
-import { RegistryRecord } from "../../core/records.ts";
-import { Schemer } from "../../core/scheming.ts";
 import { Reger } from "../../db/reger.ts";
-import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../../vdr/credentialing.ts";
-import { Tevery } from "../../vdr/eventing.ts";
-import { type AgentRuntime, settleRuntimeIngress } from "../agent-runtime.ts";
+import { type AgentRuntime } from "../agent-runtime.ts";
+import {
+  createCredential,
+  credentialRegistryRecords,
+  credentialRegistryStatus,
+  credentialStreamBytes,
+  exportCredentialStream,
+  importCredentialStream,
+  inceptCredentialRegistry,
+  listCredentials,
+  pinSchemaBytes,
+  requireReger,
+  revocationRecipients,
+  revokeCredential,
+} from "../credential-workflows.ts";
 import type { ExchangeDeliveryPreference } from "../forwarding.ts";
-import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
-import { credentialStreamMessages } from "../ipex-credentialing.ts";
-import { Verifier } from "../verifying.ts";
 import { withAgentRuntime, withExistingHabery } from "./common/context.ts";
-
-const MULTISIG_TOPIC = "multisig";
 
 interface VcBaseArgs {
   name?: string;
@@ -88,9 +80,8 @@ export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation
   vcArgs.schema = asStringList(args.schema);
   yield* withVcHabery(vcArgs, function*({ hby }) {
     for (const path of vcArgs.schema ?? []) {
-      const schemer = new Schemer({ raw: Deno.readFileSync(path) });
-      hby.db.schema.pin(schemer.said, schemer);
-      console.log(JSON.stringify({ schema: schemer.said, path }));
+      const schema = pinSchemaBytes(hby, Deno.readFileSync(path));
+      console.log(JSON.stringify({ schema, path }));
     }
   });
 }
@@ -100,21 +91,13 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
   const vcArgs = registryArgs(args);
   yield* withVcRuntime(vcArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, vcArgs.alias);
-    const rgy = requireRegery(runtime);
-    if (isGroupHab(hby, hab)) {
-      const result = yield* proposeGroupRegistryIncept(hby, runtime, rgy, hab, vcArgs);
-      console.log(JSON.stringify(result));
-      return;
-    }
-    const registry = rgy.makeRegistry(vcArgs.registryName!, hab, {
-      noBackers: vcArgs.noBackers ?? true,
-      estOnly: vcArgs.estOnly ?? false,
+    const result = yield* inceptCredentialRegistry(hby, runtime, hab, {
+      registryName: vcArgs.registryName!,
+      noBackers: vcArgs.noBackers,
+      estOnly: vcArgs.estOnly,
+      usage: vcArgs.usage,
     });
-    console.log(JSON.stringify({
-      name: vcArgs.registryName,
-      registry: registry.regk,
-      issuer: hab.pre,
-    }));
+    console.log(JSON.stringify(result));
   });
 }
 
@@ -122,12 +105,8 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
 export function* vcRegistryListCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = baseArgs(args);
   yield* withVcRuntime(vcArgs, function*({ reger }) {
-    for (const [keys, record] of reger.regs.getTopItemIter()) {
-      console.log(JSON.stringify({
-        name: keys[0],
-        registry: record.registryKey,
-        issuer: record.prefix,
-      }));
+    for (const record of credentialRegistryRecords(reger)) {
+      console.log(JSON.stringify(record));
     }
   });
 }
@@ -136,17 +115,7 @@ export function* vcRegistryListCommand(args: Record<string, unknown>): Operation
 export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs = registryArgs(args, { aliasRequired: false });
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    const record = reger.regs.get(vcArgs.registryName!);
-    if (!record?.registryKey) {
-      throw new ValidationError(`Registry ${vcArgs.registryName} not found.`);
-    }
-    const tever = requireTevery(runtime).tevers.get(record.registryKey);
-    console.log(JSON.stringify({
-      name: vcArgs.registryName,
-      registry: record.registryKey,
-      issuer: record.prefix,
-      state: tever?.state() ?? null,
-    }));
+    console.log(JSON.stringify(credentialRegistryStatus(runtime, reger, vcArgs.registryName!)));
   });
 }
 
@@ -168,44 +137,21 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
   requireNonEmpty(vcArgs.registryName, "Registry name");
 
   yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
-    const rgy = requireRegery(runtime);
-    const registry = requireRegistry(rgy, vcArgs.registryName);
-    const schema = vcArgs.schemaFile ? importSchemaFile(hby, vcArgs.schemaFile) : vcArgs.schema;
+    const schema = vcArgs.schemaFile ? pinSchemaBytes(hby, Deno.readFileSync(vcArgs.schemaFile)) : vcArgs.schema;
     requireNonEmpty(schema, "Schema");
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
-    const credentialer = new Credentialer(hby, {
-      reger,
-      vry: requireVerifier(runtime),
-    });
-    const creder = credentialer.create({
-      registry,
+    const result = yield* createCredential(hby, runtime, reger, {
+      registryName: vcArgs.registryName!,
       schema: schema!,
       recipient,
       data: parseSubjectDataArg(vcArgs.data) ?? {},
       edges: parseJsonSectionArg(vcArgs.edges, "edges"),
       rules: parseJsonSectionArg(vcArgs.rules, "rules"),
     });
-    if (isGroupHab(hby, registry.hab)) {
-      const result = yield* proposeGroupCredentialIssue(hby, runtime, reger, registry, creder);
-      if (vcArgs.out && result.saved) {
-        writeCredentialStream(hby, reger, creder, recipient ?? creder.issuee ?? "", vcArgs.out);
-      }
-      console.log(JSON.stringify(result));
-      return;
-    }
-    const result = credentialer.issue(registry, creder);
     if (vcArgs.out) {
-      writeCredentialStream(hby, reger, creder, recipient ?? creder.issuee ?? "", vcArgs.out);
+      writeBytes(credentialStreamBytes(hby, reger, result.creder, result.recipient), vcArgs.out);
     }
-    console.log(JSON.stringify({
-      said: creder.said,
-      registry: creder.regid,
-      issuer: creder.issuer,
-      issuee: creder.issuee,
-      schema: creder.schema,
-      tel: result.tel.said,
-      status: result.verifierDecision.kind,
-    }));
+    console.log(JSON.stringify(result.output));
   });
 }
 
@@ -220,18 +166,10 @@ export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
   };
   yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
     const aid = vcArgs.aid ?? (vcArgs.alias ? requireHab(hby, vcArgs.alias).pre : undefined);
-    const wallet = new CredentialWallet(reger);
-    const tvy = requireTevery(runtime);
-    for (const said of wallet.list({ issued: vcArgs.issued ?? false, aid, schema: vcArgs.schema })) {
-      const [creder] = reger.cloneCred(said);
-      const tever = creder.regid ? tvy.tevers.get(creder.regid) : null;
-      console.log(JSON.stringify({
-        said,
-        issuer: creder.issuer,
-        issuee: creder.issuee,
-        schema: creder.schema,
-        status: tever?.vcState(said)?.et ?? null,
-      }));
+    for (
+      const item of listCredentials(runtime, reger, { issued: vcArgs.issued ?? false, aid, schema: vcArgs.schema })
+    ) {
+      console.log(JSON.stringify(item));
     }
   });
 }
@@ -246,10 +184,9 @@ export function* vcExportCommand(args: Record<string, unknown>): Operation<void>
   };
   requireNonEmpty(vcArgs.said, "Credential SAID");
   yield* withVcRuntime(vcArgs, function*({ hby, reger }) {
-    const [creder] = reger.cloneCred(vcArgs.said!);
-    const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : creder.issuee ?? "";
-    const bytes = concatBytes(...credentialStreamMessages(hby, reger, creder, recipient));
-    writeBytes(bytes, vcArgs.out);
+    const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
+    const result = exportCredentialStream(hby, reger, vcArgs.said!, recipient);
+    writeBytes(result.bytes, vcArgs.out);
   });
 }
 
@@ -260,11 +197,7 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
     inPath: args.inPath as string | undefined,
   };
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    const before = savedCredentials(reger);
-    settleRuntimeIngress(runtime, [readBytes(vcArgs.inPath)]);
-    runtime.reactor.processEscrowsOnce();
-    const after = [...savedCredentials(reger)].filter((said) => !before.has(said));
-    console.log(JSON.stringify({ saved: after }));
+    console.log(JSON.stringify(importCredentialStream(runtime, reger, readBytes(vcArgs.inPath))));
   });
 }
 
@@ -283,66 +216,31 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
   yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger }) {
-    const rgy = requireRegery(runtime);
-    const registry = requireRegistry(rgy, vcArgs.registryName);
-    const result = registry.revoke(vcArgs.said!);
     const [creder] = reger.cloneCred(vcArgs.said!);
-    const sendRecipients = revocationRecipients(creder, vcArgs);
-    const deliveries: string[] = [];
-    const queued: string[] = [];
-    if (sendRecipients.length > 0) {
-      requireNonEmpty(vcArgs.alias, "Alias");
-      const hab = requireHab(hby, vcArgs.alias);
-      const messages = revocationStreamMessages(hby, reger, creder);
-      for (const recipient of sendRecipients) {
-        for (const message of messages) {
-          const sent = yield* runtime.poster.sendBytes(hab, {
-            recipient,
-            message,
-            topic: CREDENTIAL_MAILBOX_TOPIC,
-            delivery: vcArgs.delivery,
-          });
-          deliveries.push(...sent.deliveries);
-          queued.push(...sent.queued);
-        }
-      }
+    if ((vcArgs.send?.length ?? 0) > 0 && !vcArgs.alias) {
+      throw new ValidationError("Alias is required when sending revocation events.");
     }
+    const sendRecipients = revocationRecipients(creder, vcArgs.send ?? [], !!vcArgs.alias);
+    const senderHab = sendRecipients.length > 0 ? requireHab(hby, vcArgs.alias) : undefined;
+    const result = yield* revokeCredential(hby, runtime, reger, {
+      registryName: vcArgs.registryName!,
+      credentialSaid: vcArgs.said!,
+      sendRecipients,
+      senderHab,
+      delivery: vcArgs.delivery,
+    });
     if (vcArgs.out) {
-      const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : creder.issuee ?? "";
-      writeCredentialStream(hby, reger, creder, recipient, vcArgs.out);
+      const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : result.creder.issuee ?? "";
+      writeBytes(credentialStreamBytes(hby, reger, result.creder, recipient), vcArgs.out);
     }
     console.log(JSON.stringify({
-      said: vcArgs.said,
-      tel: result.serder.said,
-      status: result.decision.kind,
-      deliveries,
-      queued,
+      said: result.said,
+      tel: result.tel,
+      status: result.status,
+      deliveries: result.deliveries,
+      queued: result.queued,
     }));
   });
-}
-
-function revocationRecipients(creder: SerderACDC, args: VcSaidArgs): string[] {
-  const explicit = args.send ?? [];
-  if (explicit.length > 0 && !args.alias) {
-    throw new ValidationError("Alias is required when sending revocation events.");
-  }
-  const recipients = args.alias && creder.issuee ? [creder.issuee, ...explicit] : explicit;
-  return [...new Set(recipients.filter((recipient) => recipient.length > 0))];
-}
-
-function revocationStreamMessages(
-  hby: Habery,
-  reger: Reger,
-  creder: SerderACDC,
-): Uint8Array[] {
-  const issuer = creder.issuer;
-  if (!issuer) {
-    throw new ValidationError("Credential is missing issuer AID.");
-  }
-  return [
-    ...hby.db.clonePreIter(issuer),
-    ...reger.clonePreIter(creder.said!),
-  ];
 }
 
 function baseArgs(args: Record<string, unknown>): VcBaseArgs {
@@ -409,36 +307,6 @@ function vcOpenOptions(args: VcBaseArgs) {
   };
 }
 
-function requireRegery(runtime: AgentRuntime): Regery {
-  if (!(runtime.vdr.rgy instanceof Regery)) {
-    throw new ValidationError("VDR runtime did not open Regery.");
-  }
-  return runtime.vdr.rgy;
-}
-
-function requireTevery(runtime: AgentRuntime): Tevery {
-  if (!(runtime.vdr.tvy instanceof Tevery)) {
-    throw new ValidationError("VDR runtime did not open Tevery.");
-  }
-  return runtime.vdr.tvy;
-}
-
-function requireVerifier(runtime: AgentRuntime): Verifier {
-  if (!(runtime.vdr.vry instanceof Verifier)) {
-    throw new ValidationError("VDR runtime did not open Verifier.");
-  }
-  return runtime.vdr.vry;
-}
-
-function requireRegistry(rgy: Regery, name: string | undefined): Registry {
-  requireNonEmpty(name, "Registry name");
-  const registry = rgy.registryByName(name!);
-  if (!registry) {
-    throw new ValidationError(`Registry ${name} not found.`);
-  }
-  return registry;
-}
-
 function requireHab(hby: { habByName(name: string): unknown }, alias: string | undefined): Hab {
   requireNonEmpty(alias, "Alias");
   const hab = hby.habByName(alias!) as { pre?: string } | null;
@@ -454,15 +322,6 @@ function resolveAid(hby: { habByName(name: string): unknown }, value: string): s
     return local.pre;
   }
   return value;
-}
-
-function importSchemaFile(
-  hby: { db: { schema: { pin(key: string, value: Schemer): unknown } } },
-  path: string,
-): string {
-  const schemer = new Schemer({ raw: Deno.readFileSync(path) });
-  hby.db.schema.pin(schemer.said, schemer);
-  return schemer.said;
 }
 
 function parseJsonArg(value: string | undefined): unknown | undefined {
@@ -503,335 +362,6 @@ function parseJsonSectionArg(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function writeCredentialStream(
-  hby: Habery,
-  reger: Reger,
-  creder: SerderACDC,
-  recipient: string,
-  path: string,
-): void {
-  Deno.writeFileSync(path, concatBytes(...credentialStreamMessages(hby, reger, creder, recipient)));
-}
-
-function* proposeGroupRegistryIncept(
-  hby: Habery,
-  runtime: AgentRuntime,
-  rgy: Regery,
-  hab: Hab,
-  args: VcRegistryArgs,
-) {
-  const noBackers = args.noBackers ?? true;
-  const estOnly = args.estOnly ?? false;
-  if (!noBackers) {
-    throw new ValidationError("Group registry inception currently requires a no-backers registry.");
-  }
-  const cnfg = [
-    ...(noBackers ? [TraitDex.NoBackers] : []),
-    ...(estOnly ? [TraitDex.EstOnly] : []),
-  ];
-  const vcp = inceptRegistryEvent(hab.pre, { cnfg });
-  const anchor = hby.interactGroupHab(args.alias!, undefined, {
-    data: [eventSeal(vcp)],
-  });
-  const seal = sourceSeal(anchor.serder);
-  const decision = requireTevery(runtime).processEvent({
-    serder: vcp,
-    seqner: seal.seqner,
-    saider: seal.saider,
-  });
-  requireRegery(runtime).processEscrows();
-
-  const regk = requireSerderPrefix(vcp, "registry inception");
-  registerRegistry(rgy, args.registryName!, hab, regk, { noBackers, estOnly });
-  if (telAccepted(runtime, regk, 0, requireSerderSaid(vcp, "registry inception"))) {
-    markTelComplete(runtime, regk, 0, requireSerderSaid(vcp, "registry inception"));
-  }
-
-  const deliveries = yield* publishGroupVcProposal(runtime, hab, MULTISIG_VCP_ROUTE, {
-    gid: hab.pre,
-    usage: args.usage ?? args.registryName ?? "credential registry",
-  }, {
-    vcp: vcp.raw,
-    anc: anchor.message,
-  });
-
-  return {
-    name: args.registryName,
-    registry: regk,
-    issuer: hab.pre,
-    route: MULTISIG_VCP_ROUTE,
-    status: decision.kind,
-    accepted: telAccepted(runtime, regk, 0, requireSerderSaid(vcp, "registry inception")),
-    deliveries,
-  };
-}
-
-function* proposeGroupCredentialIssue(
-  hby: Habery,
-  runtime: AgentRuntime,
-  reger: Reger,
-  registry: Registry,
-  creder: SerderACDC,
-) {
-  const regk = requireRegistryKey(registry);
-  const iss = issueEvent(requireCredentialSaid(creder), regk);
-  const anchor = hby.interactGroupHab(registry.hab.name, undefined, {
-    data: [eventSeal(iss)],
-  });
-  const seal = sourceSeal(anchor.serder);
-  const telDecision = requireTevery(runtime).processEvent({
-    serder: iss,
-    seqner: seal.seqner,
-    saider: seal.saider,
-  });
-  requireRegery(runtime).processEscrows();
-  const credentialer = new Credentialer(hby, {
-    reger,
-    vry: requireVerifier(runtime),
-  });
-  credentialer.validate(creder);
-  const credentialSeal = telCredentialSeal(iss);
-  const verifierDecision = requireVerifier(runtime).processCredential({
-    creder,
-    prefixer: credentialSeal.prefixer,
-    seqner: credentialSeal.seqner,
-    saider: credentialSeal.saider,
-  });
-  if (verifierDecision.kind === "accept") {
-    reger.ccrd.pin(requireCredentialSaid(creder), creder);
-  }
-  requireVerifier(runtime).processEscrows();
-  if (
-    telAccepted(
-      runtime,
-      requireSerderPrefix(iss, "credential issue"),
-      iss.sn ?? 0,
-      requireSerderSaid(iss, "credential issue"),
-    )
-  ) {
-    markTelComplete(runtime, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
-  }
-
-  const deliveries = yield* publishGroupVcProposal(runtime, registry.hab, MULTISIG_ISS_ROUTE, {
-    gid: registry.hab.pre,
-  }, {
-    acdc: serializeCredential(
-      creder,
-      credentialSeal.prefixer,
-      credentialSeal.seqner,
-      credentialSeal.saider,
-    ),
-    iss: iss.raw,
-    anc: anchor.message,
-  });
-
-  return {
-    said: creder.said,
-    registry: creder.regid,
-    issuer: creder.issuer,
-    issuee: creder.issuee,
-    schema: creder.schema,
-    tel: iss.said,
-    route: MULTISIG_ISS_ROUTE,
-    status: verifierDecision.kind,
-    telStatus: telDecision.kind,
-    saved: credentialSaved(reger, creder),
-    deliveries,
-  };
-}
-
-function* publishGroupVcProposal(
-  runtime: AgentRuntime,
-  groupHab: Hab,
-  route: typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE,
-  payload: Record<string, unknown>,
-  embeds: Record<string, Uint8Array>,
-) {
-  const member = localGroupMember(runtime.hby, groupHab.pre);
-  const deliveries: string[] = [];
-  for (const recipient of groupSigningMembers(runtime.hby, groupHab.pre)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
-      continue;
-    }
-    const result = yield* runtime.poster.sendExchange(member, {
-      recipient,
-      route,
-      payload,
-      embeds,
-      topic: MULTISIG_TOPIC,
-    });
-    deliveries.push(...result.deliveries, ...result.queued);
-  }
-  return deliveries;
-}
-
-function registerRegistry(
-  rgy: Regery,
-  name: string,
-  hab: Hab,
-  regk: string,
-  options: { noBackers: boolean; estOnly: boolean },
-): void {
-  rgy.reger.registries.add(regk);
-  rgy.reger.regs.pin(
-    name,
-    new RegistryRecord({
-      registryKey: regk,
-      prefix: hab.pre,
-    }),
-  );
-  if (!rgy.registries.has(name)) {
-    rgy.registries.set(
-      name,
-      new Registry({
-        name,
-        hab,
-        reger: rgy.reger,
-        tvy: rgy.tvy,
-        cues: rgy.cues,
-        regk,
-        noBackers: options.noBackers,
-        estOnly: options.estOnly,
-      }),
-    );
-  }
-}
-
-function isGroupHab(hby: Habery, hab: Hab): boolean {
-  return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
-}
-
-function localGroupMember(hby: Habery, groupPre: string): Hab {
-  const record = hby.db.getHab(groupPre);
-  const member = record?.mid ? hby.habs.get(record.mid) : null;
-  if (!member) {
-    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
-  }
-  return member;
-}
-
-function groupSigningMembers(hby: Habery, groupPre: string): string[] {
-  const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);
-  if (stored.length > 0) {
-    return stored;
-  }
-  const record = hby.db.getHab(groupPre);
-  return record?.smids ?? [];
-}
-
-function eventSeal(
-  serder: { pre: string | null; snh?: string | null; sn: number | null; said: string | null },
-): Record<string, string> {
-  const pre = requireSerderPrefix(serder, "TEL event");
-  const sn = serder.snh ?? (serder.sn ?? 0).toString(16);
-  const dig = requireSerderSaid(serder, "TEL event");
-  return { i: pre, s: sn, d: dig };
-}
-
-function sourceSeal(serder: { pre: string | null; sn: number | null; said: string | null }) {
-  return {
-    prefixer: new Prefixer({ qb64: requireSerderPrefix(serder, "anchor event") }),
-    seqner: ordinal(serder.sn ?? 0),
-    saider: new Diger({ qb64: requireSerderSaid(serder, "anchor event") }),
-  };
-}
-
-function telCredentialSeal(serder: { pre: string | null; sn: number | null; said: string | null }) {
-  return {
-    prefixer: new Prefixer({ qb64: requireSerderPrefix(serder, "credential TEL event") }),
-    seqner: ordinal(serder.sn ?? 0),
-    saider: new Diger({ qb64: requireSerderSaid(serder, "credential TEL event") }),
-  };
-}
-
-function ordinal(num: number | bigint): NumberPrimitive {
-  const raw = new Uint8Array(16);
-  let value = BigInt(num);
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return new NumberPrimitive({ code: NumDex.Huge, raw });
-}
-
-function seqner(num: number | bigint): Seqner {
-  const raw = new Uint8Array(16);
-  let value = BigInt(num);
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return new Seqner({ code: NumDex.Huge, raw });
-}
-
-function requireRegistryKey(registry: Registry): string {
-  if (!registry.regk) {
-    throw new ValidationError(`Registry ${registry.name} has not been incepted.`);
-  }
-  return registry.regk;
-}
-
-function requireCredentialSaid(creder: SerderACDC): string {
-  if (!creder.said) {
-    throw new ValidationError("Credential is missing SAID.");
-  }
-  return creder.said;
-}
-
-function credentialSaved(reger: Reger, creder: SerderACDC): boolean {
-  const said = requireCredentialSaid(creder);
-  return reger.saved.get([said]) !== null || reger.ccrd.get(said) !== null;
-}
-
-function requireSerderPrefix(
-  serder: { pre: string | null },
-  label: string,
-): string {
-  if (!serder.pre) {
-    throw new ValidationError(`${label} is missing prefix.`);
-  }
-  return serder.pre;
-}
-
-function requireSerderSaid(
-  serder: { said: string | null },
-  label: string,
-): string {
-  if (!serder.said) {
-    throw new ValidationError(`${label} is missing SAID.`);
-  }
-  return serder.said;
-}
-
-function telAccepted(
-  runtime: AgentRuntime,
-  pre: string,
-  sn: number,
-  eventSaid: string,
-): boolean {
-  return requireReger(runtime).tels.getOn(pre, sn)?.qb64 === eventSaid;
-}
-
-function markTelComplete(
-  runtime: AgentRuntime,
-  pre: string,
-  sn: number,
-  eventSaid: string,
-): void {
-  requireReger(runtime).ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
-}
-
-function requireReger(runtime: AgentRuntime): Reger {
-  if (!(runtime.vdr.reger instanceof Reger)) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  return runtime.vdr.reger;
-}
-
-function savedCredentials(reger: Reger): Set<string> {
-  return new Set([...reger.saved.getTopItemIter()].map(([keys]) => keys[0]).filter((key): key is string => !!key));
 }
 
 function readBytes(path: string | undefined): Uint8Array {

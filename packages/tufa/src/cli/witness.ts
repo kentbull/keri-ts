@@ -23,12 +23,12 @@ import {
   type Scheme,
   Schemes,
   ValidationError,
-  type WitnessAuthMap,
   WitnessReceiptor,
 } from "keri-ts/runtime";
 import { runWitnessHost } from "../roles/witness.ts";
 import { withExistingHab } from "./support/context.ts";
 import { ensureHby } from "./support/existing.ts";
+import { resolveWitnessAuths } from "./support/witness-auth.ts";
 
 interface WitnessBaseArgs {
   name?: string;
@@ -185,8 +185,11 @@ export function* witnessSubmitCommand(
       const auths = resolveWitnessAuths(
         hab.kever?.wits ?? [],
         commandArgs.code ?? [],
-        commandArgs.codeTime,
-        commandArgs.authenticate ?? false,
+        {
+          codeTime: commandArgs.codeTime,
+          promptMissing: commandArgs.authenticate ?? false,
+          normalizeCodeTime: validateIsoDatetime,
+        },
       );
       if (commandArgs.endpoint) {
         const receiptor = new Receiptor(hby);
@@ -509,40 +512,6 @@ function* reconcileWitnessIdentity(
       "Witness startup reconciliation did not produce accepted self location/controller/witness/mailbox state.",
     );
   }
-}
-
-function resolveWitnessAuths(
-  witnesses: readonly string[],
-  codes: readonly string[],
-  codeTime: string | undefined,
-  promptMissing: boolean,
-): WitnessAuthMap {
-  const timestamp = codeTime ? validateIsoDatetime(codeTime) : makeNowIso8601();
-  const auths: WitnessAuthMap = {};
-  for (const entry of codes) {
-    const separator = entry.indexOf(":");
-    if (separator <= 0 || separator >= entry.length - 1) {
-      throw new ValidationError(
-        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
-      );
-    }
-    const witness = entry.slice(0, separator);
-    const code = entry.slice(separator + 1);
-    auths[witness] = `${code}#${timestamp}`;
-  }
-  if (promptMissing) {
-    for (const witness of witnesses) {
-      if (auths[witness]) {
-        continue;
-      }
-      const code = prompt(`Entire code for ${witness}: `);
-      if (!code) {
-        throw new ValidationError(`Missing witness code for ${witness}.`);
-      }
-      auths[witness] = `${code}#${makeNowIso8601()}`;
-    }
-  }
-  return auths;
 }
 
 /** Normalize the advertised HTTP(S) witness URL while preserving path prefix. */

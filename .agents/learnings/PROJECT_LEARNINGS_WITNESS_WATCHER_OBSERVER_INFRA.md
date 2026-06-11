@@ -74,6 +74,10 @@ release, and interoperability operations.
     `/1.0/identifiers/{did}` and `did.json`/`keri.cesr` artifact routes share
     the protocol handler, while dynamic DID Webs hosting requires explicit
     hosted-prefix selection.
+24. Interop service harnesses should allocate bind-checked localhost ports from
+    a non-ephemeral test range and track spawned children before readiness waits
+    so startup failures report the failing child output instead of surfacing as
+    opaque connection refusals.
 
 ## Use This Doc For
 

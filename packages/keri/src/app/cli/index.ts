@@ -22,6 +22,7 @@ export {
   withHabAndAgentRuntime,
 } from "./common/context.ts";
 export { type EnsuredHabery, ensureHby, setupHby } from "./common/existing.ts";
+export { resolveWitnessAuths, type WitnessAuthOptions } from "./common/witness-auth.ts";
 export { dumpEvts } from "./db-dump.ts";
 export { delegateConfirmCommand } from "./delegate.ts";
 export { dkrResolveCommand, dwsBindCommand, dwsGenerateCommand, dwsResolveCommand } from "./did.ts";

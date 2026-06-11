@@ -16,7 +16,6 @@ import { Diger, type SerderKERI } from "../../../../cesr/mod.ts";
 import type { CueEmission } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import { makeNowIso8601 } from "../../time/mod.ts";
 import {
   type AgentRuntime,
   type CueSink,
@@ -25,17 +24,15 @@ import {
 } from "../agent-runtime.ts";
 import {
   groupSigningMembers,
+  isLocalGroupHab,
   localGroupMember,
 } from "../endpoint-roleing.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { queryTransportSink } from "../query-transport.ts";
-import { type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
+import { WitnessReceiptor } from "../witnessing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
-
-function isGroupHab(hby: Habery, hab: Hab): boolean {
-  return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
-}
+import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 interface DelegateConfirmArgs {
   name?: string;
@@ -49,41 +46,6 @@ interface DelegateConfirmArgs {
   authenticate?: boolean;
   code?: string[];
   codeTime?: string;
-}
-
-/** Build witness auth payloads from CLI `<witness>:<code>` inputs. */
-function resolveWitnessAuths(
-  witnesses: readonly string[],
-  codes: readonly string[],
-  codeTime?: string,
-  promptMissing = false,
-): WitnessAuthMap {
-  const timestamp = codeTime ?? makeNowIso8601();
-  const auths: WitnessAuthMap = {};
-  for (const entry of codes) {
-    const separator = entry.indexOf(":");
-    if (separator <= 0 || separator >= entry.length - 1) {
-      throw new ValidationError(
-        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
-      );
-    }
-    const witness = entry.slice(0, separator);
-    const code = entry.slice(separator + 1);
-    auths[witness] = `${code}#${timestamp}`;
-  }
-  if (promptMissing) {
-    for (const witness of witnesses) {
-      if (auths[witness]) {
-        continue;
-      }
-      const code = prompt(`Entire code for ${witness}: `);
-      if (!code) {
-        throw new ValidationError(`Missing witness code for ${witness}.`);
-      }
-      auths[witness] = `${code}#${makeNowIso8601()}`;
-    }
-  }
-  return auths;
 }
 
 /** Return pending delegated events for one local delegator, oldest first. */
@@ -297,14 +259,16 @@ export function* performDelegationApproval(
   const auths = resolveWitnessAuths(
     hab.kever!.wits,
     confirmArgs.code ?? [],
-    confirmArgs.codeTime,
-    confirmArgs.authenticate ?? false,
+    {
+      codeTime: confirmArgs.codeTime,
+      promptMissing: confirmArgs.authenticate ?? false,
+    },
   );
   const selected = confirmArgs.auto ? pending : [pending[0]!];
 
   for (const serder of selected) {
     const anchor = anchorData(serder);
-    if (isGroupHab(hby, hab)) {
+    if (isLocalGroupHab(hby, hab)) {
       if (!interactionApproval) {
         throw new ValidationError(
           "Multisig delegated approval currently requires --interact.",

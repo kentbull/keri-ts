@@ -13,11 +13,10 @@
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import { queryTransportSink } from "../query-transport.ts";
-import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
+import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
 import {
   loadRotateFileOptions,
@@ -25,6 +24,7 @@ import {
   parseThresholdOption,
   type RotateFileOptions,
 } from "./common/parsing.ts";
+import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 /** Parsed command arguments for one `tufa rotate` invocation. */
 interface RotateArgs {
@@ -104,40 +104,6 @@ function difference(
 ): string[] {
   const rightSet = new Set(right);
   return left.filter((value) => !rightSet.has(value));
-}
-
-function resolveWitnessAuths(
-  witnesses: readonly string[],
-  codes: readonly string[],
-  codeTime?: string,
-  promptMissing = false,
-): WitnessAuthMap {
-  const timestamp = codeTime ?? makeNowIso8601();
-  const auths: WitnessAuthMap = {};
-  for (const entry of codes) {
-    const separator = entry.indexOf(":");
-    if (separator <= 0 || separator >= entry.length - 1) {
-      throw new ValidationError(
-        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
-      );
-    }
-    const witness = entry.slice(0, separator);
-    const code = entry.slice(separator + 1);
-    auths[witness] = `${code}#${timestamp}`;
-  }
-  if (promptMissing) {
-    for (const witness of witnesses) {
-      if (auths[witness]) {
-        continue;
-      }
-      const code = prompt(`Entire code for ${witness}: `);
-      if (!code) {
-        throw new ValidationError(`Missing witness code for ${witness}.`);
-      }
-      auths[witness] = `${code}#${makeNowIso8601()}`;
-    }
-  }
-  return auths;
 }
 
 /**
@@ -221,8 +187,10 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         const auths = resolveWitnessAuths(
           hab.kever.wits,
           rotateArgs.code ?? [],
-          rotateArgs.codeTime,
-          rotateArgs.authenticate ?? false,
+          {
+            codeTime: rotateArgs.codeTime,
+            promptMissing: rotateArgs.authenticate ?? false,
+          },
         );
         if (rotateArgs.endpoint) {
           const receiptor = new Receiptor(hby);

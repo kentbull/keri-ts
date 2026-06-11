@@ -5,10 +5,21 @@ import { reply as replyEvent } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
+import {
+  groupSigningMembers,
+  localGroupMember,
+  uniqueMembers,
+} from "./group-members.ts";
 import { MULTISIG_RPY_ROUTE, multisigRpyExn } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 const MULTISIG_TOPIC = "multisig";
+
+export {
+  groupSigningMembers,
+  isLocalGroupHab,
+  localGroupMember,
+} from "./group-members.ts";
 
 /** Result of proposing one group endpoint-role authorization reply. */
 export interface GroupEndpointRoleProposalResult {
@@ -19,11 +30,6 @@ export interface GroupEndpointRoleProposalResult {
   deliveries: string[];
   attachmentBytes: number;
   rpy: Uint8Array;
-}
-
-/** True when the selected habitat is a local group habitat. */
-export function isLocalGroupHab(hby: Habery, hab: Hab): boolean {
-  return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
 }
 
 /** Return whether endpoint-role state currently authorizes `eid` for `cid`. */
@@ -90,26 +96,6 @@ export function* proposeGroupEndpointRole(
     attachmentBytes: attachments.length,
     rpy: localRpy,
   };
-}
-
-/** Return the local member habitat for a persisted group identifier. */
-export function localGroupMember(hby: Habery, groupPre: string): Hab {
-  const record = hby.db.getHab(groupPre);
-  const member = record?.mid ? hby.habs.get(record.mid) : null;
-  if (!member) {
-    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
-  }
-  return member;
-}
-
-/** Return current group signing member AIDs in signing-index order. */
-export function groupSigningMembers(hby: Habery, groupPre: string): string[] {
-  const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);
-  if (stored.length > 0) {
-    return stored;
-  }
-  const record = hby.db.getHab(groupPre);
-  return record?.smids ?? [];
 }
 
 /** Endorse one reply with locally available group member signatures. */
@@ -215,8 +201,4 @@ export function signLocalGroupEvent(
     throw new ValidationError("No local member key can sign this group event.");
   }
   return sigers;
-}
-
-function uniqueMembers(members: readonly string[]): string[] {
-  return [...new Set(members.filter((member) => member.length > 0))];
 }
