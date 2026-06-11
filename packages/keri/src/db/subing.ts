@@ -1,4 +1,4 @@
-import { type Database } from "npm:lmdb";
+import { type Database } from "npm:lmdb@3.5.3";
 import {
   b,
   Cipher,
