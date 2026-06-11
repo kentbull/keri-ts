@@ -231,12 +231,13 @@ jobs:
           fi
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
-      - name: read dependency versions for linking (from built tufa manifest or verification)
+      - name: read dependency versions from published artifact
         id: deps
         shell: bash
         run: |
-          KERI_VER=$(node -p "require('./packages/tufa/npm/package.json').dependencies['keri-ts'] || ''")
-          CESR_VER=$(node -p "require('./packages/tufa/npm/package.json').dependencies['cesr-ts'] || ''")
+          tar -xOf "${{ steps.published.outputs.tarball }}" package/package.json > /tmp/tufa-package.json
+          KERI_VER=$(node -p "require('/tmp/tufa-package.json').dependencies['keri-ts'] || ''")
+          CESR_VER=$(node -p "require('/tmp/tufa-package.json').dependencies['cesr-ts'] || ''")
           echo "keri_ver=${KERI_VER}" >> "$GITHUB_OUTPUT"
           echo "cesr_ver=${CESR_VER}" >> "$GITHUB_OUTPUT"
 
