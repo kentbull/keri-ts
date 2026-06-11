@@ -1,4 +1,4 @@
-// @file-test-lane interop-witness
+// @file-test-lane interop-witness-main
 
 /**
  * Real witness receipting interoperability tests.

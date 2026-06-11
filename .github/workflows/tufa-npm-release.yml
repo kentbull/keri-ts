@@ -18,13 +18,52 @@ env:
   DEPS_CACHE_KEY_PREFIX: ci-deps-v5
 
 jobs:
-  build-and-release:
+  tufa-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: 'true'
+          do-version-check: 'true'
+          package-json-path: 'packages/tufa/package.json'
+          cache-key-extra: 'tufa'
+
+  tufa-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: 'true'
+          do-version-check: 'false'
+          cache-key-extra: 'tufa'
+
+      - name: run Tufa package test suite
+        run: deno task test:quality:tufa
+
+  tufa-test-gate:
+    if: ${{ always() }}
+    needs:
+      - tufa-static
+      - tufa-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: summarize tufa test gate results
+        env:
+          TUFA_STATIC: ${{ needs.tufa-static.result }}
+          TUFA_TESTS: ${{ needs.tufa-tests.result }}
+        run: |
+          echo "tufa-static=${TUFA_STATIC}"
+          echo "tufa-tests=${TUFA_TESTS}"
+          [[ "${TUFA_STATIC}" == "success" ]]
+          [[ "${TUFA_TESTS}" == "success" ]]
+
+  tufa-artifact:
+    needs: tufa-test-gate
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    environment: publishing
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -35,7 +74,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: "https://registry.npmjs.org"
           cache: "npm"
           cache-dependency-path: package-lock.json
 
@@ -49,14 +87,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-
 
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
       - name: assert environment
         env:
           EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
           EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
         run: bash scripts/ci/assert-environment.sh
-
-      - name: check formatting
-        run: deno task fmt:check
 
       - name: read package version
         id: package
@@ -65,21 +104,7 @@ jobs:
           VERSION=$(node -p "require('./packages/tufa/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: ensure tag matches package version
-        if: ${{ github.event_name == 'push' }}
-        shell: bash
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#tufa-v}"
-          PKG_VERSION="${{ steps.package.outputs.version }}"
-          if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
-            echo "Tag version (${TAG_VERSION}) does not match packages/tufa/package.json version (${PKG_VERSION})."
-            exit 1
-          fi
-
-      - name: test quality gate
-        run: deno task test:quality:tufa
-
-      - name: build npm packages
+      - name: build npm packages with CI metadata
         env:
           BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
         run: |
@@ -100,7 +125,7 @@ jobs:
           npm view "keri-ts@${KERI_DEP}" version >/dev/null
           npm view "cesr-ts@${CESR_DEP}" version >/dev/null
 
-      - name: npm pack dry run
+      - name: npm pack dry run (tufa primary + supporting)
         id: pack
         shell: bash
         run: |
@@ -114,7 +139,7 @@ jobs:
           echo "keri_tarball=${KERI_TARBALL}" >> "$GITHUB_OUTPUT"
           echo "tufa_tarball=${TUFA_TARBALL}" >> "$GITHUB_OUTPUT"
 
-      - name: smoke test tufa in node alpine
+      - name: smoke test tufa in node alpine (with supporting builds)
         run: |
           bash scripts/smoke-test-tufa-npm.sh \
             "packages/tufa/npm/${{ steps.pack.outputs.tufa_tarball }}" \
@@ -132,8 +157,86 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: publish to npm
+  publish:
+    needs: tufa-artifact
+    runs-on: ubuntu-latest
+    environment: publishing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/tufa/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: download the exact tufa artifact tarball
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: tufa-npm-${{ steps.package.outputs.version }}
+          path: ./release-tarball
+
+      - name: publish the downloaded tufa tarball to npm
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         run: |
-          cd packages/tufa/npm
-          npm publish --access public
+          TARBALL=$(ls ./release-tarball/@keri-ts-tufa-*.tgz 2>/dev/null | head -1 || ls ./release-tarball/tufa-*.tgz 2>/dev/null | head -1)
+          if [[ -z "$TARBALL" ]]; then
+            echo "No tufa tarball found in downloaded artifact."
+            exit 1
+          fi
+          npm publish "$TARBALL" --access public
+
+  create-github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/tufa/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: fetch the tufa tarball that was successfully published to npm
+        id: published
+        shell: bash
+        run: |
+          npm pack @keri-ts/tufa@${{ steps.package.outputs.version }} --pack-destination ./from-npm/
+          TARBALL=$(ls ./from-npm/@keri-ts-tufa-*.tgz 2>/dev/null | head -1 || ls ./from-npm/tufa-*.tgz 2>/dev/null | head -1)
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: read dependency versions for linking (from built tufa manifest or verification)
+        id: deps
+        shell: bash
+        run: |
+          KERI_VER=$(node -p "require('./packages/tufa/npm/package.json').dependencies['keri-ts'] || ''")
+          CESR_VER=$(node -p "require('./packages/tufa/npm/package.json').dependencies['cesr-ts'] || ''")
+          echo "keri_ver=${KERI_VER}" >> "$GITHUB_OUTPUT"
+          echo "cesr_ver=${CESR_VER}" >> "$GITHUB_OUTPUT"
+
+      - name: create GitHub Release with the published tufa tarball + dependency links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TITLE="@keri-ts/tufa ${{ steps.package.outputs.version }}"
+          NOTES="## @keri-ts/tufa ${{ steps.package.outputs.version }}\n\nThis release was published to npm first. The attached tarball is the one successfully published to the npm registry.\n\n### Dependency releases\n- keri-ts: https://www.npmjs.com/package/keri-ts/v/${{ steps.deps.outputs.keri_ver }}\n- cesr-ts: https://www.npmjs.com/package/cesr-ts/v/${{ steps.deps.outputs.cesr_ver }}\n\n( GitHub releases for dependencies: keri-v${{ steps.deps.outputs.keri_ver }} and cesr-v${{ steps.deps.outputs.cesr_ver }} if they exist. )"
+          # Write notes to file for gh
+          echo -e "$NOTES" > /tmp/release-notes.md
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --notes-file /tmp/release-notes.md \
+            --attach "${{ steps.published.outputs.tarball }}"

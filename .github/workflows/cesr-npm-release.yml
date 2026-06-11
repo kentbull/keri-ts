@@ -25,15 +25,53 @@ env:
   DEPS_CACHE_KEY_PREFIX: ci-deps-v3
 
 jobs:
-  build-and-release:
+  cesr-static:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    environment: publishing
-    permissions:
-      contents: read
-      id-token: write
+    timeout-minutes: 20
     steps:
-      # Commit-pin actions so the release path is reproducible.
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: 'true'
+          do-version-check: 'true'
+          package-json-path: 'packages/cesr/package.json'
+          cache-key-extra: 'cesr'
+
+  cesr-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: 'true'
+          do-version-check: 'false'
+          cache-key-extra: 'cesr'
+
+      - name: run CESR test suite
+        run: deno task test:cesr
+
+  cesr-test-gate:
+    if: ${{ always() }}
+    needs:
+      - cesr-static
+      - cesr-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: summarize cesr test gate results
+        env:
+          CESR_STATIC: ${{ needs.cesr-static.result }}
+          CESR_TESTS: ${{ needs.cesr-tests.result }}
+        run: |
+          echo "cesr-static=${CESR_STATIC}"
+          echo "cesr-tests=${CESR_TESTS}"
+          [[ "${CESR_STATIC}" == "success" ]]
+          [[ "${CESR_TESTS}" == "success" ]]
+
+  cesr-artifact:
+    needs: cesr-test-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
@@ -43,13 +81,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: "https://registry.npmjs.org"
           cache: "npm"
           cache-dependency-path: package-lock.json
 
       - name: restore Deno dependency cache
-        # Shared dependency cache keeps DNT packaging from redoing identical
-        # bootstrap work every release run.
+        id: deps-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -57,17 +93,17 @@ jobs:
             node_modules
           key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-
+            ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
+
+      - name: install deterministic workspace dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: assert environment
-        # Emit the exact Deno/Node contract before tests and packaging.
         env:
           EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
           EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
         run: bash scripts/ci/assert-environment.sh
-
-      - name: check formatting
-        run: deno task fmt:check
 
       - name: read package version
         id: package
@@ -76,24 +112,7 @@ jobs:
           VERSION=$(node -p "require('./packages/cesr/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: ensure tag matches package version
-        # Catch mistaken tag pushes before we build or publish the wrong version.
-        if: ${{ github.event_name == 'push' }}
-        shell: bash
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#cesr-v}"
-          PKG_VERSION="${{ steps.package.outputs.version }}"
-          if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
-            echo "Tag version (${TAG_VERSION}) does not match packages/cesr/package.json version (${PKG_VERSION})."
-            exit 1
-          fi
-
-      - name: test cesr package
-        # Prove the CESR package is healthy before artifact generation.
-        run: deno task test:cesr
-
-      - name: build npm package
-        # Release/build jobs explicitly stamp CI display metadata.
+      - name: build npm package with CI metadata
         env:
           BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
         run: |
@@ -101,8 +120,7 @@ jobs:
           cd packages/cesr
           deno task build:npm
 
-      - name: npm pack dry run
-        # Pack exactly what npm would receive, then archive that artifact.
+      - name: npm pack
         id: pack
         run: |
           cd packages/cesr/npm
@@ -110,8 +128,6 @@ jobs:
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
       - name: upload npm tarball
-        # Retain the built tarball so maintainers can inspect the precise output
-        # of the release job without rebuilding locally.
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cesr-ts-npm-${{ steps.package.outputs.version }}
@@ -119,10 +135,74 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: publish to npm
-        # Publish only after the package has passed checks and the exact tarball
-        # has been captured.
+  publish:
+    needs: cesr-artifact
+    runs-on: ubuntu-latest
+    environment: publishing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/cesr/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: download the exact artifact tarball
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cesr-ts-npm-${{ steps.package.outputs.version }}
+          path: ./release-tarball
+
+      - name: publish the downloaded tarball to npm
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         run: |
-          cd packages/cesr/npm
-          npm publish --access public
+          TARBALL=$(ls ./release-tarball/cesr-ts-*.tgz 2>/dev/null | head -1)
+          if [[ -z "$TARBALL" ]]; then
+            echo "No tarball found in downloaded artifact."
+            exit 1
+          fi
+          npm publish "$TARBALL" --access public
+
+  create-github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/cesr/package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: fetch the tarball that was successfully published to npm
+        id: published
+        shell: bash
+        run: |
+          npm pack cesr-ts@${{ steps.package.outputs.version }} --pack-destination ./from-npm/
+          TARBALL=$(ls ./from-npm/cesr-ts-*.tgz | head -1)
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
+      - name: create GitHub Release with the published tarball attached
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TITLE="cesr-ts ${{ steps.package.outputs.version }}"
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --generate-notes \
+            --attach "${{ steps.published.outputs.tarball }}"

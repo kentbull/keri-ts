@@ -60,6 +60,8 @@
     "test:quality:keri:interop-delegation": "cd packages/keri && deno task test:quality:interop-delegation",
     "test:quality:keri:interop-mailbox-slow": "cd packages/keri && deno task test:quality:interop-mailbox-slow",
     "test:quality:keri:interop-witness": "cd packages/keri && deno task test:quality:interop-witness",
+    "test:quality:keri:interop-witness-main": "cd packages/keri && deno task test:quality:interop-witness-main",
+    "test:quality:keri:interop-witness-cli": "cd packages/keri && deno task test:quality:interop-witness-cli",
     "test:quality:keri:interop-did-webs": "cd packages/keri && deno task test:quality:interop-did-webs",
     "test:quality:keri:interop-gates-b": "cd packages/keri && deno task test:quality:interop-gates-b",
     "test:quality:keri:interop-gates-c": "cd packages/keri && deno task test:quality:interop-gates-c",
