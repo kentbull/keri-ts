@@ -46,3 +46,38 @@ export function lazyCommand<TModule extends CommandModule>(
     yield* (handler as CommandHandler)(args);
   };
 }
+
+/** Entry describing a command name to its lazy handler implementation. */
+type CommandHandlerEntry = {
+  name: string;
+  load: () => Promise<any>;
+  exportName: string;
+};
+
+const commandHandlerEntries: CommandHandlerEntry[] = [];
+
+/**
+ * Register a command name to its lazy-loaded handler.
+ *
+ * Called from command definition sites so that parse-time registration
+ * (Commander) and runtime dispatch share a single source of command names.
+ * This eliminates the previous hand-maintained duplicate tree in handlers.ts.
+ */
+export function registerCommandHandler(
+  name: string,
+  load: () => Promise<any>,
+  exportName: string,
+): void {
+  commandHandlerEntries.push({ name, load, exportName });
+}
+
+/** Build the canonical command-dispatch map used by the Tufa CLI runtime. */
+export function createCmdHandlers(): Map<string, CommandHandler> {
+  // Lazy imports keep the runnable `tufa` package as the dispatch owner while
+  // still allowing reusable library CLI operations to live in `keri-ts/cli`.
+  const map = new Map<string, CommandHandler>();
+  for (const entry of commandHandlerEntries) {
+    map.set(entry.name, lazyCommand(entry.load, entry.exportName));
+  }
+  return map;
+}

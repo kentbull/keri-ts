@@ -1,6 +1,7 @@
 /** Commander registrations for benchmark, DB, and experimental tooling commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register benchmarking, DB, and experimental commands. */
 export function registerToolingCmds(
@@ -62,6 +63,7 @@ function registerBenchmarkCmds(
         },
       });
     });
+  registerCommandHandler("benchmark.cesr", () => import("keri-ts/cli"), "benchmarkCommand");
 }
 
 function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
@@ -117,4 +119,5 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("db.dump", () => import("keri-ts/cli"), "dumpEvts");
 }

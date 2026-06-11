@@ -1,6 +1,7 @@
 /** Commander registrations for mailbox management commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register mailbox management commands. */
 export function registerMailboxCmds(
@@ -51,6 +52,7 @@ export function registerMailboxCmds(
         },
       });
     });
+  registerCommandHandler("mailbox.start", () => import("../mailbox.ts"), "mailboxStartCommand");
 
   mailbox
     .command("add")
@@ -90,6 +92,7 @@ export function registerMailboxCmds(
         },
       });
     });
+  registerCommandHandler("mailbox.add", () => import("../mailbox.ts"), "mailboxAddCommand");
 
   mailbox
     .command("remove")
@@ -128,6 +131,7 @@ export function registerMailboxCmds(
         },
       });
     });
+  registerCommandHandler("mailbox.remove", () => import("../mailbox.ts"), "mailboxRemoveCommand");
 
   mailbox
     .command("list")
@@ -161,6 +165,7 @@ export function registerMailboxCmds(
         },
       });
     });
+  registerCommandHandler("mailbox.list", () => import("../mailbox.ts"), "mailboxListCommand");
 
   mailbox
     .command("update")
@@ -200,6 +205,7 @@ export function registerMailboxCmds(
         },
       });
     });
+  registerCommandHandler("mailbox.update", () => import("../mailbox.ts"), "mailboxUpdateCommand");
 
   mailbox
     .command("debug")
@@ -237,4 +243,5 @@ export function registerMailboxCmds(
         },
       });
     });
+  registerCommandHandler("mailbox.debug", () => import("../mailbox.ts"), "mailboxDebugCommand");
 }

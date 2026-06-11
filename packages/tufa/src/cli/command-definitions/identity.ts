@@ -8,6 +8,7 @@
  */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register identifier, signing, and inspection commands. */
 export function registerIdentityCmds(
@@ -58,6 +59,7 @@ function registerSignCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("sign", () => import("keri-ts/cli"), "signCommand");
 }
 
 /**
@@ -107,6 +109,7 @@ function registerVerifyCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("verify", () => import("keri-ts/cli"), "verifyCommand");
 }
 
 /** Register the bounded remote key-state/log query command. */
@@ -143,6 +146,7 @@ function registerQueryCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("query", () => import("keri-ts/cli"), "queryCommand");
 }
 
 /** Register the CESR export command surface. */
@@ -177,6 +181,7 @@ function registerExportCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("export", () => import("keri-ts/cli"), "exportCommand");
 }
 
 /** Register the local identifier listing command. */
@@ -204,6 +209,7 @@ function registerListCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("list", () => import("keri-ts/cli"), "listCommand");
 }
 
 /** Register the alias-to-prefix lookup command. */
@@ -237,6 +243,7 @@ function registerAidCmd(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("aid", () => import("keri-ts/cli"), "aidCommand");
 }
 
 /** Register the CESR annotation/debugging command. */
@@ -258,6 +265,7 @@ function registerAnnotateCmd(
         },
       });
     });
+  registerCommandHandler("saidify", () => import("keri-ts/cli"), "saidifyCommand");
 
   program
     .command("annotate")
@@ -287,4 +295,5 @@ function registerAnnotateCmd(
         },
       });
     });
+  registerCommandHandler("annotate", () => import("keri-ts/cli"), "annotateCommand");
 }

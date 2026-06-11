@@ -1,6 +1,7 @@
 /** Commander registrations for EXN and exchange messaging commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register exchange and EXN messaging commands. */
 export function registerMessagingCmds(
@@ -93,4 +94,5 @@ function registerExnSendSubCmd(
         },
       });
     });
+  registerCommandHandler(name, () => import("keri-ts/cli"), "exchangeSendCommand");
 }

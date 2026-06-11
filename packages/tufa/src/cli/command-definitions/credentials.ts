@@ -1,6 +1,14 @@
 /** Commander registrations for VC and IPEX credential workflows. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import {
+  addDeliveryOptions,
+  addGvrsnOption,
+  addHabOption,
+  addStoreOptions,
+  dispatchArgs,
+} from "./options.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 export function registerCredentialCmds(
   program: Command,
@@ -10,45 +18,6 @@ export function registerCredentialCmds(
   registerIpexCmds(program, dispatch);
   registerVerifierCmds(program, dispatch);
   registerHookCmds(program, dispatch);
-}
-
-function addStoreOptions(cmd: Command): Command {
-  return cmd
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore");
-}
-
-function addHabOption(cmd: Command): Command {
-  return cmd.requiredOption(
-    "-a, --alias <alias>",
-    "Human readable alias for the local identifier",
-  );
-}
-
-function addDeliveryOptions(cmd: Command): Command {
-  return cmd.option("--delivery <mode>", "Delivery mode: auto, direct, or indirect");
-}
-
-function addGvrsnOption(cmd: Command): Command {
-  return cmd.option(
-    "--gvrsn <version>",
-    "Attachment counter genus version: 1.0 or 2.0",
-  );
-}
-
-function dispatchArgs(options: Record<string, unknown>): Record<string, unknown> {
-  const { headDir, approvalTimeout, ...rest } = options;
-  return {
-    ...rest,
-    headDirPath: headDir,
-    ...(approvalTimeout === undefined ? {} : { approvalTimeoutSeconds: approvalTimeout }),
-  };
 }
 
 function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
@@ -70,6 +39,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.schema.import", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.schema.import", () => import("keri-ts/cli"), "vcSchemaImportCommand");
 
   const registry = vc.command("registry").description("Credential registry operations");
   addHabOption(
@@ -92,12 +62,14 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
       },
     });
   });
+  registerCommandHandler("vc.registry.incept", () => import("keri-ts/cli"), "vcRegistryInceptCommand");
   addStoreOptions(
     registry.command("list")
       .description("List local credential registries"),
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.registry.list", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.registry.list", () => import("keri-ts/cli"), "vcRegistryListCommand");
   addStoreOptions(
     registry.command("status")
       .description("Show one credential registry state")
@@ -105,6 +77,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.registry.status", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.registry.status", () => import("keri-ts/cli"), "vcRegistryStatusCommand");
 
   addHabOption(
     addStoreOptions(
@@ -122,6 +95,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.create", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.create", () => import("keri-ts/cli"), "vcCreateCommand");
 
   addStoreOptions(
     vc.command("list")
@@ -133,6 +107,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.list", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.list", () => import("keri-ts/cli"), "vcListCommand");
 
   addStoreOptions(
     vc.command("export")
@@ -143,6 +118,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.export", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.export", () => import("keri-ts/cli"), "vcExportCommand");
 
   addStoreOptions(
     vc.command("import")
@@ -154,6 +130,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
       args: { ...dispatchArgs(options), inPath: options.in },
     });
   });
+  registerCommandHandler("vc.import", () => import("keri-ts/cli"), "vcImportCommand");
 
   addDeliveryOptions(
     addStoreOptions(
@@ -177,6 +154,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "vc.revoke", args: dispatchArgs(options) });
   });
+  registerCommandHandler("vc.revoke", () => import("keri-ts/cli"), "vcRevokeCommand");
 }
 
 function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
@@ -196,6 +174,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.apply", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.apply", () => import("keri-ts/cli"), "ipexApplyCommand");
 
   addDeliveryOptions(
     addHabOption(
@@ -211,6 +190,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.offer", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.offer", () => import("keri-ts/cli"), "ipexOfferCommand");
 
   addDeliveryOptions(
     addHabOption(
@@ -225,6 +205,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.agree", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.agree", () => import("keri-ts/cli"), "ipexAgreeCommand");
 
   addDeliveryOptions(
     addGvrsnOption(
@@ -248,6 +229,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.grant", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.grant", () => import("keri-ts/cli"), "ipexGrantCommand");
 
   addDeliveryOptions(
     addHabOption(
@@ -264,6 +246,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.admit", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.admit", () => import("keri-ts/cli"), "ipexAdmitCommand");
 
   addDeliveryOptions(
     addHabOption(
@@ -278,6 +261,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.spurn", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.spurn", () => import("keri-ts/cli"), "ipexSpurnCommand");
 
   addStoreOptions(
     ipex.command("list")
@@ -285,6 +269,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.list", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.list", () => import("keri-ts/cli"), "ipexListCommand");
 
   addHabOption(
     addStoreOptions(
@@ -296,6 +281,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.poll", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.poll", () => import("keri-ts/cli"), "ipexPollCommand");
 
   addDeliveryOptions(
     addGvrsnOption(
@@ -311,6 +297,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "ipex.join", args: dispatchArgs(options) });
   });
+  registerCommandHandler("ipex.join", () => import("keri-ts/cli"), "ipexJoinCommand");
 }
 
 function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void {
@@ -327,6 +314,7 @@ function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "verifier.run", args: dispatchArgs(options) });
   });
+  registerCommandHandler("verifier.run", () => import("keri-ts/cli"), "verifierRunCommand");
 }
 
 function registerHookCmds(program: Command, dispatch: CommandDispatch): void {
@@ -344,4 +332,5 @@ function registerHookCmds(program: Command, dispatch: CommandDispatch): void {
     .action((options: Record<string, unknown>) => {
       dispatch({ name: "hook.demo", args: { http: options.http } });
     });
+  registerCommandHandler("hook.demo", () => import("../hook.ts"), "hookDemoCommand");
 }

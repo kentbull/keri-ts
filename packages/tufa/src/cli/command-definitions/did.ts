@@ -1,6 +1,7 @@
 /** Commander registrations for DID Webs and DID KERI operations. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 export function registerDidCmds(
   program: Command,
@@ -59,6 +60,7 @@ function registerDwsCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "dws.bind", args: dispatchArgs(options) });
   });
+  registerCommandHandler("dws.bind", () => import("keri-ts/cli"), "dwsBindCommand");
 
   addDidOption(
     addStoreOptions(
@@ -71,6 +73,7 @@ function registerDwsCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "dws.generate", args: dispatchArgs(options) });
   });
+  registerCommandHandler("dws.generate", () => import("keri-ts/cli"), "dwsGenerateCommand");
 
   addDidOption(
     addStoreOptions(
@@ -82,6 +85,7 @@ function registerDwsCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "dws.resolve", args: dispatchArgs(options) });
   });
+  registerCommandHandler("dws.resolve", () => import("keri-ts/cli"), "dwsResolveCommand");
 
   addStoreOptions(
     dws.command("resolver")
@@ -104,6 +108,7 @@ function registerDwsCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "dws.resolver", args: dispatchArgs(options) });
   });
+  registerCommandHandler("dws.resolver", () => import("../dws.ts"), "dwsResolverCommand");
 }
 
 function registerDkrCmds(program: Command, dispatch: CommandDispatch): void {
@@ -126,4 +131,5 @@ function registerDkrCmds(program: Command, dispatch: CommandDispatch): void {
   ).action((options: Record<string, unknown>) => {
     dispatch({ name: "dkr.resolve", args: dispatchArgs(options) });
   });
+  registerCommandHandler("dkr.resolve", () => import("keri-ts/cli"), "dkrResolveCommand");
 }

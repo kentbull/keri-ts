@@ -1,5 +1,6 @@
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register local notification inspection and mutation commands. */
 export function registerNotificationCmds(
@@ -47,6 +48,7 @@ export function registerNotificationCmds(
         },
       });
     });
+  registerCommandHandler("notifications.list", () => import("keri-ts/cli"), "notificationsListCommand");
 
   notifications
     .command("mark-read")
@@ -73,6 +75,7 @@ export function registerNotificationCmds(
         },
       });
     });
+  registerCommandHandler("notifications.mark-read", () => import("keri-ts/cli"), "notificationsMarkReadCommand");
 
   notifications
     .command("remove")
@@ -99,4 +102,5 @@ export function registerNotificationCmds(
         },
       });
     });
+  registerCommandHandler("notifications.remove", () => import("keri-ts/cli"), "notificationsRemoveCommand");
 }

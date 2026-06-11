@@ -1,6 +1,7 @@
 /** Commander registrations for endpoint, location, and OOBI commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register endpoint and OOBI-related commands. */
 export function registerEndpointCmds(
@@ -50,6 +51,7 @@ function registerEndsCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("ends.add", () => import("keri-ts/cli"), "endsAddCommand");
 }
 
 function registerLocCmds(program: Command, dispatch: CommandDispatch): void {
@@ -92,6 +94,7 @@ function registerLocCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("loc.add", () => import("keri-ts/cli"), "locAddCommand");
 }
 
 function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
@@ -126,6 +129,7 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("oobi.generate", () => import("keri-ts/cli"), "oobiGenerateCommand");
 
   oobi
     .command("resolve")
@@ -154,6 +158,7 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("oobi.resolve", () => import("keri-ts/cli"), "oobiResolveCommand");
 
   oobi
     .command("request")
@@ -196,4 +201,5 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
         },
       });
     });
+  registerCommandHandler("oobi.request", () => import("keri-ts/cli"), "oobiRequestCommand");
 }

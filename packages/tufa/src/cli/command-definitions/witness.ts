@@ -1,6 +1,7 @@
 /** Commander registrations for witness hosting and submission commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /**
  * Register witness commands.
@@ -60,6 +61,7 @@ export function registerWitnessCmds(
         },
       });
     });
+  registerCommandHandler("witness.start", () => import("../witness.ts"), "witnessStartCommand");
 
   witness
     .command("submit")
@@ -116,4 +118,5 @@ export function registerWitnessCmds(
         },
       });
     });
+  registerCommandHandler("witness.submit", () => import("../witness.ts"), "witnessSubmitCommand");
 }

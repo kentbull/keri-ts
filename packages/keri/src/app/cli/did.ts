@@ -16,6 +16,7 @@ import { type AgentRuntime, createAgentRuntime } from "../agent-runtime.ts";
 import type { Habery } from "../habbing.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
+import { requireNonEmpty } from "./common/parsing.ts";
 
 interface DidBaseArgs {
   name?: string;
@@ -200,12 +201,6 @@ function* openRuntime(args: DidBaseArgs): Operation<{ hby: Habery; runtime: Agen
 function* closeRuntime(hby: Habery, runtime: AgentRuntime): Operation<void> {
   yield* runtime.close();
   yield* hby.close();
-}
-
-function requireNonEmpty(value: string | undefined, label: string): void {
-  if (!value || value.trim().length === 0) {
-    throw new ValidationError(`${label} is required.`);
-  }
 }
 
 function* receiptNewWitnessEvents(

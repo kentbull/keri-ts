@@ -1,6 +1,7 @@
 /** Commander registrations for challenge/response commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerCommandHandler } from "./shared.ts";
 
 /** Register challenge-related commands. */
 export function registerChallengeCmds(
@@ -34,6 +35,7 @@ export function registerChallengeCmds(
         },
       });
     });
+  registerCommandHandler("challenge.generate", () => import("keri-ts/cli"), "challengeGenerateCommand");
 
   challenge
     .command("respond")
@@ -82,6 +84,7 @@ export function registerChallengeCmds(
         },
       });
     });
+  registerCommandHandler("challenge.respond", () => import("keri-ts/cli"), "challengeRespondCommand");
 
   challenge
     .command("verify")
@@ -148,4 +151,5 @@ export function registerChallengeCmds(
         },
       });
     });
+  registerCommandHandler("challenge.verify", () => import("keri-ts/cli"), "challengeVerifyCommand");
 }
