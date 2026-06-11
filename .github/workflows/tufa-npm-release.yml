@@ -192,7 +192,7 @@ jobs:
       - name: publish the downloaded tufa tarball to npm
         if: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         run: |
-          TARBALL=$(ls ./release-tarball/@keri-ts-tufa-*.tgz 2>/dev/null | head -1 || ls ./release-tarball/tufa-*.tgz 2>/dev/null | head -1)
+          TARBALL=$(find ./release-tarball -type f \( -name "@keri-ts-tufa-*.tgz" -o -name "keri-ts-tufa-*.tgz" -o -name "tufa-*.tgz" \) | sort | head -1)
           if [[ -z "$TARBALL" ]]; then
             echo "No tufa tarball found in downloaded artifact."
             exit 1
@@ -224,7 +224,7 @@ jobs:
         id: published
         shell: bash
         run: |
-          TARBALL=$(ls ./release-tarball/@keri-ts-tufa-*.tgz 2>/dev/null | head -1 || ls ./release-tarball/tufa-*.tgz 2>/dev/null | head -1)
+          TARBALL=$(find ./release-tarball -type f \( -name "@keri-ts-tufa-*.tgz" -o -name "keri-ts-tufa-*.tgz" -o -name "tufa-*.tgz" \) | sort | head -1)
           if [[ -z "$TARBALL" ]]; then
             echo "No tufa tarball found in downloaded artifact."
             exit 1
