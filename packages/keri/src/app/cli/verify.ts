@@ -11,10 +11,10 @@
  *   has already been updated, which is why the interop proof must include the
  *   pre-query failure and post-query success cases
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { Siger } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHabery } from "./common/context.ts";
 import { loadTextArgument } from "./common/parsing.ts";
 
 /** Parsed command arguments for one `tufa verify` invocation. */
@@ -61,31 +61,28 @@ export function* verifyCommand(args: Record<string, unknown>): Operation<void> {
   if (!verifyArgs.signature || verifyArgs.signature.length === 0) {
     throw new ValidationError("At least one signature is required");
   }
+  const prefix = verifyArgs.prefix;
+  const text = verifyArgs.text;
+  const signatures = verifyArgs.signature;
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      verifyArgs.name!,
-      verifyArgs.base ?? "",
-      verifyArgs.passcode,
-      false,
-      verifyArgs.headDirPath,
-      {
-        compat: verifyArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const kever = hby.db.getKever(verifyArgs.prefix!);
+  yield* withExistingHabery(
+    verifyArgs,
+    {
+      compat: verifyArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby }) {
+      const kever = hby.db.getKever(prefix);
       if (!kever) {
         throw new ValidationError(
-          `No known key state for prefix ${verifyArgs.prefix!}.`,
+          `No known key state for prefix ${prefix}.`,
         );
       }
 
-      const ser = loadTextArgument(verifyArgs.text!);
-      for (const rawSignature of verifyArgs.signature!) {
+      const ser = loadTextArgument(text);
+      for (const rawSignature of signatures) {
         const siger = new Siger({ qb64: rawSignature });
         if (siger.index >= kever.verfers.length) {
           throw new ValidationError(
@@ -105,10 +102,6 @@ export function* verifyCommand(args: Record<string, unknown>): Operation<void> {
         }
         console.log(`Signature ${siger.index + 1} is valid.`);
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

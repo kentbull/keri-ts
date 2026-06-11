@@ -158,7 +158,7 @@ await build({
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
-      "libsodium-wrappers": "^0.8.2",
+      "libsodium-wrappers": "0.8.4",
     },
     engines: {
       node: ">=18",

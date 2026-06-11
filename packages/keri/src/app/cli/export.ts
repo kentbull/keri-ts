@@ -1,7 +1,7 @@
-import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHab } from "./common/context.ts";
 
 interface ExportArgs {
   name?: string;
@@ -36,34 +36,16 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  const cues = createQueue<
-    { kin: string; count: number; mode: string },
-    void
-  >();
-
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      exportArgs.name!,
-      exportArgs.base ?? "",
-      exportArgs.passcode,
-      false,
-      exportArgs.headDirPath,
-      {
-        readonly: true,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(exportArgs.alias!);
-      if (!hab || !hab.pre) {
-        throw new ValidationError(
-          `No local AID found for alias ${exportArgs.alias}`,
-        );
-      }
-
+  yield* withExistingHab(
+    exportArgs,
+    exportArgs.alias,
+    {
+      readonly: true,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby, hab }) {
       const decoder = new TextDecoder();
-      let count = 0;
       const kever = hby.db.getKever(hab.pre);
       if (kever?.delegated) {
         const estSaid = kever.lastEst.d || kever.said;
@@ -78,20 +60,11 @@ export function* exportCommand(args: Record<string, unknown>): Operation<void> {
         }
         for (const msg of chain) {
           console.log(decoder.decode(msg));
-          count += 1;
         }
       }
       for (const msg of hby.db.clonePreIter(hab.pre)) {
         console.log(decoder.decode(msg));
-        count += 1;
       }
-      cues.add({ kin: "export", count, mode: "native" });
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
-  const cue = yield* cues.next();
-  if (cue.done) return;
+    },
+  );
 }

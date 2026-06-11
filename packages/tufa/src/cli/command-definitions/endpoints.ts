@@ -1,6 +1,7 @@
 /** Commander registrations for endpoint, location, and OOBI commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
+import { registerDispatchedCommand } from "./shared.ts";
 
 /** Register endpoint and OOBI-related commands. */
 export function registerEndpointCmds(
@@ -16,82 +17,88 @@ function registerEndsCmds(program: Command, dispatch: CommandDispatch): void {
   const ends = program.command("ends").description(
     "Manage endpoint authorizations",
   );
-  ends
-    .command("add")
-    .description("Authorize an endpoint role for one AID")
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-a, --alias <alias>", "Local identifier alias")
-    .requiredOption("-r, --role <role>", "Endpoint role")
-    .requiredOption("-e, --eid <eid>", "Endpoint AID")
-    .option(
-      "--multisig-mode <mode>",
-      "Group endpoint role mode: propose or complete",
-    )
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root (default fallback: ~/.tufa)",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .action((options: Record<string, unknown>) => {
-      dispatch({
-        name: "ends.add",
-        args: {
-          name: options.name,
-          alias: options.alias,
-          role: options.role,
-          eid: options.eid,
-          multisigMode: options.multisigMode,
-          base: options.base,
-          compat: options.compat || false,
-          headDirPath: options.headDir,
-          passcode: options.passcode,
-        },
-      });
-    });
+  registerDispatchedCommand(
+    ends
+      .command("add")
+      .description("Authorize an endpoint role for one AID")
+      .requiredOption("-n, --name <name>", "Keystore name")
+      .requiredOption("-a, --alias <alias>", "Local identifier alias")
+      .requiredOption("-r, --role <role>", "Endpoint role")
+      .requiredOption("-e, --eid <eid>", "Endpoint AID")
+      .option(
+        "--multisig-mode <mode>",
+        "Group endpoint role mode: propose or complete",
+      )
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option(
+        "--head-dir <dir>",
+        "Directory override for database and keystore root (default fallback: ~/.tufa)",
+      )
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+    dispatch,
+    {
+      name: "ends.add",
+      load: () => import("keri-ts/cli"),
+      exportName: "endsAddCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        alias: options.alias,
+        role: options.role,
+        eid: options.eid,
+        multisigMode: options.multisigMode,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+      }),
+    },
+  );
 }
 
 function registerLocCmds(program: Command, dispatch: CommandDispatch): void {
   const loc = program.command("loc").description(
     "Manage local endpoint locations",
   );
-  loc
-    .command("add")
-    .description(
-      "Add one local location scheme record through reply acceptance",
-    )
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-a, --alias <alias>", "Local identifier alias")
-    .requiredOption("-u, --url <url>", "Endpoint URL")
-    .option(
-      "-e, --eid <eid>",
-      "Endpoint AID (defaults to the local habitat prefix)",
-    )
-    .option("-t, --time <time>", "Explicit reply timestamp")
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root (default fallback: ~/.tufa)",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .action((options: Record<string, unknown>) => {
-      dispatch({
-        name: "loc.add",
-        args: {
-          name: options.name,
-          alias: options.alias,
-          url: options.url,
-          eid: options.eid,
-          time: options.time,
-          base: options.base,
-          compat: options.compat || false,
-          headDirPath: options.headDir,
-          passcode: options.passcode,
-        },
-      });
-    });
+  registerDispatchedCommand(
+    loc
+      .command("add")
+      .description(
+        "Add one local location scheme record through reply acceptance",
+      )
+      .requiredOption("-n, --name <name>", "Keystore name")
+      .requiredOption("-a, --alias <alias>", "Local identifier alias")
+      .requiredOption("-u, --url <url>", "Endpoint URL")
+      .option(
+        "-e, --eid <eid>",
+        "Endpoint AID (defaults to the local habitat prefix)",
+      )
+      .option("-t, --time <time>", "Explicit reply timestamp")
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option(
+        "--head-dir <dir>",
+        "Directory override for database and keystore root (default fallback: ~/.tufa)",
+      )
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+    dispatch,
+    {
+      name: "loc.add",
+      load: () => import("keri-ts/cli"),
+      exportName: "locAddCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        alias: options.alias,
+        url: options.url,
+        eid: options.eid,
+        time: options.time,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+      }),
+    },
+  );
 }
 
 function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
@@ -99,101 +106,110 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
     "Generate and resolve OOBIs",
   );
 
-  oobi
-    .command("generate")
-    .description("Generate OOBI URL(s) for one local identifier")
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-a, --alias <alias>", "Local identifier alias")
-    .requiredOption("-r, --role <role>", "OOBI role")
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root (default fallback: ~/.tufa)",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .action((options: Record<string, unknown>) => {
-      dispatch({
-        name: "oobi.generate",
-        args: {
-          name: options.name,
-          alias: options.alias,
-          role: options.role,
-          base: options.base,
-          compat: options.compat || false,
-          headDirPath: options.headDir,
-          passcode: options.passcode,
-        },
-      });
-    });
+  registerDispatchedCommand(
+    oobi
+      .command("generate")
+      .description("Generate OOBI URL(s) for one local identifier")
+      .requiredOption("-n, --name <name>", "Keystore name")
+      .requiredOption("-a, --alias <alias>", "Local identifier alias")
+      .requiredOption("-r, --role <role>", "OOBI role")
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option(
+        "--head-dir <dir>",
+        "Directory override for database and keystore root (default fallback: ~/.tufa)",
+      )
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+    dispatch,
+    {
+      name: "oobi.generate",
+      load: () => import("keri-ts/cli"),
+      exportName: "oobiGenerateCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        alias: options.alias,
+        role: options.role,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+      }),
+    },
+  );
 
-  oobi
-    .command("resolve")
-    .description("Resolve one remote OOBI URL")
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-u, --url <url>", "Remote OOBI URL")
-    .option("-A, --oobi-alias <alias>", "Alias hint for the resolved OOBI")
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root (default fallback: ~/.tufa)",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .action((options: Record<string, unknown>) => {
-      dispatch({
-        name: "oobi.resolve",
-        args: {
-          name: options.name,
-          url: options.url,
-          oobiAlias: options.oobiAlias,
-          base: options.base,
-          compat: options.compat || false,
-          headDirPath: options.headDir,
-          passcode: options.passcode,
-        },
-      });
-    });
+  registerDispatchedCommand(
+    oobi
+      .command("resolve")
+      .description("Resolve one remote OOBI URL")
+      .requiredOption("-n, --name <name>", "Keystore name")
+      .requiredOption("-u, --url <url>", "Remote OOBI URL")
+      .option("-A, --oobi-alias <alias>", "Alias hint for the resolved OOBI")
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option(
+        "--head-dir <dir>",
+        "Directory override for database and keystore root (default fallback: ~/.tufa)",
+      )
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+    dispatch,
+    {
+      name: "oobi.resolve",
+      load: () => import("keri-ts/cli"),
+      exportName: "oobiResolveCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        url: options.url,
+        oobiAlias: options.oobiAlias,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+      }),
+    },
+  );
 
-  oobi
-    .command("request")
-    .description("Send one peer OOBI request EXN to a remote recipient")
-    .requiredOption("-n, --name <name>", "Keystore name")
-    .requiredOption("-a, --alias <alias>", "Local sender alias")
-    .requiredOption("-r, --recipient <recipient>", "Recipient alias or prefix")
-    .requiredOption("-u, --url <url>", "Requested remote OOBI URL")
-    .option("-b, --base <base>", "Optional base path prefix")
-    .option("--compat", "Use KERIpy compatibility-mode path layout")
-    .option(
-      "--head-dir <dir>",
-      "Directory override for database and keystore root (default fallback: ~/.tufa)",
-    )
-    .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
-    .option(
-      "--outboxer",
-      "Enable the tufa-local durable outbox sidecar for this send",
-      false,
-    )
-    .option(
-      "--cesr-body-mode <mode>",
-      "CESR HTTP transport mode: header (default) or body",
-      "header",
-    )
-    .action((options: Record<string, unknown>) => {
-      dispatch({
-        name: "oobi.request",
-        args: {
-          name: options.name,
-          alias: options.alias,
-          recipient: options.recipient,
-          url: options.url,
-          base: options.base,
-          compat: options.compat || false,
-          headDirPath: options.headDir,
-          passcode: options.passcode,
-          outboxer: options.outboxer || false,
-          cesrBodyMode: options.cesrBodyMode,
-        },
-      });
-    });
+  registerDispatchedCommand(
+    oobi
+      .command("request")
+      .description("Send one peer OOBI request EXN to a remote recipient")
+      .requiredOption("-n, --name <name>", "Keystore name")
+      .requiredOption("-a, --alias <alias>", "Local sender alias")
+      .requiredOption("-r, --recipient <recipient>", "Recipient alias or prefix")
+      .requiredOption("-u, --url <url>", "Requested remote OOBI URL")
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option(
+        "--head-dir <dir>",
+        "Directory override for database and keystore root (default fallback: ~/.tufa)",
+      )
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+      .option(
+        "--outboxer",
+        "Enable the tufa-local durable outbox sidecar for this send",
+        false,
+      )
+      .option(
+        "--cesr-body-mode <mode>",
+        "CESR HTTP transport mode: header (default) or body",
+        "header",
+      ),
+    dispatch,
+    {
+      name: "oobi.request",
+      load: () => import("keri-ts/cli"),
+      exportName: "oobiRequestCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        alias: options.alias,
+        recipient: options.recipient,
+        url: options.url,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        outboxer: options.outboxer || false,
+        cesrBodyMode: options.cesrBodyMode,
+      }),
+    },
+  );
 }

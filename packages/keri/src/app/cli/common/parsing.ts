@@ -1,4 +1,5 @@
 import type { ThresholdSith } from "../../../../../cesr/mod.ts";
+import { ValidationError } from "../../../core/index.ts";
 
 /**
  * JSON file schema for `tufa incept --file` option loading.
@@ -261,4 +262,19 @@ export function loadTextArgument(text: string): Uint8Array {
     ? Deno.readTextFileSync(text.slice(1))
     : text;
   return new TextEncoder().encode(source);
+}
+
+/** Require a non-empty string argument (for name, alias, etc.). */
+export function requireText(value: string | undefined, label: string): string {
+  if (!value) {
+    throw new ValidationError(`${label} is required and cannot be empty`);
+  }
+  return value;
+}
+
+/** Require a non-empty value (void-throwing variant used in several commands). */
+export function requireNonEmpty(value: string | undefined, label: string): void {
+  if (!value) {
+    throw new ValidationError(`${label} is required and cannot be empty.`);
+  }
 }

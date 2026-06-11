@@ -12,10 +12,11 @@ import {
   resolveDidKeri,
   resolveDidWebs,
 } from "../../did/index.ts";
-import { type AgentRuntime, createAgentRuntime } from "../agent-runtime.ts";
+import type { AgentRuntime } from "../agent-runtime.ts";
 import type { Habery } from "../habbing.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime } from "./common/context.ts";
+import { requireNonEmpty } from "./common/parsing.ts";
 
 interface DidBaseArgs {
   name?: string;
@@ -62,25 +63,29 @@ export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> 
     createRegistry: args.createRegistry as boolean | undefined,
     allowExternalDid: args.allowExternalDid as boolean | undefined,
   };
+  requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.alias, "Alias");
-  const { hby, runtime } = yield* openRuntime(commandArgs);
-  try {
-    const hab = hby.habByName(commandArgs.alias!);
-    const priorSn = hab?.kever?.sn ?? 0;
-    const result = bindDesignatedAliases(runtime, {
-      alias: commandArgs.alias!,
-      dids: commandArgs.dids,
-      registryName: commandArgs.registryName ?? DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
-      createRegistry: commandArgs.createRegistry ?? true,
-      allowExternalDid: commandArgs.allowExternalDid ?? false,
-    });
-    if (hab?.pre) {
-      yield* receiptNewWitnessEvents(hby, hab.pre, priorSn);
-    }
-    console.log(JSON.stringify(result));
-  } finally {
-    yield* closeRuntime(hby, runtime);
-  }
+  const alias = commandArgs.alias!;
+  yield* withAgentRuntime(
+    commandArgs,
+    runtimeOpenOptions(commandArgs),
+    function*({ hby, runtime }) {
+      requireReger(runtime);
+      const hab = hby.habByName(alias);
+      const priorSn = hab?.kever?.sn ?? 0;
+      const result = bindDesignatedAliases(runtime, {
+        alias,
+        dids: commandArgs.dids,
+        registryName: commandArgs.registryName ?? DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
+        createRegistry: commandArgs.createRegistry ?? true,
+        allowExternalDid: commandArgs.allowExternalDid ?? false,
+      });
+      if (hab?.pre) {
+        yield* receiptNewWitnessEvents(hby, hab.pre, priorSn);
+      }
+      console.log(JSON.stringify(result));
+    },
+  );
 }
 
 /** Implement `tufa dws generate`. */
@@ -92,34 +97,40 @@ export function* dwsGenerateCommand(args: Record<string, unknown>): Operation<vo
     outputDir: args.outputDir as string | undefined,
     meta: args.meta as boolean | undefined,
   };
+  requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.alias, "Alias");
   requireNonEmpty(commandArgs.did, "DID");
   requireNonEmpty(commandArgs.outputDir, "Output directory");
-  const { hby, runtime } = yield* openRuntime(commandArgs);
-  try {
-    const artifacts = generateDidWebsArtifacts(runtime, {
-      alias: commandArgs.alias,
-      did: commandArgs.did!,
-      metadata: commandArgs.meta ?? false,
-    });
-    const parsed = parseDidWebs(commandArgs.did!);
-    const dir = artifactOutputDir(
-      commandArgs.outputDir!,
-      parsed.path,
-      artifacts.aid,
-    );
-    Deno.mkdirSync(dir, { recursive: true });
-    Deno.writeFileSync(`${dir}/did.json`, artifacts.didJson);
-    Deno.writeFileSync(`${dir}/keri.cesr`, artifacts.keriCesr);
-    console.log(JSON.stringify({
-      aid: artifacts.aid,
-      did: commandArgs.did,
-      didJson: `${dir}/did.json`,
-      keriCesr: `${dir}/keri.cesr`,
-    }));
-  } finally {
-    yield* closeRuntime(hby, runtime);
-  }
+  const alias = commandArgs.alias!;
+  const did = commandArgs.did!;
+  const outputDir = commandArgs.outputDir!;
+  yield* withAgentRuntime(
+    commandArgs,
+    runtimeOpenOptions(commandArgs),
+    function*({ runtime }) {
+      requireReger(runtime);
+      const artifacts = generateDidWebsArtifacts(runtime, {
+        alias,
+        did,
+        metadata: commandArgs.meta ?? false,
+      });
+      const parsed = parseDidWebs(did);
+      const dir = artifactOutputDir(
+        outputDir,
+        parsed.path,
+        artifacts.aid,
+      );
+      Deno.mkdirSync(dir, { recursive: true });
+      Deno.writeFileSync(`${dir}/did.json`, artifacts.didJson);
+      Deno.writeFileSync(`${dir}/keri.cesr`, artifacts.keriCesr);
+      console.log(JSON.stringify({
+        aid: artifacts.aid,
+        did,
+        didJson: `${dir}/did.json`,
+        keriCesr: `${dir}/keri.cesr`,
+      }));
+    },
+  );
 }
 
 /** Implement `tufa dws resolve`. */
@@ -130,18 +141,22 @@ export function* dwsResolveCommand(args: Record<string, unknown>): Operation<voi
     meta: args.meta as boolean | undefined,
     insecureHttp: args.insecureHttp as boolean | undefined,
   };
+  requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.did, "DID");
-  const { hby, runtime } = yield* openRuntime(commandArgs);
-  try {
-    const result = yield* resolveDidWebs(runtime, {
-      did: commandArgs.did!,
-      metadata: commandArgs.meta ?? false,
-      insecureHttp: commandArgs.insecureHttp ?? false,
-    });
-    console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));
-  } finally {
-    yield* closeRuntime(hby, runtime);
-  }
+  const did = commandArgs.did!;
+  yield* withAgentRuntime(
+    commandArgs,
+    runtimeOpenOptions(commandArgs),
+    function*({ runtime }) {
+      requireReger(runtime);
+      const result = yield* resolveDidWebs(runtime, {
+        did,
+        metadata: commandArgs.meta ?? false,
+        insecureHttp: commandArgs.insecureHttp ?? false,
+      });
+      console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));
+    },
+  );
 }
 
 /** Implement `tufa dkr resolve`. */
@@ -152,18 +167,22 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
     oobis: asStringList(args.oobi),
     meta: args.meta as boolean | undefined,
   };
+  requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.did, "DID");
-  const { hby, runtime } = yield* openRuntime(commandArgs);
-  try {
-    const result = yield* resolveDidKeri(runtime, {
-      did: commandArgs.did!,
-      oobis: commandArgs.oobis,
-      metadata: commandArgs.meta ?? false,
-    });
-    console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));
-  } finally {
-    yield* closeRuntime(hby, runtime);
-  }
+  const did = commandArgs.did!;
+  yield* withAgentRuntime(
+    commandArgs,
+    runtimeOpenOptions(commandArgs),
+    function*({ runtime }) {
+      requireReger(runtime);
+      const result = yield* resolveDidKeri(runtime, {
+        did,
+        oobis: commandArgs.oobis,
+        metadata: commandArgs.meta ?? false,
+      });
+      console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));
+    },
+  );
 }
 
 function baseArgs(args: Record<string, unknown>): DidBaseArgs {
@@ -176,36 +195,19 @@ function baseArgs(args: Record<string, unknown>): DidBaseArgs {
   };
 }
 
-function* openRuntime(args: DidBaseArgs): Operation<{ hby: Habery; runtime: AgentRuntime; reger: Reger }> {
-  requireNonEmpty(args.name, "Name");
-  const hby = yield* setupHby(
-    args.name!,
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
-    {
-      compat: args.compat ?? false,
-      skipConfig: true,
-    },
-  );
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+function runtimeOpenOptions(args: DidBaseArgs) {
+  return {
+    compat: args.compat ?? false,
+    skipConfig: true,
+  };
+}
+
+function requireReger(runtime: AgentRuntime): Reger {
   const reger = runtime.vdr.reger;
   if (!(reger instanceof Reger)) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
-  return { hby, runtime, reger };
-}
-
-function* closeRuntime(hby: Habery, runtime: AgentRuntime): Operation<void> {
-  yield* runtime.close();
-  yield* hby.close();
-}
-
-function requireNonEmpty(value: string | undefined, label: string): void {
-  if (!value || value.trim().length === 0) {
-    throw new ValidationError(`${label} is required.`);
-  }
+  return reger;
 }
 
 function* receiptNewWitnessEvents(

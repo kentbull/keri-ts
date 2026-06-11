@@ -98,6 +98,11 @@ const DEFAULT_TUFA_WITNESS_ALIASES = [
   "twit",
 ] as const;
 
+const DEFAULT_HEALTH_TIMEOUT_MS = 15_000;
+const TUFA_WITNESS_START_TIMEOUT_MS = 45_000;
+const TEST_PORT_MIN = 20_000;
+const TEST_PORT_MAX_EXCLUSIVE = 32_768;
+
 const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
   {
     alias: "wan",
@@ -720,8 +725,11 @@ export function extractLastNonEmptyLine(output: string): string {
 }
 
 /** Wait until one long-lived host reports healthy on `/health`. */
-export async function waitForHealth(port: number): Promise<void> {
-  const deadline = Date.now() + 15_000;
+export async function waitForHealth(
+  port: number,
+  timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   let lastError = "health check did not return 200";
   while (Date.now() < deadline) {
     try {
@@ -740,6 +748,45 @@ export async function waitForHealth(port: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error(lastError);
+}
+
+async function waitForHealthOrChildExit(
+  child: SpawnedChild,
+  port: number,
+  label: string,
+  timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS,
+): Promise<void> {
+  const health = waitForHealth(port, timeoutMs).then(
+    () => ({ kind: "healthy" as const }),
+    (error) => ({ kind: "unhealthy" as const, error }),
+  );
+  const exited = child.status.then(
+    (status) => ({ kind: "exited" as const, status }),
+    (error) => ({ kind: "exit-error" as const, error }),
+  );
+
+  const result = await Promise.race([health, exited]);
+  if (result.kind === "healthy") {
+    return;
+  }
+  if (result.kind === "exited") {
+    const signal = result.status.signal ? `, signal ${result.status.signal}` : "";
+    throw new Error(
+      `${label} exited before /health became ready on port ${port} (code ${result.status.code}${signal})`,
+    );
+  }
+  if (result.kind === "exit-error") {
+    throw new Error(
+      `${label} status failed before /health became ready on port ${port}: ${
+        result.error instanceof Error ? result.error.message : String(result.error)
+      }`,
+    );
+  }
+  throw new Error(
+    `${label} /health did not become ready on port ${port}: ${
+      result.error instanceof Error ? result.error.message : String(result.error)
+    }`,
+  );
 }
 
 /** Wait until one specific HTTP URL responds with any 2xx status. */
@@ -1261,9 +1308,32 @@ export async function requireSuccess(
   return result;
 }
 
-/** Return one random localhost port for temporary test hosts. */
+/** Return one currently available localhost port for temporary test hosts. */
 export function randomPort(): number {
-  return 20_000 + Math.floor(Math.random() * 20_000);
+  return availableLocalhostPort();
+}
+
+function availableLocalhostPort(excludedPorts = new Set<number>()): number {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const port = TEST_PORT_MIN + Math.floor(
+      Math.random() * (TEST_PORT_MAX_EXCLUSIVE - TEST_PORT_MIN),
+    );
+    if (excludedPorts.has(port)) {
+      continue;
+    }
+
+    let listener: Deno.Listener | undefined;
+    try {
+      listener = Deno.listen({ hostname: "127.0.0.1", port });
+      excludedPorts.add(port);
+      return port;
+    } catch {
+      continue;
+    } finally {
+      listener?.close();
+    }
+  }
+  throw new Error("Unable to allocate an available localhost port.");
 }
 
 /**
@@ -1477,9 +1547,10 @@ export async function startKeriPyWitnessHarness(
   };
 
   const nodes: KeriPyWitnessNode[] = [];
+  const allocatedPorts = new Set<number>();
   for (const alias of aliases) {
-    const httpPort = randomPort();
-    const tcpPort = randomPort();
+    const httpPort = availableLocalhostPort(allocatedPorts);
+    const tcpPort = availableLocalhostPort(allocatedPorts);
     await writeKeriPyWitnessConfig(configRoot, alias, httpPort, tcpPort);
     const pre = await initializeKeriPyWitness(
       ctx.kliCommand,
@@ -1754,6 +1825,7 @@ export async function startTufaWitnessHarness(
   });
   const nodes: TufaWitnessNode[] = [];
   const children: SpawnedChild[] = [];
+  const allocatedPorts = new Set<number>();
 
   try {
     for (const alias of aliases) {
@@ -1766,8 +1838,12 @@ export async function startTufaWitnessHarness(
         ctx.env,
         ctx.repoRoot,
       );
-      const httpPort = randomPort();
-      const tcpPort = randomPort();
+      const httpPort = availableLocalhostPort(allocatedPorts);
+      const tcpPort = availableLocalhostPort(allocatedPorts);
+      await assertTcpPortsFree(
+        [httpPort, tcpPort],
+        `Tufa witness ${alias}`,
+      );
       const child = startTufaWitnessHost(
         name,
         alias,
@@ -1777,7 +1853,13 @@ export async function startTufaWitnessHarness(
         ctx.env,
         ctx.repoRoot,
       );
-      await waitForHealth(httpPort);
+      children.push(child);
+      await waitForHealthOrChildExit(
+        child,
+        httpPort,
+        `Tufa witness ${alias}`,
+        TUFA_WITNESS_START_TIMEOUT_MS,
+      );
 
       nodes.push({
         alias,
@@ -1791,7 +1873,6 @@ export async function startTufaWitnessHarness(
         witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
         mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
       });
-      children.push(child);
     }
   } catch (error) {
     const details = await Promise.all(

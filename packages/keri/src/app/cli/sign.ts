@@ -8,12 +8,12 @@
  *
  * `keri-ts` difference:
  * - the command runs as one bounded Effection operation instead of a HIO doer
- * - store opening is delegated to `setupHby(...)` so encrypted and compat-mode
- *   behavior stays consistent across CLI commands
+ * - store opening is delegated to the shared CLI context helper so encrypted
+ *   and compat-mode behavior stays consistent across CLI commands
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { setupHby } from "./common/existing.ts";
+import { withExistingHab } from "./common/context.ts";
 import { loadTextArgument } from "./common/parsing.ts";
 
 /** Parsed command arguments for one `tufa sign` invocation. */
@@ -55,35 +55,22 @@ export function* signCommand(args: Record<string, unknown>): Operation<void> {
   if (!signArgs.text) {
     throw new ValidationError("Text is required and cannot be empty");
   }
+  const text = signArgs.text;
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      signArgs.name!,
-      signArgs.base ?? "",
-      signArgs.passcode,
-      false,
-      signArgs.headDirPath,
-      {
-        compat: signArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(signArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${signArgs.alias!} is invalid`);
-      }
-
-      const sigers = hab.sign(loadTextArgument(signArgs.text!), true);
+  yield* withExistingHab(
+    signArgs,
+    signArgs.alias,
+    {
+      compat: signArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hab }) {
+      const sigers = hab.sign(loadTextArgument(text), true);
       for (const [idx, siger] of sigers.entries()) {
         console.log(`${idx + 1}. ${siger.qb64}`);
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

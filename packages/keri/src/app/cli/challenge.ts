@@ -1,6 +1,6 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime, processMailboxTurn } from "../agent-runtime.ts";
+import { processMailboxTurn } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import {
   type ChallengeOutput,
@@ -13,7 +13,7 @@ import {
 import { type ExchangeDeliveryPreference, sendExchangeMessage } from "../forwarding.ts";
 import type { Habery } from "../habbing.ts";
 import { Organizer } from "../organizing.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
 interface ChallengeGenerateArgs {
   strength?: number;
@@ -102,13 +102,11 @@ export function* challengeRespondCommand(
   if (words.length === 0) {
     throw new ValidationError("Challenge words must not be empty.");
   }
+  const recipient = commandArgs.recipient;
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
@@ -117,28 +115,18 @@ export function* challengeRespondCommand(
       outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
+    function*({ hby, hab }) {
+      const { serder } = yield* sendExchangeMessage(hby, hab, {
+        recipient,
+        route: "/challenge/response",
+        topic: "challenge",
+        payload: { i: hab.pre, words },
+        delivery: normalizeTransport(commandArgs.transport),
+      });
+      console.log("Sent EXN message");
+      console.log(serder.pretty());
+    },
   );
-
-  try {
-    const hab = hby.habByName(commandArgs.alias);
-    if (!hab) {
-      throw new ValidationError(
-        `No local AID found for alias ${commandArgs.alias}.`,
-      );
-    }
-
-    const { serder } = yield* sendExchangeMessage(hby, hab, {
-      recipient: commandArgs.recipient,
-      route: "/challenge/response",
-      topic: "challenge",
-      payload: { i: hab.pre, words },
-      delivery: normalizeTransport(commandArgs.transport),
-    });
-    console.log("Sent EXN message");
-    console.log(serder.pretty());
-  } finally {
-    yield* hby.close();
-  }
 }
 
 /** Implement `tufa challenge verify` by matching accepted challenge responses in local exchange state. */
@@ -182,13 +170,10 @@ export function* challengeVerifyCommand(
   if (words.length === 0) {
     throw new ValidationError("Challenge words must not be empty.");
   }
+  const signerInput = commandArgs.signer;
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withAgentRuntime(
+    commandArgs,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
@@ -197,43 +182,39 @@ export function* challengeVerifyCommand(
       outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
-  );
-
-  try {
-    const signer = resolveSigner(hby, commandArgs.signer);
-    if (commandArgs.generate) {
-      console.log(
-        formatChallengeWords(words, normalizeOutput(commandArgs.out)),
-      );
-    }
-
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    runtime.mailboxDirector.topics.clear();
-    runtime.mailboxDirector.registerTopic("/challenge");
-    const timeoutMs = Math.max(1, commandArgs.timeout ?? 10) * 1000;
-    const pollDelayMs = Math.max(1, commandArgs.pollDelayMs ?? 250);
-    const deadline = Date.now() + timeoutMs;
-    let match = findVerifiedChallengeResponse(hby.db, signer, words);
-
-    while (!match && Date.now() < deadline) {
-      yield* processMailboxTurn(runtime);
-      match = findVerifiedChallengeResponse(hby.db, signer, words);
-      if (!match && Date.now() < deadline) {
-        yield* sleep(pollDelayMs);
+    function*({ hby, runtime }) {
+      const signer = resolveSigner(hby, signerInput);
+      if (commandArgs.generate) {
+        console.log(
+          formatChallengeWords(words, normalizeOutput(commandArgs.out)),
+        );
       }
-    }
 
-    if (!match) {
-      throw new ValidationError(
-        `No challenge response from ${commandArgs.signer} matched the provided words.`,
-      );
-    }
+      runtime.mailboxDirector.topics.clear();
+      runtime.mailboxDirector.registerTopic("/challenge");
+      const timeoutMs = Math.max(1, commandArgs.timeout ?? 10) * 1000;
+      const pollDelayMs = Math.max(1, commandArgs.pollDelayMs ?? 250);
+      const deadline = Date.now() + timeoutMs;
+      let match = findVerifiedChallengeResponse(hby.db, signer, words);
 
-    markChallengeVerified(hby.db, signer, match);
-    console.log(`${signer} ${match.said}`);
-  } finally {
-    yield* hby.close();
-  }
+      while (!match && Date.now() < deadline) {
+        yield* processMailboxTurn(runtime);
+        match = findVerifiedChallengeResponse(hby.db, signer, words);
+        if (!match && Date.now() < deadline) {
+          yield* sleep(pollDelayMs);
+        }
+      }
+
+      if (!match) {
+        throw new ValidationError(
+          `No challenge response from ${signerInput} matched the provided words.`,
+        );
+      }
+
+      markChallengeVerified(hby.db, signer, match);
+      console.log(`${signer} ${match.said}`);
+    },
+  );
 }
 
 function resolveSigner(

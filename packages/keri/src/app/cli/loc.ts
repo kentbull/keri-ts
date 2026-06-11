@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
-import { setupHby } from "./common/existing.ts";
+import { ingestKeriBytes, processRuntimeTurn } from "../agent-runtime.ts";
+import { withHabAndAgentRuntime } from "./common/context.ts";
 
 /** Parsed arguments for `tufa loc add`. */
 interface LocAddArgs {
@@ -58,54 +58,41 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
   if (!scheme) {
     throw new ValidationError(`URL ${commandArgs.url} is missing a scheme.`);
   }
+  const url = commandArgs.url;
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withHabAndAgentRuntime(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
       skipSignator: false,
     },
-  );
-
-  try {
-    const hab = hby.habByName(commandArgs.alias);
-    if (!hab) {
-      throw new ValidationError(
-        `No local AID found for alias ${commandArgs.alias}`,
+    function*({ hby, hab, runtime }) {
+      const eid = commandArgs.eid ?? hab.pre;
+      ingestKeriBytes(
+        runtime,
+        hab.makeLocScheme(url, eid, scheme, commandArgs.time),
       );
-    }
 
-    const eid = commandArgs.eid ?? hab.pre;
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    ingestKeriBytes(
-      runtime,
-      hab.makeLocScheme(commandArgs.url, eid, scheme, commandArgs.time),
-    );
-
-    for (let i = 0; i < 4; i += 1) {
-      yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
-      if (
-        hby.db.locs.get([eid, scheme])?.url === commandArgs.url
-        && !!hby.db.lans.get([eid, scheme])
-        && hab.loadLocScheme(eid, scheme).length > 0
-      ) {
-        console.log(
-          `Location ${commandArgs.url} added for aid ${eid} with scheme ${scheme}`,
-        );
-        return;
+      for (let i = 0; i < 4; i += 1) {
+        yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+        if (
+          hby.db.locs.get([eid, scheme])?.url === url
+          && !!hby.db.lans.get([eid, scheme])
+          && hab.loadLocScheme(eid, scheme).length > 0
+        ) {
+          console.log(
+            `Location ${url} added for aid ${eid} with scheme ${scheme}`,
+          );
+          return;
+        }
       }
-    }
 
-    throw new ValidationError(
-      `Location ${commandArgs.url} for ${eid} was not accepted into local state.`,
-    );
-  } finally {
-    yield* hby.close();
-  }
+      throw new ValidationError(
+        `Location ${url} for ${eid} was not accepted into local state.`,
+      );
+    },
+  );
 }

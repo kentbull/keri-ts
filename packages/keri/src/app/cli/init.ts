@@ -159,17 +159,21 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       hby.ks.pinGbls("cesrBodyMode", initArgs.cesrBodyMode ?? "header");
       if (runtimeBootstrapNeeded(hby)) {
         const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-        yield* processRuntimeUntil(
-          runtime,
-          () => !runtimeHasPendingWork(runtime),
-          { maxTurns: 128, pollMailbox: false },
-        );
-        if (hby.db.eoobi.cnt() > 0) {
-          throw new ValidationError(
-            "Bootstrap OOBI resolution failed during init.",
+        try {
+          yield* processRuntimeUntil(
+            runtime,
+            () => !runtimeHasPendingWork(runtime),
+            { maxTurns: 128, pollMailbox: false },
           );
+          if (hby.db.eoobi.cnt() > 0) {
+            throw new ValidationError(
+              "Bootstrap OOBI resolution failed during init.",
+            );
+          }
+          assertConfiguredWellKnownAuth(runtime, hby, "init");
+        } finally {
+          yield* runtime.close();
         }
-        assertConfiguredWellKnownAuth(runtime, hby, "init");
       }
 
       console.log("KERI Keystore created at:", hby.ks.path);

@@ -7,12 +7,12 @@
  *   witness receipts using the same receipting helpers already shared by
  *   `incept` and `rotate`
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { makeNowIso8601 } from "../../time/mod.ts";
-import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
+import { withExistingHab } from "./common/context.ts";
 import { parseDataItems } from "./common/parsing.ts";
+import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 /** Parsed command arguments for one `tufa interact` invocation. */
 interface InteractArgs {
@@ -27,40 +27,6 @@ interface InteractArgs {
   code?: string[];
   codeTime?: string;
   data?: string[];
-}
-
-function resolveWitnessAuths(
-  witnesses: readonly string[],
-  codes: readonly string[],
-  codeTime?: string,
-  promptMissing = false,
-): WitnessAuthMap {
-  const timestamp = codeTime ?? makeNowIso8601();
-  const auths: WitnessAuthMap = {};
-  for (const entry of codes) {
-    const separator = entry.indexOf(":");
-    if (separator <= 0 || separator >= entry.length - 1) {
-      throw new ValidationError(
-        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
-      );
-    }
-    const witness = entry.slice(0, separator);
-    const code = entry.slice(separator + 1);
-    auths[witness] = `${code}#${timestamp}`;
-  }
-  if (promptMissing) {
-    for (const witness of witnesses) {
-      if (auths[witness]) {
-        continue;
-      }
-      const code = prompt(`Entire code for ${witness}: `);
-      if (!code) {
-        throw new ValidationError(`Missing witness code for ${witness}.`);
-      }
-      auths[witness] = `${code}#${makeNowIso8601()}`;
-    }
-  }
-  return auths;
 }
 
 /**
@@ -97,25 +63,16 @@ export function* interactCommand(
 
   const data = parseDataItems(interactArgs.data);
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      interactArgs.name!,
-      interactArgs.base ?? "",
-      interactArgs.passcode,
-      false,
-      interactArgs.headDirPath,
-      {
-        compat: interactArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(interactArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${interactArgs.alias!} is invalid`);
-      }
+  yield* withExistingHab(
+    interactArgs,
+    interactArgs.alias,
+    {
+      compat: interactArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby, hab }) {
       if (!hab.kever) {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
@@ -126,8 +83,10 @@ export function* interactCommand(
         const auths = resolveWitnessAuths(
           hab.kever.wits,
           interactArgs.code ?? [],
-          interactArgs.codeTime,
-          interactArgs.authenticate ?? false,
+          {
+            codeTime: interactArgs.codeTime,
+            promptMissing: interactArgs.authenticate ?? false,
+          },
         );
         if (interactArgs.endpoint) {
           const receiptor = new Receiptor(hby);
@@ -150,10 +109,6 @@ export function* interactCommand(
       for (const [idx, key] of (state?.k ?? []).entries()) {
         console.log(`\tPublic key ${idx + 1}:  ${key}`);
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

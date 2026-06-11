@@ -1,17 +1,11 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
-import {
-  createAgentRuntime,
-  enqueueOobi,
-  processRuntimeUntil,
-  runtimeOobiConverged,
-  runtimeOobiTerminalState,
-} from "../agent-runtime.ts";
+import { enqueueOobi, processRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../forwarding.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
-import { setupHby } from "./common/existing.ts";
+import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
 interface OobiGenerateArgs {
@@ -99,84 +93,72 @@ export function* oobiGenerateCommand(
       `Unsupported OOBI role ${String(commandArgs.role)}`,
     );
   }
+  const role = commandArgs.role;
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: true,
       skipConfig: false,
       skipSignator: true,
     },
+    function*({ hby, hab }) {
+      const urls: string[] = [];
+      switch (role) {
+        case EndpointRoles.controller: {
+          const url = preferredUrl(hab.fetchUrls(hab.pre));
+          if (!url) {
+            throw new ValidationError(
+              `No controller endpoint URL is stored for ${hab.pre}`,
+            );
+          }
+          urls.push(`${url.replace(/\/$/, "")}/oobi/${hab.pre}/controller`);
+          break;
+        }
+        case EndpointRoles.agent:
+        case EndpointRoles.mailbox: {
+          const ends = hab.endsFor(hab.pre)[role] ?? {};
+          for (const [eid, surls] of Object.entries(ends)) {
+            const url = preferredUrl(surls);
+            if (url) {
+              urls.push(
+                `${canonicalOobiOrigin(url)}/oobi/${hab.pre}/${role}/${eid}`,
+              );
+            }
+          }
+          if (urls.length === 0) {
+            throw new ValidationError(
+              `No ${role} endpoint URL is stored for ${hab.pre}`,
+            );
+          }
+          break;
+        }
+        case EndpointRoles.witness: {
+          const state = hby.db.getState(hab.pre);
+          for (const witness of state?.b ?? []) {
+            const url = preferredUrl(hab.fetchUrls(witness));
+            if (url) {
+              urls.push(
+                `${url.replace(/\/$/, "")}/oobi/${hab.pre}/witness/${witness}`,
+              );
+            }
+          }
+          if (urls.length === 0) {
+            throw new ValidationError(
+              `No witness endpoint URLs are stored for ${hab.pre}`,
+            );
+          }
+          break;
+        }
+      }
+
+      for (const url of urls) {
+        console.log(url);
+      }
+    },
   );
-
-  try {
-    const hab = hby.habByName(commandArgs.alias);
-    if (!hab) {
-      throw new ValidationError(
-        `No local AID found for alias ${commandArgs.alias}`,
-      );
-    }
-
-    const urls: string[] = [];
-    switch (commandArgs.role) {
-      case EndpointRoles.controller: {
-        const url = preferredUrl(hab.fetchUrls(hab.pre));
-        if (!url) {
-          throw new ValidationError(
-            `No controller endpoint URL is stored for ${hab.pre}`,
-          );
-        }
-        urls.push(`${url.replace(/\/$/, "")}/oobi/${hab.pre}/controller`);
-        break;
-      }
-      case EndpointRoles.agent:
-      case EndpointRoles.mailbox: {
-        const ends = hab.endsFor(hab.pre)[commandArgs.role] ?? {};
-        for (const [eid, surls] of Object.entries(ends)) {
-          const url = preferredUrl(surls);
-          if (url) {
-            urls.push(
-              `${canonicalOobiOrigin(url)}/oobi/${hab.pre}/${commandArgs.role}/${eid}`,
-            );
-          }
-        }
-        if (urls.length === 0) {
-          throw new ValidationError(
-            `No ${commandArgs.role} endpoint URL is stored for ${hab.pre}`,
-          );
-        }
-        break;
-      }
-      case EndpointRoles.witness: {
-        const state = hby.db.getState(hab.pre);
-        for (const witness of state?.b ?? []) {
-          const url = preferredUrl(hab.fetchUrls(witness));
-          if (url) {
-            urls.push(
-              `${url.replace(/\/$/, "")}/oobi/${hab.pre}/witness/${witness}`,
-            );
-          }
-        }
-        if (urls.length === 0) {
-          throw new ValidationError(
-            `No witness endpoint URLs are stored for ${hab.pre}`,
-          );
-        }
-        break;
-      }
-    }
-
-    for (const url of urls) {
-      console.log(url);
-    }
-  } finally {
-    yield* hby.close();
-  }
 }
 
 /**
@@ -205,46 +187,39 @@ export function* oobiResolveCommand(
   if (!commandArgs.url) {
     throw new ValidationError("OOBI URL is required and cannot be empty");
   }
+  const url = commandArgs.url;
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withAgentRuntime(
+    commandArgs,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: false,
       skipSignator: false,
     },
-  );
-
-  try {
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    enqueueOobi(runtime, {
-      url: commandArgs.url,
-      alias: commandArgs.oobiAlias,
-    });
-    yield* processRuntimeUntil(
-      runtime,
-      () => runtimeOobiConverged(runtime, commandArgs.url!),
-      { maxTurns: 128, pollMailbox: false },
-    );
-
-    const terminal = runtimeOobiTerminalState(runtime, commandArgs.url);
-    if (terminal.status === "failed") {
-      throw new ValidationError(
-        `OOBI ${commandArgs.url} failed: ${terminal.record?.state ?? "failed"}`,
+    function*({ runtime }) {
+      enqueueOobi(runtime, {
+        url,
+        alias: commandArgs.oobiAlias,
+      });
+      yield* processRuntimeUntil(
+        runtime,
+        () => runtimeOobiConverged(runtime, url),
+        { maxTurns: 128, pollMailbox: false },
       );
-    }
-    if (terminal.status !== "resolved") {
-      throw new ValidationError(`OOBI ${commandArgs.url} did not resolve.`);
-    }
-    console.log(commandArgs.url);
-  } finally {
-    yield* hby.close();
-  }
+
+      const terminal = runtimeOobiTerminalState(runtime, url);
+      if (terminal.status === "failed") {
+        throw new ValidationError(
+          `OOBI ${url} failed: ${terminal.record?.state ?? "failed"}`,
+        );
+      }
+      if (terminal.status !== "resolved") {
+        throw new ValidationError(`OOBI ${url} did not resolve.`);
+      }
+      console.log(url);
+    },
+  );
 }
 
 /**
@@ -283,18 +258,17 @@ export function* oobiRequestCommand(
   if (!commandArgs.url) {
     throw new ValidationError("OOBI URL is required and cannot be empty");
   }
+  const recipient = commandArgs.recipient;
+  const url = commandArgs.url;
 
-  const parsed = new URL(commandArgs.url);
+  const parsed = new URL(url);
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new ValidationError(`Unsupported OOBI scheme ${parsed.protocol}`);
   }
 
-  const hby = yield* setupHby(
-    commandArgs.name,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
@@ -303,27 +277,19 @@ export function* oobiRequestCommand(
       outboxer: commandArgs.outboxer ?? false,
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
+    function*({ hby, hab }) {
+      const exn = oobiRequestExn(hab, recipient, url);
+      const { serder } = yield* sendExchangeMessage(hby, hab, {
+        recipient,
+        route: OOBI_REQUEST_ROUTE,
+        topic: OOBI_MAILBOX_TOPIC,
+        payload: (exn.ked?.a as Record<string, unknown>) ?? {
+          dest: recipient,
+          oobi: url,
+        },
+      });
+      console.log("Sent OOBI request");
+      console.log(serder.pretty());
+    },
   );
-
-  try {
-    const hab = hby.habByName(commandArgs.alias);
-    if (!hab) {
-      throw new ValidationError(`invalid sender alias ${commandArgs.alias}`);
-    }
-
-    const exn = oobiRequestExn(hab, commandArgs.recipient, commandArgs.url);
-    const { serder } = yield* sendExchangeMessage(hby, hab, {
-      recipient: commandArgs.recipient,
-      route: OOBI_REQUEST_ROUTE,
-      topic: OOBI_MAILBOX_TOPIC,
-      payload: (exn.ked?.a as Record<string, unknown>) ?? {
-        dest: commandArgs.recipient,
-        oobi: commandArgs.url,
-      },
-    });
-    console.log("Sent OOBI request");
-    console.log(serder.pretty());
-  } finally {
-    yield* hby.close();
-  }
 }

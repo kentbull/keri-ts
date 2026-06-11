@@ -12,15 +12,15 @@
  *   one bounded command lifetime instead of being spread across long-lived HIO
  *   doers
  */
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
-import { createAgentRuntime, processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
-import type { Hab, Habery } from "../habbing.ts";
+import { processRuntimeTurn, runtimeHasPendingWork, runtimeTurn } from "../agent-runtime.ts";
+import type { Hab } from "../habbing.ts";
 import { flattenRoleUrls } from "../mailboxing.ts";
 import { queryTransportSink } from "../query-transport.ts";
+import { withHabAndAgentRuntime } from "./common/context.ts";
 import { printExternal } from "./common/displaying.ts";
-import { setupHby } from "./common/existing.ts";
 
 /** Parsed command arguments for one `tufa query` invocation. */
 interface QueryArgs {
@@ -110,27 +110,18 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
   if (!queryArgs.prefix) {
     throw new ValidationError("Prefix is required and cannot be empty");
   }
+  const prefix = queryArgs.prefix;
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      queryArgs.name!,
-      queryArgs.base ?? "",
-      queryArgs.passcode,
-      false,
-      queryArgs.headDirPath,
-      {
-        compat: queryArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-    try {
-      const hab = hby.habByName(queryArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${queryArgs.alias!} is invalid`);
-      }
+  yield* withHabAndAgentRuntime(
+    queryArgs,
+    queryArgs.alias,
+    {
+      compat: queryArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby, runtime, hab }) {
       const sink = queryTransportSink(runtime, hby, hab);
 
       let watchDone = () => false;
@@ -138,7 +129,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
         const anchor = loadAnchor(queryArgs.anchor);
         console.log(`Checking for anchor ${JSON.stringify(anchor)}...`);
         const querier = runtime.querying.watchAnchor(
-          queryArgs.prefix!,
+          prefix,
           anchor,
           {
             hab,
@@ -147,7 +138,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
         watchDone = () => querier.done;
       } else {
         console.log("Checking for updates...");
-        const noticer = runtime.querying.watchKeyState(queryArgs.prefix!, {
+        const noticer = runtime.querying.watchKeyState(prefix, {
           hab,
         });
         watchDone = () => noticer.done;
@@ -162,7 +153,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       }
 
       if (!watchDone() && !queryArgs.anchor) {
-        const catchupUrl = controllerCatchupUrl(hab, queryArgs.prefix!);
+        const catchupUrl = controllerCatchupUrl(hab, prefix);
         if (catchupUrl) {
           runtime.oobiery.resolve(catchupUrl);
           const catchupDeadline = Date.now() + 5_000;
@@ -181,12 +172,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       }
 
       console.log("");
-      printExternal(hby, queryArgs.prefix!);
-    } finally {
-      yield* runtime.close();
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+      printExternal(hby, prefix);
+    },
+  );
 }

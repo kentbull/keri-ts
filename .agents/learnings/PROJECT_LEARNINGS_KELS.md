@@ -133,12 +133,16 @@ and KERIpy interoperability.
 38. `packages/tufa` owns the runnable host/CLI edge. `packages/keri` remains a
     library/runtime surface, not the home of host composition, command
     registration, or transport middleware policy.
-39. Attachment counter genus-version handling is split by message class: live
+39. Command-local lifecycle should choose the narrowest explicit scope:
+    `withExistingHabery`, `withAgentRuntime`, or `withHabAndAgentRuntime` for
+    ordinary existing-store CLI commands; direct `setupHby` remains a low-level
+    escape hatch, and `ensureHby` remains for create-if-missing host startup.
+40. Attachment counter genus-version handling is split by message class: live
     message serialization may follow caller/requested `gvrsn` and KERIpy v2
     enclosure rules, but replay clone APIs (`Baser.clone*`, `Reger.cloneTvt*`,
     KEL/TEL replay helpers) are fixed to v1 counters because they replay stored
     KEL/TEL events rather than constructing new live attachment envelopes.
-40. `did:webs` `keri.cesr` artifact generation is not an OOBI reply bundle:
+41. `did:webs` `keri.cesr` artifact generation is not an OOBI reply bundle:
     replay the controller delegation/KEL once, then append stored witness,
     agent, mailbox `/loc/scheme` and `/end/role` replies directly. Calling
     `Hab.replyEndRole(...)` per role repeats the controller KEL.

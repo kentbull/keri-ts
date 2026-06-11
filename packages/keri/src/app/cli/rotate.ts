@@ -11,20 +11,20 @@
  * - witness replacement/cut/add math plus witness-auth/receipt convergence
  * - KLI-compatible success output
  */
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { makeNowIso8601 } from "../../time/mod.ts";
 import { createAgentRuntime, processRuntimeUntil } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import { queryTransportSink } from "../query-transport.ts";
-import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witnessing.ts";
-import { setupHby } from "./common/existing.ts";
+import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
+import { withExistingHab } from "./common/context.ts";
 import {
   loadRotateFileOptions,
   parseDataItems,
   parseThresholdOption,
   type RotateFileOptions,
 } from "./common/parsing.ts";
+import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 /** Parsed command arguments for one `tufa rotate` invocation. */
 interface RotateArgs {
@@ -63,9 +63,7 @@ function emptyRotateOptions(): RotateFileOptions {
  * - absent CLI `--next-count` still forces `1`
  */
 function mergeWithFile(args: RotateArgs): RotateFileOptions {
-  const options = args.file && args.file !== ""
-    ? loadRotateFileOptions(args.file)
-    : emptyRotateOptions();
+  const options = args.file && args.file !== "" ? loadRotateFileOptions(args.file) : emptyRotateOptions();
 
   if (args.isith !== undefined) {
     options.isith = parseThresholdOption(args.isith);
@@ -108,40 +106,6 @@ function difference(
   return left.filter((value) => !rightSet.has(value));
 }
 
-function resolveWitnessAuths(
-  witnesses: readonly string[],
-  codes: readonly string[],
-  codeTime?: string,
-  promptMissing = false,
-): WitnessAuthMap {
-  const timestamp = codeTime ?? makeNowIso8601();
-  const auths: WitnessAuthMap = {};
-  for (const entry of codes) {
-    const separator = entry.indexOf(":");
-    if (separator <= 0 || separator >= entry.length - 1) {
-      throw new ValidationError(
-        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
-      );
-    }
-    const witness = entry.slice(0, separator);
-    const code = entry.slice(separator + 1);
-    auths[witness] = `${code}#${timestamp}`;
-  }
-  if (promptMissing) {
-    for (const witness of witnesses) {
-      if (auths[witness]) {
-        continue;
-      }
-      const code = prompt(`Entire code for ${witness}: `);
-      if (!code) {
-        throw new ValidationError(`Missing witness code for ${witness}.`);
-      }
-      auths[witness] = `${code}#${makeNowIso8601()}`;
-    }
-  }
-  return auths;
-}
-
 /**
  * Rotate one local habitat and print the newly accepted public key state.
  *
@@ -182,25 +146,16 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
 
   const options = mergeWithFile(rotateArgs);
 
-  const doer = yield* spawn(function*() {
-    const hby = yield* setupHby(
-      rotateArgs.name!,
-      rotateArgs.base ?? "",
-      rotateArgs.passcode,
-      false,
-      rotateArgs.headDirPath,
-      {
-        compat: rotateArgs.compat ?? false,
-        readonly: false,
-        skipConfig: true,
-        skipSignator: true,
-      },
-    );
-    try {
-      const hab = hby.habByName(rotateArgs.alias!);
-      if (!hab) {
-        throw new ValidationError(`Alias ${rotateArgs.alias!} is invalid`);
-      }
+  yield* withExistingHab(
+    rotateArgs,
+    rotateArgs.alias,
+    {
+      compat: rotateArgs.compat ?? false,
+      readonly: false,
+      skipConfig: true,
+      skipSignator: true,
+    },
+    function*({ hby, hab }) {
       const kever = hab.kever;
       if (!kever) {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
@@ -232,8 +187,10 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         const auths = resolveWitnessAuths(
           hab.kever.wits,
           rotateArgs.code ?? [],
-          rotateArgs.codeTime,
-          rotateArgs.authenticate ?? false,
+          {
+            codeTime: rotateArgs.codeTime,
+            promptMissing: rotateArgs.authenticate ?? false,
+          },
         );
         if (rotateArgs.endpoint) {
           const receiptor = new Receiptor(hby);
@@ -287,10 +244,6 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
       if (delegationPhase) {
         console.log(`Delegation status  ${delegationPhase}`);
       }
-    } finally {
-      yield* hby.close();
-    }
-  });
-
-  yield* doer;
+    },
+  );
 }

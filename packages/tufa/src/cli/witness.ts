@@ -23,11 +23,12 @@ import {
   type Scheme,
   Schemes,
   ValidationError,
-  type WitnessAuthMap,
   WitnessReceiptor,
 } from "keri-ts/runtime";
 import { runWitnessHost } from "../roles/witness.ts";
-import { ensureHby, setupHby } from "./support/existing.ts";
+import { withExistingHab } from "./support/context.ts";
+import { ensureHby } from "./support/existing.ts";
+import { resolveWitnessAuths } from "./support/witness-auth.ts";
 
 interface WitnessBaseArgs {
   name?: string;
@@ -171,45 +172,42 @@ export function* witnessSubmitCommand(
     codeTime: args.codeTime as string | undefined,
   };
 
-  const hby = yield* setupHby(
-    commandArgs.name!,
-    commandArgs.base ?? "",
-    commandArgs.passcode,
-    false,
-    commandArgs.headDirPath,
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
     {
       compat: commandArgs.compat ?? false,
       readonly: false,
       skipConfig: true,
       skipSignator: true,
     },
-  );
-  try {
-    const hab = requireWitnessHab(hby, commandArgs.alias);
-    const auths = resolveWitnessAuths(
-      hab.kever?.wits ?? [],
-      commandArgs.code ?? [],
-      commandArgs.codeTime,
-      commandArgs.authenticate ?? false,
-    );
-    if (commandArgs.endpoint) {
-      const receiptor = new Receiptor(hby);
-      yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
-    } else {
-      const witDoer = new WitnessReceiptor(hby, {
-        force: commandArgs.force ?? false,
-      });
-      yield* witDoer.submit(hab.pre, {
-        sn: hab.kever?.sn,
-        auths,
-      });
-    }
+    function*({ hby, hab }) {
+      const auths = resolveWitnessAuths(
+        hab.kever?.wits ?? [],
+        commandArgs.code ?? [],
+        {
+          codeTime: commandArgs.codeTime,
+          promptMissing: commandArgs.authenticate ?? false,
+          normalizeCodeTime: validateIsoDatetime,
+        },
+      );
+      if (commandArgs.endpoint) {
+        const receiptor = new Receiptor(hby);
+        yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
+      } else {
+        const witDoer = new WitnessReceiptor(hby, {
+          force: commandArgs.force ?? false,
+        });
+        yield* witDoer.submit(hab.pre, {
+          sn: hab.kever?.sn,
+          auths,
+        });
+      }
 
-    console.log(`Prefix  ${hab.pre}`);
-    console.log(`Sequence No.  ${hab.kever?.sn ?? ""}`);
-  } finally {
-    yield* hby.close();
-  }
+      console.log(`Prefix  ${hab.pre}`);
+      console.log(`Sequence No.  ${hab.kever?.sn ?? ""}`);
+    },
+  );
 }
 
 function parseWitnessStartArgs(
@@ -514,48 +512,6 @@ function* reconcileWitnessIdentity(
       "Witness startup reconciliation did not produce accepted self location/controller/witness/mailbox state.",
     );
   }
-}
-
-function requireWitnessHab(hby: Habery, alias?: string): Hab {
-  const hab = hby.habByName(alias ?? "");
-  if (!hab) {
-    throw new ValidationError(`No local AID found for alias ${alias}`);
-  }
-  return hab;
-}
-
-function resolveWitnessAuths(
-  witnesses: readonly string[],
-  codes: readonly string[],
-  codeTime: string | undefined,
-  promptMissing: boolean,
-): WitnessAuthMap {
-  const timestamp = codeTime ? validateIsoDatetime(codeTime) : makeNowIso8601();
-  const auths: WitnessAuthMap = {};
-  for (const entry of codes) {
-    const separator = entry.indexOf(":");
-    if (separator <= 0 || separator >= entry.length - 1) {
-      throw new ValidationError(
-        `Invalid witness code '${entry}'. Expected <Witness AID>:<code>.`,
-      );
-    }
-    const witness = entry.slice(0, separator);
-    const code = entry.slice(separator + 1);
-    auths[witness] = `${code}#${timestamp}`;
-  }
-  if (promptMissing) {
-    for (const witness of witnesses) {
-      if (auths[witness]) {
-        continue;
-      }
-      const code = prompt(`Entire code for ${witness}: `);
-      if (!code) {
-        throw new ValidationError(`Missing witness code for ${witness}.`);
-      }
-      auths[witness] = `${code}#${makeNowIso8601()}`;
-    }
-  }
-  return auths;
 }
 
 /** Normalize the advertised HTTP(S) witness URL while preserving path prefix. */

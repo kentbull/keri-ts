@@ -10,6 +10,7 @@ import { concatBytes } from "cesr-ts";
 import { action, type Operation } from "effection";
 import { join } from "jsr:@std/path";
 import {
+  type AgentRuntime,
   buildCesrRequest,
   buildCesrStreamRequest,
   type CesrBodyMode,
@@ -35,7 +36,8 @@ import {
   ValidationError,
 } from "keri-ts/runtime";
 import { runMailboxHost } from "../roles/mailbox.ts";
-import { ensureHby, setupHby } from "./support/existing.ts";
+import { type CommandHaberyOptions, withExistingHab, withHabAndAgentRuntime } from "./support/context.ts";
+import { ensureHby } from "./support/existing.ts";
 
 type MultisigMailboxMode = "propose" | "complete";
 
@@ -195,38 +197,39 @@ export function* mailboxListCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs = parseMailboxBaseArgs(args);
-  const hby = yield* openExistingMailboxHabery(commandArgs);
 
-  try {
-    const hab = requireHab(hby, commandArgs.alias);
-    const organizer = new Organizer(hby);
-    for (
-      const [keys, end] of hby.db.ends.getTopItemIter(
-        [hab.pre, Roles.mailbox],
-        {
-          topive: true,
-        },
-      )
-    ) {
-      const eid = keys[2];
-      if (!eid || !end.allowed) {
-        continue;
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
+    mailboxOpenOptions(commandArgs),
+    function*({ hby, hab }) {
+      const organizer = new Organizer(hby);
+      for (
+        const [keys, end] of hby.db.ends.getTopItemIter(
+          [hab.pre, Roles.mailbox],
+          {
+            topive: true,
+          },
+        )
+      ) {
+        const eid = keys[2];
+        if (!eid || !end.allowed) {
+          continue;
+        }
+        const contact = organizer.get(eid);
+        const alias = typeof contact?.alias === "string" ? contact.alias : "";
+        const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
+        const oobi = url.length > 0 ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}` : "";
+        const fields: string[] = [
+          alias,
+          eid,
+          url,
+          oobi,
+        ].filter((item) => item.length > 0);
+        console.log(fields.join(" "));
       }
-      const contact = organizer.get(eid);
-      const alias = typeof contact?.alias === "string" ? contact.alias : "";
-      const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
-      const oobi = url.length > 0 ? `${canonicalMailboxOrigin(url)}/oobi/${hab.pre}/mailbox/${eid}` : "";
-      const fields: string[] = [
-        alias,
-        eid,
-        url,
-        oobi,
-      ].filter((item) => item.length > 0);
-      console.log(fields.join(" "));
-    }
-  } finally {
-    yield* hby.close();
-  }
+    },
+  );
 }
 
 /**
@@ -253,19 +256,22 @@ export function* mailboxUpdateCommand(
     throw new ValidationError("Mailbox topic index is required.");
   }
 
+  const witness = commandArgs.witness;
+  const index = Number(commandArgs.index);
   const topic = normalizeTopic(commandArgs.topic);
-  const hby = yield* openExistingMailboxHabery(commandArgs);
 
-  try {
-    const hab = requireHab(hby, commandArgs.alias);
-    const record = hby.db.tops.get([hab.pre, commandArgs.witness])
-      ?? new TopicsRecord({ topics: {} });
-    record.topics[topic] = Number(commandArgs.index);
-    hby.db.tops.pin([hab.pre, commandArgs.witness], record);
-    console.log(`${commandArgs.witness} ${topic} ${record.topics[topic]}`);
-  } finally {
-    yield* hby.close();
-  }
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
+    mailboxOpenOptions(commandArgs),
+    function*({ hby, hab }) {
+      const record = hby.db.tops.get([hab.pre, witness])
+        ?? new TopicsRecord({ topics: {} });
+      record.topics[topic] = index;
+      hby.db.tops.pin([hab.pre, witness], record);
+      console.log(`${witness} ${topic} ${record.topics[topic]}`);
+    },
+  );
 }
 
 /**
@@ -288,180 +294,182 @@ export function* mailboxDebugCommand(
   if (!commandArgs.witness) {
     throw new ValidationError("Mailbox or witness AID is required.");
   }
+  const witness = commandArgs.witness;
 
-  const hby = yield* openExistingMailboxHabery(commandArgs);
-  try {
-    const hab = requireHab(hby, commandArgs.alias);
-    console.log("Configured Mailboxes");
-    const organizer = new Organizer(hby);
-    for (
-      const [keys, end] of hby.db.ends.getTopItemIter(
-        [hab.pre, Roles.mailbox],
-        {
-          topive: true,
-        },
-      )
-    ) {
-      const eid = keys[2];
-      if (!eid || !end.allowed) {
-        continue;
-      }
-      const contact = organizer.get(eid);
-      const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
-      console.log(`${contact?.alias ?? ""} ${eid} ${url}`.trim());
-    }
-
-    console.log("");
-    console.log("Local Index per Topic");
-    const witrec = hby.db.tops.get([hab.pre, commandArgs.witness]);
-    if (witrec) {
-      for (const [topic, idx] of Object.entries(witrec.topics)) {
-        console.log(`Topic ${topic}: ${idx}`);
-      }
-    } else {
-      console.log("No local index");
-    }
-
-    console.log("");
-    console.log("Outbox Pending");
-    if (!hby.obx.enabled) {
-      console.log("Outboxer disabled");
-    } else {
-      for (const pending of hby.obx.iterPending()) {
-        if (pending.target.eid !== commandArgs.witness) {
+  yield* withExistingHab(
+    commandArgs,
+    commandArgs.alias,
+    mailboxOpenOptions(commandArgs),
+    function*({ hby, hab }) {
+      console.log("Configured Mailboxes");
+      const organizer = new Organizer(hby);
+      for (
+        const [keys, end] of hby.db.ends.getTopItemIter(
+          [hab.pre, Roles.mailbox],
+          {
+            topive: true,
+          },
+        )
+      ) {
+        const eid = keys[2];
+        if (!eid || !end.allowed) {
           continue;
         }
-        console.log(
-          `${pending.message.topic} ${pending.target.eid} attempts=${pending.target.attempts ?? 0}`,
-        );
+        const contact = organizer.get(eid);
+        const url = preferredUrl(fetchEndpointUrls(hby, eid)) ?? "";
+        console.log(`${contact?.alias ?? ""} ${eid} ${url}`.trim());
       }
-    }
 
-    const endpointUrl = preferredUrl(
-      fetchEndpointUrls(hby, commandArgs.witness),
-    );
-    if (!endpointUrl) {
-      return;
-    }
-
-    const topics = witrec?.topics ?? {
-      "/challenge": 0,
-      "/reply": 0,
-      "/receipt": 0,
-      "/replay": 0,
-    };
-    const cursor: Record<string, number> = {};
-    for (const [topic, idx] of Object.entries(topics)) {
-      cursor[topic] = idx + 1;
-    }
-
-    const response = yield* fetchMailboxDebug(
-      endpointUrl,
-      hab.query(
-        hab.pre,
-        commandArgs.witness,
-        { topics: cursor },
-        "mbx",
-      ),
-      hby.cesrBodyMode,
-      commandArgs.witness,
-    );
-
-    console.log("");
-    console.log("Messages");
-    for (const event of parseMailboxSse(response)) {
-      if (!commandArgs.verbose) {
-        console.log(`${event.topic} ${event.idx}: ${event.msg.slice(0, 20)}`);
+      console.log("");
+      console.log("Local Index per Topic");
+      const witrec = hby.db.tops.get([hab.pre, witness]);
+      if (witrec) {
+        for (const [topic, idx] of Object.entries(witrec.topics)) {
+          console.log(`Topic ${topic}: ${idx}`);
+        }
       } else {
-        console.log(`Topic: ${event.topic}`);
-        console.log(`Index: ${event.idx}`);
-        console.log(event.msg);
-        console.log("");
+        console.log("No local index");
       }
-    }
-  } finally {
-    yield* hby.close();
-  }
+
+      console.log("");
+      console.log("Outbox Pending");
+      if (!hby.obx.enabled) {
+        console.log("Outboxer disabled");
+      } else {
+        for (const pending of hby.obx.iterPending()) {
+          if (pending.target.eid !== witness) {
+            continue;
+          }
+          console.log(
+            `${pending.message.topic} ${pending.target.eid} attempts=${pending.target.attempts ?? 0}`,
+          );
+        }
+      }
+
+      const endpointUrl = preferredUrl(
+        fetchEndpointUrls(hby, witness),
+      );
+      if (!endpointUrl) {
+        return;
+      }
+
+      const topics = witrec?.topics ?? {
+        "/challenge": 0,
+        "/reply": 0,
+        "/receipt": 0,
+        "/replay": 0,
+      };
+      const cursor: Record<string, number> = {};
+      for (const [topic, idx] of Object.entries(topics)) {
+        cursor[topic] = idx + 1;
+      }
+
+      const response = yield* fetchMailboxDebug(
+        endpointUrl,
+        hab.query(
+          hab.pre,
+          witness,
+          { topics: cursor },
+          "mbx",
+        ),
+        hby.cesrBodyMode,
+        witness,
+      );
+
+      console.log("");
+      console.log("Messages");
+      for (const event of parseMailboxSse(response)) {
+        if (!commandArgs.verbose) {
+          console.log(`${event.topic} ${event.idx}: ${event.msg.slice(0, 20)}`);
+        } else {
+          console.log(`Topic: ${event.topic}`);
+          console.log(`Index: ${event.idx}`);
+          console.log(event.msg);
+          console.log("");
+        }
+      }
+    },
+  );
 }
 
 function* withMailboxWorkflow(
   args: MailboxAddRemoveArgs,
   allow: boolean,
 ): Operation<void> {
-  const hby = yield* openExistingMailboxHabery(args);
-
-  try {
-    const hab = requireHab(hby, args.alias);
-    const mailboxAid = resolveMailboxAid(hby, args.mailbox!);
-    const endpointUrl = preferredUrl(fetchEndpointUrls(hby, mailboxAid));
-    if (!endpointUrl) {
-      throw new ValidationError(
-        `No endpoint URL is stored for mailbox ${mailboxAid}.`,
-      );
-    }
-
-    if (isLocalGroupHab(hby, hab)) {
-      if (!allow) {
+  yield* withHabAndAgentRuntime(
+    args,
+    args.alias,
+    mailboxOpenOptions(args),
+    function*({ hby, hab, runtime }) {
+      const mailboxAid = resolveMailboxAid(hby, args.mailbox!);
+      const endpointUrl = preferredUrl(fetchEndpointUrls(hby, mailboxAid));
+      if (!endpointUrl) {
         throw new ValidationError(
-          "Group mailbox removal is not supported by mailbox remove; use multisig endpoint-role cut workflow.",
+          `No endpoint URL is stored for mailbox ${mailboxAid}.`,
         );
       }
-      if (!args.multisigMode) {
-        throw new ValidationError(
-          "Group mailbox add requires --multisig-mode propose or --multisig-mode complete.",
-        );
-      }
-      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      if (args.multisigMode === "propose") {
-        const result = yield* proposeGroupEndpointRole(runtime, hab, {
-          eid: mailboxAid,
-          role: Roles.mailbox,
-          allow: true,
-        });
-        console.log(JSON.stringify({
-          route: result.route,
-          said: result.said,
-          group: result.group,
-          accepted: result.accepted,
-          deliveries: result.deliveries,
-          attachmentBytes: result.attachmentBytes,
-        }));
+
+      if (isLocalGroupHab(hby, hab)) {
+        if (!allow) {
+          throw new ValidationError(
+            "Group mailbox removal is not supported by mailbox remove; use multisig endpoint-role cut workflow.",
+          );
+        }
+        if (!args.multisigMode) {
+          throw new ValidationError(
+            "Group mailbox add requires --multisig-mode propose or --multisig-mode complete.",
+          );
+        }
+        if (args.multisigMode === "propose") {
+          const result = yield* proposeGroupEndpointRole(runtime, hab, {
+            eid: mailboxAid,
+            role: Roles.mailbox,
+            allow: true,
+          });
+          console.log(JSON.stringify({
+            route: result.route,
+            said: result.said,
+            group: result.group,
+            accepted: result.accepted,
+            deliveries: result.deliveries,
+            attachmentBytes: result.attachmentBytes,
+          }));
+          return;
+        }
+        if (!endpointRoleAccepted(hby, hab.pre, Roles.mailbox, mailboxAid)) {
+          throw new ValidationError(
+            `Mailbox role for ${mailboxAid} is not yet approved for group ${hab.pre}.`,
+          );
+        }
+        const rpy = loadAcceptedEndpointRole(hab, mailboxAid, Roles.mailbox);
+        yield* completeMailboxAdmin(runtime, hby, hab, mailboxAid, endpointUrl, rpy, allow);
+        console.log(`added ${mailboxAid}`);
         return;
       }
-      if (!endpointRoleAccepted(hby, hab.pre, Roles.mailbox, mailboxAid)) {
+
+      if (args.multisigMode) {
+        throw new ValidationError("--multisig-mode is only valid for local group aliases.");
+      }
+
+      const submission = collectMailboxAdminSubmission(hby, hab.pre);
+      const existing = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
+      const rpy = allow && existing?.allowed
+        ? hab.loadEndRole(hab.pre, mailboxAid, Roles.mailbox)
+        : hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
+      if (rpy.length === 0) {
         throw new ValidationError(
-          `Mailbox role for ${mailboxAid} is not yet approved for group ${hab.pre}.`,
+          `No accepted mailbox role reply is available for ${hab.pre}.`,
         );
       }
-      const rpy = loadAcceptedEndpointRole(hab, mailboxAid, Roles.mailbox);
-      yield* completeMailboxAdmin(hby, hab, mailboxAid, endpointUrl, rpy, allow);
-      console.log(`added ${mailboxAid}`);
-      return;
-    }
+      yield* completeMailboxAdmin(runtime, hby, hab, mailboxAid, endpointUrl, rpy, allow);
 
-    if (args.multisigMode) {
-      throw new ValidationError("--multisig-mode is only valid for local group aliases.");
-    }
-
-    const submission = collectMailboxAdminSubmission(hby, hab.pre);
-    const existing = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
-    const rpy = allow && existing?.allowed
-      ? hab.loadEndRole(hab.pre, mailboxAid, Roles.mailbox)
-      : hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
-    if (rpy.length === 0) {
-      throw new ValidationError(
-        `No accepted mailbox role reply is available for ${hab.pre}.`,
-      );
-    }
-    yield* completeMailboxAdmin(hby, hab, mailboxAid, endpointUrl, rpy, allow);
-
-    console.log(`${allow ? "added" : "removed"} ${mailboxAid}`);
-  } finally {
-    yield* hby.close();
-  }
+      console.log(`${allow ? "added" : "removed"} ${mailboxAid}`);
+    },
+  );
 }
 
 function* completeMailboxAdmin(
+  runtime: AgentRuntime,
   hby: Habery,
   hab: Hab,
   mailboxAid: string,
@@ -481,7 +489,6 @@ function* completeMailboxAdmin(
     );
   }
 
-  const runtime = yield* createAgentRuntime(hby, { mode: "local" });
   ingestKeriBytes(runtime, rpy);
   yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
 
@@ -804,20 +811,24 @@ function* reconcileMailboxIdentity(
   // Feed self-authored location and role replies through the normal runtime
   // path instead of mutating `locs.` or `ends.` directly.
   const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-  const scheme = new URL(startup.url).protocol === "https:" ? "https" : "http";
-  ingestKeriBytes(
-    runtime,
-    hab.makeLocScheme(startup.url, hab.pre, scheme, startup.datetime),
-  );
-  ingestKeriBytes(
-    runtime,
-    hab.makeEndRole(hab.pre, EndpointRoles.controller, true, startup.datetime),
-  );
-  ingestKeriBytes(
-    runtime,
-    hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true, startup.datetime),
-  );
-  yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+  try {
+    const scheme = new URL(startup.url).protocol === "https:" ? "https" : "http";
+    ingestKeriBytes(
+      runtime,
+      hab.makeLocScheme(startup.url, hab.pre, scheme, startup.datetime),
+    );
+    ingestKeriBytes(
+      runtime,
+      hab.makeEndRole(hab.pre, EndpointRoles.controller, true, startup.datetime),
+    );
+    ingestKeriBytes(
+      runtime,
+      hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true, startup.datetime),
+    );
+    yield* processRuntimeTurn(runtime, { hab, pollMailbox: false });
+  } finally {
+    yield* runtime.close();
+  }
 
   if (!mailboxIdentityComplete(hby, hab.pre, startup.url)) {
     throw new ValidationError(
@@ -906,36 +917,15 @@ function isBindableLiteralHost(hostname: string): boolean {
     || hostname.includes(":");
 }
 
-/**
- * Open the selected habitat with mailbox-aware options.
- *
- * `Outboxer` remains opt-in so compat and parity work can still open keystores
- * without the Tufa-only retry sidecar.
- */
-function* openExistingMailboxHabery(
-  args: MailboxBaseArgs,
-): Operation<Habery> {
-  if (!args.name) {
-    throw new ValidationError("Name is required and cannot be empty");
-  }
-  if (!args.alias) {
-    throw new ValidationError("Alias is required and cannot be empty");
-  }
-  return yield* setupHby(
-    args.name,
-    args.base ?? "",
-    args.passcode,
-    false,
-    args.headDirPath,
-    {
-      compat: args.compat ?? false,
-      readonly: false,
-      skipConfig: false,
-      skipSignator: false,
-      outboxer: args.outboxer ?? false,
-      cesrBodyMode: args.cesrBodyMode,
-    },
-  );
+function mailboxOpenOptions(args: MailboxBaseArgs): CommandHaberyOptions {
+  return {
+    compat: args.compat ?? false,
+    readonly: false,
+    skipConfig: false,
+    skipSignator: false,
+    outboxer: args.outboxer ?? false,
+    cesrBodyMode: args.cesrBodyMode,
+  };
 }
 
 /** Resolve the selected local habitat and fail fast when the alias is missing. */
