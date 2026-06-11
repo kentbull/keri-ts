@@ -31,6 +31,7 @@
     "npm:hono@^4.7.11": "4.12.12",
     "npm:libsodium-wrappers@0.7.15": "0.7.15",
     "npm:libsodium-wrappers@0.8.2": "0.8.2",
+    "npm:libsodium-wrappers@0.8.4": "0.8.4",
     "npm:lmdb@*": "3.4.4",
     "npm:lmdb@3.4.4": "3.4.4"
   },
@@ -328,6 +329,12 @@
     },
     "libsodium-wrappers@0.8.2": {
       "integrity": "sha512-VFLmfxkxo+U9q60tjcnSomQBRx2UzlRjKWJqvB4K1pUqsMQg4cu3QXA2nrcsj9A1qRsnJBbi2Ozx1hsiDoCkhw==",
+      "dependencies": [
+        "libsodium@0.8.2"
+      ]
+    },
+    "libsodium-wrappers@0.8.4": {
+      "integrity": "sha512-mu8aAWucZjTB5O/BtGXtW4e1agy7uHxNYG7zPthmmD1jU43LCDmSWZLN4JhflbdPXj3yDO4lxM1O9hLDgIOXDw==",
       "dependencies": [
         "libsodium@0.8.2"
       ]

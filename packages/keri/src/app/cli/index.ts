@@ -8,6 +8,18 @@ export { aidCommand } from "./aid.ts";
 export { annotateCommand } from "./annotate.ts";
 export { benchmarkCommand } from "./benchmark.ts";
 export { challengeGenerateCommand, challengeRespondCommand, challengeVerifyCommand } from "./challenge.ts";
+export {
+  type AgentRuntimeContext,
+  type CommandContextDependencies,
+  type CommandHaberyOptions,
+  type CommandStoreArgs,
+  type HabAgentRuntimeContext,
+  type HaberyContext,
+  withAgentRuntime,
+  withExistingHabery,
+  withHabAndAgentRuntime,
+} from "./common/context.ts";
+export { type EnsuredHabery, ensureHby, setupHby } from "./common/existing.ts";
 export { dumpEvts } from "./db-dump.ts";
 export { delegateConfirmCommand } from "./delegate.ts";
 export { dkrResolveCommand, dwsBindCommand, dwsGenerateCommand, dwsResolveCommand } from "./did.ts";

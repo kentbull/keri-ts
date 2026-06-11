@@ -2,7 +2,8 @@
  * Re-export of the canonical CLI lifecycle context helpers.
  *
  * Tufa-owned commands use this shim when they need scoped Habery or runtime
- * lifecycle management while the transitional implementation lives in keri-ts.
+ * lifecycle management while the transitional implementation lives behind the
+ * public `keri-ts/cli` package boundary.
  */
 export {
   type AgentRuntimeContext,
@@ -14,4 +15,4 @@ export {
   withAgentRuntime,
   withExistingHabery,
   withHabAndAgentRuntime,
-} from "../../../../keri/src/app/cli/common/context.ts";
+} from "keri-ts/cli";

@@ -1,4 +1,4 @@
-import sodium from "npm:libsodium-wrappers@0.8.2";
+import sodium from "npm:libsodium-wrappers@0.8.4";
 
 await sodium.ready;
 
