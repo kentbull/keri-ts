@@ -68,8 +68,10 @@ runs:
       id: package
       if: ${{ inputs.do-version-check == 'true' && inputs.package-json-path != '' }}
       shell: bash
+      env:
+        PACKAGE_JSON_PATH: ${{ inputs.package-json-path }}
       run: |
-        VERSION=$(node -p "require('${{ inputs.package-json-path }}').version")
+        VERSION=$(node -e "const path = process.env.PACKAGE_JSON_PATH; const target = path.startsWith('.') ? path : './' + path; process.stdout.write(require(target).version);")
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
     - name: ensure tag matches package version
