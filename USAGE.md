@@ -17,7 +17,7 @@ finished end-user documentation.
 Run these commands from `packages/keri`:
 
 ```bash
-cd /Users/kbull/code/keri/kentbull/keri-ts/packages/keri
+cd /Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri
 
 export SRC_DIR=/tmp/tufa-oobi-src
 export DST_DIR=/tmp/tufa-oobi-dst
@@ -61,7 +61,7 @@ echo "$PRE"
 Start the source-side agent server in a separate terminal:
 
 ```bash
-cd /Users/kbull/code/keri/kentbull/keri-ts/packages/keri
+cd /Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri
 
 export SRC_DIR=/tmp/tufa-oobi-src
 export SRC_NAME=src
@@ -80,7 +80,7 @@ Notes:
 Back in another terminal, add mailbox authorization and generate OOBIs:
 
 ```bash
-cd /Users/kbull/code/keri/kentbull/keri-ts/packages/keri
+cd /Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri
 
 export SRC_DIR=/tmp/tufa-oobi-src
 export DST_DIR=/tmp/tufa-oobi-dst
@@ -100,7 +100,7 @@ deno task tufa oobi generate -n "$SRC_NAME" --head-dir "$SRC_DIR" -a "$ALIAS" -r
 Resolve the generated OOBIs on the target side:
 
 ```bash
-cd /Users/kbull/code/keri/kentbull/keri-ts/packages/keri
+cd /Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri
 
 export DST_DIR=/tmp/tufa-oobi-dst
 export DST_NAME=dst

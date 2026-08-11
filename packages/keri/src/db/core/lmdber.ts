@@ -107,6 +107,15 @@ export interface LMDBerOptions extends PathManagerOptions {
   readonly?: boolean;
   dupsort?: boolean;
   logger?: Logger;
+  /**
+   * Requested LMDB map size in bytes.
+   *
+   * When opening an existing environment, the effective map size is raised to
+   * at least the map size stored in `data.mdb` so KERIpy databases created with
+   * large `KERI_*_MAP_SIZE` values (for example 10 GiB) can be opened without a
+   * native abort from undersized virtual mapping.
+   */
+  mapSize?: number;
 }
 
 /** Defaultable LMDB/path settings shared by all `LMDBer` instances. */
@@ -130,8 +139,106 @@ export const LMDBER_DEFAULTS: LMDBerDefaults = {
   mode: "r+",
   fext: "text",
   maxNamedDBs: 96,
-  mapSize: 4 * 1024 * 1024 * 1024, // 4GB default
+  // 10 GiB default so common KERIpy deployments (e.g. KERI_BASER_MAP_SIZE=10GiB)
+  // open without an explicit CLI/env override. Existing environments still
+  // auto-raise to at least the map size stamped in `data.mdb` when larger.
+  mapSize: 10 * 1024 * 1024 * 1024,
 };
+
+/** LMDB page size used when validating map sizes read from existing files. */
+const LMDB_PAGE_SIZE = 4096;
+/** Reject absurd header values rather than mapping terabytes of address space. */
+const LMDB_MAP_SIZE_MAX = 1024 * 1024 * 1024 * 1024; // 1 TiB
+/**
+ * Floor applied when an existing `data.mdb` is present but its stored map size
+ * cannot be parsed. Covers common KERIpy production values such as 10 GiB.
+ */
+const EXISTING_DB_MAP_SIZE_FLOOR = 16 * 1024 * 1024 * 1024; // 16 GiB
+
+/**
+ * Read the map size stamped into an existing LMDB `data.mdb` meta page.
+ *
+ * Returns null when the file is missing, too small, or the candidate map size
+ * fails basic sanity checks (page alignment and range).
+ */
+export function readStoredLmdbMapSize(dataMdbPath: string): number | null {
+  try {
+    const file = Deno.openSync(dataMdbPath, { read: true });
+    try {
+      const header = new Uint8Array(40);
+      const bytesRead = file.readSync(header);
+      if (bytesRead === null || bytesRead < 40) {
+        return null;
+      }
+      // On current LMDB data-v1 layouts used with keri-ts/KERIpy, me_mapsize is
+      // a little-endian uint64 at offset 32 in the first meta page.
+      const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+      const mapSize = Number(view.getBigUint64(32, true));
+      if (
+        !Number.isFinite(mapSize)
+        || mapSize < LMDB_PAGE_SIZE
+        || mapSize > LMDB_MAP_SIZE_MAX
+        || mapSize % LMDB_PAGE_SIZE !== 0
+      ) {
+        return null;
+      }
+      return mapSize;
+    } finally {
+      file.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the map size used for `lmdb.open`.
+ *
+ * Precedence for the configured size:
+ * 1. explicit option
+ * 2. `KERI_LMDB_MAP_SIZE`
+ * 3. `KERI_BASER_MAP_SIZE` (KERIpy-compatible alias used by witness deployments)
+ * 4. library default
+ *
+ * Existing environments then raise the effective size to at least the map size
+ * stored in `data.mdb` (or a conservative floor when the header is unreadable).
+ */
+export function resolveLmdbMapSize(args: {
+  optionMapSize?: number;
+  envMapSize?: string | null;
+  baserEnvMapSize?: string | null;
+  defaultMapSize: number;
+  dataMdbPath?: string | null;
+  databaseExists: boolean;
+}): number {
+  const parseEnv = (raw: string | null | undefined): number | undefined => {
+    if (raw === undefined || raw === null || raw.trim() === "") {
+      return undefined;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return undefined;
+    }
+    return parsed;
+  };
+
+  const configured = args.optionMapSize
+    ?? parseEnv(args.envMapSize)
+    ?? parseEnv(args.baserEnvMapSize)
+    ?? args.defaultMapSize;
+
+  if (!args.databaseExists) {
+    return configured;
+  }
+
+  const stored = args.dataMdbPath
+    ? readStoredLmdbMapSize(args.dataMdbPath)
+    : null;
+  if (stored !== null) {
+    return Math.max(configured, stored);
+  }
+  return Math.max(configured, EXISTING_DB_MAP_SIZE_FLOOR);
+}
 
 const DEFAULT_DB_VERSION = "1.0.0";
 
@@ -164,6 +271,8 @@ export class LMDBer {
   public readonly: boolean;
   private defaults: LMDBerDefaults;
   private readonly logger: Logger;
+  /** Optional constructor-level map size override applied on every reopen. */
+  private configuredMapSize?: number;
 
   // Class constants
   static readonly HeadDirPath: string = "/usr/local/var";
@@ -181,6 +290,7 @@ export class LMDBer {
   constructor(options: LMDBerOptions = {}, defaults?: Partial<LMDBerDefaults>) {
     this.defaults = { ...LMDBER_DEFAULTS, ...defaults };
     this.logger = options.logger ?? consoleLogger;
+    this.configuredMapSize = options.mapSize;
 
     // Create PathManager with composition
     const pathDefaults: Partial<PathManagerDefaults> = {
@@ -296,12 +406,6 @@ export class LMDBer {
     }
     let dbPath = this.pathManager.path;
 
-    // Get map size from environment variable or use default
-    const mapSizeEnv = Deno.env.get("KERI_LMDB_MAP_SIZE");
-    const mapSize = mapSizeEnv
-      ? parseInt(mapSizeEnv, 10)
-      : this.defaults.mapSize;
-
     // Check if database files exist before opening
     const dbExists = yield* this.checkDatabaseExists();
 
@@ -315,13 +419,22 @@ export class LMDBer {
       return false;
     }
 
-    // For readonly opens of existing databases, use a large mapSize that's safe
-    // LMDB will use the actual map size from the database file, but the Node.js
-    // lmdb package requires mapSize to be >= the database's actual map size
-    // Use 4GB (KERIpy default) or larger to ensure compatibility
-    const effectiveMapSize = readonly && dbExists
-      ? Math.max(mapSize, 4 * 1024 * 1024 * 1024) // At least 4GB for existing databases
-      : mapSize;
+    // Prefer reopen-time option, then constructor option, then env, then default.
+    // When data.mdb already exists, raise to at least the stored map size so
+    // KERIpy databases opened with KERI_BASER_MAP_SIZE=10GiB (etc.) do not abort
+    // under an undersized lmdb-js virtual mapping.
+    if (options.mapSize !== undefined) {
+      this.configuredMapSize = options.mapSize;
+    }
+    const dataMdbPath = dbExists ? `${dbPath}/data.mdb` : null;
+    const effectiveMapSize = resolveLmdbMapSize({
+      optionMapSize: this.configuredMapSize,
+      envMapSize: Deno.env.get("KERI_LMDB_MAP_SIZE"),
+      baserEnvMapSize: Deno.env.get("KERI_BASER_MAP_SIZE"),
+      defaultMapSize: this.defaults.mapSize,
+      dataMdbPath,
+      databaseExists: dbExists,
+    });
     const dbConfig = {
       path: dbPath, // Use directory path (Node.js lmdb should handle this)
       maxDbs: this.defaults.maxNamedDBs,

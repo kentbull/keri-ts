@@ -14,7 +14,7 @@ At the start of each new task thread, read:
 3. Only the task-relevant topic learnings docs from that index
 4. Only the task-relevant ADRs, contracts, or plan docs those topic docs point
    to
-5. KERIpy at `$HOME/code/keri/kentbull/keripy` whenever parity or expected
+5. KERIpy at `$HOME/enc/keri/core/python/keripy` whenever parity or expected
    behavior is uncertain
 
 Then produce:

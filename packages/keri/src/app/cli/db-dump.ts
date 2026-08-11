@@ -26,6 +26,8 @@ type DumpArgs = {
   headDirPath?: string;
   temp?: boolean;
   compat?: boolean;
+  /** Optional LMDB map size override in bytes for large KERIpy environments. */
+  mapSize?: number;
   target?: string;
   prefix?: string;
   limit?: number;
@@ -327,10 +329,21 @@ function buildOptions(args: DumpArgs): DomainFactoryOptions {
     headDirPath: args.headDirPath,
     temp: args.temp,
     compat: args.compat,
+    mapSize: args.mapSize,
     reopen: true,
     readonly: true,
     dupsort: false,
   };
+}
+
+function resolveMapSize(rawMapSize: number | undefined): number | undefined {
+  if (rawMapSize === undefined) {
+    return undefined;
+  }
+  if (!Number.isInteger(rawMapSize) || rawMapSize <= 0) {
+    throw new ValidationError("`--map-size` must be a positive integer byte count");
+  }
+  return rawMapSize;
 }
 
 function resolveLimit(rawLimit: number | undefined): number {
@@ -359,6 +372,7 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
   const headDirPath = args.headDirPath as string | undefined;
   const temp = args.temp as boolean | undefined;
   const compat = args.compat as boolean | undefined;
+  const mapSize = resolveMapSize(args.mapSize as number | undefined);
   const target = args.target as string | undefined;
   const prefix = args.prefix as string | undefined;
   const limit = resolveLimit(args.limit as number | undefined);
@@ -381,6 +395,7 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
       headDirPath,
       temp,
       compat,
+      mapSize,
     }),
   );
 
@@ -393,7 +408,9 @@ export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
       } from ${domain.path ?? "(unknown path)"}`,
     );
     console.log(
-      `Mode: readonly compat=${compat ? "true" : "false"} temp=${temp ? "true" : "false"}`,
+      `Mode: readonly compat=${compat ? "true" : "false"} temp=${temp ? "true" : "false"}${
+        mapSize !== undefined ? ` mapSize=${mapSize}` : ""
+      }`,
     );
     console.log("");
 

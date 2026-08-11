@@ -5,8 +5,8 @@ Date: 2026-03-10
 ## Scope
 
 This document captures a code-level inventory of `libkeri` in
-`/Users/kbull/code/keri/kentbull/libkeri`, using KERIpy as the authoritative
-behavioral baseline in `/Users/kbull/code/keri/kentbull/keripy`.
+`/Users/kbull/enc/keri/core/rust/hk/libkeri`, using KERIpy as the authoritative
+behavioral baseline in `/Users/kbull/enc/keri/core/python/keripy`.
 
 The focus is resolver-relevant capability:
 

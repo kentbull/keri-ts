@@ -25,7 +25,7 @@ import {
   Verfer,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
@@ -956,6 +956,93 @@ Deno.test("Habery makeGroupHab creates a local group inception and persists memb
         ],
       );
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotation is pending", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `habery-group-pending-rot-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    const remoteHby = yield* createHabery({
+      name: `habery-group-pending-rot-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const member1 = hby.makeHab("member1", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const member2 = hby.makeHab("member2", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const remote = remoteHby.makeHab("remote", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      for (const message of remoteHby.db.clonePreIter(remote.pre, 0)) {
+        ingestKeriBytes(runtime, message);
+      }
+      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      assertExists(hby.db.getKever(remote.pre));
+
+      const group = hby.makeGroupHab(
+        "team",
+        member1,
+        [member1.pre, member2.pre],
+        [member1.pre, member2.pre],
+        undefined,
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+        },
+      );
+      assertEquals(hby.db.getHab(group.hab.pre)?.smids, [member1.pre, member2.pre]);
+      assertEquals(hby.db.getHab(group.hab.pre)?.rmids, [member1.pre, member2.pre]);
+
+      hby.habs.delete(member2.pre);
+      const rotation = hby.rotateGroupHab(
+        "team",
+        [member1.pre, member2.pre],
+        [member1.pre, remote.pre],
+        {
+          isith: "2",
+          nsith: "2",
+          toad: 0,
+        },
+      );
+
+      assertEquals(rotation.sigers.map((siger) => siger.index), [0]);
+      assertEquals(
+        rotation.serder.sn !== null ? hby.db.kels.getLast(group.hab.pre, rotation.serder.sn) : null,
+        null,
+      );
+      const stored = hby.db.getHab(group.hab.pre);
+      assertEquals(stored?.smids, [member1.pre, member2.pre]);
+      assertEquals(stored?.rmids, [member1.pre, member2.pre]);
+      assertEquals(hby.ks.getSmids(group.hab.pre).map((tuple) => tuple[0].qb64), [member1.pre, member2.pre]);
+      assertEquals(hby.ks.getRmids(group.hab.pre).map((tuple) => tuple[0].qb64), [member1.pre, member2.pre]);
+    } finally {
+      yield* remoteHby.close(true);
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

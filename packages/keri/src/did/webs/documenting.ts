@@ -5,6 +5,7 @@
  * state, and active designated-alias credentials. Hosted artifacts may use
  * `did:web`, but resolver comparison normalizes them back to `did:webs`.
  */
+import type { ThresholdClause, ThresholdClauseEntry, ThresholdSith } from "../../../../cesr/mod.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -26,6 +27,13 @@ export interface DidDocument extends Record<string, unknown> {
 export interface DidDocumentOptions {
   readonly hosted?: boolean;
   readonly metadata?: boolean;
+}
+
+type VerificationMethodEntry = Record<string, unknown> & { id: string };
+
+interface Rational {
+  readonly numerator: bigint;
+  readonly denominator: bigint;
 }
 
 /** Generate a DID document or DID Resolution Result from runtime state. */
@@ -105,7 +113,7 @@ export function didResolutionError(
 function verificationMethods(
   did: string,
   kever: Kever,
-): Array<Record<string, unknown> & { id: string }> {
+): VerificationMethodEntry[] {
   return kever.verfers.map((verfer) => ({
     id: `#${verfer.qb64}`,
     type: "JsonWebKey",
@@ -123,7 +131,7 @@ function thresholdVerificationMethods(
   did: string,
   kever: Kever,
   methodIds: readonly string[],
-): Array<Record<string, unknown> & { id: string }> {
+): VerificationMethodEntry[] {
   const tholder = kever.tholder;
   if (!tholder || methodIds.length === 0) {
     return [];
@@ -140,13 +148,7 @@ function thresholdVerificationMethods(
       conditionThreshold: [...methodIds],
     }];
   }
-  return [{
-    id: `#${kever.prefixer.qb64}`,
-    type: "ConditionalProof2022",
-    controller: did,
-    threshold: tholder.sith,
-    conditionWeightedThreshold: weightedConditions(tholder.sith, methodIds),
-  }];
+  return weightedThresholdVerificationMethods(did, kever.prefixer.qb64, tholder.sith, methodIds);
 }
 
 function serviceEntries(
@@ -240,24 +242,220 @@ function pruneEmpty(value: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
-function weightedConditions(
-  threshold: unknown,
-  methodIds: readonly string[],
-): Array<Record<string, unknown>> {
-  if (!Array.isArray(threshold) || threshold.length === 0) {
-    return methodIds.map((id) => ({ condition: id, weight: 1 }));
-  }
-  const weights = Array.isArray(threshold[0]) ? threshold[0] : threshold;
-  return methodIds.map((id, index) => ({
-    condition: id,
-    weight: weights[index] ?? 1,
-  }));
-}
-
 function base64Url(raw: Uint8Array): string {
   let text = "";
   for (const byte of raw) {
     text += String.fromCharCode(byte);
   }
   return btoa(text).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+function weightedThresholdVerificationMethods(
+  did: string,
+  pre: string,
+  sith: ThresholdSith,
+  methodIds: readonly string[],
+): VerificationMethodEntry[] {
+  if (typeof sith === "string") {
+    throw new ValidationError(`Expected weighted threshold for ${pre}.`);
+  }
+  const clauses = thresholdClauses(sith);
+  if (clauses.length === 1) {
+    const projected = projectWeightedClause({
+      id: `#${pre}`,
+      did,
+      pre,
+      clause: clauses[0]!,
+      clauseIndex: 0,
+      methodIds,
+      startSlot: 0,
+    });
+    return [projected.method, ...projected.children];
+  }
+
+  const methods: VerificationMethodEntry[] = [];
+  const conditionAnd: string[] = [];
+  let slot = 0;
+  for (const [clauseIndex, clause] of clauses.entries()) {
+    const projected = projectWeightedClause({
+      id: `#${pre}-kt-c${clauseIndex}`,
+      did,
+      pre,
+      clause,
+      clauseIndex,
+      methodIds,
+      startSlot: slot,
+    });
+    conditionAnd.push(projected.method.id);
+    methods.push(projected.method, ...projected.children);
+    slot = projected.nextSlot;
+  }
+
+  return [{
+    id: `#${pre}`,
+    type: "ConditionalProof2022",
+    controller: did,
+    conditionAnd,
+  }, ...methods];
+}
+
+function thresholdClauses(sith: Exclude<ThresholdSith, string>): ThresholdClause[] {
+  if (!Array.isArray(sith) || sith.length === 0) {
+    throw new ValidationError("Weighted threshold must be a non-empty array.");
+  }
+  return sith.some((entry) => !Array.isArray(entry))
+    ? [sith as ThresholdClause]
+    : sith as ThresholdClause[];
+}
+
+function projectWeightedClause(args: {
+  id: string;
+  did: string;
+  pre: string;
+  clause: ThresholdClause;
+  clauseIndex: number;
+  methodIds: readonly string[];
+  startSlot: number;
+}): {
+  method: VerificationMethodEntry;
+  children: VerificationMethodEntry[];
+  nextSlot: number;
+} {
+  const topWeights = args.clause.map(clauseEntryWeight);
+  const scaled = scaleWeights(topWeights);
+  const children: VerificationMethodEntry[] = [];
+  const conditionWeightedThreshold: Array<{ condition: string; weight: number }> = [];
+  let slot = args.startSlot;
+  let groupIndex = 0;
+
+  for (const [entryIndex, entry] of args.clause.entries()) {
+    if (typeof entry === "string") {
+      conditionWeightedThreshold.push({
+        condition: methodIdAt(args.methodIds, slot),
+        weight: scaled.weights[entryIndex]!,
+      });
+      slot += 1;
+      continue;
+    }
+
+    const [, members] = singleWeightedGroup(entry);
+    const nestedWeights = members.map(parseWeight);
+    const nestedScaled = scaleWeights(nestedWeights);
+    const nestedConditions = members.map((_member, memberIndex) => ({
+      condition: methodIdAt(args.methodIds, slot + memberIndex),
+      weight: nestedScaled.weights[memberIndex]!,
+    }));
+    slot += members.length;
+
+    const childId = `#${args.pre}-kt-c${args.clauseIndex}-g${groupIndex}`;
+    groupIndex += 1;
+    children.push({
+      id: childId,
+      type: "ConditionalProof2022",
+      controller: args.did,
+      threshold: nestedScaled.threshold,
+      conditionWeightedThreshold: nestedConditions,
+    });
+    conditionWeightedThreshold.push({
+      condition: childId,
+      weight: scaled.weights[entryIndex]!,
+    });
+  }
+
+  return {
+    method: {
+      id: args.id,
+      type: "ConditionalProof2022",
+      controller: args.did,
+      threshold: scaled.threshold,
+      conditionWeightedThreshold,
+    },
+    children,
+    nextSlot: slot,
+  };
+}
+
+function clauseEntryWeight(entry: ThresholdClauseEntry): Rational {
+  if (typeof entry === "string") {
+    return parseWeight(entry);
+  }
+  const [weight] = singleWeightedGroup(entry);
+  return parseWeight(weight);
+}
+
+function singleWeightedGroup(entry: Record<string, string[]>): [string, string[]] {
+  const keys = Object.keys(entry);
+  if (keys.length !== 1) {
+    throw new ValidationError("Nested weighted threshold groups must have exactly one key.");
+  }
+  const weight = keys[0]!;
+  const members = entry[weight];
+  if (!Array.isArray(members) || members.length === 0) {
+    throw new ValidationError("Nested weighted threshold groups must contain member weights.");
+  }
+  return [weight, members];
+}
+
+function methodIdAt(methodIds: readonly string[], index: number): string {
+  const methodId = methodIds[index];
+  if (!methodId) {
+    throw new ValidationError(`Weighted threshold references missing signer slot ${index}.`);
+  }
+  return methodId;
+}
+
+function parseWeight(input: string): Rational {
+  const text = input.trim();
+  if (/^\d+$/.test(text)) {
+    return normalizeRational(BigInt(text), 1n);
+  }
+  const match = text.match(/^(\d+)\/(\d+)$/);
+  if (!match) {
+    throw new ValidationError(`Invalid threshold weight ${input}.`);
+  }
+  return normalizeRational(BigInt(match[1]!), BigInt(match[2]!));
+}
+
+function scaleWeights(weights: readonly Rational[]): { threshold: number; weights: number[] } {
+  let common = 1n;
+  for (const weight of weights) {
+    common = lcm(common, weight.denominator);
+  }
+  return {
+    threshold: safeNumber(common),
+    weights: weights.map((weight) => safeNumber(weight.numerator * (common / weight.denominator))),
+  };
+}
+
+function normalizeRational(numerator: bigint, denominator: bigint): Rational {
+  if (denominator === 0n) {
+    throw new ValidationError("Invalid threshold weight denominator=0.");
+  }
+  const divisor = gcd(numerator, denominator);
+  return {
+    numerator: numerator / divisor,
+    denominator: denominator / divisor,
+  };
+}
+
+function gcd(left: bigint, right: bigint): bigint {
+  let a = left < 0n ? -left : left;
+  let b = right < 0n ? -right : right;
+  while (b !== 0n) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a === 0n ? 1n : a;
+}
+
+function lcm(left: bigint, right: bigint): bigint {
+  return (left / gcd(left, right)) * right;
+}
+
+function safeNumber(value: bigint): number {
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new ValidationError(`Threshold weight scale ${value} exceeds safe JSON number range.`);
+  }
+  return Number(value);
 }

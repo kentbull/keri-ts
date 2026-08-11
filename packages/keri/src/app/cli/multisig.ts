@@ -128,6 +128,8 @@ function loadMultisigInceptFile(path: string): MultisigInceptFileOptions {
     ...loaded,
     aids: Array.isArray(loaded.aids) ? loaded.aids.filter(isString) : loaded.aids,
     rmids: Array.isArray(loaded.rmids) ? loaded.rmids.filter(isString) : loaded.rmids,
+    isith: parseThresholdOption(loaded.isith),
+    nsith: parseThresholdOption(loaded.nsith),
     wits: Array.isArray(loaded.wits) ? loaded.wits.filter(isString) : loaded.wits,
   };
 }

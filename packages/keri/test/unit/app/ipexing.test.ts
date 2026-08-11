@@ -225,3 +225,67 @@ Deno.test("accepted IPEX grants create KERIpy-shaped notifier entries", async ()
     }
   });
 });
+
+Deno.test("IPEX grants accept nested weighted threshold combinations from partial escrow", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `ipex-nested-escrow-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 3,
+        isith: [{ "1": ["1/2", "1/2"] }, "1"],
+        ncount: 3,
+        nsith: [{ "1": ["1/2", "1/2"] }, "1"],
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const exchanger = new Exchanger(hby);
+      loadIpexHandlers(hby, exchanger);
+      const acdc = exchangeMessage("/dummy/acdc", { d: "data" }, { sender: sender.pre })[0];
+      const [grant] = ipexGrantExn(sender, recipient.pre, "grant message", acdc);
+      const sigers = sender.sign(grant.raw, true);
+      const group = new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        sender.kever!.sner,
+        new Diger({ qb64: sender.kever!.said }),
+        sigers,
+      );
+
+      const initial = exchanger.processEvent({
+        serder: grant,
+        tsgs: [
+          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+            sigers[0],
+          ]),
+        ],
+      });
+      assertExists(grant.said);
+      assertEquals(initial.kind, "escrow");
+      assertExists(hby.db.epse.get([grant.said]));
+
+      const quadKey = [grant.said, group.pre, group.snh, group.said] as const;
+      hby.db.esigs.add(quadKey, sigers[1]);
+      exchanger.processEscrows();
+
+      assertEquals(hby.db.epse.get([grant.said]), null);
+      assertEquals(hby.db.exns.get([grant.said])?.said, grant.said);
+      assertEquals(
+        [...hby.db.esigs.getTopItemIter([grant.said, ""])].map(([, siger]) => siger.index),
+        [0, 1],
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

@@ -15,8 +15,9 @@ and KERIpy interoperability.
    promotion of the highest-value `Partial` rows with real parity evidence,
    especially `fetchTsgs` and the remaining `Komer` family.
 4. Exact interop rules matter: keep `lmdb` pinned to `3.4.4`, preserve
-   `LMDB_DATA_V1=true`, and route protocol/storage CBOR through the shared CESR
-   codec.
+   `LMDB_DATA_V1=true`, size existing mappings from stored metadata after
+   applying explicit or KERIpy-compatible environment overrides, and route
+   protocol/storage CBOR through the shared CESR codec.
 5. Typed `Suber` / `Komer` wrappers are the active parity path; the forward
    ordinal-wrapper surface is the newer `getTop*` / `getAll*` family, with old
    `getOn*` names retained only as temporary compatibility aliases.
@@ -85,7 +86,13 @@ and KERIpy interoperability.
     group->witnessed 2-of-3 group approval. Tufa now has public CLI multisig
     `incept`, `join`, `interact`, and `rotate` surfaces over the real
     grouping/multiplexing path; interop workflows should use those CLI seams
-    instead of private `Habery.makeGroupHab(...)` shortcuts.
+    instead of private `Habery.makeGroupHab(...)` shortcuts. Accepted group
+    member metadata changes only after the corresponding inception or rotation
+    is present in the local KEL; pending rotations retain the prior accepted
+    `smids` / `rmids` state. Tufa multisig inception files preserve structured
+    `isith` / `nsith` values, and the nested weighted public-CLI gate proves that
+    a satisfying subgroup can complete inception, interaction, endpoint-role
+    reply, and DID Webs publication without an unnecessary third signature.
 25. Delegation source-seal repair has two cases. Pending delegated events in
     `pdes` / `delegables` still use explicit delegation escrow promotion, but
     already accepted local delegated events must also pin `aess` when a later
@@ -99,9 +106,10 @@ and KERIpy interoperability.
     route breadth, the stale/timeout continuation tail, and the last high-value
     DB parity promotions.
 27. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
-    partially signed `exn` persistence, challenge flows are live, and mailbox
-    forwarding/polling now sit on explicit shared provider storage plus durable
-    `tops.` cursors.
+    partially signed `exn` persistence, escrow promotion clears partial state
+    exactly once so accepted signatures survive for lead election and IPEX
+    evidence, challenge flows are live, and mailbox forwarding/polling now sit
+    on explicit shared provider storage plus durable `tops.` cursors.
 28. The mailbox mental model must stay explicit: provider mailbox storage is
     shared runtime-composed state above `Habery`, while remote topic cursors are
     durable habery state in `tops.`.

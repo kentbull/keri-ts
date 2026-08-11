@@ -1902,6 +1902,34 @@ export class Habery {
     return hab;
   }
 
+  /** Commit accepted group member metadata after the corresponding group event is accepted. */
+  commitGroupHabMembers(
+    pre: string,
+    smids: readonly string[],
+    rmids: readonly string[] = smids,
+  ): void {
+    const record = this.db.getHab(pre);
+    if (!record?.mid) {
+      throw new ValidationError(`Group prefix ${pre} is missing local member metadata.`);
+    }
+    this.db.pinHab(
+      pre,
+      new HabitatRecord({
+        hid: pre,
+        name: record.name,
+        domain: record.domain,
+        mid: record.mid,
+        sid: record.sid,
+        watchers: record.watchers ? [...record.watchers] : undefined,
+        smids: [...smids],
+        rmids: [...rmids],
+      }),
+    );
+    this.ks.pinSmids(pre, this.groupMemberTuples(smids));
+    this.ks.pinRmids(pre, this.groupMemberTuples(rmids));
+    this.markAcceptedGroupHab(pre);
+  }
+
   /**
    * Rotate a locally membered group identifier from member habitat state.
    *
@@ -1979,22 +2007,9 @@ export class Habery {
       throw new ValidationError(decision.message, decision.context);
     }
 
-    if (hab.accepted) {
-      this.markAcceptedGroupHab(hab.pre);
+    if (serder.sn !== null && serder.said && this.db.kels.getLast(hab.pre, serder.sn) === serder.said) {
+      this.commitGroupHabMembers(hab.pre, signingMembers, rotationMembers);
     }
-    this.ks.pinSmids(hab.pre, this.groupMemberTuples(signingMembers));
-    this.ks.pinRmids(hab.pre, this.groupMemberTuples(rotationMembers));
-    this.db.pinHab(
-      hab.pre,
-      new HabitatRecord({
-        hid: hab.pre,
-        name: group,
-        domain: record.domain,
-        mid: record.mid,
-        smids: [...signingMembers],
-        rmids: [...rotationMembers],
-      }),
-    );
 
     return {
       hab,

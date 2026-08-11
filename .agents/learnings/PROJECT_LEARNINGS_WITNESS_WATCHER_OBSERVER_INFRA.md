@@ -33,8 +33,9 @@ release, and interoperability operations.
 9. Runtime version generation should stay deterministic during checks; build
    metadata is opt-in for artifact/release steps.
 10. KERIpy interop depends on exact LMDB-js behavior: keep `lmdb` pinned to
-    `3.4.4`, preserve `LMDB_DATA_V1=true`, and use the correct native-addon
-    rebuild path.
+    `3.4.4`, preserve `LMDB_DATA_V1=true`, use the correct native-addon rebuild
+    path, and size existing mappings from stored metadata after explicit,
+    `KERI_LMDB_MAP_SIZE`, or `KERI_BASER_MAP_SIZE` configuration.
 11. Cache topology is part of correctness. Interop-sensitive LMDB-v1 jobs need
     their own cache boundary.
 12. CI feedback should follow true isolation boundaries: DB, core, app/server,

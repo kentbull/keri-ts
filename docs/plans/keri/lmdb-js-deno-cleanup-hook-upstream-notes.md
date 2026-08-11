@@ -87,18 +87,19 @@ should be documented and addressed as a second issue.
 
 ## Patch Mapping
 
-The local `keri-ts` patch set that corresponds to this upstream candidate is:
+The historical local `keri-ts` patch set is no longer present in the current
+checkout. Its recorded artifacts were:
 
-- [`lmdb-deno-cleanup-hook.patch`](/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/scripts/patches/lmdb-deno-cleanup-hook.patch)
+- `lmdb-deno-cleanup-hook.patch`
   Adds `cleanupHookRegistered`, initializes it, guards cleanup-hook
   registration, and clears the flag in the cleanup callback.
-- [`lmdb-deno-cleanup-closeenv.patch`](/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/scripts/patches/lmdb-deno-cleanup-closeenv.patch)
+- `lmdb-deno-cleanup-closeenv.patch`
   Guards `napi_remove_env_cleanup_hook(...)` behind the explicit registration
   flag.
-- [`lmdb-deno-cleanup-envwraps.patch`](/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/scripts/patches/lmdb-deno-cleanup-envwraps.patch)
+- `lmdb-deno-cleanup-envwraps.patch`
   Makes `cleanupEnvWraps(void* data)` act on the exact vector pointer passed to
   the hook instead of relying on ambient thread-local state.
-- [`lmdb-deno-cleanup-envwraps-register.patch`](/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/scripts/patches/lmdb-deno-cleanup-envwraps-register.patch)
+- `lmdb-deno-cleanup-envwraps-register.patch`
   Registers `cleanupEnvWraps` with `openEnvWraps` as the hook `arg` instead of
   `nullptr`.
 

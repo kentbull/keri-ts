@@ -435,6 +435,10 @@ function* approveKelProposal(
 
   const deliveries = yield* publishProposal(runtime, member, members, route, label, payload, localMessage);
   const accepted = eventAccepted(hby, serder);
+  if (accepted && (route === MULTISIG_ICP_ROUTE || route === MULTISIG_ROT_ROUTE)) {
+    const rmids = stringArrayField(payload, "rmids");
+    hby.commitGroupHabMembers(groupPre, smids, rmids.length > 0 ? rmids : smids);
+  }
 
   return { route, said: wrapperSaid, embedded: embeddedSaid ?? "", group: groupPre, accepted, deliveries };
 }
