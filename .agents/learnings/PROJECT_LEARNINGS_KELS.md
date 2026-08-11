@@ -100,9 +100,10 @@ and KERIpy interoperability.
     route breadth, the stale/timeout continuation tail, and the last high-value
     DB parity promotions.
 27. Gate F/G bridge work is already partly real: `Exchanger` owns accepted and
-    partially signed `exn` persistence, challenge flows are live, and mailbox
-    forwarding/polling now sit on explicit shared provider storage plus durable
-    `tops.` cursors.
+    partially signed `exn` persistence, escrow promotion clears partial state
+    exactly once so accepted signatures survive for lead election and IPEX
+    evidence, challenge flows are live, and mailbox forwarding/polling now sit
+    on explicit shared provider storage plus durable `tops.` cursors.
 28. The mailbox mental model must stay explicit: provider mailbox storage is
     shared runtime-composed state above `Habery`, while remote topic cursors are
     durable habery state in `tops.`.

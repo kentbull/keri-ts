@@ -232,3 +232,107 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
     }
   });
 });
+
+Deno.test("Exchanger accepts nested weighted threshold combinations from partial escrow", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `exchange-nested-escrow-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 3,
+        isith: [{ "1": ["1/2", "1/2"] }, "1"],
+        ncount: 3,
+        nsith: [{ "1": ["1/2", "1/2"] }, "1"],
+        toad: 0,
+      });
+      const recipient = hby.makeHab("recipient", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+
+      const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+      ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9021"));
+      ingestKeriBytes(
+        runtime,
+        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+      );
+      ingestKeriBytes(
+        runtime,
+        recipient.makeLocScheme("http://127.0.0.1:9022"),
+      );
+      ingestKeriBytes(
+        runtime,
+        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      );
+      yield* processRuntimeTurn(runtime, { hab: sender });
+
+      const exchanger = new Exchanger(hby);
+      loadChallengeHandlers(hby.db, exchanger);
+      const serder = makeExchangeSerder(
+        "/challenge/response",
+        { i: sender.pre, words: ["gaga", "haha"] },
+        { sender: sender.pre, recipient: recipient.pre },
+      );
+      const sigers = sender.sign(serder.raw, true);
+      const group = new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        sender.kever!.sner,
+        new Diger({ qb64: sender.kever!.said }),
+        sigers,
+      );
+
+      const initial = exchanger.processEvent({
+        serder,
+        tsgs: [
+          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+            sigers[0],
+          ]),
+        ],
+      });
+      const said = serder.said;
+      assertExists(said);
+      assertEquals(initial.kind, "escrow");
+      assertExists(hby.db.epse.get([said]));
+
+      const quadKey = [said, group.pre, group.snh, group.said] as const;
+      hby.db.esigs.add(quadKey, sigers[1]);
+      exchanger.processEscrows();
+
+      assertEquals(hby.db.epse.get([said]), null);
+      assertEquals(hby.db.exns.get([said])?.said, said);
+      assertEquals(
+        [...hby.db.esigs.getTopItemIter([said, ""])].map(([, siger]) => siger.index),
+        [0, 1],
+      );
+      assertEquals(exchanger.lead(sender, said), true);
+
+      const alternate = makeExchangeSerder(
+        "/challenge/response",
+        { i: sender.pre, words: ["jaja", "kaka"] },
+        { sender: sender.pre, recipient: recipient.pre },
+      );
+      const alternateSigers = sender.sign(alternate.raw, true);
+      const accepted = exchanger.processEvent({
+        serder: alternate,
+        tsgs: [
+          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+            alternateSigers[2],
+          ]),
+        ],
+      });
+      assertExists(alternate.said);
+      assertEquals(accepted.kind, "accept");
+      assertEquals(hby.db.exns.get([alternate.said])?.said, alternate.said);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

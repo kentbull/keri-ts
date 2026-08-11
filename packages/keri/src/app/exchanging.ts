@@ -221,7 +221,7 @@ export class Exchanger {
         essrs: this.hby.db.essrs.get([said]),
       });
 
-      if (decision.kind === "accept" || decision.kind === "reject") {
+      if (decision.kind === "reject") {
         this.removeEscrow(said);
       }
     }
