@@ -60,7 +60,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
     JSON-number inputs the way KERIpy still does.
 19. Weighted thresholds are now semantic CESR primitives through `Tholder`,
     including weighted/nested normalization, `limen`/`sith` projection, exact
-    threshold sizing, and `satisfy(indices)` behavior.
+    threshold sizing, left-to-right signer-slot consumption across clauses, and
+    `satisfy(indices)` behavior.
 20. Fixed-field `structing.py` values belong to CESR through
     `packages/cesr/src/primitives/structing.ts`: the right TypeScript mental
     model is plain frozen records plus companion helpers/registries, not a mini

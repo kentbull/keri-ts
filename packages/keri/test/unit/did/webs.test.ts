@@ -1,7 +1,7 @@
 // @file-test-lane app-fast-parallel
 
 import { run } from "effection";
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -11,6 +11,7 @@ import {
   DEFAULT_DESIGNATED_ALIASES_REGISTRY_NAME,
   DESIGNATED_ALIASES_SCHEMA_SAID,
   didWebsArtifactUrls,
+  generateBareDidDocument,
   generateDidWebsArtifacts,
   listActiveDesignatedAliasCredentials,
   parseDid,
@@ -201,6 +202,221 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
       assertEquals(keriCesr.includes("\"v\":\"ACDC"), true);
       assertEquals(keriCesr.includes("\"r\":\"/loc/scheme\""), true);
       assertEquals(keriCesr.includes("\"role\":\"mailbox\""), true);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+type VerificationMethodDocument = Record<string, unknown> & {
+  id: string;
+  type?: string;
+  threshold?: unknown;
+  conditionThreshold?: unknown;
+  conditionWeightedThreshold?: unknown;
+  conditionAnd?: unknown;
+  conditionOr?: unknown;
+};
+
+function didFor(pre: string): string {
+  return `did:webs:example.com:dws:${pre}`;
+}
+
+function verificationMethodMap(document: Record<string, unknown>): Map<string, VerificationMethodDocument> {
+  const methods = document.verificationMethod;
+  if (!Array.isArray(methods)) {
+    throw new Error("Expected verificationMethod array.");
+  }
+  return new Map(methods.map((method) => {
+    if (!method || typeof method !== "object" || typeof (method as { id?: unknown }).id !== "string") {
+      throw new Error("Expected verification method with id.");
+    }
+    return [(method as { id: string }).id, method as VerificationMethodDocument];
+  }));
+}
+
+function requireVerificationMethod(
+  methods: Map<string, VerificationMethodDocument>,
+  id: string,
+): VerificationMethodDocument {
+  const method = methods.get(id);
+  assertExists(method);
+  return method;
+}
+
+function assertOnlyConditionFamily(method: VerificationMethodDocument): void {
+  const families = [
+    "conditionThreshold",
+    "conditionWeightedThreshold",
+    "conditionAnd",
+    "conditionOr",
+  ].filter((key) => key in method);
+  assertEquals(families.length, 1, method.id);
+  assertEquals("path" in method, false, method.id);
+  assertEquals(Array.isArray(method.threshold), false, method.id);
+  assertEquals(
+    method.threshold !== null && typeof method.threshold === "object",
+    false,
+    method.id,
+  );
+}
+
+function assertConditionalProofMethods(document: Record<string, unknown>): void {
+  for (const method of verificationMethodMap(document).values()) {
+    if (method.type === "ConditionalProof2022") {
+      assertOnlyConditionFamily(method);
+    }
+  }
+}
+
+Deno.test("did/webs - numeric thresholds project as conditionThreshold methods", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `did-webs-numeric-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      const hab = hby.makeHab("numeric", undefined, {
+        transferable: true,
+        icount: 2,
+        isith: "2",
+        ncount: 2,
+        nsith: "2",
+        toad: 0,
+      });
+      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const methods = verificationMethodMap(document);
+      const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
+      const root = requireVerificationMethod(methods, `#${hab.pre}`);
+
+      assertEquals(root.type, "ConditionalProof2022");
+      assertEquals(root.threshold, 2);
+      assertEquals(root.conditionThreshold, keyMethods);
+      assertConditionalProofMethods(document);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("did/webs - flat weighted thresholds project with scaled integer weights", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `did-webs-flat-weighted-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      const hab = hby.makeHab("flat", undefined, {
+        transferable: true,
+        icount: 2,
+        isith: ["1/2", "1/2"],
+        ncount: 2,
+        nsith: ["1/2", "1/2"],
+        toad: 0,
+      });
+      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const methods = verificationMethodMap(document);
+      const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
+      const root = requireVerificationMethod(methods, `#${hab.pre}`);
+
+      assertEquals(root.type, "ConditionalProof2022");
+      assertEquals(root.threshold, 2);
+      assertEquals(root.conditionWeightedThreshold, [
+        { condition: keyMethods[0], weight: 1 },
+        { condition: keyMethods[1], weight: 1 },
+      ]);
+      assertConditionalProofMethods(document);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("did/webs - nested weighted thresholds project recursively without path fields", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `did-webs-nested-weighted-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      const hab = hby.makeHab("nested", undefined, {
+        transferable: true,
+        icount: 3,
+        isith: [{ "1": ["1/2", "1/2"] }, "1"],
+        ncount: 3,
+        nsith: [{ "1": ["1/2", "1/2"] }, "1"],
+        toad: 0,
+      });
+      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const methods = verificationMethodMap(document);
+      const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
+      const root = requireVerificationMethod(methods, `#${hab.pre}`);
+      const childId = `#${hab.pre}-kt-c0-g0`;
+      const child = requireVerificationMethod(methods, childId);
+
+      assertEquals(root.type, "ConditionalProof2022");
+      assertEquals(root.threshold, 1);
+      assertEquals(root.conditionWeightedThreshold, [
+        { condition: childId, weight: 1 },
+        { condition: keyMethods[2], weight: 1 },
+      ]);
+      assertEquals(child.type, "ConditionalProof2022");
+      assertEquals(child.threshold, 2);
+      assertEquals(child.conditionWeightedThreshold, [
+        { condition: keyMethods[0], weight: 1 },
+        { condition: keyMethods[1], weight: 1 },
+      ]);
+      assertConditionalProofMethods(document);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("did/webs - multi-clause weighted thresholds project as conditionAnd children", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `did-webs-multi-clause-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const runtime = yield* createAgentRuntime(hby, { mode: "local" });
+    try {
+      const hab = hby.makeHab("multi", undefined, {
+        transferable: true,
+        icount: 4,
+        isith: [["1/2", "1/2"], ["1/2", "1/2"]],
+        ncount: 4,
+        nsith: [["1/2", "1/2"], ["1/2", "1/2"]],
+        toad: 0,
+      });
+      const document = generateBareDidDocument(runtime, didFor(hab.pre));
+      const methods = verificationMethodMap(document);
+      const keyMethods = hab.kever!.verfers.map((verfer) => `#${verfer.qb64}`);
+      const root = requireVerificationMethod(methods, `#${hab.pre}`);
+      const first = requireVerificationMethod(methods, `#${hab.pre}-kt-c0`);
+      const second = requireVerificationMethod(methods, `#${hab.pre}-kt-c1`);
+
+      assertEquals(root.type, "ConditionalProof2022");
+      assertEquals(root.conditionAnd, [`#${hab.pre}-kt-c0`, `#${hab.pre}-kt-c1`]);
+      assertEquals("threshold" in root, false);
+      assertEquals(first.threshold, 2);
+      assertEquals(first.conditionWeightedThreshold, [
+        { condition: keyMethods[0], weight: 1 },
+        { condition: keyMethods[1], weight: 1 },
+      ]);
+      assertEquals(second.threshold, 2);
+      assertEquals(second.conditionWeightedThreshold, [
+        { condition: keyMethods[2], weight: 1 },
+        { condition: keyMethods[3], weight: 1 },
+      ]);
+      assertConditionalProofMethods(document);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

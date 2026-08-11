@@ -54,6 +54,22 @@ Deno.test("tholder: hydrates nested weighted thresholds and satisfies nested gro
   assertEquals(tholder.satisfy([0, 1]), true);
 });
 
+Deno.test("tholder: nested multi-clause weighted thresholds consume slots left-to-right", () => {
+  const sith = [[{ "1": ["1/2", "1/2"] }], ["1/2", "1/2"]];
+  const tholder = new Tholder({ sith });
+  const roundTrip = new Tholder({ qb64: tholder.qb64 });
+
+  assertEquals(tholder.weighted, true);
+  assertEquals(tholder.size, 4);
+  assertEquals(tholder.sith, sith);
+  assertEquals(roundTrip.sith, sith);
+  assertEquals(tholder.satisfy([0, 1, 2, 3]), true);
+  assertEquals(tholder.satisfy([3, 2, 1, 0]), true);
+  assertEquals(tholder.satisfy([0, 1, 2]), false);
+  assertEquals(tholder.satisfy([0, 1, 3]), false);
+  assertEquals(tholder.satisfy([0, 2, 3]), false);
+});
+
 Deno.test("tholder: rejects weighted clauses whose sums do not reach one", () => {
   assertThrows(() => new Tholder({ sith: ["1/2"] }));
   assertThrows(() => new Tholder({ sith: [{ "1": ["1/2"] }] }));

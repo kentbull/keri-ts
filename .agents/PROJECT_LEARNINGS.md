@@ -103,7 +103,9 @@ stay short enough to reread at session start.
 22. DID Webs resolution is not just hosted JSON lookup: resolution must ingest
     `keri.cesr`, rebuild the DID document from KERI/VDR state, and compare it
     with the hosted `did.json`; Universal Resolver path decoding must preserve
-    method-specific `%3A` host-port encodings.
+    method-specific `%3A` host-port encodings. Verification-method projection
+    preserves numeric, flat weighted, nested weighted, and multi-clause KERI
+    threshold semantics through `ConditionalProof2022` methods.
 23. The learnings layer is part of project hygiene: compact docs when they grow
     noisy instead of preserving every step as prose.
 
