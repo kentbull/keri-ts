@@ -86,7 +86,10 @@ and KERIpy interoperability.
     group->witnessed 2-of-3 group approval. Tufa now has public CLI multisig
     `incept`, `join`, `interact`, and `rotate` surfaces over the real
     grouping/multiplexing path; interop workflows should use those CLI seams
-    instead of private `Habery.makeGroupHab(...)` shortcuts.
+    instead of private `Habery.makeGroupHab(...)` shortcuts. Accepted group
+    member metadata changes only after the corresponding inception or rotation
+    is present in the local KEL; pending rotations retain the prior accepted
+    `smids` / `rmids` state.
 25. Delegation source-seal repair has two cases. Pending delegated events in
     `pdes` / `delegables` still use explicit delegation escrow promotion, but
     already accepted local delegated events must also pin `aess` when a later
