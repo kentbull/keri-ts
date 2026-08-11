@@ -81,7 +81,7 @@ function normalizeThresholdOption(
  * modules do not duplicate threshold coercion rules.
  */
 export function parseThresholdOption(
-  value: string | undefined,
+  value: unknown,
 ): ThresholdSith | undefined {
   return normalizeThresholdOption(value);
 }

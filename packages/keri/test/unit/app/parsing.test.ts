@@ -1,7 +1,10 @@
 // @file-test-lane app-fast-parallel
 
 import { assertEquals } from "jsr:@std/assert";
-import { parseExnDataItems } from "../../../src/app/cli/common/parsing.ts";
+import {
+  parseExnDataItems,
+  parseThresholdOption,
+} from "../../../src/app/cli/common/parsing.ts";
 
 Deno.test("parseExnDataItems matches KERIpy-style coercion and merge order", () => {
   const parsed = parseExnDataItems([
@@ -45,4 +48,15 @@ Deno.test("parseExnDataItems loads object payloads from @file references", () =>
   } finally {
     Deno.removeSync(dir, { recursive: true });
   }
+});
+
+Deno.test("parseThresholdOption accepts CLI and JSON-file threshold forms", () => {
+  const structured = [{ "1": ["1/2", "1/2"] }, "1"];
+
+  assertEquals(parseThresholdOption(2), "2");
+  assertEquals(parseThresholdOption("2"), "2");
+  assertEquals(parseThresholdOption(JSON.stringify(structured)), structured);
+  assertEquals(parseThresholdOption(structured), structured);
+  assertEquals(parseThresholdOption(undefined), undefined);
+  assertEquals(parseThresholdOption(null), undefined);
 });

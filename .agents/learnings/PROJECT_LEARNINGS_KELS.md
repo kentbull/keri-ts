@@ -89,7 +89,10 @@ and KERIpy interoperability.
     instead of private `Habery.makeGroupHab(...)` shortcuts. Accepted group
     member metadata changes only after the corresponding inception or rotation
     is present in the local KEL; pending rotations retain the prior accepted
-    `smids` / `rmids` state.
+    `smids` / `rmids` state. Tufa multisig inception files preserve structured
+    `isith` / `nsith` values, and the nested weighted public-CLI gate proves that
+    a satisfying subgroup can complete inception, interaction, endpoint-role
+    reply, and DID Webs publication without an unnecessary third signature.
 25. Delegation source-seal repair has two cases. Pending delegated events in
     `pdes` / `delegables` still use explicit delegation escrow promotion, but
     already accepted local delegated events must also pin `aess` when a later
