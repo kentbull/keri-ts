@@ -88,6 +88,11 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
       .option("-t, --temp", "Use temporary database")
       .option("--compat", "Open KERIpy-compatible .keri stores instead of .tufa")
       .option(
+        "--map-size <bytes>",
+        "LMDB map size override in bytes (also honors KERI_LMDB_MAP_SIZE / KERI_BASER_MAP_SIZE; auto-adapts to existing data.mdb)",
+        (value: string) => Number.parseInt(value, 10),
+      )
+      .option(
         "--prefix <prefix>",
         "Logical key prefix filter for one sub-database target",
       )
@@ -109,6 +114,7 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
           headDir?: string;
           temp?: boolean;
           compat?: boolean;
+          mapSize?: number;
           prefix?: string;
           limit?: number;
         },
@@ -118,6 +124,7 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
         headDirPath: options.headDir,
         temp: options.temp || false,
         compat: options.compat || false,
+        mapSize: options.mapSize,
         target,
         prefix: options.prefix,
         limit: options.limit,

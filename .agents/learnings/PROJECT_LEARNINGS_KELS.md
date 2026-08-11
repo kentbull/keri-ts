@@ -15,8 +15,9 @@ and KERIpy interoperability.
    promotion of the highest-value `Partial` rows with real parity evidence,
    especially `fetchTsgs` and the remaining `Komer` family.
 4. Exact interop rules matter: keep `lmdb` pinned to `3.4.4`, preserve
-   `LMDB_DATA_V1=true`, and route protocol/storage CBOR through the shared CESR
-   codec.
+   `LMDB_DATA_V1=true`, size existing mappings from stored metadata after
+   applying explicit or KERIpy-compatible environment overrides, and route
+   protocol/storage CBOR through the shared CESR codec.
 5. Typed `Suber` / `Komer` wrappers are the active parity path; the forward
    ordinal-wrapper surface is the newer `getTop*` / `getAll*` family, with old
    `getOn*` names retained only as temporary compatibility aliases.
