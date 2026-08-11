@@ -197,23 +197,10 @@ function resolveKeripyPath(): string {
   const env = Deno.env.get("KERIPY_PATH");
   if (env) return env;
 
-  const candidates = [
-    // Normalize the URL pathname by dropping only the final slash so later
-    // `${candidate}/...` joins do not produce double separators.
-    new URL("../../../../../python/keripy/", import.meta.url).pathname.replace(/\/$/, ""),
-    "/Users/kbull/code/keri/kentbull/keripy",
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (Deno.statSync(`${candidate}/src/keri/core/coring.py`).isFile) {
-        return candidate;
-      }
-    } catch {
-      // Try the next known workspace layout.
-    }
-  }
-
-  return candidates[0];
+  // Normalize the URL pathname by dropping only the final slash so later
+  // `${candidate}/...` joins do not produce double separators. The relative
+  // path resolves from core/typescript/keri-ts to core/python/keripy.
+  return new URL("../../../../../python/keripy/", import.meta.url).pathname.replace(/\/$/, "");
 }
 
 async function readFile(path: string): Promise<string> {

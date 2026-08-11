@@ -15,8 +15,8 @@ This document is the current source of truth for:
 ## Authority And Scope
 
 - The only authoritative KERIpy repo for this work is
-  `/Users/kbull/code/keri/kentbull/keripy` on branch `mailbox-impl`.
-- Do not use `/Users/kbull/code/keri/sam/keripy` for parity claims.
+  `/Users/kbull/enc/keri/core/python/keripy` on branch `mailbox-impl`.
+- Do not use stale or non-authoritative KERIpy checkouts for parity claims.
 - Keep the `keri-ts` delegation escrow decisions KERIpy-shaped unless there is a
   compelling reason to diverge.
 - Keep standalone mailbox-provider product support intact.
@@ -116,8 +116,8 @@ wrongly escrowed as `missingKever`.
 
 ### Files Changed
 
-- `/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/src/core/eventing.ts`
-- `/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/test/unit/app/gate-e-runtime.test.ts`
+- `/Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri/src/core/eventing.ts`
+- `/Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri/test/unit/app/gate-e-runtime.test.ts`
 
 ## Regression Added
 
@@ -128,7 +128,7 @@ Test:
 
 File:
 
-- `/Users/kbull/code/keri/kentbull/keri-ts/packages/keri/test/unit/app/gate-e-runtime.test.ts`
+- `/Users/kbull/enc/keri/core/typescript/keri-ts/packages/keri/test/unit/app/gate-e-runtime.test.ts`
 
 What it proves:
 
@@ -198,7 +198,7 @@ create failure.
 Use this pattern instead:
 
 ```sh
-cd /Users/kbull/code/keri/kentbull/keri-ts/packages/tufa
+cd /Users/kbull/enc/keri/core/typescript/keri-ts/packages/tufa
 HOME=/path/to/kli-temp-home \
 DENO_DIR=/Users/kbull/Library/Caches/deno \
 deno run --allow-all --unstable-ffi mod.ts db dump --compat \
@@ -242,21 +242,21 @@ test to time out:
 ### Focused Regression
 
 ```sh
-cd /Users/kbull/code/keri/kentbull/keri-ts
+cd /Users/kbull/enc/keri/core/typescript/keri-ts
 deno test -A packages/keri/test/unit/app/gate-e-runtime.test.ts --filter 'reopened witness `logs` queries replay remote accepted KEL state via read-through `getKever`'
 ```
 
 ### Single Interop Row
 
 ```sh
-cd /Users/kbull/code/keri/kentbull/keri-ts
+cd /Users/kbull/enc/keri/core/typescript/keri-ts
 deno test -A packages/keri/test/integration/app/interop-delegation-kli-tufa.test.ts --filter 'Interop delegation: tufa delegate with explicit proxy is approved and rotated by a KLI delegator over witness-mailbox transport with witness-backed approval discovery'
 ```
 
 ### Example Compat Dump
 
 ```sh
-cd /Users/kbull/code/keri/kentbull/keri-ts/packages/tufa
+cd /Users/kbull/enc/keri/core/typescript/keri-ts/packages/tufa
 HOME=/var/folders/kg/kzwqkdwn55j5ytz7mpbmbbjm0000gn/T/tufa-kli-home-4ad14ce7b136f5ca \
 DENO_DIR=/Users/kbull/Library/Caches/deno \
 deno run --allow-all --unstable-ffi mod.ts db dump --compat \

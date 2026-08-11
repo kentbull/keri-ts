@@ -2,7 +2,7 @@
  * KERIpy `main` primitive vectors and codex constants.
  *
  * Source baseline:
- * - repo: /Users/kbull/code/keri/wot/keripy
+ * - repo: /Users/kbull/enc/keri/core/python/wot-upstream/keripy
  * - branch: main
  * - commit: 5a5597e8b7f7
  *
