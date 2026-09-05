@@ -45,6 +45,8 @@ export {
   processWitnessIngress,
   Receiptor,
   type WitnessAuthMap,
+  witnessKeyStateGet,
+  type WitnessKeyStateGetResult,
   witnessQueryGet,
   type WitnessQueryGetResult,
   type WitnessReceiptEndpointResponse,

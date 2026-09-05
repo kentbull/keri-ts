@@ -28,7 +28,7 @@ import {
 } from "../../../cesr/mod.ts";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
-import { receipt as receiptEvent } from "../core/protocol-eventing.ts";
+import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../core/schemes.ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
@@ -1118,4 +1118,29 @@ export class WitnessReceiptor {
     }
     return yield* this.receiptor.receipt(pre, { sn: eventSn, auths });
   }
+}
+
+/** Host-side decision for an endorsed, fully witnessed key-state notice. */
+export type WitnessKeyStateGetResult =
+  | { kind: "accepted"; status: 200; body: Uint8Array }
+  | { kind: "reject"; status: number; message: string };
+
+/** Return an actual signed KERI reply; unknown or incompletely witnessed state is not advertised. */
+export function witnessKeyStateGet(
+  serviceHab: Hab,
+  query: { pre?: string | null; destination?: string | null },
+): WitnessKeyStateGetResult {
+  if (!query.destination || query.destination !== serviceHab.pre) {
+    return { kind: "reject", status: 400, message: "Recognized CESR destination required" };
+  }
+  if (!query.pre) return { kind: "reject", status: 400, message: "'pre' query param is required" };
+  const kever = serviceHab.db.getKever(query.pre, { refresh: true });
+  if (!kever || !serviceHab.db.fullyWitnessed(kever.serder)) {
+    return { kind: "reject", status: 404, message: "Fully witnessed key state not found" };
+  }
+  return {
+    kind: "accepted",
+    status: 200,
+    body: serviceHab.endorse(replyEvent(`/ksn/${serviceHab.pre}`, kever.state().asDict())),
+  };
 }

@@ -20,6 +20,7 @@ import { classifyMailboxAdminRoute, handleMailboxAdmin } from "./protocol/endpoi
 import { classifyOobiRoute, handleOobiRoute, parseOobiRouteRequest } from "./protocol/endpoints/oobi.ts";
 import {
   classifyWitnessHttpRoute,
+  handleWitnessKeyStateGet,
   handleWitnessQueryGet,
   handleWitnessReceiptGet,
   handleWitnessReceiptPost,
@@ -95,6 +96,8 @@ async function dispatchProtocolRoute(
       );
     case "witnessReceiptsGet":
       return handleWitnessReceiptGet(context, route.witnessHab);
+    case "witnessKeyStateGet":
+      return handleWitnessKeyStateGet(context, route.witnessHab);
     case "witnessQueryGet":
       return handleWitnessQueryGet(context, route.witnessHab);
     case "oobi":

@@ -35,6 +35,7 @@ export type ProtocolRoute =
   | { kind: "witnessReceiptsPost"; witnessHab: Hab }
   | { kind: "witnessReceiptsGet"; witnessHab: Hab }
   | { kind: "witnessQueryGet"; witnessHab: Hab }
+  | { kind: "witnessKeyStateGet"; witnessHab: Hab }
   | { kind: "oobi"; request: OobiRouteRequest }
   | { kind: "genericCesrIngress"; hosted: HostedRouteResolution }
   | { kind: "ambiguousHostedPath"; message: string }
