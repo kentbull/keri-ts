@@ -341,8 +341,15 @@ export class Kevery {
         }]);
       }
       case "mbx": {
-        if (!this.db.getKever(pre)) {
+        if (dest !== pre) {
+          return dropQuery("unauthorizedMailboxRequester");
+        }
+        const recipient = this.db.getKever(pre, { refresh: true });
+        if (!recipient) {
           return escrowQuery("missingKever");
+        }
+        if (!authenticatesMailboxQuery(envelope, recipient)) {
+          return dropQuery("unauthorizedMailboxRequester");
         }
         return acceptQuery([{
           kin: "stream",
@@ -3057,6 +3064,28 @@ function queryRequester(envelope: QueryEnvelope): string | null {
   }
   const cigar = envelope.cigars?.[0];
   return cigar?.verfer?.qb64 ?? null;
+}
+
+/**
+ * Mailbox reads authorize private recipient bytes, unlike public KEL queries.
+ * Require the recipient's current signing threshold; merely naming its prefix
+ * in endorsement material is not authentication. Repeated indices count once.
+ */
+function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever): boolean {
+  if (!recipient.transferable) {
+    return (envelope.cigars ?? []).some((cigar) =>
+      cigar.verfer?.qb64 === recipient.pre
+      && !cigar.verfer.transferable
+      && cigar.verfer.verify(cigar.raw, envelope.serder.raw)
+    );
+  }
+  if (envelope.source?.qb64 !== recipient.pre) return false;
+  const indices = new Set<number>();
+  for (const siger of envelope.sigers ?? []) {
+    const verfer = recipient.verfers[siger.index];
+    if (verfer && verfer.verify(siger.raw, envelope.serder.raw)) indices.add(siger.index);
+  }
+  return recipient.tholder?.satisfy([...indices]) ?? false;
 }
 
 /** Return the reply destination derived from one normalized query envelope. */

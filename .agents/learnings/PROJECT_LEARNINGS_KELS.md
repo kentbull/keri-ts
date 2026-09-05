@@ -7,6 +7,14 @@ and KERIpy interoperability.
 
 ## Current State
 
+Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
+match the recipient and its signatures must satisfy the current accepted signing
+threshold. Naming a prefix in attachment material and correlating a stream cue
+are not authentication. Verify nontransferable cigars as well as indexed
+transferable signatures; duplicate indices do not increase the threshold. Public
+`logs` and `ksn` query policy remains separate. This intentionally tightens the
+permissive KERIpy 1.2.14 mailbox query behavior.
+
 Group rotation signatures carry independent current-key and prior-next-commitment
 indices. Match each current public key cryptographically against the accepted
 prior `ndigers`; an uncommitted replacement key signs current-only. Inception and

@@ -1519,7 +1519,7 @@ Deno.test("Kevery.processQuery escrows `mbx` until local mailbox authority exist
         src: requester.pre,
         topics: ["/reply"],
       });
-      kvy.processQuery(signedQueryEnvelope(requester, querySerder));
+      kvy.processQuery(signedQueryEnvelope(controller, querySerder));
       assertEquals(remote.db.qnfs.cnt(), 1);
       assertEquals(pullCueOfKin(kvy, "invalid"), undefined);
 
@@ -1545,6 +1545,70 @@ Deno.test("Kevery.processQuery escrows `mbx` until local mailbox authority exist
         throw new Error("Expected stream cue.");
       }
       assertEquals(streamCue.topics, { "/reply": 0 });
+    } finally {
+      yield* remote.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("mailbox queries require the recipient's current signature threshold", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: `mailbox-read-source-${crypto.randomUUID()}`, temp: true });
+    const remote = yield* createHabery({ name: `mailbox-read-verifier-${crypto.randomUUID()}`, temp: true });
+    try {
+      const recipient = source.makeHab("recipient", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+      const other = source.makeHab("other");
+      const kvy = new Kevery(remote.db);
+      for (const hab of [recipient, other]) {
+        const event = source.db.getEvtSerder(hab.pre, hab.kever!.said)!;
+        kvy.processEvent(eventEnvelope({ serder: event, sigers: source.db.sigs.get([hab.pre, event.said!]) }));
+      }
+      const query = makeQuerySerder("mbx", { i: recipient.pre, src: other.pre, topics: { "/challenge": 0 } });
+      const valid = signedQueryEnvelope(recipient, query);
+      const foreign = signedQueryEnvelope(other, query);
+      for (
+        const envelope of [
+          foreign,
+          { ...foreign, source: valid.source },
+          { ...valid, sigers: valid.sigers!.slice(0, 1) },
+          { ...valid, sigers: [valid.sigers![0], valid.sigers![0]] },
+        ]
+      ) {
+        kvy.processQuery(envelope);
+        assertEquals(pullCueOfKin(kvy, "stream"), undefined, "unverified requester must not authorize mailbox bytes");
+      }
+      kvy.processQuery(valid);
+      assertExists(pullCueOfKin(kvy, "stream"));
+      recipient.rotate();
+      const rotation = source.db.getEvtSerder(recipient.pre, recipient.kever!.said)!;
+      kvy.processEvent(
+        eventEnvelope({ serder: rotation, sigers: source.db.sigs.get([recipient.pre, rotation.said!]) }),
+      );
+      kvy.processQuery(valid);
+      assertEquals(pullCueOfKin(kvy, "stream"), undefined, "old keys no longer authorize reads");
+      kvy.processQuery(signedQueryEnvelope(recipient, query));
+      assertExists(pullCueOfKin(kvy, "stream"));
+      const nontransferable = source.makeHab("nontransferable", undefined, { transferable: false });
+      const inception = source.db.getEvtSerder(nontransferable.pre, nontransferable.kever!.said)!;
+      kvy.processEvent(
+        eventEnvelope({ serder: inception, sigers: source.db.sigs.get([nontransferable.pre, inception.said!]) }),
+      );
+      const nontransQuery = makeQuerySerder("mbx", {
+        i: nontransferable.pre,
+        src: other.pre,
+        topics: { "/challenge": 0 },
+      });
+      kvy.processQuery({ serder: nontransQuery, cigars: nontransferable.sign(query.raw, false) });
+      assertEquals(
+        pullCueOfKin(kvy, "stream"),
+        undefined,
+        "matching nontransferable key still requires a valid signature",
+      );
+      kvy.processQuery({ serder: nontransQuery, cigars: nontransferable.sign(nontransQuery.raw, false) });
+      assertExists(pullCueOfKin(kvy, "stream"));
+      kvy.processQuery({ serder: query, cigars: nontransferable.sign(query.raw, false) });
+      assertEquals(pullCueOfKin(kvy, "stream"), undefined);
     } finally {
       yield* remote.close(true);
       yield* source.close(true);

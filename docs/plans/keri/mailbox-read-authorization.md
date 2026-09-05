@@ -1,5 +1,26 @@
 # Mailbox Read Authorization via Verified `mbx` Query SAID Correlation
 
+## Implementation checkpoint
+
+`Kevery.decideQuery()` now gates `mbx` stream cues on the recipient's current
+signature threshold and requester identity. Nontransferable queries require a
+valid matching cigar. This prevents forged or foreign requester material from
+creating an accepted cue; SAID correlation by itself did not provide this gate.
+Old-key queries must be signed again after rotation. Public `logs` and `ksn`
+queries retain their existing behavior.
+
+The HTTP query stream still returns its initial retry hint and waits for an
+accepted cue. A denied query therefore yields no mailbox messages; this change
+does not introduce the proposed immediate 403 response or unsafe override. Signed
+queries are not one-use tokens; no query nonce/replay-window policy is introduced.
+
+This is intentional privacy hardening beyond KERIpy 1.2.14's explicitly promiscuous
+`processQuery` behavior. The existing provider/recipient/sender HTTP fixture now
+proves that a valid foreign sender cannot read recipient payloads while the
+recipient can read the exact accepted message. Core tests cover forged prefix
+claims, insufficient/duplicate indices, current threshold acceptance, rotation,
+nontransferable cigars and query-not-found continuation.
+
 ## Summary
 
 - Secure mailbox reads by making the server stream only from the accepted
