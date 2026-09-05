@@ -72,10 +72,10 @@ participants' next commitments for later recovery.
 21. Incomplete `query` cues are runtime correspondence requests, not near-wire
     messages. They must resolve a local habitat and an honest remote attester
     before emitting follow-on `qry`.
-22. Query acceptance for `logs` / `ksn` / `mbx` must use durable read-through
+22. Event routing and query acceptance for `logs` / `ksn` / `mbx` must use durable read-through
     state via `db.getKever(...)`, not only the hot `db.kevers` cache, or
-    reopened witnesses will falsely escrow remote accepted subjects as
-    `missingKever` and fail to emit `/replay` or `/reply`.
+    reopened processors will falsely escrow remote accepted subjects as
+    `ooo` or `missingKever` and fail to emit `/replay` or `/reply`.
 23. Delegator-side `delegate confirm` parity is `delegables`-driven, not
     notice-driven. Notices from `/delegate/request` are UI hints only; confirm
     must derive the delegated event, delegator, and approval order from

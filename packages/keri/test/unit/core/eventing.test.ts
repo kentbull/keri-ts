@@ -3106,3 +3106,36 @@ Deno.test("Kevery accepts superseding delegated recovery when the later seal is 
     }
   });
 });
+
+Deno.test("Kevery accepts a remote rotation from durable state after observer reopen", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: `cold-source-${crypto.randomUUID()}`, temp: true });
+    const options = {
+      name: `cold-observer-${crypto.randomUUID()}`,
+      headDirPath: `/tmp/kevery-cold-${crypto.randomUUID()}`,
+      skipSignator: true,
+      skipConfig: true,
+    };
+    let observer = yield* createHabery(options);
+    try {
+      const controller = source.makeHab("controller");
+      const inception = source.db.getEvtSerder(controller.pre, controller.kever!.said)!;
+      acceptEvent(observer.kevery, controller, inception);
+      assertEquals(observer.db.kels.getLast(controller.pre, 0), inception.said);
+      yield* observer.close();
+      observer = yield* createHabery(options);
+      // Remote identifiers are durable but are not eagerly loaded as local habitats.
+      assertEquals(observer.db.kevers.has(controller.pre), false);
+      assertExists(observer.db.getState(controller.pre));
+      controller.rotate();
+      const rotation = source.db.getEvtSerder(controller.pre, controller.kever!.said)!;
+      acceptEvent(observer.kevery, controller, rotation);
+      // Inspect the accepted KEL before any getKever call can hydrate the cache.
+      assertEquals(observer.db.kels.getLast(controller.pre, 1), rotation.said);
+      assertEquals(observer.db.getState(controller.pre)?.d, rotation.said);
+    } finally {
+      yield* observer.close(true);
+      yield* source.close(true);
+    }
+  });
+});
