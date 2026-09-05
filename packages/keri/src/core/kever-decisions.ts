@@ -364,10 +364,11 @@ export type QueryEscrowReason =
   | "unmetSequenceGate"
   | "notFullyWitnessed";
 
-/** Terminal live-query outcomes that mirror KERIpy parser-dropped validation errors. */
+/** Terminal live-query validation outcomes, including stricter recipient authorization for mailbox reads. */
 export type QueryDropReason =
   | "malformedQuery"
   | "missingRequesterSignatureMaterial"
+  | "unauthorizedMailboxRequester"
   | "invalidLogsGate"
   | "unsupportedRoute";
 

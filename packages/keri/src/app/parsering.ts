@@ -573,7 +573,8 @@ function envelopeFromMessage(
   return envelope;
 }
 
-function queryEnvelopeFromDispatch(
+/** Normalize the actual query endorsements for ingress and per-request authorization. */
+export function queryEnvelopeFromDispatch(
   envelope: KeriDispatchEnvelope,
 ): QueryEnvelope {
   const lastSsg = envelope.ssgs.at(-1);

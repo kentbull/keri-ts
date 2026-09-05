@@ -47,6 +47,11 @@ stay short enough to reread at session start.
 
 ## Cross-Topic Snapshot
 
+Mailbox transport cue correlation does not prove recipient authorization. KEL
+query processing authenticates `mbx` requester signatures against the recipient's
+current accepted threshold before emitting a stream cue; public KEL query policy
+is unchanged. See the KEL learnings and mailbox-read-authorization plan.
+
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the parser
    lifecycle contract; keep parser behavior traceable to that contract and its
    tests.

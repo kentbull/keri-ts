@@ -5,13 +5,15 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { concatBytes, Ilks, type SerderKERI } from "cesr-ts";
+import { concatBytes, createParser, Ilks, type SerderKERI } from "cesr-ts";
 import { run } from "effection";
 import {
   type CueEmission,
+  envelopesFromFrames,
   type HostedRouteResolution,
   inspectCesrRequest,
   processWitnessIngress,
+  queryEnvelopeFromDispatch,
   readRequiredCesrRequestBytes,
   runtimeTurn,
 } from "keri-ts/runtime";
@@ -212,6 +214,25 @@ export async function handleGenericCesrIngress(
           context.policy.serviceHab,
         );
       });
+      // Query SAIDs omit attachments: an older accepted cue must not authorize
+      // this request when it carries forged, foreign or now-stale signatures.
+      if (!authorizesMailboxRequest(context, bytes, serder.said ?? null)) {
+        return textResponse("Mailbox requester is not authorized", 403);
+      }
       return querySseResponse(context, serder.said ?? null);
   }
+}
+
+/** Parse and authenticate this request envelope before consulting shared query cues. */
+function authorizesMailboxRequest(context: ProtocolRequestContext, bytes: Uint8Array, said: string | null): boolean {
+  let envelopes;
+  try {
+    const parser = createParser({ framed: false, attachmentDispatchMode: "compat" });
+    envelopes = envelopesFromFrames(parser.feed(bytes), false);
+  } catch {
+    return false;
+  }
+  const envelope = envelopes[0];
+  if (!envelope || envelope.serder.said !== said) return false;
+  return context.runtime!.reactor.kevery.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(envelope));
 }
