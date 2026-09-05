@@ -1,8 +1,10 @@
 import { run } from "effection";
 import {
   type AgentRuntime,
+  CESR_DESTINATION_HEADER,
   type Hab,
   readRequiredCesrRequestBytes,
+  witnessKeyStateGet,
   witnessQueryGet,
   witnessReceiptGet,
   witnessReceiptPost,
@@ -42,6 +44,9 @@ export function classifyWitnessHttpRoute(
   }
   if (context.method === "GET" && relativePath === "/query") {
     return { kind: "witnessQueryGet", witnessHab: context.policy.witnessHab };
+  }
+  if (context.method === "GET" && relativePath === "/ksn") {
+    return { kind: "witnessKeyStateGet", witnessHab: context.policy.witnessHab };
   }
   return null;
 }
@@ -106,4 +111,15 @@ export function handleWitnessQueryGet(
     return cesrResponse(result.body, result.status);
   }
   return textResponse(result.message, result.status);
+}
+
+/** Serve the signed witness state-notice contract with explicit destination selection. */
+export function handleWitnessKeyStateGet(context: ProtocolRequestContext, witnessHab: Hab): Response {
+  const result = witnessKeyStateGet(witnessHab, {
+    pre: context.url.searchParams.get("pre"),
+    destination: context.req.headers.get(CESR_DESTINATION_HEADER),
+  });
+  return result.kind === "accepted"
+    ? cesrResponse(result.body, result.status)
+    : textResponse(result.message, result.status);
 }
