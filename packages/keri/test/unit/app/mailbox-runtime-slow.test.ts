@@ -17,7 +17,7 @@ import {
   processRuntimeTurn,
   runAgentRuntime,
 } from "../../../src/app/agent-runtime.ts";
-import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
+import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -1316,6 +1316,10 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
             body: request.body,
             signal: abort.signal,
           });
+          if (response.status === 403) {
+            yield* textOp(response);
+            return [];
+          }
           assertEquals(response.status, 200);
           return parseMailboxSse(
             yield* readMailboxSseBody(response, abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }),
@@ -1330,6 +1334,34 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       const owned = yield* readAs(clientName, clientHeadDirPath, "alice");
       assertEquals(owned.length, 1);
       assertEquals(owned[0]!.msg, mailboxer.getTopicMsgs(mailboxTopicKey(recipientPre, "/challenge"))[0]);
+      const recipientHby = yield* createHabery({ name: clientName, headDirPath: clientHeadDirPath, skipConfig: true });
+      const senderHby = yield* createHabery({ name: senderName, headDirPath: senderHeadDirPath, skipConfig: true });
+      const abort = new AbortController();
+      try {
+        const validWire = recipientHby.habByName("alice")!.query(recipientPre, providerPre, {
+          topics: { "/challenge": 0 },
+        }, "mbx");
+        const query = inspectCesrRequest(validWire)!;
+        ingestKeriBytes(runtime, validWire);
+        yield* processRuntimeTurn(runtime, { hab: hab!, sink: runtime.respondant.forHab(hab!), pollMailbox: false });
+        assertEquals(runtime.mailboxDirector.hasQueryCue(query.said!), true);
+        const forged = buildCesrRequest(senderHby.habByName("sender")!.endorse(query), { destination: providerPre });
+        const response = yield* fetchOp(url, {
+          method: "POST",
+          headers: forged.headers,
+          body: forged.body,
+          signal: abort.signal,
+        });
+        assertEquals(response.status, 403);
+        const stolen = response.status === 200
+          ? parseMailboxSse(yield* readMailboxSseBody(response, abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }))
+          : (yield* textOp(response), []);
+        assertEquals(stolen.length, 0, "old accepted cue cannot authorize different request attachments");
+      } finally {
+        abort.abort();
+        yield* senderHby.close();
+        yield* recipientHby.close();
+      }
     } finally {
       yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);

@@ -237,6 +237,16 @@ export class Kevery {
     this.applyLiveQueryDecision(envelope, decision);
   }
 
+  /** Recheck one exact mailbox request independently of any previously queued stream cue. */
+  isMailboxQueryAuthorized(envelope: QueryEnvelope): boolean {
+    if (envelope.serder.route !== "mbx") return false;
+    const query = envelope.serder.ked?.q as Record<string, unknown> | undefined;
+    const pre = typeof query?.i === "string" ? query.i : null;
+    if (!pre || queryRequester(envelope) !== pre) return false;
+    const recipient = this.db.getKever(pre, { refresh: true });
+    return !!recipient && authenticatesMailboxQuery(envelope, recipient);
+  }
+
   /**
    * Decide how one live query should be handled without mutating escrow state.
    *

@@ -10,7 +10,8 @@ and KERIpy interoperability.
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue
-are not authentication. Verify nontransferable cigars as well as indexed
+are not authentication. Tufa rechecks the exact request envelope before
+consulting shared cues, because attachments are outside the query SAID. Verify nontransferable cigars as well as indexed
 transferable signatures; duplicate indices do not increase the threshold. Public
 `logs` and `ksn` query policy remains separate. This intentionally tightens the
 permissive KERIpy 1.2.14 mailbox query behavior.
