@@ -20,6 +20,7 @@ import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } 
 import { exchange } from "../core/protocol-exchanging.ts";
 import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
+import { DEFAULT_MAILBOX_INBOX_LIMITS, type MailboxDelivery, type MailboxInboxLimits } from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
@@ -64,6 +65,7 @@ interface PosterOptions {
 }
 
 interface MailboxPollerOptions {
+  mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
   services?: RuntimeServices;
   pollTransport?: MailboxPollTransport;
@@ -696,6 +698,9 @@ export class MailboxPoller {
   readonly timeoutPolicy: Readonly<MailboxPollingTimeoutPolicy>;
   readonly services: RuntimeServices;
   readonly pollTransport: MailboxPollTransport;
+  private readonly delivered = new Set<string>();
+  readonly inboxLimits: MailboxInboxLimits;
+  private readonly durableAdmission: boolean;
   private readonly localCursors = new Map<string, Record<string, number>>();
 
   constructor(
@@ -709,6 +714,11 @@ export class MailboxPoller {
       pollTransport = defaultMailboxPollTransport,
     } = options;
     this.hby = hby;
+    if (options.mailboxAdmission && options.mailboxAdmission.mode !== "durable") {
+      throw new Error("Unsupported mailbox admission mode");
+    }
+    this.durableAdmission = options.mailboxAdmission?.mode === "durable";
+    this.inboxLimits = { ...DEFAULT_MAILBOX_INBOX_LIMITS, ...options.mailboxAdmission?.limits };
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
     this.services = services;
@@ -745,7 +755,7 @@ export class MailboxPoller {
     if (topics.length === 0) {
       return [];
     }
-    const batches: MailboxPollBatch[] = [];
+    const batches: MailboxPollBatch[] = this.replayRetained();
     const deadline = this.services.clock.now() + positiveTimeoutMs(
       budgetMs,
       this.timeoutPolicy.commandLocalBudgetMs,
@@ -763,7 +773,7 @@ export class MailboxPoller {
       for (const endpoint of remoteEndpoints) {
         const remainingBudgetMs = deadline - this.services.clock.now();
         if (remainingBudgetMs <= 0) {
-          return batches;
+          return this.handOff(batches);
         }
         const batch = yield* this.pollRemoteEndpointOnce(
           target,
@@ -776,7 +786,7 @@ export class MailboxPoller {
       }
     }
 
-    return batches;
+    return this.handOff(batches);
   }
 
   /**
@@ -792,6 +802,10 @@ export class MailboxPoller {
 
     try {
       while (true) {
+        for (const batch of this.replayRetained()) {
+          onBatch(batch);
+          this.handOff([batch]);
+        }
         const topics = this.mailboxDirector.registeredTopics();
         yield* this.syncRemoteWorkers(remoteWorkers, onBatch, topics);
 
@@ -884,20 +898,68 @@ export class MailboxPoller {
     if (messages.length === 0) {
       return null;
     }
-    for (const message of messages) {
-      this.mailboxDirector.updateRemoteCursor(
-        target.targetPre,
-        endpoint.eid,
-        message.topic,
-        message.idx,
-      );
+    if (!this.durableAdmission) {
+      for (const message of messages) {
+        this.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
+      }
+      return {
+        source: "remote",
+        pre: target.targetPre,
+        eid: endpoint.eid,
+        messages: messages.map((message) => message.msg),
+      };
     }
-    return {
-      source: "remote",
-      pre: target.targetPre,
-      eid: endpoint.eid,
-      messages: messages.map((message) => message.msg),
-    };
+    this.hby.db.mailboxInbox.admit(target.targetPre, endpoint.eid, messages, this.inboxLimits);
+    return this.replayRetained(target.targetPre, endpoint.eid)[0] ?? null;
+  }
+
+  /** Deliver retained ingress once per poller lifetime; consumers explicitly dispose durable outcomes. */
+  private replayRetained(pre?: string, eid?: string): MailboxPollBatch[] {
+    if (!this.durableAdmission) return [];
+    const topics = new Set(this.mailboxDirector.registeredTopics());
+    if (topics.size === 0) return [];
+    const retained = this.hby.db.mailboxInbox.pending({ pre, eid, topics, exclude: this.delivered });
+    const batches = new Map<string, MailboxPollBatch>();
+    for (const { delivery, msg } of retained) {
+      if (this.delivered.has(delivery.id) || (pre && delivery.pre !== pre) || (eid && delivery.eid !== eid)) continue;
+      const key = JSON.stringify([delivery.pre, delivery.eid]);
+      let batch = batches.get(key);
+      if (!batch) {
+        batch = { source: "remote", pre: delivery.pre, eid: delivery.eid, messages: [], deliveries: [] };
+        batches.set(key, batch);
+      }
+      batch.messages.push(msg);
+      batch.deliveries!.push(delivery);
+    }
+    return [...batches.values()];
+  }
+
+  /** Mark successful handoff only, never selection before later network work or a throwing sink. */
+  private handOff(batches: MailboxPollBatch[]): MailboxPollBatch[] {
+    // Validate/prune before marking new IDs: a corrupt retained row must not lose this handoff.
+    if (
+      this.delivered.size + batches.reduce((n, batch) => n + (batch.deliveries?.length ?? 0), 0)
+        > this.inboxLimits.maxRetainedRecords
+    ) {
+      const retained = new Set(this.hby.db.mailboxInbox.retained().map((row) => row.id));
+      for (const id of this.delivered) if (!retained.has(id)) this.delivered.delete(id);
+    }
+    const output: MailboxPollBatch[] = [];
+    for (const batch of batches) {
+      if (!batch.deliveries) {
+        output.push(batch);
+        continue;
+      }
+      const messages: Uint8Array[] = [], deliveries: MailboxDelivery[] = [];
+      for (const [index, delivery] of batch.deliveries.entries()) {
+        if (this.delivered.has(delivery.id)) continue;
+        this.delivered.add(delivery.id);
+        messages.push(batch.messages[index]);
+        deliveries.push(delivery);
+      }
+      if (messages.length) output.push({ ...batch, messages, deliveries });
+    }
+    return output;
   }
 
   /** Keep one long-lived worker running for each currently configured remote endpoint. */
@@ -950,6 +1012,7 @@ export class MailboxPoller {
       );
       if (batch) {
         onBatch(batch);
+        this.handOff([batch]);
       }
       yield* runtimeTurn();
     }
@@ -1204,6 +1267,8 @@ export interface MailboxPollingTimeoutPolicy {
 
 /** One mailbox retrieval batch whose message boundaries should stay together. */
 export interface MailboxPollBatch {
+  /** Stable IDs for retained remote bytes; parser return does not acknowledge them. */
+  deliveries?: MailboxDelivery[];
   source: "local" | "remote";
   pre: string;
   eid?: string;
