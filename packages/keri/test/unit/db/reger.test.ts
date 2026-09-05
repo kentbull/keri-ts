@@ -1,6 +1,6 @@
 // @file-test-lane db-fast
 
-import { run } from "effection";
+import { action, call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
   concatBytes,
@@ -19,7 +19,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { createReger } from "../../../src/db/reger.ts";
+import { createReger, Reger } from "../../../src/db/reger.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -255,4 +255,60 @@ Deno.test("db/reger - sources returns recursive source credentials with seal tri
       yield* reger.close(true);
     }
   });
+});
+
+Deno.test("createReger retains acquisition ownership through yielding cleanup", async (t) => {
+  for (const mode of ["throw", "cancel"] as const) {
+    await t.step(mode, async () => {
+      const reopen = Reger.prototype.reopen;
+      const close = Reger.prototype.close;
+      const entered = Promise.withResolvers<void>();
+      const closing = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let captured: Reger | undefined;
+      let closeStarted = false;
+      let settled = false;
+      Reger.prototype.reopen = function*(options) {
+        const opened = yield* reopen.call(this, options);
+        captured = this;
+        entered.resolve();
+        if (mode === "throw") throw new Error("after native reopen");
+        yield* action<void>(() => () => {});
+        return opened;
+      };
+      Reger.prototype.close = function*(...args) {
+        closeStarted = true;
+        closing.resolve();
+        yield* call(() => release.promise);
+        return yield* close.apply(this, args);
+      };
+      const task = run(() => call(() => createReger({ name: crypto.randomUUID(), temp: true })));
+      const outcome = task.then(() => {
+        settled = true;
+      }, () => {
+        settled = true;
+      });
+      let halt: Promise<void> | undefined;
+      try {
+        await entered.promise;
+        assertExists(captured);
+        assertEquals(captured.opened, true);
+        if (mode === "cancel") halt = task.halt().then(() => {});
+        await Promise.race([closing.promise, outcome]);
+        assertEquals(closeStarted, true, "unreturned native Reger must be closed");
+        assertEquals(settled, false, "factory must join yielding close before settling");
+        assertEquals(captured.opened, true);
+        release.resolve();
+        await outcome;
+        if (halt) await halt;
+        assertEquals(captured.opened, false);
+      } finally {
+        release.resolve();
+        await task.halt();
+        Reger.prototype.reopen = reopen;
+        Reger.prototype.close = close;
+        if (captured?.opened) await run(() => captured!.close());
+      }
+    });
+  }
 });
