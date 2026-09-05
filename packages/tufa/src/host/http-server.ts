@@ -5,7 +5,7 @@
  * Protocol route composition lives under `tufa/src/http`, while route-facing
  * policy lives in `keri-ts` through `ProtocolHostPolicy`.
  */
-import { action, type Operation } from "effection";
+import { action, call, type Operation } from "effection";
 import { type AgentRuntime, consoleLogger, type Logger, type ProtocolHostPolicy } from "keri-ts/runtime";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
@@ -18,7 +18,7 @@ interface RunningServer {
 
 interface ServerHost {
   readonly server: RunningServer;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 interface ServerOptions {
@@ -235,31 +235,46 @@ function openServerHost(
     app: { logger },
   });
   const handler = (req: Request): Promise<Response> => Promise.resolve(app.fetch(req));
-  let host: ServerHost;
-  if (hasDenoServe()) {
-    try {
-      host = openDenoServerHost(serverOptions, handler);
-    } catch (error) {
-      logger.warn(
-        "Falling back to Node HTTP host after Deno.serve() startup failed:",
-        error,
-      );
-      host = openNodeServerHost(serverOptions, handler);
-    }
-  } else {
-    host = openNodeServerHost(serverOptions, handler);
-  }
-
   Deno.addSignalListener("SIGINT", shutdown);
   Deno.addSignalListener("SIGTERM", shutdown);
+  const removeSignals = () => {
+    Deno.removeSignalListener("SIGINT", shutdown);
+    Deno.removeSignalListener("SIGTERM", shutdown);
+  };
+  let host: ServerHost;
+  try {
+    if (hasDenoServe()) {
+      try {
+        host = openDenoServerHost(serverOptions, handler);
+      } catch (error) {
+        logger.warn(
+          "Falling back to Node HTTP host after Deno.serve() startup failed:",
+          error,
+        );
+        host = openNodeServerHost(serverOptions, handler);
+      }
+    } else {
+      host = openNodeServerHost(serverOptions, handler);
+    }
+  } catch (error) {
+    removeSignals();
+    throw error;
+  }
 
   return {
     server: host.server,
-    close() {
-      Deno.removeSignalListener("SIGINT", shutdown);
-      Deno.removeSignalListener("SIGTERM", shutdown);
-      host.close();
-      controller.abort();
+    async close() {
+      // Keep repeated signals graceful until the adapter has actually drained.
+      try {
+        try {
+          await host.close();
+        } finally {
+          controller.abort();
+          await host.server.finished;
+        }
+      } finally {
+        removeSignals();
+      }
     },
   };
 }
@@ -283,6 +298,8 @@ export function* startServer(
   try {
     yield* waitForServerFinished(host.server);
   } finally {
-    host.close();
+    // Start cleanup synchronously before yielding, including on scope cancellation.
+    const closing = host.close();
+    yield* call(() => Promise.resolve(closing));
   }
 }
