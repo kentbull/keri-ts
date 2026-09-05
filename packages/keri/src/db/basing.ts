@@ -1588,9 +1588,15 @@ export class BaserDoer {
 /** Constructor-safe async factory for a fully reopened `Baser`. */
 export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
   const baser = new Baser(options);
-  const opened = yield* baser.reopen(options);
-  if (!opened) {
-    throw new DatabaseNotOpenError("Failed to open Baser");
+  let delivered = false;
+  try {
+    const opened = yield* baser.reopen(options);
+    if (!opened) {
+      throw new DatabaseNotOpenError("Failed to open Baser");
+    }
+    delivered = true;
+    return baser;
+  } finally {
+    if (!delivered) yield* baser.close();
   }
-  return baser;
 }

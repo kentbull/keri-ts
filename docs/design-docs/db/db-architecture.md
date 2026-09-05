@@ -625,6 +625,12 @@ These invariants are mandatory for parity-compatible DB behavior in `keri-ts`.
 ### E. Lifecycle Invariants
 
 1. DB open/close/reopen flows are safe and idempotent.
+   `createBaser`, `createKeeper`, and `createOutboxer` retain ownership until
+   returning the opened store; failed or cancelled acquisition closes the
+   unreturned handle without clearing durable data. `createHabery` similarly
+   closes already-acquired owned resources if later setup fails. Supplied
+   configuration remains caller-owned on failure; successful Habery ownership
+   and explicit close behavior remain unchanged.
 2. Version metadata behavior on new/temp writeable stores matches parity policy.
 3. No command-level feature may bypass required DB-layer behavior with hidden
    in-memory substitutions in parity-gated flows.
