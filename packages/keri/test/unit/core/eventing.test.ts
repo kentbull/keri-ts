@@ -3139,3 +3139,226 @@ Deno.test("Kevery accepts a remote rotation from durable state after observer re
     }
   });
 });
+
+Deno.test("Kevery recognizes historical delegated inception after an approved rotation", async () => {
+  await run(function*() {
+    const source = yield* createHabery({
+      name: `kevery-delegated-stale-state-source-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    const remote = yield* createHabery({
+      name: `kevery-delegated-stale-state-remote-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const delegator = source.makeHab("delegator", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const delegate = source.makeHab("delegate", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+        delpre: delegator.pre,
+      });
+      const kvy = new Kevery(remote.db);
+      const delegatorKever = delegator.kever;
+      const delegateKever = delegate.kever;
+      assertExists(delegatorKever);
+      assertExists(delegateKever);
+
+      const delegatorIcp = source.db.getEvtSerder(
+        delegator.pre,
+        delegatorKever.said,
+      );
+      const dip = source.db.getEvtSerder(delegate.pre, delegateKever.said);
+      assertExists(delegatorIcp);
+      assertExists(dip);
+      const dipAnchor = makeDelegatingInteraction(
+        delegator.pre,
+        1,
+        delegatorKever.said,
+        [eventSeal(dip)],
+      );
+      const firstRotationSigner = findCommittedRotationSigner(
+        source,
+        delegate.pre,
+        delegateKever.ndigs[0],
+      );
+      const secondRotationSigner = deriveRotationSigner(
+        source,
+        delegate.pre,
+        "r2",
+      );
+      const drt = makeDelegatedRotation(
+        delegate.pre,
+        1,
+        dip.said!,
+        firstRotationSigner.verfer.qb64,
+        nextKeyDigest(secondRotationSigner.verfer.qb64).qb64,
+      );
+      const drtAnchor = makeDelegatingInteraction(
+        delegator.pre,
+        2,
+        dipAnchor.said!,
+        [eventSeal(drt)],
+      );
+
+      assertEquals(
+        kvy.processEvent({
+          serder: delegatorIcp,
+          sigers: source.db.sigs.get([delegator.pre, delegatorKever.said]),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+      assertEquals(
+        kvy.processEvent({
+          serder: dipAnchor,
+          sigers: delegator.sign(dipAnchor.raw, true),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+      assertEquals(
+        kvy.processEvent({
+          serder: dip,
+          sigers: source.db.sigs.get([delegate.pre, delegateKever.said]),
+          wigers: [],
+          frcs: [],
+          sscs: [sourceSealFor(dipAnchor)],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+      assertEquals(remote.db.getKever(delegate.pre)?.sn, 0);
+      assertEquals(
+        kvy.processEvent({
+          serder: drtAnchor,
+          sigers: delegator.sign(drtAnchor.raw, true),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: false,
+        }).kind,
+        "accept",
+      );
+
+      const decision = kvy.processEvent({
+        serder: drt,
+        sigers: signRotation(drt, firstRotationSigner.signer.seed),
+        wigers: [],
+        frcs: [],
+        sscs: [sourceSealFor(drtAnchor)],
+        ssts: [],
+        local: false,
+      });
+
+      assertEquals(decision.kind, "accept");
+      assertEquals(remote.db.getKever(delegate.pre)?.sn, 1);
+      const replay = kvy.processEvent({
+        serder: dip,
+        sigers: source.db.sigs.get([delegate.pre, dip.said!]),
+        wigers: [],
+        frcs: [],
+        sscs: [sourceSealFor(dipAnchor)],
+        ssts: [],
+        local: false,
+      });
+      assertEquals(replay.kind, "duplicate", replay.kind === "escrow" ? replay.reason : undefined);
+      assertEquals(remote.db.getKever(delegate.pre)?.said, drt.said);
+      assertEquals(remote.db.kels.getLast(delegate.pre, 0), dip.said);
+
+      assertEquals(remote.db.getState(delegate.pre)?.s, "1");
+      assertEquals(remote.db.getKever(delegate.pre)?.said, drt.said);
+    } finally {
+      yield* source.close(true);
+      yield* remote.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery recognizes historical inception without admitting forged attachments or forks", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `historical-inception-${crypto.randomUUID()}`, temp: true });
+    try {
+      const hab = hby.makeHab("controller", undefined, {
+        code: "D",
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const inception = hby.db.getEvtSerder(hab.pre, hab.kever!.said)!;
+      const signatures = hby.db.sigs.get([hab.pre, inception.said!]);
+      // A basic key-derived prefix permits distinct, validly signed inception bodies.
+      const fork = new SerderKERI({ sad: { ...inception.ked, a: [{ fork: "conflict" }] }, makify: true });
+      assertEquals(fork.pre, hab.pre);
+      const forkSignatures = hab.sign(fork.raw, true);
+      hab.rotate();
+      const head = hab.kever!.said;
+      assertEquals(hab.kever!.sn, 1);
+      const kvy = new Kevery(hby.db);
+      const replay = kvy.processEvent({
+        serder: inception,
+        sigers: signatures,
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      });
+      assertEquals(replay.kind, "duplicate", replay.kind === "escrow" ? replay.reason : undefined);
+      // Current rotated keys are NOT inception authority. The already accepted
+      // body remains duplicate, but these invalid attachments cannot be logged.
+      const invalid = hab.sign(inception.raw, true);
+      const before = hby.db.sigs.get([hab.pre, inception.said!]).map(sig => sig.qb64);
+      const invalidReplay = kvy.processEvent({
+        serder: inception,
+        sigers: invalid,
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      });
+      assertEquals(invalidReplay.kind, "duplicate");
+      assertEquals(hby.db.sigs.get([hab.pre, inception.said!]).map(sig => sig.qb64), before);
+      const conflict = kvy.processEvent({
+        serder: fork,
+        sigers: forkSignatures,
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      });
+      assertEquals(conflict.kind, "escrow");
+      if (conflict.kind !== "escrow") throw new Error("Expected conflicting inception escrow");
+      assertEquals(conflict.reason, "duplicitous");
+      assertEquals(hby.db.getKever(hab.pre)?.said, head);
+      assertEquals(hby.db.kels.getLast(hab.pre, 0), inception.said);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

@@ -67,6 +67,22 @@ decision-returning helpers such as:
 This keeps the KERIpy mental model while making the control surface explicit in
 TypeScript.
 
+## Historical inception replay
+
+For a known prefix, an `icp` or `dip` replay is compared with the accepted KEL
+entry at sequence zero. The current `Kever` head may already refer to a later
+rotation or interaction; comparing the inception with that head falsely treats
+an ordinary replay as likely duplicity. A differing inception digest remains
+`escrow/duplicitous`.
+
+Duplicate attachment validation continues to use the inception's historical
+verifiers. Invalid attachments are discarded rather than stored; an already
+accepted body can still yield `duplicate/sameSaid` without authenticating those
+attachments or advancing key state. This matches `Kevery.processEvent()` and
+`fetchEstEvent(pre, 0)` in KERIpy 1.2.14 and the inspected 2.x main snapshot
+`7da1e64a1df971ab34d622e2f30c541e7c48305c`. The specification's duplicity definition
+likewise distinguishes a shorter matching KEL from inconsistent event histories.
+
 ## Decision Taxonomy
 
 ### `KeverDecision`
