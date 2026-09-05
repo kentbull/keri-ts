@@ -752,9 +752,10 @@ export class Kevery {
     const local = envelope.local ?? this.local;
     const init = this.makeKeverEventInit(envelope, local);
 
-    // If prefix does not exist in kevers (was not reloaded from disk) and first event not inception
-    // then escrow out of order.
-    if (!this.kevers.has(pre)) {
+    // Remote accepted states are loaded lazily after reopen. KERIpy's dbdict
+    // performs this read-through on membership lookup; a plain Map does not.
+    const kever = this.db.getKever(pre);
+    if (!kever) {
       if (ilk !== Ilks.icp && ilk !== Ilks.dip) {
         return this.makeEscrowDecision(
           "ooo",
@@ -764,8 +765,6 @@ export class Kevery {
       }
       return Kever.evaluateInception(init);
     }
-
-    const kever = this.kevers.get(pre)!;
 
     if (ilk === Ilks.icp || ilk === Ilks.dip) {
       if (sn !== 0) {
