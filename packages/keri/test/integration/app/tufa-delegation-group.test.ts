@@ -324,7 +324,14 @@ function approveDelegable(
   delegator: ControlledAid,
   delegated: ControlledAid,
 ): SerderKERI {
-  delegator.hab.interact({ data: [eventAnchor(delegated.serder)] });
+  const data = [eventAnchor(delegated.serder)];
+  if (delegator.hby.db.getHab(delegator.pre)?.mid) {
+    // The fixture owns the group members and must explicitly collect their
+    // approvals; Hab.sign represents only the designated member contribution.
+    delegator.hby.interactGroupHab(delegator.hab.name, delegator.members.map((member) => member.pre), { data });
+  } else {
+    delegator.hab.interact({ data });
+  }
   const approving = eventSerderFor(
     delegator.hby,
     delegator.pre,
