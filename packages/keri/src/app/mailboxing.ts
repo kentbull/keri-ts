@@ -88,7 +88,12 @@ export function mailboxQueryTopics(
   const record = mailboxRemoteCursorRecord(hby, pre, witness);
   const cursor: Record<string, number> = {};
   for (const topic of topics) {
-    cursor[topic] = topic in record.topics ? record.topics[topic]! + 1 : 0;
+    Object.defineProperty(cursor, topic, {
+      value: Object.hasOwn(record.topics, topic) ? record.topics[topic]! + 1 : 0,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return cursor;
 }

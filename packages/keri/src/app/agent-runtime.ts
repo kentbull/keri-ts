@@ -10,6 +10,7 @@ import {
   REPLY_MAILBOX_TOPIC,
 } from "../core/mailbox-topics.ts";
 import type { OobiRecord } from "../core/records.ts";
+import type { MailboxInboxLimits } from "../db/mailbox-inbox.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
@@ -107,6 +108,8 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
+  /** Raw-byte retention limits; reaching capacity pauses admission without losing cursors. */
+  mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   vdr?: VdrRuntimeServices;
 }
 
@@ -217,6 +220,7 @@ export function* createAgentRuntime(
   const mailboxPoller = new MailboxPoller(hby, mailboxDirector, {
     services,
     pollTransport: options.mailboxPollTransport,
+    mailboxAdmission: options.mailboxAdmission,
   });
   for (
     const topic of [

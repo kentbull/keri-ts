@@ -69,6 +69,7 @@ import {
 import { dgKey } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
+import { MailboxInbox } from "./mailbox-inbox.ts";
 import {
   B64OnIoDupSuber,
   CatCesrIoSetSuber,
@@ -221,6 +222,11 @@ export class Baser {
   public ends!: Komer<EndpointRecord>; // Service endpoint authorization records.
   public locs!: Komer<LocationRecord>; // Service endpoint locations keyed by endpoint and scheme.
   public obvs!: Komer<ObservedRecord>; // Observed identifier records keyed by controller, watcher, and observed ID.
+  private inbox?: MailboxInbox;
+  /** Open opt-in consumer storage lazily so legacy/read-only opens require no new subdatabase. */
+  get mailboxInbox(): MailboxInbox {
+    return this.inbox ??= new MailboxInbox(this.lmdber, this.tops);
+  }
   public tops!: Komer<TopicsRecord>; // Witness mailbox retrieval cursors.
   public gpse!: CatCesrIoSetSuber<EventSealTuple>; // Group partial signature escrows.
   public gdee!: CatCesrIoSetSuber<EventSealTuple>; // Group delegate escrows.
@@ -578,6 +584,8 @@ export class Baser {
         subkey: "witm.",
         recordClass: TopicsRecord,
       });
+
+      this.inbox = undefined;
 
       // Group partial signature escrow entries.
       this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
