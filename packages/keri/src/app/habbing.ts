@@ -792,7 +792,12 @@ export class Hab {
     return messagize(serder, { sigers, pipelined: true });
   }
 
-  /** Produces signatures with this habitat's current signing keys. */
+  /**
+   * Sign with accepted current keys. Group habitats use only their designated
+   * member's latest single-key contribution, located in its accepted KEL.
+   * No caller-selected key/index overrides are exposed here; rotation's
+   * independent prior-next authority remains in Habery.rotateGroupHab().
+   */
   sign(ser: Uint8Array, indexed: true): Siger[];
   sign(ser: Uint8Array, indexed?: false): Cigar[];
   sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
@@ -804,6 +809,37 @@ export class Hab {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
     const pubs = kever.verfers.map((verfer) => verfer.qb64);
+    const member = this.db.getHab(this.pre)?.mid;
+    if (member) {
+      const state = this.db.getKever(member);
+      if (!state) throw new ValidationError(`Missing accepted member key state for ${member}.`);
+      // KERIpy GroupHab.sign/fetchLatestContribTo: a member may have rotated
+      // ahead of its contribution to the group's currently accepted key list.
+      for (const [, sn, said] of this.db.kels.getOnItemBackIter(member, state.sn)) {
+        if (this.db.kels.getLast(member, sn) !== said) continue;
+        const event = this.db.getEvtSerder(member, said);
+        if (!event) throw new ValidationError(`Missing accepted member event ${member}:${said}.`);
+        if (!event.estive) continue;
+        const keys = event.verfers ?? [];
+        if (keys.length !== 1) {
+          throw new ValidationError(`Group signing requires single-key member events for ${member}.`);
+        }
+        const index = pubs.indexOf(keys[0].qb64);
+        if (index < 0) continue;
+        if (indexed) {
+          // Endorsement proves current authority only. Rotation signatures have
+          // a separate prior-next commitment path in rotateGroupHab().
+          return this.mgr.sign(ser, {
+            pubs: [keys[0].qb64],
+            indexed: true,
+            indices: [index],
+            ondices: [null],
+          });
+        }
+        return this.mgr.sign(ser, [keys[0].qb64], false);
+      }
+      throw new ValidationError(`Member ${member} has no contribution to group ${this.pre}.`);
+    }
     if (indexed) {
       return this.mgr.sign(ser, pubs, true);
     }
@@ -905,8 +941,10 @@ export class Hab {
   /**
    * Create and sign one query message from this habitat.
    *
-   * This mirrors the intent of KERIpy's `BaseHab.query()` while staying within
-   * the current Gate E bootstrap message surface.
+   * Unlike KERIpy GroupHab.query(), which endorses as the individual member,
+   * a TypeScript group Hab retains the group prefix as query authority. Its
+   * local contribution may be only a partial signature; the receiver must still
+   * enforce the group's current threshold. This is not a member-query fallback.
    */
   query(
     pre: string,
