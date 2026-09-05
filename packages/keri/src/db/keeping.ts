@@ -533,9 +533,15 @@ export function* createKeeper(
   options: KeeperOptions = {},
 ): Operation<Keeper> {
   const keeper = new Keeper(options);
-  const opened = yield* keeper.reopen(options);
-  if (!opened) {
-    throw new DatabaseNotOpenError("Failed to open Keeper");
+  let delivered = false;
+  try {
+    const opened = yield* keeper.reopen(options);
+    if (!opened) {
+      throw new DatabaseNotOpenError("Failed to open Keeper");
+    }
+    delivered = true;
+    return keeper;
+  } finally {
+    if (!delivered) yield* keeper.close();
   }
-  return keeper;
 }

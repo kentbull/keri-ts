@@ -2294,82 +2294,108 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     cesrBodyMode = DEFAULT_CESR_BODY_MODE,
   } = args;
 
-  const db = yield* createBaser({
-    name,
-    base,
-    temp,
-    headDirPath,
-    compat,
-    reopen: true,
-    readonly,
-  });
-  const ks = yield* createKeeper({
-    name,
-    base,
-    temp,
-    headDirPath,
-    compat,
-    reopen: true,
-    readonly,
-  });
-  if (compat && outboxer !== "disabled") {
-    throw new ValidationError(
-      "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
-    );
-  }
-  const obx = outboxer === "disabled" ? new DisabledOutboxer() : (yield* createOutboxer({
-    name,
-    base,
-    temp,
-    headDirPath,
-    compat,
-    reopen: true,
-    readonly,
-    mustExist: outboxer === "open",
-  }));
-
-  const cf = providedCf
-    ?? (skipConfig ? undefined : (yield* createConfiger({
+  let db: Baser | undefined;
+  let ks: Keeper | undefined;
+  let obx: OutboxerLike | undefined;
+  let cf: Configer | undefined;
+  let delivered = false;
+  try {
+    db = yield* createBaser({
       name,
       base,
       temp,
       headDirPath,
+      compat,
       reopen: true,
-      clear: false,
-    })));
+      readonly,
+    });
+    ks = yield* createKeeper({
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      reopen: true,
+      readonly,
+    });
+    if (compat && outboxer !== "disabled") {
+      throw new ValidationError(
+        "Outboxer is a tufa-only sidecar and is unavailable in compat mode.",
+      );
+    }
+    obx = outboxer === "disabled" ? new DisabledOutboxer() : (yield* createOutboxer({
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      reopen: true,
+      readonly,
+      mustExist: outboxer === "open",
+    }));
 
-  let usedSeed = seed ?? "";
-  let usedAeid = aeid ?? "";
-  if (bran && !seed) {
-    const derived = branToSeedAeid(bran);
-    usedSeed = derived.seed;
-    if (!usedAeid) usedAeid = derived.aeid;
+    cf = providedCf
+      ?? (skipConfig ? undefined : (yield* createConfiger({
+        name,
+        base,
+        temp,
+        headDirPath,
+        reopen: true,
+        clear: false,
+      })));
+
+    let usedSeed = seed ?? "";
+    let usedAeid = aeid ?? "";
+    if (bran && !seed) {
+      const derived = branToSeedAeid(bran);
+      usedSeed = derived.seed;
+      if (!usedAeid) usedAeid = derived.aeid;
+    }
+
+    // Keep the old startup seam for callers that were explicit about encrypted
+    // keeper readiness, even though CESR primitives now own sodium readiness.
+    ensureKeeperCryptoReady();
+    const mgr = new Manager({
+      ks,
+      seed: usedSeed,
+      aeid: usedAeid,
+      algo,
+      salt: normalizeSaltQb64(salt),
+    });
+
+    const hby = new Habery(
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      readonly,
+      db,
+      ks,
+      obx,
+      cesrBodyMode,
+      mgr,
+      cf,
+      skipSignator,
+    );
+    delivered = true;
+    return hby;
+  } finally {
+    if (!delivered) {
+      // Failed acquisition retains ownership; never clear persistent data or caller config.
+      try {
+        if (cf && cf !== providedCf) yield* cf.close();
+      } finally {
+        try {
+          if (obx) yield* obx.close();
+        } finally {
+          try {
+            if (ks) yield* ks.close();
+          } finally {
+            if (db) yield* db.close();
+          }
+        }
+      }
+    }
   }
-
-  // Keep the old startup seam for callers that were explicit about encrypted
-  // keeper readiness, even though CESR primitives now own sodium readiness.
-  ensureKeeperCryptoReady();
-  const mgr = new Manager({
-    ks,
-    seed: usedSeed,
-    aeid: usedAeid,
-    algo,
-    salt: normalizeSaltQb64(salt),
-  });
-
-  return new Habery(
-    name,
-    base,
-    temp,
-    headDirPath,
-    compat,
-    readonly,
-    db,
-    ks,
-    obx,
-    cesrBodyMode,
-    mgr,
-    cf,
-    skipSignator,
-  );
 }

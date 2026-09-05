@@ -422,24 +422,28 @@ export function* createOutboxer(
   }
 
   const outboxer = new Outboxer(openOptions);
-  if (mustExist) {
-    const exists = yield* outboxer.reopen({
-      ...openOptions,
-      readonly: true,
-    });
-    if (!exists) {
+  let delivered = false;
+  try {
+    if (mustExist) {
+      const exists = yield* outboxer.reopen({
+        ...openOptions,
+        readonly: true,
+      });
+      if (!exists) {
+        throw new ValidationError(
+          "Outboxer is not enabled for this keystore. Re-run `tufa init --outboxer` to create it.",
+        );
+      }
       yield* outboxer.close();
-      throw new ValidationError(
-        "Outboxer is not enabled for this keystore. Re-run `tufa init --outboxer` to create it.",
-      );
     }
-    yield* outboxer.close();
-  }
 
-  const opened = yield* outboxer.reopen(openOptions);
-  if (!opened) {
-    yield* outboxer.close();
-    throw new DatabaseNotOpenError("Failed to open Outboxer");
+    const opened = yield* outboxer.reopen(openOptions);
+    if (!opened) {
+      throw new DatabaseNotOpenError("Failed to open Outboxer");
+    }
+    delivered = true;
+    return outboxer;
+  } finally {
+    if (!delivered) yield* outboxer.close();
   }
-  return outboxer;
 }
