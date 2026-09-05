@@ -5,7 +5,7 @@ import { startServer } from "../../src/host/http-server.ts";
 const serve = Deno.serve;
 let release!: () => void;
 const drain = new Promise<void>((resolve) => release = resolve);
-Deno.serve = ((...args: Parameters<typeof Deno.serve>) => {
+const wrappedServe = ((...args: Parameters<typeof Deno.serve>) => {
   const server = serve(...args);
   const finished = server.finished.then(async () => {
     console.log("DRAINING");
@@ -19,6 +19,8 @@ Deno.serve = ((...args: Parameters<typeof Deno.serve>) => {
     },
   });
 }) as typeof Deno.serve;
+// Deno 2.8 exposes a configurable getter without the setter added in 2.9.
+Object.defineProperty(Deno, "serve", { configurable: true, value: wrappedServe });
 const quiet = {
   debug() {},
   info(message: string) {
