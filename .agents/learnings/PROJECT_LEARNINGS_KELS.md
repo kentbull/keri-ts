@@ -7,6 +7,13 @@ and KERIpy interoperability.
 
 ## Current State
 
+Group rotation signatures carry independent current-key and prior-next-commitment
+indices. Match each current public key cryptographically against the accepted
+prior `ndigers`; an uncommitted replacement key signs current-only. Inception and
+interaction signatures are current-only as well. Recovery must satisfy both the
+prior rotation threshold and the new current threshold; preserve unavailable
+participants' next commitments for later recovery.
+
 1. Phase 2 remains parity-first. The broad DB foundation is in place; the active
    edge is runtime, key-management, and `kli`/`tufa` interoperability.
 2. `docs/design-docs/db/db-architecture.md` is the storage contract for

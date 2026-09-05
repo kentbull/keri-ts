@@ -1928,3 +1928,128 @@ Deno.test("Signator reuses the Habery narrow dependency seam across reopen", asy
     }
   });
 });
+
+Deno.test("Habery rotateGroupHab maps prior commitments independently of signing members", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `group-dual-index-${crypto.randomUUID()}`, temp: true });
+    try {
+      const alice = hby.makeHab("alice");
+      const bob = hby.makeHab("bob");
+      const fresh = hby.makeHab("fresh");
+      const group = hby.makeGroupHab("team", alice, [alice.pre, bob.pre], [bob.pre, alice.pre], undefined, {
+        isith: "2",
+        nsith: "2",
+        toad: 0,
+      });
+      assertEquals(group.sigers.map((siger) => siger.ondex ?? null), [null, null]);
+      alice.rotate();
+      bob.rotate();
+      const added = hby.rotateGroupHab("team", [alice.pre, bob.pre, fresh.pre], undefined, {
+        isith: ["0", "0", "1"],
+        nsith: "2",
+        toad: 0,
+      });
+      assertEquals(added.sigers.map((siger) => [siger.index, siger.ondex ?? null]), [[0, 1], [1, 0], [2, null]]);
+      assertEquals(group.hab.kever?.sn, 1);
+      assertEquals(hby.db.kels.getLast(group.hab.pre, 1), added.serder.said);
+      assertEquals(hby.db.getHab(group.hab.pre)?.smids, [alice.pre, bob.pre, fresh.pre]);
+      const signed = hby.interactGroupHab("team");
+      assertEquals(signed.sigers.map((siger) => siger.ondex ?? null), [null, null, null]);
+      assertEquals(group.hab.kever?.sn, 2);
+      alice.rotate();
+      bob.rotate();
+      const removed = hby.rotateGroupHab("team", [bob.pre, alice.pre], [alice.pre, bob.pre], {
+        isith: "2",
+        nsith: "2",
+        toad: 0,
+      });
+      assertEquals(removed.sigers.map((siger) => [siger.index, siger.ondex ?? null]), [[0, 0], [1, 1]]);
+      assertEquals(group.hab.kever?.sn, 3);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Habery rotateGroupHab repeatedly replaces an inaccessible user with two service members", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `group-recovery-${crypto.randomUUID()}`, temp: true });
+    const observer = yield* createHabery({ name: `group-recovery-observer-${crypto.randomUUID()}`, temp: true });
+    const runtime = yield* createAgentRuntime(observer, { mode: "local" });
+    try {
+      const services = [hby.makeHab("service1"), hby.makeHab("service2"), hby.makeHab("service3")];
+      const mids = services.map((member) => member.pre);
+      const group = hby.makeGroupHab("account", services[0], mids, mids, undefined, {
+        isith: ["1/2", "1/2", "1/2"],
+        nsith: ["1/2", "1/2", "1/2"],
+        toad: 0,
+      });
+      const root = group.hab.pre;
+      // The unavailable custodian contributes neither a signature nor an exposed key.
+      hby.habs.delete(services[2].pre);
+      let oldUser: string | undefined;
+      for (let generation = 0; generation < 3; generation++) {
+        if (oldUser) hby.habs.delete(oldUser);
+        services[0].rotate();
+        services[1].rotate();
+        const user = hby.makeHab(`user-${generation}`);
+        const rotation = hby.rotateGroupHab("account", [...mids, user.pre], [...mids, user.pre], {
+          isith: ["0", "0", "0", "1"],
+          nsith: [{ "1": ["1/2", "1/2", "1/2"] }, "1"],
+          toad: 0,
+        });
+        assertEquals(rotation.sigers.map((siger) => [siger.index, siger.ondex ?? null]), [[0, 0], [1, 1], [3, null]]);
+        assertEquals(group.hab.pre, root);
+        assertEquals(group.hab.kever?.sn, generation * 2 + 1);
+        assertEquals(hby.db.kels.getLast(root, generation * 2 + 1), rotation.serder.said);
+        hby.interactGroupHab("account", [...mids, user.pre], { data: [{ generation }] });
+        assertEquals(group.hab.kever?.sn, generation * 2 + 2);
+        oldUser = user.pre;
+      }
+      for (const message of hby.db.clonePreIter(root, 0)) ingestKeriBytes(runtime, message);
+      yield* processRuntimeTurn(runtime, { pollMailbox: false });
+      assertEquals(observer.db.getKever(root)?.sn, 6);
+      assertEquals(observer.db.getKever(root)?.said, group.hab.kever?.said);
+    } finally {
+      yield* runtime.close();
+      yield* observer.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Habery rotateGroupHab requires both prior recovery quorum and replacement consent", async () => {
+  for (const retained of [[3], [0, 3], [0, 1]]) {
+    await run(function*() {
+      const hby = yield* createHabery({ name: `group-recovery-insufficient-${crypto.randomUUID()}`, temp: true });
+      try {
+        const services = [hby.makeHab("service1"), hby.makeHab("service2"), hby.makeHab("service3")];
+        const mids = services.map((member) => member.pre);
+        const group = hby.makeGroupHab("account", services[0], mids, mids, undefined, {
+          isith: ["1/2", "1/2", "1/2"],
+          nsith: ["1/2", "1/2", "1/2"],
+          toad: 0,
+        });
+        services[0].rotate();
+        services[1].rotate();
+        const user = hby.makeHab("replacement");
+        const members = [...services, user];
+        for (let index = 0; index < members.length; index++) {
+          if (!retained.includes(index)) hby.habs.delete(members[index].pre);
+        }
+        const rotation = hby.rotateGroupHab("account", [...mids, user.pre], [...mids, user.pre], {
+          isith: ["0", "0", "0", "1"],
+          nsith: [{ "1": ["1/2", "1/2", "1/2"] }, "1"],
+          toad: 0,
+        });
+        assertEquals(rotation.sigers.map((siger) => siger.index), retained);
+        assertEquals(group.hab.kever?.sn, 0);
+        assertEquals(hby.db.kels.getLast(group.hab.pre, 1), null);
+        assertEquals(hby.db.getHab(group.hab.pre)?.smids, mids);
+        assertEquals(hby.db.getHab(group.hab.pre)?.rmids, mids);
+      } finally {
+        yield* hby.close(true);
+      }
+    });
+  }
+});
