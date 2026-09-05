@@ -1993,6 +1993,7 @@ export class Habery {
       serder,
       signingMembers,
       keys,
+      kever.ndigers,
     );
     const decision = this.kevery.processEvent({
       serder,
@@ -2121,11 +2122,21 @@ export class Habery {
     return ndigs;
   }
 
-  /** Sign a group event with every listed member that is local to this habery. */
+  /**
+   * Sign with local contributors using independent current and prior-next indices.
+   *
+   * Rotation callers supply the accepted group's prior commitments. Match each
+   * current public key against those digests using their own digest algorithm;
+   * first-match semantics do not count one signature toward duplicate slots.
+   * Uncommitted keys and non-rotation events use current-only signatures, as in
+   * KERIpy GroupHab.sign(). This convenience path uses cryptographic commitment
+   * matching rather than walking the member's historical contribution events.
+   */
   private signGroupEventWithLocalMembers(
     serder: SerderKERI,
     smids: readonly string[],
     keys: readonly string[],
+    priorNext: readonly Diger[] = [],
   ): Siger[] {
     const sigers: Siger[] = [];
     for (const [index, mid] of smids.entries()) {
@@ -2133,11 +2144,14 @@ export class Habery {
       if (!member) {
         continue;
       }
+      const verfer = new Verfer({ qb64: keys[index] });
+      const priorIndex = priorNext.findIndex((diger) => diger.verify(verfer.qb64b));
       sigers.push(
         ...(member.mgr.sign(serder.raw, {
           pubs: [keys[index]],
           indexed: true,
           indices: [index],
+          ondices: [priorIndex < 0 ? null : priorIndex],
         }) as Siger[]),
       );
     }
