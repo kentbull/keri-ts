@@ -409,12 +409,18 @@ export class Reger extends LMDBer {
   }
 }
 
-/** Open a `Reger` and return the ready-to-use databaser. */
+/** Transfer a ready `Reger` to its caller, closing unreturned acquisitions on failure or cancellation. */
 export function* createReger(options: RegerOptions = {}): Operation<Reger> {
   const reger = new Reger(options);
-  const opened = yield* reger.reopen(options);
-  if (!opened) {
-    throw new DatabaseNotOpenError("Failed to open Reger");
+  let delivered = false;
+  try {
+    const opened = yield* reger.reopen(options);
+    if (!opened) {
+      throw new DatabaseNotOpenError("Failed to open Reger");
+    }
+    delivered = true;
+    return reger;
+  } finally {
+    if (!delivered) yield* reger.close();
   }
-  return reger;
 }
