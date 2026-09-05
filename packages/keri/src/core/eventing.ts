@@ -791,13 +791,15 @@ export class Kevery {
           message: `Duplicate inception event ${said} for ${pre} must keep sn=0.`,
         };
       }
-      if (kever.said === said) {
+      // Rotation changes the current head, not the accepted inception at sn=0.
+      const inceptionSaid = this.db.kels.getLast(pre, 0);
+      if (inceptionSaid === said) {
         return this.buildDuplicateDecision(kever, init);
       }
       return this.makeEscrowDecision(
         "duplicitous",
         init,
-        `Likely duplicitous inception for ${pre}; existing SAID=${kever.said}, got ${said}.`,
+        `Likely duplicitous inception for ${pre}; existing SAID=${inceptionSaid}, got ${said}.`,
       );
     }
 
