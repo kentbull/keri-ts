@@ -1,5 +1,27 @@
 # keri-ts
 
+## 0.10.1
+
+### Patch Changes
+
+- e99beb0: Use pinned libsodium Argon2id for faster byte-compatible Salter derivation, wiping owned WASM buffers before release. Preserve KERIpy tier parameters and enforce its 16-byte minimum output; whole-process erasure is not claimed.
+- 4a05016: Sign group endorsements with the designated local member's accepted historical contribution, preserving its current group index without asserting prior-next rotation authority. Group queries no longer request private keys belonging to remote members.
+- 8f8cd83: Close Habery-owned stores when initialization fails, and close unreturned Baser,
+  Keeper and Outboxer handles when their acquisition is cancelled or rejected.
+  Preserve existing data and caller-provided configuration on failure.
+- 9d0a824: Recognize replayed inception events after rotation using the accepted sequence-zero KEL digest. Preserve historical signature verification and conflicting-inception escrow behavior.
+- 4c69e12: Add opt-in durable remote mailbox admission for managed SDK consumers. Store exact inbound bytes and source cursors atomically, replay retained batches after reopen, and require explicit durable disposition rather than interpreting parser return as application completion. Preserve legacy polling as the default and bound retained data with fail-closed capacity limits.
+- 09848ec: Map group rotation signatures to their prior next-key commitments independently of current member order. Use current-only signatures for newly added keys and non-rotation events so threshold recovery can replace an unavailable member without weakening either acceptance threshold.
+- fdde61b: Size LMDB mappings from explicit options, KERIpy-compatible environment variables, and existing database metadata.
+- 8b4adce: Authenticate mailbox queries against the recipient's current signing threshold before streaming private messages. Reject foreign requester identities, forged signature material, insufficient or duplicate signature indices, and old-key queries after rotation while preserving public KEL query behavior.
+
+  Recheck each exact HTTP mailbox request before correlating stream cues, returning 403 for invalid or currently unverifiable requests so an older cue cannot authorize different attachments.
+
+- 7a16330: Project weighted DID Webs thresholds as recursive `ConditionalProof2022` verification methods.
+- 29366fb: Load persisted remote key state before classifying incoming events as unknown. Observers can accept valid rotations immediately after restart without an unrelated query first warming their key-state cache.
+- ea0d325: Close an unreturned Reger when opening fails or is cancelled, and await its cleanup before the factory settles. Successfully returned registries remain caller-owned.
+- 6b75316: Expose signed witness key-state replies at GET /ksn. Require the selected witness destination and fully witnessed accepted state before serving the existing KERI reply encoding.
+
 ## 0.10.0
 
 ### Minor Changes
