@@ -114,6 +114,10 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
 23. The learnings layer is part of project hygiene: compact docs when they grow
     noisy instead of preserving every step as prose.
 
+Crypto backend changes cross the source/package boundary: pinned wrapper versions
+alone do not pin a private native ABI. See Crypto Suite learnings for exact raw
+module binding, independent byte parity, and the limits of owned-buffer cleanup.
+
 ## Current Follow-Ups
 
 1. Promote the highest-value DB `Partial` rows with evidence, especially

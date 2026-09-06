@@ -53,6 +53,7 @@ const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
 const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/"];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
+  "libsodium-wrappers-sumo",
   "lmdb",
   "@noble/curves",
   "@noble/hashes",

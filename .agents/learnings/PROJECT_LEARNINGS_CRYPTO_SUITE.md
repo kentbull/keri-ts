@@ -42,6 +42,24 @@ signing/verification behavior in `keri-ts`.
     executable behavior. Keeping those responsibilities separate is the stable
     mental model.
 
+14. Salter and sealed boxes share one initialized `libsodium-wrappers-sumo@0.8.4`
+    backend. Argon2id13 keeps KERIpy's unchanged temp/low/med/high work factors;
+    independent pysodium vectors cover empty, NUL, Unicode, and variable output
+    lengths. Output sizes are safe integers of at least 16 bytes; the former
+    Noble-only 4–15-byte behavior is not a compatibility requirement.
+15. `pwhash.ts` owns password, salt, and output WASM allocations through cleanup
+    and reads the current heap view after growth. Zero-before-free applies only
+    to those owned ranges. Native temporaries can retain secret copies, and the
+    WASM high-water allocation is retained after free; no process-erasure or
+    memory-shrink guarantee follows from owned cleanup.
+16. The private wasm32 ABI requires the exact raw sodium distribution as well
+    as the wrapper version. Deno uses its frozen lock; generated npm output
+    authenticates and includes the two exact ESM files, their license, and hash
+    provenance with one relative import rewrite. Never rely on the wrapper's
+    upstream semver range for this private ABI, or instantiate a second heap to
+    try to check module identity. Package qualification must exercise the built
+    Node/browser runtime, not source imports alone.
+
 ## Use This Doc For
 
 1. Key generation, derivation, and rotation semantics.
@@ -53,6 +71,7 @@ signing/verification behavior in `keri-ts`.
 1. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
 2. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_KERIPY_PARITY_MATRIX.md`
 3. `docs/ARCHITECTURE_MAP.md`
+4. `packages/cesr/src/primitives/pwhash.md`
 
 ## Current Follow-Ups
 
@@ -64,6 +83,12 @@ signing/verification behavior in `keri-ts`.
 4. Keep variable-family size/code normalization centralized in `Matter`.
 5. Avoid widening crypto ownership boundaries casually; suite-specific or
    AEID-specific broadening should happen deliberately, not by leakage.
+
+6. Any sodium upgrade must requalify ABI arguments, independent all-tier bytes,
+   owned allocation failure cleanup, and generated package bindings. Run high-tier
+   vectors in a separate explicitly opted-in process because WASM retains its
+   high-water memory. Faster derivation does not change application authority,
+   key-cache lifetimes, or durable native reopen/close requirements.
 
 ## Milestone Rollup
 

@@ -1,9 +1,9 @@
-import { argon2id } from "npm:@noble/hashes@1.8.0/argon2";
 import { UnknownCodeError } from "../core/errors.ts";
 import { type Tier, Tiers } from "../core/vocabulary.ts";
 import { MtrDex } from "./codex.ts";
 import { SALTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit } from "./matter.ts";
+import { deriveArgon2id } from "./pwhash.ts";
 import { Signer } from "./signer.ts";
 
 export interface SalterInit extends MatterInit {
@@ -71,9 +71,7 @@ export class Salter extends Matter {
     if (!SALTER_CODES.has(this.code)) {
       throw new UnknownCodeError(`Expected salt code, got ${this.code}`);
     }
-    this.tier = init instanceof Salter
-      ? init.tier
-      : (init as SalterInit).tier ?? Tiers.low;
+    this.tier = init instanceof Salter ? init.tier : (init as SalterInit).tier ?? Tiers.low;
   }
 
   /** Raw salt bytes used by key-derivation consumers. */
@@ -99,13 +97,7 @@ export class Salter extends Matter {
     temp = false,
   }: SalterStretchOptions = {}): Uint8Array {
     const params = tierParams(tier, temp);
-    return argon2id(pathToBytes(path), this.raw, {
-      p: 1,
-      t: params.t,
-      m: params.m,
-      dkLen: size,
-      version: 0x13,
-    });
+    return deriveArgon2id(pathToBytes(path), this.raw, size, params.t, params.m * 1024);
   }
 
   /**

@@ -4,6 +4,7 @@ import { Tiers } from "../../../src/core/vocabulary.ts";
 import { MtrDex } from "../../../src/primitives/codex.ts";
 import { Salter } from "../../../src/primitives/salter.ts";
 import { KERIPY_CODE_VECTORS, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
+import { SALTER_PWHASH_VECTORS } from "../../fixtures/salter-pwhash-vectors.ts";
 
 Deno.test("salter: hydrates KERIpy salt vector", () => {
   const salter = new Salter({ qb64: KERIPY_MATTER_VECTORS.salterFixed });
@@ -97,3 +98,20 @@ Deno.test("salter: signers uses hex-suffixed path progression and supports code 
   assertEquals(mixed[0].code, MtrDex.Ed25519_Seed);
   assertEquals(mixed[1].code, MtrDex.ECDSA_256k1_Seed);
 });
+
+// Fixed independent vectors exercise production work factors as well as test-only paths.
+// Medium/high memory vectors are run by scripts/qualify-salter-derivation.ts in isolation.
+for (const vector of SALTER_PWHASH_VECTORS.cases.filter((v) => v.mode === "temp" || v.mode === "low")) {
+  Deno.test(`salter: pysodium ${vector.mode} path ${JSON.stringify(vector.path)} size ${vector.size}`, () => {
+    const salt = Uint8Array.from(SALTER_PWHASH_VECTORS.salt.match(/../g)!, (n) => parseInt(n, 16));
+    const expected = Uint8Array.from(vector.hex.match(/../g)!, (n) => parseInt(n, 16));
+    assertEquals(
+      new Salter({ raw: salt, code: MtrDex.Salt_128 }).stretch({
+        path: vector.path,
+        size: vector.size,
+        temp: vector.mode === "temp",
+      }),
+      expected,
+    );
+  });
+}
