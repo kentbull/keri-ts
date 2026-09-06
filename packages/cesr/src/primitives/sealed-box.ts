@@ -1,6 +1,4 @@
-import sodium from "npm:libsodium-wrappers@0.8.4";
-
-await sodium.ready;
+import sodium from "./sodium.ts";
 
 /**
  * Internal libsodium-backed sealed-box seam for KERIpy cipher parity.
