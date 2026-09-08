@@ -166,21 +166,31 @@ jobs:
           TARBALL="$(npm pack --silent | tail -n 1)"
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
+      - name: pack tufa npm tarball
+        id: pack-tufa
+        run: |
+          cd packages/tufa/npm
+          TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
       - name: smoke test keri-ts tarball on macOS
         # Install and execute the actual packed tarballs on macOS to catch
         # platform-specific npm/bin/runtime issues after packaging.
         run: |
           TARBALL="${GITHUB_WORKSPACE}/packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}"
           CESR_TARBALL="${GITHUB_WORKSPACE}/packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}"
+          TUFA_TARBALL="${GITHUB_WORKSPACE}/packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}"
           SAMPLE="${GITHUB_WORKSPACE}/samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr"
           TMP_DIR="$(mktemp -d)"
           cd "${TMP_DIR}"
           npm init -y >/dev/null
-          npm install "${CESR_TARBALL}" "${TARBALL}" >/dev/null
-          V1="$(npx --yes tufa version | tr -d '\r')"
-          V2="$(npx --yes tufa --version | tr -d '\r')"
+          npm install "${CESR_TARBALL}" "${TARBALL}" "${TUFA_TARBALL}" >/dev/null
+          TUFA_BIN="${TMP_DIR}/node_modules/.bin/tufa"
+          test -x "${TUFA_BIN}"
+          V1="$("${TUFA_BIN}" version | tr -d '\r')"
+          V2="$("${TUFA_BIN}" --version | tr -d '\r')"
           [[ "${V1}" == "${V2}" ]]
-          OUT="$(npx --yes tufa annotate --in "${SAMPLE}" | awk 'NR==1{print; exit}')"
+          OUT="$("${TUFA_BIN}" annotate --in "${SAMPLE}" | awk 'NR==1{print; exit}')"
           echo "${OUT}" | grep -q 'SERDER KERI JSON'
 
       - name: upload npm tarballs
@@ -191,5 +201,6 @@ jobs:
           path: |
             packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}
             packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}
+            packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}
           if-no-files-found: error
           retention-days: 14

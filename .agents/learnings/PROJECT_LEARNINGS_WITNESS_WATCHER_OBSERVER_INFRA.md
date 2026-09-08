@@ -70,6 +70,8 @@ release, and interoperability operations.
     generated workspace paths that are absent in a clean release-job checkout.
 22. Package smoke CI should install the local npm tarballs once per runtime
     image and exercise both library and CLI surfaces from that installed graph.
+    macOS needs all three tarballs too: `tufa` belongs to `@keri-ts/tufa`, not
+    the KERI library. Invoke the installed bin directly, without npx fallback.
     Keep LMDB-v1 interop `node_modules` cached behind its own key boundary.
 23. DID Webs hosting belongs at the Tufa edge. The Universal Resolver route
     `/1.0/identifiers/{did}` and `did.json`/`keri.cesr` artifact routes share
