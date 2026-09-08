@@ -80,6 +80,13 @@ release, and interoperability operations.
     so startup failures report the failing child output instead of surfacing as
     opaque connection refusals.
 
+25. macOS KERIpy jobs must provision native `libsodium` independently of the
+    cached Python virtualenv. `pysodium` discovers it through `ctypes`, so expose
+    Homebrew's resolved dylib in a standard discovery directory on the ephemeral
+    runner, without overwriting a conflicting file. System `/bin/bash` scrubs
+    `DYLD_*` variables, so `GITHUB_ENV` alone is insufficient. Verify the actual
+    loaded library and keep the real KLI import assertion.
+
 ## Use This Doc For
 
 1. Witness/watcher/observer deployment and compatibility notes

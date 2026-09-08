@@ -89,6 +89,22 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: install KERIpy native library
+        # A cached venv still needs native libsodium. /bin/bash strips DYLD_*
+        # variables, so expose Homebrew's dylib in ctypes' standard search path.
+        # This is an ephemeral hosted runner; never replace a conflicting file.
+        run: |
+          brew install libsodium
+          SODIUM_LIB="$(brew --prefix libsodium)/lib/libsodium.dylib"
+          test -f "${SODIUM_LIB}"
+          SODIUM_LINK=/usr/local/lib/libsodium.dylib
+          if [[ -e "${SODIUM_LINK}" || -L "${SODIUM_LINK}" ]]; then
+            [[ "${SODIUM_LINK}" -ef "${SODIUM_LIB}" ]]
+          else
+            sudo mkdir -p /usr/local/lib
+            sudo ln -s "${SODIUM_LIB}" "${SODIUM_LINK}"
+          fi
+
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -115,7 +131,9 @@ jobs:
           EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
           EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
           EXPECT_KLI: "true"
-        run: bash scripts/ci/assert-environment.sh
+        run: |
+          python scripts/ci/report-sodium-environment.py "$(brew --prefix libsodium)/lib/libsodium.dylib"
+          bash scripts/ci/assert-environment.sh
 
       - name: run macOS quality and test suites
         # Re-run the main quality and test surface on macOS so native/runtime
