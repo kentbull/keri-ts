@@ -1,5 +1,11 @@
 # keri-ts
 
+## 0.10.4
+
+### Patch Changes
+
+- 77561f4: Stop active mailbox stream timers before closing their backing LMDB store.
+
 ## 0.10.3
 
 ### Patch Changes
