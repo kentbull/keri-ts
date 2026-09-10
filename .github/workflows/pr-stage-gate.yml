@@ -686,7 +686,7 @@ jobs:
 
       - name: upload interop parity timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -775,7 +775,7 @@ jobs:
 
       - name: upload interop gate B timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-gates-b-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -864,7 +864,7 @@ jobs:
 
       - name: upload interop gate C timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-gates-c-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -950,7 +950,7 @@ jobs:
 
       - name: upload interop witness main timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-witness-main-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -1036,7 +1036,7 @@ jobs:
 
       - name: upload interop witness cli timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-witness-cli-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -1141,7 +1141,7 @@ jobs:
 
       - name: upload DID Webs interop timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-did-webs-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -1166,7 +1166,7 @@ jobs:
 
       - name: upload Docker DID Webs interop timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-did-webs-docker-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
@@ -1321,7 +1321,7 @@ jobs:
         # Keep the exact built artifacts for inspection/debugging when smoke or
         # later release work fails.
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: npm-tarballs-pr-${{ github.event.pull_request.number }}
           path: |

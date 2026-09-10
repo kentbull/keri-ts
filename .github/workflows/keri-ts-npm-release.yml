@@ -958,7 +958,7 @@ jobs:
           bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/${{ steps.pack.outputs.tarball }}"
 
       - name: upload npm tarball
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-ts-npm-${{ steps.package.outputs.version }}
           path: packages/keri/npm/${{ steps.pack.outputs.tarball }}
