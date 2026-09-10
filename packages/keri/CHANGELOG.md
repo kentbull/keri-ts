@@ -1,5 +1,11 @@
 # keri-ts
 
+## 0.10.3
+
+### Patch Changes
+
+- ea53199: Expose granular runtime module subpaths so Deno consumers can preserve least-privilege imports without eagerly initializing unrelated native and host modules.
+
 ## 0.10.2
 
 ### Patch Changes
