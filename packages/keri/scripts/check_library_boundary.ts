@@ -34,7 +34,16 @@ const PACKAGE_DIR = new URL("../", import.meta.url);
 const NPM_MANIFEST_PATH = new URL("../npm/package.json", import.meta.url);
 
 /** Public npm export keys that `packages/keri/scripts/build_npm.ts` normalizes. */
-const EXPECTED_EXPORT_KEYS = [".", "./cli", "./runtime", "./db"];
+const EXPECTED_EXPORT_KEYS = [
+  ".",
+  "./cli",
+  "./runtime",
+  "./db",
+  "./app/*",
+  "./core/*",
+  "./db/*",
+  "./vdr/*",
+];
 
 interface SurfaceCheck {
   label: string;
@@ -189,6 +198,16 @@ function assertManifestExports(): void {
 function assertPackageTargetExists(target: string, label: string): void {
   if (!target.startsWith("./")) {
     throw new Error(`${label} must be a package-relative ./ path, got ${target}`);
+  }
+  if (target.includes("*")) {
+    const [prefix, suffix] = target.slice(2).split("*");
+    const slash = prefix.lastIndexOf("/");
+    const directory = new URL(`../npm/${prefix.slice(0, slash + 1)}`, import.meta.url);
+    const matches = [...Deno.readDirSync(directory)].some((entry) => entry.isFile && entry.name.endsWith(suffix));
+    if (!matches) {
+      throw new Error(`${label} pattern matches no package files: ${target}`);
+    }
+    return;
   }
   const path = new URL(`../npm/${target.slice(2)}`, import.meta.url);
   const stat = Deno.statSync(path);
