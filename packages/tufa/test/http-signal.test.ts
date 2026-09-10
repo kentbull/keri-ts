@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 
-Deno.test("tufa HTTP cancellation retains signal handlers until actual adapter drain joins", async () => {
+Deno.test("tufa HTTP signal closes response owners before adapter drain and retains handlers until joined", async () => {
   const child = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", new URL("./fixtures/http-signal-child.ts", import.meta.url).pathname],
     stdin: "piped",
@@ -28,16 +28,13 @@ Deno.test("tufa HTTP cancellation retains signal handlers until actual adapter d
   }, 15000);
   try {
     assertEquals(await line(), "READY");
-    await writer.write(new Uint8Array([1]));
-    let boundary = await line();
-    if (boundary === "HALTED") boundary = await line();
-    assertEquals(boundary, "DRAINING");
     child.kill("SIGTERM");
     assertEquals(await line(), "SIGNAL");
+    assertEquals(await line(), "OWNER_CLOSING");
+    assertEquals(await line(), "DRAINING");
     child.kill("SIGINT");
     assertEquals(await line(), "SIGNAL");
-    await writer.write(new Uint8Array([2]));
-    assertEquals(await line(), "HALTED");
+    await writer.write(new Uint8Array([1]));
     assertEquals(await line(), "DONE");
     assertEquals((await child.status).code, 0);
   } finally {

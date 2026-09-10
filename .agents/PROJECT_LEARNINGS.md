@@ -187,6 +187,13 @@ module binding, independent byte parity, and the limits of owned-buffer cleanup.
 - DID Webs `alsoKnownAs` is derived only from active, unrevoked designated-alias
   ACDCs issued from the bound AID.
 
+### 2026-09-10 - Signal Shutdown Must Enter Ownership Cleanup Before Drain
+
+- Aborting `Deno.serve` from a signal can leave `server.finished` waiting on an
+  active response, so the signal must also wake the supervising operation.
+- The supervisor closes runtime-owned response streams before it awaits the
+  HTTP adapter drain; task cancellation tests alone do not prove this signal path.
+
 ## Templates
 
 ### New Thread Kickoff Template

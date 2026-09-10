@@ -21,6 +21,10 @@ interface ServerHost {
   close(): void | Promise<void>;
 }
 
+interface OwnedServerHost extends ServerHost {
+  readonly shutdownRequested: Promise<void>;
+}
+
 interface ServerOptions {
   port: number;
   hostname: string;
@@ -192,9 +196,7 @@ function openNodeServerHost(
 
   server.listen(options.port, options.hostname, () => {
     const address = server.address();
-    const port = typeof address === "object" && address !== null
-      ? address.port
-      : options.port;
+    const port = typeof address === "object" && address !== null ? address.port : options.port;
     options.onListen({ port });
   });
 
@@ -215,12 +217,13 @@ function openServerHost(
   logger: Logger,
   runtime?: AgentRuntime,
   options: RuntimeHttpHostOptions = {},
-): ServerHost {
+): OwnedServerHost {
   const controller = new AbortController();
   const { signal } = controller;
+  const shutdownRequested = Promise.withResolvers<void>();
   const shutdown = () => {
     logger.info("Shutting down server...");
-    controller.abort();
+    shutdownRequested.resolve();
   };
   const serverOptions = buildServerOptions(
     port,
@@ -263,6 +266,7 @@ function openServerHost(
 
   return {
     server: host.server,
+    shutdownRequested: shutdownRequested.promise,
     async close() {
       // Keep repeated signals graceful until the adapter has actually drained.
       try {
@@ -280,9 +284,9 @@ function openServerHost(
 }
 
 /** Adapt `server.finished` into an Effection operation. */
-function* waitForServerFinished(server: RunningServer): Operation<void> {
+function* waitForServerStop(host: OwnedServerHost): Operation<void> {
   yield* action((resolve, reject) => {
-    server.finished.then(resolve).catch(reject);
+    Promise.race([host.server.finished, host.shutdownRequested]).then(resolve).catch(reject);
     return () => {};
   });
 }
@@ -297,7 +301,7 @@ export function* startServer(
 ): Operation<void> {
   const host = openServerHost(port, logger, runtime, options);
   try {
-    yield* waitForServerFinished(host.server);
+    yield* waitForServerStop(host);
   } finally {
     // Stop accepting work synchronously, then let the owner close response-producing
     // resources before waiting for active response bodies to drain.
