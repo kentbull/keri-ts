@@ -70,6 +70,8 @@ release, and interoperability operations.
     generated workspace paths that are absent in a clean release-job checkout.
 22. Package smoke CI should install the local npm tarballs once per runtime
     image and exercise both library and CLI surfaces from that installed graph.
+    macOS needs all three tarballs too: `tufa` belongs to `@keri-ts/tufa`, not
+    the KERI library. Invoke the installed bin directly, without npx fallback.
     Keep LMDB-v1 interop `node_modules` cached behind its own key boundary.
 23. DID Webs hosting belongs at the Tufa edge. The Universal Resolver route
     `/1.0/identifiers/{did}` and `did.json`/`keri.cesr` artifact routes share
@@ -79,6 +81,13 @@ release, and interoperability operations.
     a non-ephemeral test range and track spawned children before readiness waits
     so startup failures report the failing child output instead of surfacing as
     opaque connection refusals.
+
+25. macOS KERIpy jobs must provision native `libsodium` independently of the
+    cached Python virtualenv. `pysodium` discovers it through `ctypes`, so expose
+    Homebrew's resolved dylib in a standard discovery directory on the ephemeral
+    runner, without overwriting a conflicting file. System `/bin/bash` scrubs
+    `DYLD_*` variables, so `GITHUB_ENV` alone is insufficient. Verify the actual
+    loaded library and keep the real KLI import assertion.
 
 ## Use This Doc For
 
