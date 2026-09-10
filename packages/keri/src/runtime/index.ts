@@ -12,6 +12,7 @@ export * from "../app/authenticating.ts";
 export * from "../app/cesr-http.ts";
 export * from "../app/challenging.ts";
 export * from "../app/configing.ts";
+export * from "../app/credential-workflows.ts";
 export * from "../app/cue-runtime.ts";
 export * from "../app/delegating.ts";
 export * from "../app/endpoint-roleing.ts";
@@ -57,10 +58,17 @@ export {
   type WitnessReceiptPostResult,
   type WitnessReceiptRunResult,
 } from "../app/witnessing.ts";
+export * from "../core/attachment-countering.ts";
 export * from "../core/cues.ts";
 export * from "../core/errors.ts";
+export * from "../core/eventing.ts";
+export * from "../core/kever.ts";
 export * from "../core/logger.ts";
 export * from "../core/mailbox-topics.ts";
+export { incept, interact, query, reply, rotate } from "../core/protocol-eventing.ts";
+export { exchange } from "../core/protocol-exchanging.ts";
+export { messagize } from "../core/protocol-serialization.ts";
+export { incept as inceptRegistry, issue, revoke } from "../core/protocol-vdr-eventing.ts";
 export * from "../core/records.ts";
 export * from "../core/roles.ts";
 export * from "../core/schemes.ts";

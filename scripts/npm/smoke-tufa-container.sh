@@ -35,6 +35,7 @@ log_agent_process() {
 
 npm install -g "$@" >/dev/null
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
+node /smoke-scripts/smoke-tufa-runtime.mjs "$(npm root -g)/@keri-ts/tufa"
 V1="$(tufa version | tr -d "\r")"
 V2="$(tufa --version | tr -d "\r")"
 if [ "${V1}" != "${V2}" ]; then
