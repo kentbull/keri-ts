@@ -66,7 +66,7 @@ jobs:
         # cleared the PR stage gate. Publish remains handled by tag workflows.
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: deno task release:version
-          publish: echo "Publishing is handled by keri-v*/cesr-v*/tufa-v* tag workflows."
+          version-script: deno task release:version
+          publish-script: echo "Publishing is handled by keri-v*/cesr-v*/tufa-v* tag workflows."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
