@@ -88,6 +88,10 @@ release, and interoperability operations.
     runner, without overwriting a conflicting file. System `/bin/bash` scrubs
     `DYLD_*` variables, so `GITHUB_ENV` alone is insufficient. Verify the actual
     loaded library and keep the real KLI import assertion.
+26. HTTP host shutdown is two-phase: stop accepting work, close the runtime and
+    every response-producing mailbox stream, then await server drain. Awaiting
+    drain before runtime closure deadlocks active SSE responses and forces the
+    outer process guard to use `SIGKILL`.
 
 ## Use This Doc For
 

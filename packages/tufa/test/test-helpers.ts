@@ -221,6 +221,7 @@ export function* waitForTaskHalt(
 export function* startTestServer(
   runtime?: AgentRuntime,
   options: RuntimeHttpHostOptions = {},
+  beforeDrain?: () => Operation<void>,
 ): Operation<StartedRuntimeServer> {
   const listening = Promise.withResolvers<TestListenAddress>();
   const task = yield* spawn(function*() {
@@ -230,7 +231,7 @@ export function* startTestServer(
         options.onListen?.({ hostname, port });
         listening.resolve({ hostname, port });
       },
-    });
+    }, beforeDrain);
   });
 
   const address = yield* promiseOp(listening.promise);

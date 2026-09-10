@@ -198,6 +198,7 @@ export class MailboxDirector {
     let closed = false;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
 
     const cleanup = () => {
       if (closed) {
@@ -212,20 +213,23 @@ export class MailboxDirector {
         clearTimeout(pollTimer);
         pollTimer = null;
       }
-      this.streamCleanups.delete(cleanup);
+      this.streamCleanups.delete(close);
     };
-    this.streamCleanups.add(cleanup);
+    const close = () => {
+      if (closed) {
+        return;
+      }
+      cleanup();
+      streamController?.close();
+    };
+    this.streamCleanups.add(close);
 
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
+        streamController = controller;
         if (emitRetryHeader) {
           controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
         }
-
-        const close = () => {
-          cleanup();
-          controller.close();
-        };
 
         const resetIdle = () => {
           if (idleTimeoutMs === null) {
@@ -298,6 +302,7 @@ export class MailboxDirector {
     let closed = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
 
     const cleanup = () => {
       if (closed) {
@@ -312,10 +317,20 @@ export class MailboxDirector {
         void reader.cancel().catch(() => undefined);
         reader = null;
       }
+      this.streamCleanups.delete(close);
     };
+    const close = () => {
+      if (closed) {
+        return;
+      }
+      cleanup();
+      streamController?.close();
+    };
+    this.streamCleanups.add(close);
 
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
+        streamController = controller;
         controller.enqueue(encoder.encode(`retry: ${retryMs}\n\n`));
 
         const pumpMailbox = () => {

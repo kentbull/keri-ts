@@ -293,13 +293,21 @@ export function* startServer(
   logger: Logger = consoleLogger,
   runtime?: AgentRuntime,
   options: RuntimeHttpHostOptions = {},
+  beforeDrain?: () => Operation<void>,
 ): Operation<void> {
   const host = openServerHost(port, logger, runtime, options);
   try {
     yield* waitForServerFinished(host.server);
   } finally {
-    // Start cleanup synchronously before yielding, including on scope cancellation.
+    // Stop accepting work synchronously, then let the owner close response-producing
+    // resources before waiting for active response bodies to drain.
     const closing = host.close();
-    yield* call(() => Promise.resolve(closing));
+    try {
+      if (beforeDrain) {
+        yield* beforeDrain();
+      }
+    } finally {
+      yield* call(() => Promise.resolve(closing));
+    }
   }
 }

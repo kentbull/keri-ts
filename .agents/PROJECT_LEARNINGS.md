@@ -99,6 +99,8 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
     names. Keep lane ownership explicit and keep default CI truthful.
 19. `packages/tufa` now owns the runnable host/CLI edge; `keri-ts` root,
     `keri-ts/runtime`, and `keri-ts/db` are the supported library entrypoints.
+    Its HTTP shutdown must close runtime-owned response streams before waiting
+    for the listener to drain.
 20. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
     `Counter` owns KERIpy genus/enclosure helpers, live serialization may use
     requested `gvrsn`, and replay clone streams stay v1.
