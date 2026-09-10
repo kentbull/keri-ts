@@ -203,6 +203,22 @@ function normalizeBuiltManifest(): void {
       import: targets.db.import,
       types: targets.db.types,
     },
+    "./app/*": {
+      import: "./esm/keri/npm/src/app/*.js",
+      types: "./types/app/*.d.ts",
+    },
+    "./core/*": {
+      import: "./esm/keri/npm/src/core/*.js",
+      types: "./types/core/*.d.ts",
+    },
+    "./db/*": {
+      import: "./esm/keri/npm/src/db/*.js",
+      types: "./types/db/*.d.ts",
+    },
+    "./vdr/*": {
+      import: "./esm/keri/npm/src/vdr/*.js",
+      types: "./types/vdr/*.d.ts",
+    },
   };
   writeJsonFileSync(packageJsonPath, manifest);
 }
@@ -279,6 +295,22 @@ try {
         "./db": {
           import: NPM_DB_PATH,
           types: NPM_DB_TYPES_PATH,
+        },
+        "./app/*": {
+          import: "./esm/keri/npm/src/app/*.js",
+          types: "./types/app/*.d.ts",
+        },
+        "./core/*": {
+          import: "./esm/keri/npm/src/core/*.js",
+          types: "./types/core/*.d.ts",
+        },
+        "./db/*": {
+          import: "./esm/keri/npm/src/db/*.js",
+          types: "./types/db/*.d.ts",
+        },
+        "./vdr/*": {
+          import: "./esm/keri/npm/src/vdr/*.js",
+          types: "./types/vdr/*.d.ts",
         },
       },
       files: ["esm", "types", "README.md", "LICENSE"],

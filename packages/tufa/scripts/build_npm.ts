@@ -165,6 +165,14 @@ function normalizeBuiltManifest(): TufaNpmTargets {
       import: targets.runtime.import,
       types: targets.runtime.types,
     },
+    "./host/kernel": {
+      import: "./esm/tufa/npm/src/src/host/kernel.js",
+      types: "./types/src/host/kernel.d.ts",
+    },
+    "./http/protocol-handler": {
+      import: "./esm/tufa/npm/src/src/http/protocol-handler.js",
+      types: "./types/src/http/protocol-handler.d.ts",
+    },
   };
   manifest.bin = {
     // npm `bin` entries are package-relative paths without the leading `./`
@@ -252,6 +260,14 @@ await build({
       "./runtime": {
         import: NPM_RUNTIME_PATH,
         types: NPM_RUNTIME_TYPES_PATH,
+      },
+      "./host/kernel": {
+        import: "./esm/tufa/npm/src/src/host/kernel.js",
+        types: "./types/src/host/kernel.d.ts",
+      },
+      "./http/protocol-handler": {
+        import: "./esm/tufa/npm/src/src/http/protocol-handler.js",
+        types: "./types/src/http/protocol-handler.d.ts",
       },
     },
     bin: {

@@ -38,6 +38,11 @@ export function packageTargetPath(target) {
   if (typeof target !== "string") {
     return null;
   }
+  // Export patterns describe families of files rather than one literal
+  // tarball member. Concrete import smoke tests validate their substitutions.
+  if (target.includes("*")) {
+    return null;
+  }
   if (target.startsWith("./")) {
     return `package/${target.slice(2)}`;
   }

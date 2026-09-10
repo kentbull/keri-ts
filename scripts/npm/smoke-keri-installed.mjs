@@ -10,6 +10,10 @@ import { join } from "node:path";
 import * as db from "keri-ts/db";
 import * as keri from "keri-ts";
 import * as runtime from "keri-ts/runtime";
+import { createAgentRuntime } from "keri-ts/app/agent-runtime";
+import { Kevery } from "keri-ts/core/eventing";
+import { createBaser } from "keri-ts/db/basing";
+import { credential } from "keri-ts/vdr/credentialing";
 import { collectManifestTargets } from "./package-targets.mjs";
 
 /** Throw an actionable smoke failure when a package invariant is false. */
@@ -23,7 +27,7 @@ const packageRoot = "node_modules/keri-ts";
 const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 
 for (const target of collectManifestTargets(manifest)) {
-  if (!target.startsWith("./")) {
+  if (!target.startsWith("./") || target.includes("*")) {
     continue;
   }
   const installedPath = join(packageRoot, target.slice(2));
@@ -39,6 +43,10 @@ assert(typeof runtime.inceptRegistry === "function", "keri-ts/runtime missing in
 assert(typeof db.createBaser === "function", "keri-ts/db missing createBaser");
 assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
+assert(typeof createAgentRuntime === "function", "keri-ts/app/* export pattern is broken");
+assert(typeof Kevery === "function", "keri-ts/core/* export pattern is broken");
+assert(typeof createBaser === "function", "keri-ts/db/* export pattern is broken");
+assert(typeof credential === "function", "keri-ts/vdr/* export pattern is broken");
 
 assert(!("startServer" in keri), "keri-ts root leaked startServer");
 assert(!("createTufaApp" in keri), "keri-ts root leaked createTufaApp");
