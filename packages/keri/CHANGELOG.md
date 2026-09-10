@@ -1,5 +1,11 @@
 # keri-ts
 
+## 0.10.2
+
+### Patch Changes
+
+- 2a2fa28: Resolve KERI runtime CESR imports through the published `cesr-ts` dependency so consumers receive one compatible set of nominal CESR classes and types.
+
 ## 0.10.1
 
 ### Patch Changes
