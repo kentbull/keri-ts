@@ -5,7 +5,6 @@
  * service validation, registry state, credential issue/revoke/import/export,
  * and multisig VC proposal coordination.
  */
-import { type Operation } from "npm:effection@^3.6.0";
 import {
   concatBytes,
   Diger,
@@ -16,7 +15,8 @@ import {
   Seqner,
   SerderACDC,
   TraitDex,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { incept as inceptRegistryEvent, issue as issueEvent } from "../core/protocol-vdr-eventing.ts";

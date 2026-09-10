@@ -1,11 +1,11 @@
-import { type Operation } from "npm:effection@^3.6.0";
 import {
   concatBytes,
   parseSerder,
   SerderKERI,
   smell,
   type Versionage,
-} from "../../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";

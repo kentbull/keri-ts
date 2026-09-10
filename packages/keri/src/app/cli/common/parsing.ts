@@ -1,4 +1,4 @@
-import type { ThresholdSith } from "../../../../../cesr/mod.ts";
+import type { ThresholdSith } from "cesr-ts";
 import { ValidationError } from "../../../core/index.ts";
 
 /**

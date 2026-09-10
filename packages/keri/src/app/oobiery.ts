@@ -1,5 +1,5 @@
+import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "../../../cesr/mod.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";

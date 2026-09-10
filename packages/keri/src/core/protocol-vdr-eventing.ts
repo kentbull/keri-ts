@@ -16,7 +16,7 @@ import {
   TraitDex,
   type Versionage,
   Vrsn_1_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
 import { query as coreQuery } from "./protocol-eventing.ts";

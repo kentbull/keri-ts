@@ -9,7 +9,7 @@
  * - this module owns IPEX `exn` shape and route behavior only
  * - credential/TEL artifact ingestion remains VDR/runtime work
  */
-import type { Kind, SerderKERI, Versionage } from "../../../cesr/mod.ts";
+import type { Kind, SerderKERI, Versionage } from "cesr-ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";

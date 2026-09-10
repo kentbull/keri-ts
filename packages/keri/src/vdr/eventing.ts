@@ -21,7 +21,7 @@ import {
   Siger,
   TraitDex,
   Verfer,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";

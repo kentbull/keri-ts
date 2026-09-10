@@ -207,6 +207,17 @@ function normalizeBuiltManifest(): void {
   writeJsonFileSync(packageJsonPath, manifest);
 }
 
+/** Remove DNT's now-unreferenced local workspace copy of the external CESR dependency. */
+function pruneBundledCesr(): void {
+  for (const path of [`${OUT_DIR}/esm/cesr`, `${OUT_DIR}/types/cesr`]) {
+    try {
+      Deno.removeSync(path, { recursive: true });
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
+  }
+}
+
 // Avoid running native install scripts (for example lmdb build) during packaging.
 setIgnoreScriptsDefault();
 
@@ -287,6 +298,7 @@ try {
     },
     postBuild() {
       normalizeBuiltManifest();
+      pruneBundledCesr();
       Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
       Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
     },

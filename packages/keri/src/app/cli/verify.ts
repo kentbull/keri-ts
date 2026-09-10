@@ -11,8 +11,8 @@
  *   has already been updated, which is why the interop proof must include the
  *   pre-query failure and post-query success cases
  */
+import { Siger } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Siger } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHabery } from "./common/context.ts";
 import { loadTextArgument } from "./common/parsing.ts";

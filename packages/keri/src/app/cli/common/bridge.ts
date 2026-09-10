@@ -1,3 +1,4 @@
+import { t } from "cesr-ts";
 import {
   each,
   type Operation,
@@ -7,7 +8,6 @@ import {
   type Subscription,
   withResolvers,
 } from "npm:effection@^3.6.0";
-import { t } from "../../../../../cesr/mod.ts";
 import { ValidationError } from "../../../core/errors.ts";
 
 /** Result envelope for one `kli` subprocess invocation. */

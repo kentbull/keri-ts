@@ -1,4 +1,3 @@
-import { type Database } from "npm:lmdb@3.5.3";
 import {
   b,
   Cipher,
@@ -14,7 +13,8 @@ import {
   smell,
   t,
   Verfer,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Database } from "npm:lmdb@3.5.3";
 import { Schemer } from "../core/scheming.ts";
 import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
 

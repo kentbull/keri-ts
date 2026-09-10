@@ -22,7 +22,7 @@ import {
   type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
 import { KeyStateRecord, type KeyStateRecordShape, StateEERecord, type StateEERecordShape } from "./records.ts";

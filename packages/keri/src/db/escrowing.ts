@@ -1,4 +1,4 @@
-import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from "../../../cesr/mod.ts";
+import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from "cesr-ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import {

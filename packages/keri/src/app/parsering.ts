@@ -21,7 +21,7 @@ import {
   Texter,
   TypeMedia,
   Verfer,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import {
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,

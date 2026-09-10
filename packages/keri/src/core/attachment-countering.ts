@@ -1,4 +1,4 @@
-import { Counter, CtrDexV1, CtrDexV2, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "../../../cesr/mod.ts";
+import { Counter, CtrDexV1, CtrDexV2, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { ValidationError } from "./errors.ts";
 
 /**

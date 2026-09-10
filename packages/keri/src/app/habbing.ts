@@ -12,7 +12,6 @@
  * - local bootstrap replies and events still flow through the same accepted
  *   state machinery instead of being written directly to persistent state
  */
-import { type Operation } from "npm:effection@^3.6.0";
 import {
   Cigar,
   concatBytes,
@@ -30,7 +29,8 @@ import {
   Verfer,
   type Versionage,
   Vrsn_1_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";

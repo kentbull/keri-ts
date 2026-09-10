@@ -6,7 +6,7 @@
  * own group key-event counseling; local group habitat state still lives under
  * `Habery.makeGroupHab(...)`, `Baser.habs`, and the keeper member stores.
  */
-import { Counter, type Kind, parsePather, Prefixer, Saider, SerderKERI, type Versionage } from "../../../cesr/mod.ts";
+import { Counter, type Kind, parsePather, Prefixer, Saider, SerderKERI, type Versionage } from "cesr-ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";

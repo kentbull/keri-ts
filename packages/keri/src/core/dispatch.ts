@@ -1,4 +1,4 @@
-import type { AttachmentGroup } from "../../../cesr/mod.ts";
+import type { AttachmentGroup } from "cesr-ts";
 import {
   type BlindState,
   type BoundState,
@@ -15,7 +15,7 @@ import {
   Siger,
   Texter,
   type TypeMedia,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 
 /** Fixed-width or compact ordinal primitive accepted by runtime dispatch groups. */
 export type DispatchOrdinal = Seqner | NumberPrimitive;

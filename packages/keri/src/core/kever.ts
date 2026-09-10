@@ -10,7 +10,7 @@ import {
   Siger,
   Tholder,
   Verfer,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";

@@ -9,7 +9,6 @@
  * - TEL state machines, registry orchestration, credential issuance, and
  *   verifier policy live in later VDR runtime modules
  */
-import { type Operation } from "npm:effection@^3.6.0";
 import {
   Cigar,
   concatBytes,
@@ -26,7 +25,8 @@ import {
   Verfer,
   type Versionage,
   Vrsn_1_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";

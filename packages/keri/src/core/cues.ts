@@ -1,4 +1,4 @@
-import type { Dater, SerderACDC, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import type { Dater, SerderACDC, SerderKERI, Siger } from "cesr-ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
 import type { MbxTopicCursor } from "./mailbox-topics.ts";
 import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts";

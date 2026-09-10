@@ -1,5 +1,5 @@
+import { concatBytes } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { concatBytes } from "../../../cesr/mod.ts";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Roles } from "../core/roles.ts";

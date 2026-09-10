@@ -18,7 +18,7 @@ import {
   type ThresholdSith,
   TypeMedia as TypeMediaValue,
   type Verfer,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import type { MbxTopicCursor } from "./mailbox-topics.ts";
 
 const textEncoder = new TextEncoder();

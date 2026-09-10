@@ -7,8 +7,8 @@
  * - `join` polls mailbox notifications, signs the embedded event with local
  *   member keys, and republishes the approval EXN
  */
+import { type ThresholdSith } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { type ThresholdSith } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
 import { type AgentRuntime } from "../agent-runtime.ts";

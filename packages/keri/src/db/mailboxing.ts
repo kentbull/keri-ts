@@ -13,8 +13,8 @@
  * - runtime polling, query streaming, and HTTP serving live elsewhere, but
  *   they all treat this module as the single source of mailbox payload truth
  */
+import { Diger, MtrDex } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Diger, MtrDex } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { CesrOnSuber, Suber } from "./subing.ts";

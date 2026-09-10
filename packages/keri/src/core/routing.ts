@@ -1,4 +1,4 @@
-import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "../../../cesr/mod.ts";
+import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";

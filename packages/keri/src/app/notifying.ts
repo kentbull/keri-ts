@@ -10,8 +10,8 @@
  * - delegation approval must use delegation escrows; `/notification` signals
  *   are only transient UI wakeups.
  */
+import { type Cigar } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { type Cigar } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import { createNoter, type Noter, type NoterOptions, Notice, type NoticeAttrs } from "../db/noting.ts";
 import type { Habery } from "./habbing.ts";

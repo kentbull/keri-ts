@@ -12,7 +12,7 @@ import {
   Kinds,
   Saider,
   type SerderACDC,
-} from "../../../../cesr/mod.ts";
+} from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Hab } from "../../app/habbing.ts";
 import { Verifier } from "../../app/verifying.ts";

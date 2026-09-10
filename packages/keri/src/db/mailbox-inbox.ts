@@ -1,5 +1,5 @@
+import { Diger } from "cesr-ts";
 import { Buffer } from "node:buffer";
-import { Diger } from "../../../cesr/mod.ts";
 import { RawRecord, type TopicsRecord } from "../core/records.ts";
 import type { LMDBer } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";

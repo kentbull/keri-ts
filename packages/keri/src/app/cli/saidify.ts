@@ -1,5 +1,5 @@
+import { Saider } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Saider } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
 
 interface SaidifyArgs {
