@@ -1,5 +1,5 @@
-name: 'Common Release Setup'
-description: 'Common checkout, Deno/Node setup, cache restore, install, assert, and optional fmt/version steps for release jobs.'
+name: 'Common CI Setup'
+description: 'Common Deno/Node setup, cache restore, install, assert, and optional fmt/version steps.'
 inputs:
   do-fmt-check:
     description: 'Whether to run fmt:check'
@@ -18,14 +18,15 @@ inputs:
     required: false
     default: ''
 outputs:
+  cache-hit:
+    description: 'Whether the combined Deno and node_modules cache matched exactly.'
+    value: ${{ steps.deps-cache.outputs.cache-hit }}
   package-version:
     description: 'The version read from package.json (if do-version-check was true)'
     value: ${{ steps.package.outputs.version }}
 runs:
   using: 'composite'
   steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: ${{ env.NODE_VERSION }}
