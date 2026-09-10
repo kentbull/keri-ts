@@ -173,7 +173,7 @@ jobs:
           if npm view "$NPM_NAME@$VERSION" version >/dev/null 2>&1; then
             echo "$NPM_NAME@$VERSION is already published"
           else
-            TARBALL=$(find release-tarball -type f -name '*.tgz' | head -1)
+            TARBALL=$(find "$GITHUB_WORKSPACE/release-tarball" -type f -name '*.tgz' | head -1)
             test -n "$TARBALL"
             npm publish "$TARBALL" --access public
           fi
