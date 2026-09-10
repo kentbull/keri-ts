@@ -9,6 +9,11 @@ on:
         default: extended-interop
         type: choice
         options:
+          - interop-parity
+          - interop-gates-b
+          - interop-gates-c
+          - interop-witness-main
+          - interop-witness-cli
           - extended-interop
           - interop-acdc-deep
           - interop-acdc-extended

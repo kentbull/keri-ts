@@ -1,0 +1,204 @@
+name: Shared npm release
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        required: true
+        type: string
+      publish:
+        required: true
+        type: boolean
+
+env:
+  DENO_DIR: ${{ github.workspace }}/.deno-cache
+  DENO_VERSION: "2.8.2"
+  NODE_VERSION: "25.9.0"
+  DEPS_CACHE_KEY_PREFIX: release-deps-v6
+
+jobs:
+  artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      artifact: ${{ steps.meta.outputs.artifact }}
+      npm_name: ${{ steps.meta.outputs.npm_name }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+      title: ${{ steps.meta.outputs.title }}
+      version: ${{ steps.setup.outputs.package-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: select package
+        id: meta
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          case "$PACKAGE" in
+            cesr)
+              echo "path=packages/cesr/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=cesr-ts" >> "$GITHUB_OUTPUT"
+              echo "artifact=cesr-ts-npm" >> "$GITHUB_OUTPUT"
+              echo "title=cesr-ts" >> "$GITHUB_OUTPUT"
+              ;;
+            keri)
+              echo "path=packages/keri/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=keri-ts" >> "$GITHUB_OUTPUT"
+              echo "artifact=keri-ts-npm" >> "$GITHUB_OUTPUT"
+              echo "title=keri-ts" >> "$GITHUB_OUTPUT"
+              ;;
+            tufa)
+              echo "path=packages/tufa/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=@keri-ts/tufa" >> "$GITHUB_OUTPUT"
+              echo "artifact=tufa-npm" >> "$GITHUB_OUTPUT"
+              echo "title=@keri-ts/tufa" >> "$GITHUB_OUTPUT"
+              ;;
+            *) exit 2 ;;
+          esac
+
+      - id: setup
+        uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: "true"
+          do-version-check: "true"
+          package-json-path: ${{ steps.meta.outputs.path }}
+          cache-key-extra: ${{ inputs.package }}
+
+      - name: require a release commit from master
+        if: github.event_name == 'push'
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+
+      - name: run the package-owned release check
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          case "$PACKAGE" in
+            cesr) deno task test:cesr ;;
+            keri) deno task test:quality:keri:fast ;;
+            tufa) deno task test:quality:tufa ;;
+          esac
+
+      - name: build exact npm artifacts
+        env:
+          BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          deno task version:generate:ci
+          case "$PACKAGE" in
+            cesr) (cd packages/cesr && deno task build:npm) ;;
+            keri) (cd packages/keri && deno task build:npm) ;;
+            tufa)
+              (cd packages/cesr && deno run -A scripts/build_npm.ts)
+              (cd packages/keri && deno run -A scripts/build_npm.ts)
+              (cd packages/tufa && deno run -A scripts/build_npm.ts)
+              ;;
+          esac
+
+      - name: verify Tufa's released dependencies
+        if: inputs.package == 'tufa'
+        run: |
+          KERI_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['keri-ts']")
+          CESR_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['cesr-ts']")
+          npm view "keri-ts@${KERI_DEP}" version >/dev/null
+          npm view "cesr-ts@${CESR_DEP}" version >/dev/null
+
+      - name: pack and smoke the primary tarball
+        id: pack
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          case "$PACKAGE" in
+            cesr)
+              cd packages/cesr/npm
+              TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../..
+              bash scripts/smoke-test-tephra-npm.sh "packages/cesr/npm/$TARBALL"
+              ;;
+            keri)
+              cd packages/keri/npm
+              TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../..
+              bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/$TARBALL"
+              ;;
+            tufa)
+              cd packages/cesr/npm
+              CESR_TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../keri/npm
+              KERI_TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../tufa/npm
+              TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../..
+              bash scripts/smoke-test-tufa-npm.sh \
+                "packages/tufa/npm/$TARBALL" \
+                "packages/cesr/npm/$CESR_TARBALL" \
+                "packages/keri/npm/$KERI_TARBALL"
+              ;;
+          esac
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+
+      - name: upload exact publish candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.meta.outputs.artifact }}-${{ steps.setup.outputs.package-version }}
+          path: packages/${{ inputs.package }}/npm/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    if: inputs.publish
+    needs: artifact
+    runs-on: ubuntu-latest
+    environment: publishing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.artifact.outputs.artifact }}-${{ needs.artifact.outputs.version }}
+          path: release-tarball
+
+      - name: publish unless this exact version already exists
+        env:
+          NPM_NAME: ${{ needs.artifact.outputs.npm_name }}
+          VERSION: ${{ needs.artifact.outputs.version }}
+        run: |
+          if npm view "$NPM_NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NPM_NAME@$VERSION is already published"
+          else
+            TARBALL=$(find release-tarball -type f -name '*.tgz' | head -1)
+            test -n "$TARBALL"
+            npm publish "$TARBALL" --access public
+          fi
+
+  github-release:
+    if: inputs.publish && github.event_name == 'push'
+    needs: [artifact, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.artifact.outputs.artifact }}-${{ needs.artifact.outputs.version }}
+          path: release-tarball
+
+      - name: create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ needs.artifact.outputs.title }} ${{ needs.artifact.outputs.version }}
+        run: |
+          TARBALL=$(find release-tarball -type f -name '*.tgz' | head -1)
+          test -n "$TARBALL"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$TARBALL" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$TARBALL" --title "$TITLE" --generate-notes --verify-tag
+          fi

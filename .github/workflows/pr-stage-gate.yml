@@ -1,38 +1,9 @@
 name: PR Stage Gate
 
-# PR merge gate for `master`.
-# Flow:
-# 1. `static-checks` rejects formatting, lint, and deterministic quality drift.
-# 2. `changeset-required` ensures every normal PR records release intent before
-#    merge, while generated Changesets version PRs are exempt.
-# 3. The KERI test surface is split by real isolation boundaries:
-#    - `keri-db-fast-tests` for parallel-safe DB coverage
-#    - `keri-core-fast-a-tests` and `keri-core-fast-b-tests` for the split core
-#      KEL/query/reply unit lanes
-#    - `keri-app-fast-tests` for tiny app/help checks
-#    - `tufa-tests` for Tufa-owned CLI/server/host package-surface checks
-#    - `keri-runtime-medium-tests` for representative runtime coverage
-#    - `keri-runtime-slow-tests` for mailbox-heavy runtime flows extracted out
-#      of the representative lane
-#    - `keri-app-stateful-*` for stateful CLI flows that mutate process globals
-#    - `keri-interop-*` for the slow KERIpy/LMDB v1 parity paths
-# 4. `cesr-tests` keeps the CESR package's fast unit surface independent so
-#    regressions fail quickly without waiting on interop-heavy jobs.
-# 5. `package-smoke` proves the built `keri-ts` and `tufa` npm artifacts are
-#    installable and usable, which catches publish-time breakage that normal
-#    tests can miss.
-# 6. `stage-gate` is the single stable branch-protection target; it fails if
-#    any of the parallel jobs fail.
-
 on:
   pull_request:
-    branches:
-      - master
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
+    branches: [master]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
@@ -42,887 +13,105 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # We pin exact runtime versions in CI because this repo uses native addons,
-  # Deno->npm builds, and KERIpy interop, all of which are sensitive to drift.
   DENO_DIR: ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.8.2"
+  NODE_VERSION: "25.9.0"
+  PYTHON_VERSION: "3.14"
+  LMDB_DATA_V1: "true"
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v6
   KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
   KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
-  DID_WEBS_RESOLVER_GIT_URL: https://github.com/kentbull/did-webs-resolver.git
-  DID_WEBS_RESOLVER_GIT_REF: refs/heads/clean-up-deps
-  DID_WEBS_RESOLVER_GIT_SHA: 8395277f32b37129fa6ef734c9f3902bb6cbbcbc
-  DID_WEBS_RESOLVER_PYTHON_VERSION: "3.13"
-  LMDB_DATA_V1: "true"
-  NODE_VERSION: "25.9.0"
-  PYTHON_VERSION: "3.14"
-  DENO_CACHE_KEY_PREFIX: ci-deno-v1
-  NODE_MODULES_CACHE_KEY_PREFIX: ci-node-modules-v1
-  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v3
   KERIPY_CACHE_KEY_PREFIX: keripy-v2-mailbox-impl
-  DID_WEBS_RESOLVER_CACHE_KEY_PREFIX: did-webs-resolver-v1
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
-  # Fast, deterministic gate. Nothing here should depend on KERIpy being
-  # installed, which keeps the cheap feedback path fast and stable.
   static-checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
-      # Every workflow pins third-party actions by commit SHA to reduce
-      # supply-chain drift and make reruns auditable.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: setup
+        uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: "false"
 
       - name: verify immutable action pins
         run: bash scripts/ci/check-action-pins.sh
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        # Emit the exact toolchain the job is about to use. This turns future
-        # CI failures into diagnosis instead of archaeology.
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: check formatting
-        # Formatting is a cheap first failure and avoids noisy review churn.
-        run: deno task fmt:check
-
-      - name: run lint
-        # Lint catches structural/code-smell regressions before heavier checks.
-        run: deno task lint
-
-      - name: run quality checks
-        # Keep version checks deterministic in PR CI. Runtime build metadata is
-        # only for artifact-producing workflows, not for source-state checks.
+      - name: check formatting, lint, and quality
         env:
           BUILD_METADATA: ""
           KERI_TS_BUILD_METADATA: ""
           CESR_TS_BUILD_METADATA: ""
-        run: deno task quality:check
+        run: deno task fmt:check && deno task lint && deno task quality:check
 
-  # Release intent is a separate fast gate so branch protection can reject
-  # missing Changesets before maintainers discover the issue at release time.
   changeset-required:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - name: require changeset
+      - name: require release intent
         run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
 
-  # Parallel-safe DB coverage stays isolated so the cheapest deterministic gate
-  # finishes quickly even when heavier KERI lanes are busy.
-  keri-db-fast-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run fast KERI DB lane
-        run: deno task test:quality:keri:db-fast
-
-  # Core KEL/query/reply unit coverage is logically "fast" compared with
-  # interop/runtime hosting, but one oversized lane still became the default
-  # path bottleneck. Keep the balanced slices explicit in CI.
-  keri-core-fast-a-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run KERI core fast A lane
-        run: deno task test:quality:keri:core-fast-a
-
-  keri-core-fast-b-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run KERI core fast B lane
-        run: deno task test:quality:keri:core-fast-b
-
-  # Tiny app/help checks stay together so we do not pay per-job overhead for
-  # slices that already finish quickly on their own.
-  keri-app-fast-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run KERI app fast bundle
-        run: deno task test:quality:keri:app-fast
-
-  # Tufa now owns the package-surface CLI/server/host boundary, so PR CI needs
-  # an explicit package-local lane instead of pretending KERI app tests cover
-  # the active runnable surface.
-  tufa-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run Tufa package test suite
-        run: deno task test:quality:tufa
-
-  # Representative runtime coverage is intentionally on the default path, but
-  # it should not delay the DB/core/app feedback lanes.
-  keri-runtime-medium-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run KERI runtime medium lane
-        run: deno task test:quality:keri:runtime-medium
-
-  # Mailbox-heavy runtime hosting flows no longer live inside
-  # `runtime-medium`, so PR CI needs an explicit slow runtime job or the latest
-  # topology split would silently drop coverage.
-  keri-runtime-slow-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run KERI runtime slow lane
-        run: deno task test:quality:keri:runtime-slow
-
-  # Stateful CLI flows are slower and mutate console/HOME or persisted stores,
-  # so we isolate them by file and split them into two balanced jobs.
-  keri-app-stateful-a-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run stateful KERI app tests group A
-        run: deno task test:quality:keri:app-stateful-a
-
-  keri-app-stateful-b-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        # Compat tests should consume a prepared LMDB v1-compatible addon from
-        # job setup, not rebuild it ad hoc from inside the test harness.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run stateful KERI app tests group B
-        run: deno task test:quality:keri:app-stateful-b
-
-  # Interop-sensitive KERI test jobs. These alone need pinned KERIpy and LMDB
-  # data-format v1 compatibility, so they stay isolated from the rest.
-  keri-interop-parity-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        # The shared deps cache is only bootstrap state. Interop jobs need a
-        # second authoritative cache for node_modules after `deno task setup`
-        # has rebuilt LMDB-js with the required v1 data format.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: rebuild LMDB-js with data v1 compatibility
-        # Only the interop node_modules cache proves the native addon was
-        # rebuilt for KERIpy-compatible LMDB v1 semantics.
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
-
-      - name: restore KERIpy virtualenv cache
-        id: keripy-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
-
-      - name: install pinned KERIpy CLI
-        if: steps.keripy-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "${KERIPY_VENV}"
-          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
-
-      - name: add KERIpy CLI to PATH
-        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-          EXPECT_KLI: "true"
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run interop parity test
-        run: deno task test:quality:keri:interop-parity
-
-      - name: upload interop parity timings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-  keri-interop-gates-b-tests:
+  unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - id: setup
+        uses: ./.github/actions/common-release-setup
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        # The shared deps cache is only bootstrap state. Interop jobs need a
-        # second authoritative cache for node_modules after `deno task setup`
-        # has rebuilt LMDB-js with the required v1 data format.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
+          do-fmt-check: "false"
+          cache-key-extra: lmdb-v1
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: rebuild LMDB-js with data v1 compatibility
-        # Only the interop node_modules cache proves the native addon was
-        # rebuilt for KERIpy-compatible LMDB v1 semantics.
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
+      - name: rebuild LMDB-js for KERI compatibility
+        if: steps.setup.outputs.cache-hit != 'true'
+        run: deno task setup:compat-lmdb
+
+      - name: run the maintained package and runtime suites once
         run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
+          deno task test:quality:keri:db-fast
+          deno task test:quality:keri:core-fast-a
+          deno task test:quality:keri:core-fast-b
+          deno task test:quality:keri:app-fast
+          deno task test:quality:keri:runtime-medium
+          deno task test:quality:keri:runtime-slow
+          deno task test:quality:keri:app-stateful-a
+          deno task test:quality:keri:app-stateful-b
+          deno task test:quality:tufa
+          deno task test:cesr
 
-      - name: restore KERIpy virtualenv cache
-        id: keripy-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
-
-      - name: install pinned KERIpy CLI
-        if: steps.keripy-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "${KERIPY_VENV}"
-          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
-
-      - name: add KERIpy CLI to PATH
-        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-          EXPECT_KLI: "true"
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run interop gate B scenarios
-        run: deno task test:quality:keri:interop-gates-b
-
-      - name: upload interop gate B timings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: keri-interop-gates-b-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-  keri-interop-gates-c-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        # The shared deps cache is only bootstrap state. Interop jobs need a
-        # second authoritative cache for node_modules after `deno task setup`
-        # has rebuilt LMDB-js with the required v1 data format.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: rebuild LMDB-js with data v1 compatibility
-        # Only the interop node_modules cache proves the native addon was
-        # rebuilt for KERIpy-compatible LMDB v1 semantics.
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
-
-      - name: restore KERIpy virtualenv cache
-        id: keripy-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
-
-      - name: install pinned KERIpy CLI
-        if: steps.keripy-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "${KERIPY_VENV}"
-          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
-
-      - name: add KERIpy CLI to PATH
-        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-          EXPECT_KLI: "true"
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run interop gate C scenarios
-        run: deno task test:quality:keri:interop-gates-c
-
-      - name: upload interop gate C timings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: keri-interop-gates-c-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-  keri-interop-witness-main-tests:
+  interop-parity:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - id: setup
+        uses: ./.github/actions/common-release-setup
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
+          do-fmt-check: "false"
+          cache-key-extra: lmdb-v1
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
+      - name: rebuild LMDB-js for KERI compatibility
+        if: steps.setup.outputs.cache-hit != 'true'
+        run: deno task setup:compat-lmdb
 
-      - name: restore KERIpy virtualenv cache
+      - name: restore KERIpy virtualenv
         id: keripy-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -939,498 +128,87 @@ jobs:
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
 
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-          EXPECT_KLI: "true"
-        run: bash scripts/ci/assert-environment.sh
+      - name: run representative KERIpy parity
+        run: deno task test:quality:keri:interop-parity
 
-      - name: run interop witness main lane
-        run: |
-          unset LD_LIBRARY_PATH
-          deno task test:quality:keri:interop-witness-main
-
-      - name: upload interop witness main timings
-        if: ${{ always() }}
+      - name: retain parity timings on failure
+        if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: keri-interop-witness-main-timings-pr-${{ github.event.pull_request.number }}
+          name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
 
-  keri-interop-witness-cli-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
-
-      - name: restore KERIpy virtualenv cache
-        id: keripy-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
-
-      - name: install pinned KERIpy CLI
-        if: steps.keripy-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "${KERIPY_VENV}"
-          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
-
-      - name: add KERIpy CLI to PATH
-        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-          EXPECT_KLI: "true"
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run interop witness cli lane
-        run: |
-          unset LD_LIBRARY_PATH
-          deno task test:quality:keri:interop-witness-cli
-
-      - name: upload interop witness cli timings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: keri-interop-witness-cli-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-  keri-interop-did-webs-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore interop LMDB node_modules cache
-        id: interop-node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-
-
-      - name: install deterministic workspace dependencies
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: capture KERIpy Python
-        run: echo "KERIPY_INTEROP_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
-
-      - name: rebuild LMDB-js with data v1 compatibility
-        if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
-        run: |
-          cd packages/keri
-          deno task setup:compat-lmdb
-
-      - name: restore KERIpy virtualenv cache
-        id: keripy-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
-
-      - name: install pinned KERIpy CLI
-        if: steps.keripy-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "${KERIPY_VENV}"
-          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
-
-      - name: add KERIpy CLI to PATH
-        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.DID_WEBS_RESOLVER_PYTHON_VERSION }}
-
-      - name: capture did-webs-resolver Python
-        run: echo "DID_WEBS_RESOLVER_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
-
-      - name: restore pinned did-webs-resolver cache
-        id: did-webs-resolver-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/tufa-interop/did-webs-resolver/${{ env.DID_WEBS_RESOLVER_GIT_SHA }}
-          key: ${{ runner.os }}-${{ env.DID_WEBS_RESOLVER_CACHE_KEY_PREFIX }}-python-${{ env.DID_WEBS_RESOLVER_PYTHON_VERSION }}-${{ env.DID_WEBS_RESOLVER_GIT_SHA }}
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-          EXPECT_KLI: "true"
-        run: |
-          bash scripts/ci/assert-environment.sh
-          echo "did-webs-resolver ref: ${DID_WEBS_RESOLVER_GIT_URL}@${DID_WEBS_RESOLVER_GIT_REF}"
-          echo "did-webs-resolver sha: ${DID_WEBS_RESOLVER_GIT_SHA}"
-          "${DID_WEBS_RESOLVER_PYTHON}" --version
-
-      - name: run DID Webs interop matrix
-        run: deno task test:quality:keri:interop-did-webs
-
-      - name: upload DID Webs interop timings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: keri-interop-did-webs-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-  keri-interop-did-webs-docker-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: build DID Webs TS interop image
-        run: docker build --file docker/did-webs-ts/Dockerfile --target interop --tag did-webs-ts-interop:ci .
-
-      - name: run DID Webs interop matrix in Docker
-        run: |
-          mkdir -p .test-timings
-          docker run --rm \
-            --volume "${PWD}/.test-timings:/app/.test-timings" \
-            did-webs-ts-interop:ci
-
-      - name: upload Docker DID Webs interop timings
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: keri-interop-did-webs-docker-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
-          if-no-files-found: ignore
-          retention-days: 14
-
-  # CESR remains a separate job because it is fast and independent; splitting it
-  # out improves feedback latency and makes failures easier to localize.
-  cesr-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
-
-      - name: run CESR test suite
-        run: deno task test:cesr
-
-  # Packaging smoke is a different failure class from source tests: it proves
-  # that the built npm artifacts can actually be installed and exercised as the
-  # published package boundaries, not merely as source-tree code.
   package-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: ./.github/actions/common-release-setup
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
-        with:
-          deno-version: ${{ env.DENO_VERSION }}
-
-      - name: restore Deno dependency cache
-        id: deno-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
-
-      - name: restore workspace node_modules cache
-        id: node-modules-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-
-
-      - name: install deterministic workspace dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --ignore-scripts
-
-      - name: assert environment
-        env:
-          EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
-          EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-        run: bash scripts/ci/assert-environment.sh
+          do-fmt-check: "false"
 
       - name: build npm packages
-        # Build all tarball candidates first so the smoke test validates the
-        # exact artifacts this PR would ship, not the source tree alone.
         run: deno task npm:build:all
 
-      - name: pack keri-ts npm tarball
-        id: pack-keri
+      - name: pack npm tarballs
+        id: pack
         run: |
           cd packages/keri/npm
-          TARBALL="$(npm pack --silent | tail -n 1)"
-          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+          echo "keri=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
+          cd ../../cesr/npm
+          echo "cesr=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
+          cd ../../tufa/npm
+          echo "tufa=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
 
-      - name: pack cesr-ts npm tarball
-        id: pack-cesr
-        run: |
-          cd packages/cesr/npm
-          TARBALL="$(npm pack --silent | tail -n 1)"
-          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
-
-      - name: pack tufa npm tarball
-        id: pack-tufa
-        run: |
-          cd packages/tufa/npm
-          TARBALL="$(npm pack --silent | tail -n 1)"
-          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
-
-      - name: smoke test packages in Node glibc
-        id: smoke-packages-glibc
-        continue-on-error: true
+      - name: smoke test exact packages on glibc
         env:
           SMOKE_NODE_IMAGE: node:bookworm-slim
         run: |
           bash scripts/smoke-test-pr-packages-npm.sh \
-            "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}" \
-            "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}" \
-            "packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}"
+            "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
+            "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
 
-      - name: smoke test packages in Node Alpine
-        id: smoke-packages-alpine
-        continue-on-error: true
+      - name: smoke test exact packages on Alpine
         env:
           SMOKE_NODE_IMAGE: node:alpine
         run: |
           bash scripts/smoke-test-pr-packages-npm.sh \
-            "packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}" \
-            "packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}" \
-            "packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}"
+            "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
+            "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
 
-      - name: upload npm tarballs
-        # Keep the exact built artifacts for inspection/debugging when smoke or
-        # later release work fails.
-        if: always()
+      - name: retain packages on failure
+        if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: npm-tarballs-pr-${{ github.event.pull_request.number }}
           path: |
-            packages/keri/npm/${{ steps.pack-keri.outputs.tarball }}
-            packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}
-            packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}
-          if-no-files-found: error
-          retention-days: 14
+            packages/keri/npm/${{ steps.pack.outputs.keri }}
+            packages/cesr/npm/${{ steps.pack.outputs.cesr }}
+            packages/tufa/npm/${{ steps.pack.outputs.tufa }}
+          if-no-files-found: ignore
+          retention-days: 3
 
-      - name: assert smoke matrix results
-        run: |
-          echo "packages-glibc=${{ steps.smoke-packages-glibc.outcome }}"
-          echo "packages-alpine=${{ steps.smoke-packages-alpine.outcome }}"
-          [[ "${{ steps.smoke-packages-glibc.outcome }}" == "success" ]]
-          [[ "${{ steps.smoke-packages-alpine.outcome }}" == "success" ]]
-
-  # Aggregate branch-protection target. We keep this tiny on purpose so branch
-  # protection can require one stable check name while the real work fans out.
   stage-gate:
     if: ${{ always() }}
-    needs:
-      - static-checks
-      - changeset-required
-      - keri-db-fast-tests
-      - keri-core-fast-a-tests
-      - keri-core-fast-b-tests
-      - keri-app-fast-tests
-      - tufa-tests
-      - keri-runtime-medium-tests
-      - keri-runtime-slow-tests
-      - keri-app-stateful-a-tests
-      - keri-app-stateful-b-tests
-      - keri-interop-parity-tests
-      - keri-interop-gates-b-tests
-      - keri-interop-gates-c-tests
-      - keri-interop-witness-main-tests
-      - keri-interop-witness-cli-tests
-      - keri-interop-did-webs-tests
-      - keri-interop-did-webs-docker-tests
-      - cesr-tests
-      - package-smoke
+    needs: [static-checks, changeset-required, unit-tests, interop-parity, package-smoke]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
-      - name: summarize stage gate results
-        # `always()` lets this step report which dependency failed instead of
-        # disappearing when an upstream job aborts early.
+      - name: require every maintained gate
         env:
-          STATIC_CHECKS: ${{ needs.static-checks.result }}
-          CHANGESET_REQUIRED: ${{ needs.changeset-required.result }}
-          KERI_DB_FAST_TESTS: ${{ needs.keri-db-fast-tests.result }}
-          KERI_CORE_FAST_A_TESTS: ${{ needs.keri-core-fast-a-tests.result }}
-          KERI_CORE_FAST_B_TESTS: ${{ needs.keri-core-fast-b-tests.result }}
-          KERI_APP_FAST_TESTS: ${{ needs.keri-app-fast-tests.result }}
-          TUFA_TESTS: ${{ needs.tufa-tests.result }}
-          KERI_RUNTIME_MEDIUM_TESTS: ${{ needs.keri-runtime-medium-tests.result }}
-          KERI_RUNTIME_SLOW_TESTS: ${{ needs.keri-runtime-slow-tests.result }}
-          KERI_APP_STATEFUL_A_TESTS: ${{ needs.keri-app-stateful-a-tests.result }}
-          KERI_APP_STATEFUL_B_TESTS: ${{ needs.keri-app-stateful-b-tests.result }}
-          KERI_INTEROP_PARITY_TESTS: ${{ needs.keri-interop-parity-tests.result }}
-          KERI_INTEROP_GATES_B_TESTS: ${{ needs.keri-interop-gates-b-tests.result }}
-          KERI_INTEROP_GATES_C_TESTS: ${{ needs.keri-interop-gates-c-tests.result }}
-          KERI_INTEROP_WITNESS_MAIN_TESTS: ${{ needs.keri-interop-witness-main-tests.result }}
-          KERI_INTEROP_WITNESS_CLI_TESTS: ${{ needs.keri-interop-witness-cli-tests.result }}
-          KERI_INTEROP_DID_WEBS_TESTS: ${{ needs.keri-interop-did-webs-tests.result }}
-          KERI_INTEROP_DID_WEBS_DOCKER_TESTS: ${{ needs.keri-interop-did-webs-docker-tests.result }}
-          CESR_TESTS: ${{ needs.cesr-tests.result }}
-          PACKAGE_SMOKE: ${{ needs.package-smoke.result }}
+          STATIC: ${{ needs.static-checks.result }}
+          CHANGESET: ${{ needs.changeset-required.result }}
+          UNIT: ${{ needs.unit-tests.result }}
+          INTEROP: ${{ needs.interop-parity.result }}
+          PACKAGE: ${{ needs.package-smoke.result }}
         run: |
-          echo "static-checks=${STATIC_CHECKS}"
-          echo "changeset-required=${CHANGESET_REQUIRED}"
-          echo "keri-db-fast-tests=${KERI_DB_FAST_TESTS}"
-          echo "keri-core-fast-a-tests=${KERI_CORE_FAST_A_TESTS}"
-          echo "keri-core-fast-b-tests=${KERI_CORE_FAST_B_TESTS}"
-          echo "keri-app-fast-tests=${KERI_APP_FAST_TESTS}"
-          echo "tufa-tests=${TUFA_TESTS}"
-          echo "keri-runtime-medium-tests=${KERI_RUNTIME_MEDIUM_TESTS}"
-          echo "keri-runtime-slow-tests=${KERI_RUNTIME_SLOW_TESTS}"
-          echo "keri-app-stateful-a-tests=${KERI_APP_STATEFUL_A_TESTS}"
-          echo "keri-app-stateful-b-tests=${KERI_APP_STATEFUL_B_TESTS}"
-          echo "keri-interop-parity-tests=${KERI_INTEROP_PARITY_TESTS}"
-          echo "keri-interop-gates-b-tests=${KERI_INTEROP_GATES_B_TESTS}"
-          echo "keri-interop-gates-c-tests=${KERI_INTEROP_GATES_C_TESTS}"
-          echo "keri-interop-witness-main-tests=${KERI_INTEROP_WITNESS_MAIN_TESTS}"
-          echo "keri-interop-witness-cli-tests=${KERI_INTEROP_WITNESS_CLI_TESTS}"
-          echo "keri-interop-did-webs-tests=${KERI_INTEROP_DID_WEBS_TESTS}"
-          echo "keri-interop-did-webs-docker-tests=${KERI_INTEROP_DID_WEBS_DOCKER_TESTS}"
-          echo "cesr-tests=${CESR_TESTS}"
-          echo "package-smoke=${PACKAGE_SMOKE}"
-          [[ "${STATIC_CHECKS}" == "success" ]]
-          [[ "${CHANGESET_REQUIRED}" == "success" ]]
-          [[ "${KERI_DB_FAST_TESTS}" == "success" ]]
-          [[ "${KERI_CORE_FAST_A_TESTS}" == "success" ]]
-          [[ "${KERI_CORE_FAST_B_TESTS}" == "success" ]]
-          [[ "${KERI_APP_FAST_TESTS}" == "success" ]]
-          [[ "${TUFA_TESTS}" == "success" ]]
-          [[ "${KERI_RUNTIME_MEDIUM_TESTS}" == "success" ]]
-          [[ "${KERI_RUNTIME_SLOW_TESTS}" == "success" ]]
-          [[ "${KERI_APP_STATEFUL_A_TESTS}" == "success" ]]
-          [[ "${KERI_APP_STATEFUL_B_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_PARITY_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_GATES_B_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_GATES_C_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_WITNESS_MAIN_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_WITNESS_CLI_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_DID_WEBS_TESTS}" == "success" ]]
-          [[ "${KERI_INTEROP_DID_WEBS_DOCKER_TESTS}" == "success" ]]
-          [[ "${CESR_TESTS}" == "success" ]]
-          [[ "${PACKAGE_SMOKE}" == "success" ]]
+          test "$STATIC" = success
+          test "$CHANGESET" = success
+          test "$UNIT" = success
+          test "$INTEROP" = success
+          test "$PACKAGE" = success

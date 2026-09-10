@@ -1,13 +1,10 @@
 name: macOS Compatibility
 
-# Scheduled platform-compatibility workflow.
-# We keep this out of the PR gate because macOS runners are slower and more
-# expensive, but we still need periodic proof that native addon, interop, and
-# packaging behavior are not Linux-only accidents.
+# Manual pre-release platform-compatibility workflow. Running a broad macOS
+# matrix every week did not earn its keep; releases still require an explicit
+# cross-platform proof when it matters.
 
 on:
-  schedule:
-    - cron: "17 9 * * 1"
   workflow_dispatch:
 
 permissions:
