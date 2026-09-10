@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/common-release-setup
         with:
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: ./.github/actions/common-release-setup
         with:
@@ -76,13 +76,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -90,7 +90,7 @@ jobs:
 
       - name: restore Deno dependency cache
         id: deps-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ env.DENO_DIR }}
@@ -132,7 +132,7 @@ jobs:
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
       - name: upload npm tarball
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: cesr-ts-npm-${{ steps.package.outputs.version }}
           path: packages/cesr/npm/${{ steps.pack.outputs.tarball }}
@@ -147,7 +147,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: read package version
         id: package
@@ -156,13 +156,13 @@ jobs:
           VERSION=$(node -p "require('./packages/cesr/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
 
       - name: download the exact artifact tarball
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: cesr-ts-npm-${{ steps.package.outputs.version }}
           path: ./release-tarball
@@ -183,7 +183,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: read package version
         id: package
@@ -193,7 +193,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: download the exact published artifact tarball
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: cesr-ts-npm-${{ steps.package.outputs.version }}
           path: ./release-tarball

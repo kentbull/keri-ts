@@ -72,21 +72,21 @@ jobs:
     steps:
       # Every workflow pins third-party actions by commit SHA to reduce
       # supply-chain drift and make reruns auditable.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -95,7 +95,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -137,11 +137,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -156,21 +156,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -179,7 +179,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -206,21 +206,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -229,7 +229,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -253,21 +253,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -276,7 +276,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -302,21 +302,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -325,7 +325,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -352,21 +352,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -375,7 +375,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -401,21 +401,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -424,7 +424,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -451,21 +451,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -474,7 +474,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -500,21 +500,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -523,7 +523,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -547,28 +547,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -576,7 +576,7 @@ jobs:
         id: interop-node-modules-cache
         # Compat tests should consume a prepared LMDB v1-compatible addon from
         # job setup, not rebuild it ad hoc from inside the test harness.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -608,21 +608,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -634,7 +634,7 @@ jobs:
         # The shared deps cache is only bootstrap state. Interop jobs need a
         # second authoritative cache for node_modules after `deno task setup`
         # has rebuilt LMDB-js with the required v1 data format.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -645,7 +645,7 @@ jobs:
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -659,7 +659,7 @@ jobs:
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
@@ -686,32 +686,32 @@ jobs:
 
       - name: upload interop parity timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   keri-interop-gates-b-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -723,7 +723,7 @@ jobs:
         # The shared deps cache is only bootstrap state. Interop jobs need a
         # second authoritative cache for node_modules after `deno task setup`
         # has rebuilt LMDB-js with the required v1 data format.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -734,7 +734,7 @@ jobs:
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -748,7 +748,7 @@ jobs:
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
@@ -775,32 +775,32 @@ jobs:
 
       - name: upload interop gate B timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-gates-b-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   keri-interop-gates-c-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -812,7 +812,7 @@ jobs:
         # The shared deps cache is only bootstrap state. Interop jobs need a
         # second authoritative cache for node_modules after `deno task setup`
         # has rebuilt LMDB-js with the required v1 data format.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -823,7 +823,7 @@ jobs:
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -837,7 +837,7 @@ jobs:
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
@@ -864,32 +864,32 @@ jobs:
 
       - name: upload interop gate C timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-gates-c-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   keri-interop-witness-main-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -898,7 +898,7 @@ jobs:
 
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -909,7 +909,7 @@ jobs:
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -921,7 +921,7 @@ jobs:
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
@@ -950,32 +950,32 @@ jobs:
 
       - name: upload interop witness main timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-witness-main-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   keri-interop-witness-cli-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -984,7 +984,7 @@ jobs:
 
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -995,7 +995,7 @@ jobs:
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1007,7 +1007,7 @@ jobs:
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
@@ -1036,32 +1036,32 @@ jobs:
 
       - name: upload interop witness cli timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-witness-cli-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   keri-interop-did-webs-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -1070,7 +1070,7 @@ jobs:
 
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -1081,7 +1081,7 @@ jobs:
         if: steps.interop-node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -1096,7 +1096,7 @@ jobs:
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERIPY_VENV }}
           key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
@@ -1111,7 +1111,7 @@ jobs:
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.DID_WEBS_RESOLVER_PYTHON_VERSION }}
 
@@ -1120,7 +1120,7 @@ jobs:
 
       - name: restore pinned did-webs-resolver cache
         id: did-webs-resolver-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/tufa-interop/did-webs-resolver/${{ env.DID_WEBS_RESOLVER_GIT_SHA }}
           key: ${{ runner.os }}-${{ env.DID_WEBS_RESOLVER_CACHE_KEY_PREFIX }}-python-${{ env.DID_WEBS_RESOLVER_PYTHON_VERSION }}-${{ env.DID_WEBS_RESOLVER_GIT_SHA }}
@@ -1141,18 +1141,18 @@ jobs:
 
       - name: upload DID Webs interop timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-did-webs-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   keri-interop-did-webs-docker-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: build DID Webs TS interop image
         run: docker build --file docker/did-webs-ts/Dockerfile --target interop --tag did-webs-ts-interop:ci .
@@ -1166,11 +1166,11 @@ jobs:
 
       - name: upload Docker DID Webs interop timings
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: keri-interop-did-webs-docker-timings-pr-${{ github.event.pull_request.number }}
           path: .test-timings/*.json
-          if-no-files-found: warn
+          if-no-files-found: ignore
           retention-days: 14
 
   # CESR remains a separate job because it is fast and independent; splitting it
@@ -1179,21 +1179,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -1202,7 +1202,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -1229,21 +1229,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: restore Deno dependency cache
         id: deno-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DENO_DIR }}
           key: ${{ runner.os }}-${{ env.DENO_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json') }}
@@ -1252,7 +1252,7 @@ jobs:
 
       - name: restore workspace node_modules cache
         id: node-modules-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
           key: ${{ runner.os }}-${{ env.NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
@@ -1321,7 +1321,7 @@ jobs:
         # Keep the exact built artifacts for inspection/debugging when smoke or
         # later release work fails.
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
         with:
           name: npm-tarballs-pr-${{ github.event.pull_request.number }}
           path: |
