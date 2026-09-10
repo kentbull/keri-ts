@@ -1,5 +1,11 @@
 # keri-ts
 
+## 0.10.5
+
+### Patch Changes
+
+- b407ed2: Close runtime-owned mailbox response streams before the Tufa HTTP host waits for active responses to drain.
+
 ## 0.10.4
 
 ### Patch Changes
