@@ -1,5 +1,5 @@
 /** Real HTTP child with a deterministic adapter-drain barrier controlled by stdin. */
-import { run } from "effection";
+import { action, run } from "effection";
 import { startServer } from "../../src/host/http-server.ts";
 
 const serve = Deno.serve;
@@ -34,12 +34,16 @@ const task = run(() =>
     onListen() {
       console.log("READY");
     },
+  }, function*() {
+    console.log("OWNER_CLOSING");
+    yield* action<void>((resolve) => {
+      resolve();
+      return () => {};
+    });
   })
 );
 const input = new Uint8Array(1);
 await Deno.stdin.read(input);
-const halted = task.halt().then(() => console.log("HALTED"));
-await Deno.stdin.read(input);
 release();
-await halted;
+await task;
 console.log("DONE");
