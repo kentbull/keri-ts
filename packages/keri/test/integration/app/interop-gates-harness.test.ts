@@ -6,7 +6,7 @@ import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { ensureCompatLmdbBuild } from "../../../test/utils.ts";
-import { createLocalKeripyKliWrapper } from "./interop-test-helpers.ts";
+import { createLocalKeripyKliWrapper, ensurePinnedKeripyKli } from "./interop-test-helpers.ts";
 
 interface CmdResult {
   code: number;
@@ -133,6 +133,12 @@ async function resolveKliCommand(
       return candidate;
     }
   }
+
+  const pinned = await ensurePinnedKeripyKli(env);
+  if (await canUseKli(pinned, env)) {
+    return pinned;
+  }
+  candidates.push(pinned);
 
   throw new Error(
     `kli is required for interop tests but could not be resolved. Tried: ${candidates.join(", ")}`,

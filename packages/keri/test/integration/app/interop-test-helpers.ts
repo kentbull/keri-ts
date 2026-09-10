@@ -1204,7 +1204,7 @@ async function ensurePinnedKeripyFixtures(): Promise<void> {
   ]);
 }
 
-async function ensurePinnedKeripyKli(
+export async function ensurePinnedKeripyKli(
   env: Record<string, string>,
 ): Promise<string> {
   const marker = `${keripyInteropCacheRoot()}/PIN`;
