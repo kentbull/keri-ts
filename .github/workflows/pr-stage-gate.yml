@@ -50,15 +50,64 @@ jobs:
   changeset-required:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      run_unit: ${{ steps.scope.outputs.run_unit }}
+      run_interop: ${{ steps.scope.outputs.run_interop }}
+      run_package: ${{ steps.scope.outputs.run_package }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
+      - name: select checks that can be affected
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run_unit=false
+          run_interop=false
+          run_package=false
+
+          while IFS= read -r file; do
+            case "$file" in
+              .github/workflows/pr-stage-gate.yml|.github/actions/common-release-setup/*|deno.json|deno.lock|package.json|package-lock.json)
+                run_unit=true
+                run_interop=true
+                run_package=true
+                ;;
+              packages/*)
+                run_unit=true
+                run_package=true
+                ;;
+              scripts/ci/run-*.ts|scripts/setup-lmdb-v1.sh)
+                run_unit=true
+                ;;
+            esac
+
+            case "$file" in
+              packages/cesr/*|packages/keri/*|scripts/ci/interop-*|scripts/ci/run-interop-*)
+                run_interop=true
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/npm-release.yml|scripts/npm/*|scripts/smoke-test-*|scripts/build-*)
+                run_package=true
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          echo "run_unit=$run_unit" >> "$GITHUB_OUTPUT"
+          echo "run_interop=$run_interop" >> "$GITHUB_OUTPUT"
+          echo "run_package=$run_package" >> "$GITHUB_OUTPUT"
+
       - name: require release intent
         run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
 
   unit-tests:
+    needs: changeset-required
+    if: needs.changeset-required.outputs.run_unit == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -92,6 +141,8 @@ jobs:
           deno task test:cesr
 
   interop-parity:
+    needs: changeset-required
+    if: needs.changeset-required.outputs.run_interop == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -141,6 +192,8 @@ jobs:
           retention-days: 3
 
   package-smoke:
+    needs: changeset-required
+    if: needs.changeset-required.outputs.run_package == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -209,6 +262,6 @@ jobs:
         run: |
           test "$STATIC" = success
           test "$CHANGESET" = success
-          test "$UNIT" = success
-          test "$INTEROP" = success
-          test "$PACKAGE" = success
+          test "$UNIT" = success || test "$UNIT" = skipped
+          test "$INTEROP" = success || test "$INTEROP" = skipped
+          test "$PACKAGE" = success || test "$PACKAGE" = skipped

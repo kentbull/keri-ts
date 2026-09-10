@@ -193,6 +193,7 @@ jobs:
       - name: create or update the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TITLE: ${{ needs.artifact.outputs.title }} ${{ needs.artifact.outputs.version }}
         run: |
           TARBALL=$(find release-tarball -type f -name '*.tgz' | head -1)
