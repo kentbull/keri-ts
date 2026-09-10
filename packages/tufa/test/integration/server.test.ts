@@ -1,4 +1,4 @@
-import { type Operation, run, spawn } from "effection";
+import { action, type Operation, run, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { fetchOp, startTestServer, textOp, waitForTaskHalt } from "../test-helpers.ts";
 
@@ -88,5 +88,31 @@ Deno.test("tufa/server - startServer recovers from 404s and keeps serving", asyn
     } finally {
       yield* waitForTaskHalt(serverTask, 100);
     }
+  });
+});
+
+Deno.test("tufa/server - shutdown runs response-owner cleanup before awaiting drain", async () => {
+  await run(function*(): Operation<void> {
+    let cleanupStarted = false;
+    const release = Promise.withResolvers<void>();
+    const { task: serverTask } = yield* startTestServer(undefined, {}, function*() {
+      cleanupStarted = true;
+      yield* action<void>((resolve) => {
+        release.promise.then(resolve);
+        return () => {};
+      });
+    });
+    const halting = yield* spawn(function*() {
+      yield* serverTask.halt();
+    });
+
+    while (!cleanupStarted) {
+      yield* action<void>((resolve) => {
+        const timer = setTimeout(resolve, 1);
+        return () => clearTimeout(timer);
+      });
+    }
+    release.resolve();
+    yield* halting;
   });
 });

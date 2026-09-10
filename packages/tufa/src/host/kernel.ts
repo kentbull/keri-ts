@@ -102,6 +102,38 @@ export function* runHostKernel(
     });
   });
   const companionTasks: Task<void>[] = [];
+  let closed = false;
+  const closeKernel = function*(): Operation<void> {
+    if (closed) {
+      return;
+    }
+    let failed = false;
+    let failure: unknown;
+    for (const task of companionTasks.slice().reverse()) {
+      try {
+        yield* task.halt();
+      } catch (error) {
+        failed = true;
+        failure ??= error;
+      }
+    }
+    try {
+      yield* runtimeTask.halt();
+    } catch (error) {
+      failed = true;
+      failure ??= error;
+    }
+    try {
+      yield* runtime.close();
+    } catch (error) {
+      failed = true;
+      failure ??= error;
+    }
+    closed = true;
+    if (failed) {
+      throw failure;
+    }
+  };
 
   try {
     for (const companion of spec.companionHosts ?? []) {
@@ -122,16 +154,13 @@ export function* runHostKernel(
           onListen: spec.http.onListen,
           ...protocolPolicy,
         },
+        closeKernel,
       );
       return;
     }
 
     yield* waitUntilHalted();
   } finally {
-    for (const task of companionTasks.slice().reverse()) {
-      yield* task.halt();
-    }
-    yield* runtimeTask.halt();
-    yield* runtime.close();
+    yield* closeKernel();
   }
 }

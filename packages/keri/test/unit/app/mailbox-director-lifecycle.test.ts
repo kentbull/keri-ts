@@ -22,6 +22,8 @@ Deno.test("mailbox director stops active stream polling before its store closes"
     idleTimeoutMs: null,
     pollIntervalMs: 1,
   });
+  const reader = stream.getReader();
+  const finished = reader.read();
 
   await new Promise((resolve) => setTimeout(resolve, 5));
   director.close();
@@ -30,5 +32,20 @@ Deno.test("mailbox director stops active stream polling before its store closes"
   await new Promise((resolve) => setTimeout(resolve, 10));
 
   assertEquals(polls, pollsAtClose);
-  await stream.cancel();
+  assertEquals(await finished, { value: undefined, done: true });
+});
+
+Deno.test("mailbox director closes a pending query response during runtime shutdown", async () => {
+  const director = new MailboxDirector({} as Habery, {
+    mailboxer: {} as Mailboxer,
+  });
+  const reader = director.streamQueryResponse("query-said", {
+    pollIntervalMs: 1,
+  }).getReader();
+
+  assertEquals(new TextDecoder().decode((await reader.read()).value), "retry: 5000\n\n");
+  const finished = reader.read();
+  director.close();
+
+  assertEquals(await finished, { value: undefined, done: true });
 });
