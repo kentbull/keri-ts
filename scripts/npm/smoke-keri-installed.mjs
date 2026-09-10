@@ -33,7 +33,12 @@ for (const target of collectManifestTargets(manifest)) {
 assert(typeof keri.PACKAGE_VERSION === "string" && keri.PACKAGE_VERSION.length > 0, "keri-ts root missing PACKAGE_VERSION");
 assert(typeof keri.DISPLAY_VERSION === "string" && keri.DISPLAY_VERSION.length > 0, "keri-ts root missing DISPLAY_VERSION");
 assert(typeof runtime.createAgentRuntime === "function", "keri-ts/runtime missing createAgentRuntime");
+assert(typeof runtime.Kevery === "function", "keri-ts/runtime missing Kevery");
+assert(typeof runtime.messagize === "function", "keri-ts/runtime missing messagize");
+assert(typeof runtime.inceptRegistry === "function", "keri-ts/runtime missing inceptRegistry");
 assert(typeof db.createBaser === "function", "keri-ts/db missing createBaser");
+assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
+assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 
 assert(!("startServer" in keri), "keri-ts root leaked startServer");
 assert(!("createTufaApp" in keri), "keri-ts root leaked createTufaApp");

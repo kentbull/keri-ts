@@ -18,11 +18,14 @@ import {
 } from "../../../scripts/npm/dnt-helpers.ts";
 
 const ENTRYPOINT = "./src/npm/index.ts";
+const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const NODE_CLI_ENTRYPOINT = "./src/app/cli-node.ts";
 const OUT_DIR = "./npm";
 const DENO_CONFIG_PATH = new URL("../deno.json", import.meta.url).href;
 const NPM_MAIN_PATH = "./esm/tufa/npm/src/npm/index.js";
 const NPM_TYPES_PATH = "./types/npm/index.d.ts";
+const NPM_RUNTIME_PATH = "./esm/tufa/npm/src/npm/runtime.js";
+const NPM_RUNTIME_TYPES_PATH = "./types/npm/runtime.d.ts";
 const NPM_BIN_PATH = "./esm/tufa/npm/src/app/cli-node.js";
 
 /** Manifest fields that this build script owns after DNT emits package.json. */
@@ -42,6 +45,10 @@ interface TufaNpmTargets {
     import: string;
     types: string;
   };
+  runtime: {
+    import: string;
+    types: string;
+  };
   bin: string;
 }
 
@@ -49,6 +56,7 @@ interface TufaNpmTargets {
 // rewriting. The CLI marker is its bootstrap expression rather than a comment;
 // both markers make generated target discovery resilient to path-depth drift.
 const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
+const RUNTIME_ENTRYPOINT_MARKER = "npm subpath entrypoint for `@keri-ts/tufa/runtime`.";
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
 const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/"];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
@@ -99,6 +107,14 @@ function resolveGeneratedTargets(): TufaNpmTargets {
         { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "index.d.ts", marker: ROOT_ENTRYPOINT_MARKER },
       ),
     },
+    runtime: {
+      import: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "runtime.js", marker: RUNTIME_ENTRYPOINT_MARKER },
+      ),
+      types: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "runtime.d.ts", marker: RUNTIME_ENTRYPOINT_MARKER },
+      ),
+    },
     bin: findGeneratedEntrypoint(
       { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "cli-node.js", marker: BIN_ENTRYPOINT_MARKER },
     ),
@@ -106,6 +122,8 @@ function resolveGeneratedTargets(): TufaNpmTargets {
 
   assertPackagePathExists(OUT_DIR, targets.root.import);
   assertPackagePathExists(OUT_DIR, targets.root.types);
+  assertPackagePathExists(OUT_DIR, targets.runtime.import);
+  assertPackagePathExists(OUT_DIR, targets.runtime.types);
   assertPackagePathExists(OUT_DIR, targets.bin);
 
   return targets;
@@ -142,6 +160,10 @@ function normalizeBuiltManifest(): TufaNpmTargets {
     ".": {
       import: targets.root.import,
       types: targets.root.types,
+    },
+    "./runtime": {
+      import: targets.runtime.import,
+      types: targets.runtime.types,
     },
   };
   manifest.bin = {
@@ -191,7 +213,7 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 );
 
 await build({
-  entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
+  entryPoints: [ENTRYPOINT, RUNTIME_ENTRYPOINT, NODE_CLI_ENTRYPOINT],
   outDir: OUT_DIR,
   shims: {
     deno: true,
@@ -226,6 +248,10 @@ await build({
       ".": {
         import: NPM_MAIN_PATH,
         types: NPM_TYPES_PATH,
+      },
+      "./runtime": {
+        import: NPM_RUNTIME_PATH,
+        types: NPM_RUNTIME_TYPES_PATH,
       },
     },
     bin: {
