@@ -1,5 +1,5 @@
+import { MtrDex, Salter } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { MtrDex, Salter } from "../../../cesr/mod.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 const textEncoder = new TextEncoder();

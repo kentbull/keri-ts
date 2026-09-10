@@ -1,4 +1,4 @@
-import { Cipher, Decrypter, Encrypter, Salter, Signer, Verfer } from "../../../cesr/mod.ts";
+import { Cipher, Decrypter, Encrypter, Salter, Signer, Verfer } from "cesr-ts";
 
 /**
  * Thin compatibility wrappers over CESR-owned sealed-box primitives.

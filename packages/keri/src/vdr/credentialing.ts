@@ -27,7 +27,7 @@ import {
   TraitDex,
   type Versionage,
   Vrsn_1_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import type { Hab, Habery } from "../app/habbing.ts";
 import { resolveCachedSchema } from "../app/schema-resolving.ts";
 import { Verifier, type VerifierDecision } from "../app/verifying.ts";

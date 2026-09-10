@@ -5,8 +5,8 @@
  * VDR stores remain byte-compatible with KERIpy, while verifier webhook retry
  * and ack state lives in this operational database.
  */
+import { Dater, Prefixer, SerderACDC } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Dater, Prefixer, SerderACDC } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { CesrSuber, SerderSuber } from "./subing.ts";

@@ -1,5 +1,5 @@
+import { Diger, Ilks, SerderKERI, Siger } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Diger, Ilks, SerderKERI, Siger } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import { reply as replyEvent } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";

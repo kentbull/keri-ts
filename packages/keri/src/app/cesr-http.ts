@@ -20,7 +20,7 @@ import {
   SerderKERI,
   smell,
   type Smellage,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 
 /** Mailbox HTTP framing modes supported by `keri-ts`. */

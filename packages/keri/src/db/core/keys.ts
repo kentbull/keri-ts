@@ -7,8 +7,8 @@
 
 import { DatabaseKeyError, ValidationError } from "../../core/errors.ts";
 
-import { b, t } from "../../../../cesr/mod.ts";
-import { to32CharHex } from "../../../../cesr/src/core/bytes.ts";
+import { b, t } from "cesr-ts";
+import { to32CharHex } from "cesr-ts";
 
 /**
  * Create a digest key: prefix.digest

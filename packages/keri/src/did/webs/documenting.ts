@@ -5,7 +5,7 @@
  * state, and active designated-alias credentials. Hosted artifacts may use
  * `did:web`, but resolver comparison normalizes them back to `did:webs`.
  */
-import type { ThresholdClause, ThresholdClauseEntry, ThresholdSith } from "../../../../cesr/mod.ts";
+import type { ThresholdClause, ThresholdClauseEntry, ThresholdSith } from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";

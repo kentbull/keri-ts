@@ -16,7 +16,7 @@ import {
   type Verfer,
   type Versionage,
   Vrsn_1_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import {

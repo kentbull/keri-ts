@@ -1,4 +1,4 @@
-import { Diger, type SerderKERI } from "../../../cesr/mod.ts";
+import { Diger, type SerderKERI } from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Exchanger } from "./exchanging.ts";

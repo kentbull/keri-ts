@@ -11,8 +11,8 @@
  * - approval ordering and event selection come from the delegated-event escrows
  *   and the delegator's own KEL state
  */
+import { Diger, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Diger, type SerderKERI } from "../../../../cesr/mod.ts";
 import type { CueEmission } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";

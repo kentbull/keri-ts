@@ -9,7 +9,7 @@
  * - ordinary outcomes are explicit decisions instead of exception-only control
  *   flow; durable corruption and unsupported `DI2I` still fail explicitly
  */
-import { Dater, Diger, Ilks, NumberPrimitive, Prefixer, Saider, SerderACDC } from "../../../cesr/mod.ts";
+import { Dater, Diger, Ilks, NumberPrimitive, Prefixer, Saider, SerderACDC } from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";

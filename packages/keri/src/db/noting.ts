@@ -10,8 +10,8 @@
  *   family
  * - higher-level notification policy lives in `app/notifying.ts`
  */
+import { Cigar, MtrDex, Salter } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
-import { Cigar, MtrDex, Salter } from "../../../cesr/mod.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { CesrSuber, Suber } from "./subing.ts";

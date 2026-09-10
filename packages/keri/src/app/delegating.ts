@@ -12,8 +12,8 @@
  * - proxy communication is a selected local habitat, not an implicit runtime
  *   side effect
  */
+import { Diger, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { Diger, type SerderKERI } from "../../../cesr/mod.ts";
 import { ValidationError } from "../core/errors.ts";
 import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { Schemes } from "../core/schemes.ts";

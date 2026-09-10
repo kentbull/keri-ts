@@ -1,5 +1,5 @@
+import { concatBytes } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { concatBytes } from "../../../../cesr/mod.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import { type AgentRuntime } from "../agent-runtime.ts";

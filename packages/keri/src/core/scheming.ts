@@ -6,9 +6,9 @@
  * - schema `$id` is the self-addressing field and must verify as a SAID
  * - raw schema bytes remain the stored value in `schema.`
  */
+import { DigDex, dumps, type Kind, Saider } from "cesr-ts";
 import Ajv from "npm:ajv@8.17.1";
 import Ajv2020 from "npm:ajv@8.17.1/dist/2020.js";
-import { DigDex, dumps, type Kind, Saider } from "../../../cesr/mod.ts";
 import { ValidationError } from "./errors.ts";
 
 type JsonObject = Record<string, unknown>;

@@ -5,7 +5,6 @@
  * proposal publishing, mailbox polling, KEL/RPY/VDR approval, and delegation
  * completion for command-local multisig operations.
  */
-import { action, type Operation } from "npm:effection@^3.6.0";
 import {
   concatBytes,
   Diger,
@@ -18,7 +17,8 @@ import {
   SerderACDC,
   SerderKERI,
   TraitDex,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RegistryRecord } from "../core/records.ts";

@@ -4,7 +4,7 @@
  * `did.json` is a hosted projection. `keri.cesr` is the replay stream a clean
  * resolver needs to rebuild the same DID document from KERI/VDR state.
  */
-import { concatBytes, Diger, Prefixer } from "../../../../cesr/mod.ts";
+import { concatBytes, Diger, Prefixer } from "cesr-ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import type { Hab } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";

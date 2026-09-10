@@ -1,4 +1,4 @@
-import { type Cigar } from "../../../cesr/mod.ts";
+import { type Cigar } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Habery } from "./habbing.ts";
 

@@ -1,4 +1,3 @@
-import { type Operation } from "npm:effection@^3.6.0";
 import {
   type Cigar,
   Dater,
@@ -9,7 +8,8 @@ import {
   type SerderKERI,
   type Siger,
   type Texter,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup } from "../core/dispatch.ts";

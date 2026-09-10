@@ -5,7 +5,6 @@
  * CLI adapters supply parsed options and output/file handling; this service
  * signs, publishes, waits, and sends completed group IPEX messages.
  */
-import { action, type Operation } from "npm:effection@^3.6.0";
 import {
   type Cigar,
   concatBytes,
@@ -18,7 +17,8 @@ import {
   smell,
   type Versionage,
   Vrsn_1_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";

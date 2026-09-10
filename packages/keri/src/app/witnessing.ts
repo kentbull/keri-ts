@@ -14,8 +14,6 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import { createConnection } from "node:net";
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import {
   Cigar,
   concatBytes,
@@ -25,7 +23,9 @@ import {
   Ilks,
   type SerderKERI,
   type Siger,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { createConnection } from "node:net";
+import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
 import { ValidationError } from "../core/errors.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../core/protocol-eventing.ts";

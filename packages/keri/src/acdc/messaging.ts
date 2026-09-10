@@ -20,7 +20,7 @@ import {
   versify,
   type Versionage,
   Vrsn_2_0,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 

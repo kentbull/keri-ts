@@ -10,7 +10,7 @@
  * `Notifier` rows are intentionally not consumed here; they remain operator
  * visibility, matching the roadmap contract.
  */
-import { Dater, Ilks, Prefixer, SerderACDC } from "../../../cesr/mod.ts";
+import { Dater, Ilks, Prefixer, SerderACDC } from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
 import type { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";

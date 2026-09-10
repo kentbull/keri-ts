@@ -1,7 +1,5 @@
 /** KERI event-log databaser built on `LMDBer` composition. */
 
-import { action, type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.5.3";
 import {
   b,
   Cigar,
@@ -22,7 +20,9 @@ import {
   Texter,
   Verfer,
   Verser,
-} from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { action, type Operation } from "npm:effection@^3.6.0";
+import type { Database } from "npm:lmdb@3.5.3";
 import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";

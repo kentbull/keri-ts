@@ -17,8 +17,8 @@ import {
   type Tier,
   Tiers,
   Verfer,
-} from "../../../cesr/mod.ts";
-import { b } from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { b } from "cesr-ts";
 import { Keeper, type PrePrm, type PrePrmShape, type PreSit, type PreSitShape, PubLot } from "../db/keeping.ts";
 
 /**

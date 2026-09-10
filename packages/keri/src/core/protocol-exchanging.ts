@@ -13,8 +13,8 @@ import {
   type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
-} from "../../../cesr/mod.ts";
-import { type Cigar } from "../../../cesr/mod.ts";
+} from "cesr-ts";
+import { type Cigar } from "cesr-ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { pathedMaterialCounterQb64b } from "./attachment-countering.ts";
 import { type TransIdxSigGroup } from "./dispatch.ts";
