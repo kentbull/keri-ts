@@ -258,6 +258,7 @@ export function* createAgentRuntime(
     vdr,
     services,
     *close(): Operation<void> {
+      mailboxDirector.close();
       if (ownsNoter && noter?.opened) {
         yield* noter.close();
       }

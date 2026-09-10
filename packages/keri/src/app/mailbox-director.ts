@@ -51,6 +51,7 @@ export class MailboxDirector {
   readonly queryCues: Deck<StreamCue>;
   readonly topics: Set<string>;
   private activeMailboxAid: string | null = null;
+  private readonly streamCleanups = new Set<() => void>();
 
   constructor(
     hby: Habery,
@@ -113,6 +114,13 @@ export class MailboxDirector {
   /** Snapshot the currently configured mailbox topic set. */
   registeredTopics(): string[] {
     return [...this.topics];
+  }
+
+  /** Stop every request-owned mailbox stream before its backing store closes. */
+  close(): void {
+    for (const cleanup of [...this.streamCleanups]) {
+      cleanup();
+    }
   }
 
   /** Retain one mailbox-query `stream` cue for later HTTP/SSE correlation. */
@@ -204,7 +212,9 @@ export class MailboxDirector {
         clearTimeout(pollTimer);
         pollTimer = null;
       }
+      this.streamCleanups.delete(cleanup);
     };
+    this.streamCleanups.add(cleanup);
 
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
