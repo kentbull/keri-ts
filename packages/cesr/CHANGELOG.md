@@ -1,5 +1,11 @@
 # cesr-ts
 
+## 0.9.2
+
+### Patch Changes
+
+- e99beb0: Use pinned libsodium Argon2id for faster byte-compatible Salter derivation, wiping owned WASM buffers before release. Preserve KERIpy tier parameters and enforce its 16-byte minimum output; whole-process erasure is not claimed.
+
 ## 0.9.1
 
 ### Patch Changes
