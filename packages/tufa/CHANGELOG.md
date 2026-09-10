@@ -1,5 +1,11 @@
 # @keri-ts/tufa
 
+## 0.10.4
+
+### Patch Changes
+
+- ce87fb3: Consume the KERI runtime release that closes active mailbox streams before LMDB shutdown.
+
 ## 0.10.3
 
 ### Patch Changes
