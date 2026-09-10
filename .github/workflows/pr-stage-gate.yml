@@ -64,10 +64,21 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           run_unit=false
           run_interop=false
           run_package=false
+
+          # The source PR already ran unit and interop gates. Version PRs only
+          # rewrite release metadata, so retain static and package validation.
+          if [[ "$HEAD_REF" == "changeset-release/master" && "$HEAD_AUTHOR" == "github-actions[bot]" ]]; then
+            echo "run_unit=false" >> "$GITHUB_OUTPUT"
+            echo "run_interop=false" >> "$GITHUB_OUTPUT"
+            echo "run_package=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           while IFS= read -r file; do
             case "$file" in
