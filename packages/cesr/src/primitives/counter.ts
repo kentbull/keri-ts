@@ -1,5 +1,5 @@
 import { b, b64ToInt, codeB2ToB64, codeB64ToB2, concatBytes, intToB64, nabSextets, sceil } from "../core/bytes.ts";
-import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
+import { DeserializeError, ShortageError, UnknownCodeError, VersionError } from "../core/errors.ts";
 import type { ColdCode } from "../core/types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { resolveCounterCodeNameTable, resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
@@ -438,4 +438,17 @@ export function parseCounter(
   cold: Extract<ColdCode, "txt" | "bny">,
 ): Counter {
   return cold === "bny" ? parseCounterFromBinary(input, version) : parseCounterFromText(input, version);
+}
+
+/** Decode a genus selector without coercing unsupported versions into a supported family. */
+export function decodeGenusVersion(counter: Counter): Versionage {
+  const triplet = intToB64(counter.count, 3);
+  const major = b64ToInt(triplet[0]);
+  const minor = b64ToInt(triplet.slice(1));
+  if (major !== 1 && major !== 2) {
+    throw new VersionError(`Unsupported genus major version ${major}`);
+  }
+  const version: Versionage = { major, minor };
+  resolveCounterSizeTable(version);
+  return version;
 }

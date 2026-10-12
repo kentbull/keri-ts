@@ -1,4 +1,4 @@
-import { buildGeneratedArtifacts } from "./generate-tables.ts";
+import { buildGeneratedArtifacts, KERIPY_TABLE_BASELINE } from "./generate-tables.ts";
 
 async function main(): Promise<void> {
   const artifacts = await buildGeneratedArtifacts();
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
     Deno.exit(1);
   }
 
-  console.log("verify-tables: generated CESR tables match KERIpy baseline.");
+  console.log(`verify-tables: generated CESR tables match KERIpy ${KERIPY_TABLE_BASELINE}.`);
 }
 
 if (import.meta.main) {

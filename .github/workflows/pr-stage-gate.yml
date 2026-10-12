@@ -190,6 +190,18 @@ jobs:
       - name: add KERIpy CLI to PATH
         run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
 
+      - name: check out pinned KERIpy table source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kentbull/keripy
+          ref: ${{ env.KERIPY_GIT_SHA }}
+          path: .cache/keripy-source
+
+      - name: verify CESR tables against interop baseline
+        env:
+          KERIPY_PATH: ${{ github.workspace }}/.cache/keripy-source
+        run: deno run -A packages/cesr/scripts/verify-tables.ts
+
       - name: run representative KERIpy parity
         run: deno task test:quality:keri:interop-parity
 

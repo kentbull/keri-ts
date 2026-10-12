@@ -29,6 +29,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    transport shortages. Fixtures must encode payload lengths, not item counts.
    Dispatch selects separate v1 item-count and v2 payload-exhaustion handlers;
    single-entry parsing and primitive rehydration remain shared.
+   ESSR also has separate v1 item-count and v2 payload-length handlers, both
+   returning Texters. Nested transferable signatures require the controller
+   counter, matching the pinned reference (including its exclusion of big inner
+   counters). Genus selectors decode both minor sextets and reject unsupported
+   versions even in compat wrappers.
 6. Version and codex lookup now goes through explicit registries rather than ad
    hoc major-version branching.
 7. Syntax and semantic failures are intentionally separated on high-coupling
@@ -37,7 +42,12 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 8. Binary serder cold-start support exists for JSON, MGPK, and CBOR. Local Deno
    source graphs must carry CESR-owned npm/import-map entries when they load
    local CESR source.
-9. Generated KERIpy-parity codex objects such as `MtrDex`, `PreDex`, `DigDex`,
+9. Table generation and verification read immutable KERIpy source at
+   `450ae1c2a7eac61d92bc7b830cb6883c41e6a798`, the PR interop baseline. CI checks
+   table parity. At that baseline, v2 `-N` is TransReceiptQuadruples and GramHead
+   is `0Q`; newer `-N` NonceSealSingles and Matter `b` require a coordinated
+   reference upgrade, not a partial table import.
+   Generated KERIpy-parity codex objects such as `MtrDex`, `PreDex`, `DigDex`,
    `IdrDex`, `IdxSigDex`, and `TraitDex` are the primary authority. Helper sets
    in `primitives/codex.ts` are derived readability views.
 10. `Matter` and `Indexer` are low-level CESR bases. When semantics are known,
