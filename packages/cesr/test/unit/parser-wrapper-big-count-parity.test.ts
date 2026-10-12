@@ -3,7 +3,7 @@ import { decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -35,7 +35,7 @@ function summarizeFrames(events: CesrFrame[]): string[] {
 }
 
 Deno.test("V-P1-006: big wrapper counters (--A/--B/--C) preserve txt/qb2 parity", () => {
-  const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedSigGroup = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
 
   const bigBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSigGroup}`;
   const bigBodyWrapped = wrapQuadletGroupV2(

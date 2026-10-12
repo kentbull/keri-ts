@@ -3,7 +3,7 @@ import { decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { CesrFrame } from "../../src/index.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -88,7 +88,7 @@ Deno.test("chunk-fuzz matrix: v2 native fix-body frame stream", () => {
 });
 
 Deno.test("chunk-fuzz matrix: v2 BodyWithAttachmentGroup stream (txt + qb2)", () => {
-  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const wrapped = `${
     counterV2(

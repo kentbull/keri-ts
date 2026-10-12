@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
 
@@ -23,7 +23,7 @@ function summarizeFrames(events: CesrFrame[]): string[] {
 
 Deno.test("V-P1-009: boundary-shortage matrix is deterministic at header/mid/just-before-complete cuts", () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const attachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const attachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const stream = `${body}${attachment}`;
   const bytes = encode(stream);
 

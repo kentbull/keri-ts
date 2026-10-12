@@ -6,8 +6,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current State
 
-1. Parser completeness has a formal `GO` decision against the current KERIpy
-   baseline; no open `S0/S1` contract-surface gaps are currently tracked.
+1. The historical parser completeness `GO` predates the count-unit correction
+   and mixed-version precedence issue below; current parity claims must name
+   their tested reference and version combinations.
 2. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the
    normative lifecycle contract. Parser behavior changes should stay mapped to
    that contract and its tests.
@@ -22,7 +23,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    controls opaque wrapper-tail recovery only. Explicit genus selectors and
    legacy frame-start recognition remain separate from attachment dispatch.
    Non-shortage errors emit the normal parser error event and reset; recovery
-   has no separate diagnostic callback API.
+   has no separate diagnostic callback API. V1 signature/tuple counters count
+   items; v2 payload counters count quadlets/triplets, including nested signature
+   groups. Complete v2 payloads with incomplete items are boundary errors, not
+   transport shortages. Fixtures must encode payload lengths, not item counts.
 6. Version and codex lookup now goes through explicit registries rather than ad
    hoc major-version branching.
 7. Syntax and semantic failures are intentionally separated on high-coupling
@@ -97,6 +101,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 6. `docs/design-docs/keri/WEIGHTED_THRESHOLD_PARITY.md`
 
 ## Current Follow-Ups
+
+- Mixed v1 JSON protocol bodies with an explicit v2 genus selector still lose
+  the stream selector in `FrameParser` message handling (`gvrsn ?? pvrsn`).
+  Keep this version-precedence issue separate from v2 count-unit correctness;
+  serializer/parser coverage currently proves explicit v2 protocol/genus.
 
 1. Keep lifecycle-contract tests synchronized with version selection and wrapper
    recovery behavior.

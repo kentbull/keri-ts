@@ -4,7 +4,7 @@ import { createParser, type ParserOptions } from "../../src/core/parser-engine.t
 import type { CesrFrame } from "../../src/core/types.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import { minimalV1CborBody, minimalV1MgpkBody, v2ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -79,7 +79,7 @@ Deno.test(
   () => {
     const opaqueMatter = token("1AAE");
     const bigOpaqueBody = `${counterV2(CtrDexV2.NonNativeBodyGroup, opaqueMatter.length / 4)}${opaqueMatter}${
-      counterV2(CtrDexV2.ControllerIdxSigs, 20)
+      counterV2(CtrDexV2.ControllerIdxSigs, 20 * sigerToken().length / 4)
     }${Array.from({ length: 20 }, () => sigerToken()).join("")}`;
     const wrapped = wrapQuadletGroupV2(
       CtrDexV2.BigBodyWithAttachmentGroup,
@@ -93,7 +93,7 @@ Deno.test(
     assertEquals(txtSummary[0].kind, "CESR");
     assertEquals(txtSummary[0].ilk, "");
     assertEquals(txtSummary[0].attachments, [
-      `${CtrDexV2.ControllerIdxSigs}:20`,
+      `${CtrDexV2.ControllerIdxSigs}:440`,
     ]);
   },
 );
@@ -101,7 +101,7 @@ Deno.test(
 Deno.test(
   "V-P2-002: deep nested GenericGroup chain with mixed wrapper children remains split-deterministic",
   () => {
-    const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+    const nestedSigGroup = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
     const wrappedBody = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
       `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedSigGroup}`,
@@ -132,7 +132,7 @@ Deno.test(
 
     assertEquals(baseline.length, 6);
     assertEquals(
-      baseline.filter((frame) => frame.attachments.includes(`${CtrDexV2.ControllerIdxSigs}:1`))
+      baseline.filter((frame) => frame.attachments.includes(`${CtrDexV2.ControllerIdxSigs}:22`))
         .length,
       2,
     );
@@ -197,7 +197,7 @@ Deno.test(
     const json = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
     const wrappedNative = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
-      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`,
+      `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${groupV2(CtrDexV2.ControllerIdxSigs, sigerToken())}`,
     );
 
     const part1 = encode(json);
@@ -231,14 +231,14 @@ Deno.test(
       "2.0",
       "2.0",
     ]);
-    assertEquals(summary[4].attachments, [`${CtrDexV2.ControllerIdxSigs}:1`]);
+    assertEquals(summary[4].attachments, [`${CtrDexV2.ControllerIdxSigs}:22`]);
   },
 );
 
 Deno.test(
   "V-P2-012: same semantic wrapper-heavy corpus preserves txt/qb2 summary and metadata parity",
   () => {
-    const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 2)}${sigerToken()}${sigerToken()}`;
+    const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken().repeat(2));
     const wrapped = wrapQuadletGroupV2(
       CtrDexV2.BodyWithAttachmentGroup,
       `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`,
@@ -261,7 +261,7 @@ Deno.test(
     assertEquals(qb2Summary, txtSummary);
     assertEquals(txtSummary.length, 3);
     assertEquals(txtSummary[0].attachments, [
-      `${CtrDexV2.ControllerIdxSigs}:2`,
+      `${CtrDexV2.ControllerIdxSigs}:44`,
     ]);
   },
 );
@@ -270,7 +270,7 @@ Deno.test(
   "V-P2-014: large declared attachment counts with early EOF emit one terminal shortage and no duplicate flush frames",
   () => {
     const declared = 20;
-    const fullAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, declared)}${
+    const fullAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, declared * sigerToken().length / 4)}${
       Array.from({ length: declared }, () => sigerToken()).join("")
     }`;
     const truncated = encode(
@@ -300,7 +300,7 @@ Deno.test(
 Deno.test(
   "V-P2-015: malformed wrapper payload is fail-fast in strict mode and recoverable in compat mode",
   () => {
-    const nested = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+    const nested = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
     const malformedPayload = `${nested}ABCD`;
     const wrappedAttachmentGroup = `${
       counterV2(CtrDexV2.AttachmentGroup, malformedPayload.length / 4)
