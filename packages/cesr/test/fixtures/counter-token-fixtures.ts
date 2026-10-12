@@ -29,3 +29,8 @@ export function token(code: string): string {
   }
   return code + "A".repeat(sizage.fs - code.length);
 }
+
+/** Frame a v2 text payload using its encoded quadlet length. */
+export function groupV2(code: string, payload: string): string {
+  return counterV2(code, payload.length / 4) + payload;
+}

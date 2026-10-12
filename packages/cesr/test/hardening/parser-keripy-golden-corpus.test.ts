@@ -9,7 +9,7 @@ import {
   SUDexByVersion,
   UniDexByVersion,
 } from "../../src/tables/counter-version-registry.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, KERIPY_V1_JSON_ICP_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -73,7 +73,7 @@ Deno.test(
   "V-P2-017: KERIpy-derived golden corpus preserves txt/qb2 parity and split determinism",
   () => {
     const expectedSaid = "EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN";
-    const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 2)}${sigerToken()}${sigerToken()}`;
+    const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken().repeat(2));
     // Build nested wrapper shapes from the canonical KERIpy v2 native fixture so
     // parity assertions lock wrapper semantics, not synthetic body differences.
     const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
@@ -112,7 +112,7 @@ Deno.test(
             pvrsn: "2.0",
             ilk: "icp",
             said: expectedSaid,
-            attachments: [`${CtrDexV2.ControllerIdxSigs}:2`],
+            attachments: [`${CtrDexV2.ControllerIdxSigs}:44`],
           },
         ],
       },
@@ -125,7 +125,7 @@ Deno.test(
             pvrsn: "2.0",
             ilk: "icp",
             said: expectedSaid,
-            attachments: [`${CtrDexV2.ControllerIdxSigs}:2`],
+            attachments: [`${CtrDexV2.ControllerIdxSigs}:44`],
           },
           {
             kind: "CESR",

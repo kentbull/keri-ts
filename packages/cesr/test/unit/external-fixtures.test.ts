@@ -3,7 +3,7 @@ import { decodeB64, t } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -120,7 +120,7 @@ Deno.test("qb2 BodyWithAttachmentGroup parses nested native body", () => {
 });
 
 Deno.test("txt and qb2 BodyWithAttachmentGroup parse nested native body with attachments", () => {
-  const nestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   assertEquals(payload.length % 4, 0);
 

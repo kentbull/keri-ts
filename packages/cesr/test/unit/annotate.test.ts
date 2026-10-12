@@ -4,7 +4,7 @@ import { denot } from "../../src/annotate/denot.ts";
 import { tephraCli } from "../../src/cli/main.ts";
 import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
@@ -17,14 +17,14 @@ function genusVersionCounter(major: 1 | 2, minor = 0): string {
 }
 
 Deno.test("annotate + denot roundtrip for CESR text stream", () => {
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${groupV2(CtrDexV2.ControllerIdxSigs, sigerToken())}`;
   const annotated = annotate(ims);
   const restored = denot(annotated);
   assertEquals(TEXT_DECODER.decode(restored), ims);
 });
 
 Deno.test("annotate qb2 stream emits canonical annotated text", () => {
-  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const ims = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${groupV2(CtrDexV2.ControllerIdxSigs, sigerToken())}`;
   const annotated = annotate(decodeB64(ims), { domainHint: "bny" });
   assertStringIncludes(annotated, "FixBodyGroup");
   assertStringIncludes(annotated, "ControllerIdxSigs");

@@ -7,7 +7,7 @@ import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../src/
 import { smell, versify } from "../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { Vrsn_2_0 } from "../../src/tables/versions.ts";
-import { counterV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
+import { counterV2, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { KERIPY_STRUCTING_DATA_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -80,11 +80,9 @@ Deno.test("serder: structor projection classifies attachment families", () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const aggorPayload = `${token("B")}${token("E")}`;
   const aggor = `${counterV2(CtrDexV2.GenericListGroup, aggorPayload.length / 4)}${aggorPayload}`;
-  const sealer = `${counterV2(CtrDexV2.SealSourceCouples, 1)}${token("B")}${token("E")}`;
-  const blinder = `${counterV2(CtrDexV2.BlindedStateQuadruples, 1)}${token("B")}${token("E")}${token("D")}${
-    token("M")
-  }`;
-  const mediar = `${counterV2(CtrDexV2.TypedMediaQuadruples, 1)}${token("B")}${token("E")}${token("D")}${token("M")}`;
+  const sealer = groupV2(CtrDexV2.SealSourceCouples, `${token("B")}${token("E")}`);
+  const blinder = groupV2(CtrDexV2.BlindedStateQuadruples, `${token("B")}${token("E")}${token("D")}${token("M")}`);
+  const mediar = groupV2(CtrDexV2.TypedMediaQuadruples, `${token("B")}${token("E")}${token("D")}${token("M")}`);
   const stream = `${body}${aggor}${sealer}${blinder}${mediar}`;
 
   const parser = createParser();
@@ -110,8 +108,8 @@ Deno.test("serder: structor projection classifies attachment families", () => {
 Deno.test("serder: projection traverses nested wrapper groups and preserves other families", () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const sealerPayload = KERIPY_STRUCTOR_VECTORS.sealerTypedDigestPayload;
-  const nestedSealer = `${counterV2(CtrDexV2.TypedDigestSealCouples, 1)}${sealerPayload}`;
-  const nestedControllerSigs = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedSealer = groupV2(CtrDexV2.TypedDigestSealCouples, sealerPayload);
+  const nestedControllerSigs = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const wrapperPayload = `${nestedSealer}${nestedControllerSigs}`;
   const wrapper = `${counterV2(CtrDexV2.AttachmentGroup, wrapperPayload.length / 4)}${wrapperPayload}`;
   const stream = `${body}${wrapper}`;

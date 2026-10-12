@@ -37,10 +37,10 @@ Deno.test("qb2 smoke: counter/indexer txt/bny parity", () => {
 });
 
 Deno.test("qb2 smoke: attachment dispatch", () => {
-  const qb64 = `${KERIPY_COUNTER_VECTORS.v2ControllerIdxSigsCount1}${KERIPY_INDEXER_VECTORS.ed25519SigIdx0}`;
+  const qb64 = `-KAW${KERIPY_INDEXER_VECTORS.ed25519SigIdx0}`;
   const parsed = parseAttachmentDispatch(codeB64ToB2(qb64), V2, "bny");
 
   assertEquals(parsed.group.code, "-K");
-  assertEquals(parsed.group.count, 1);
+  assertEquals(parsed.group.count, 22);
   assertEquals(parsed.group.items.length, 1);
 });

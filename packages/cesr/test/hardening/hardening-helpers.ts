@@ -3,7 +3,7 @@ import { concatBytes, decodeB64, intToB64 } from "../../src/core/bytes.ts";
 import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -233,7 +233,7 @@ export function genusVersionCounter(major: 1 | 2, minor = 0): string {
  * attachment wrappers to maximize parser-surface coverage per fixture.
  */
 export function wrapperHeavyV2Stream(): string {
-  const nestedSigGroup = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const nestedSigGroup = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const shortGeneric = wrapQuadletGroupV2(
     CtrDexV2.GenericGroup,
     KERIPY_NATIVE_V2_ICP_FIX_BODY,

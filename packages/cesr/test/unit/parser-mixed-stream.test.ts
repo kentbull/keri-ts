@@ -3,7 +3,7 @@ import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -38,7 +38,7 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
 
 Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const attachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const attachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
 
   // Same semantic frame, two attachment domains:
   // - txt stream carries qb64 attachments.
@@ -50,15 +50,15 @@ Deno.test("V-P1-004: mixed qb64/qb2 parity for JSON body + attachments stream", 
   const bnySummary = summarizeFrames(bnyStream, []);
   assertEquals(txtSummary, bnySummary);
   assertEquals(txtSummary.length, 1);
-  assertEquals(txtSummary[0], "JSON|icp|Eabc|-K:1");
+  assertEquals(txtSummary[0], "JSON|icp|Eabc|-K:22");
 });
 
 Deno.test("V-P1-005: multi-message mixed stream ordering is split-deterministic", () => {
   const jsonBody = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const jsonAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const jsonAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const jsonFrame = `${jsonBody}${jsonAttachment}`;
 
-  const wrappedNestedAttachment = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const wrappedNestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const wrappedPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedNestedAttachment}`;
   const wrappedFrame = `${counterV2(CtrDexV2.BodyWithAttachmentGroup, wrappedPayload.length / 4)}${wrappedPayload}`;
 
@@ -70,14 +70,14 @@ Deno.test("V-P1-005: multi-message mixed stream ordering is split-deterministic"
 
   // Verification 1: baseline order across three distinct frame types.
   assertEquals(baseline.length, 3);
-  assertEquals(baseline[0], "JSON|icp|Eabc|-K:1");
+  assertEquals(baseline[0], "JSON|icp|Eabc|-K:22");
   assertEquals(
     baseline[1],
     "CESR|icp|EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN|",
   );
   assertEquals(
     baseline[2],
-    "CESR|icp|EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN|-K:1",
+    "CESR|icp|EFaYE2LTv8dItUgQzIHKRA9FaHDrHtIHNs-m5DJKWXRN|-K:22",
   );
 
   const frame1End = jsonFrame.length;

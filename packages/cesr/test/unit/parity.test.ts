@@ -42,29 +42,30 @@ Deno.test("primitive registry includes extended KERIpy codex entries", () => {
 });
 
 Deno.test("dispatch parses v2 controller indexed signatures group", () => {
-  const ims = `-KAB${sigerToken()}`;
+  const ims = `-KAW${sigerToken()}`;
   const parsed = parseAttachmentDispatch(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
   assertEquals(parsed.group.name, "ControllerIdxSigs");
-  assertEquals(parsed.group.count, 1);
+  assertEquals(parsed.group.count, (ims.length - 4) / 4);
   assertEquals(parsed.group.items.length, 1);
 });
 
 Deno.test("dispatch parses v2 trans indexed sig group", () => {
-  const ims = `-XAB${token("B")}${token("M")}${token("E")}-KAB${sigerToken()}`;
+  const payload = `${token("B")}${token("M")}${token("E")}-KAW${sigerToken()}`;
+  const ims = `${counterV2("-X", payload.length / 4)}${payload}`;
   const parsed = parseAttachmentDispatch(encode(ims), {
     major: 2,
     minor: 0,
   }, "txt");
   assertEquals(parsed.group.name, "TransIdxSigGroups");
-  assertEquals(parsed.group.count, 1);
+  assertEquals(parsed.group.count, (ims.length - 4) / 4);
   assertEquals(parsed.group.items.length, 1);
 });
 
 Deno.test("dispatch parses nested attachment wrapper", () => {
-  const nested = `-KAB${sigerToken()}`;
+  const nested = `-KAW${sigerToken()}`;
   const ims = `${counterV2("-C", nested.length / 4)}${nested}`;
   const parsed = parseAttachmentDispatch(encode(ims), {
     major: 2,

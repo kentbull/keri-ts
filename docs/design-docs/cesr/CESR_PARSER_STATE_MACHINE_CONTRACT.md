@@ -114,6 +114,37 @@ reason about lifecycle behavior without re-deriving rules from control flow.
   emitted once, remainder consumed.
 - Non-shortage parser errors emit one `error` event and trigger `reset()`.
 
+## Attachment Count Units
+
+Count semantics follow the selected CESR genus version, independently of the
+message protocol version. The reference for this correction is KERIpy commit
+`927c0cb8794d7c84fc17143c67df64aab9deda6c`, `core/counting.py` (`Counter.enclose`)
+and `core/parsing.py` (versioned attachment handlers).
+
+| Group family                                                                           | v1                        | v2                                      |
+| -------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------- |
+| Controller/witness signatures, receipt/replay/seal tuples                              | Item count                | Payload quadlets/triplets               |
+| Transferable and last-establishment signature groups, including nested signature lists | Item count at each level  | Payload quadlets/triplets at each level |
+| v2-only seal, blinded-state, bound-state, and media tuples                             | Not applicable            | Payload quadlets/triplets               |
+| Enclosures/wrappers                                                                    | Payload quadlets/triplets | Payload quadlets/triplets               |
+| Genus-version selector                                                                 | Version value             | Version value                           |
+
+V2 payload lengths exclude the counter header. Each v2 group is bounded before
+its items are parsed, and success consumes that exact boundary. A count of 22
+can therefore contain one 88-character signature; `Counter.count` stays 22,
+while the hydrated item list has length one. Primitive sizes determine item
+boundaries; there is no fixed signature-size assumption.
+
+If fewer bytes than the declared payload have arrived, parsing raises
+`ShortageError` and waits. Once that payload is complete, an incomplete inner
+primitive, tuple, or nested group is a `GroupSizeError`: following bytes cannot
+repair it. Strict and compat wrapper modes both propagate this boundary error.
+Old v2 fixtures that used item counts are invalid; no fallback accepts them.
+
+Coverage: `packages/cesr/test/unit/parser-count-units.test.ts` and the KERI
+`protocol-serialization.test.ts` serializer-to-parser regression, plus the
+existing version-selector, wrapper, and split-stream suites.
+
 ## Version Context Semantics
 
 - Top-level stream scope: `streamVersion`, affected by leading

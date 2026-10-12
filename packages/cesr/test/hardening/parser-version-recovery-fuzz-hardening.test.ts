@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
+import { counterV1, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { chunkByBoundaries, encode } from "../fixtures/stream-byte-fixtures.ts";
 import { minimalV1MgpkBody, v2ify } from "../fixtures/versioned-body-fixtures.ts";
@@ -86,7 +86,7 @@ Deno.test(
     const wrapped = encode(
       wrapQuadletGroupV2(
         CtrDexV2.BodyWithAttachmentGroup,
-        `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`,
+        `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${groupV2(CtrDexV2.ControllerIdxSigs, sigerToken())}`,
       ),
     );
     const mgpk = minimalV1MgpkBody();
@@ -101,7 +101,7 @@ Deno.test(
     const summary = summarizeFrames(parseFramesNoError(stream, boundaries));
     assertEquals(summary.length, 3);
     assertEquals(summary.map((frame) => frame.kind), ["JSON", "CESR", "MGPK"]);
-    assertEquals(summary[1].attachments, [`${CtrDexV2.ControllerIdxSigs}:1`]);
+    assertEquals(summary[1].attachments, [`${CtrDexV2.ControllerIdxSigs}:22`]);
   },
 );
 

@@ -496,16 +496,17 @@ function parseTuple(
   return { items, consumed: offset };
 }
 
-/** Parse `count` tuple repetitions with stable ordering and exact byte accounting. */
+/** Parse v1 item counts or exhaust a bounded v2 tuple payload. */
 function parseRepeated(
   input: Uint8Array,
   count: number,
+  version: Versionage,
   kinds: readonly PrimitiveKind[],
   domain: ParseDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = 0;
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; version.major === 2 ? offset < input.length : i < count; i++) {
     const tuple = parseTuple(input.slice(offset), kinds, domain);
     items.push(tupleItem(tuple.items));
     offset += tuple.consumed;
@@ -563,15 +564,8 @@ function parseSigerList(
     );
   }
 
-  const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
-  for (let i = 0; i < counter.count; i++) {
-    const part = parseIndexer(input.slice(offset), domain);
-    items.push(part);
-    offset += primitiveSize(part, domain);
-  }
-
-  return { items, consumed: offset };
+  const parsed = parseAttachmentDispatch(input, version, domain);
+  return { items: parsed.group.items.flat(), consumed: parsed.consumed };
 }
 
 /**
@@ -667,7 +661,7 @@ function repeatTupleParser(kinds: readonly PrimitiveKind[]): GroupParser {
   return (
     input: Uint8Array,
     counter: Counter,
-    _version: Versionage,
+    version: Versionage,
     domain: ParseDomain,
     _context: AttachmentDispatchOptions,
   ): ParsedGroup => {
@@ -675,6 +669,7 @@ function repeatTupleParser(kinds: readonly PrimitiveKind[]): GroupParser {
     const parsed = parseRepeated(
       input.slice(headerSize),
       counter.count,
+      version,
       kinds,
       domain,
     );
@@ -692,7 +687,7 @@ function transIdxSigGroupsParser(
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
-  for (let i = 0; i < counter.count; i++) {
+  for (let i = 0; version.major === 2 ? offset < input.length : i < counter.count; i++) {
     const header = parseTuple(input.slice(offset), [
       "matter",
       "matter",
@@ -716,7 +711,7 @@ function transLastIdxSigGroupsParser(
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
-  for (let i = 0; i < counter.count; i++) {
+  for (let i = 0; version.major === 2 ? offset < input.length : i < counter.count; i++) {
     const header = parseTuple(input.slice(offset), ["matter"], domain);
     offset += header.consumed;
     const sigers = parseSigerList(input.slice(offset), version, domain);
@@ -960,7 +955,29 @@ function parseAttachmentDispatchWithVersion(
     );
   }
 
-  const parsed = parser(input, counter, version, domain, context);
+  // V2 counts payload quadlets/triplets; the genus selector carries a version,
+  // not a payload length. Bound before parsing so siblings cannot fill a group.
+  const bounded = version.major === 2 && counter.code !== CtrDexV2.KERIACDCGenusVersion;
+  if (bounded) {
+    const end = counterHeaderSize(counter, domain) + counter.count * quadletUnitSize(domain);
+    if (input.length < end) {
+      throw new ShortageError(end, input.length);
+    }
+    input = input.slice(0, end);
+  }
+
+  let parsed: ParsedGroup;
+  try {
+    parsed = parser(input, counter, version, domain, context);
+  } catch (error) {
+    if (bounded && error instanceof ShortageError) {
+      throw new GroupSizeError(`Incomplete item inside ${counter.code} payload`);
+    }
+    throw error;
+  }
+  if (bounded && parsed.consumed !== input.length) {
+    throw new GroupSizeError(`Unconsumed payload in ${counter.code}`);
+  }
 
   if (parsed.consumed > input.length) {
     throw new GroupSizeError(
