@@ -1,9 +1,4 @@
-import {
-  type AttachmentDispatchOptions,
-  type AttachmentVersionFallbackPolicy,
-  createAttachmentVersionFallbackPolicy,
-  type VersionFallbackInfo,
-} from "../parser/group-dispatch.ts";
+import type { AttachmentDispatchOptions } from "../parser/group-dispatch.ts";
 import { ParserError, ShortageError } from "./errors.ts";
 import { AttachmentCollector } from "./parser-attachment-collector.ts";
 import { DEFAULT_VERSION } from "./parser-constants.ts";
@@ -11,34 +6,21 @@ import { DeferredFrameLifecycle } from "./parser-deferred-frames.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
 import { createFrameBoundaryPolicy, type FrameBoundaryPolicy } from "./parser-policy.ts";
 import { ParserStreamState } from "./parser-stream-state.ts";
-import { composeRecoveryDiagnosticObserver, type RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
+import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import type { CesrFrame, CesrMessage } from "./types.ts";
 
 /**
- * Parser construction options spanning legacy compatibility knobs and the newer
- * explicit policy seams.
+ * Parser construction options for emission and wrapper-tail recovery.
  */
 export interface ParserOptions {
   /** Legacy framed toggle; used only when `frameBoundaryPolicy` is not injected. */
   framed?: boolean;
-  /**
-   * Legacy strict/compat selector; used only when
-   * `attachmentVersionFallbackPolicy` is not injected.
-   */
+  /** Wrapper-tail recovery mode; attachment dispatch never retries versions. */
   attachmentDispatchMode?: AttachmentDispatchOptions["mode"];
-  /** Legacy fallback observer; adapted from structured diagnostics events. */
-  onAttachmentVersionFallback?: (info: VersionFallbackInfo) => void;
   /** Structured recovery diagnostics observer (preferred observability path). */
   onRecoveryDiagnostic?: RecoveryDiagnosticObserver;
   /** Explicit frame-boundary strategy override (preferred for new integrations). */
   frameBoundaryPolicy?: FrameBoundaryPolicy;
-  /**
-   * Explicit attachment fallback strategy override.
-   *
-   * When provided, this supersedes `attachmentDispatchMode` and
-   * `onAttachmentVersionFallback`.
-   */
-  attachmentVersionFallbackPolicy?: AttachmentVersionFallbackPolicy;
 }
 
 /**
@@ -57,38 +39,24 @@ export class CesrParser {
   private readonly attachmentCollector: AttachmentCollector;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
-  /**
-   * Compose parser collaborators with injected policy strategies.
-   *
-   * Policy precedence:
-   * 1) explicit policy objects from `ParserOptions`
-   * 2) derived defaults from legacy `framed` and strict/compat options
-   */
+  /** Compose emission policy and attachment parsing collaborators. */
   constructor(options: ParserOptions = {}) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy
       ?? createFrameBoundaryPolicy(options.framed ?? false);
-    this.recoveryDiagnosticObserver = composeRecoveryDiagnosticObserver({
-      onRecoveryDiagnostic: options.onRecoveryDiagnostic,
-      onAttachmentVersionFallback: options.attachmentVersionFallbackPolicy
-        ? undefined
-        : options.onAttachmentVersionFallback,
-    });
-    const attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy
-      ?? createAttachmentVersionFallbackPolicy({
-        mode: options.attachmentDispatchMode,
-      });
+    this.recoveryDiagnosticObserver = options.onRecoveryDiagnostic;
+    const attachmentDispatchMode = options.attachmentDispatchMode ?? "compat";
 
     this.stream = new ParserStreamState(DEFAULT_VERSION);
     this.deferred = new DeferredFrameLifecycle();
     this.frameParser = new FrameParser({
       frameBoundaryPolicy: this.frameBoundaryPolicy,
-      attachmentVersionFallbackPolicy,
+      attachmentDispatchMode,
       onEnclosedFrames: (frames) => this.deferred.enqueueQueued(frames),
       recoveryDiagnosticObserver: this.recoveryDiagnosticObserver,
     });
     this.attachmentCollector = new AttachmentCollector({
       frameBoundaryPolicy: this.frameBoundaryPolicy,
-      attachmentVersionFallbackPolicy,
+      attachmentDispatchMode,
       recoveryDiagnosticObserver: this.recoveryDiagnosticObserver,
       isFrameBoundaryAhead: (input, version, cold) => this.frameParser.isFrameBoundaryAhead(input, version, cold),
     });

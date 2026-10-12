@@ -131,6 +131,22 @@ Legacy note:
 - In those cases, version context is inferred from the first parsed message/body
   semantics.
 
+## Attachment Version Selection
+
+Attachment dispatch uses the selected genus version once. Unknown counter codes,
+deserialization failures, and invalid primitives must not trigger a retry under a
+different major version. In particular, malformed v1 `ControllerIdxSigs` must not
+be accepted as an opaque v2 `GenericGroup` because both use `-A`.
+
+Strict/compat mode controls wrapper-tail recovery only. Explicit scoped
+`KERIACDCGenusVersion` selectors remain supported. Frame-start recognition and
+legacy implicit-v1 behavior are separate from attachment dispatch.
+
+Regression coverage: `test/unit/parity.test.ts` exercises selected-version
+rejection in both modes and both text/binary domains; `test/unit/parser.test.ts`
+checks that the default parser emits an error rather than a frame for malformed
+v1 signatures. Paths are relative to `packages/cesr`.
+
 ## Framed vs Unframed
 
 - `framed=false`: greedy lookahead and attachment collection; may defer

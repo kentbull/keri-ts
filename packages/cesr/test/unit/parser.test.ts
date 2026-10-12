@@ -1,4 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
+import { UnknownCodeError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { sniff } from "../../src/parser/cold-start.ts";
 import { smell } from "../../src/serder/smell.ts";
@@ -24,7 +26,7 @@ function selectV2OnlyQuadletGroupCode(): string {
   ];
   const code = candidates.find((value) => !(value in COUNTER_CODE_NAMES_V1));
   if (!code) {
-    throw new Error("No v2-only quadlet-group code found for fallback tests");
+    throw new Error("No v2-only quadlet-group code found for version rejection tests");
   }
   return code;
 }
@@ -103,7 +105,7 @@ Deno.test("parser fail-fast on malformed attachment stream", () => {
   assertEquals(frames.some((e) => e.type === "error"), true);
 });
 
-Deno.test("parser strict mode rejects mixed-version attachments that need fallback", () => {
+Deno.test("parser strict mode rejects attachments with undeclared major versions", () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
   const ims = `${body}${v2OnlyAttachment}`;
@@ -111,29 +113,6 @@ Deno.test("parser strict mode rejects mixed-version attachments that need fallba
   const parser = createParser({ attachmentDispatchMode: "strict" });
   const frames = [...parser.feed(encode(ims)), ...parser.flush()];
   assertEquals(frames.some((e) => e.type === "error"), true);
-});
-
-Deno.test("parser compat mode uses fallback callback for mixed-version attachments", () => {
-  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
-  const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
-  const ims = `${body}${v2OnlyAttachment}`;
-  const fallbackCalls: Array<{ from: number; to: number }> = [];
-
-  const parser = createParser({
-    attachmentDispatchMode: "compat",
-    onAttachmentVersionFallback: (info) => {
-      fallbackCalls.push({ from: info.from.major, to: info.to.major });
-    },
-  });
-  const frames = [...parser.feed(encode(ims)), ...parser.flush()];
-  const messages = frames.filter((e) => e.type === "frame");
-  const errors = frames.filter((e) => e.type === "error");
-
-  assertEquals(errors.length, 0);
-  assertEquals(messages.length, 1);
-  assertEquals(fallbackCalls.length, 1);
-  assertEquals(fallbackCalls[0].from, 1);
-  assertEquals(fallbackCalls[0].to, 2);
 });
 
 Deno.test("parser fail-fast on NonNativeBodyGroup payload size mismatch", () => {
@@ -256,4 +235,17 @@ Deno.test("parser fail-fast on malformed native fix-body payload tokenization", 
 
 Deno.test("sniff throws on empty buffer", () => {
   assertThrows(() => sniff(new Uint8Array(0)));
+});
+
+Deno.test("default parser rejects malformed v1 signatures without emitting a frame", () => {
+  const body = encode(v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}"));
+  for (const attachment of [encode("-AABzzzz"), decodeB64("-AABzzzz")]) {
+    const parser = createParser();
+    const events = [...parser.feed(concatBytes(body, attachment)), ...parser.flush()];
+    assertEquals(events.length, 1);
+    assertEquals(events[0].type, "error");
+    if (events[0].type === "error") {
+      assertEquals(events[0].error instanceof UnknownCodeError, true);
+    }
+  }
 });

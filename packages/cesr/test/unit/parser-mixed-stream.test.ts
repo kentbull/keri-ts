@@ -13,11 +13,7 @@ function parseFrames(
   input: Uint8Array,
   boundaries: number[],
 ): Array<CesrFrame> {
-  const parser = createParser({
-    onAttachmentVersionFallback: () => {
-      // Keep split-matrix output deterministic/noiseless in test logs.
-    },
-  });
+  const parser = createParser();
   const events: CesrFrame[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
     events.push(...parser.feed(chunk));

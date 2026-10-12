@@ -1,6 +1,6 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import type { AttachmentVersionFallbackPolicy } from "../parser/group-dispatch.ts";
+import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import { parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
@@ -42,7 +42,7 @@ import type { CesrMessage } from "./types.ts";
 /** Dependency-injected options for frame parsing behavior and hooks. */
 interface FrameParserOptions {
   frameBoundaryPolicy: FrameBoundaryPolicy;
-  attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  attachmentDispatchMode: AttachmentDispatchMode;
   onEnclosedFrames: (frames: CesrMessage[]) => void;
   recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 }
@@ -135,13 +135,13 @@ interface NativeBodySyntaxArtifact {
  */
 export class FrameParser {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
-  private readonly attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  private readonly attachmentDispatchMode: AttachmentDispatchMode;
   private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
   constructor(options: FrameParserOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
-    this.attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy;
+    this.attachmentDispatchMode = options.attachmentDispatchMode;
     this.onEnclosedFrames = options.onEnclosedFrames;
     this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
   }
@@ -613,7 +613,7 @@ export class FrameParser {
           frameVersion,
           nextCold,
           {
-            versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+            mode: this.attachmentDispatchMode,
             onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
           },
         );
@@ -668,7 +668,7 @@ export class FrameParser {
         version,
         nextCold,
         {
-          versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+          mode: this.attachmentDispatchMode,
           onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
         },
       );

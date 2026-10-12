@@ -1,93 +1,10 @@
-import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
-import { UnknownCodeError } from "../../src/core/errors.ts";
+import { assert, assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
 import type { RecoveryDiagnostic } from "../../src/core/recovery-diagnostics.ts";
-import { parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { COUNTER_CODE_NAMES_V1 } from "../../src/tables/counter.tables.generated.ts";
 import { counterV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
-
-function selectV2OnlyQuadletGroupCode(): string {
-  const candidates = [
-    CtrDexV2.ESSRWrapperGroup,
-    CtrDexV2.BigESSRWrapperGroup,
-    CtrDexV2.FixBodyGroup,
-    CtrDexV2.BigFixBodyGroup,
-    CtrDexV2.MapBodyGroup,
-    CtrDexV2.BigMapBodyGroup,
-    CtrDexV2.GenericMapGroup,
-    CtrDexV2.BigGenericMapGroup,
-    CtrDexV2.GenericListGroup,
-    CtrDexV2.BigGenericListGroup,
-  ];
-  const code = candidates.find((value) => !(value in COUNTER_CODE_NAMES_V1));
-  if (!code) {
-    throw new Error("No v2-only quadlet-group code found for fallback tests");
-  }
-  return code;
-}
-
-Deno.test("recovery diagnostics: compat fallback emits accepted event and legacy callback once", () => {
-  const code = selectV2OnlyQuadletGroupCode();
-  const ims = `${counterV2(code, 1)}AAAA`;
-  const diagnostics: RecoveryDiagnostic[] = [];
-  const fallbackCalls: Array<{ from: number; to: number }> = [];
-
-  const parsed = parseAttachmentDispatchCompat(
-    encode(ims),
-    { major: 1, minor: 0 },
-    "txt",
-    {
-      mode: "compat",
-      onRecoveryDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-      onVersionFallback: (info) => {
-        fallbackCalls.push({ from: info.from.major, to: info.to.major });
-      },
-    },
-  );
-
-  assertEquals(parsed.group.code, code);
-  assertEquals(diagnostics.length, 1);
-  assertEquals(diagnostics[0].type, "version-fallback-accepted");
-  if (diagnostics[0].type === "version-fallback-accepted") {
-    assertEquals(diagnostics[0].from.major, 1);
-    assertEquals(diagnostics[0].to.major, 2);
-    assertEquals(diagnostics[0].domain, "txt");
-  }
-  assertEquals(fallbackCalls.length, 1);
-  assertEquals(fallbackCalls[0].from, 1);
-  assertEquals(fallbackCalls[0].to, 2);
-});
-
-Deno.test("recovery diagnostics: strict fallback emits rejected event", () => {
-  const code = selectV2OnlyQuadletGroupCode();
-  const ims = `${counterV2(code, 1)}AAAA`;
-  const diagnostics: RecoveryDiagnostic[] = [];
-
-  assertThrows(
-    () =>
-      parseAttachmentDispatchCompat(
-        encode(ims),
-        { major: 1, minor: 0 },
-        "txt",
-        {
-          mode: "strict",
-          onRecoveryDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-        },
-      ),
-    UnknownCodeError,
-  );
-
-  assertEquals(diagnostics.length, 1);
-  assertEquals(diagnostics[0].type, "version-fallback-rejected");
-  if (diagnostics[0].type === "version-fallback-rejected") {
-    assertEquals(diagnostics[0].version.major, 1);
-    assertEquals(diagnostics[0].domain, "txt");
-    assertEquals(diagnostics[0].errorName, "UnknownCodeError");
-  }
-});
 
 Deno.test("recovery diagnostics: compat wrapper tail preservation emits opaque-tail event", () => {
   const nested = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;

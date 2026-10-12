@@ -37,8 +37,8 @@ Canonical parser lifecycle/state-machine contract:
   - Handles chunk boundaries, pending frames, and attachment continuation.
 - `packages/cesr/src/parser/group-dispatch.ts`
   - Counter-group dispatch for attachment/body groups.
-  - Versioned dispatch maps (`V1_DISPATCH`, `V2_DISPATCH`) and compatibility
-    fallback.
+  - Version-selected dispatch with no cross-major retry. Compatibility mode
+    preserves opaque wrapper tails; it does not reinterpret attachment codes.
 - `packages/cesr/src/primitives/mapper.ts`
   - Strict parsing for map-oriented native groups (labels interleaved with
     values).

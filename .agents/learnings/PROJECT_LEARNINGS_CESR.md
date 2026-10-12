@@ -17,9 +17,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    top-level continuation, `queuedFrames` means already-complete enclosed
    frames, and stream-order preservation when both coexist is part of the
    contract.
-5. Attachment parsing is organized around one declarative dispatch spec, an
-   explicit strict/compat fallback policy, structured recovery diagnostics, and
-   typed attachment payloads.
+5. Attachment dispatch decodes only the selected genus version; unknown codes
+   and primitive failures never trigger a cross-major retry. Strict/compat mode
+   controls opaque wrapper-tail recovery only. Explicit genus selectors and
+   legacy frame-start recognition remain separate from attachment dispatch.
 6. Version and codex lookup now goes through explicit registries rather than ad
    hoc major-version branching.
 7. Syntax and semantic failures are intentionally separated on high-coupling
@@ -95,8 +96,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Keep lifecycle-contract tests synchronized with recovery and fallback
-   behavior.
+1. Keep lifecycle-contract tests synchronized with version selection and wrapper
+   recovery behavior.
 2. Preserve the full P2 vector set as the regression floor while upper-layer
    KERI work proceeds.
 3. Keep `packages/cesr/scripts/verify-tables.ts` green whenever parity work
