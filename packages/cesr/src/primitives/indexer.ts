@@ -93,7 +93,7 @@ function parseIndexFields(
 function parseIndexerFromTextData(input: Uint8Array): IndexerData {
   const txt = String.fromCharCode(...input);
   if (txt.length === 0) {
-    throw new DeserializeError("Empty indexer input");
+    throw new ShortageError(1, 0);
   }
 
   const { code } = parseIndexerCodeFromText(txt);

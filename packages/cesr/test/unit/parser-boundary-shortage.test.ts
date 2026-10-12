@@ -40,11 +40,7 @@ Deno.test("V-P1-009: boundary-shortage matrix is deterministic at header/mid/jus
   ];
 
   for (const cut of cuts) {
-    const parser = createParser({
-      onAttachmentVersionFallback: () => {
-        // Keep shortage-matrix assertions focused and log-noiseless.
-      },
-    });
+    const parser = createParser();
     const first = parser.feed(bytes.slice(0, cut));
     const firstErrors = first.filter((event) => event.type === "error");
     assertEquals(firstErrors.length, 0);

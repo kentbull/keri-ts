@@ -91,8 +91,8 @@ function describeError(error: Error): ValidationErrorReport {
  * Count frames, attachment groups, and parser errors for one input stream.
  *
  * `tephra validate` is strict by default because a validation command should fail
- * on ambiguous attachment dispatch. `--compat` intentionally relaxes that mode
- * for streams that still rely on legacy mixed-major attachment behavior.
+ * on malformed attachments. `--compat` permits opaque wrapper tails but still
+ * decodes every attachment under the selected version.
  *
  * Empty input is reported as a validation failure even though the parser has no
  * malformed bytes to diagnose. A zero-frame stream is not useful evidence that a

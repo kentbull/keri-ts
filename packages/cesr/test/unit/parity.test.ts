@@ -1,11 +1,11 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import { decodeB64 } from "../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../src/core/errors.ts";
 import { parseAttachmentDispatch, parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   COUNTER_CODE_NAMES_V1,
-  COUNTER_CODE_NAMES_V2,
   COUNTER_SIZES_V1,
   COUNTER_SIZES_V2,
 } from "../../src/tables/counter.tables.generated.ts";
@@ -27,7 +27,7 @@ function selectV2OnlyQuadletGroupCode(): string {
   ];
   const code = candidates.find((value) => !(value in COUNTER_CODE_NAMES_V1));
   if (!code) {
-    throw new Error("No v2-only quadlet-group code found for fallback tests");
+    throw new Error("No v2-only quadlet-group code found for version rejection tests");
   }
   return code;
 }
@@ -82,55 +82,28 @@ Deno.test("legacy v1 sad path aliases persist in generated tables", () => {
   assert(COUNTER_SIZES_V2.has("-J"));
 });
 
-Deno.test("strict attachment dispatch does not fallback across major versions", () => {
+Deno.test("attachment dispatch rejects undeclared major versions in both modes", () => {
   const code = selectV2OnlyQuadletGroupCode();
   const ims = `${counterV2(code, 1)}AAAA`;
 
-  assertThrows(
-    () =>
-      parseAttachmentDispatch(encode(ims), {
-        major: 1,
-        minor: 0,
-      }, "txt"),
-    UnknownCodeError,
-  );
+  for (const mode of ["strict", "compat"] as const) {
+    assertThrows(
+      () => parseAttachmentDispatchCompat(encode(ims), { major: 1, minor: 0 }, "txt", { mode }),
+      UnknownCodeError,
+    );
+  }
 });
 
-Deno.test("compat attachment dispatch falls back and reports callback", () => {
-  const code = selectV2OnlyQuadletGroupCode();
-  const ims = `${counterV2(code, 1)}AAAA`;
-  const fallbackEvents: Array<{
-    fromMajor: number;
-    toMajor: number;
-    domain: string;
-    reason: string;
-  }> = [];
-
-  const parsed = parseAttachmentDispatchCompat(
-    encode(ims),
-    { major: 1, minor: 0 },
-    "txt",
-    {
-      mode: "compat",
-      onVersionFallback: (info) => {
-        fallbackEvents.push({
-          fromMajor: info.from.major,
-          toMajor: info.to.major,
-          domain: info.domain,
-          reason: info.reason,
-        });
-      },
-    },
-  );
-
-  assertEquals(parsed.group.code, code);
-  assertEquals(
-    parsed.group.name,
-    COUNTER_CODE_NAMES_V2[code as keyof typeof COUNTER_CODE_NAMES_V2],
-  );
-  assertEquals(fallbackEvents.length, 1);
-  assertEquals(fallbackEvents[0].fromMajor, 1);
-  assertEquals(fallbackEvents[0].toMajor, 2);
-  assertEquals(fallbackEvents[0].domain, "txt");
-  assert(fallbackEvents[0].reason.length > 0);
+Deno.test("malformed v1 signatures cannot be reinterpreted as a v2 GenericGroup", () => {
+  // -A is ControllerIdxSigs in v1, but GenericGroup in v2.
+  const malformed = "-AABzzzz";
+  for (const mode of ["strict", "compat"] as const) {
+    for (const domain of ["txt", "bny"] as const) {
+      const input = domain === "txt" ? encode(malformed) : decodeB64(malformed);
+      assertThrows(
+        () => parseAttachmentDispatchCompat(input, { major: 1, minor: 0 }, domain, { mode }),
+        UnknownCodeError,
+      );
+    }
+  }
 });

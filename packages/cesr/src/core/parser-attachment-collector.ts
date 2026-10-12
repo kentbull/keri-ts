@@ -1,6 +1,6 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import type { AttachmentVersionFallbackPolicy } from "../parser/group-dispatch.ts";
+import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isAttachmentDomain } from "./parser-constants.ts";
@@ -11,7 +11,7 @@ import type { AttachmentGroup, CesrMessage } from "./types.ts";
 /** Dependency-injected attachment collection policies and hooks. */
 interface AttachmentCollectorOptions {
   frameBoundaryPolicy: FrameBoundaryPolicy;
-  attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  attachmentDispatchMode: AttachmentDispatchMode;
   recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   isFrameBoundaryAhead: (
     input: Uint8Array,
@@ -41,7 +41,7 @@ export interface ResumePendingResult {
  */
 export class AttachmentCollector {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
-  private readonly attachmentVersionFallbackPolicy: AttachmentVersionFallbackPolicy;
+  private readonly attachmentDispatchMode: AttachmentDispatchMode;
   private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
@@ -51,7 +51,7 @@ export class AttachmentCollector {
 
   constructor(options: AttachmentCollectorOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
-    this.attachmentVersionFallbackPolicy = options.attachmentVersionFallbackPolicy;
+    this.attachmentDispatchMode = options.attachmentDispatchMode;
     this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }
@@ -100,7 +100,7 @@ export class AttachmentCollector {
           version,
           nextCold,
           {
-            versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+            mode: this.attachmentDispatchMode,
             onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
           },
         );
@@ -178,7 +178,7 @@ export class AttachmentCollector {
       version,
       nextCold,
       {
-        versionFallbackPolicy: this.attachmentVersionFallbackPolicy,
+        mode: this.attachmentDispatchMode,
         onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
       },
     );
