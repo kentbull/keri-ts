@@ -21,6 +21,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    and primitive failures never trigger a cross-major retry. Strict/compat mode
    controls opaque wrapper-tail recovery only. Explicit genus selectors and
    legacy frame-start recognition remain separate from attachment dispatch.
+   Non-shortage errors emit the normal parser error event and reset; recovery
+   has no separate diagnostic callback API.
 6. Version and codex lookup now goes through explicit registries rather than ad
    hoc major-version branching.
 7. Syntax and semantic failures are intentionally separated on high-coupling
