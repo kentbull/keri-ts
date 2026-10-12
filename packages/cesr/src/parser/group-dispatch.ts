@@ -496,17 +496,33 @@ function parseTuple(
   return { items, consumed: offset };
 }
 
-/** Parse v1 item counts or exhaust a bounded v2 tuple payload. */
-function parseRepeated(
+/** Parse the declared number of v1 tuples after the counter header. */
+function parseTuplesV1(
   input: Uint8Array,
-  count: number,
-  version: Versionage,
+  counter: Counter,
   kinds: readonly PrimitiveKind[],
   domain: ParseDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = 0;
-  for (let i = 0; version.major === 2 ? offset < input.length : i < count; i++) {
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const tuple = parseTuple(input.slice(offset), kinds, domain);
+    items.push(tupleItem(tuple.items));
+    offset += tuple.consumed;
+  }
+  return { items, consumed: offset };
+}
+
+/** Exhaust a v2 tuple group already bounded to its declared payload by dispatch. */
+function parseTuplesV2(
+  input: Uint8Array,
+  counter: Counter,
+  kinds: readonly PrimitiveKind[],
+  domain: ParseDomain,
+): ParsedGroup {
+  const items: GroupEntry[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  while (offset < input.length) {
     const tuple = parseTuple(input.slice(offset), kinds, domain);
     items.push(tupleItem(tuple.items));
     offset += tuple.consumed;
@@ -656,67 +672,90 @@ function parseQuadletGroup(
   return { items, consumed: total };
 }
 
-/** Build parser for repeated tuple-based group families. */
-function repeatTupleParser(kinds: readonly PrimitiveKind[]): GroupParser {
-  return (
-    input: Uint8Array,
-    counter: Counter,
-    version: Versionage,
-    domain: ParseDomain,
-    _context: AttachmentDispatchOptions,
-  ): ParsedGroup => {
-    const headerSize = counterHeaderSize(counter, domain);
-    const parsed = parseRepeated(
-      input.slice(headerSize),
-      counter.count,
-      version,
-      kinds,
-      domain,
-    );
-    return { items: parsed.items, consumed: parsed.consumed + headerSize };
+/** Parse one transferable signature entry: prefix, sequence, digest, and signature list. */
+function parseTransSig(input: Uint8Array, version: Versionage, domain: ParseDomain): ParsedGroup {
+  const header = parseTuple(input, ["matter", "matter", "matter"], domain);
+  const sigers = parseSigerList(input.slice(header.consumed), version, domain);
+  return {
+    items: [...header.items, tupleItem(sigers.items)],
+    consumed: header.consumed + sigers.consumed,
   };
 }
 
-/** Parse transferable indexed-signature groups with a 3-field header + siger list. */
-function transIdxSigGroupsParser(
+/** Parse one last-establishment signature entry: prefix and signature list. */
+function parseLastSig(input: Uint8Array, version: Versionage, domain: ParseDomain): ParsedGroup {
+  const header = parseTuple(input, ["matter"], domain);
+  const sigers = parseSigerList(input.slice(header.consumed), version, domain);
+  return {
+    items: [...header.items, tupleItem(sigers.items)],
+    consumed: header.consumed + sigers.consumed,
+  };
+}
+
+/** Parse the declared number of v1 signature entries. */
+function parseTransSigsV1(
   input: Uint8Array,
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  _context: AttachmentDispatchOptions,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
-  for (let i = 0; version.major === 2 ? offset < input.length : i < counter.count; i++) {
-    const header = parseTuple(input.slice(offset), [
-      "matter",
-      "matter",
-      "matter",
-    ], domain);
-    offset += header.consumed;
-    const sigers = parseSigerList(input.slice(offset), version, domain);
-    offset += sigers.consumed;
-    items.push(tupleItem([...header.items, tupleItem(sigers.items)]));
+  for (let i = 0; i < counter.count; i++) {
+    const entry = parseTransSig(input.slice(offset), version, domain);
+    items.push(tupleItem(entry.items));
+    offset += entry.consumed;
   }
   return { items, consumed: offset };
 }
 
-/** Parse transferable last-establishment sig groups with header + siger list. */
-function transLastIdxSigGroupsParser(
+/** Exhaust a v2 signature group already bounded to its declared payload by dispatch. */
+function parseTransSigsV2(
   input: Uint8Array,
   counter: Counter,
   version: Versionage,
   domain: ParseDomain,
-  _context: AttachmentDispatchOptions,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = counterHeaderSize(counter, domain);
-  for (let i = 0; version.major === 2 ? offset < input.length : i < counter.count; i++) {
-    const header = parseTuple(input.slice(offset), ["matter"], domain);
-    offset += header.consumed;
-    const sigers = parseSigerList(input.slice(offset), version, domain);
-    offset += sigers.consumed;
-    items.push(tupleItem([...header.items, tupleItem(sigers.items)]));
+  while (offset < input.length) {
+    const entry = parseTransSig(input.slice(offset), version, domain);
+    items.push(tupleItem(entry.items));
+    offset += entry.consumed;
+  }
+  return { items, consumed: offset };
+}
+
+/** Parse the declared number of v1 signature entries. */
+function parseLastSigsV1(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+): ParsedGroup {
+  const items: GroupEntry[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const entry = parseLastSig(input.slice(offset), version, domain);
+    items.push(tupleItem(entry.items));
+    offset += entry.consumed;
+  }
+  return { items, consumed: offset };
+}
+
+/** Exhaust a v2 signature group already bounded to its declared payload by dispatch. */
+function parseLastSigsV2(
+  input: Uint8Array,
+  counter: Counter,
+  version: Versionage,
+  domain: ParseDomain,
+): ParsedGroup {
+  const items: GroupEntry[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  while (offset < input.length) {
+    const entry = parseLastSig(input.slice(offset), version, domain);
+    items.push(tupleItem(entry.items));
+    offset += entry.consumed;
   }
   return { items, consumed: offset };
 }
@@ -835,15 +874,6 @@ const V2_QUADLET_PARSER: GroupParser = (
   );
 
 /**
- * Parser instance cache keyed by tuple shape (`matter|indexer|...`).
- *
- * Why:
- * many codes share identical repeated-tuple semantics; caching preserves one
- * parser closure per tuple shape and keeps dispatch-map construction stable.
- */
-const REPEAT_TUPLE_PARSER_CACHE = new Map<string, GroupParser>();
-
-/**
  * Resolve one expanded descriptor into its executable parser function.
  *
  * Invariant:
@@ -859,18 +889,14 @@ function parserForDescriptor(descriptor: DispatchDescriptor): GroupParser {
           `Dispatch descriptor ${descriptor.code} is missing tupleKinds`,
         );
       }
-      const key = descriptor.tupleKinds.join("|");
-      let parser = REPEAT_TUPLE_PARSER_CACHE.get(key);
-      if (!parser) {
-        parser = repeatTupleParser(descriptor.tupleKinds);
-        REPEAT_TUPLE_PARSER_CACHE.set(key, parser);
-      }
-      return parser;
+      const kinds = descriptor.tupleKinds;
+      const parse = descriptor.version === 1 ? parseTuplesV1 : parseTuplesV2;
+      return (input, counter, _version, domain) => parse(input, counter, kinds, domain);
     }
     case "transIdxSigGroups":
-      return transIdxSigGroupsParser;
+      return descriptor.version === 1 ? parseTransSigsV1 : parseTransSigsV2;
     case "transLastIdxSigGroups":
-      return transLastIdxSigGroupsParser;
+      return descriptor.version === 1 ? parseLastSigsV1 : parseLastSigsV2;
     case "sadPathSig":
       return sadPathSigParser;
     case "sadPathSigGroup":
