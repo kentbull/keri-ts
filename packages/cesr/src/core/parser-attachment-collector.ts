@@ -5,14 +5,12 @@ import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
 import { isAttachmentDomain } from "./parser-constants.ts";
 import type { FrameBoundaryPolicy } from "./parser-policy.ts";
-import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import type { AttachmentGroup, CesrMessage } from "./types.ts";
 
 /** Dependency-injected attachment collection policies and hooks. */
 interface AttachmentCollectorOptions {
   frameBoundaryPolicy: FrameBoundaryPolicy;
   attachmentDispatchMode: AttachmentDispatchMode;
-  recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   isFrameBoundaryAhead: (
     input: Uint8Array,
     version: Versionage,
@@ -42,7 +40,6 @@ export interface ResumePendingResult {
 export class AttachmentCollector {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
   private readonly attachmentDispatchMode: AttachmentDispatchMode;
-  private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
     version: Versionage,
@@ -52,7 +49,6 @@ export class AttachmentCollector {
   constructor(options: AttachmentCollectorOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
     this.attachmentDispatchMode = options.attachmentDispatchMode;
-    this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
     this.isFrameBoundaryAhead = options.isFrameBoundaryAhead;
   }
 
@@ -99,10 +95,7 @@ export class AttachmentCollector {
           input.slice(offset),
           version,
           nextCold,
-          {
-            mode: this.attachmentDispatchMode,
-            onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
-          },
+          { mode: this.attachmentDispatchMode },
         );
         attachments.push(group);
         offset += consumed;
@@ -177,10 +170,7 @@ export class AttachmentCollector {
       input.slice(offset),
       version,
       nextCold,
-      {
-        mode: this.attachmentDispatchMode,
-        onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
-      },
+      { mode: this.attachmentDispatchMode },
     );
     pendingFrame.attachments.push(group);
     offset += consumed;

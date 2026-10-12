@@ -168,7 +168,7 @@ v1 signatures. Paths are relative to `packages/cesr`.
 | Nested wrapper version-context behavior                                     | `packages/cesr/test/unit/parser-wrapper-version-context.test.ts` (`V-P1-007`, `V-P1-008`, `V-P1-010`)                  |
 | Legacy implicit-v1 behavior without selectors                               | `packages/cesr/test/unit/parser-legacy-v1-implicit-version.test.ts`                                                    |
 | Mixed multi-frame order determinism across splits                           | `packages/cesr/test/unit/parser-mixed-stream.test.ts` (`V-P1-005`)                                                     |
-| Non-shortage error recovery via reset                                       | `packages/cesr/test/unit/parser-recovery.test.ts` (`V-P1-011`)                                                         |
+| Non-shortage error recovery via automatic reset                             | `packages/cesr/test/unit/parser-recovery.test.ts` (`V-P1-011`)                                                         |
 | Leading/repeated `ano` separator handling                                   | `packages/cesr/test/unit/parser.test.ts` (`V-P0-010`)                                                                  |
 | Top-level native body groups either hydrate to `Serder` or emit parse error | `packages/cesr/test/unit/external-fixtures.test.ts`, `packages/cesr/test/hardening/parser-native-body-breadth.test.ts` |
 | `pendingFrame` + `queuedFrames` coexistence preserves stream order at flush | `packages/cesr/test/unit/parser-flush.test.ts` (`V-P1-014`)                                                            |

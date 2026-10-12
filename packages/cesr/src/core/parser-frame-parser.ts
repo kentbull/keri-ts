@@ -36,7 +36,6 @@ import {
   tokenSize,
 } from "./parser-constants.ts";
 import type { FrameBoundaryPolicy } from "./parser-policy.ts";
-import type { RecoveryDiagnosticObserver } from "./recovery-diagnostics.ts";
 import type { CesrMessage } from "./types.ts";
 
 /** Dependency-injected options for frame parsing behavior and hooks. */
@@ -44,7 +43,6 @@ interface FrameParserOptions {
   frameBoundaryPolicy: FrameBoundaryPolicy;
   attachmentDispatchMode: AttachmentDispatchMode;
   onEnclosedFrames: (frames: CesrMessage[]) => void;
-  recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 }
 
 /** Parsed frame-start result consumed by top-level parser orchestration. */
@@ -137,13 +135,11 @@ export class FrameParser {
   private readonly frameBoundaryPolicy: FrameBoundaryPolicy;
   private readonly attachmentDispatchMode: AttachmentDispatchMode;
   private readonly onEnclosedFrames: (frames: CesrMessage[]) => void;
-  private readonly recoveryDiagnosticObserver?: RecoveryDiagnosticObserver;
 
   constructor(options: FrameParserOptions) {
     this.frameBoundaryPolicy = options.frameBoundaryPolicy;
     this.attachmentDispatchMode = options.attachmentDispatchMode;
     this.onEnclosedFrames = options.onEnclosedFrames;
-    this.recoveryDiagnosticObserver = options.recoveryDiagnosticObserver;
   }
 
   /** Probe whether the next token is a top-level frame boundary counter. */
@@ -612,10 +608,7 @@ export class FrameParser {
           input.slice(offset),
           frameVersion,
           nextCold,
-          {
-            mode: this.attachmentDispatchMode,
-            onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
-          },
+          { mode: this.attachmentDispatchMode },
         );
         attachments.push(group);
         offset += consumed;
@@ -667,10 +660,7 @@ export class FrameParser {
         input.slice(offset),
         version,
         nextCold,
-        {
-          mode: this.attachmentDispatchMode,
-          onRecoveryDiagnostic: this.recoveryDiagnosticObserver,
-        },
+        { mode: this.attachmentDispatchMode },
       );
       attachments.push(group);
       offset += consumed;

@@ -1,6 +1,5 @@
 import { b, b64ToInt, intToB64 } from "../core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
-import type { RecoveryDiagnosticObserver } from "../core/recovery-diagnostics.ts";
 import type { AttachmentGroup } from "../core/types.ts";
 import { Counter, CounterGroup, parseCounter } from "../primitives/counter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
@@ -39,7 +38,7 @@ function tupleItem(items: GroupEntry[]): GroupEntry {
   return items;
 }
 
-/** Normalize unknown throwables to an `Error` for diagnostic emission. */
+/** Normalize unknown throwables for wrapper error handling. */
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -48,8 +47,6 @@ function asError(error: unknown): Error {
 export interface AttachmentDispatchOptions {
   /** Compat preserves opaque wrapper tails; strict propagates nested errors. */
   mode?: AttachmentDispatchMode;
-  /** Structured recovery diagnostics observer. */
-  onRecoveryDiagnostic?: RecoveryDiagnosticObserver;
 }
 
 /** Parser contract for one attachment-group counter code. */
@@ -648,17 +645,7 @@ function parseQuadletGroup(
         }
         // Intentional recovery point: keep unread wrapper tail as opaque units.
         const remainder = payload.slice(offset);
-        const opaque = splitOpaqueUnits(remainder, domain);
-        context.onRecoveryDiagnostic?.({
-          type: "wrapper-opaque-tail-preserved",
-          version: nestedVersion,
-          domain,
-          wrapperCode: counter.code,
-          opaqueItemCount: opaque.length,
-          errorName: normalized.name,
-          reason: normalized.message,
-        });
-        items.push(...opaque);
+        items.push(...splitOpaqueUnits(remainder, domain));
         offset = payload.length;
       }
     }
