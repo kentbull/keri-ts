@@ -27,6 +27,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    items; v2 payload counters count quadlets/triplets, including nested signature
    groups. Complete v2 payloads with incomplete items are boundary errors, not
    transport shortages. Fixtures must encode payload lengths, not item counts.
+   Dispatch selects separate v1 item-count and v2 payload-exhaustion handlers;
+   single-entry parsing and primitive rehydration remain shared.
 6. Version and codex lookup now goes through explicit registries rather than ad
    hoc major-version branching.
 7. Syntax and semantic failures are intentionally separated on high-coupling

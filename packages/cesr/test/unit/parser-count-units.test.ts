@@ -3,8 +3,8 @@ import { decodeB64 } from "../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
 import { parseAttachmentDispatch, parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
-import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
-import { groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
+import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
+import { counterV1, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
@@ -69,19 +69,24 @@ Deno.test("v2 boundaries distinguish incomplete transport from malformed complet
   }
 });
 
-Deno.test("v2 transferable groups honor outer and inner payload lengths", () => {
+Deno.test("versioned transferable groups preserve item counts, payload bounds, and nested signatures", () => {
   for (const domain of domains) {
     for (
-      const [code, header] of [
-        [CtrDexV2.TransIdxSigGroups, token("B") + token("M") + token("E")],
-        [CtrDexV2.BigTransIdxSigGroups, token("B") + token("M") + token("E")],
-        [CtrDexV2.TransLastIdxSigGroups, token("B")],
-        [CtrDexV2.BigTransLastIdxSigGroups, token("B")],
-      ]
+      const [version, code, header] of [
+        [V1, CtrDexV1.TransIdxSigGroups, token("B") + token("M") + token("E")],
+        [V1, CtrDexV1.TransLastIdxSigGroups, token("B")],
+        [V2, CtrDexV2.TransIdxSigGroups, token("B") + token("M") + token("E")],
+        [V2, CtrDexV2.BigTransIdxSigGroups, token("B") + token("M") + token("E")],
+        [V2, CtrDexV2.TransLastIdxSigGroups, token("B")],
+        [V2, CtrDexV2.BigTransLastIdxSigGroups, token("B")],
+      ] as const
     ) {
-      const inner = "-KAt" + sigerToken() + bigSiger;
-      const wire = bytes(groupV2(code, (header + inner).repeat(2)), domain);
-      const parsed = parseAttachmentDispatch(wire, V2, domain);
+      const inner = (version.major === 1 ? "-AAC" : "-KAt") + sigerToken() + bigSiger;
+      const payload = (header + inner).repeat(2);
+      const group = version.major === 1 ? counterV1(code, 2) + payload : groupV2(code, payload);
+      const wire = bytes(group, domain);
+      const parsed = parseAttachmentDispatch(bytes(group + group, domain), version, domain);
+      assertEquals(parsed.group.raw, wire);
       assertEquals(parsed.consumed, wire.length);
       assertEquals(parsed.group.items.length, 2);
       const tuples = parsed.group.items as unknown[][];

@@ -5,7 +5,7 @@ import { join } from "jsr:@std/path";
 import { denot } from "../../../../cesr/src/annotate/denot.ts";
 import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../../cesr/src/tables/counter-codex.ts";
-import { counterV1, counterV2, sigerToken } from "../../../../cesr/test/fixtures/counter-token-fixtures.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../../../../cesr/test/fixtures/counter-token-fixtures.ts";
 import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
@@ -92,7 +92,7 @@ Deno.test("KERIpy annot and tufa annotate cover native KERI event streams", asyn
 
 Deno.test("tufa annotate covers broad CESR stream surfaces", async () => {
   const env = Deno.env.toObject();
-  const sigs = `${counterV2(CtrDexV2.ControllerIdxSigs, 1)}${sigerToken()}`;
+  const sigs = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const jsonRpy = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
   const v1Attachment = `${v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}")}${
     counterV1(
