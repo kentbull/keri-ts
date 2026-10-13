@@ -12,6 +12,16 @@
   - Normative and test-mapped. Behavior changes require updates to this document
     and mapped tests.
 
+## Approved transition
+
+This document describes the current synchronous atomic implementation.
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) approves its replacement
+under the [progressive target contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md) and
+[phased plan](CESR_PROGRESSIVE_PARSER_PLAN.md). Those target guarantees are not
+implemented by the documentation change. Keep this contract accurate while
+callers migrate; phase 12 removes the old engine and its API compatibility
+surfaces, while retaining wire-protocol regression coverage.
+
 ## Purpose
 
 Define the normative parser state machine for `CesrParser` so maintainers can

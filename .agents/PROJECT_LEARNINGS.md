@@ -7,8 +7,9 @@ stay short enough to reread at session start.
 
 ## Current Focus
 
-1. CESR parser, primitive, and serder work is stable; current work is parity,
-   readability, and regression preservation, not parser re-architecture.
+1. CESR parser migration to progressive generators is approved for the many-message
+   ESSR workload. ADR-0012 and the progressive plan govern execution; current
+   atomic behavior remains authoritative until each caller migrates.
 2. KERI Phase 2 is parity-first around DB closure, runtime/key-management
    behavior, and practical `kli`/`tufa` interoperability.
 3. DID Webs work is now a first-class hosted identity surface: KERI/VDR state
@@ -56,8 +57,9 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
    lifecycle contract; keep parser behavior traceable to that contract and its
    tests. Stream genus controls attachment decoding independently of a body
    protocol version; only unselected streams permit legacy inference.
-2. CESR parser architecture remains atomic/bounded-substream first. Do not
-   reopen nested incremental parsing without real performance evidence.
+2. CESR progressive parsing is an approved performance phase with before/after
+   benchmarks. Keep current and target contracts distinct; the final phase removes
+   the atomic production path and old API shims while preserving protocol parity.
 3. Generated KERIpy-parity codex objects are authoritative; helper sets are
    derived readability views.
 4. When the semantic type is known, construct the narrow CESR primitive.
@@ -125,8 +127,8 @@ module binding, independent byte parity, and the limits of owned-buffer cleanup.
 
 1. Promote the highest-value DB `Partial` rows with evidence, especially
    `fetchTsgs` and remaining `Komer` families.
-2. Preserve CESR parser/serder/primitive parity without reopening settled
-   architecture unless KERIpy or regression evidence forces it.
+2. Execute the progressive parser plan with scoped PRs, retained protocol
+   regressions, and measured memory/latency at each declared checkpoint.
 3. Continue runtime closure on the remaining exchange/forwarding breadth and the
    broader stale/timeout continuation tail now that the core query/reply,
    receipt/query, mailbox, and challenge slices are real.

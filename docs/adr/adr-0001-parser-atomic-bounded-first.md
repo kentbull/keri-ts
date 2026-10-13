@@ -1,12 +1,22 @@
 # ADR-0001: Parser Architecture - Atomic Bounded Substream First
 
-- Status: Accepted
+- Status: Implemented; replacement design accepted in
+  [ADR-0012](adr-0012-progressive-nested-parser.md)
 - Date: 2026-02-28
 - Scope: `packages/cesr` parser architecture
 - Related:
   - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-improvement-plan.md`
   - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-readability-phased-roadmap.md`
   - `docs/archived-plan-docs/cesr/cesr-parser/cesr-parser-phase0-behavior-lock-parity-matrix.md`
+
+## Transition
+
+On 2026-10-12, the user approved progressive nested parsing for many smaller
+ESSR messages in large transfers. ADR-0012 replaces the long-term decision below.
+This ADR remains a description of the current atomic implementation during
+migration. Its separate-strategy, feature-flag, and explicit-stack suggestions
+are historical proposals, not requirements for the new generator design.
+Phase 12 of the new plan removes the atomic production path.
 
 ## Context
 
