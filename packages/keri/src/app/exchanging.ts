@@ -380,7 +380,7 @@ export class Exchanger {
       const said = keys[0];
       if (!said) continue;
       const dater = this.hby.db.epsd.get([said]);
-      if (!dater || Date.now() - new Date(dater.iso8601).getTime() > EXCHANGE_ESCROW_TIMEOUT_MS) {
+      if (!dater || Date.now() - new Date(dater.dts).getTime() > EXCHANGE_ESCROW_TIMEOUT_MS) {
         yield* call(() => this.dropEscrow(said));
         continue;
       }

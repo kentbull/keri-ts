@@ -153,6 +153,13 @@ and use this supplementary adapter at their parsing boundary.
     (`isSad`, `fromSad`, `toSad`), `SerderKERI` keeps raw `a`/`seals` but adds
     explicit typed seal projections, and `packages/keri` runtime dispatch now
     consumes CESR structing records directly instead of local wrapper classes.
+    Frozen `927c0cb8` casts `SealKind.d` as `Noncer` (qualified empty, salt, or
+    digest); attachment hydration and TS tuple storage retain that role. Python's
+    `kramTDCS` still casts `Diger`, so TS empty/salt storage readback is an explicit
+    consistency repair, not a claim of Python database interoperability.
+    `FirstSeen` owns `f: NumberPrimitive` / `dt: Dater` with hexadecimal/ISO crew
+    projections; runtime dispatch uses this plain record. `Dater.dts` is canonical
+    ISO text and replaces the old TS `iso8601` accessor.
 21. `Verser` parity is slightly broader than the top-level message-protocol
     model: auxiliary four-char tags such as `OCSR` must remain accepted because
     KERIpy uses them in typed-digest seal families even though native message

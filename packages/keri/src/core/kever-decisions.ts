@@ -1,6 +1,5 @@
-import type { Dater, Diger, SealEvent, SealSource, SerderKERI, Siger } from "cesr-ts";
+import type { Dater, Diger, FirstSeen, SealEvent, SealSource, SerderKERI, Siger } from "cesr-ts";
 import type { AgentCue } from "./cues.ts";
-import type { FirstSeenReplayCouple } from "./dispatch.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
 import type { KeyStateRecord } from "./records.ts";
 
@@ -42,7 +41,7 @@ export interface KELEventState {
   wigers: readonly Siger[];
   wits?: readonly string[];
   first?: boolean;
-  frc?: FirstSeenReplayCouple | null;
+  frc?: FirstSeen | null;
   sourceSeal?: SealSource | SealEvent | null;
   local: boolean;
 }

@@ -483,10 +483,10 @@ function decodeEntry(entry: GroupEntry, gvrsn: Versionage): MapperValue {
     return new NumberPrimitive(matter).numh;
   }
   if (DATER_CODES.has(matter.code)) {
-    return new Dater(matter).iso8601;
+    return new Dater(matter).dts;
   }
   if (matter.code === MtrDex.DateTime) {
-    return new Dater(matter).iso8601;
+    return new Dater(matter).dts;
   }
   if (TAG_CODES.has(matter.code)) {
     if (matter.code === MtrDex.Tag3) {
@@ -1282,7 +1282,7 @@ function parseNativeField(
   if (spec.kind === "datetime") {
     const date = new Dater({ qb64b: raw.slice(offset) });
     return {
-      value: date.iso8601,
+      value: date.dts,
       nextOffset: offset + date.fullSize,
     };
   }

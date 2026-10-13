@@ -881,7 +881,7 @@ export class Kevery {
         const transition = this.applyFirstSeenState(
           decision.transition,
           logged.fn,
-          logged.dater.iso8601,
+          logged.dater.dts,
         );
         kever.applyTransition(transition);
         this.db.pinState(transition.pre, transition.state);
@@ -2469,7 +2469,7 @@ export class Kevery {
         context: { pre, said, scope },
       });
     }
-    return Date.now() - new Date(dater.iso8601).getTime() > timeoutMs
+    return Date.now() - new Date(dater.dts).getTime() > timeoutMs
       ? dropEscrow("stale", {
         message: `${scope} Stale event escrow at dig = ${said}`,
         context: { pre, said, scope },
@@ -2799,7 +2799,7 @@ export class Kevery {
     if (!this.db.dtss.get(dgkey)) {
       this.db.dtss.put(
         dgkey,
-        log.frc?.dater
+        log.frc?.dt
           ?? new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }),
       );
     }

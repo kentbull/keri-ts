@@ -1126,7 +1126,7 @@ export class Baser {
       // Typed digest seal couples.
       this.tdcs = new CatCesrIoSetSuber<TypedDigestSealCouple>(this.lmdber, {
         subkey: "tdcs.",
-        ctor: [Verser, Diger],
+        ctor: [Verser, Noncer],
       });
 
       // Pathed streams stored as raw bytes.

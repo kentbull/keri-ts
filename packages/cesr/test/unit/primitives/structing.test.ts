@@ -62,6 +62,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     "BlindState",
     "BoundState",
     "TypeMedia",
+    "FirstSeen",
   ]);
 
   assertStrictEquals(SClanDom.SealEvent, SealEvent);
@@ -81,6 +82,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     BlindState: "BlindedStateQuadruples",
     BoundState: "BoundStateSextuples",
     TypeMedia: "TypedMediaQuadruples",
+    FirstSeen: "FirstSeenReplayCouples",
   });
   assertEquals(CodenToClans, {
     DigestSealSingles: "SealDigest",
@@ -94,6 +96,7 @@ Deno.test("primitives/structing - registry metadata mirrors KERIpy clan and code
     BlindedStateQuadruples: "BlindState",
     BoundStateSextuples: "BoundState",
     TypedMediaQuadruples: "TypeMedia",
+    FirstSeenReplayCouples: "FirstSeen",
   });
 
   assertEquals(SCastDom.SealEvent.s, castage(NumberPrimitive, "numh"));
@@ -187,7 +190,7 @@ Deno.test("primitives/structing - seal records round-trip tuple values and crew 
 
   const sealKind = SealKind.fromTuple([
     verser,
-    new Diger({ qb64: KERIPY_STRUCTING_DATA_VECTORS.sealKind.d }),
+    new Noncer({ qb64: KERIPY_STRUCTING_DATA_VECTORS.sealKind.d }),
   ]);
   assertEquals(sealKind.t.proto, "OCSR");
   assertEquals(sealKind.t.pvrsn, { major: 2, minor: 0 });

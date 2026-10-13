@@ -90,6 +90,9 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
 6. Fixed-field seal/blind/media values belong to CESR `primitives/structing.ts`;
    KERI runtime code projects hydrated primitives through CESR structing helpers
    without decoding their bytes again; public raw-input boundaries still validate.
+   FirstSeen shares this record boundary; Dater.dts is the canonical ISO projection.
+   Typed-seal Noncer roles survive TS storage, while the frozen Python database
+   still has a narrower Diger cast; wire parity does not imply widened DB parity.
 7. CESR-native and ACDC-native behavior should extend the shared native support
    matrix in `packages/cesr/src/serder/native.ts`.
 8. Weighted thresholds are semantic through `Tholder`; KEL and reply logic

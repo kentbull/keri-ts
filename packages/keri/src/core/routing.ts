@@ -79,8 +79,8 @@ function sameOrNewerReply(
   if (!oldDater) {
     return true;
   }
-  return new Date(nextDater.iso8601).getTime()
-    > new Date(oldDater.iso8601).getTime();
+  return new Date(nextDater.dts).getTime()
+    > new Date(oldDater.dts).getTime();
 }
 
 /**
@@ -727,7 +727,7 @@ export class Revery {
         },
       });
     }
-    if (Date.now() - new Date(dater.iso8601).getTime() > Revery.TimeoutRPE) {
+    if (Date.now() - new Date(dater.dts).getTime() > Revery.TimeoutRPE) {
       return dropEscrow("stale", {
         message: `Stale reply escrow at route = ${serder.route ?? "<unknown>"}.`,
         context: { said: diger.qb64, route: serder.route },

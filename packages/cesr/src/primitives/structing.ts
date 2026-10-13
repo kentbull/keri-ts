@@ -20,6 +20,7 @@ import { b, concatBytes } from "../core/bytes.ts";
 import type { CounterCodeNameV1, CounterCodeNameV2 } from "../tables/counter-codex.ts";
 import { Bexter } from "./bexter.ts";
 import { LabelDex, NonceDex } from "./codex.ts";
+import { Dater } from "./dater.ts";
 import { Diger } from "./diger.ts";
 import { Labeler } from "./labeler.ts";
 import type { Matter, MatterInit } from "./matter.ts";
@@ -39,6 +40,7 @@ type Qb64b = Uint8Array;
  * - the named struct values themselves stay plain frozen records
  */
 export type StructingPrimitive =
+  | Dater
   | Diger
   | Labeler
   | Noncer
@@ -194,6 +196,9 @@ function hydrateStructingField(
   spec: Castage,
   value: string,
 ): StructingPrimitive {
+  if (spec.kls === Dater) {
+    return new Dater({ dts: value });
+  }
   if (spec.kls === NumberPrimitive) {
     return hydrateNumber(value);
   }
@@ -276,7 +281,8 @@ export type StructingCoden =
   | "TypedDigestSealCouples"
   | "BlindedStateQuadruples"
   | "BoundStateSextuples"
-  | "TypedMediaQuadruples";
+  | "TypedMediaQuadruples"
+  | "FirstSeenReplayCouples";
 
 type StructingDescriptorShape<
   TFields extends readonly string[],
@@ -706,7 +712,7 @@ const SEAL_KIND_FIELDS = Object.freeze(["t", "d"] as const);
 const SEAL_KIND_CAST = Object.freeze(
   {
     t: castage(Verser),
-    d: castage(Diger),
+    d: castage(Noncer),
   } as const,
 );
 
@@ -714,29 +720,29 @@ const SEAL_KIND_CAST = Object.freeze(
  * Typed-digest seal fixed-field value (`t`, `d`).
  *
  * KERIpy substance:
- * - pairs one `Verser` with one digest so typed/versioned digests stay
+ * - pairs one `Verser` with a nonce (empty, salt, or digest) so typed values stay
  *   explicit in counted attachment groups
  *
  * Counter family:
  * - `TypedDigestSealCouples`
  */
-export type SealKind = Readonly<{ t: Verser; d: Diger }>;
+export type SealKind = Readonly<{ t: Verser; d: Noncer }>;
 export const SealKind = withSadProjection(
   {
     name: "SealKind",
     fields: SEAL_KIND_FIELDS,
     cast: SEAL_KIND_CAST,
     coden: "TypedDigestSealCouples" as const,
-    fromTuple([t, d]: readonly [Verser, Diger]): SealKind {
+    fromTuple([t, d]: readonly [Verser, Noncer]): SealKind {
       return freezeRecord({ t, d });
     },
     fromQb64bTuple([t, d]: readonly [Qb64b, Qb64b]): SealKind {
       return freezeRecord({
         t: new Verser({ qb64b: t }),
-        d: new Diger({ qb64b: d }),
+        d: new Noncer({ qb64b: d }),
       });
     },
-    toTuple(value: SealKind): readonly [Verser, Diger] {
+    toTuple(value: SealKind): readonly [Verser, Noncer] {
       return [value.t, value.d] as const;
     },
     toCrew(value: SealKind): SealKindCrew {
@@ -1034,6 +1040,62 @@ export const TypeMedia = withSadProjection(
   } as const,
 );
 
+/** Crew projection of the first-seen ordinal and RFC3339 datetime. */
+type FirstSeenCrew = Readonly<{ f: string; dt: string }>;
+/** Reference field order for first-seen replay couples. */
+const FIRST_SEEN_FIELDS = Object.freeze(["f", "dt"] as const);
+/** Reference casts keep the ordinal hexadecimal and the datetime human-readable. */
+const FIRST_SEEN_CAST = Object.freeze(
+  {
+    f: castage(NumberPrimitive, "numh"),
+    dt: castage(Dater, "dts"),
+  } as const,
+);
+
+/**
+ * First-seen replay record: an observer-local ordinal `f` and receipt datetime `dt`.
+ * KERIpy's `FirstSeen` uses Number and Dater, not an event sequence or seal digest.
+ * Its existing FirstSeenReplayCouples counter has v1 item and v2 payload counts.
+ */
+export type FirstSeen = Readonly<{ f: NumberPrimitive; dt: Dater }>;
+/** Plain-record companion for FirstSeen crew and CESR tuple conversions. */
+export const FirstSeen = withSadProjection(
+  {
+    name: "FirstSeen",
+    fields: FIRST_SEEN_FIELDS,
+    cast: FIRST_SEEN_CAST,
+    coden: "FirstSeenReplayCouples" as const,
+    /** Retain already-hydrated primitives without decoding their bytes again. */
+    fromTuple([f, dt]: readonly [NumberPrimitive, Dater]): FirstSeen {
+      return freezeRecord({ f, dt });
+    },
+    /** Validate primitive roles at the public raw-tuple boundary. */
+    fromQb64bTuple([f, dt]: readonly [Qb64b, Qb64b]): FirstSeen {
+      return freezeRecord({ f: new NumberPrimitive({ qb64b: f }), dt: new Dater({ qb64b: dt }) });
+    },
+    /** Project the wire-ordered tuple while preserving primitive identity. */
+    toTuple(value: FirstSeen): readonly [NumberPrimitive, Dater] {
+      return [value.f, value.dt] as const;
+    },
+    /** Project Python's hexadecimal ordinal and RFC3339 datetime crew. */
+    toCrew(value: FirstSeen): FirstSeenCrew {
+      return buildCrew(FIRST_SEEN_FIELDS, FIRST_SEEN_CAST, value);
+    },
+    /** Serialize the tuple without introducing a transport counter. */
+    qb64(value: FirstSeen): string {
+      return serializeTupleQb64([value.f, value.dt]);
+    },
+    /** Serialize the tuple as qualified base64 bytes. */
+    qb64b(value: FirstSeen): Uint8Array {
+      return serializeTupleQb64b([value.f, value.dt]);
+    },
+    /** Serialize the tuple as qualified binary bytes. */
+    qb2(value: FirstSeen): Uint8Array {
+      return serializeTupleQb2([value.f, value.dt]);
+    },
+  } as const,
+);
+
 /** Empty clan registry placeholder retained for KERIpy naming familiarity. */
 export const EmptyClanDom = Object.freeze({} as const);
 /** Empty cast registry placeholder retained for KERIpy naming familiarity. */
@@ -1113,12 +1175,22 @@ export const TypeMediaCastDom = Object.freeze(
 /** KERIpy alias for `TypeMediaCastDom`. */
 export const TMCastDom = TypeMediaCastDom;
 
+/** First-seen clan registry, independent of the seal families. */
+export const FirstSeenClanDom = Object.freeze({ FirstSeen } as const);
+/** KERIpy alias for the first-seen clan registry. */
+export const FSClanDom = FirstSeenClanDom;
+/** First-seen cast registry keyed by clan name. */
+export const FirstSeenCastDom = Object.freeze({ FirstSeen: FirstSeen.cast } as const);
+/** KERIpy alias for the first-seen cast registry. */
+export const FSCastDom = FirstSeenCastDom;
+
 /** All structing clan registries combined into one authoritative CESR view. */
 export const AllClanDom = Object.freeze(
   {
     ...SealClanDom,
     ...BlindStateClanDom,
     ...TypeMediaClanDom,
+    ...FirstSeenClanDom,
   } as const,
 );
 /** KERIpy alias for `AllClanDom`. */
@@ -1130,6 +1202,7 @@ export const AllCastDom = Object.freeze(
     ...SealCastDom,
     ...BlindStateCastDom,
     ...TypeMediaCastDom,
+    ...FirstSeenCastDom,
   } as const,
 );
 /** KERIpy alias for `AllCastDom`. */
@@ -1154,7 +1227,8 @@ export type StructingRecord =
   | SealRecord
   | BlindState
   | BoundState
-  | TypeMedia;
+  | TypeMedia
+  | FirstSeen;
 
 /** Ordered seal descriptor registry for raw-SAD projection helpers. */
 export const SealDescriptors = Object.freeze(
@@ -1189,6 +1263,7 @@ export const ClanToCodens = Object.freeze(
     BlindState: BlindState.coden,
     BoundState: BoundState.coden,
     TypeMedia: TypeMedia.coden,
+    FirstSeen: FirstSeen.coden,
   } as const satisfies Record<
     StructClanName,
     CounterCodeNameV1 | CounterCodeNameV2
