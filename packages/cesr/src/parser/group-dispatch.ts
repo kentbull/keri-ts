@@ -9,11 +9,7 @@ import type { GroupEntry } from "../primitives/primitive.ts";
 import { parseTexter } from "../primitives/texter.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
-import {
-  resolveCtrDex,
-  resolveTable,
-  type VersionedRegistry,
-} from "../tables/counter-version-registry.ts";
+import { resolveCtrDex } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 
 /**
@@ -61,383 +57,6 @@ type GroupParser = (
   domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ) => ParsedGroup;
-
-/**
- * Dispatch table major-version discriminator.
- *
- * Invariant:
- * all dispatch artifacts in this module are built for exactly these two major
- * versions; the selected version determines the only table used for dispatch.
- */
-type DispatchVersion = 1 | 2;
-
-/**
- * Parser family keys used to map descriptor entries to concrete parser functions.
- *
- * Maintainer rule:
- * adding a new parser family requires touching this union and
- * `parserForDescriptor(...)` together so routing remains exhaustive.
- */
-type DispatchParserKind =
-  | "genusVersion"
-  | "quadlet"
-  | "repeatTuple"
-  | "essr"
-  | "transIdxSigGroups"
-  | "transLastIdxSigGroups"
-  | "sadPathSig"
-  | "sadPathSigGroup";
-
-/**
- * Semantic classification for descriptor entries.
- *
- * This metadata is intentionally domain-facing (review/debug/docs) and does not
- * alter parser behavior by itself. Behavioral switches are driven only by
- * `parserKind`, `tupleKinds`, and `wrapperGroup`.
- */
-type DispatchSemanticShape =
-  | "genusVersionMarker"
-  | "countedGroupPayload"
-  | "wrapperGroupPayload"
-  | "primitiveTuples"
-  | "signatureGroupTuples"
-  | "lastSignatureGroupTuples"
-  | "sadPathSignatures"
-  | "sadPathSignatureGroup";
-
-/**
- * Authoring-time dispatch spec row.
- *
- * This form groups equivalent parser semantics across major versions to reduce
- * duplicate declarations in the canonical spec constant.
- */
-interface DispatchFamilySpec {
-  parserKind: DispatchParserKind;
-  semanticShape: DispatchSemanticShape;
-  codesByVersion: Partial<Record<DispatchVersion, readonly string[]>>;
-  tupleKinds?: readonly PrimitiveKind[];
-  wrapperGroup?: boolean;
-}
-
-/**
- * Fully expanded dispatch descriptor for a single `(major, code)` pair.
- *
- * Invariant:
- * every descriptor entry must resolve to exactly one `GroupParser`.
- */
-interface DispatchDescriptor {
-  gvrsn: DispatchVersion;
-  code: string;
-  parserKind: DispatchParserKind;
-  semanticShape: DispatchSemanticShape;
-  tupleKinds?: readonly PrimitiveKind[];
-  wrapperGroup: boolean;
-}
-
-/**
- * Canonical attachment dispatch specification (authoring form).
- *
- * This is the single source of truth for:
- * - code -> parser routing
- * - semantic shape classification
- * - wrapper-group recursion eligibility
- *
- * Maintainer workflow:
- * when adding/removing a counter route, edit this constant only, then rely on
- * descriptor expansion + generated dispatch maps below.
- */
-export const ATTACHMENT_DISPATCH_SPEC: readonly DispatchFamilySpec[] = [
-  {
-    parserKind: "genusVersion",
-    semanticShape: "genusVersionMarker",
-    codesByVersion: {
-      1: [CtrDexV1.KERIACDCGenusVersion],
-      2: [CtrDexV2.KERIACDCGenusVersion],
-    },
-  },
-  {
-    parserKind: "quadlet",
-    semanticShape: "countedGroupPayload",
-    codesByVersion: {
-      1: [
-        CtrDexV1.GenericGroup,
-        CtrDexV1.BigGenericGroup,
-        CtrDexV1.NonNativeBodyGroup,
-        CtrDexV1.BigNonNativeBodyGroup,
-        CtrDexV1.PathedMaterialCouples,
-        CtrDexV1.BigPathedMaterialCouples,
-      ],
-      2: [
-        CtrDexV2.GenericGroup,
-        CtrDexV2.BigGenericGroup,
-        CtrDexV2.NonNativeBodyGroup,
-        CtrDexV2.BigNonNativeBodyGroup,
-        CtrDexV2.PathedMaterialCouples,
-        CtrDexV2.BigPathedMaterialCouples,
-        CtrDexV2.DatagramSegmentGroup,
-        CtrDexV2.BigDatagramSegmentGroup,
-        CtrDexV2.ESSRWrapperGroup,
-        CtrDexV2.BigESSRWrapperGroup,
-        CtrDexV2.FixBodyGroup,
-        CtrDexV2.BigFixBodyGroup,
-        CtrDexV2.MapBodyGroup,
-        CtrDexV2.BigMapBodyGroup,
-        CtrDexV2.GenericMapGroup,
-        CtrDexV2.BigGenericMapGroup,
-        CtrDexV2.GenericListGroup,
-        CtrDexV2.BigGenericListGroup,
-      ],
-    },
-  },
-  {
-    parserKind: "quadlet",
-    semanticShape: "wrapperGroupPayload",
-    wrapperGroup: true,
-    codesByVersion: {
-      1: [
-        CtrDexV1.AttachmentGroup,
-        CtrDexV1.BigAttachmentGroup,
-        CtrDexV1.BodyWithAttachmentGroup,
-        CtrDexV1.BigBodyWithAttachmentGroup,
-      ],
-      2: [
-        CtrDexV2.AttachmentGroup,
-        CtrDexV2.BigAttachmentGroup,
-        CtrDexV2.BodyWithAttachmentGroup,
-        CtrDexV2.BigBodyWithAttachmentGroup,
-      ],
-    },
-  },
-  {
-    parserKind: "essr",
-    semanticShape: "countedGroupPayload",
-    codesByVersion: {
-      1: [CtrDexV1.ESSRPayloadGroup, CtrDexV1.BigESSRPayloadGroup],
-      2: [CtrDexV2.ESSRPayloadGroup, CtrDexV2.BigESSRPayloadGroup],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: ["indexer"],
-    codesByVersion: {
-      1: [CtrDexV1.ControllerIdxSigs, CtrDexV1.WitnessIdxSigs],
-      2: [
-        CtrDexV2.ControllerIdxSigs,
-        CtrDexV2.BigControllerIdxSigs,
-        CtrDexV2.WitnessIdxSigs,
-        CtrDexV2.BigWitnessIdxSigs,
-      ],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: ["matter", "matter"],
-    codesByVersion: {
-      1: [
-        CtrDexV1.NonTransReceiptCouples,
-        CtrDexV1.FirstSeenReplayCouples,
-        CtrDexV1.SealSourceCouples,
-      ],
-      2: [
-        CtrDexV2.NonTransReceiptCouples,
-        CtrDexV2.BigNonTransReceiptCouples,
-        CtrDexV2.FirstSeenReplayCouples,
-        CtrDexV2.BigFirstSeenReplayCouples,
-        CtrDexV2.SealSourceCouples,
-        CtrDexV2.BigSealSourceCouples,
-        CtrDexV2.BackerRegistrarSealCouples,
-        CtrDexV2.BigBackerRegistrarSealCouples,
-        CtrDexV2.TypedDigestSealCouples,
-        CtrDexV2.BigTypedDigestSealCouples,
-      ],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: ["matter", "matter", "matter", "indexer"],
-    codesByVersion: {
-      1: [
-        CtrDexV1.TransReceiptQuadruples,
-      ],
-      2: [
-        CtrDexV2.TransReceiptQuadruples,
-        CtrDexV2.BigTransReceiptQuadruples,
-      ],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: ["matter", "matter", "matter"],
-    codesByVersion: {
-      1: [
-        CtrDexV1.SealSourceTriples,
-      ],
-      2: [
-        CtrDexV2.SealSourceTriples,
-        CtrDexV2.BigSealSourceTriples,
-      ],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: ["matter"],
-    codesByVersion: {
-      2: [
-        CtrDexV2.SealSourceLastSingles,
-        CtrDexV2.BigSealSourceLastSingles,
-        CtrDexV2.DigestSealSingles,
-        CtrDexV2.BigDigestSealSingles,
-        CtrDexV2.MerkleRootSealSingles,
-        CtrDexV2.BigMerkleRootSealSingles,
-      ],
-    },
-  },
-  {
-    parserKind: "transIdxSigGroups",
-    semanticShape: "signatureGroupTuples",
-    codesByVersion: {
-      1: [
-        CtrDexV1.TransIdxSigGroups,
-      ],
-      2: [
-        CtrDexV2.TransIdxSigGroups,
-        CtrDexV2.BigTransIdxSigGroups,
-      ],
-    },
-  },
-  {
-    parserKind: "transLastIdxSigGroups",
-    semanticShape: "lastSignatureGroupTuples",
-    codesByVersion: {
-      1: [
-        CtrDexV1.TransLastIdxSigGroups,
-      ],
-      2: [
-        CtrDexV2.TransLastIdxSigGroups,
-        CtrDexV2.BigTransLastIdxSigGroups,
-      ],
-    },
-  },
-  {
-    parserKind: "sadPathSig",
-    semanticShape: "sadPathSignatures",
-    codesByVersion: {
-      1: [CtrDexV1.SadPathSig],
-    },
-  },
-  {
-    parserKind: "sadPathSigGroup",
-    semanticShape: "sadPathSignatureGroup",
-    codesByVersion: {
-      1: [CtrDexV1.SadPathSigGroup],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: ["matter", "matter", "matter", "matter"],
-    codesByVersion: {
-      2: [
-        CtrDexV2.BlindedStateQuadruples,
-        CtrDexV2.BigBlindedStateQuadruples,
-        CtrDexV2.TypedMediaQuadruples,
-        CtrDexV2.BigTypedMediaQuadruples,
-      ],
-    },
-  },
-  {
-    parserKind: "repeatTuple",
-    semanticShape: "primitiveTuples",
-    tupleKinds: [
-      "matter",
-      "matter",
-      "matter",
-      "matter",
-      "matter",
-      "matter",
-    ],
-    codesByVersion: {
-      2: [
-        CtrDexV2.BoundStateSextuples,
-        CtrDexV2.BigBoundStateSextuples,
-      ],
-    },
-  },
-];
-
-/**
- * Expand grouped spec rows into per-version descriptors.
- *
- * Why:
- * downstream builders operate on `(version, code)` units, while spec authoring
- * stays concise by grouping shared semantics across major versions.
- */
-function expandDispatchSpec(
-  spec: readonly DispatchFamilySpec[],
-): DispatchDescriptor[] {
-  const descriptors: DispatchDescriptor[] = [];
-  for (const family of spec) {
-    for (const gvrsn of [1, 2] as const) {
-      for (const code of family.codesByVersion[gvrsn] ?? []) {
-        descriptors.push({
-          gvrsn,
-          code,
-          parserKind: family.parserKind,
-          semanticShape: family.semanticShape,
-          tupleKinds: family.tupleKinds,
-          wrapperGroup: family.wrapperGroup === true,
-        });
-      }
-    }
-  }
-  return descriptors;
-}
-
-/**
- * Build a version-indexed code-set projection from descriptors.
- *
- * Used for secondary routing metadata (wrapper recursion)
- * so those sets cannot drift from the canonical dispatch spec.
- */
-function buildCodeSetByVersion(
-  descriptors: readonly DispatchDescriptor[],
-  predicate: (descriptor: DispatchDescriptor) => boolean,
-): Record<DispatchVersion, Set<string>> {
-  const byVersion: Record<DispatchVersion, Set<string>> = {
-    1: new Set<string>(),
-    2: new Set<string>(),
-  };
-  for (const descriptor of descriptors) {
-    if (predicate(descriptor)) {
-      byVersion[descriptor.gvrsn].add(descriptor.code);
-    }
-  }
-  return byVersion;
-}
-
-/**
- * Normalized per-code dispatch descriptors used by all derived routing tables.
- *
- * Invariant:
- * this array is generated once at module load from `ATTACHMENT_DISPATCH_SPEC`
- * and should not be hand-edited.
- */
-const ATTACHMENT_DISPATCH_DESCRIPTORS = expandDispatchSpec(
-  ATTACHMENT_DISPATCH_SPEC,
-);
-
-/** Wrapper counters by major version whose payloads recurse as nested groups. */
-const WRAPPER_GROUP_CODES_BY_MAJOR = buildCodeSetByVersion(
-  ATTACHMENT_DISPATCH_DESCRIPTORS,
-  (descriptor) => descriptor.wrapperGroup,
-);
-const WRAPPER_GROUP_CODES_V1 = WRAPPER_GROUP_CODES_BY_MAJOR[1];
-const WRAPPER_GROUP_CODES_V2 = WRAPPER_GROUP_CODES_BY_MAJOR[2];
 
 /** Universal genus-version counter code (v1/v2 compatible encoding semantics). */
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
@@ -576,11 +195,10 @@ function parseControllerSigs(
  * - compat mode preserves unread wrapper remainder as opaque units on non-boundary
  *   nested parse errors.
  */
-function parseQuadletGroup(
+function parseSizedGroup(
   input: Uint8Array,
   counter: Counter,
   gvrsn: Versionage,
-  wrapperCodes: Set<string>,
   domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ): ParsedGroup {
@@ -594,27 +212,31 @@ function parseQuadletGroup(
 
   const payload = input.slice(headerSize, total);
 
-  if (wrapperCodes.has(counter.code)) {
+  if (
+    ["AttachmentGroup", "BigAttachmentGroup", "BodyWithAttachmentGroup", "BigBodyWithAttachmentGroup"].includes(
+      counter.name,
+    )
+  ) {
     // Wrapper payload is a packed stream of nested groups (best effort).
     const items: GroupEntry[] = [];
     let offset = 0;
-    let nestedVersion = gvrsn;
+    let nestedGvrsn = gvrsn;
     while (offset < payload.length) {
       try {
         const nestedCounter = parseCounter(
           payload.slice(offset),
-          nestedVersion,
+          nestedGvrsn,
           domain,
         );
         if (nestedCounter.code === GENUS_VERSION_CODE) {
           // Wrapper-scoped version override for subsequent nested groups.
           offset += tokenSize(nestedCounter, domain);
-          nestedVersion = decodeGenusVersion(nestedCounter);
+          nestedGvrsn = decodeGenusVersion(nestedCounter);
           continue;
         }
         const nested = parseAttachmentDispatchCompat(
           payload.slice(offset),
-          nestedVersion,
+          nestedGvrsn,
           domain,
           context,
         );
@@ -745,7 +367,7 @@ function parseLastSigsV2(
 }
 
 /** Parse SadPathSig groups: each path is followed by one nested signature group. */
-function sadPathSigParser(
+function parsePathSigs(
   input: Uint8Array,
   counter: Counter,
   gvrsn: Versionage,
@@ -775,7 +397,7 @@ function sadPathSigParser(
 }
 
 /** Parse SadPathSigGroup: root path + repeated (path, nested signature group). */
-function sadPathSigGroupParser(
+function parsePathSigGroup(
   input: Uint8Array,
   counter: Counter,
   gvrsn: Versionage,
@@ -810,7 +432,7 @@ function sadPathSigGroupParser(
 }
 
 /** Genus-version groups carry only the counter token itself as semantic payload. */
-function genusVersionParser(
+function parseGenus(
   _input: Uint8Array,
   counter: Counter,
   _gvrsn: Versionage,
@@ -824,129 +446,106 @@ function genusVersionParser(
   };
 }
 
-/** v1 quadlet/triplet parser variant with v1 wrapper-code semantics. */
-const V1_QUADLET_PARSER: GroupParser = (
-  input,
-  counter,
-  gvrsn,
-  domain,
-  context,
-) =>
-  parseQuadletGroup(
-    input,
-    counter,
-    gvrsn,
-    WRAPPER_GROUP_CODES_V1,
-    domain,
-    context,
-  );
-
-/** v2 quadlet/triplet parser variant with v2 wrapper-code semantics. */
-const V2_QUADLET_PARSER: GroupParser = (
-  input,
-  counter,
-  gvrsn,
-  domain,
-  context,
-) =>
-  parseQuadletGroup(
-    input,
-    counter,
-    gvrsn,
-    WRAPPER_GROUP_CODES_V2,
-    domain,
-    context,
-  );
-
-/**
- * Resolve one expanded descriptor into its executable parser function.
- *
- * Invariant:
- * this switch must remain exhaustive over `DispatchParserKind`.
- */
-function parserForDescriptor(descriptor: DispatchDescriptor): GroupParser {
-  switch (descriptor.parserKind) {
-    case "quadlet":
-      return descriptor.gvrsn === 2 ? V2_QUADLET_PARSER : V1_QUADLET_PARSER;
-    case "repeatTuple": {
-      if (!descriptor.tupleKinds || descriptor.tupleKinds.length === 0) {
-        throw new Error(
-          `Dispatch descriptor ${descriptor.code} is missing tupleKinds`,
-        );
-      }
-      const kinds = descriptor.tupleKinds;
-      const parse = descriptor.gvrsn === 1 ? parseTuplesV1 : parseTuplesV2;
-      return (input, counter, _gvrsn, domain) => parse(input, counter, kinds, domain);
-    }
-    case "essr":
-      return descriptor.gvrsn === 1 ? parseEssrV1 : parseEssrV2;
-    case "transIdxSigGroups":
-      return descriptor.gvrsn === 1 ? parseTransSigsV1 : parseTransSigsV2;
-    case "transLastIdxSigGroups":
-      return descriptor.gvrsn === 1 ? parseLastSigsV1 : parseLastSigsV2;
-    case "sadPathSig":
-      return sadPathSigParser;
-    case "sadPathSigGroup":
-      return sadPathSigGroupParser;
-    case "genusVersion":
-      return genusVersionParser;
-  }
+/** Bind a tuple shape to v1 item-count parsing. */
+function tuplesV1(...kinds: PrimitiveKind[]): GroupParser {
+  return (input, counter, _gvrsn, domain) => parseTuplesV1(input, counter, kinds, domain);
 }
 
-/**
- * Build major-version dispatch maps from normalized descriptors.
- *
- * Invariant:
- * each code appears at most once per major version in the final maps; if a code
- * were duplicated in descriptors, later entries would overwrite earlier ones.
- */
-function buildDispatchByVersion(
-  descriptors: readonly DispatchDescriptor[],
-): Record<DispatchVersion, Map<string, GroupParser>> {
-  const dispatch: Record<DispatchVersion, Map<string, GroupParser>> = {
-    1: new Map<string, GroupParser>(),
-    2: new Map<string, GroupParser>(),
-  };
-  for (const descriptor of descriptors) {
-    dispatch[descriptor.gvrsn].set(
-      descriptor.code,
-      parserForDescriptor(descriptor),
-    );
-  }
-  return dispatch;
+/** Bind a tuple shape to v2 bounded-payload parsing. */
+function tuplesV2(...kinds: PrimitiveKind[]): GroupParser {
+  return (input, counter, _gvrsn, domain) => parseTuplesV2(input, counter, kinds, domain);
 }
 
-/** Generated dispatch maps keyed by major version. */
-const DISPATCH_BY_MAJOR = buildDispatchByVersion(
-  ATTACHMENT_DISPATCH_DESCRIPTORS,
-);
+/** Direct routes for CESR v1; counter parsing validates the requested minor. */
+const HANDLERS_V1: Readonly<Record<string, GroupParser>> = {
+  [CtrDexV1.KERIACDCGenusVersion]: parseGenus,
+  [CtrDexV1.GenericGroup]: parseSizedGroup,
+  [CtrDexV1.BigGenericGroup]: parseSizedGroup,
+  [CtrDexV1.NonNativeBodyGroup]: parseSizedGroup,
+  [CtrDexV1.BigNonNativeBodyGroup]: parseSizedGroup,
+  [CtrDexV1.PathedMaterialCouples]: parseSizedGroup,
+  [CtrDexV1.BigPathedMaterialCouples]: parseSizedGroup,
+  [CtrDexV1.AttachmentGroup]: parseSizedGroup,
+  [CtrDexV1.BigAttachmentGroup]: parseSizedGroup,
+  [CtrDexV1.BodyWithAttachmentGroup]: parseSizedGroup,
+  [CtrDexV1.BigBodyWithAttachmentGroup]: parseSizedGroup,
+  [CtrDexV1.ESSRPayloadGroup]: parseEssrV1,
+  [CtrDexV1.BigESSRPayloadGroup]: parseEssrV1,
+  [CtrDexV1.ControllerIdxSigs]: tuplesV1("indexer"),
+  [CtrDexV1.WitnessIdxSigs]: tuplesV1("indexer"),
+  [CtrDexV1.NonTransReceiptCouples]: tuplesV1("matter", "matter"),
+  [CtrDexV1.FirstSeenReplayCouples]: tuplesV1("matter", "matter"),
+  [CtrDexV1.SealSourceCouples]: tuplesV1("matter", "matter"),
+  [CtrDexV1.TransReceiptQuadruples]: tuplesV1("matter", "matter", "matter", "indexer"),
+  [CtrDexV1.SealSourceTriples]: tuplesV1("matter", "matter", "matter"),
+  [CtrDexV1.TransIdxSigGroups]: parseTransSigsV1,
+  [CtrDexV1.TransLastIdxSigGroups]: parseLastSigsV1,
+  [CtrDexV1.SadPathSig]: parsePathSigs,
+  [CtrDexV1.SadPathSigGroup]: parsePathSigGroup,
+};
 
-/**
- * Lift major-indexed artifacts into a major+minor registry.
- *
- * Current parser supports one minor (`0`) per major, but this keeps lookup
- * contracts explicit and ready for minor-version progression.
- */
-function asMinorZeroRegistry<T>(
-  byMajor: Record<DispatchVersion, T>,
-): VersionedRegistry<T> {
-  return Object.freeze({
-    1: Object.freeze({ 0: byMajor[1] }),
-    2: Object.freeze({ 0: byMajor[2] }),
-  });
-}
-
-/** Attachment-group dispatch registry resolved by major+minor stream version. */
-const DISPATCH_BY_VERSION = asMinorZeroRegistry(DISPATCH_BY_MAJOR);
-
-/** Resolve attachment dispatch table for the requested stream version. */
-function getDispatch(gvrsn: Versionage): Map<string, GroupParser> {
-  return resolveTable(
-    DISPATCH_BY_VERSION,
-    gvrsn,
-    "attachment dispatch registry",
-  ).value;
-}
+/** Direct routes for CESR v2; counter parsing validates the requested minor. */
+const HANDLERS_V2: Readonly<Record<string, GroupParser>> = {
+  [CtrDexV2.KERIACDCGenusVersion]: parseGenus,
+  [CtrDexV2.GenericGroup]: parseSizedGroup,
+  [CtrDexV2.BigGenericGroup]: parseSizedGroup,
+  [CtrDexV2.NonNativeBodyGroup]: parseSizedGroup,
+  [CtrDexV2.BigNonNativeBodyGroup]: parseSizedGroup,
+  [CtrDexV2.PathedMaterialCouples]: parseSizedGroup,
+  [CtrDexV2.BigPathedMaterialCouples]: parseSizedGroup,
+  [CtrDexV2.DatagramSegmentGroup]: parseSizedGroup,
+  [CtrDexV2.BigDatagramSegmentGroup]: parseSizedGroup,
+  [CtrDexV2.ESSRWrapperGroup]: parseSizedGroup,
+  [CtrDexV2.BigESSRWrapperGroup]: parseSizedGroup,
+  [CtrDexV2.FixBodyGroup]: parseSizedGroup,
+  [CtrDexV2.BigFixBodyGroup]: parseSizedGroup,
+  [CtrDexV2.MapBodyGroup]: parseSizedGroup,
+  [CtrDexV2.BigMapBodyGroup]: parseSizedGroup,
+  [CtrDexV2.GenericMapGroup]: parseSizedGroup,
+  [CtrDexV2.BigGenericMapGroup]: parseSizedGroup,
+  [CtrDexV2.GenericListGroup]: parseSizedGroup,
+  [CtrDexV2.BigGenericListGroup]: parseSizedGroup,
+  [CtrDexV2.AttachmentGroup]: parseSizedGroup,
+  [CtrDexV2.BigAttachmentGroup]: parseSizedGroup,
+  [CtrDexV2.BodyWithAttachmentGroup]: parseSizedGroup,
+  [CtrDexV2.BigBodyWithAttachmentGroup]: parseSizedGroup,
+  [CtrDexV2.ESSRPayloadGroup]: parseEssrV2,
+  [CtrDexV2.BigESSRPayloadGroup]: parseEssrV2,
+  [CtrDexV2.ControllerIdxSigs]: tuplesV2("indexer"),
+  [CtrDexV2.BigControllerIdxSigs]: tuplesV2("indexer"),
+  [CtrDexV2.WitnessIdxSigs]: tuplesV2("indexer"),
+  [CtrDexV2.BigWitnessIdxSigs]: tuplesV2("indexer"),
+  [CtrDexV2.NonTransReceiptCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.BigNonTransReceiptCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.FirstSeenReplayCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.BigFirstSeenReplayCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.SealSourceCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.BigSealSourceCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.BackerRegistrarSealCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.BigBackerRegistrarSealCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.TypedDigestSealCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.BigTypedDigestSealCouples]: tuplesV2("matter", "matter"),
+  [CtrDexV2.TransReceiptQuadruples]: tuplesV2("matter", "matter", "matter", "indexer"),
+  [CtrDexV2.BigTransReceiptQuadruples]: tuplesV2("matter", "matter", "matter", "indexer"),
+  [CtrDexV2.SealSourceTriples]: tuplesV2("matter", "matter", "matter"),
+  [CtrDexV2.BigSealSourceTriples]: tuplesV2("matter", "matter", "matter"),
+  [CtrDexV2.SealSourceLastSingles]: tuplesV2("matter"),
+  [CtrDexV2.BigSealSourceLastSingles]: tuplesV2("matter"),
+  [CtrDexV2.DigestSealSingles]: tuplesV2("matter"),
+  [CtrDexV2.BigDigestSealSingles]: tuplesV2("matter"),
+  [CtrDexV2.MerkleRootSealSingles]: tuplesV2("matter"),
+  [CtrDexV2.BigMerkleRootSealSingles]: tuplesV2("matter"),
+  [CtrDexV2.TransIdxSigGroups]: parseTransSigsV2,
+  [CtrDexV2.BigTransIdxSigGroups]: parseTransSigsV2,
+  [CtrDexV2.TransLastIdxSigGroups]: parseLastSigsV2,
+  [CtrDexV2.BigTransLastIdxSigGroups]: parseLastSigsV2,
+  [CtrDexV2.BlindedStateQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
+  [CtrDexV2.BigBlindedStateQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
+  [CtrDexV2.TypedMediaQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
+  [CtrDexV2.BigTypedMediaQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
+  [CtrDexV2.BoundStateSextuples]: tuplesV2("matter", "matter", "matter", "matter", "matter", "matter"),
+  [CtrDexV2.BigBoundStateSextuples]: tuplesV2("matter", "matter", "matter", "matter", "matter", "matter"),
+};
 
 /** Parse one attachment group with an explicit version (no version fallback). */
 function parseAttachmentDispatchWithVersion(
@@ -956,7 +555,7 @@ function parseAttachmentDispatchWithVersion(
   context: AttachmentDispatchOptions,
 ): { group: AttachmentGroup; consumed: number } {
   const counter = parseCounter(input, gvrsn, domain);
-  const parser = getDispatch(gvrsn).get(counter.code);
+  const parser = (gvrsn.major === 1 ? HANDLERS_V1 : HANDLERS_V2)[counter.code];
 
   if (!parser) {
     throw new UnknownCodeError(
