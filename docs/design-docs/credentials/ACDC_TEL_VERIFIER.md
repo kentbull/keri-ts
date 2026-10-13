@@ -13,7 +13,7 @@ responsibilities into one vague "VC" layer.
 
 - `acdc/regeventing.ts` verifies supplied v2 `rip`/`bup` evidence against already
   accepted KEL state; it owns no fetching, persistence, or issuer-side processing.
-- Internal `acdc/regengine.ts` owns local inception acceptance and anchor escrow,
+- Internal `acdc/regengine.ts` owns local event acceptance and anchor/order escrows,
   borrowing an issuer's public KEL and RegistryStore without acquiring secrets.
 - `vdr/eventing.ts` owns legacy TEL state processing: registry inception, rotation,
   issue, revoke, accepted-state persistence, and TEL escrows.
@@ -96,15 +96,20 @@ restricts cutoff text to timezone-qualified RFC3339 with at most six fractional
 digits and retains exact microseconds; events at the cutoff are included.
 `makeNowIso8601` accepts a caller-supplied `Date` for clock injection, padding its
 milliseconds to six digits. Python accepts a broader datetime grammar. The issuer
-engine's update/retry orchestration and end-to-end production qualification remain unfinished.
+engine's automatic retry orchestration and end-to-end production qualification remain unfinished.
 
-The internal inception entry point returns accept, duplicate, anchor escrow or
+The internal event entry point returns accept, duplicate, anchor/order escrow or
 typed rejection. It discovers full, fully witnessed KEL seals; stored anchors
 are already caller-verified evidence. One registry transaction stages the body,
 anchor, accepted ordinal/head and escrow removal. Failure rolls back those rows
 before binding the engine instance. Replay cannot rewrite an occupied slot or
 downgrade a head; absent/corrupt accepted bodies propagate as invariant failures.
 Duplicate replay opens no write transaction and remains usable on readonly stores.
+Updates require an accepted predecessor with the exact prior SAID; a staged body
+cannot satisfy ordering. Missing anchors take precedence over missing predecessors.
+Protocol ordinals retain bigint precision, but the current storage API supports
+only safe integer ordinals; larger updates receive an explicit `ordinalRange`
+refusal before storage conversion. This is an unfinished storage boundary.
 Named services and scheduled retries belong to the remaining registry units.
 
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
