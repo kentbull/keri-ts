@@ -52,7 +52,9 @@ function summarizeFrames(frames: ParseEvent[]): FrameSummary[] {
       pvrsn: `${event.frame.body.pvrsn.major}.${event.frame.body.pvrsn.minor}`,
       ilk: event.frame.body.ilk ?? "",
       said: event.frame.body.said ?? "",
-      nativeBodyCode: event.frame.body.native?.bodyCode ?? "",
+      nativeBodyCode: event.frame.body.kind === "CESR" && event.frame.body.ked
+        ? new Counter({ qb64b: event.frame.body.raw, version: event.frame.body.gvrsn ?? event.frame.body.pvrsn }).code
+        : "",
       attachments: event.frame.attachments.map((attachment) => `${attachment.code}:${attachment.count}`),
     }));
 }
@@ -144,27 +146,6 @@ Deno.test(
       ).length,
       4,
     );
-  },
-);
-
-Deno.test(
-  "V-P2-005: FixBodyGroup fixture exposes maximal mapped primitive categories",
-  () => {
-    const frames = parseFramesNoError(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY));
-    assertEquals(frames.length, 1);
-    const frame = frames[0];
-    if (frame.type !== "frame") {
-      throw new Error("Expected frame event");
-    }
-    assertEquals(frame.frame.body.kind, "CESR");
-    assertEquals(frame.frame.body.ilk, "icp");
-    assertEquals(frame.frame.body.native?.bodyCode, CtrDexV2.FixBodyGroup);
-    assertEquals(frame.frame.body.native?.fields.length, 13);
-
-    const categories = new Set(
-      (frame.frame.body.native?.fields ?? []).map((field) => field.primitive.code),
-    );
-    assertEquals([...categories].sort(), ["-J", "D", "E", "M"]);
   },
 );
 

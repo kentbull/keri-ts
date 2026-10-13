@@ -1394,7 +1394,6 @@ export class Serder implements CesrBody {
   readonly pvrsn: CesrBody["pvrsn"];
   readonly gvrsn: CesrBody["gvrsn"];
   readonly ilk: string | null;
-  readonly native?: CesrBody["native"];
 
   protected readonly _ked: SadMap | null;
   protected readonly _said: string | null;

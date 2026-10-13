@@ -1,8 +1,9 @@
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { tephraCli } from "../../src/cli/main.ts";
 import { decodeB64 } from "../../src/core/bytes.ts";
+import { VersionError } from "../../src/core/errors.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
@@ -129,4 +130,21 @@ Deno.test("tephra annotate --pretty pretty-prints JSON body", async () => {
   const out = TEXT_DECODER.decode(files.get("/virtual/out.annotated")!);
   assertStringIncludes(out, "\n  \"v\":");
   assertStringIncludes(out, "SERDER KERI JSON");
+});
+
+Deno.test("native fixture annotation preserves primitive categories without a parser sidecar", () => {
+  for (const input of [KERIPY_NATIVE_V2_ICP_FIX_BODY, decodeB64(KERIPY_NATIVE_V2_ICP_FIX_BODY)]) {
+    const annotated = annotate(input);
+    for (const name of ["FixBodyGroup", "GenericListGroup", "Ed25519", "Blake3_256", "Short"]) {
+      assertStringIncludes(annotated, name);
+    }
+    assertEquals(TEXT_DECODER.decode(denot(annotated)), KERIPY_NATIVE_V2_ICP_FIX_BODY);
+  }
+});
+
+Deno.test("annotation validates both selector minor sextets and unsupported majors", () => {
+  for (const countB64 of ["CAB", "CBA", "DAA"]) {
+    const selector = new Counter({ code: CtrDexV2.KERIACDCGenusVersion, countB64 });
+    assertThrows(() => annotate(selector.qb64 + KERIPY_NATIVE_V2_ICP_FIX_BODY), VersionError);
+  }
 });

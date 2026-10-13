@@ -93,7 +93,9 @@ export function summarizeFrames(frames: ParseEvent[]): FrameSummary[] {
       pvrsn: `${event.frame.body.pvrsn.major}.${event.frame.body.pvrsn.minor}`,
       ilk: event.frame.body.ilk ?? "",
       said: event.frame.body.said ?? "",
-      nativeBodyCode: event.frame.body.native?.bodyCode ?? "",
+      nativeBodyCode: event.frame.body.kind === "CESR" && event.frame.body.ked
+        ? new Counter({ qb64b: event.frame.body.raw, version: event.frame.body.gvrsn ?? event.frame.body.pvrsn }).code
+        : "",
       attachments: event.frame.attachments.map((attachment) => `${attachment.code}:${attachment.count}`),
     }));
 }

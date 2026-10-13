@@ -1,11 +1,11 @@
-import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { CesrDomain, CesrFrame } from "../core/types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
-import { Counter, parseCounter } from "../primitives/counter.ts";
+import { Counter, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
+import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
 import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
@@ -73,40 +73,6 @@ function emitLine(
     return;
   }
   lines.push(`${pad}${value} # ${comment}`);
-}
-
-/** Parse counters with a bounded v1/v2 fallback for annotation-only rendering paths. */
-function parseCounterCompat(
-  input: Uint8Array,
-  version: Versionage,
-  domain: CesrDomain,
-) {
-  try {
-    return parseCounter(input, version, domain);
-  } catch (error) {
-    if (!isRecoverableParseError(error)) {
-      throw error;
-    }
-    const alternate: Versionage = version.major >= 2
-      ? { major: 1, minor: 0 }
-      : { major: 2, minor: 0 };
-    return parseCounter(input, alternate, domain);
-  }
-}
-
-/** Decode a wrapped genus-version selector into the active protocol version context. */
-function decodeVersionCounter(
-  counter: { qb64: string; count: number },
-): Versionage {
-  const triplet = counter.qb64.length >= 3
-    ? counter.qb64.slice(-3)
-    : intToB64(counter.count, 3);
-  const majorRaw = b64ToInt(triplet[0] ?? "A");
-  const minorRaw = b64ToInt(triplet[1] ?? "A");
-  return {
-    major: majorRaw === 1 ? 1 : 2,
-    minor: minorRaw,
-  };
 }
 
 /** Render hydrated group entries recursively using semantic primitive comments. */
@@ -193,7 +159,7 @@ function renderAttachmentGroupRaw(
     return 0;
   }
   const parsed = parseAttachmentDispatchCompat(raw, version, domain);
-  const counter = parseCounterCompat(raw, version, domain);
+  const counter = parseCounter(raw, version, domain);
   emitLine(
     lines,
     counter.qb64,
@@ -267,7 +233,7 @@ function renderAttachmentGroupRaw(
   return parsed.consumed;
 }
 
-/** Render a native CESR body-group payload using hydrated native field projections when available. */
+/** Walk native body tokens for annotation; Serder owns semantic validation. */
 function renderNativeBody(
   lines: string[],
   frame: CesrFrame,
@@ -280,7 +246,7 @@ function renderNativeBody(
     return;
   }
 
-  const counter = parseCounterCompat(raw, version, domain);
+  const counter = parseCounter(raw, version, domain);
   emitLine(
     lines,
     counter.qb64,
@@ -294,11 +260,12 @@ function renderNativeBody(
   const payloadSize = counter.count * unit;
   const end = Math.min(raw.length, headerSize + payloadSize);
   let offset = headerSize;
+  let pendingLabel: string | null = null;
 
   while (offset < end) {
     const slice = raw.slice(offset, end);
     try {
-      const nestedCounter = parseCounterCompat(slice, version, domain);
+      const nestedCounter = parseCounter(slice, version, domain);
       const nestedCounterSize = domain === "bny"
         ? nestedCounter.fullSizeB2
         : nestedCounter.fullSize;
@@ -319,8 +286,8 @@ function renderNativeBody(
 
     const matter = parseMatter(slice, domain);
     const matterSize = domain === "bny" ? matter.fullSizeB2 : matter.fullSize;
-    const field = frame.body.native?.fields.find((candidate) => candidate.primitive.qb64 === matter.qb64);
-    const label = field ? nativeLabelName(field.label) : null;
+    const label = nativeLabelName(pendingLabel);
+    pendingLabel = isLabelerCode(matter.code) ? parseLabeler(slice, domain).label : null;
     const primitiveComment = matter instanceof Indexer
       ? `Indexer ${matter.code}`
       : matterCodeName(matter.code);
@@ -441,7 +408,7 @@ function renderWrapperAwareStream(
       return true;
     }
 
-    const counter = parseCounterCompat(slice, activeVersion, domain);
+    const counter = parseCounter(slice, activeVersion, domain);
     const headerSize = domain === "bny" ? counter.fullSizeB2 : counter.fullSize;
     const name = counterCodeName(counter.code);
 
@@ -453,7 +420,7 @@ function renderWrapperAwareStream(
         indent,
         options,
       );
-      activeVersion = decodeVersionCounter(counter);
+      activeVersion = decodeGenusVersion(counter);
       offset += headerSize;
       usedWrapper = true;
       continue;

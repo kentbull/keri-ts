@@ -61,15 +61,15 @@ Deno.test("supplemental: compat mode preserves opaque tail remainder inside Atta
 Deno.test("V-P1-003: parser rejects MapBodyGroup with dangling label and no value", () => {
   const stream = `${CtrDexV2.MapBodyGroup}ABVAAA`; // count=1 quadlet: label only
   const parser = createParser();
-  const events = [...parser.feed(encode(stream)), ...parser.flush()];
+  const events = parser.feed(encode(stream));
   const errors = events.filter((event) => event.type === "error");
   const frames = events.filter((event) => event.type === "frame");
 
   assertEquals(frames.length, 0);
   assertEquals(errors.length, 1);
   if (errors[0].type === "error") {
-    assertEquals(errors[0].error.name, "SyntaxParseError");
-    assertStringIncludes(errors[0].error.message, "Invalid label text");
+    assertEquals(errors[0].error.name, "GroupSizeError");
+    assertStringIncludes(errors[0].error.message, "Incomplete field inside native body payload");
   }
 });
 
@@ -77,14 +77,13 @@ Deno.test("V-P1-003: parser rejects MapBodyGroup boundary-mismatched nested valu
   // count=2 quadlets with payload: label + truncated nested counter value.
   const stream = `${CtrDexV2.MapBodyGroup}ACVAAA-KAB`;
   const parser = createParser();
-  const events = [...parser.feed(encode(stream)), ...parser.flush()];
+  const events = parser.feed(encode(stream));
   const errors = events.filter((event) => event.type === "error");
   const frames = events.filter((event) => event.type === "frame");
 
   assertEquals(frames.length, 0);
   assertEquals(errors.length, 1);
   if (errors[0].type === "error") {
-    assertEquals(errors[0].error.name, "SyntaxParseError");
-    assertStringIncludes(errors[0].error.message, "Invalid label text");
+    assertEquals(errors[0].error.name, "UnknownCodeError");
   }
 });
