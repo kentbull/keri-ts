@@ -1,6 +1,8 @@
 # CESR Atomic Bounded Parser Architecture
 
-This describes the currently implemented parser. The accepted
+This describes the temporary synchronous parser. Async `parse()` and frame
+adapters now use progressive traversal; see the
+[progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md). The accepted
 [progressive design](../../adr/adr-0012-progressive-nested-parser.md) is a planned
 replacement, tracked in the [execution plan](CESR_PROGRESSIVE_PARSER_PLAN.md).
 

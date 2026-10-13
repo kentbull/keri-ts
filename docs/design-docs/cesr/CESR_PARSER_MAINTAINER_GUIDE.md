@@ -2,12 +2,17 @@
 
 The parser has three owners: stream state, frame boundaries, and attachment
 contents. The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-defines completion and version rules; this guide maps those rules to the code.
+defines the temporary synchronous completion and version rules. The async
+`parse(source, options)` entrypoint and frame adapters now use the
+[progressive contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md); payload and runtime
+migration remain in progress. This guide maps both paths to their owners.
 
 ## Read the code in this order
 
 | Module                                    | Responsibility                                                                                                                               |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cesr/src/parser/progressive.ts` | Async generators own scoped genus and frame progress; `yield*` emits GenericGroup children early.                                            |
+| `packages/cesr/src/parser/cursor.ts`      | Segmented input, exact bounded reads, cancellation, and resource limits.                                                                     |
 | `packages/cesr/src/parser/stream.ts`      | `CesrParser` owns bytes, offset, selected genus, pending frame, and queued siblings. `feed`, `flush`, and `reset` are the lifecycle.         |
 | `packages/cesr/src/parser/frames.ts`      | `parseFrameStart` reads a body or enclosure. Bounded children are parsed atomically by ordinary functions.                                   |
 | `packages/cesr/src/parser/attachments.ts` | `parseAttachments` walks a frame's attachment set; `parseAttachmentGroup` selects a direct v1/v2 handler and hydrates known primitive roles. |
@@ -22,7 +27,7 @@ A `GroupTuple` is an ordered recursive tuple, not necessarily a flat primitive
 array. `OpaqueSpan` holds original bytes and their domain for opaque wire families;
 it is not a qualified primitive.
 
-## Follow one frame
+## Follow one synchronous frame
 
 1. `feed` appends bytes and calls `drain`.
 2. `parseFrameStart` reads any selector and dispatches to Serder or a bounded
@@ -45,9 +50,9 @@ it is not a qualified primitive.
   selector persists; enclosure selectors remain local to their bounded scope.
 - V1 signature/tuple counters count items. V2 counters count payload quadlets
   (`txt`) or triplets (`bny`). Sized v1 wrappers also count payload units.
-- Await the full declared payload before descending into an enclosure. A
-  truncated item inside that complete payload is a `GroupSizeError`; bytes from
-  the next group cannot repair it.
+- Synchronous enclosure readers wait for the full payload. Progressive frame
+  readers descend into a bounded scope immediately; both reject an impossible
+  child extent with `GroupSizeError`, never borrowing bytes from the next group.
 - Known roles hydrate narrow primitives such as Siger, Verfer/Cigar, NumberPrimitive,
   Diger, and Texter. Preserve canonical wire family names from the pinned codex.
 - Opaque wire families preserve one span. Malformed wrappers are errors, not

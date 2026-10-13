@@ -12,7 +12,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 2. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the
    normative lifecycle contract. Parser behavior changes should stay mapped to
    that contract and its tests.
-3. The implemented parser remains atomic/bounded-substream first during migration.
+3. The synchronous parser remains atomic/bounded-substream first during migration.
    `CesrParser` directly owns its buffer, offset, and selected stream genus.
    The parser lives in `parser/stream.ts`, `frames.ts`, and `attachments.ts`;
    shared byte widths live in `core/domain.ts`. Frame parsing uses stateless
@@ -25,7 +25,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    `parser/cursor.ts` prepares that input boundary: segmented storage drops consumed
    buffers, scope ends limit all reads, and accepted producer backing buffers count
    toward resource policy. Demand and cancellation belong to the shared cursor;
-   generator locals will own nested parse progress.
+   generator locals now own nested parse progress in `parser/progressive.ts`.
+   The async `parse()` entrypoint and frame adapters yield complete GenericGroup
+   children early; they retain existing Serder/attachment hydration under cursor
+   and `maxFrameBytes` admission limits. ESSR sinks and runtime migration remain
+   later phases, so frame traversal alone is not an end-to-end memory claim.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not

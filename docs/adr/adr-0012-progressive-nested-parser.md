@@ -1,6 +1,6 @@
 # ADR-0012: Progressive Nested Parsing and Bounded Payload Storage
 
-- Status: Accepted design; implementation planned
+- Status: Accepted design; progressive frame traversal implemented, migration in progress
 - Date: 2026-10-12
 - Scope: CESR parsing and its KERI transport, payload, and storage boundaries
 - Replaces: the long-term architecture decision in
@@ -11,7 +11,7 @@
 ## Context
 
 The committed workload is many small ESSR messages in transfers that can total
-multiple gigabytes. The current parser waits for a complete counted enclosure,
+multiple gigabytes. The synchronous parser waits for a complete counted enclosure,
 retains its child frames, and copies accumulated input. Transport, primitive
 hydration, exchange handling, and storage can independently materialize the
 same transfer. Making nested parsing resumable alone does not establish bounded
@@ -49,11 +49,12 @@ storage is a separate representation and must not replace original wire evidence
 
 ## Implementation transition
 
-This ADR does not describe the currently implemented parser. The existing
+Progressive frame traversal and async adapters now implement the generator
+portion of this ADR. Payload sinks and the runtime path remain later phases. The existing
 [state-machine contract](../design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md)
 remains authoritative for its synchronous API until callers migrate. The
-progressive contract states obligations for the new implementation, not completed
-features.
+progressive contract distinguishes implemented traversal from the remaining
+payload, storage, and runtime obligations.
 
 A temporary second implementation is permitted only to keep intermediate PRs
 cohesive. Migrate the actual async adapter first, then its consumers. Phase 12

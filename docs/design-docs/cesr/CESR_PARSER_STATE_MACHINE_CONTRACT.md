@@ -14,11 +14,13 @@
 
 ## Approved transition
 
-This document describes the current synchronous atomic implementation.
+This document describes the temporary synchronous atomic implementation.
+The async `parse()` entrypoint and adapters now implement progressive frame
+traversal; their contract is separate below.
 [ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) approves its replacement
 under the [progressive target contract](CESR_PROGRESSIVE_PARSER_CONTRACT.md) and
-[phased plan](CESR_PROGRESSIVE_PARSER_PLAN.md). Those target guarantees are not
-implemented by the documentation change. Keep this contract accurate while
+[phased plan](CESR_PROGRESSIVE_PARSER_PLAN.md). That contract distinguishes the implemented frame traversal from the remaining
+payload and runtime targets. Keep this contract accurate while
 callers migrate; phase 12 removes the old engine and its API compatibility
 surfaces, while retaining wire-protocol regression coverage.
 
