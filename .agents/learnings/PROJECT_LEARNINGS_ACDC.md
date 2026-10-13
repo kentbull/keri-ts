@@ -65,6 +65,10 @@ hook demo is only a sample receiver.
 
 ## Remaining work
 
+The [registry foundation](../../docs/plans/credentials/REGISTRY_PLAN.md) owns
+full v2 services and the custom-import audit. Preserve legacy VDR and #168 stores;
+storage readability, observer vetting and issuer processing are separate gates.
+
 Standalone Mapper currently accepts a tampered map with a stale claimed d despite
 saidive verify. The [focused repair](../../docs/plans/cesr/MAPPER_PLAN.md) must use
 independent positive/tampered formats and preserve Aggor disclosure semantics.

@@ -6,6 +6,7 @@ sequence. Subject files below own acceptance, without duplicating that sequence.
 - [CESR parser](cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) and [Mapper](cesr/MAPPER_PLAN.md).
 - [Multisig](exchange/MULTISIG_PLAN.md), [IPEX](exchange/IPEX_PLAN.md),
   [exchange proofs and v2 admission](exchange/EXCHANGE_ADMISSION_PLAN.md).
+- [V1/V2 registries](credentials/REGISTRY_PLAN.md) and [KRAM](exchange/KRAM_PLAN.md).
 - [ESSR](essr/ESSR_PLAN.md) and [shared resource policy](runtime/RESOURCE_POLICY_PLAN.md).
 - [Storage/recovery](db/STORAGE_RECOVERY_PLAN.md) and [transport](runtime/TRANSPORT_PLAN.md).
 - [Full qualification](qualification/QUALIFICATION_PLAN.md) and

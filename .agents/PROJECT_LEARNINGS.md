@@ -30,6 +30,10 @@ Normal remote outcomes use typed decisions. Exceptions retain invariant,
 infrastructure and caller-contract failures. Keep protocol compatibility and
 frozen-reference evidence explicit; no old TypeScript API shims are required.
 Finite local limits do not establish a shared runtime memory bound.
+PRs target 300–500 added or removed lines or fewer, including verification.
+Reuse tests; new maintained integration/end-to-end coverage needs strong
+justification. Exploratory probes may remain uncommitted. Choose narrow unit
+regressions with durable value, not new test scaffolding by default.
 
 ## Maintenance and handoff
 
