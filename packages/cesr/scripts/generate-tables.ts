@@ -6,6 +6,9 @@ import {
   renderStringCodexes,
 } from "./table-renderers.ts";
 
+/** Same reference as PR interop CI; codex changes require an intentional baseline upgrade. */
+export const KERIPY_TABLE_BASELINE = "450ae1c2a7eac61d92bc7b830cb6883c41e6a798";
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -203,8 +206,21 @@ function resolveKeripyPath(): string {
   return new URL("../../../../../python/keripy/", import.meta.url).pathname.replace(/\/$/, "");
 }
 
-async function readFile(path: string): Promise<string> {
-  return await Deno.readTextFile(path);
+/** Read immutable source at the interop baseline, independent of checkout HEAD or local edits. */
+async function readSource(repo: string, path: string): Promise<string> {
+  const result = await new Deno.Command("git", {
+    args: ["-C", repo, "show", `${KERIPY_TABLE_BASELINE}:${path}`],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    throw new Error(
+      `KERIpy table source unavailable: ${path}. Set KERIPY_PATH to a repository containing ${KERIPY_TABLE_BASELINE}. ${
+        decoder.decode(result.stderr)
+      }`,
+    );
+  }
+  return decoder.decode(result.stdout);
 }
 
 async function formatTypeScript(source: string): Promise<string> {
@@ -449,12 +465,12 @@ function applyCompatV2CounterSizeAliases(
 export async function buildGeneratedArtifacts(
   keripyPath = resolveKeripyPath(),
 ): Promise<Record<string, string>> {
-  const coring = await readFile(`${keripyPath}/src/keri/core/coring.py`);
-  const mapping = await readFile(`${keripyPath}/src/keri/core/mapping.py`);
-  const counting = await readFile(`${keripyPath}/src/keri/core/counting.py`);
-  const signing = await readFile(`${keripyPath}/src/keri/core/signing.py`);
-  const indexing = await readFile(`${keripyPath}/src/keri/core/indexing.py`);
-  const kering = await readFile(`${keripyPath}/src/keri/kering.py`);
+  const coring = await readSource(keripyPath, "src/keri/core/coring.py");
+  const mapping = await readSource(keripyPath, "src/keri/core/mapping.py");
+  const counting = await readSource(keripyPath, "src/keri/core/counting.py");
+  const signing = await readSource(keripyPath, "src/keri/core/signing.py");
+  const indexing = await readSource(keripyPath, "src/keri/core/indexing.py");
+  const kering = await readSource(keripyPath, "src/keri/kering.py");
 
   const sourceText = (source: CanonicalCodexSpec["source"]): string => {
     switch (source) {

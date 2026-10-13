@@ -1,7 +1,7 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
 import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
-import { parseCounter } from "../primitives/counter.ts";
+import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseIlker } from "../primitives/ilker.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
@@ -12,7 +12,6 @@ import { parseVerser } from "../primitives/verser.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
-import { b64ToInt, intToB64 } from "./bytes.ts";
 import {
   ColdStartError,
   DeserializeError,
@@ -190,7 +189,7 @@ export class FrameParser {
       const peek = parseCounter(input.slice(offset), activeVersion, cold);
       if (peek.code === GENUS_VERSION_CODE) {
         offset += tokenSize(peek, cold);
-        activeVersion = this.decodeVersionCounter(peek);
+        activeVersion = decodeGenusVersion(peek);
         if (input.length <= offset) {
           throw new ShortageError(offset + 1, input.length);
         }
@@ -672,20 +671,6 @@ export class FrameParser {
     return {
       frame: { body: base.frame.body, attachments },
       consumed: offset,
-    };
-  }
-
-  /** Decode a genus-version counter token into major/minor Versionage values. */
-  private decodeVersionCounter(counter: Counter): Versionage {
-    const triplet = counter.qb64.length >= 3
-      ? counter.qb64.slice(-3)
-      : intToB64(counter.count, 3);
-    const majorRaw = b64ToInt(triplet[0] ?? "A");
-    const minorRaw = b64ToInt(triplet[1] ?? "A");
-    const major = majorRaw === 1 ? 1 : 2;
-    return {
-      major,
-      minor: minorRaw,
     };
   }
 

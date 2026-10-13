@@ -214,3 +214,19 @@ Any parser lifecycle change that affects:
 - framed/unframed branch behavior,
 
 must update this contract and the mapped tests in the matrix.
+
+## Attachment Version Boundaries
+
+- ESSR v1 counts Texter items; ESSR v2 counts payload quadlets (text) or triplets
+  (binary). Both hydrate Texters before KERI envelope normalization.
+- Genus selectors carry one major sextet and two minor sextets. Unsupported
+  versions fail without coercion or compat-wrapper recovery.
+- Transferable signature groups require the selected version's ControllerIdxSigs
+  counter internally. Witness counters and big inner counters are rejected to
+  match the pinned KERIpy parser; top-level big signature counters remain valid.
+- Generated codex tables target KERIpy
+  `450ae1c2a7eac61d92bc7b830cb6883c41e6a798`, also pinned by PR interop CI.
+  `KERIPY_PATH` must identify a Git repository containing that revision; table
+  generation reads committed blobs, independent of the checkout's current HEAD.
+  Updating this baseline requires reviewing reused code meanings together with
+  parser, serializer, fixture, and interop changes.

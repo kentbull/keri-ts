@@ -1,13 +1,18 @@
-import { b, b64ToInt, intToB64 } from "../core/bytes.ts";
-import { GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
+import { b } from "../core/bytes.ts";
+import { GroupSizeError, ShortageError, UnknownCodeError, VersionError } from "../core/errors.ts";
 import type { AttachmentGroup } from "../core/types.ts";
-import { Counter, CounterGroup, parseCounter } from "../primitives/counter.ts";
+import { type Counter, CounterGroup, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
 import { parseMatter } from "../primitives/matter.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
+import { parseTexter } from "../primitives/texter.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
-import { resolveVersionedRegistryValue, type VersionedRegistry } from "../tables/counter-version-registry.ts";
+import {
+  resolveCtrDex,
+  resolveVersionedRegistryValue,
+  type VersionedRegistry,
+} from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 
 /**
@@ -78,6 +83,7 @@ type DispatchParserKind =
   | "genusVersion"
   | "quadlet"
   | "repeatTuple"
+  | "essr"
   | "transIdxSigGroups"
   | "transLastIdxSigGroups"
   | "sadPathSig"
@@ -88,7 +94,7 @@ type DispatchParserKind =
  *
  * This metadata is intentionally domain-facing (review/debug/docs) and does not
  * alter parser behavior by itself. Behavioral switches are driven only by
- * `parserKind`, `tupleKinds`, `wrapperGroup`, and `allowsSigerList`.
+ * `parserKind`, `tupleKinds`, and `wrapperGroup`.
  */
 type DispatchSemanticShape =
   | "genusVersionMarker"
@@ -112,7 +118,6 @@ interface DispatchFamilySpec {
   codesByVersion: Partial<Record<DispatchVersion, readonly string[]>>;
   tupleKinds?: readonly PrimitiveKind[];
   wrapperGroup?: boolean;
-  allowsSigerList?: boolean;
 }
 
 /**
@@ -128,7 +133,6 @@ interface DispatchDescriptor {
   semanticShape: DispatchSemanticShape;
   tupleKinds?: readonly PrimitiveKind[];
   wrapperGroup: boolean;
-  allowsSigerList: boolean;
 }
 
 /**
@@ -138,7 +142,6 @@ interface DispatchDescriptor {
  * - code -> parser routing
  * - semantic shape classification
  * - wrapper-group recursion eligibility
- * - nested siger-list allowance
  *
  * Maintainer workflow:
  * when adding/removing a counter route, edit this constant only, then rely on
@@ -162,8 +165,6 @@ export const ATTACHMENT_DISPATCH_SPEC: readonly DispatchFamilySpec[] = [
         CtrDexV1.BigGenericGroup,
         CtrDexV1.NonNativeBodyGroup,
         CtrDexV1.BigNonNativeBodyGroup,
-        CtrDexV1.ESSRPayloadGroup,
-        CtrDexV1.BigESSRPayloadGroup,
         CtrDexV1.PathedMaterialCouples,
         CtrDexV1.BigPathedMaterialCouples,
       ],
@@ -172,8 +173,6 @@ export const ATTACHMENT_DISPATCH_SPEC: readonly DispatchFamilySpec[] = [
         CtrDexV2.BigGenericGroup,
         CtrDexV2.NonNativeBodyGroup,
         CtrDexV2.BigNonNativeBodyGroup,
-        CtrDexV2.ESSRPayloadGroup,
-        CtrDexV2.BigESSRPayloadGroup,
         CtrDexV2.PathedMaterialCouples,
         CtrDexV2.BigPathedMaterialCouples,
         CtrDexV2.DatagramSegmentGroup,
@@ -211,15 +210,19 @@ export const ATTACHMENT_DISPATCH_SPEC: readonly DispatchFamilySpec[] = [
     },
   },
   {
+    parserKind: "essr",
+    semanticShape: "countedGroupPayload",
+    codesByVersion: {
+      1: [CtrDexV1.ESSRPayloadGroup, CtrDexV1.BigESSRPayloadGroup],
+      2: [CtrDexV2.ESSRPayloadGroup, CtrDexV2.BigESSRPayloadGroup],
+    },
+  },
+  {
     parserKind: "repeatTuple",
     semanticShape: "primitiveTuples",
     tupleKinds: ["indexer"],
-    allowsSigerList: true,
     codesByVersion: {
-      1: [
-        CtrDexV1.ControllerIdxSigs,
-        CtrDexV1.WitnessIdxSigs,
-      ],
+      1: [CtrDexV1.ControllerIdxSigs, CtrDexV1.WitnessIdxSigs],
       2: [
         CtrDexV2.ControllerIdxSigs,
         CtrDexV2.BigControllerIdxSigs,
@@ -389,7 +392,6 @@ function expandDispatchSpec(
           semanticShape: family.semanticShape,
           tupleKinds: family.tupleKinds,
           wrapperGroup: family.wrapperGroup === true,
-          allowsSigerList: family.allowsSigerList === true,
         });
       }
     }
@@ -400,7 +402,7 @@ function expandDispatchSpec(
 /**
  * Build a version-indexed code-set projection from descriptors.
  *
- * Used for secondary routing metadata (wrapper recursion/siger-list allowance)
+ * Used for secondary routing metadata (wrapper recursion)
  * so those sets cannot drift from the canonical dispatch spec.
  */
 function buildCodeSetByVersion(
@@ -430,12 +432,6 @@ const ATTACHMENT_DISPATCH_DESCRIPTORS = expandDispatchSpec(
   ATTACHMENT_DISPATCH_SPEC,
 );
 
-/** Siger-list counter codes by major version (for nested trans sig group parsing). */
-const SIGER_LIST_CODES_BY_MAJOR = buildCodeSetByVersion(
-  ATTACHMENT_DISPATCH_DESCRIPTORS,
-  (descriptor) => descriptor.allowsSigerList,
-);
-
 /** Wrapper counters by major version whose payloads recurse as nested groups. */
 const WRAPPER_GROUP_CODES_BY_MAJOR = buildCodeSetByVersion(
   ATTACHMENT_DISPATCH_DESCRIPTORS,
@@ -463,19 +459,6 @@ function counterHeaderSize(counter: Counter, domain: ParseDomain): number {
 /** Counter count unit size by domain: quadlets in text, triplets in binary. */
 function quadletUnitSize(domain: ParseDomain): number {
   return domain === "bny" ? 3 : 4;
-}
-
-/** Decode a genus-version counter payload into major/minor `Versionage`. */
-function decodeVersionCounter(counter: Counter): Versionage {
-  const triplet = counter.qb64.length >= 3
-    ? counter.qb64.slice(-3)
-    : intToB64(counter.count, 3);
-  const majorRaw = b64ToInt(triplet[0] ?? "A");
-  const minorRaw = b64ToInt(triplet[1] ?? "A");
-  return {
-    major: majorRaw === 1 ? 1 : 2,
-    minor: minorRaw,
-  };
 }
 
 /** Parse a fixed primitive tuple shape and return qb64 strings in source order. */
@@ -530,6 +513,30 @@ function parseTuplesV2(
   return { items, consumed: offset };
 }
 
+/** Read v1 ESSR Texters using the declared item count. */
+function parseEssrV1(input: Uint8Array, counter: Counter, _version: Versionage, domain: ParseDomain): ParsedGroup {
+  const items: GroupEntry[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  for (let i = 0; i < counter.count; i++) {
+    const texter = parseTexter(input.slice(offset), domain);
+    items.push(texter);
+    offset += primitiveSize(texter, domain);
+  }
+  return { items, consumed: offset };
+}
+
+/** Read v2 ESSR Texters until the dispatch-bounded payload is exhausted. */
+function parseEssrV2(input: Uint8Array, counter: Counter, _version: Versionage, domain: ParseDomain): ParsedGroup {
+  const items: GroupEntry[] = [];
+  let offset = counterHeaderSize(counter, domain);
+  while (offset < input.length) {
+    const texter = parseTexter(input.slice(offset), domain);
+    items.push(texter);
+    offset += primitiveSize(texter, domain);
+  }
+  return { items, consumed: offset };
+}
+
 /** Split opaque counted payload into domain units (quadlets for text, triplets for binary). */
 function splitOpaqueUnits(
   payload: Uint8Array,
@@ -562,21 +569,16 @@ function splitOpaqueUnits(
   return (text.match(/.{1,4}/g) ?? []).map((token) => UnknownPrimitive.fromPayload(b(token), domain));
 }
 
-/** Parse nested siger-list group headed by a version-appropriate siger counter. */
-function parseSigerList(
+/** Parse the controller signature group required inside a transferable signature group. */
+function parseControllerSigs(
   input: Uint8Array,
   version: Versionage,
   domain: ParseDomain,
 ): { items: GroupEntry[]; consumed: number } {
   const counter = parseCounter(input, version, domain);
-  const allowed = resolveVersionedRegistryValue(
-    SIGER_LIST_CODES_BY_VERSION,
-    version,
-    "siger-list code set",
-  ).value;
-  if (!allowed.has(counter.code)) {
+  if (counter.code !== resolveCtrDex(version).ControllerIdxSigs) {
     throw new UnknownCodeError(
-      `Expected siger-list counter but got ${counter.code}`,
+      `Expected controller signature counter but got ${counter.code}`,
     );
   }
 
@@ -626,7 +628,7 @@ function parseQuadletGroup(
         if (nestedCounter.code === GENUS_VERSION_CODE) {
           // Wrapper-scoped version override for subsequent nested groups.
           offset += counterHeaderSize(nestedCounter, domain);
-          nestedVersion = decodeVersionCounter(nestedCounter);
+          nestedVersion = decodeGenusVersion(nestedCounter);
           continue;
         }
         const nested = parseAttachmentDispatchCompat(
@@ -647,6 +649,7 @@ function parseQuadletGroup(
         if (
           normalized instanceof ShortageError
           || normalized instanceof GroupSizeError
+          || normalized instanceof VersionError
         ) {
           throw normalized;
         }
@@ -675,7 +678,7 @@ function parseQuadletGroup(
 /** Parse one transferable signature entry: prefix, sequence, digest, and signature list. */
 function parseTransSig(input: Uint8Array, version: Versionage, domain: ParseDomain): ParsedGroup {
   const header = parseTuple(input, ["matter", "matter", "matter"], domain);
-  const sigers = parseSigerList(input.slice(header.consumed), version, domain);
+  const sigers = parseControllerSigs(input.slice(header.consumed), version, domain);
   return {
     items: [...header.items, tupleItem(sigers.items)],
     consumed: header.consumed + sigers.consumed,
@@ -685,7 +688,7 @@ function parseTransSig(input: Uint8Array, version: Versionage, domain: ParseDoma
 /** Parse one last-establishment signature entry: prefix and signature list. */
 function parseLastSig(input: Uint8Array, version: Versionage, domain: ParseDomain): ParsedGroup {
   const header = parseTuple(input, ["matter"], domain);
-  const sigers = parseSigerList(input.slice(header.consumed), version, domain);
+  const sigers = parseControllerSigs(input.slice(header.consumed), version, domain);
   return {
     items: [...header.items, tupleItem(sigers.items)],
     consumed: header.consumed + sigers.consumed,
@@ -833,6 +836,7 @@ function genusVersionParser(
   domain: ParseDomain,
   _context: AttachmentDispatchOptions,
 ): ParsedGroup {
+  decodeGenusVersion(counter);
   return {
     items: [counter],
     consumed: counterHeaderSize(counter, domain),
@@ -893,6 +897,8 @@ function parserForDescriptor(descriptor: DispatchDescriptor): GroupParser {
       const parse = descriptor.version === 1 ? parseTuplesV1 : parseTuplesV2;
       return (input, counter, _version, domain) => parse(input, counter, kinds, domain);
     }
+    case "essr":
+      return descriptor.version === 1 ? parseEssrV1 : parseEssrV2;
     case "transIdxSigGroups":
       return descriptor.version === 1 ? parseTransSigsV1 : parseTransSigsV2;
     case "transLastIdxSigGroups":
@@ -949,10 +955,6 @@ function asMinorZeroRegistry<T>(
   });
 }
 
-/** Siger-list counter code sets resolved by major+minor stream version. */
-const SIGER_LIST_CODES_BY_VERSION = asMinorZeroRegistry(
-  SIGER_LIST_CODES_BY_MAJOR,
-);
 /** Attachment-group dispatch registry resolved by major+minor stream version. */
 const DISPATCH_BY_VERSION = asMinorZeroRegistry(DISPATCH_BY_MAJOR);
 

@@ -174,21 +174,18 @@ Deno.test(
         case "genusVersionMarker":
           assertEquals(f.parserKind, "genusVersion");
           assertEquals(f.wrapperGroup ?? false, false);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
         case "countedGroupPayload":
-          assertEquals(f.parserKind, "quadlet");
+          assertEquals(["quadlet", "essr"].includes(f.parserKind), true);
           assertEquals(f.wrapperGroup ?? false, false);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
         case "wrapperGroupPayload":
           assertEquals(f.parserKind, "quadlet");
           assertEquals(f.wrapperGroup ?? false, true);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
@@ -196,38 +193,29 @@ Deno.test(
           assertEquals(f.parserKind, "repeatTuple");
           assertEquals((f.tupleKinds?.length ?? 0) > 0, true);
           assertEquals(f.wrapperGroup ?? false, false);
-          if (f.allowsSigerList === true) {
-            // Only controller/witness indexer tuple families should advertise
-            // siger-list compatibility for nested signature-group parsing.
-            assertEquals(tupleKey(f.tupleKinds), "indexer");
-          }
           break;
 
         case "signatureGroupTuples":
           assertEquals(f.parserKind, "transIdxSigGroups");
           assertEquals(f.wrapperGroup ?? false, false);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
         case "lastSignatureGroupTuples":
           assertEquals(f.parserKind, "transLastIdxSigGroups");
           assertEquals(f.wrapperGroup ?? false, false);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
         case "sadPathSignatures":
           assertEquals(f.parserKind, "sadPathSig");
           assertEquals(f.wrapperGroup ?? false, false);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
         case "sadPathSignatureGroup":
           assertEquals(f.parserKind, "sadPathSigGroup");
           assertEquals(f.wrapperGroup ?? false, false);
-          assertEquals(f.allowsSigerList ?? false, false);
           assertEquals(tupleKey(f.tupleKinds), "");
           break;
 
