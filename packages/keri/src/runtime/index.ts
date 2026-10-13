@@ -10,6 +10,7 @@ export * from "../acdc/index.ts";
 export * from "../app/agent-runtime.ts";
 export * from "../app/authenticating.ts";
 export * from "../app/byte-source.ts";
+export * from "../app/cesr-egress.ts";
 export * from "../app/cesr-http.ts";
 export * from "../app/challenging.ts";
 export * from "../app/configing.ts";

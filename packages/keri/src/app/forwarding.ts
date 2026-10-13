@@ -24,10 +24,12 @@ import { DEFAULT_MAILBOX_INBOX_LIMITS, type MailboxDelivery, type MailboxInboxLi
 import type { Mailboxer } from "../db/mailboxing.ts";
 import type { OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { buildCesrRequest, CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE, splitCesrStream } from "./cesr-http.ts";
+import { chunkBytes } from "./byte-source.ts";
+import { postCesr } from "./cesr-egress.ts";
+import { buildCesrRequest } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import { closeResponseBody, fetchResponseHandle, fetchResponseHandleOrNull } from "./httping.ts";
+import { closeResponseBody, fetchResponseHandleOrNull } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { type MailboxSseMessage, parseMailboxSse, readMailboxSseBody } from "./mailbox-sse.ts";
 import {
@@ -280,7 +282,6 @@ export class Poster {
       message: Uint8Array;
       topic?: string;
       delivery?: ExchangeDeliveryPreference;
-      split?: boolean;
     },
   ): Operation<RawCesrSendResult> {
     const recipient = this.resolveRecipient(args.recipient);
@@ -369,7 +370,6 @@ export class Poster {
           this.hby.cesrBodyMode,
           endpoint.eid,
           this.services,
-          { split: args.split },
         );
         deliveries.push(endpoint.url);
       }
@@ -1438,96 +1438,15 @@ function positiveTimeoutMs(
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
-/**
- * Post mailbox or exchange CESR traffic to one endpoint.
- *
- * Header-mode policy:
- * - split a combined CESR stream into one request per message
- * - send the message body in the HTTP body
- * - send that message's attachments in `CESR-ATTACHMENT`
- *
- * Body-mode policy:
- * - send the whole provided payload in the request body
- */
+/** Post finite mailbox/EXN caller bytes through the shared progressive, scope-owned sender. */
 export function* postCesrMessage(
   url: string,
   body: Uint8Array,
   bodyMode: "header" | "body",
   destination?: string,
   services: RuntimeServices = defaultRuntimeServices,
-  options: { split?: boolean } = {},
 ): Operation<void> {
-  const requests = bodyMode === "header" && (options.split ?? true) ? splitCesrStream(body) : [body];
-  for (const [index, currentBody] of requests.entries()) {
-    const contentTypes = bodyMode === "header"
-      ? [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE]
-      : [CESR_CONTENT_TYPE];
-    let delivered = false;
-    let lastStatus = 0;
-    let lastText = "";
-    for (const contentType of contentTypes) {
-      const request = buildCesrRequest(currentBody, {
-        bodyMode,
-        contentType,
-        destination,
-      });
-      const { response } = yield* fetchResponseHandle(url, {
-        method: "POST",
-        headers: request.headers,
-        body: request.body,
-      }, {
-        services,
-      });
-
-      if (response.ok) {
-        yield* closeResponseBody(response);
-        delivered = true;
-        break;
-      }
-      const responseText = yield* readResponseText(response);
-      lastStatus = response.status;
-      lastText = responseText;
-      if (
-        response.status === 406
-        && contentType === CESR_CONTENT_TYPE
-        && responseText.toLowerCase().includes("content type")
-      ) {
-        continue;
-      }
-      throw new ValidationError(
-        `Exchange delivery to ${url} failed with HTTP ${response.status} on message ${index + 1}/${requests.length} (${
-          describeCesrMessage(currentBody)
-        }): ${responseText}`,
-      );
-    }
-    if (!delivered) {
-      throw new ValidationError(
-        `Exchange delivery to ${url} failed with HTTP ${lastStatus} on message ${index + 1}/${requests.length} (${
-          describeCesrMessage(currentBody)
-        }): ${lastText}`,
-      );
-    }
-  }
-}
-
-function describeCesrMessage(bytes: Uint8Array): string {
-  try {
-    const serder = new SerderKERI({ raw: bytes });
-    return [
-      serder.ilk ?? "unknown",
-      serder.route ? `route=${serder.route}` : null,
-      serder.said ? `said=${serder.said}` : null,
-    ].filter((part): part is string => !!part).join(" ");
-  } catch {
-    return `unparsed length=${bytes.length}`;
-  }
-}
-
-function* readResponseText(response: Response): Operation<string> {
-  return yield* action<string>((resolve, reject) => {
-    response.text().then(resolve, reject);
-    return () => {};
-  });
+  yield* postCesr(url, (signal) => chunkBytes(body, { signal }), { bodyMode, destination, services });
 }
 
 /** Shared EXN send helper used by CLI commands that want KERIpy-style behavior. */

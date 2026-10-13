@@ -115,19 +115,23 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
     `keri-ts/runtime`, and `keri-ts/db` are the supported library entrypoints.
     Its HTTP shutdown must close runtime-owned response streams before waiting
     for the listener to drain.
-20. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
+20. Progressive frame egress preserves payload ownership through an Effection
+    request resource; successful fetch headers do not end the response lifetime.
+    Normalize attachment genus/domain at serialization, using CESR-owned counter
+    tables and preserving KERIpy's inner-signature counter restrictions.
+21. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
     `Counter` owns KERIpy genus/enclosure helpers, live serialization may use
     requested `gvrsn`, and replay clone streams stay v1.
-21. Maintainer docs now have a ratcheted export-surface check for selected
+22. Maintainer docs now have a ratcheted export-surface check for selected
     recent modules; expand that list as future documentation slices close more
     exported API gaps.
-22. DID Webs resolution is not just hosted JSON lookup: resolution must ingest
+23. DID Webs resolution is not just hosted JSON lookup: resolution must ingest
     `keri.cesr`, rebuild the DID document from KERI/VDR state, and compare it
     with the hosted `did.json`; Universal Resolver path decoding must preserve
     method-specific `%3A` host-port encodings. Verification-method projection
     preserves numeric, flat weighted, nested weighted, and multi-clause KERI
     threshold semantics through `ConditionalProof2022` methods.
-23. The learnings layer is part of project hygiene: compact docs when they grow
+24. The learnings layer is part of project hygiene: compact docs when they grow
     noisy instead of preserving every step as prose.
 
 Crypto backend changes cross the source/package boundary: pinned wrapper versions

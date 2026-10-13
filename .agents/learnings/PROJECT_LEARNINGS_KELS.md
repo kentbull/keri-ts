@@ -60,6 +60,13 @@ ordinary delivery before their reservation closes. Source, frame, and runtime
 permit resources precede their work children so cancellation joins I/O before
 releasing ownership. See `packages/keri/src/app/reactor.md`.
 
+CESR egress owns one admitted frame and one HTTP request per Effection scope.
+`requestFrame` keeps successful response bodies live until the consuming scope
+exits, then aborts and joins its I/O; `postCesr` supplies parser credit only after
+delivery and ESSR disposal. Header mode is finite text-qualified metadata;
+bulk body mode streams payload references. Replay/cue, mailbox, and annotation
+migration remain separate obligations, not implied by the sender conversion.
+
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue

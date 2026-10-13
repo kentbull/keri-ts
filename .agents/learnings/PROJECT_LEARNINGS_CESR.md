@@ -36,6 +36,11 @@ and use this supplementary adapter at their parsing boundary.
    children early; they retain Serder/ordinary leaf hydration under cursor and `maxFrameBytes`
    limits. Progressive ESSR stores one owned canonical Texter wire sequence with
    a reopenable decoded view, per-frame byte/item limits, and awaited sink writes.
+   Serialization exposes non-owning `framePayload`/`attachmentPayload` views and
+   shared `essrChunks` output. Normalize known leaves to one output genus/domain:
+   current KERIpy allows one initial attachment GVC, not selectors between leaves
+   or nested attachment wrappers. Preserve small inner transferable-signature
+   counters; reject unsafe opaque genus changes and inner-counter overflow.
    Internal one-frame candidates remain parser-owned until the public yield;
    malformed enclosures abort all undelivered stages. Runtime migration remains
    later work, so parser measurements alone are not an end-to-end memory claim.

@@ -2,6 +2,7 @@ import {
   type Cigar,
   Dater,
   Diger,
+  essrChunks,
   type EssrPayload,
   essrPayload,
   essrTexters,
@@ -12,7 +13,7 @@ import {
   type Siger,
 } from "cesr-ts";
 import { call, type Operation, type Provide, resource } from "npm:effection@^3.6.0";
-import { attachmentCounterQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
+import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup } from "../core/dispatch.ts";
@@ -412,9 +413,7 @@ export class Exchanger {
       genusify: gvrsn.major >= 2,
     });
     if (essr) {
-      const count = gvrsn.major >= 2 ? essr.wire.size / 4 : essr.count;
-      yield attachmentCounterQb64b("ESSRPayloadGroup", count, gvrsn);
-      yield* essr.wire.open(signal);
+      yield* essrChunks(essr, { gvrsn, signal });
     }
   }
 

@@ -173,6 +173,34 @@ content. Stage, finalize, publish, and recover orphaned content with explicit
 crash-recovery tests. Reopen, retry, forwarding, and serialization consume the
 same references incrementally.
 
+## Serialization and HTTP egress
+
+`framePayload()` and `attachmentPayload()` return non-owning reopenable views of
+one admitted frame. Ordinary metadata stays within the parser's frame budget;
+ESSR wire is consumed incrementally through `essrChunks()`. The caller retains
+its `EssrPayload` owner until all output readers finish. Output chunks are owned
+copies of at most 64 KiB; custom ESSR wire readers retain the existing 1 MiB
+maximum backing-allocation contract.
+
+The output attachment enclosure has one selected genus and one wire domain.
+KERIpy `main` at `927c0cb8794d7c84fc17143c67df64aab9deda6c` permits a GVC only
+at its beginning and rejects nested attachment enclosures or mixed domains.
+Progressive parsing can accept broader scoped input, but forwarding normalizes
+known leaf tuples rather than reproducing interior selectors. Transferable
+signature tuples retain their required small controller counter. A genus
+conversion that would need a big inner counter, or would reinterpret opaque
+content, fails explicitly; same-genus opaque wire remains byte-preserving.
+
+KERI's `requestFrame()` is an Effection resource. Header mode admits at most
+64 KiB of text-qualified attachments by default; it uses the body's inferred
+genus for the outer header and one initial selector when needed. Body mode
+streams the complete admitted frame. A response remains readable inside its
+resource scope; exit aborts and joins request preparation, fetch, upload, and
+response cleanup. Failed-response diagnostics retain at most 16 KiB by default.
+`postCesr()` awaits one frame's delivery and disposal before asking the parser
+for its next output. These policies do not yet migrate replay cues, CLI
+annotation, or retained mailbox queues; those remain later phase-11 slices.
+
 ## Cancellation and resource policy
 
 Generator `.return()` alone cannot interrupt an in-flight awaited source

@@ -377,7 +377,6 @@ export function* sendCredentialBytes(
       message,
       topic: CREDENTIAL_MAILBOX_TOPIC,
       delivery,
-      split: false,
     });
     sent.push(...result.deliveries, ...result.queued);
   }
