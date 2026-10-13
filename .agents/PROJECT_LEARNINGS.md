@@ -129,7 +129,7 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
     tables and preserving KERIpy's inner-signature counter restrictions.
 21. Attachment counter `gvrsn` support is a cross-boundary parity rule: CESR
     `Counter` owns KERIpy genus/enclosure helpers, live serialization may use
-    requested `gvrsn`, and replay clone streams stay v1.
+    requested `gvrsn`, and replay derives its minimum genus from the stored body without changing its bytes.
 22. Maintainer docs now have a ratcheted export-surface check for selected
     recent modules; expand that list as future documentation slices close more
     exported API gaps.

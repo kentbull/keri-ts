@@ -272,10 +272,16 @@ v2 event bodies being replayed by `Baser.cloneEvtMsg` with fixed v1 attachment
 counters. This fails downstream OOBI and credential-evidence parsing. Explicit v1
 CLI fixtures qualify the existing v1 scenarios; they do not close this v2 defect.
 
-First check whether phase 11 streaming serialization already repairs every
-replay path. Implement only the remaining gap, with independent Python v2
-issuance/anchor fixtures, close/reopen replay, OOBI ingestion, and credential
-import across both genera. Preserve stored bodies and evidence; select a lawful
+Phase 11 left `Baser.cloneEvtMsg` on fixed v1 counters and a non-native version
+sniff. The independent core repair hydrates stored bodies with `SerderKERI`,
+selects every replay counter from the body protocol/genus, and preserves v2
+qualified ordinals. Six frozen `927c0cb8` fixtures prove JSON v1/v2 and native v2
+source seals/grouped receipts after database reopen; Python independently
+constructs and parses each expected envelope. This narrow repair can land before
+the reference-table update.
+
+The remaining acceptance work still requires independent Python v2 issuance/anchor
+fixtures, actual OOBI ingestion, and credential import across both genera. Preserve stored bodies and evidence; select a lawful
 explicit enclosure genus without heuristic retries or wire rewriting. Complete
 this repair before claiming the corresponding current-main v2 runtime parity.
 

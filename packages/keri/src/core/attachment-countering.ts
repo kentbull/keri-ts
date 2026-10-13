@@ -32,8 +32,8 @@ type VersionedSerder = Readonly<{
  * Resolve the attachment genus version for one live message envelope.
  *
  * Caller-requested `gvrsn` is a floor, nested/enclosed messages require v2,
- * and a serder's own `gvrsn`/`pvrsn` can raise the result. Replay clone APIs
- * should not use this helper when they are preserving stored v1 KEL/TEL bytes.
+ * and a serder's own `gvrsn`/`pvrsn` can raise the result. Stored replay bodies
+ * retain their bytes while requiring attachments at least this recent.
  */
 export function resolveAttachmentGvrsn(
   serder: VersionedSerder,

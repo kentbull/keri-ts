@@ -13,7 +13,6 @@ import {
   Noncer,
   NumberPrimitive,
   NumDex,
-  parseSerder,
   type Payload,
   Prefixer,
   ResourceLimitError,
@@ -22,7 +21,6 @@ import {
   Seqner,
   SerderKERI,
   Siger,
-  smell,
   t,
   Texter,
   Verfer,
@@ -36,6 +34,7 @@ import {
   type AttachmentCounterName,
   attachmentCounterPayloadQb64b,
   attachmentCounterQb64b,
+  resolveAttachmentGvrsn,
 } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
@@ -1521,10 +1520,11 @@ export class Baser {
     if (stored === null) throw new DatabaseOperationError(`Missing event body for ${pre}:${said}`);
     if (stored.length > maxBytes) throw new ResourceLimitError("Replay message exceeds byte limit");
     // Preserve SerderSuber's validation so corrupt records retain clonePreIter's skip behavior.
-    const { smellage } = smell(stored);
-    const serder = parseSerder(stored, smellage);
-    if (!(serder instanceof SerderKERI)) throw new TypeError("Replay body must be KERI");
+    // SerderKERI recognizes both native CESR and version-string bodies.
+    const serder = new SerderKERI({ raw: stored });
     const raw = serder.raw;
+    // Preserve body bytes; its declared protocol/genus sets the minimum lawful attachment genus.
+    const gvrsn = resolveAttachmentGvrsn(serder);
     let size = 0;
     /** Admit each qualified fragment before retaining it or allocating the complete replay. */
     const retain = (part: Uint8Array): Uint8Array => {
@@ -1536,7 +1536,7 @@ export class Baser {
     const attachments: Uint8Array[] = [];
     /** Prefix already admitted payload pieces without a large argument spread or another copy. */
     const group = (name: AttachmentCounterName, count: number, payload: Uint8Array[]) => {
-      attachments.push(retain(attachmentCounterPayloadQb64b(name, count, payload)));
+      attachments.push(retain(attachmentCounterPayloadQb64b(name, count, payload, gvrsn)));
       for (const part of payload) attachments.push(part);
     };
     /** Iterate fixed-size signatures so storage cannot materialize an unbounded evidence array. */
@@ -1545,6 +1545,11 @@ export class Baser {
       for (const siger of entries) parts.push(retain(siger.qb64b));
       return parts;
     };
+    /** Legacy v1 seals require Seqner; v2 preserves the stored qualified Number. */
+    const ordinal = (value: NumberPrimitive): Uint8Array =>
+      gvrsn.major === 1
+        ? seqnerFromNumber(value).qb64b
+        : value.qb64b;
     const sigers = signatures(this.sigs.getIter(dgkey));
     if (sigers.length === 0) throw new DatabaseOperationError(`Missing indexed signatures for ${pre}:${said}`);
     group("ControllerIdxSigs", sigers.length, sigers);
@@ -1554,7 +1559,7 @@ export class Baser {
     const seal = this.aess.get(dgkey);
     if (seal !== null) {
       const [number, diger] = seal;
-      group("SealSourceCouples", 1, [retain(seqnerFromNumber(number).qb64b), retain(diger.qb64b)]);
+      group("SealSourceCouples", 1, [retain(ordinal(number)), retain(diger.qb64b)]);
     }
 
     // Receipt storage remains per signature; canonical groups share one establishment seal.
@@ -1564,7 +1569,7 @@ export class Baser {
       let receipt = groups.get(key);
       if (!receipt) {
         receipt = {
-          seal: [retain(prefixer.qb64b), retain(seqnerFromNumber(snu).qb64b), retain(diger.qb64b)],
+          seal: [retain(prefixer.qb64b), retain(ordinal(snu)), retain(diger.qb64b)],
           signatures: [],
         };
         groups.set(key, receipt);
@@ -1579,6 +1584,7 @@ export class Baser {
           "ControllerIdxSigs",
           receipt.signatures.length,
           receipt.signatures,
+          gvrsn,
         )));
         for (const part of receipt.signatures) payload.push(part);
       }
@@ -1595,12 +1601,13 @@ export class Baser {
 
     const dater = this.dtss.get(dgkey);
     if (dater === null) throw new DatabaseOperationError(`Missing datetime stamp for ${pre}:${said}`);
+    // Huge ordinals remain legal Number primitives in both genera.
     group("FirstSeenReplayCouples", 1, [retain(encodeHugeOrdinal(fn).qb64b), retain(dater.qb64b)]);
     const attachmentSize = size - raw.length;
     if (attachmentSize % 4 !== 0) {
       throw new DatabaseOperationError(`Invalid attachment quadlet size for ${pre}:${said}`);
     }
-    const header = retain(attachmentCounterQb64b("AttachmentGroup", attachmentSize / 4));
+    const header = retain(attachmentCounterQb64b("AttachmentGroup", attachmentSize / 4, gvrsn));
     // One admitted final allocation replaces the former attachment copy plus whole-message copy.
     const message = new Uint8Array(size);
     message.set(raw);

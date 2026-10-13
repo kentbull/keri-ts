@@ -13,6 +13,13 @@ awaits each event consumer; provider output reads one record per demand and
 releases LMDB iterators before suspension. Aggregate connection admission and
 pre-read storage size limits remain explicit follow-ons.
 
+KEL replay hydrates stored JSON or native CESR bodies with `SerderKERI` and
+selects attachment genus from the body protocol/genus. Every outer and inner
+counter uses that genus. Source and receipt ordinals convert to `Seqner` only
+for v1; v2 retains the stored qualified `Number`. Independent frozen KERIpy
+fixtures cover both genera, grouped receipts, source seals, and database reopen.
+Full v2 OOBI/credential import qualification remains a separate obligation.
+
 Canonical KEL replay emits transferable receipt signature groups (`-F` in v1),
 collated by the complete receiptor establishment seal. Durable `vrcs.` quadruples
 and legacy wire receipt parsing remain unchanged. Current KERIpy main removed
