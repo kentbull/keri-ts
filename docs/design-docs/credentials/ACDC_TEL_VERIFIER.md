@@ -96,7 +96,7 @@ restricts cutoff text to timezone-qualified RFC3339 with at most six fractional
 digits and retains exact microseconds; events at the cutoff are included.
 `makeNowIso8601` accepts a caller-supplied `Date` for clock injection, padding its
 milliseconds to six digits. Python accepts a broader datetime grammar. The issuer
-engine's automatic retry orchestration and end-to-end production qualification remain unfinished.
+engine's public orchestration and end-to-end production qualification remain unfinished.
 
 The internal event entry point returns accept, duplicate, anchor/order escrow or
 typed rejection. It discovers full, fully witnessed KEL seals; stored anchors
@@ -111,6 +111,18 @@ Protocol ordinals retain bigint precision, but the current storage API supports
 only safe integer ordinals; larger updates receive an explicit `ordinalRange`
 refusal before storage conversion. This is an unfinished storage boundary.
 Named services and scheduled retries belong to the remaining registry units.
+Acceptance advances already anchored successors one transaction at a time.
+Explicit `processEscrows` retries both families, pruning invalid prior links;
+later failures preserve earlier committed events. `anchorMsg` validates stored
+events before saving a verified explicit couple, requires both source primitives
+or neither, and retains the earliest anchor across reseals. Authentication of an
+explicit anchor is durable separately from subsequent event/chain acceptance.
+Explicit missing-anchor retry groups candidates by ordinal and discovers all
+visible anchors before choosing siblings by anchor number, anchor digest, then
+event SAID (code-point order). Unanchored candidates sort last. Dangling bodies
+and stale candidates leave escrow; corrupt records and I/O failures propagate.
+The read cursor closes before replay writes. This pass still collects registry
+escrow rows; shared scan admission remains part of the resource-policy phase.
 
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or
