@@ -5,7 +5,9 @@ import type { Hab } from "./habbing.ts";
 
 /** Expected ESSR admission failures; no failure publishes plaintext. */
 export class EssrError extends ValidationError {
+  /** Preserve the admission stage separately from its human-readable failure reason. */
   constructor(
+    /** Stable failure category for recipient admission and authenticated decoding. */
     readonly kind: "unaccepted" | "envelope" | "limit" | "busy" | "digest" | "decrypt" | "framing",
     message: string,
   ) {
@@ -15,9 +17,13 @@ export class EssrError extends ValidationError {
 
 /** One owning plaintext file and a non-owning view of its inner CESR stream. */
 export interface EssrMessage {
+  /** Sender authenticated by both the signed EXN and decrypted SCS prefix. */
   sender: string;
+  /** Explicit hosted recipient selected by the signed destination. */
   recipient: string;
+  /** Owning authenticated envelope file; discard also invalidates body. */
   plaintext: FilePayload;
+  /** Non-owning inner CESR source, excluding the SCS header and padding. */
   body: Payload;
 }
 
@@ -29,12 +35,18 @@ export interface EssrMessage {
  * from its durable table. Ciphertext evidence stays owned by that exchange.
  */
 export class EssrRecipient {
+  /** Admitted decryptions, including ciphertext reads and plaintext writes. */
   private active = 0;
 
+  /** Bind one hosted habitat and finite per-message/concurrency budgets to a staging store. */
   constructor(
+    /** Explicit local key owner; recipient selection never searches other habitats. */
     private readonly hab: Hab,
+    /** Owns authenticated plaintext staging; the successful caller owns its result. */
     private readonly store: PayloadStore,
+    /** Ciphertext allocation cap, including the 48-byte sealed-box overhead. */
     private readonly maxMessageBytes: number,
+    /** Maximum admitted requests; excess work rejects instead of queueing. */
     private readonly maxConcurrent = 1,
   ) {
     if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 48) {
@@ -59,6 +71,7 @@ export class EssrRecipient {
       throw new EssrError("limit", "ESSR ciphertext exceeds admitted message size");
     }
     this.active++;
+    // Keep the owned decrypt buffer local so finalization can clear it before returning.
     let plain: Uint8Array | undefined;
     try {
       const serder = this.hab.db.exns.get([said]);
@@ -132,6 +145,7 @@ function bodyOffset(plain: Uint8Array, sender: string): number {
 function bodyView(plaintext: Payload, offset: number): Payload {
   return {
     size: plaintext.size - offset,
+    /** Reopen the file and skip bounded chunks until the inner stream begins. */
     async *open(signal?: AbortSignal) {
       let skip = offset;
       for await (const chunk of plaintext.open(signal)) {

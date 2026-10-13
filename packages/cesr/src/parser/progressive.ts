@@ -60,22 +60,31 @@ async function separators(input: Cursor): Promise<void> {
   while (!await input.atEnd() && sniff(await input.peek(1)) === "ano") await consume(input, 1);
 }
 
-/** A draft retains stage ownership until the outermost public delivery. */
-interface Draft {
+/** A frame under construction or enclosure validation; its stages stay parser-owned until delivery. */
+interface PendingFrame {
+  /** Hydrated body and bounded ordinary attachment leaves awaiting public delivery. */
   frame: CesrFrame;
+  /** Frame genus remains independent of temporary attachment-wrapper selectors. */
   gvrsn: Versionage;
+  /** Admitted body/ordinary wire bytes, excluding externally staged ESSR. */
   resident: number;
+  /** Shared unfinished stage for every ESSR group encountered in this frame. */
   writer?: EssrWriter;
 }
 
-/** Invocation ownership stays bounded by nesting, never by delivered sibling count. */
-interface Session {
+/** Limits and stage ownership shared by nested readers during one parse invocation. */
+interface ParseContext {
+  /** Maximum admitted body plus ordinary attachment bytes for one frame. */
   limit: number;
+  /** Maximum retained leaf objects, including zero-item groups. */
   maxGroups: number;
-  create: (gvrsn: Versionage) => Promise<EssrWriter>;
-  pending: Set<EssrWriter>;
+  /** Open a finite stage only when the frame actually contains ESSR. */
+  openEssr: (gvrsn: Versionage) => Promise<EssrWriter>;
+  /** Every unfinished candidate stage, including children held by oneFrame validation. */
+  stages: Set<EssrWriter>;
 }
 
+/** Structural attachment scopes are traversed, never retained as giant raw containers. */
 const WRAPPERS = new Set([
   "AttachmentGroup",
   "BigAttachmentGroup",
@@ -86,9 +95,9 @@ const WRAPPERS = new Set([
 /** Read semantic leaves in order, flattening wrappers instead of retaining their raw payload. */
 async function attachments(
   input: Cursor,
-  draft: Draft,
+  pending: PendingFrame,
   gvrsn: Versionage,
-  session: Session,
+  context: ParseContext,
   enclosed = false,
 ): Promise<void> {
   while (true) {
@@ -98,7 +107,9 @@ async function attachments(
     if (domain === "msg" && !enclosed) return;
     if (!isCesrDomain(domain)) throw new ColdStartError(`Unsupported attachment cold code ${domain}`);
     if (!enclosed && await peek(input, (bytes) => startsFrame(bytes, gvrsn, domain))) return;
+    // Read only this selected-genus counter before choosing staged or finite hydration.
     const counter = await peek(input, (bytes) => parseCounter(bytes, gvrsn, domain));
+    // Counter header size follows the incoming text/binary domain.
     const header = tokenSize(counter, domain);
     if (counter.code === GENUS_VERSION_CODE && enclosed) {
       gvrsn = decodeGenusVersion(counter);
@@ -107,35 +118,38 @@ async function attachments(
     }
     if (WRAPPERS.has(counter.name)) {
       await consume(input, header);
+      // Wrapper bounds and genus changes remain local to the recursive call.
       const scope = input.scope(counter.count * unitBytes(domain));
-      await attachments(scope, draft, gvrsn, session, true);
+      await attachments(scope, pending, gvrsn, context, true);
       scope.expectEnd();
       if (!enclosed && counter.name.includes("AttachmentGroup")) return;
       continue;
     }
     if (counter.name === "ESSRPayloadGroup" || counter.name === "BigESSRPayloadGroup") {
       await consume(input, header);
-      if (!draft.writer) {
-        draft.writer = await session.create(draft.gvrsn);
-        session.pending.add(draft.writer);
+      if (!pending.writer) {
+        pending.writer = await context.openEssr(pending.gvrsn);
+        context.stages.add(pending.writer);
       }
-      await draft.writer.read(input, counter, gvrsn, domain);
+      await pending.writer.read(input, counter, gvrsn, domain);
       continue;
     }
-    if (draft.frame.attachments.length >= session.maxGroups) {
+    if (pending.frame.attachments.length >= context.maxGroups) {
       throw new ResourceLimitError("Frame exceeds attachment group limit", input.offset);
     }
-    const remaining = session.limit - draft.resident;
+    // Previously admitted leaves reduce the same frame-wide byte budget.
+    const remaining = context.limit - pending.resident;
+    // Ordinary semantic groups remain bounded hydrated values under the existing dispatcher.
     const parsed = await peek(input, (bytes) => parseAttachmentGroup(bytes, gvrsn, domain), remaining);
     await consume(input, parsed.consumed);
-    draft.resident += parsed.consumed;
-    draft.frame.attachments.push(parsed.group);
+    pending.resident += parsed.consumed;
+    pending.frame.attachments.push(parsed.group);
   }
 }
 
 /** Verify a single-frame wrapper entirely before its one result may escape. */
-async function oneFrame(input: Cursor, gvrsn: Versionage, session: Session): Promise<Draft> {
-  const nested = frames(input, gvrsn, session);
+async function oneFrame(input: Cursor, gvrsn: Versionage, context: ParseContext): Promise<PendingFrame> {
+  const nested = frames(input, gvrsn, context);
   try {
     const first = await nested.next();
     if (first.done) throw new ColdStartError("BodyWithAttachmentGroup contained no frame");
@@ -148,10 +162,17 @@ async function oneFrame(input: Cursor, gvrsn: Versionage, session: Session): Pro
 }
 
 /** Parse one scope; generator locals retain genus and progress across input waits. */
-async function* frames(input: Cursor, inherited: Versionage | null, session: Session): AsyncGenerator<Draft, number> {
-  const limit = session.limit;
+async function* frames(
+  input: Cursor,
+  inherited: Versionage | null,
+  context: ParseContext,
+): AsyncGenerator<PendingFrame, number> {
+  const limit = context.limit;
+  // A selector belongs to this enclosure; recursive children inherit but cannot overwrite it.
   let selected = inherited;
+  // The returned child count rejects empty GenericGroups without retaining siblings.
   let count = 0;
+  // A trailing genus selector is incomplete even at otherwise clean source EOF.
   let needsBody = false;
   while (true) {
     await separators(input);
@@ -166,10 +187,11 @@ async function* frames(input: Cursor, inherited: Versionage | null, session: Ses
       if (size > limit) throw new ResourceLimitError("Body exceeds frame limit", input.offset);
       const base = parseFrameStart(await input.peek(size), selected);
       await consume(input, base.consumed);
-      const draft = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
-      await attachments(input, draft, base.gvrsn, session);
+      // Keep stage ownership separate from the public frame until its boundary is proven.
+      const pending = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
+      await attachments(input, pending, base.gvrsn, context);
       count++;
-      yield draft;
+      yield pending;
       continue;
     }
     if (!isCesrDomain(domain)) throw new ColdStartError(`Unsupported frame cold code ${domain}`);
@@ -186,17 +208,18 @@ async function* frames(input: Cursor, inherited: Versionage | null, session: Ses
       continue;
     }
     needsBody = false;
+    // Counted frame enclosures use quadlets in text and triplets in binary.
     const payloadSize = counter.count * unitBytes(domain);
     if (FRAME_LISTS.has(counter.name) || FRAME_GROUPS.has(counter.name)) {
       await consume(input, headerSize);
       const scope = input.scope(payloadSize);
       if (FRAME_LISTS.has(counter.name)) {
-        const children = yield* frames(scope, gvrsn, session);
+        const children = yield* frames(scope, gvrsn, context);
         scope.expectEnd();
         if (children === 0) throw new ColdStartError("GenericGroup contained no frames");
         count += children;
       } else {
-        const frame = await oneFrame(scope, gvrsn, session);
+        const frame = await oneFrame(scope, gvrsn, context);
         count++;
         yield frame;
       }
@@ -211,10 +234,11 @@ async function* frames(input: Cursor, inherited: Versionage | null, session: Ses
     const base = parseFrameStart(await input.peek(size), gvrsn);
     if (base.consumed !== size) throw new GroupSizeError("Body did not consume its declared extent", input.offset);
     await consume(input, size);
-    const draft = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
-    await attachments(input, draft, base.gvrsn, session);
+    // Native bodies use the same ownership boundary as non-native messages.
+    const pending = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
+    await attachments(input, pending, base.gvrsn, context);
     count++;
-    yield draft;
+    yield pending;
   }
 }
 
@@ -232,32 +256,34 @@ export async function* parse(
 ): AsyncGenerator<CesrFrame> {
   const limit = options.maxFrameBytes ?? 8 * 1024 ** 2;
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Frame limit must be a positive safe integer");
+  // Empty attachment groups require an object-count cap in addition to the byte cap.
   const maxGroups = options.maxAttachmentGroups ?? 4096;
   if (!Number.isSafeInteger(maxGroups) || maxGroups < 0) {
     throw new RangeError("Attachment group limit must be a non-negative safe integer");
   }
-  const session: Session = { limit, maxGroups, create: essrFactory(options, options.signal), pending: new Set() };
+  // One invocation owns every stage that has not crossed the public yield below.
+  const context: ParseContext = { limit, maxGroups, openEssr: essrFactory(options, options.signal), stages: new Set() };
   const input = new Cursor(source, options);
   try {
-    for await (const draft of frames(input, null, session)) {
-      if (draft.writer) {
+    for await (const pending of frames(input, null, context)) {
+      if (pending.writer) {
         // Internal yields are still parser-owned; only this public yield transfers ownership.
-        draft.frame.essr = await draft.writer.finish();
+        pending.frame.essr = await pending.writer.finish();
         try {
           options.signal?.throwIfAborted();
         } catch (error) {
           // Cancellation during finish occurs before the consumer owns the completed payload.
-          await draft.frame.essr.discard();
+          await pending.frame.essr.discard();
           throw error;
         }
-        session.pending.delete(draft.writer);
+        context.stages.delete(pending.writer);
       }
-      yield draft.frame;
+      yield pending.frame;
     }
   } finally {
     try {
       // Includes every candidate held while oneFrame checks for an illegal second child.
-      await Promise.all(Array.from(session.pending, (writer) => writer.abort()));
+      await Promise.all(Array.from(context.stages, (writer) => writer.abort()));
     } finally {
       await input.close();
     }

@@ -22,6 +22,32 @@ const text = "{\"v\":\"KERI10JSON00002e_\",\"t\":\"rpy\",\"d\":\"Eabc\"}";
 const annotated = annotate(text, { domainHint: "txt", pretty: true });
 ```
 
+## Progressive parsing and optional Effection integration
+
+`parse(source, options)` consumes an async byte iterable and yields complete
+frames with pull backpressure. Pass an AbortSignal to the parser and the source
+when cancellation must interrupt pending I/O. This core API requires no Effection
+installation.
+
+Applications using Effection can install Effection and import the supported
+supplementary adapter from `cesr-ts/effection`:
+
+```ts
+import { each } from "effection";
+import { toEffectionFrames } from "cesr-ts/effection";
+
+// Inside an Operation, readChunks must honor the supplied signal.
+const channel = yield* toEffectionFrames((signal) => readChunks(signal));
+for (const frame of yield* each(channel.frames)) {
+  yield* handleFrame(frame);
+  yield* each.next();
+}
+```
+
+A channel permits one subscription and does not queue frames ahead of demand.
+Leaving its scope aborts pending input and joins source cleanup. KERI and Tufa
+use this Operation model while the standalone CESR API stays framework-neutral.
+
 ## CLI usage
 
 ```bash

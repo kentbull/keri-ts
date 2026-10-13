@@ -6,6 +6,8 @@
  * users rely on after installing the packed tarball.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as db from "keri-ts/db";
 import * as keri from "keri-ts";
@@ -56,3 +58,25 @@ assert(!("reportCliFailure" in keri), "keri-ts root leaked CLI failure helper");
 console.error("keri-ts root exports:", Object.keys(keri).sort().join(", "));
 console.error("keri-ts/runtime exports:", Object.keys(runtime).slice(0, 12).sort().join(", "));
 console.error("keri-ts/db exports:", Object.keys(db).slice(0, 12).sort().join(", "));
+
+// Exercise the generated Deno shim through the public npm storage API, including fsync.
+const payloadRoot = await mkdtemp(join(tmpdir(), "keri-payload-smoke-"));
+const payloadStore = new db.PayloadStore(payloadRoot, 2);
+try {
+  const sink = await payloadStore.stage(3);
+  await sink.write(new Uint8Array([1, 2, 3]));
+  const payload = await sink.finish();
+  await payload.promote("essr.smoke");
+  const reopened = await payloadStore.open(payload.id);
+  const bytes = [];
+  for await (const chunk of reopened.open()) bytes.push(...chunk);
+  assert(bytes.join(",") === "1,2,3", "npm payload file changed bytes during promotion");
+  await reopened.discard();
+  const aborted = await payloadStore.stage(1);
+  await aborted.write(new Uint8Array([4]));
+  await aborted.abort();
+  await aborted.abort();
+} finally {
+  await payloadStore.close();
+  await rm(payloadRoot, { recursive: true });
+}

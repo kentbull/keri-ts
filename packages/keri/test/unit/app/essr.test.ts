@@ -3,13 +3,19 @@
 import { collectPayload, concatBytes, Diger, Encrypter, MtrDex, type Payload, Prefixer, Texter } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { readdir } from "node:fs/promises";
 import { EssrError, EssrRecipient } from "../../../src/app/essr.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { PayloadStore } from "../../../src/db/payload-store.ts";
+
+/** Inspect this test-owned directory without depending on Node filesystem APIs. */
+async function entries(root: string): Promise<string[]> {
+  const names: string[] = [];
+  for await (const entry of Deno.readDir(root)) names.push(entry.name);
+  return names.sort();
+}
 
 /** Give each scenario real keys, accepted sender state, and an isolated payload store. */
 async function scenario(
@@ -92,7 +98,7 @@ Deno.test("ESSR recipient decrypts accepted SCS content before staging and prese
     assertEquals(await collectPayload(result.plaintext, 4096), plain);
     assertEquals(await collectPayload(result.body, 4096), body);
     assertEquals(hby.db.essrs.get([said])[0].raw, cipher);
-    await result.plaintext.promote();
+    await result.plaintext.promote(`plain.${said}`);
     // The view reopens the owning file, so it survives promotion without a RAM copy.
     assertEquals(await collectPayload(result.body, 4096), body);
     await result.plaintext.discard();
@@ -113,7 +119,7 @@ Deno.test("ESSR recipient rejects unaccepted and misaddressed exchanges before r
       assertEquals(failure.kind, "envelope");
     }
     // PayloadStore.stage has never been called, so even its directory is absent.
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
   });
 });
 
@@ -148,7 +154,7 @@ Deno.test("ESSR digest, sealed-box authentication, and inner source failures wri
       failure = await assertRejects(() => receiver.decrypt(invalidSaid, fragmentsPayload(sealed)), EssrError);
       assertEquals(failure.kind, "framing");
     }
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
   });
 });
 
@@ -160,6 +166,7 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
     const controller = new AbortController();
     const waiting: Payload = {
       size: cipher.length,
+      /** Stay pending until cancellation to exercise signal-aware source teardown. */
       async *open(signal) {
         // Simulate an owned network read that is released by the request signal.
         await new Promise<void>((_resolve, reject) => {
@@ -171,7 +178,7 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
     const attempt = receiver.decrypt(said, waiting, controller.signal);
     controller.abort(new Error("request cancelled"));
     await assertRejects(() => attempt, Error, "request cancelled");
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
     // A new request proves the cancelled attempt released admission state.
     const next = await receiver.decrypt(said, fragmentsPayload(cipher));
     await next.plaintext.discard();
@@ -182,6 +189,7 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
 function fragmentsPayload(bytes: Uint8Array): Payload {
   return {
     size: bytes.length,
+    /** Reopen fixed bytes at deliberately unaligned transport boundaries. */
     async *open(signal) {
       for (let offset = 0; offset < bytes.length; offset += 13) {
         signal?.throwIfAborted();
@@ -199,6 +207,7 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
     let opened = false;
     const oversized: Payload = {
       size: 4097,
+      /** Detect any premature source access before size admission. */
       async *open() {
         opened = true;
       },
@@ -211,6 +220,7 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
     });
     const waiting: Payload = {
       size: cipher.length,
+      /** Hold the sole admission slot until the test releases its read gate. */
       async *open() {
         // Hold the first request at ingress to prove the second is rejected, not queued.
         await gate;
@@ -219,7 +229,7 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
     };
     const first = receiver.decrypt(said, waiting);
     assertEquals((await assertRejects(() => receiver.decrypt(said, waiting), EssrError)).kind, "busy");
-    assertEquals(await readdir(root), []);
+    assertEquals(await entries(root), []);
     resume();
     const result = await first;
     await result.plaintext.discard();

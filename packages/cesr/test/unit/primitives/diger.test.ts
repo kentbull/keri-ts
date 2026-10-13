@@ -27,7 +27,9 @@ Deno.test("diger: rejects non-digest code families", () => {
 });
 
 Deno.test("diger: every digest family verifies ordered sync and async fragments", async () => {
+  // Nonuniform bytes expose omitted or reordered chunks across hash block boundaries.
   const data = Uint8Array.from({ length: 10003 }, (_, i) => i % 251);
+  // Empty and uneven fragments must hash identically to their logical concatenation.
   const fragments = [data.slice(0, 1), new Uint8Array(), data.slice(1, 4099), data.slice(4099)];
   for (const code of Diger.Digests.keys()) {
     // One-shot bytes exercise the same algorithm with a different update schedule.
@@ -45,7 +47,9 @@ async function* chunks(parts: Uint8Array[]): AsyncGenerator<Uint8Array> {
 }
 
 Deno.test("diger: asynchronous source failure cannot become successful verification", async () => {
+  // The empty digest would falsely succeed if a later source failure were swallowed.
   const expected = new Diger({ raw: Diger.digest(new Uint8Array(), "E"), code: "E" });
+  /** Fail after a valid empty chunk, before clean EOF permits final verification. */
   async function* failing(): AsyncGenerator<Uint8Array> {
     yield new Uint8Array();
     throw new Error("source failed");

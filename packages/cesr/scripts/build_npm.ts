@@ -18,6 +18,8 @@ import {
 import { vendorSodium } from "../../../scripts/npm/vendor-sodium.ts";
 
 const ENTRYPOINT = "./mod.ts";
+/** Optional adapter entrypoint, separate from the framework-neutral package root. */
+const EFFECTION_ENTRYPOINT = "./effection.ts";
 const NODE_CLI_ENTRYPOINT = "./src/cli/node.ts";
 const OUT_DIR = "./npm";
 const NPM_MAIN_PATH = "./esm/mod.js";
@@ -31,11 +33,17 @@ interface BuiltNpmPackageManifest {
   types?: string;
   bin?: Record<string, string>;
   exports?: Record<string, unknown>;
+  /** DNT discovers runtime imports; Effection is moved to an optional peer below. */
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional: boolean }>;
 }
 
 // These marker comments live in source entrypoints and should survive DNT
 // rewriting. They make generated target discovery resilient to path-depth drift.
 const ROOT_ENTRYPOINT_MARKER = "cesr-ts npm package root entrypoint.";
+/** Marker used to locate the optional adapter in either generated output tree. */
+const EFFECTION_ENTRYPOINT_MARKER = "cesr-ts optional Effection integration entrypoint.";
 const BIN_ENTRYPOINT_MARKER = "npm executable entrypoint for the package-level `tephra` CLI.";
 
 /** Resolve this package version from package.json or a release override. */
@@ -76,6 +84,19 @@ function normalizeBuiltManifest(): string {
     fileName: "mod.d.ts",
     marker: ROOT_ENTRYPOINT_MARKER,
   });
+  // Resolve the supplementary export from emitted files just like the root entrypoint.
+  const effectionImport = findGeneratedEntrypoint({
+    root: `${OUT_DIR}/esm`,
+    outDir: OUT_DIR,
+    fileName: "effection.js",
+    marker: EFFECTION_ENTRYPOINT_MARKER,
+  });
+  const effectionTypes = findGeneratedEntrypoint({
+    root: `${OUT_DIR}/types`,
+    outDir: OUT_DIR,
+    fileName: "effection.d.ts",
+    marker: EFFECTION_ENTRYPOINT_MARKER,
+  });
   const bin = findGeneratedEntrypoint({
     root: `${OUT_DIR}/esm`,
     outDir: OUT_DIR,
@@ -86,6 +107,8 @@ function normalizeBuiltManifest(): string {
   assertPackagePathExists(OUT_DIR, rootImport);
   assertPackagePathExists(OUT_DIR, rootTypes);
   assertPackagePathExists(OUT_DIR, bin);
+  assertPackagePathExists(OUT_DIR, effectionImport);
+  assertPackagePathExists(OUT_DIR, effectionTypes);
 
   manifest.main = rootImport;
   manifest.module = rootImport;
@@ -96,6 +119,11 @@ function normalizeBuiltManifest(): string {
       types: rootTypes,
     },
   };
+  manifest.exports["./effection"] = { import: effectionImport, types: effectionTypes };
+  // Core consumers neither install nor load Effection unless they choose the supplementary export.
+  if (manifest.dependencies) delete manifest.dependencies.effection;
+  manifest.peerDependencies = { ...manifest.peerDependencies, effection: "^3.6.0" };
+  manifest.peerDependenciesMeta = { ...manifest.peerDependenciesMeta, effection: { optional: true } };
   manifest.bin = {
     tephra: toNpmBinPath(bin),
   };
@@ -119,7 +147,7 @@ function toNpmBinPath(path: string): string {
 await emptyDir(OUT_DIR);
 
 await build({
-  entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
+  entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT, EFFECTION_ENTRYPOINT],
   outDir: OUT_DIR,
   shims: {
     deno: false,
