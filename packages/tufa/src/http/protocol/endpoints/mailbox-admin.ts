@@ -1,4 +1,5 @@
 import { Ilks } from "cesr-ts";
+import { type Operation, run } from "effection";
 import {
   type AgentRuntime,
   type CesrStreamInspection,
@@ -68,7 +69,7 @@ export async function handleMailboxAdmin(
   }
 
   const { cid, role, expected } = validation;
-  settleMailboxAdminIngress(runtime, bytes, mailboxAid);
+  await run(() => settleMailboxAdminIngress(runtime, bytes, mailboxAid));
 
   const acceptance = confirmMailboxAuthorization(
     runtime,
@@ -153,12 +154,10 @@ export function confirmMailboxAuthorization(
 }
 
 /** Settle mailbox-admin CESR ingress without responder-side cue forwarding. */
-export function settleMailboxAdminIngress(
+export function* settleMailboxAdminIngress(
   runtime: AgentRuntime,
   bytes: Uint8Array,
   mailboxAid: string,
-): void {
-  runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
-    settleRuntimeIngress(runtime, [bytes]);
-  });
+): Operation<void> {
+  yield* settleRuntimeIngress(runtime, [bytes], { mailboxAid });
 }

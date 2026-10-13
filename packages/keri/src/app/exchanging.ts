@@ -41,11 +41,15 @@ export interface ExchangeRouteHandler {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
     essrs: readonly Texter[];
+    /** Receiving hosted endpoint used for mailbox authorization. */
+    mailboxAid?: string | null;
   }): boolean;
   handle(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
     essrs: readonly Texter[];
+    /** Receiving hosted endpoint used for mailbox authorization. */
+    mailboxAid?: string | null;
   }): void;
 }
 
@@ -124,6 +128,8 @@ export class Exchanger {
     cigars?: readonly Cigar[];
     ptds?: readonly PathedMaterialGroup[];
     essrs?: readonly Texter[];
+    /** Receiving hosted endpoint used for mailbox authorization. */
+    mailboxAid?: string | null;
   }): ExchangeDecision {
     const said = args.serder.said ?? "<unknown>";
     if (args.serder.ilk !== "exn") {
@@ -178,6 +184,7 @@ export class Exchanger {
         serder: args.serder,
         attachments,
         essrs,
+        mailboxAid: args.mailboxAid,
       })
     ) {
       return {
@@ -200,6 +207,7 @@ export class Exchanger {
       serder: args.serder,
       attachments,
       essrs,
+      mailboxAid: args.mailboxAid,
     });
 
     return { kind: "accept", said };

@@ -1,6 +1,6 @@
 // @file-test-lane app-fast-parallel
 
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { b, Diger, Prefixer, Texter } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
@@ -95,18 +95,24 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
       });
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9001"));
-      ingestKeriBytes(
-        runtime,
-        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+      yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9001")));
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+        )
       );
-      ingestKeriBytes(
-        runtime,
-        recipient.makeLocScheme("http://127.0.0.1:9002"),
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          recipient.makeLocScheme("http://127.0.0.1:9002"),
+        )
       );
-      ingestKeriBytes(
-        runtime,
-        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+        )
       );
       yield* processRuntimeTurn(runtime, { hab: sender });
 
@@ -118,17 +124,19 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
         { sender: sender.pre, recipient: recipient.pre },
       );
       const sigers = sender.sign(serder.raw, true);
-      const decision = exchanger.processEvent({
-        serder,
-        tsgs: [
-          new TransIdxSigGroup(
-            new Prefixer({ qb64: sender.pre }),
-            sender.kever!.sner,
-            new Diger({ qb64: sender.kever!.said }),
-            sigers,
-          ),
-        ],
-      });
+      const decision = yield* call(() =>
+        exchanger.processEvent({
+          serder,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: sender.pre }),
+              sender.kever!.sner,
+              new Diger({ qb64: sender.kever!.said }),
+              sigers,
+            ),
+          ],
+        })
+      );
 
       const said = serder.said;
       assertExists(said);
@@ -174,18 +182,24 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
       });
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9011"));
-      ingestKeriBytes(
-        runtime,
-        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+      yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9011")));
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+        )
       );
-      ingestKeriBytes(
-        runtime,
-        recipient.makeLocScheme("http://127.0.0.1:9012"),
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          recipient.makeLocScheme("http://127.0.0.1:9012"),
+        )
       );
-      ingestKeriBytes(
-        runtime,
-        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+        )
       );
       yield* processRuntimeTurn(runtime, { hab: sender });
 
@@ -204,14 +218,16 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
         sigers,
       );
 
-      const initial = exchanger.processEvent({
-        serder,
-        tsgs: [
-          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
-            sigers[0],
-          ]),
-        ],
-      });
+      const initial = yield* call(() =>
+        exchanger.processEvent({
+          serder,
+          tsgs: [
+            new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+              sigers[0],
+            ]),
+          ],
+        })
+      );
       const said = serder.said;
       assertExists(said);
       assertEquals(initial.kind, "escrow");
@@ -219,7 +235,7 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
 
       const quadKey = [said, group.pre, group.snh, group.said] as const;
       hby.db.esigs.add(quadKey, sigers[1]);
-      exchanger.processEscrows();
+      yield* call(() => exchanger.processEscrows());
 
       assertEquals(hby.db.epse.get([said]), null);
       assertEquals(hby.db.exns.get([said])?.said, said);
@@ -259,18 +275,24 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
       });
 
       const runtime = yield* createAgentRuntime(hby, { mode: "local" });
-      ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9021"));
-      ingestKeriBytes(
-        runtime,
-        sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+      yield* call(() => ingestKeriBytes(runtime, sender.makeLocScheme("http://127.0.0.1:9021")));
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
+        )
       );
-      ingestKeriBytes(
-        runtime,
-        recipient.makeLocScheme("http://127.0.0.1:9022"),
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          recipient.makeLocScheme("http://127.0.0.1:9022"),
+        )
       );
-      ingestKeriBytes(
-        runtime,
-        recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+      yield* call(() =>
+        ingestKeriBytes(
+          runtime,
+          recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+        )
       );
       yield* processRuntimeTurn(runtime, { hab: sender });
 
@@ -289,14 +311,16 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
         sigers,
       );
 
-      const initial = exchanger.processEvent({
-        serder,
-        tsgs: [
-          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
-            sigers[0],
-          ]),
-        ],
-      });
+      const initial = yield* call(() =>
+        exchanger.processEvent({
+          serder,
+          tsgs: [
+            new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+              sigers[0],
+            ]),
+          ],
+        })
+      );
       const said = serder.said;
       assertExists(said);
       assertEquals(initial.kind, "escrow");
@@ -304,7 +328,7 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
 
       const quadKey = [said, group.pre, group.snh, group.said] as const;
       hby.db.esigs.add(quadKey, sigers[1]);
-      exchanger.processEscrows();
+      yield* call(() => exchanger.processEscrows());
 
       assertEquals(hby.db.epse.get([said]), null);
       assertEquals(hby.db.exns.get([said])?.said, said);
@@ -320,14 +344,16 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
         { sender: sender.pre, recipient: recipient.pre },
       );
       const alternateSigers = sender.sign(alternate.raw, true);
-      const accepted = exchanger.processEvent({
-        serder: alternate,
-        tsgs: [
-          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
-            alternateSigers[2],
-          ]),
-        ],
-      });
+      const accepted = yield* call(() =>
+        exchanger.processEvent({
+          serder: alternate,
+          tsgs: [
+            new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+              alternateSigers[2],
+            ]),
+          ],
+        })
+      );
       assertExists(alternate.said);
       assertEquals(accepted.kind, "accept");
       assertEquals(hby.db.exns.get([alternate.said])?.said, alternate.said);
@@ -372,12 +398,12 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
       assertEquals(serder.a, digest.qb64);
       assertEquals(serder.seals, []);
       for (const payload of [[], [essrs[0]], [...essrs].reverse()]) {
-        assertEquals(exchanger.processEvent({ serder, tsgs, essrs: payload }).kind, "reject");
+        assertEquals((yield* call(() => exchanger.processEvent({ serder, tsgs, essrs: payload }))).kind, "reject");
         assertEquals(hby.db.exns.get([serder.said!]), null);
         assertEquals(hby.db.essrs.get([serder.said!]), []);
       }
       // Concatenation order is semantic even though fragment boundaries are not hashed.
-      assertEquals(exchanger.processEvent({ serder, tsgs, essrs }).kind, "accept");
+      assertEquals((yield* call(() => exchanger.processEvent({ serder, tsgs, essrs }))).kind, "accept");
       assertEquals(hby.db.exns.get([serder.said!])?.said, serder.said);
       assertEquals(hby.db.essrs.get([serder.said!]).map((item) => item.text), ["abc", "xyz"]);
     } finally {

@@ -155,7 +155,7 @@ export function* waitForGroupAcceptance(
       return true;
     }
     yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     yield* sleep(250);
   }
   return eventAccepted(hby, serder);
@@ -173,7 +173,7 @@ export function* waitForOneApproval(
       return result;
     }
     yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     yield* sleep(250);
   }
   return null;
@@ -229,7 +229,7 @@ export function* waitForReplyAcceptance(
       return true;
     }
     yield* processMailboxTurn(runtime, { budgetMs: options.pollBudgetMs });
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     yield* sleep(250);
   }
   return endpointRoleAccepted(hby, groupPre, role, eid);
@@ -365,14 +365,14 @@ function* approveRpyProposal(
   }
 
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "rpy");
-  runtime.reactor.processCompleteChunk(
+  yield* runtime.reactor.processCompleteChunk(
     concatBytes(rpySerder.raw, peerAttachment),
     { local: true },
   );
 
   const localRpy = groupEndorseReply(hby, groupPre, rpySerder);
-  runtime.reactor.processCompleteChunk(localRpy, { local: true });
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processCompleteChunk(localRpy, { local: true });
+  yield* runtime.reactor.processEscrowsOnce();
 
   const attrs = rpyAttrs(rpySerder);
   const deliveries = yield* publishProposalEmbeds(
@@ -431,8 +431,8 @@ function* approveKelProposal(
   // Keep the attachment set open until the peer signatures are appended.
   const localMessage = messagize(serder, { sigers, pipelined: false });
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, label);
-  runtime.reactor.processCompleteChunk(concatBytes(localMessage, peerAttachment), { local: true });
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processCompleteChunk(concatBytes(localMessage, peerAttachment), { local: true });
+  yield* runtime.reactor.processEscrowsOnce();
 
   const deliveries = yield* publishProposal(runtime, member, members, route, label, payload, localMessage);
   const accepted = eventAccepted(hby, serder);
@@ -483,8 +483,8 @@ function* approveVdrProposal(
   // Keep the attachment set open until the peer signatures are appended.
   const localAnchor = messagize(anchorSerder, { sigers, pipelined: false });
   const peerAnchorAttachment = multisigPathedAttachment(hby, wrapperSaid, "anc");
-  runtime.reactor.processCompleteChunk(concatBytes(localAnchor, peerAnchorAttachment), { local: true });
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processCompleteChunk(concatBytes(localAnchor, peerAnchorAttachment), { local: true });
+  yield* runtime.reactor.processEscrowsOnce();
 
   let accepted = false;
   let embeds: Record<string, Uint8Array>;

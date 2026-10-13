@@ -5,7 +5,7 @@ import { assertEquals, assertExists } from "jsr:@std/assert";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
-import { VerifierAgent, type VerifierAgentProcessResult } from "../../../src/app/verifier-agent.ts";
+import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
@@ -94,12 +94,13 @@ function issueFixture(
   return { issuerHby, issuerReger, issuer, verifier, registry, creder, grant };
 }
 
-function ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): void {
+/** Admit supporting state before the grant, then settle escrows before each verifier assertion. */
+function* ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): Operation<void> {
   for (const message of fixture.grant.support) {
-    runtime.reactor.processCompleteChunk(message);
+    yield* runtime.reactor.processCompleteChunk(message);
   }
-  runtime.reactor.processCompleteChunk(fixture.grant.wire);
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processCompleteChunk(fixture.grant.wire);
+  yield* runtime.reactor.processEscrowsOnce();
 }
 
 Deno.test("VerifierAgent scans accepted grants and sends issuance webhook without notifier dependency", async () => {
@@ -143,7 +144,7 @@ Deno.test("VerifierAgent scans accepted grants and sends issuance webhook withou
     });
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
-      ingestGrant(runtime, fixture);
+      yield* ingestGrant(runtime, fixture);
 
       const agent = new VerifierAgent({
         hby: verifierHby,
@@ -154,7 +155,7 @@ Deno.test("VerifierAgent scans accepted grants and sends issuance webhook withou
         services: runtime.services,
         hook: "http://example.test/hook",
       });
-      const result = yield* processAgentOnce(agent);
+      const result = yield* agent.processOnce();
 
       assertEquals(result.grantsQueued, 1);
       assertEquals(result.presentationsReady, 1);
@@ -216,7 +217,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
     });
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
-      ingestGrant(runtime, fixture);
+      yield* ingestGrant(runtime, fixture);
       const agent = new VerifierAgent({
         hby: verifierHby,
         reger: verifierReger,
@@ -226,18 +227,18 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         services: runtime.services,
         hook: "http://example.test/hook",
       });
-      yield* processAgentOnce(agent);
+      yield* agent.processOnce();
 
       fixture.registry.revoke(fixture.creder.said!);
       for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
-        runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processCompleteChunk(message);
       }
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
-        runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processCompleteChunk(message);
       }
-      runtime.reactor.processEscrowsOnce();
+      yield* runtime.reactor.processEscrowsOnce();
 
-      const result = yield* processAgentOnce(agent);
+      const result = yield* agent.processOnce();
 
       assertEquals(result.revocationsQueued, 1);
       assertEquals(result.revocationsReady, 1);
@@ -295,7 +296,7 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
     });
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
-      ingestGrant(runtime, fixture);
+      yield* ingestGrant(runtime, fixture);
       const agent = new VerifierAgent({
         hby: verifierHby,
         reger: verifierReger,
@@ -305,23 +306,23 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
         services: runtime.services,
         hook: "http://example.test/hook",
       });
-      yield* processAgentOnce(agent);
+      yield* agent.processOnce();
       assertExists(cdb.ack.get([fixture.creder.said!]));
 
       fixture.registry.revoke(fixture.creder.said!);
       for (const message of issuerHby.db.clonePreIter(fixture.issuer.pre)) {
-        runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processCompleteChunk(message);
       }
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
-        runtime.reactor.processCompleteChunk(message);
+        yield* runtime.reactor.processCompleteChunk(message);
       }
-      runtime.reactor.processEscrowsOnce();
+      yield* runtime.reactor.processEscrowsOnce();
       while (!runtime.cues.empty) {
         runtime.cues.pull();
       }
 
-      const result = yield* processAgentOnce(agent);
-      const repeat = yield* processAgentOnce(agent);
+      const result = yield* agent.processOnce();
+      const repeat = yield* agent.processOnce();
 
       assertEquals(result.revocationsQueued, 1);
       assertEquals(result.revocationsReady, 1);
@@ -348,11 +349,4 @@ function fixedClock() {
     setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
     clearTimeout: (timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>),
   };
-}
-
-function* processAgentOnce(agent: VerifierAgent): Operation<VerifierAgentProcessResult> {
-  return yield* action((resolve, reject) => {
-    agent.processOnce().then(resolve, reject);
-    return () => {};
-  });
 }

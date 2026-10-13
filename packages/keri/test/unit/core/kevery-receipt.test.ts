@@ -70,7 +70,7 @@ Deno.test("Kevery unescrows witness receipts against partially witnessed events"
       assertEquals(decision.reason, "partialWigs");
 
       reactor.ingest(witness.witness(event));
-      reactor.processOnce();
+      yield* reactor.processOnce();
       assertEquals(remote.db.uwes.cnt(), 1);
 
       kvy.processEscrowUnverWitness();

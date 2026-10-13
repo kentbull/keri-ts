@@ -225,8 +225,8 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
 
           try {
             ingestKeriBytes(recipientRuntime, storedMessage);
-            recipientRuntime.reactor.processOnce();
-            recipientRuntime.reactor.processEscrowsOnce();
+            yield* recipientRuntime.reactor.processOnce();
+            yield* recipientRuntime.reactor.processEscrowsOnce();
 
             const requestedRecord = recipientHby.db.oobis.get(requestedOobi);
             const requestedNotice = (recipientRuntime.notifier?.list() ?? [])

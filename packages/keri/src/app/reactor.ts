@@ -1,5 +1,5 @@
 import { type CesrParser, Cigar, createParser, Ilks, parseBytes, SerderKERI, Siger, Verfer } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
@@ -83,11 +83,11 @@ export class Reactor {
    * level hosts choose whether one ingress source should be treated as local or
    * remote without creating a second parser/router stack.
    */
-  processChunk(
+  *processChunk(
     chunk: Uint8Array,
-    { local = this.local }: { local?: boolean } = {},
-  ): void {
-    this.dispatchParsedFrames(this.parser.feed(chunk), local);
+    { local = this.local, mailboxAid }: { local?: boolean; mailboxAid?: string | null } = {},
+  ): Operation<void> {
+    yield* this.dispatchParsedFrames(this.parser.feed(chunk), local, mailboxAid);
   }
 
   /**
@@ -97,29 +97,32 @@ export class Reactor {
    * A fresh parser plus flush completes their open attachment sets without
    * waiting for another record or affecting the shared streaming parser.
    */
-  processCompleteChunk(
+  *processCompleteChunk(
     chunk: Uint8Array,
-    { local = this.local }: { local?: boolean } = {},
-  ): void {
-    this.dispatchParsedFrames(parseBytes(chunk), local);
+    { local = this.local, mailboxAid }: { local?: boolean; mailboxAid?: string | null } = {},
+  ): Operation<void> {
+    yield* this.dispatchParsedFrames(parseBytes(chunk), local, mailboxAid);
   }
 
-  private dispatchParsedFrames(
+  /** Complete each dispatch before advancing a parsed batch. */
+  private *dispatchParsedFrames(
     frames: ReturnType<CesrParser["feed"]>,
     local: boolean,
-  ): void {
+    mailboxAid?: string | null,
+  ): Operation<void> {
     for (
       const envelope of envelopesFromFrames(
         frames,
         local,
       )
     ) {
-      const decision = dispatchEnvelope(
+      const decision = yield* dispatchEnvelope(
         envelope,
         this.revery,
         this.kevery,
         this.exchanger,
         { tvy: this.vdr.tvy, vry: this.vdr.vry },
+        mailboxAid,
       );
       if (decision?.kind === "unverified") {
         continue;
@@ -133,13 +136,13 @@ export class Reactor {
    * This mirrors the KERIpy pattern where a doer owns the long-lived loop but
    * delegates the actual work to a plain drain helper.
    */
-  processOnce(): void {
+  *processOnce(): Operation<void> {
     while (!this.ingress.empty) {
       const chunk = this.ingress.pull();
       if (!chunk) {
         continue;
       }
-      this.processCompleteChunk(chunk);
+      yield* this.processCompleteChunk(chunk);
     }
   }
 
@@ -150,12 +153,12 @@ export class Reactor {
    * - KEL escrows through `Kevery.processEscrows()`
    * - reply escrows through `Revery.processEscrowReply()`
    */
-  processEscrowsOnce(): void {
+  *processEscrowsOnce(): Operation<void> {
     this.kevery.processEscrows();
     this.revery.processEscrowReply();
     this.vdr.tvy?.processEscrows?.();
     this.vdr.vry?.processEscrows?.();
-    this.exchanger.processEscrows();
+    yield* call(() => this.exchanger.processEscrows());
   }
 
   /**
@@ -166,7 +169,7 @@ export class Reactor {
    */
   *msgDo(): Operation<never> {
     while (true) {
-      this.processOnce();
+      yield* this.processOnce();
       yield* runtimeTurn();
     }
   }
@@ -180,7 +183,7 @@ export class Reactor {
    */
   *escrowDo(): Operation<never> {
     while (true) {
-      this.processEscrowsOnce();
+      yield* this.processEscrowsOnce();
       yield* runtimeTurn();
     }
   }

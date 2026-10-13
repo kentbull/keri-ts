@@ -14,16 +14,7 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import {
-  Cigar,
-  concatBytes,
-  Counter,
-  CtrDexV1,
-  Ilks,
-  parseBytes,
-  type SerderKERI,
-  type Siger,
-} from "cesr-ts";
+import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
 import { createConnection } from "node:net";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { CueEmission } from "../core/cues.ts";
@@ -318,7 +309,7 @@ export function* processWitnessIngress(
     deliver?: boolean;
   } = {},
 ): Operation<CueEmission[]> {
-  settleRuntimeIngress(runtime, [bytes], { local });
+  yield* settleRuntimeIngress(runtime, [bytes], { local });
   return yield* drainWitnessCues(runtime, serviceHab, { deliver });
 }
 
@@ -951,7 +942,7 @@ export class Receiptor {
           wigers: response.wigers,
           cigars: response.cigars,
         });
-        settleRuntimeIngress(runtime, [response.body], { local: false });
+        yield* settleRuntimeIngress(runtime, [response.body], { local: false });
       }
 
       for (const witness of witnesses) {
@@ -1034,7 +1025,7 @@ export class Receiptor {
 
     const runtime = yield* createAgentRuntime(this.hby, { mode: "local" });
     try {
-      settleRuntimeIngress(runtime, [response.body], { local: false });
+      yield* settleRuntimeIngress(runtime, [response.body], { local: false });
       return true;
     } finally {
       yield* runtime.close();

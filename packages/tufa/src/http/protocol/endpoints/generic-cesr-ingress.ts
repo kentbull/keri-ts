@@ -148,7 +148,7 @@ function* deferredDirectQueryResponse(
   const runtime = context.runtime!;
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
   while (Date.now() < expires) {
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     const replayEmissions = yield* drainRuntimeCues(
       runtime,
       context.policy.serviceHab,

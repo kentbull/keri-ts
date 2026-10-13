@@ -13,7 +13,7 @@
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
 import { concatBytes, Counter, parsePather, SerderACDC, SerderKERI } from "cesr-ts";
-import { action, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
+import { action, call, type Operation, spawn, type Task } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -564,7 +564,7 @@ export class Poster {
  * This is the `keri-ts` mailbox-storage analogue to KERIpy's `ForwardHandler`.
  *
  * Authorization rule:
- * - the request-scoped mailbox AID set by `MailboxDirector` must currently be
+ * - the request-scoped mailbox AID passed with this message must currently be
  *   authorized for the addressed recipient
  */
 export class ForwardHandler implements ExchangeRouteHandler {
@@ -605,12 +605,14 @@ export class ForwardHandler implements ExchangeRouteHandler {
   handle(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
+    /** Receiving hosted endpoint whose authority must cover the addressed recipient. */
+    mailboxAid?: string | null;
   }): void {
     const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
     const recipient = typeof modifiers?.pre === "string" ? modifiers.pre : null;
     const topic = typeof modifiers?.topic === "string" ? modifiers.topic : null;
     const forwarded = extractForwardedMessage(args.serder, args.attachments);
-    const mailboxAid = this.mailboxDirector.currentMailboxAid();
+    const mailboxAid = args.mailboxAid;
     if (!recipient || !topic || !forwarded) {
       return;
     }
@@ -796,14 +798,14 @@ export class MailboxPoller {
    * workers do not have a natural finite return value.
    */
   *pollDo(
-    onBatch: (batch: MailboxPollBatch) => void,
+    onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<never> {
     const remoteWorkers = new Map<string, Task<void>>();
 
     try {
       while (true) {
         for (const batch of this.replayRetained()) {
-          onBatch(batch);
+          yield* call(() => onBatch(batch));
           this.handOff([batch]);
         }
         const topics = this.mailboxDirector.registeredTopics();
@@ -813,7 +815,7 @@ export class MailboxPoller {
           for (const pre of this.hby.prefixes) {
             const local = this.readLocalMailbox(pre, topics);
             if (local.length > 0) {
-              onBatch({ source: "local", pre, messages: local });
+              yield* call(() => onBatch({ source: "local", pre, messages: local }));
             }
           }
         }
@@ -965,7 +967,7 @@ export class MailboxPoller {
   /** Keep one long-lived worker running for each currently configured remote endpoint. */
   private *syncRemoteWorkers(
     remoteWorkers: Map<string, Task<void>>,
-    onBatch: (batch: MailboxPollBatch) => void,
+    onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
     topics: readonly string[],
   ): Operation<void> {
     const active = new Set<string>();
@@ -1002,7 +1004,7 @@ export class MailboxPoller {
   private *remoteEndpointWorker(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
-    onBatch: (batch: MailboxPollBatch) => void,
+    onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<never> {
     while (true) {
       const batch = yield* this.pollRemoteEndpointOnce(
@@ -1011,7 +1013,7 @@ export class MailboxPoller {
         this.timeoutPolicy.maxPollDurationMs,
       );
       if (batch) {
-        onBatch(batch);
+        yield* call(() => onBatch(batch));
         this.handOff([batch]);
       }
       yield* runtimeTurn();

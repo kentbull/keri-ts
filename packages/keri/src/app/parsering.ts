@@ -28,6 +28,7 @@ import {
   Verfer,
   Verser,
 } from "cesr-ts";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import {
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
@@ -38,15 +39,20 @@ import {
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
+import type { ExchangeDecision } from "./exchanging.ts";
 
+/** Exchange admission may await durable payload storage before dispatch advances. */
 export interface ExchangerLike {
+  /** Resolve after signature admission and its required storage/handler effects finish. */
   processEvent(args: {
     serder: SerderKERI;
     tsgs: TransIdxSigGroup[];
     cigars: Cigar[];
     ptds: PathedMaterialGroup[];
     essrs: Texter[];
-  }): void;
+    /** Hosted endpoint that received this message, independent of its claimed sender. */
+    mailboxAid?: string | null;
+  }): void | ExchangeDecision | Operation<void | ExchangeDecision>;
 }
 
 export interface TelDispatchArgs {
@@ -123,13 +129,14 @@ export function envelopesFromFrames(
  * Route one already-parsed KERI dispatch envelope into the established
  * `Revery` / `Kevery` / `Exchanger` architecture.
  */
-export function dispatchEnvelope(
+export function* dispatchEnvelope(
   envelope: KeriDispatchEnvelope,
   revery: Revery,
   kevery: Kevery,
   exchanger?: ExchangerLike,
   vdr: VdrDispatchServices = {},
-): ReplyProcessDecision | void {
+  mailboxAid?: string | null,
+): Operation<ReplyProcessDecision | void> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
     if (serder.ilk === null) {
@@ -152,13 +159,18 @@ export function dispatchEnvelope(
       kevery.processReceipt(envelope);
       break;
     case Ilks.exn:
-      exchanger?.processEvent({
-        serder,
-        tsgs: envelope.tsgs,
-        cigars: envelope.cigars,
-        ptds: envelope.ptds,
-        essrs: envelope.essrs,
-      });
+      if (exchanger) {
+        yield* call(() =>
+          exchanger.processEvent({
+            serder,
+            tsgs: envelope.tsgs,
+            cigars: envelope.cigars,
+            ptds: envelope.ptds,
+            essrs: envelope.essrs,
+            mailboxAid,
+          })
+        );
+      }
       break;
     case Ilks.vcp:
     case Ilks.vrt:

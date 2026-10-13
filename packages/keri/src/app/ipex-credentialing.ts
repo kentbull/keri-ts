@@ -1,3 +1,4 @@
+import type { Operation } from "npm:effection@^3.6.0";
 /**
  * IPEX credential artifact assembly for registry-backed ACDC workflows.
  *
@@ -273,14 +274,14 @@ export function ipexCredentialAdmit(args: {
 }
 
 /** Parse grant-embedded artifacts in KERIpy admit order: `anc`, `iss`, `acdc`. */
-export function processCredentialPresentationArtifacts(
+export function* processCredentialPresentationArtifacts(
   reactor: Reactor,
   artifacts: CredentialPresentationArtifacts,
-): void {
-  reactor.processCompleteChunk(artifacts.anc);
-  reactor.processCompleteChunk(artifacts.iss);
-  reactor.processCompleteChunk(artifacts.acdc);
-  reactor.processEscrowsOnce();
+): Operation<void> {
+  yield* reactor.processCompleteChunk(artifacts.anc);
+  yield* reactor.processCompleteChunk(artifacts.iss);
+  yield* reactor.processCompleteChunk(artifacts.acdc);
+  yield* reactor.processEscrowsOnce();
 }
 
 /** Rebuild grant-embedded `anc`, `iss`, and `acdc` streams from exchange storage. */

@@ -545,9 +545,8 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
         }];
 
         assertEquals(handler.verify({ serder, attachments }), true);
-        director.withActiveMailboxAid(provider.pre, () => {
-          handler.handle({ serder, attachments });
-        });
+        // Endpoint provenance travels with this dispatch, across any async suspension.
+        handler.handle({ serder, attachments, mailboxAid: provider.pre });
 
         const stored = mailboxer!.getTopicMsgs(
           mailboxTopicKey(recipient.pre, CREDENTIAL_MAILBOX_TOPIC),
@@ -1006,24 +1005,16 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
             mailboxTopicKey(recipient.pre, "/receipt"),
           ).length ?? 0;
 
-        runtime.mailboxDirector.withActiveMailboxAid(mailboxHost.pre, () => {
-          handler.handle({ serder: wrapped.serder, attachments });
-        });
+        handler.handle({ serder: wrapped.serder, attachments, mailboxAid: mailboxHost.pre });
         assertEquals(countStored(), 1);
 
-        runtime.mailboxDirector.withActiveMailboxAid(agentHost.pre, () => {
-          handler.handle({ serder: wrapped.serder, attachments });
-        });
+        handler.handle({ serder: wrapped.serder, attachments, mailboxAid: agentHost.pre });
         assertEquals(countStored(), 2);
 
-        runtime.mailboxDirector.withActiveMailboxAid(witnessHost.pre, () => {
-          handler.handle({ serder: wrapped.serder, attachments });
-        });
+        handler.handle({ serder: wrapped.serder, attachments, mailboxAid: witnessHost.pre });
         assertEquals(countStored(), 3);
 
-        runtime.mailboxDirector.withActiveMailboxAid(controllerHost.pre, () => {
-          handler.handle({ serder: wrapped.serder, attachments });
-        });
+        handler.handle({ serder: wrapped.serder, attachments, mailboxAid: controllerHost.pre });
         assertEquals(countStored(), 3);
       } finally {
         yield* runtime.close();

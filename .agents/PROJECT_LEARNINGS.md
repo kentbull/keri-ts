@@ -48,6 +48,9 @@ stay short enough to reread at session start.
 
 ## Cross-Topic Snapshot
 
+Runtime ingress yields each dispatch as an Effection operation and carries the receiving mailbox AID with
+the message; request identity must never live in shared mutable ambient state.
+
 Mailbox transport cue correlation does not prove recipient authorization. KEL
 query processing authenticates `mbx` requester signatures against the recipient's
 current accepted threshold before emitting a stream cue; public KEL query policy
