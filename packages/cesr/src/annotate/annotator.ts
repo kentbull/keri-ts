@@ -1,6 +1,6 @@
 import { b } from "../core/bytes.ts";
-import { parseBytes } from "../core/parser-engine.ts";
 import type { ParseEvent } from "../core/types.ts";
+import { parseBytes } from "../parser/stream.ts";
 import { renderAnnotatedFrames, renderWrapperAnnotatedStream } from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 

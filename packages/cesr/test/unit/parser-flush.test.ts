@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { ShortageError } from "../../src/core/errors.ts";
-import { createParser } from "../../src/core/parser-engine.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";

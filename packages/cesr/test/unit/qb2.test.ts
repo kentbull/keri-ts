@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { codeB64ToB2 } from "../../src/core/bytes.ts";
-import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachments.ts";
 import { parseCounterFromBinary, parseCounterFromText } from "../../src/primitives/counter.ts";
 import { parseIndexerFromBinary, parseIndexerFromText } from "../../src/primitives/indexer.ts";
 import { parseMatterFromBinary, parseMatterFromText } from "../../src/primitives/matter.ts";

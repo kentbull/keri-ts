@@ -5,7 +5,6 @@ import {
   type CounterGroupLike,
   type GroupEntry,
   isCounterGroupLike,
-  isGroupTuple,
   type Primitive,
 } from "../../src/primitives/primitive.ts";
 
@@ -37,12 +36,6 @@ export function assertQb64Qb2Parity(
 export function expectCounterGroup(entry: GroupEntry): CounterGroupLike {
   assertEquals(isCounterGroupLike(entry), true);
   return entry as CounterGroupLike;
-}
-
-/** Narrow one group entry to primitive tuple node. */
-export function expectPrimitiveTuple(entry: GroupEntry): readonly GroupEntry[] {
-  assertEquals(isGroupTuple(entry), true);
-  return entry as readonly GroupEntry[];
 }
 
 /** Assert one entry is a counter primitive (non-group node allowed). */

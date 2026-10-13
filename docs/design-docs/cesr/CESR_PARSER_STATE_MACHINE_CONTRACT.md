@@ -4,7 +4,7 @@
 
 - Created: 2026-02-28
 - Scope:
-  - `packages/cesr/src/core/parser-engine.ts`
+  - `packages/cesr/src/parser/stream.ts`
 - Architecture:
   - Atomic bounded substream parser
     (`docs/adr/adr-0001-parser-atomic-bounded-first.md`)
@@ -49,7 +49,7 @@ An open frame completes only at:
 
 Exhausting a network chunk never completes an open frame, even after one or
 more fully parsed attachment groups. Initial and resumed attachment collection
-use the same code. Annotation separators do not close frames.
+and bounded frames use `parseAttachments`. Annotation separators do not close frames.
 
 ## Lifecycle (Normative)
 
@@ -155,7 +155,7 @@ Malformed wrapper tails are rejected; there is no recovery mode. Explicit scoped
 legacy implicit-v1 behavior are separate from attachment dispatch.
 
 Regression coverage: `test/unit/parity.test.ts` exercises selected-version
-rejection in both modes and both text/binary domains; `test/unit/parser.test.ts`
+rejection in both text/binary domains; `test/unit/parser.test.ts`
 checks that the default parser emits an error rather than a frame for malformed
 v1 signatures. Paths are relative to `packages/cesr`.
 

@@ -65,8 +65,8 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
 5. `Signer`/`Verfer` own signer/verifier suite dispatch; crypto helpers should
    not become a second semantic home.
 6. Fixed-field seal/blind/media values belong to CESR `primitives/structing.ts`;
-   KERI runtime code should project through CESR structing helpers rather than
-   duplicating raw-shape logic.
+   KERI runtime code projects hydrated primitives through CESR structing helpers
+   without decoding their bytes again; public raw-input boundaries still validate.
 7. CESR-native and ACDC-native behavior should extend the shared native support
    matrix in `packages/cesr/src/serder/native.ts`.
 8. Weighted thresholds are semantic through `Tholder`; KEL and reply logic

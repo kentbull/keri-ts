@@ -1,8 +1,8 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../src/core/errors.ts";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { sniff } from "../../src/parser/cold-start.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { smell } from "../../src/serder/smell.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { COUNTER_CODE_NAMES_V1 } from "../../src/tables/counter.tables.generated.ts";

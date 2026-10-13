@@ -14,7 +14,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    that contract and its tests.
 3. Parser architecture remains intentionally atomic/bounded-substream first.
    `CesrParser` directly owns its buffer, offset, and selected stream genus.
-   Frame parsing uses stateless functions; no collector or frame-parser objects.
+   The parser lives in `parser/stream.ts`, `frames.ts`, and `attachments.ts`;
+   shared byte widths live in `core/domain.ts`. Frame parsing uses stateless
+   functions; no collector or frame-parser objects.
    Nested incremental parsing is deferred behind explicit performance evidence.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.

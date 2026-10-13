@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
-import { createParser } from "../../src/core/parser-engine.ts";
 import type { ParseEvent } from "../../src/core/types.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   CtrDexByVersion,

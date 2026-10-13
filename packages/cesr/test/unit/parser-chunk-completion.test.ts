@@ -1,7 +1,7 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError } from "../../src/core/errors.ts";
-import { createParser, parseBytes } from "../../src/core/parser-engine.ts";
+import { createParser, parseBytes } from "../../src/parser/stream.ts";
 import { counterV1, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY as body } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";

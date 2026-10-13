@@ -2,7 +2,7 @@ import { b, codeB2ToB64, encodeB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
-import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../parser/attachments.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";

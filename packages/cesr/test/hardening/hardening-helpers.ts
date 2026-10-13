@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
-import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { ParseEvent } from "../../src/core/types.ts";
+import { createParser, type ParserOptions } from "../../src/parser/stream.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";

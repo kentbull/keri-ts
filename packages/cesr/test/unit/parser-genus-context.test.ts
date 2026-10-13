@@ -1,7 +1,7 @@
 import { assertEquals, assertInstanceOf, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { VersionError } from "../../src/core/errors.ts";
-import { createParser, parseBytes } from "../../src/core/parser-engine.ts";
+import { createParser, parseBytes } from "../../src/parser/stream.ts";
 import { Counter, CounterGroup } from "../../src/primitives/counter.ts";
 import { Texter } from "../../src/primitives/texter.ts";
 import { versify } from "../../src/serder/smell.ts";

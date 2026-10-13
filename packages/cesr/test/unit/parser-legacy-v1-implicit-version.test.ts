@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV1 } from "../../src/tables/counter-codex.ts";
 import { counterV1 } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";

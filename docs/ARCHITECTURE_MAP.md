@@ -122,7 +122,7 @@ internal-only implementation areas so refactors can preserve stable contracts.
 ### CESR Stack
 
 1. Public API (`packages/cesr/src/index.ts`)
-2. Parser orchestration (`core/parser-engine.ts`, parser dispatch)
+2. Parser orchestration (`parser/stream.ts`, `parser/frames.ts`, `parser/attachments.ts`)
 3. Primitive parsers + table codex
    - executable crypto primitives live here as well: `Signer.sign()`,
      `Verfer.verify()`, and `Salter.signer()` are the public behavior seams.

@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64, t } from "../../src/core/bytes.ts";
-import { createParser } from "../../src/core/parser-engine.ts";
-import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachments.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";

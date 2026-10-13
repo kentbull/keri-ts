@@ -121,7 +121,7 @@ On each `feed()`:
 
 1. Continue top stack frame if any.
 2. If a frame completes, pop and merge result into parent frame.
-3. When root frame completes, emit a complete `CesrMessage`.
+3. When root frame completes, emit a complete `CesrFrame`.
 
 On `flush()`:
 

@@ -1,5 +1,5 @@
-import { createParser, type ParserOptions } from "../core/parser-engine.ts";
 import type { CesrFrame } from "../core/types.ts";
+import { createParser, type ParserOptions } from "../parser/stream.ts";
 
 /**
  * Adapt an async byte stream into parsed CESR frames.

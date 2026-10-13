@@ -2,7 +2,7 @@
 
 import { assert, assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";
-import { parseBytes } from "../../../../cesr/src/core/parser-engine.ts";
+import { parseBytes } from "../../../../cesr/src/parser/stream.ts";
 import { CounterGroup } from "../../../../cesr/src/primitives/counter.ts";
 import { counterV1, groupV2 } from "../../../../cesr/test/fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../../../cesr/test/fixtures/external-vectors.ts";

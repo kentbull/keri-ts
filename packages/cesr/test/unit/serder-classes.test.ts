@@ -1,7 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../src/core/errors.ts";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { b } from "../../src/index.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { Matter } from "../../src/primitives/matter.ts";
 import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../src/serder/serder.ts";
 import { smell, versify } from "../../src/serder/smell.ts";
