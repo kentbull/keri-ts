@@ -130,7 +130,14 @@ and use this supplementary adapter at their parsing boundary.
 12. CESR-native serder behavior is organized around one shared support matrix in
     `packages/cesr/src/serder/native.ts`, keyed by protocol/version/ilk and
     field-family semantics. Extend that matrix rather than adding sidecar
-    branches.
+    branches. Native event `a` lists now encode and project the frozen `927c0cb8`
+    seven seal families with consecutive homogeneous runs and typed field roles;
+    only `icp/rot/ixn/dip/drt` admit these lists. Mapper-valued `a` stays a mapper.
+    Nonce/big seal counters remain outside the reference native registry. Unknown
+    maps and reordered seal keys fail early: Python can silently discard them.
+    `NumberPrimitive.fromNum` owns compact `M/R/N/S/T/U` automatic encoding
+    for seal, Serder, and threshold projections;
+    explicit `0H/0A` primitive decoding is unchanged.
 13. Top-level native KERI messages are fixed-body only. Message-shaped native
     map bodies belong to ACDC or lower-level mapping surfaces and should be
     rejected at the KERI serder boundary.

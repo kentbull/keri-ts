@@ -1,23 +1,12 @@
-import { b, codeB2ToB64, encodeB64, intToB64, t } from "../core/bytes.ts";
+import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
 import { parseAttachmentGroup } from "../parser/attachments.ts";
 import { sniff } from "../parser/cold-start.ts";
-import { Aggor, isAggorListCode, isAggorMapCode, parseAggor } from "../primitives/aggor.ts";
+import { Aggor } from "../primitives/aggor.ts";
 import { Bexter } from "../primitives/bexter.ts";
-import {
-  BEXTER_CODES,
-  DATER_CODES,
-  DIGEST_CODES,
-  LabelDex,
-  MtrDex,
-  NON_DIGEST_PREFIX_CODES,
-  NONCE_CODES,
-  NUMBER_CODES,
-  PREFIX_CODES,
-  TAG_CODES,
-} from "../primitives/codex.ts";
+import { LabelDex, MtrDex } from "../primitives/codex.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Dater } from "../primitives/dater.ts";
 import { parseIlker } from "../primitives/ilker.ts";
@@ -26,12 +15,20 @@ import { Mapper, type MapperMap, type MapperValue } from "../primitives/mapper.t
 import { parseMatter } from "../primitives/matter.ts";
 import { parseNoncer } from "../primitives/noncer.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
-import { OpaqueSpan } from "../primitives/opaque.ts";
 import { makePather, parsePather } from "../primitives/pather.ts";
-import type { GroupEntry } from "../primitives/primitive.ts";
-import { isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
-import { SealNonce } from "../primitives/structing.ts";
-import { Structor } from "../primitives/structor.ts";
+import { isGroupTuple } from "../primitives/primitive.ts";
+import {
+  SealBack,
+  SealDigest,
+  SealEvent,
+  SealKind,
+  SealLast,
+  SealNonce,
+  type SealRecord,
+  SealRoot,
+  SealSource,
+  type StructingPrimitive,
+} from "../primitives/structing.ts";
 import { Texter } from "../primitives/texter.ts";
 import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
 import { parseTraitor } from "../primitives/traitor.ts";
@@ -93,17 +90,6 @@ const TAG_CODES_BY_LENGTH = new Map<number, string>([
   [10, LabelDex.Tag10],
   [11, LabelDex.Tag11],
 ]);
-
-const NUMBER_CAPACITIES = [
-  { code: "M", rawSize: 2 },
-  { code: "0H", rawSize: 4 },
-  { code: "R", rawSize: 5 },
-  { code: "N", rawSize: 8 },
-  { code: "S", rawSize: 11 },
-  { code: "T", rawSize: 14 },
-  { code: "0A", rawSize: 16 },
-  { code: "U", rawSize: 17 },
-];
 
 /** Native text bodies always begin with a counter hard code `-`. */
 function isTextDomain(raw: Uint8Array): boolean {
@@ -267,28 +253,9 @@ function encodeVerser(
   return encodeTag(payload);
 }
 
-/** Big-endian integer helper used by native numeric families. */
-function bigintToBytes(value: bigint): Uint8Array {
-  if (value < 0n) {
-    throw new SerializeError(`Negative CESR number=${value}`);
-  }
-  if (value === 0n) {
-    return new Uint8Array([0]);
-  }
-  const bytes: number[] = [];
-  let working = value;
-  while (working > 0n) {
-    bytes.unshift(Number(working & 0xffn));
-    working >>= 8n;
-  }
-  return new Uint8Array(bytes);
-}
-
 /**
  * Emit one CESR numeric primitive from a semantic integer/hex-string value.
- *
- * Maintainer rule: when native number-family parity broadens, extend
- * `NUMBER_CAPACITIES` instead of growing special cases in callers.
+ * Numeric sizing belongs to NumberPrimitive, shared with threshold and SAD projections.
  */
 function encodeNumber(value: string | number | bigint): string {
   const bigint = typeof value === "bigint"
@@ -296,14 +263,7 @@ function encodeNumber(value: string | number | bigint): string {
     : typeof value === "number"
     ? BigInt(value)
     : BigInt(`0x${value || "0"}`);
-  const raw = bigintToBytes(bigint);
-  const entry = NUMBER_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
-  if (!entry) {
-    throw new SerializeError(`Unsupported number width=${raw.length}`);
-  }
-  const padded = new Uint8Array(entry.rawSize);
-  padded.set(raw, entry.rawSize - raw.length);
-  return new NumberPrimitive({ code: entry.code, raw: padded }).qb64;
+  return NumberPrimitive.fromNum(bigint).qb64;
 }
 
 /** KERI thresholds are either numeric hex strings or weighted clause expressions. */
@@ -345,218 +305,67 @@ function encodeList(entries: string[], gvrsn: Versionage | null): string {
   return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
 }
 
-/**
- * Enclose one semantic field map inside either a top-level body-group or a
- * nested generic map-group.
- */
-function encodeMap(
-  map: SadMap,
-  gvrsn: Versionage | null,
-  topLevel = false,
-): string {
-  let frame = "";
-  for (const [label, value] of Object.entries(map)) {
-    frame += encodeLabel(label);
-    frame += encodeValue(value, gvrsn, label);
-  }
-  const count = frame.length / 4;
-  const code = topLevel
-    ? count < 64 ** 2 ? CtrDexV2.MapBodyGroup : CtrDexV2.BigMapBodyGroup
-    : count < 64 ** 2
-    ? CtrDexV2.GenericMapGroup
-    : CtrDexV2.BigGenericMapGroup;
-  return `${new Counter({ code, count, version: gvrsn ?? Vrsn_2_0 }).qb64}${frame}`;
+/** Shared projection shape for the seven seal families admitted by native KERI events. */
+interface NativeSealDescriptor {
+  readonly fields: readonly string[];
+  readonly coden: keyof typeof CtrDexV2;
+  isSad(value: unknown): boolean;
+  fromSad(value: Record<string, string>): SealRecord;
+  fromTuple(value: readonly StructingPrimitive[]): SealRecord;
+  toSad(value: SealRecord): Record<string, string>;
+  qb64(value: SealRecord): string;
 }
 
 /**
- * Best-effort native emit for one semantic field value.
- *
- * Decision order matters:
- * 1. preserve already-qualified CESR primitives when present
- * 2. apply field-specific semantic encoders
- * 3. fall back to generic scalar/list/map encoders
+ * Frozen KERIpy Serder.ClanCodes, deliberately narrower than Sealer's registry.
+ * Nonce and big seal counters are not admitted by that native reader.
  */
-function encodeValue(
-  value: unknown,
-  gvrsn: Versionage | null,
-  label?: string,
-): string {
-  if (typeof value === "string") {
-    if (value.length === 0 && label && ["u", "rd", "td"].includes(label)) {
-      return LabelDex.Empty;
-    }
-    try {
-      const primitive = parseMatter(b(value), "txt");
-      if (
-        DIGEST_CODES.has(primitive.code)
-        || PREFIX_CODES.has(primitive.code)
-        || NON_DIGEST_PREFIX_CODES.has(primitive.code)
-        || NONCE_CODES.has(primitive.code)
-        || BEXTER_CODES.has(primitive.code)
-        || TAG_CODES.has(primitive.code)
-        || DATER_CODES.has(primitive.code)
-      ) {
-        return primitive.qb64;
-      }
-    } catch {
-      // fall through to semantic encoding
-    }
+const NATIVE_SEAL_DESCRIPTORS = [
+  SealDigest,
+  SealRoot,
+  SealEvent,
+  SealSource,
+  SealLast,
+  SealBack,
+  SealKind,
+] as unknown as readonly NativeSealDescriptor[];
 
-    if (label === "dt") {
-      return encodeDate(value);
+/** Enclose consecutive seals of one family without sorting or merging separated runs. */
+function encodeSealList(values: unknown[], gvrsn: Versionage): string {
+  const groups: string[] = [];
+  let code: string | null = null;
+  let payload = "";
+  /** Flush one homogeneous run, measured in qb64 quadlets rather than seal items. */
+  function flush(): void {
+    if (code === null) return;
+    const counter = new Counter({ code, count: payload.length / 4, version: gvrsn });
+    if (counter.code !== code) {
+      throw new SerializeError("Big seal counters are not supported in native event seal lists");
     }
-    if (label === "r" || label === "rr") {
-      return encodePath(value);
+    groups.push(counter.qb64 + payload);
+    payload = "";
+  }
+  for (const [index, value] of values.entries()) {
+    if (SealNonce.isSad(value)) {
+      throw new SerializeError("NonceSealSingles is not supported in native event seal lists");
     }
-    if (label === "ts") {
-      return encodeLabel(value);
-    }
-    if (/^[A-Za-z0-9_-]{1,11}$/.test(value)) {
-      return encodeTag(value);
-    }
-    if (/^[A-Za-z0-9_-]+$/.test(value)) {
-      return encodeBext(value);
-    }
-    return encodeBytes(value);
-  }
-
-  if (typeof value === "number" || typeof value === "bigint") {
-    return encodeNumber(value);
-  }
-
-  if (Array.isArray(value)) {
-    const entries = value.map((entry) => encodeValue(entry, gvrsn));
-    return encodeList(entries, gvrsn);
-  }
-
-  if (value && typeof value === "object") {
-    return encodeMap(value as SadMap, gvrsn);
-  }
-
-  throw new SerializeError(`Unsupported native value=${String(value)}`);
-}
-
-/**
- * Decode one parser graph entry back into a semantic SAD value.
- *
- * This stays parser-graph aware on purpose so native deserialization reuses the
- * existing group dispatch machinery instead of maintaining a separate
- * attachment/group decoder.
- */
-function decodeEntry(entry: GroupEntry, gvrsn: Versionage): MapperValue {
-  if (entry instanceof OpaqueSpan) return entry.domain === "txt" ? t(entry.raw) : encodeB64(entry.raw);
-  if (isGroupTuple(entry)) {
-    return entry.map((item) => decodeEntry(item, gvrsn));
-  }
-  if (isCounterGroupLike(entry)) {
-    if (isAggorListCode(entry.code)) {
-      return entry.items.map((item) => decodeEntry(item, gvrsn));
-    }
-    if (isAggorMapCode(entry.code)) {
-      const aggor = parseAggor(
-        b(Structor.fromGroup(entry).qb64g),
-        gvrsn,
-        "txt",
-      );
-      const fields = aggor.mapFields ?? [];
-      return Object.fromEntries(
-        fields.map((
-          field,
-        ) => [field.label ?? "", decodeMapperField(field, gvrsn)]),
-      );
-    }
-    return Structor.fromGroup(entry).qb64g;
-  }
-
-  const matter = entry;
-  if (
-    DIGEST_CODES.has(matter.code)
-    || PREFIX_CODES.has(matter.code)
-    || NON_DIGEST_PREFIX_CODES.has(matter.code)
-  ) {
-    return matter.qb64;
-  }
-  if (NONCE_CODES.has(matter.code)) {
-    return parseNoncer(b(matter.qb64), "txt").nonce;
-  }
-  if (NUMBER_CODES.has(matter.code)) {
-    return new NumberPrimitive(matter).numh;
-  }
-  if (DATER_CODES.has(matter.code)) {
-    return new Dater(matter).dts;
-  }
-  if (matter.code === MtrDex.DateTime) {
-    return new Dater(matter).dts;
-  }
-  if (TAG_CODES.has(matter.code)) {
-    if (matter.code === MtrDex.Tag3) {
-      return parseIlker(b(matter.qb64), "txt").ilk;
-    }
-    return new Labeler(matter).text;
-  }
-  if (BEXTER_CODES.has(matter.code)) {
-    return parsePather(b(matter.qb64), "txt").path;
-  }
-  return matter.qb64;
-}
-
-/** Recursively convert parsed mapper fields into nested JS map/list/scalar values. */
-function decodeMapperField(
-  field: {
-    label: string | null;
-    primitive: GroupEntry;
-    children?: readonly {
-      label: string | null;
-      primitive: GroupEntry;
-      children?: readonly unknown[];
-    }[];
-  },
-  gvrsn: Versionage,
-): MapperValue {
-  if (field.children) {
-    return Object.fromEntries(
-      field.children.map((
-        child,
-      ) => [child.label ?? "", decodeMapperField(child as never, gvrsn)]),
+    const descriptor = NATIVE_SEAL_DESCRIPTORS.find((candidate) =>
+      candidate.isSad(value)
+      // KERIpy infers seal clans from ordered SAD keys, not an unordered key set.
+      && Object.keys(value as object).every((key, i) => key === candidate.fields[i])
     );
-  }
-  return decodeEntry(field.primitive, gvrsn);
-}
-
-/**
- * Decode one native generic-list group.
- *
- * Items may be plain primitives or nested counted groups, so we probe group
- * dispatch first and fall back to `Matter` only when no valid group starts at
- * the current offset.
- */
-function decodeList(raw: Uint8Array, gvrsn: Versionage): MapperValue[] {
-  const counter = parseCounter(raw, gvrsn, "txt");
-  if (
-    counter.code !== CtrDexV2.GenericListGroup
-    && counter.code !== CtrDexV2.BigGenericListGroup
-  ) {
-    throw new DeserializeError(`Expected list group, got ${counter.code}`);
-  }
-  const payload = t(
-    raw.slice(counter.fullSize, counter.fullSize + counter.count * 4),
-  );
-  const out: MapperValue[] = [];
-  let offset = 0;
-  while (offset < payload.length) {
-    const chunk = b(payload.slice(offset));
-    try {
-      const parsed = parseAttachmentGroup(chunk, gvrsn, "txt");
-      out.push(decodeEntry(parsed.group, gvrsn));
-      offset += parsed.consumed;
-      continue;
-    } catch {
-      const matter = parseMatter(chunk, "txt");
-      out.push(decodeEntry(matter, gvrsn));
-      offset += matter.fullSize;
+    if (!descriptor) {
+      throw new SerializeError(`Unsupported native seal SAD at a[${index}]`);
     }
+    const nextCode = CtrDexV2[descriptor.coden];
+    if (code !== nextCode) {
+      flush();
+      code = nextCode;
+    }
+    payload += descriptor.qb64(descriptor.fromSad(value as Record<string, string>));
   }
-  return out;
+  flush();
+  return encodeList(groups, gvrsn);
 }
 
 /**
@@ -688,26 +497,35 @@ function parseTraitListField(
 }
 
 /**
- * Decode one native list field whose members may themselves be nested groups.
- *
- * Typical KERI fixed-body example:
- * - `a`: seal/data list in inception/rotation/interact-style messages
- *
- * Unlike `k`/`n`/`b`, the `a` field may contain grouped or structured payloads,
- * so we reuse `decodeList()` instead of assuming each member is one plain
- * `Matter`.
+ * Project bounded native seal groups to SAD records through their semantic descriptors.
+ * Group parsing owns primitive roles; this layer owns native admission and list order.
  */
-function parseNestedSealOrDataListField(
+function parseSealListField(
   raw: Uint8Array,
   offset: number,
   gvrsn: Versionage,
 ): ParsedNativeField<MapperValue[]> {
-  const listCounter = parseCounter(raw.slice(offset), gvrsn, "txt");
-  const total = listCounter.fullSize + listCounter.count * 4;
-  return {
-    value: listCounter.count === 0 ? [] : decodeList(raw.slice(offset, offset + total), gvrsn),
-    nextOffset: offset + total,
-  };
+  const listCounter = parseCounter(raw.subarray(offset), gvrsn, "txt");
+  const end = offset + listCounter.fullSize + listCounter.count * 4;
+  if (end > raw.length) throw new DeserializeError("Native seal list exceeds body boundary");
+  const seals: MapperValue[] = [];
+  let inner = offset + listCounter.fullSize;
+  while (inner < end) {
+    const remaining = raw.subarray(inner, end);
+    const counter = parseCounter(remaining, gvrsn, "txt");
+    const descriptor = NATIVE_SEAL_DESCRIPTORS.find((candidate) => CtrDexV2[candidate.coden] === counter.code);
+    if (!descriptor) {
+      throw new DeserializeError(`Unsupported native seal counter=${counter.code}`);
+    }
+    // The bounded view prevents an incomplete tuple from borrowing the following field.
+    const parsed = parseAttachmentGroup(remaining, gvrsn, "txt");
+    for (const tuple of parsed.group.items) {
+      if (!isGroupTuple(tuple)) throw new DeserializeError("Expected native seal tuple");
+      seals.push(descriptor.toSad(descriptor.fromTuple(tuple as readonly StructingPrimitive[])));
+    }
+    inner += parsed.consumed;
+  }
+  return { value: seals, nextOffset: end };
 }
 
 /**
@@ -817,9 +635,15 @@ const KERI_NATIVE_FAMILIES: Record<string, NativeFieldKind> = {
   rr: "route",
   rp: "route",
   c: "trait-list",
-  a: "seal-list-or-mapper",
+  a: "mapper",
   e: "mapper",
   q: "mapper",
+};
+
+/** Only establishment and interaction events permit a list of typed seals in `a`. */
+const KERI_EVENT_NATIVE_FAMILIES: Record<string, NativeFieldKind> = {
+  ...KERI_NATIVE_FAMILIES,
+  a: "seal-list-or-mapper",
 };
 
 const ACDC_NATIVE_FAMILIES: Record<string, NativeFieldKind> = {
@@ -848,7 +672,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       Protocols.keri,
       "fixed",
       ["d", "i", "s", "kt", "k", "nt", "n", "bt", "b", "c", "a"],
-      KERI_NATIVE_FAMILIES,
+      KERI_EVENT_NATIVE_FAMILIES,
     ),
   ],
   [
@@ -866,7 +690,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       "br",
       "ba",
       "a",
-    ], KERI_NATIVE_FAMILIES),
+    ], KERI_EVENT_NATIVE_FAMILIES),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.ixn),
@@ -874,7 +698,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       Protocols.keri,
       "fixed",
       ["d", "i", "s", "p", "a"],
-      KERI_NATIVE_FAMILIES,
+      KERI_EVENT_NATIVE_FAMILIES,
     ),
   ],
   [
@@ -892,7 +716,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       "c",
       "a",
       "di",
-    ], KERI_NATIVE_FAMILIES),
+    ], KERI_EVENT_NATIVE_FAMILIES),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.drt),
@@ -909,7 +733,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       "br",
       "ba",
       "a",
-    ], KERI_NATIVE_FAMILIES),
+    ], KERI_EVENT_NATIVE_FAMILIES),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 1, minor: 0 }, Ilks.rct),
@@ -966,7 +790,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       Protocols.keri,
       "fixed",
       ["d", "i", "s", "kt", "k", "nt", "n", "bt", "b", "c", "a"],
-      KERI_NATIVE_FAMILIES,
+      KERI_EVENT_NATIVE_FAMILIES,
     ),
   ],
   [
@@ -985,7 +809,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       "ba",
       "c",
       "a",
-    ], KERI_NATIVE_FAMILIES),
+    ], KERI_EVENT_NATIVE_FAMILIES),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.ixn),
@@ -993,7 +817,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       Protocols.keri,
       "fixed",
       ["d", "i", "s", "p", "a"],
-      KERI_NATIVE_FAMILIES,
+      KERI_EVENT_NATIVE_FAMILIES,
     ),
   ],
   [
@@ -1011,7 +835,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       "c",
       "a",
       "di",
-    ], KERI_NATIVE_FAMILIES),
+    ], KERI_EVENT_NATIVE_FAMILIES),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.drt),
@@ -1029,7 +853,7 @@ const NATIVE_LAYOUTS = new Map<string, NativeBodyLayout>([
       "ba",
       "c",
       "a",
-    ], KERI_NATIVE_FAMILIES),
+    ], KERI_EVENT_NATIVE_FAMILIES),
   ],
   [
     nativeLayoutKey(Protocols.keri, { major: 2, minor: 0 }, Ilks.rct),
@@ -1311,7 +1135,7 @@ function parseNativeField(
       counter.code === CtrDexV2.GenericListGroup
       || counter.code === CtrDexV2.BigGenericListGroup
     ) {
-      return parseNestedSealOrDataListField(raw, offset, gvrsn);
+      return parseSealListField(raw, offset, gvrsn);
     }
     throw new DeserializeError(
       `Expected native list/map group for field ${label}, got ${counter.code}`,
@@ -1453,10 +1277,7 @@ function encodeNativeFieldValue(
   }
   if (spec.kind === "seal-list-or-mapper") {
     if (Array.isArray(value)) {
-      if (value.some((entry) => SealNonce.isSad(entry))) {
-        throw new SerializeError("NonceSealSingles is not supported in native event seal lists");
-      }
-      return encodeList(value.map((entry) => encodeValue(entry, gvrsn)), gvrsn);
+      return encodeSealList(value, gvrsn);
     }
     if (value && typeof value === "object") {
       return Mapper.fromSad(value as SadMap, {

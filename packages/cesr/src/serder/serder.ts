@@ -114,33 +114,7 @@ function cloneDefault<T>(value: T): T {
   return value;
 }
 
-const NUMBER_CAPACITIES = [
-  { code: "M", rawSize: 2 },
-  { code: "0H", rawSize: 4 },
-  { code: "R", rawSize: 5 },
-  { code: "N", rawSize: 8 },
-  { code: "S", rawSize: 11 },
-  { code: "T", rawSize: 14 },
-  { code: "0A", rawSize: 16 },
-  { code: "U", rawSize: 17 },
-];
-
-function bigintToBytes(value: bigint): Uint8Array {
-  if (value < 0n) {
-    throw new SerializeError(`Negative CESR number=${value}`);
-  }
-  if (value === 0n) {
-    return new Uint8Array([0]);
-  }
-  const bytes: number[] = [];
-  let working = value;
-  while (working > 0n) {
-    bytes.unshift(Number(working & 0xffn));
-    working >>= 8n;
-  }
-  return new Uint8Array(bytes);
-}
-
+/** Project optional SAD hex or integer values through the canonical numeric ladder. */
 function makeNumberPrimitive(
   value: string | number | bigint | null | undefined,
 ): NumberPrimitive | null {
@@ -160,14 +134,7 @@ function makeNumberPrimitive(
       }
       return value;
     })();
-  const raw = bigintToBytes(bigint);
-  const entry = NUMBER_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
-  if (!entry) {
-    throw new SerializeError(`Unsupported number width=${raw.length}`);
-  }
-  const padded = new Uint8Array(entry.rawSize);
-  padded.set(raw, entry.rawSize - raw.length);
-  return new NumberPrimitive({ code: entry.code, raw: padded });
+  return NumberPrimitive.fromNum(bigint);
 }
 
 function isPlainSadObject(value: unknown): value is Record<string, unknown> {

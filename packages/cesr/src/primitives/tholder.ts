@@ -106,23 +106,6 @@ type NormalizedClauseEntry = Rational | WeightedGroup;
 /** Internal normalized clause representation used by satisfaction logic. */
 type NormalizedWeightedThreshold = NormalizedClauseEntry[];
 
-/**
- * Numeric tholder codex capacities keyed by the code used for a given raw width.
- *
- * This is the bridge between bigint numeric thresholds and the compact CESR
- * numeric codex family that `Tholder` reuses.
- */
-const NUMERIC_CAPACITIES = [
-  { code: "M", rawSize: 2 },
-  { code: "0H", rawSize: 4 },
-  { code: "R", rawSize: 5 },
-  { code: "N", rawSize: 8 },
-  { code: "S", rawSize: 11 },
-  { code: "T", rawSize: 14 },
-  { code: "0A", rawSize: 16 },
-  { code: "U", rawSize: 17 },
-] as const;
-
 /** Largest bigint that can be mirrored into a lossless JS `number`. */
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
@@ -308,45 +291,6 @@ function chooseBexterCode(rawLength: number): string {
     : LabelDex.StrB64_L2;
 }
 
-/** Resolve the smallest numeric-threshold codex entry that can carry `rawSize` bytes. */
-function chooseNumberCode(rawSize: number): string {
-  const entry = NUMERIC_CAPACITIES.find(({ rawSize: max }) => rawSize <= max);
-  if (!entry) {
-    throw new Error(`Unsupported threshold width=${rawSize}.`);
-  }
-  return entry.code;
-}
-
-/** Convert a non-negative bigint threshold into big-endian raw bytes. */
-function bigintToBytes(value: bigint): Uint8Array {
-  if (value < 0n) {
-    throw new Error(`Negative threshold number=${value}.`);
-  }
-  if (value === 0n) {
-    return new Uint8Array([0]);
-  }
-  const bytes: number[] = [];
-  let working = value;
-  while (working > 0n) {
-    bytes.unshift(Number(working & 0xffn));
-    working >>= 8n;
-  }
-  return new Uint8Array(bytes);
-}
-
-/** Build the `MatterInit` used to serialize a numeric threshold into CESR. */
-function makeNumberMatterInit(value: bigint): MatterInit {
-  const raw = bigintToBytes(value);
-  const code = chooseNumberCode(raw.length);
-  const entry = NUMERIC_CAPACITIES.find(({ code: current }) => current === code);
-  if (!entry) {
-    throw new Error(`Unsupported threshold number code=${code}.`);
-  }
-  const padded = new Uint8Array(entry.rawSize);
-  padded.set(raw, entry.rawSize - raw.length);
-  return { code, raw: padded };
-}
-
 /**
  * Normalize a public weighted threshold expression into exact arithmetic form.
  *
@@ -496,7 +440,7 @@ function normalizeThresholdInput(
     return normalizeThresholdInput(BigInt(value));
   }
   if (typeof value === "bigint") {
-    const matterInit = makeNumberMatterInit(value);
+    const matterInit = NumberPrimitive.fromNum(value);
     const size = value > MAX_SAFE_BIGINT
       ? Number.MAX_SAFE_INTEGER
       : Number(value);
