@@ -40,13 +40,9 @@ function registerBenchmarkCmds(
         "--chunk-size <bytes>",
         "Chunk size for simulated streaming input",
         (value: string) => Number(value),
-        0,
+        65536,
       )
-      .option("--framed", "Use framed parser mode")
-      .option(
-        "--allow-errors",
-        "Do not fail benchmark if parse errors are emitted",
-      )
+      .option("--max-bytes <n>", "Finite benchmark corpus limit in bytes", Number)
       .option("--json", "Emit benchmark result as one JSON line"),
     dispatch,
     {
@@ -58,8 +54,7 @@ function registerBenchmarkCmds(
         iterations: options.iterations,
         warmupIterations: options.warmup,
         chunkSize: options.chunkSize,
-        framed: options.framed || false,
-        allowErrors: options.allowErrors || false,
+        maxBytes: options.maxBytes,
         json: options.json || false,
       }),
     },

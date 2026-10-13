@@ -36,7 +36,7 @@ function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
   });
 }
 
-Deno.test("top-level GenericGroup enclosing one BodyWithAttachmentGroup", () => {
+Deno.test("top-level GenericGroup enclosing one BodyWithAttachmentGroup", async () => {
   const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const bodyWithAttachmentPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const bodyWithAttachment = wrapQuadletGroup(
@@ -45,7 +45,7 @@ Deno.test("top-level GenericGroup enclosing one BodyWithAttachmentGroup", () => 
   );
   const stream = wrapQuadletGroup(CtrDexV2.GenericGroup, bodyWithAttachment); // -A
 
-  const annotated = annotate(stream);
+  const annotated = await annotate(stream);
   assertStringIncludes(annotated, "GenericGroup count=");
   assertStringIncludes(annotated, "BodyWithAttachmentGroup count=");
   assertEquals(t(denot(annotated)), stream);
@@ -56,7 +56,7 @@ Deno.test("top-level GenericGroup enclosing one BodyWithAttachmentGroup", () => 
   assertEquals(summary[0].endsWith(`|${CtrDexV2.ControllerIdxSigs}`), true);
 });
 
-Deno.test("nested GenericGroup two levels deep with mixed enclosed content is split-deterministic", () => {
+Deno.test("nested GenericGroup two levels deep with mixed enclosed content is split-deterministic", async () => {
   const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const wrappedBodyPayload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
   const wrappedBody = wrapQuadletGroup(
@@ -67,7 +67,7 @@ Deno.test("nested GenericGroup two levels deep with mixed enclosed content is sp
   const outerPayload = `${innerGeneric}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
   const stream = wrapQuadletGroup(CtrDexV2.GenericGroup, outerPayload);
   const input = encode(stream);
-  const annotated = annotate(stream);
+  const annotated = await annotate(stream);
 
   // Verification type 1: annotated CESR preserves wrapper counters and round-trips.
   assertStringIncludes(annotated, "GenericGroup count=");

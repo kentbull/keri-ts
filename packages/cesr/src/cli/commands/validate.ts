@@ -1,35 +1,50 @@
-import { parseBytes } from "../../parser/stream.ts";
+import { parse } from "../../parser/progressive.ts";
 import type { CliIo } from "../types.ts";
 
+/** Input selection and report format for streaming validation. */
 interface ValidateCliOptions {
+  /** Stream source file; omission selects stdin. */
   inPath?: string;
-  framed: boolean;
+  /** Select machine-readable validation results. */
   json: boolean;
 }
 
+/** Public diagnostic fields from the first parser or storage failure. */
 interface ValidationErrorReport {
+  /** Error class name. */
   name: string;
+  /** Human-readable failure reason. */
   message: string;
+  /** Byte offset when supplied by the parser. */
   offset?: number;
+  /** Parser-provided context when available. */
   context?: string;
 }
 
+/** Counts for delivered complete frames and actually pulled source bytes. */
 interface ValidationReport {
+  /** True only for a nonempty stream with no failure. */
   ok: boolean;
+  /** Input path or stdin label. */
   source: string;
+  /** Actually pulled input bytes, including failing read-ahead. */
   bytes: number;
+  /** Complete frames delivered before termination. */
   frameCount: number;
+  /** Hydrated leaf groups plus one aggregate ESSR entry per frame. */
   attachmentGroupCount: number;
+  /** Zero or one terminal failure. */
   errorCount: number;
+  /** First parser, source, or cleanup failure. */
   errors: ValidationErrorReport[];
 }
 
-const VALIDATE_USAGE = "Usage: tephra validate [--in <path>] [--framed] [--json]";
+/** Supported streaming validation flags. */
+const VALIDATE_USAGE = "Usage: tephra validate [--in <path>] [--json]";
 
 /** Parse `tephra validate` command-line flags without performing IO. */
 function parseArgs(args: string[]): ValidateCliOptions {
   const out: ValidateCliOptions = {
-    framed: false,
     json: false,
   };
 
@@ -40,10 +55,6 @@ function parseArgs(args: string[]): ValidateCliOptions {
       if (!next) throw new Error("Missing value for --in");
       out.inPath = next;
       i++;
-      continue;
-    }
-    if (arg === "--framed") {
-      out.framed = true;
       continue;
     }
     if (arg === "--json") {
@@ -90,35 +101,36 @@ function describeError(error: Error): ValidationErrorReport {
  * malformed bytes to diagnose. A zero-frame stream is not useful evidence that a
  * CESR payload is valid.
  */
-function validateBytes(
-  bytes: Uint8Array,
-  source: string,
-  options: ValidateCliOptions,
-): ValidationReport {
-  const events = parseBytes(bytes, {
-    framed: options.framed,
-  });
-  const frames = events.filter((event) => event.type === "frame");
-  const errors = events
-    .filter((event) => event.type === "error")
-    .map((event) => describeError(event.error));
-  const attachmentGroupCount = frames.reduce(
-    (count, event) => count + event.frame.attachments.length,
-    0,
-  );
-
-  if (frames.length === 0 && errors.length === 0) {
-    errors.push({
-      name: "NoFramesError",
-      message: "No CESR frames parsed",
-    });
+async function validateSource(source: AsyncIterable<Uint8Array>, label: string): Promise<ValidationReport> {
+  let bytes = 0;
+  let frameCount = 0;
+  let attachmentGroupCount = 0;
+  const errors: ValidationErrorReport[] = [];
+  /** Count only bytes actually pulled; a parser failure may stop before source EOF. */
+  async function* counted(): AsyncGenerator<Uint8Array> {
+    for await (const chunk of source) {
+      bytes += chunk.length;
+      yield chunk;
+    }
   }
-
+  try {
+    for await (const frame of parse(counted())) {
+      try {
+        frameCount++;
+        attachmentGroupCount += frame.attachments.length + (frame.essr ? 1 : 0);
+      } finally {
+        await frame.essr?.discard();
+      }
+    }
+  } catch (error) {
+    errors.push(describeError(error instanceof Error ? error : new Error(String(error))));
+  }
+  if (frameCount === 0 && errors.length === 0) errors.push({ name: "NoFramesError", message: "No CESR frames parsed" });
   return {
     ok: errors.length === 0,
-    source,
-    bytes: bytes.length,
-    frameCount: frames.length,
+    source: label,
+    bytes,
+    frameCount,
     attachmentGroupCount,
     errorCount: errors.length,
     errors,
@@ -168,10 +180,7 @@ export async function validateCommand(args: string[], io: CliIo): Promise<number
   try {
     const options = parseArgs(args);
     const source = options.inPath ? options.inPath : "stdin";
-    const inputBytes = options.inPath
-      ? await io.readFile(options.inPath)
-      : await io.readStdin();
-    const report = validateBytes(inputBytes, source, options);
+    const report = await validateSource(io.read(options.inPath), source);
 
     if (options.json) {
       await io.writeStdout(`${JSON.stringify(report)}\n`);

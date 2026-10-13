@@ -287,8 +287,8 @@ function registerAnnotateCmd(
       .description("Annotate CESR stream from file or stdin")
       .option("--in <path>", "Input file path (defaults to stdin)")
       .option("--out <path>", "Output file path (defaults to stdout)")
-      .option("--qb2", "Treat input as qb2 binary instead of text CESR")
       .option("--pretty", "Pretty-print annotation output")
+      .option("--max-bytes <n>", "Finite annotation input limit in bytes", Number)
       .option("--colored", "Colorize annotation output (stdout only)"),
     dispatch,
     {
@@ -298,15 +298,15 @@ function registerAnnotateCmd(
       args: (options: {
         in?: string;
         out?: string;
-        qb2?: boolean;
         pretty?: boolean;
         colored?: boolean;
+        maxBytes?: number;
       }) => ({
         inPath: options.in,
         outPath: options.out,
-        qb2: options.qb2 || false,
         pretty: options.pretty || false,
         colored: options.colored || false,
+        maxBytes: options.maxBytes,
       }),
     },
   );

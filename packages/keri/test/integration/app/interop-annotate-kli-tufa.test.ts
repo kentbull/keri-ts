@@ -149,6 +149,6 @@ Deno.test("tufa annotate covers broad CESR stream surfaces", async () => {
 
   const qb2Stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${sigs}`;
   const qb2Bytes = decodeB64(qb2Stream);
-  const tufaQb2 = await runTufaAnnotate(env, qb2Bytes, ["--qb2"]);
+  const tufaQb2 = await runTufaAnnotate(env, qb2Bytes);
   expectLabels(tufaQb2, ["FixBodyGroup", "ControllerIdxSigs"]);
 });

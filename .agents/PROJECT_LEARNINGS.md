@@ -48,6 +48,10 @@ stay short enough to reread at session start.
 
 ## Cross-Topic Snapshot
 
+CLI validation consumes progressive frames; annotation and convenience benchmarks
+have explicit finite input budgets. Tufa awaits native I/O through owned
+Effection operations, and output tests exercise actual process pipes.
+
 Replay wire encoding and durable receipt storage are separate contracts: canonical
 transferable receipt groups preserve every signature while allowing current KERIpy
 to consume following OOBI endpoint replies. See the KEL learnings.

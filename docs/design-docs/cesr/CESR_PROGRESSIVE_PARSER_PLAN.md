@@ -26,7 +26,7 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 | 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133) |
 | 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137) |
 | 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Merged [#138](https://github.com/kentbull/keri-ts/pull/138) |
-| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Egress slice in preparation                                 |
+| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | In progress                                                 |
 | 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                     |
 
 Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which makes
@@ -38,9 +38,11 @@ payload references. Exchange integration merged in
 [#134](https://github.com/kentbull/keri-ts/pull/134) and grouped-receipt repair
 [#139](https://github.com/kentbull/keri-ts/pull/139); its review diff contains only ingress.
 
-Phase 11a prepares reopenable frame serialization and scoped HTTP egress, including
-forwarding and exchange ESSR replay. Remaining replay, mailbox, and consumer
-migrations stay in phase 11b; this slice does not complete phase 11.
+Phase 11 serialization and HTTP output merged in
+[#140](https://github.com/kentbull/keri-ts/pull/140). Its remaining review slices
+are finite annotation and streaming CLI consumers, lazy replay and HTTP replies,
+and the remaining mailbox/runtime consumers. Each slice preserves one owner for
+pending reads and leaves shared runtime reservations to the approved follow-on.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
