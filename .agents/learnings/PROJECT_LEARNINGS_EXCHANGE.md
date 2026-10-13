@@ -77,6 +77,10 @@ KRAM time plans are read-only: cached multi partials reuse original windows; rec
 time freezes on completion. Recheck plans atomically with current keys and durable
 readiness before publication so competing receipts cannot replace the first one.
 
+KRAM pruning closes read cursors before atomic cleanup and defers for live handoff
+owners. Finite orphan scans restart on committed database changes; unrelated writes
+can postpone cleanup. Remove the shared opener only after the final participant.
+
 [Proofs](../../docs/design-docs/exchange/EXCHANGE_PROOFS.md),
 [multisig](../../docs/design-docs/exchange/MULTISIG.md),
 [IPEX](../../docs/design-docs/exchange/IPEX.md),
