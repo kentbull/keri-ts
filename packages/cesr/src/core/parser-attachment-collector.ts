@@ -1,114 +1,57 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
+import { parseCounter } from "../primitives/counter.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { ColdStartError, ShortageError } from "./errors.ts";
-import { isCesrDomain } from "./parser-constants.ts";
+import { ColdStartError, DeserializeError, ShortageError, UnknownCodeError } from "./errors.ts";
+import { isCesrDomain, isFrameBoundaryCounter } from "./parser-constants.ts";
 import type { AttachmentGroup, CesrDomain } from "./types.ts";
 
-/** Recognition of the next body. */
-interface AttachmentCollectorOptions {
-  startsFrame: (
-    input: Uint8Array,
-    gvrsn: Versionage,
-    cold: CesrDomain,
-  ) => boolean;
-}
-
-/** Outcome for top-level trailing attachment collection. */
-export interface CollectAttachmentsResult {
-  attachments: AttachmentGroup[];
-  consumed: number;
-  complete: boolean;
-}
-
-/** Collect a message's attachments identically on initial and resumed feeds. */
-export class AttachmentCollector {
-  private readonly startsFrame: (
-    input: Uint8Array,
-    gvrsn: Versionage,
-    cold: CesrDomain,
-  ) => boolean;
-
-  constructor(options: AttachmentCollectorOptions) {
-    this.startsFrame = options.startsFrame;
+/** Probe only the selected genus; a shortage must remain a shortage. */
+function startsFrame(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): boolean {
+  try {
+    return isFrameBoundaryCounter(parseCounter(input, gvrsn, domain));
+  } catch (error) {
+    if (error instanceof UnknownCodeError || error instanceof DeserializeError) return false;
+    throw error;
   }
+}
 
-  /**
-   * Collect attachments from the current stream head until a frame boundary
-   * (including `msg` message-domain frame start) or shortage pause is reached.
-   */
-  collectTrailingAttachments(
-    input: Uint8Array,
-    gvrsn: Versionage,
-    seed: AttachmentGroup[] = [],
-    terminal = false,
-  ): CollectAttachmentsResult {
-    const attachments = [...seed];
-    let offset = 0;
-
-    while (offset < input.length) {
-      const nextCold = sniff(input.slice(offset));
-      if (nextCold === "msg") {
+/**
+ * Read attachments until a following body, a closed attachment enclosure, or exhaustion.
+ * Exhaustion completes only terminal/bounded input. Partial groups remain unconsumed;
+ * terminal shortages propagate so bounded callers can report enclosure errors.
+ */
+export function parseAttachments(
+  input: Uint8Array,
+  gvrsn: Versionage,
+  seed: AttachmentGroup[] = [],
+  terminal = false,
+): { attachments: AttachmentGroup[]; consumed: number; complete: boolean } {
+  const attachments = [...seed];
+  let offset = 0;
+  while (offset < input.length) {
+    const rest = input.slice(offset);
+    const domain = sniff(rest);
+    if (domain === "msg") return { attachments, consumed: offset, complete: true };
+    if (domain === "ano") {
+      offset++;
+      continue;
+    }
+    if (!isCesrDomain(domain)) throw new ColdStartError(`Unsupported attachment cold code ${domain}`);
+    try {
+      if (startsFrame(rest, gvrsn, domain)) return { attachments, consumed: offset, complete: true };
+      const { group, consumed } = parseAttachmentGroup(rest, gvrsn, domain);
+      attachments.push(group);
+      offset += consumed;
+      if (group.name === "AttachmentGroup" || group.name === "BigAttachmentGroup") {
         return { attachments, consumed: offset, complete: true };
       }
-      if (nextCold === "ano") {
-        offset = this.consumeLeadingAno(input, offset);
-        continue;
+    } catch (error) {
+      if (error instanceof ShortageError && !terminal) {
+        return { attachments, consumed: offset, complete: false };
       }
-      if (!isCesrDomain(nextCold)) {
-        throw new ColdStartError(
-          `Unsupported attachment cold code ${nextCold}`,
-        );
-      }
-
-      try {
-        if (
-          this.startsFrame(
-            input.slice(offset),
-            gvrsn,
-            nextCold,
-          )
-        ) {
-          return { attachments, consumed: offset, complete: true };
-        }
-
-        const { group, consumed } = parseAttachmentGroup(
-          input.slice(offset),
-          gvrsn,
-          nextCold,
-        );
-        attachments.push(group);
-        offset += consumed;
-        // An AttachmentGroup encloses the entire attachment set, unlike an
-        // individual signature/receipt group. Its boundary completes the frame.
-        if (group.name === "AttachmentGroup" || group.name === "BigAttachmentGroup") {
-          return { attachments, consumed: offset, complete: true };
-        }
-      } catch (error) {
-        if (error instanceof ShortageError) {
-          return {
-            attachments,
-            consumed: offset,
-            complete: false,
-          };
-        }
-        throw error;
-      }
+      throw error;
     }
-
-    return {
-      attachments,
-      consumed: offset,
-      complete: terminal,
-    };
   }
-
-  /** Fast-forward consecutive annotation separator bytes from a local offset. */
-  private consumeLeadingAno(input: Uint8Array, start: number): number {
-    let offset = start;
-    while (offset < input.length && sniff(input.slice(offset)) === "ano") {
-      offset += 1;
-    }
-    return offset;
-  }
+  return { attachments, consumed: offset, complete: terminal };
 }

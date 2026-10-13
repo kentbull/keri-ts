@@ -2,8 +2,8 @@ import { sniff } from "../parser/cold-start.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { concatBytes } from "./bytes.ts";
 import { ParserError, ShortageError } from "./errors.ts";
-import { AttachmentCollector } from "./parser-attachment-collector.ts";
-import { FrameParser } from "./parser-frame-parser.ts";
+import { parseAttachments } from "./parser-attachment-collector.ts";
+import { parseFrameStart } from "./parser-frame-parser.ts";
 import type { CesrFrame, ParseEvent } from "./types.ts";
 
 /**
@@ -29,17 +29,10 @@ export class CesrParser {
   private streamGvrsn: Versionage | null = null;
   private pending: { frame: CesrFrame; gvrsn: Versionage } | null = null;
   private queued: CesrFrame[] = [];
-  private readonly frameParser: FrameParser;
-  private readonly attachmentCollector: AttachmentCollector;
 
   /** Configure frame parsing and attachment collection. */
   constructor(options: ParserOptions = {}) {
     this.framed = options.framed ?? false;
-
-    this.frameParser = new FrameParser();
-    this.attachmentCollector = new AttachmentCollector({
-      startsFrame: (input, gvrsn, cold) => this.frameParser.startsFrame(input, gvrsn, cold),
-    });
   }
 
   /** Append bytes and emit any complete parse events. */
@@ -82,7 +75,7 @@ export class CesrParser {
         }
         const pending = this.pending;
         if (pending) {
-          const collected = this.attachmentCollector.collectTrailingAttachments(
+          const collected = parseAttachments(
             this.buffer,
             pending.gvrsn,
             pending.frame.attachments,
@@ -102,7 +95,7 @@ export class CesrParser {
           out.push({ type: "frame", frame: this.queued.shift()! });
         } else {
           if (this.buffer.length === 0) break;
-          const base = this.frameParser.parseFrameStart(this.buffer, this.streamGvrsn);
+          const base = parseFrameStart(this.buffer, this.streamGvrsn);
           this.consume(base.consumed);
           this.streamGvrsn = base.streamGvrsn;
           if (!base.complete) {

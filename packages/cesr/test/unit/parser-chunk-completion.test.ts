@@ -117,3 +117,18 @@ Deno.test("complete frame enclosures reject incomplete inner attachments without
     assertEquals(parser.flush(), []);
   }
 });
+
+Deno.test("complete v1 attachment enclosures reject truncated items without waiting for peers", () => {
+  const bodyBytes = encode(v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}"));
+  const truncated = counterV1("-A", 1) + "AAAA";
+  for (const code of ["-V", "--V"]) {
+    for (const bytes of [encode, decodeB64]) {
+      const wrapper = bytes(counterV1(code, truncated.length / 4) + truncated);
+      const parser = createParser();
+      const events = parser.feed(concatBytes(bodyBytes, wrapper));
+      assertEquals(events.map((event) => event.type), ["error"]);
+      if (events[0].type === "error") assertInstanceOf(events[0].error, GroupSizeError);
+      assertEquals(parser.flush(), []);
+    }
+  }
+});
