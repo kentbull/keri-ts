@@ -243,12 +243,13 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
             local: route.kind === "witnessLocalIngress",
             mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
             escrows: true,
-          }, function*(envelope) {
+          }, function*(envelope, decision) {
             if (query) {
               // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
-              query.authorized = !query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
-                queryEnvelopeFromDispatch(envelope!),
-              );
+              query.authorized = decision?.kind !== "drop"
+                && (!query.mailbox || runtime.reactor.kevery.isMailboxQueryAuthorized(
+                  queryEnvelopeFromDispatch(envelope!),
+                ));
             }
             if (route.kind === "witnessLocalIngress") {
               yield* drainWitnessCues(runtime, route.witnessHab, runtime.cues);
@@ -262,7 +263,7 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
     });
     if (!seen) return textResponse("Invalid CESR request", 400);
     if (!query) return jsonNoContentResponse();
-    if (!query.authorized) return textResponse("Mailbox requester is not authorized", 403);
+    if (!query.authorized) return textResponse("Query requester is not authorized", 403);
     if (query.mailbox) return querySseResponse(context, query.serder.said ?? null);
     return query.reply
       ? (yield* deferredDirectQueryResponse(context, query.serder, query.reply)) ?? jsonNoContentResponse()

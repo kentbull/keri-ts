@@ -14,12 +14,18 @@ import { action, call, each, type Operation, resource } from "npm:effection@^3.6
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransLastIdxSigGroup } from "../core/dispatch.ts";
-import { Kevery } from "../core/eventing.ts";
+import { Kevery, type MessagePolicy } from "../core/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { Exchanger } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
-import { dispatchEnvelope, envelopeFromFrame, type TeveryLike, type VerifierLike } from "./parsering.ts";
+import {
+  type DispatchDecision,
+  dispatchEnvelope,
+  envelopeFromFrame,
+  type TeveryLike,
+  type VerifierLike,
+} from "./parsering.ts";
 import { QueryReplies } from "./query-replies.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
@@ -83,6 +89,7 @@ export class Reactor {
       maxSources = 8,
       maxQueuedBytes = 8 * 1024 * 1024,
       maxPendingCues = 1024,
+      messagePolicy,
     }: {
       cues?: Deck<AgentCue>;
       local?: boolean;
@@ -93,6 +100,8 @@ export class Reactor {
       maxQueuedBytes?: number;
       /** Reject more protocol work until the host drains a full cue deck. */
       maxPendingCues?: number;
+      /** Runtime-owned v2 non-event sender policy, independent of parser admission. */
+      messagePolicy?: MessagePolicy;
     } = {},
   ) {
     for (const limit of [maxSources, maxQueuedBytes, maxPendingCues]) {
@@ -111,7 +120,7 @@ export class Reactor {
     this.revery = new Revery(hby.db, { rtr: this.router, cues: this.cues });
     this.replyRoutes = new BasicReplyRouteHandler(hby.db, this.revery);
     this.replyRoutes.registerReplyRoutes(this.router);
-    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery });
+    this.kevery = new Kevery(hby.db, { cues: this.cues, rvy: this.revery, messagePolicy });
     this.kevery.registerReplyRoutes(this.router);
     this.exchanger = new Exchanger(hby, { cues: this.cues });
     this.local = local;
@@ -155,7 +164,7 @@ export class Reactor {
   *process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
     options: IngressOptions = {},
-    consume?: (envelope?: KeriDispatchEnvelope) => Operation<void>,
+    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>,
   ): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -176,7 +185,7 @@ export class Reactor {
   settle(
     frame?: CesrFrame,
     { local = this.local, mailboxAid, escrows = false }: IngressOptions = {},
-    consume?: (envelope?: KeriDispatchEnvelope) => Operation<void>,
+    consume?: (envelope?: KeriDispatchEnvelope, decision?: DispatchDecision) => Operation<void>,
   ): Operation<KeriDispatchEnvelope | undefined> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
@@ -193,14 +202,15 @@ export class Reactor {
       }
       return yield* self.turn(function*() {
         let envelope: KeriDispatchEnvelope | undefined;
+        let decision: DispatchDecision = undefined;
         if (frame) self.cues.checkSpace();
         if (frame) {
           envelope = envelopeFromFrame(frame, local);
-          yield* dispatchEnvelope(envelope, self.revery, self.kevery, self.exchanger, self.vdr, mailboxAid);
+          decision = yield* dispatchEnvelope(envelope, self.revery, self.kevery, self.exchanger, self.vdr, mailboxAid);
         }
         if (escrows) yield* self.advanceEscrows();
         self.replies.capture(self.cues);
-        if (consume) yield* consume(envelope);
+        if (consume) yield* consume(envelope, decision);
         return envelope;
       });
     });

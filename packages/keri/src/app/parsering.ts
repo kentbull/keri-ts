@@ -99,6 +99,8 @@ export interface AcdcDispatchArgs {
 
 export interface TeveryLike {
   processEvent?(args: TelDispatchArgs): void;
+  /** Optional owner for v2 tels/tsn queries; the built-in Tevery does not yet implement it. */
+  processQuery?(args: QueryEnvelope): void;
   processEscrows?(): void;
 }
 
@@ -111,6 +113,21 @@ export interface VdrDispatchServices {
   tvy?: TeveryLike | null;
   vry?: VerifierLike | null;
 }
+
+/** A normal refusal before route processing; a parsed message is not accepted. */
+export interface MessageDropDecision {
+  kind: "drop";
+  reason:
+    | "deniedSender"
+    | "senderNotAllowed"
+    | "missingAuthentication"
+    | "unsupportedRoute"
+    | "missingProcessor"
+    | "referenceStub";
+}
+
+/** Route-specific results remain distinct from pre-dispatch refusal and unreported outcomes. */
+export type DispatchDecision = ReplyProcessDecision | ExchangeDecision | MessageDropDecision | void;
 
 /**
  * Convert one or more already-parsed CESR frames into KERI dispatch envelopes.
@@ -139,13 +156,20 @@ export function* dispatchEnvelope(
   exchanger?: ExchangerLike,
   vdr: VdrDispatchServices = {},
   mailboxAid?: string | null,
-): Operation<ReplyProcessDecision | void> {
+): Operation<DispatchDecision> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
     if (serder.ilk === null) {
       vdr.vry?.processACDC?.(acdcEnvelopeFromDispatch(envelope, serder));
     }
     return;
+  }
+
+  if (
+    serder.pvrsn.major >= 2
+    && [Ilks.qry, Ilks.rpy, Ilks.exn, Ilks.xip, Ilks.pro, Ilks.bar].some((ilk) => ilk === serder.ilk)
+  ) {
+    return yield* dispatchMessage(envelope, revery, kevery, exchanger, vdr, mailboxAid);
   }
 
   switch (serder.ilk) {
@@ -165,18 +189,7 @@ export function* dispatchEnvelope(
       // Frozen legacy intake requires a signature group even though the EXN kernel accepts source seals.
       if (serder.pvrsn.major === 1 && !envelope.tsgs.length && !envelope.cigars.length) break;
       if (exchanger) {
-        yield* exchanger.processEvent({
-          serder,
-          tsgs: envelope.tsgs,
-          sscs: envelope.sscs,
-          sourceSeals: envelope.ssts,
-          lsgs: envelope.ssgs,
-          cigars: envelope.cigars,
-          ptds: envelope.ptds,
-          essr: envelope.essr,
-          nests: envelope.nests,
-          mailboxAid,
-        });
+        return yield* dispatchExchange(envelope, exchanger, mailboxAid);
       }
       break;
     case Ilks.vcp:
@@ -219,6 +232,71 @@ export function* dispatchEnvelope(
     default:
       break;
   }
+}
+
+/**
+ * Frozen processMsg boundary with KRAM disabled: sender policy precedes proof
+ * prerequisites and delegation. Downstream processors authenticate their own
+ * evidence; this layer borrows the envelope and never owns its payloads.
+ */
+function* dispatchMessage(
+  envelope: KeriDispatchEnvelope,
+  revery: Revery,
+  kevery: Kevery,
+  exchanger: ExchangerLike | undefined,
+  vdr: VdrDispatchServices,
+  mailboxAid?: string | null,
+): Operation<DispatchDecision> {
+  const serder = envelope.serder;
+  const sender = serder.pre;
+  if (sender !== null) {
+    if (kevery.denyList.has(sender)) return { kind: "drop", reason: "deniedSender" };
+    if (kevery.allowList.size && !kevery.allowList.has(sender)) return { kind: "drop", reason: "senderNotAllowed" };
+  }
+  switch (serder.ilk) {
+    case Ilks.qry: {
+      const query = queryEnvelopeFromDispatch(envelope);
+      if (!query.source && !query.cigars?.length) return { kind: "drop", reason: "missingAuthentication" };
+      if (["logs", "ksn", "mbx"].includes(serder.route ?? "")) return kevery.processQuery(query);
+      if (serder.route === "tels" || serder.route === "tsn") {
+        if (!vdr.tvy?.processQuery) return { kind: "drop", reason: "missingProcessor" };
+        return vdr.tvy.processQuery(query);
+      }
+      return { kind: "drop", reason: "unsupportedRoute" };
+    }
+    case Ilks.rpy:
+      if (!envelope.cigars.length && !envelope.tsgs.length) return { kind: "drop", reason: "missingAuthentication" };
+      return revery.processReply({ serder, cigars: envelope.cigars, tsgs: envelope.tsgs });
+    case Ilks.exn:
+      if (!envelope.cigars.length && !envelope.tsgs.length && !envelope.sscs.length && !envelope.ssts.length) {
+        return { kind: "drop", reason: "missingAuthentication" };
+      }
+      if (!exchanger) return { kind: "drop", reason: "missingProcessor" };
+      return yield* dispatchExchange(envelope, exchanger, mailboxAid);
+    default:
+      // processXip/processPro/processBar are pass stubs at the frozen reference.
+      return { kind: "drop", reason: "referenceStub" };
+  }
+}
+
+/** Await the route owner while preserving parent, child and mailbox provenance. */
+function* dispatchExchange(
+  envelope: KeriDispatchEnvelope,
+  exchanger: ExchangerLike,
+  mailboxAid?: string | null,
+): Operation<void | ExchangeDecision> {
+  return yield* exchanger.processEvent({
+    serder: envelope.serder,
+    tsgs: envelope.tsgs,
+    sscs: envelope.sscs,
+    sourceSeals: envelope.ssts,
+    lsgs: envelope.ssgs,
+    cigars: envelope.cigars,
+    ptds: envelope.ptds,
+    essr: envelope.essr,
+    nests: envelope.nests,
+    mailboxAid,
+  });
 }
 
 function telEnvelopeFromDispatch(
@@ -474,10 +552,14 @@ export function queryEnvelopeFromDispatch(
   envelope: KeriDispatchEnvelope,
 ): QueryEnvelope {
   const lastSsg = envelope.ssgs.at(-1);
+  // V2 processMsg falls back to the claimed sender only when raw sigers exist.
+  const rawSource = !lastSsg && envelope.serder.pvrsn.major >= 2 && envelope.sigers.length && envelope.serder.pre
+    ? new Prefixer({ qb64: envelope.serder.pre })
+    : undefined;
   return {
     serder: envelope.serder,
-    source: lastSsg?.prefixer,
-    sigers: lastSsg ? [...lastSsg.sigers] : [],
+    source: lastSsg?.prefixer ?? rawSource,
+    sigers: lastSsg ? [...lastSsg.sigers] : rawSource ? [...envelope.sigers] : [],
     cigars: [...envelope.cigars],
   };
 }

@@ -46,7 +46,8 @@ cursors remain durable Habery state. Remote fwd stores the inner message, not th
 wrapper. Recipient authorization of the addressed mailbox gates storage. Read
 authorization separately requires requester identity and current signature threshold;
 query-SAID/cue correlation alone is not authentication. Recheck exact attachments
-on HTTP intake, including cigars, old keys and duplicate indices. Public logs/ksn
+on HTTP intake, including cigars, old keys and duplicate indices. Also honor the
+current dispatch refusal: a prior matching query cue cannot override sender policy. Public logs/ksn
 queries retain separate policy; no insecure read override exists.
 
 SSE consumes one complete event and awaits its consumer before another read.

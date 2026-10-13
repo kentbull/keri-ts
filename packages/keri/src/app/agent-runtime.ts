@@ -2,6 +2,7 @@ import { type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import type { MessagePolicy } from "../core/eventing.ts";
 import {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -124,6 +125,8 @@ export interface AgentRuntimeOptions {
   vdr?: VdrRuntimeServices;
   /** Caller-injected stores remain caller-owned. */
   registryEvidence?: RegistryEvidenceStore;
+  /** Sender filtering for v2 non-event ingress; denial always wins. */
+  messagePolicy?: MessagePolicy;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -239,7 +242,7 @@ export function* createAgentRuntime(
         }
       })
       : null);
-  const reactor = new Reactor(hby, { cues, vdr });
+  const reactor = new Reactor(hby, { cues, vdr, messagePolicy: options.messagePolicy });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);
