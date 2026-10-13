@@ -14,8 +14,11 @@ interface DigerOptions {
 
 /** Incremental digest state; callers finalize once and destroy on every exit. */
 export interface Digest {
+  /** Absorb the next ordered bytes without retaining the input buffer. */
   update(bytes: Uint8Array): void;
+  /** Finalize once and return digest bytes owned by the caller. */
   digest(): Uint8Array;
+  /** Release internal state on success, failure, or abandoned iteration. */
   destroy(): void;
 }
 
@@ -62,6 +65,7 @@ export class Diger extends Matter {
 
   /** Create incremental state from the same registry used for one-shot digests. */
   static hasher(code: string): Digest {
+    // Keep algorithm selection identical for one-shot and incremental callers.
     const create = Diger.Digests.get(code);
     if (!create) throw new UnknownCodeError(`Unsupported digest code ${code}`);
     return create();
@@ -69,6 +73,7 @@ export class Diger extends Matter {
 
   /** Compute raw digest bytes for `ser` using the digest family selected by `code`. */
   static digest(ser: Uint8Array, code: string): Uint8Array {
+    // This operation owns the state through finalization and exceptional cleanup.
     const hash = Diger.hasher(code);
     try {
       hash.update(ser);
@@ -80,6 +85,7 @@ export class Diger extends Matter {
 
   /** Verify ordered fragments as one logical byte sequence without concatenation. */
   verifyChunks(chunks: Iterable<Uint8Array>): boolean {
+    // This operation owns the state through finalization and exceptional cleanup.
     const hash = Diger.hasher(this.code);
     try {
       for (const chunk of chunks) hash.update(chunk);
@@ -91,6 +97,7 @@ export class Diger extends Matter {
 
   /** Verify a reopenable payload stream while retaining only the hash state. */
   async verifyStream(chunks: AsyncIterable<Uint8Array>): Promise<boolean> {
+    // This operation owns the state through finalization and exceptional cleanup.
     const hash = Diger.hasher(this.code);
     try {
       for await (const chunk of chunks) hash.update(chunk);

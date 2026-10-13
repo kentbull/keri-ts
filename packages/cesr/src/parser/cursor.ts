@@ -2,40 +2,64 @@ import { GroupSizeError, ResourceLimitError, ShortageError } from "../core/error
 
 /** Input budgets are deployment policy, not limits on valid CESR wire sizes. */
 export interface CursorOptions {
+  /** Cancel a pending source read and release parser-owned input. */
   signal?: AbortSignal;
+  /** Maximum backing allocation of any source chunk; default 1 MiB. */
   maxChunkBytes?: number;
+  /** Maximum sum of retained backing allocations; default 8 MiB. */
   maxBufferedBytes?: number;
+  /** Maximum counted-enclosure nesting below the root; default 64. */
   maxDepth?: number;
 }
 
+/** One immutable source allocation and its unconsumed suffix. */
 interface Segment {
+  /** Transport-owned bytes retained until this segment is exhausted. */
   bytes: Uint8Array;
+  /** First unconsumed byte within bytes. */
   start: number;
+  /** Next source allocation, in wire order. */
   next?: Segment;
 }
 
 /** Own the shared input queue and iterator; scopes only constrain its absolute position. */
 class Input {
+  /** Absolute number of consumed wire bytes. */
   offset = 0;
+  /** Unconsumed bytes across all queued segments. */
   available = 0;
+  /** Backing allocations pinned by queued segments, including consumed prefixes. */
   retained = 0;
+  /** Queue ends; consuming the last segment clears both references. */
   head?: Segment;
   private tail?: Segment;
+  /** EOF is separate from close: buffered bytes remain readable after EOF. */
   private eof = false;
+  /** One read owns the shared position across all scopes. */
   private busy = false;
+  /** Terminal failure rethrown by every later operation. */
   private failure: unknown;
+  /** Close is idempotent, including cancellation during an upstream read. */
   private closed = false;
+  /** The single upstream return operation, if one was available. */
   private closing?: Promise<void>;
+  /** A queued generator return must not block cancellation behind a pending next. */
   private returnMayBlock = false;
+  /** The one outstanding source pull and its cancellable local waiter. */
   private pending?: Promise<IteratorResult<Uint8Array>>;
-  private readonly stopped: Promise<never>;
-  private rejectStop!: (reason: unknown) => void;
+  private rejectRead?: (reason: unknown) => void;
+  /** This input alone owns source advancement and cleanup. */
   private readonly iterator: AsyncIterator<Uint8Array>;
+  /** Caller cancellation is observed once for this input's lifetime. */
   private readonly signal?: AbortSignal;
+  /** Validated source-allocation admission limit. */
   readonly maxChunkBytes: number;
+  /** Validated total queued-allocation admission limit. */
   readonly maxBufferedBytes: number;
+  /** Validated enclosure depth limit. */
   readonly maxDepth: number;
 
+  /** Validate policy before taking ownership of the caller's source. */
   constructor(source: AsyncIterable<Uint8Array>, options: CursorOptions) {
     this.maxChunkBytes = options.maxChunkBytes ?? 1024 ** 2;
     this.maxBufferedBytes = options.maxBufferedBytes ?? 8 * 1024 ** 2;
@@ -47,24 +71,22 @@ class Input {
     }
     if (this.maxChunkBytes > this.maxBufferedBytes) throw new RangeError("Chunk limit exceeds buffer limit");
     this.iterator = source[Symbol.asyncIterator]();
-    this.stopped = new Promise((_, reject) => {
-      this.rejectStop = reject;
-    });
-    // Stop can happen between reads, when no Promise.race is observing it yet.
-    this.stopped.catch(() => {});
     this.signal = options.signal;
     this.signal?.addEventListener("abort", this.abort, { once: true });
     if (this.signal?.aborted) this.abort();
   }
 
+  /** Convert external cancellation into the input's one terminal failure. */
   private abort = (): void => {
     this.stop(this.signal?.reason ?? new DOMException("Input aborted", "AbortError"));
   };
 
+  /** Prevent reads and new scopes from outliving their source owner. */
   check(): void {
     if (this.closed) throw this.failure;
   }
 
+  /** Serialize reads across parent and child scopes sharing one byte position. */
   async access<T>(operation: () => Promise<T>): Promise<T> {
     this.check();
     if (this.busy) throw new Error("Cursor scopes cannot read concurrently");
@@ -77,6 +99,7 @@ class Input {
     }
   }
 
+  /** Pull only until the requested prefix is available, enforcing allocation budgets. */
   async ensure(size: number): Promise<boolean> {
     this.check();
     if (size > this.maxBufferedBytes) throw new ResourceLimitError("Read exceeds cursor buffer limit", this.offset);
@@ -87,7 +110,13 @@ class Input {
           this.check();
           return this.iterator.next();
         });
-        const result = await Promise.race([this.pending, this.stopped]);
+        // Keep only the current waiter. Racing every pull against one lifetime
+        // stop promise would retain completed reactions for the entire stream.
+        const result = await new Promise<IteratorResult<Uint8Array>>((resolve, reject) => {
+          this.rejectRead = reject;
+          this.pending!.then(resolve, reject);
+        });
+        this.rejectRead = undefined;
         this.pending = undefined;
         this.check();
         if (result.done) {
@@ -111,6 +140,7 @@ class Input {
         this.available += bytes.length;
         this.retained += bytes.buffer.byteLength;
       } catch (error) {
+        this.rejectRead = undefined;
         this.pending = undefined;
         this.stop(error);
         throw error;
@@ -119,6 +149,7 @@ class Input {
     return this.available >= size;
   }
 
+  /** Copy an admitted prefix into independently owned primitive storage. */
   copy(size: number): Uint8Array {
     // Give hydrated primitives only their own bytes, never a view pinning the input queue.
     const result = new Uint8Array(size);
@@ -131,6 +162,7 @@ class Input {
     return result;
   }
 
+  /** Advance once and unlink each fully consumed allocation immediately. */
   consume(size: number): void {
     this.offset += size;
     this.available -= size;
@@ -148,6 +180,7 @@ class Input {
     }
   }
 
+  /** Release queued allocations, wake the current read, and close upstream once. */
   private stop(reason: unknown): void {
     if (this.closed) return;
     this.closed = true;
@@ -156,7 +189,8 @@ class Input {
     this.head = this.tail = undefined;
     this.available = this.retained = 0;
     // Wake blocked readers before attempting upstream cleanup, which may itself be blocked.
-    this.rejectStop(reason);
+    this.rejectRead?.(reason);
+    this.rejectRead = undefined;
     this.returnMayBlock = this.pending !== undefined;
     try {
       this.closing = Promise.resolve(this.iterator.return?.()).then(() => {});
@@ -166,6 +200,7 @@ class Input {
     this.closing.catch(() => {});
   }
 
+  /** Await cooperative cleanup without getting stuck behind an uncancellable next. */
   async close(): Promise<void> {
     this.stop(new DOMException("Cursor closed", "AbortError"));
     // A generic async generator queues return behind next. If next ignores
@@ -186,11 +221,16 @@ class Input {
  * must also honor the signal to cancel their own blocked I/O and cleanup.
  */
 export class Cursor {
+  /** Shared input owner; child cursors never own a separate source. */
   private readonly input: Input;
+  /** Absolute exclusive enclosure end; Infinity denotes the root stream. */
   readonly end: number;
+  /** Root-relative enclosure depth for admission checks. */
   readonly depth: number;
 
+  /** Own a new source with independently validated resource policy. */
   constructor(source: AsyncIterable<Uint8Array>, options?: CursorOptions);
+  /** Internal child view over an already owned source and absolute extent. */
   constructor(source: Input, end: number, depth: number);
   constructor(source: AsyncIterable<Uint8Array> | Input, options: CursorOptions | number = {}, depth = 0) {
     this.input = source instanceof Input ? source : new Input(source, options as CursorOptions);
@@ -198,19 +238,24 @@ export class Cursor {
     this.depth = depth;
   }
 
+  /** Shared absolute consumed-byte position. */
   get offset(): number {
     return this.input.offset;
   }
+  /** Bytes remaining in this enclosure, without reading ahead. */
   get remaining(): number {
     return this.end - this.offset;
   }
+  /** Unconsumed queued bytes across all shared scopes. */
   get bufferedBytes(): number {
     return this.input.available;
   }
+  /** Actual backing allocation bytes pinned by the shared queue. */
   get retainedBytes(): number {
     return this.input.retained;
   }
 
+  /** Reject invalid arithmetic and enclosure crossings before any source pull. */
   private extent(size: number): void {
     this.input.check();
     if (!Number.isSafeInteger(size) || size < 0) throw new RangeError("Read size must be a non-negative safe integer");
@@ -236,6 +281,7 @@ export class Cursor {
     return this.bytes(size, true);
   }
 
+  /** Share the admission and owned-copy path for read and peek. */
   private bytes(size: number, consume: boolean): Promise<Uint8Array> {
     return this.input.access(async () => {
       this.extent(size);

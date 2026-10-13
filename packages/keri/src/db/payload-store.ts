@@ -4,12 +4,15 @@ import { join, resolve } from "node:path";
 
 /** A caller-owned file; promotion is separate from publishing a database reference. */
 export interface FilePayload extends OwnedPayload {
+  /** Opaque store-local identity, validated before reopening a file. */
   readonly id: string;
+  /** Move staged bytes to object storage without publishing a database reference. */
   promote(): Promise<void>;
 }
 
 /** A file sink returns a staged file whose disposal belongs to its consumer. */
 export interface FilePayloadSink extends PayloadSink {
+  /** Sync and close the stage before handing its file lifetime to the caller. */
   finish(): Promise<FilePayload>;
 }
 
@@ -33,10 +36,14 @@ export async function writePayloadChunk(
 
 /** Private staged files and explicitly promoted objects, with no database policy. */
 export class PayloadStore {
+  /** Canonical store root used for all private staging and object paths. */
   private readonly root: string;
+  /** Only unfinished stages remain store-owned and are aborted on close. */
   private readonly sinks = new Set<FileSink>();
+  /** Prevent new stages or opens after shutdown begins. */
   private closed = false;
 
+  /** Bind a store directory and bounded reader allocation size. */
   constructor(root: string, private readonly chunkSize = 65536) {
     if (!Number.isSafeInteger(chunkSize) || chunkSize < 1) throw new RangeError("Invalid payload read chunk size");
     this.root = resolve(root);
@@ -91,9 +98,12 @@ export class PayloadStore {
 
 /** A finished stage or promoted object; each read owns its own file descriptor. */
 class FileValue implements FilePayload {
+  /** Discard is terminal and idempotent for this owner. */
   private removed = false;
+  /** Reject overlapping promotion/discard instead of queueing ownership changes. */
   private busy = false;
 
+  /** Represent one completed file without taking ownership of any reader descriptor. */
   constructor(
     private readonly root: string,
     readonly id: string,
@@ -102,10 +112,12 @@ class FileValue implements FilePayload {
     private staged: boolean,
   ) {}
 
+  /** Resolve the current stage/object location from immutable identity. */
   private get path(): string {
     return join(this.root, this.staged ? "staging" : "objects", this.id);
   }
 
+  /** Reopen from byte zero and release the descriptor on return, failure, or cancellation. */
   async *open(signal?: AbortSignal): AsyncIterable<Uint8Array> {
     this.check();
     signal?.throwIfAborted();
@@ -126,6 +138,7 @@ class FileValue implements FilePayload {
     }
   }
 
+  /** Atomically move a completed stage into object storage. */
   async promote(): Promise<void> {
     this.check();
     if (!this.staged) return;
@@ -139,6 +152,7 @@ class FileValue implements FilePayload {
     }
   }
 
+  /** Remove this owned file once, rejecting concurrent ownership mutations. */
   async discard(): Promise<void> {
     if (this.removed) return;
     this.check();
@@ -151,6 +165,7 @@ class FileValue implements FilePayload {
     }
   }
 
+  /** Ensure this file remains readable and is not changing ownership. */
   private check(): void {
     if (this.removed || this.busy) throw new Error("Payload file is removed or changing ownership");
   }
@@ -158,14 +173,20 @@ class FileValue implements FilePayload {
 
 /** One writer with no internal queue; abort waits for its active write to settle. */
 class FileSink implements FilePayloadSink {
+  /** Successfully written bytes, excluding a currently pending write. */
   private size = 0;
+  /** Stage ownership moves exactly once to finished or aborted. */
   private state: "open" | "finished" | "aborted" = "open";
+  /** Single in-flight file operation; no unbounded internal write queue. */
   private active: Promise<unknown> | null = null;
+  /** Reused abort completion prevents duplicate close/unlink operations. */
   private cleanup: Promise<void> | null = null;
+  /** Begin cleanup on cancellation without throwing from the event listener. */
   private readonly cancel = () => {
     void this.abort().catch(() => undefined);
   };
 
+  /** Own one exclusive stage descriptor and its completion/cleanup callbacks. */
   constructor(
     private readonly file: FileHandle,
     private readonly path: string,
@@ -177,6 +198,7 @@ class FileSink implements FilePayloadSink {
     signal?.addEventListener("abort", this.cancel, { once: true });
   }
 
+  /** Await every partial write before accepting another chunk or finalizing. */
   async write(chunk: Uint8Array): Promise<void> {
     this.check();
     if (chunk.length > this.maxBytes - this.size) throw new RangeError("Payload exceeds sink limit");
@@ -195,6 +217,7 @@ class FileSink implements FilePayloadSink {
     }
   }
 
+  /** Sync and close bytes, then transfer the completed file to its new owner. */
   async finish(): Promise<FilePayload> {
     this.check();
     const finishing = (async () => {
@@ -218,6 +241,7 @@ class FileSink implements FilePayloadSink {
     }
   }
 
+  /** Wait for active I/O before removing an unfinished stage exactly once. */
   abort(): Promise<void> {
     if (this.state === "finished") return Promise.resolve();
     if (this.cleanup) return this.cleanup;
@@ -239,6 +263,7 @@ class FileSink implements FilePayloadSink {
     return this.cleanup;
   }
 
+  /** Reject cancellation, overlapping operations, and closed stage access. */
   private check(): void {
     this.signal?.throwIfAborted();
     if (this.state !== "open" || this.active) throw new Error("Payload sink is closed or has an active operation");

@@ -62,20 +62,29 @@ async function separators(input: Cursor): Promise<void> {
 
 /** A draft retains stage ownership until the outermost public delivery. */
 interface Draft {
+  /** Hydrated body and bounded ordinary attachment leaves awaiting public delivery. */
   frame: CesrFrame;
+  /** Frame genus remains independent of temporary attachment-wrapper selectors. */
   gvrsn: Versionage;
+  /** Admitted body/ordinary wire bytes, excluding externally staged ESSR. */
   resident: number;
+  /** Shared unfinished stage for every ESSR group encountered in this frame. */
   writer?: EssrWriter;
 }
 
 /** Invocation ownership stays bounded by nesting, never by delivered sibling count. */
 interface Session {
+  /** Maximum admitted body plus ordinary attachment bytes for one frame. */
   limit: number;
+  /** Maximum retained leaf objects, including zero-item groups. */
   maxGroups: number;
+  /** Open a finite stage only when the frame actually contains ESSR. */
   create: (gvrsn: Versionage) => Promise<EssrWriter>;
+  /** Every unfinished candidate stage, including children held by oneFrame validation. */
   pending: Set<EssrWriter>;
 }
 
+/** Structural attachment scopes are traversed, never retained as giant raw containers. */
 const WRAPPERS = new Set([
   "AttachmentGroup",
   "BigAttachmentGroup",
@@ -98,7 +107,9 @@ async function attachments(
     if (domain === "msg" && !enclosed) return;
     if (!isCesrDomain(domain)) throw new ColdStartError(`Unsupported attachment cold code ${domain}`);
     if (!enclosed && await peek(input, (bytes) => startsFrame(bytes, gvrsn, domain))) return;
+    // Read only this selected-genus counter before choosing staged or finite hydration.
     const counter = await peek(input, (bytes) => parseCounter(bytes, gvrsn, domain));
+    // Counter header size follows the incoming text/binary domain.
     const header = tokenSize(counter, domain);
     if (counter.code === GENUS_VERSION_CODE && enclosed) {
       gvrsn = decodeGenusVersion(counter);
@@ -107,6 +118,7 @@ async function attachments(
     }
     if (WRAPPERS.has(counter.name)) {
       await consume(input, header);
+      // Wrapper bounds and genus changes remain local to the recursive call.
       const scope = input.scope(counter.count * unitBytes(domain));
       await attachments(scope, draft, gvrsn, session, true);
       scope.expectEnd();
@@ -125,7 +137,9 @@ async function attachments(
     if (draft.frame.attachments.length >= session.maxGroups) {
       throw new ResourceLimitError("Frame exceeds attachment group limit", input.offset);
     }
+    // Previously admitted leaves reduce the same frame-wide byte budget.
     const remaining = session.limit - draft.resident;
+    // Ordinary semantic groups remain bounded hydrated values under the existing dispatcher.
     const parsed = await peek(input, (bytes) => parseAttachmentGroup(bytes, gvrsn, domain), remaining);
     await consume(input, parsed.consumed);
     draft.resident += parsed.consumed;
@@ -150,8 +164,11 @@ async function oneFrame(input: Cursor, gvrsn: Versionage, session: Session): Pro
 /** Parse one scope; generator locals retain genus and progress across input waits. */
 async function* frames(input: Cursor, inherited: Versionage | null, session: Session): AsyncGenerator<Draft, number> {
   const limit = session.limit;
+  // A selector belongs to this enclosure; recursive children inherit but cannot overwrite it.
   let selected = inherited;
+  // The returned child count rejects empty GenericGroups without retaining siblings.
   let count = 0;
+  // A trailing genus selector is incomplete even at otherwise clean source EOF.
   let needsBody = false;
   while (true) {
     await separators(input);
@@ -166,6 +183,7 @@ async function* frames(input: Cursor, inherited: Versionage | null, session: Ses
       if (size > limit) throw new ResourceLimitError("Body exceeds frame limit", input.offset);
       const base = parseFrameStart(await input.peek(size), selected);
       await consume(input, base.consumed);
+      // Keep stage ownership separate from the public frame until its boundary is proven.
       const draft = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
       await attachments(input, draft, base.gvrsn, session);
       count++;
@@ -186,6 +204,7 @@ async function* frames(input: Cursor, inherited: Versionage | null, session: Ses
       continue;
     }
     needsBody = false;
+    // Counted frame enclosures use quadlets in text and triplets in binary.
     const payloadSize = counter.count * unitBytes(domain);
     if (FRAME_LISTS.has(counter.name) || FRAME_GROUPS.has(counter.name)) {
       await consume(input, headerSize);
@@ -211,6 +230,7 @@ async function* frames(input: Cursor, inherited: Versionage | null, session: Ses
     const base = parseFrameStart(await input.peek(size), gvrsn);
     if (base.consumed !== size) throw new GroupSizeError("Body did not consume its declared extent", input.offset);
     await consume(input, size);
+    // Native bodies use the same ownership boundary as non-native messages.
     const draft = { frame: base.frame, gvrsn: base.gvrsn, resident: size };
     await attachments(input, draft, base.gvrsn, session);
     count++;
@@ -232,10 +252,12 @@ export async function* parse(
 ): AsyncGenerator<CesrFrame> {
   const limit = options.maxFrameBytes ?? 8 * 1024 ** 2;
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Frame limit must be a positive safe integer");
+  // Empty attachment groups require an object-count cap in addition to the byte cap.
   const maxGroups = options.maxAttachmentGroups ?? 4096;
   if (!Number.isSafeInteger(maxGroups) || maxGroups < 0) {
     throw new RangeError("Attachment group limit must be a non-negative safe integer");
   }
+  // One invocation owns every stage that has not crossed the public yield below.
   const session: Session = { limit, maxGroups, create: essrFactory(options, options.signal), pending: new Set() };
   const input = new Cursor(source, options);
   try {
