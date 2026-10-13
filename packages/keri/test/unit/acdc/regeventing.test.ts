@@ -85,7 +85,7 @@ Deno.test("shared registry time preserves exact microseconds and injected clock 
 Deno.test("v2 registry vetting matches frozen decisions through missing evidence, binding and historical changes", async () => {
   assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
   const bodies = new Map(Object.entries(fixture.bodies).map(([name, raw]) => [name, new SerderACDC({ raw: b(raw) })]));
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({ name: `registry-vetting-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       let through = 0;
@@ -223,7 +223,7 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
 });
 
 Deno.test("local registry anchors require the full seal and verified witness receipts", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({ name: `registry-anchor-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const witnessHby = yield* createHabery({
       name: `registry-witness-${crypto.randomUUID()}`,
@@ -294,7 +294,7 @@ Deno.test("local registry anchors require the full seal and verified witness rec
 });
 
 Deno.test("registry inception atomically accepts or escrows without overwriting an accepted slot", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({ name: `registry-engine-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: `registry-engine-${crypto.randomUUID()}`, temp: true });
     try {
@@ -342,7 +342,7 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       issuer.interact({ data: [{ i: other.said!, s: "0", d: other.said! }] });
       const accept = store.accept;
       try {
-        store.accept = function (...args) {
+        store.accept = function(...args) {
           accept.apply(this, args);
           throw new Error("registry write failed");
         };
@@ -373,7 +373,7 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
 });
 
 Deno.test("registry updates require accepted predecessors and preserve decided slots and heads", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({ name: `registry-order-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: `registry-order-${crypto.randomUUID()}`, temp: true });
     try {
