@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { ILKER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 import { Tagger } from "./tagger.ts";
@@ -27,7 +27,7 @@ export class Ilker extends Tagger {
 /** Parse and hydrate `Ilker` from txt/qb2 bytes. */
 export function parseIlker(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Ilker {
   return new Ilker(parseMatter(input, cold));
 }

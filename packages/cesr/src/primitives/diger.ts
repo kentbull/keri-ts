@@ -3,7 +3,7 @@ import { blake3 } from "npm:@noble/hashes@1.8.0/blake3";
 import { sha256, sha512 } from "npm:@noble/hashes@1.8.0/sha2";
 import { sha3_256, sha3_512 } from "npm:@noble/hashes@1.8.0/sha3";
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { DigDex, DIGEST_CODES, matterCodexName } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
@@ -90,7 +90,7 @@ export class Diger extends Matter {
 /** Parse and hydrate `Diger` from txt/qb2 bytes. */
 export function parseDiger(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Diger {
   return new Diger(parseMatter(input, cold));
 }

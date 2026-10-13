@@ -1,7 +1,5 @@
 import { codeB64ToB2, encodeB64 } from "../core/bytes.ts";
-
-/** Origin domain of losslessly preserved unknown CESR payloads. */
-export type PrimitiveDomain = "txt" | "bny";
+import type { CesrDomain } from "../core/types.ts";
 
 /**
  * Lossless placeholder for unrecognized CESR units encountered during parse.
@@ -16,12 +14,12 @@ export class UnknownPrimitive {
   readonly fullSize: number;
   readonly fullSizeB2: number;
   readonly raw: Uint8Array;
-  readonly sourceDomain: PrimitiveDomain;
+  readonly sourceDomain: CesrDomain;
 
   constructor(
     qb64: string,
     qb2: Uint8Array,
-    sourceDomain: PrimitiveDomain,
+    sourceDomain: CesrDomain,
   ) {
     this.code = "?";
     this.qb64 = qb64;
@@ -40,7 +38,7 @@ export class UnknownPrimitive {
    */
   static fromPayload(
     payload: Uint8Array,
-    domain: PrimitiveDomain,
+    domain: CesrDomain,
   ): UnknownPrimitive {
     if (domain === "bny") {
       return new UnknownPrimitive(encodeB64(payload), payload, domain);

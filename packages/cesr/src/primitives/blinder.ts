@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { BLINDER_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { CounterGroupLike } from "./primitive.ts";
@@ -36,7 +36,7 @@ export class Blinder extends Structor {
   /** Hydrate a `Blinder` from an already parsed counter-group node. */
   static override fromGroup(
     group: CounterGroupLike,
-    sourceDomain: Extract<ColdCode, "txt" | "bny"> = "txt",
+    sourceDomain: CesrDomain = "txt",
   ): Blinder {
     return new Blinder({ group, sourceDomain });
   }
@@ -46,7 +46,7 @@ export class Blinder extends Structor {
 export function parseBlinder(
   input: Uint8Array,
   version: Versionage,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Blinder {
   return new Blinder(
     parseStructor(input, version, cold, BLINDER_CODES, "blinder"),

@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { TRAIT_TAGS } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 import { Tagger } from "./tagger.ts";
@@ -27,7 +27,7 @@ export class Traitor extends Tagger {
 /** Parse and hydrate `Traitor` from txt/qb2 bytes. */
 export function parseTraitor(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Traitor {
   return new Traitor(parseMatter(input, cold));
 }

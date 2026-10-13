@@ -5,7 +5,7 @@ import {
   LEGACY_COMPAT_COUNTER_CODES_BY_VERSION,
   resolveCounterCodeNameTable,
   resolveCtrDex,
-  resolveVersionedRegistryValue,
+  resolveTable,
   type VersionedRegistry,
 } from "../../src/tables/counter-version-registry.ts";
 
@@ -17,7 +17,7 @@ Deno.test(
       2: { 0: "v2.0" },
     };
 
-    const resolved = resolveVersionedRegistryValue(
+    const resolved = resolveTable(
       registry,
       { major: 1, minor: 0 },
       "test registry",
@@ -38,7 +38,7 @@ Deno.test(
 
     assertThrows(
       () =>
-        resolveVersionedRegistryValue(
+        resolveTable(
           registry,
           { major: 1, minor: 3 },
           "test registry",

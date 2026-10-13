@@ -1,6 +1,7 @@
 import { b } from "../core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError, VersionError } from "../core/errors.ts";
-import type { AttachmentGroup } from "../core/types.ts";
+import { tokenSize, unitBytes } from "../core/parser-constants.ts";
+import type { AttachmentGroup, CesrDomain } from "../core/types.ts";
 import { type Counter, CounterGroup, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
 import { parseMatter } from "../primitives/matter.ts";
@@ -10,7 +11,7 @@ import { UnknownPrimitive } from "../primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import {
   resolveCtrDex,
-  resolveVersionedRegistryValue,
+  resolveTable,
   type VersionedRegistry,
 } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -32,8 +33,6 @@ interface ParsedGroup {
   consumed: number;
 }
 
-/** Attachment parsing can only proceed in counter domains. */
-type ParseDomain = "txt" | "bny";
 /** Wrapper-tail handling; both modes decode only the selected version. */
 export type AttachmentDispatchMode = "strict" | "compat";
 /** Primitive token families used by tuple/repetition parsers. */
@@ -58,8 +57,8 @@ export interface AttachmentDispatchOptions {
 type GroupParser = (
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ) => ParsedGroup;
 
@@ -127,7 +126,7 @@ interface DispatchFamilySpec {
  * every descriptor entry must resolve to exactly one `GroupParser`.
  */
 interface DispatchDescriptor {
-  version: DispatchVersion;
+  gvrsn: DispatchVersion;
   code: string;
   parserKind: DispatchParserKind;
   semanticShape: DispatchSemanticShape;
@@ -383,10 +382,10 @@ function expandDispatchSpec(
 ): DispatchDescriptor[] {
   const descriptors: DispatchDescriptor[] = [];
   for (const family of spec) {
-    for (const version of [1, 2] as const) {
-      for (const code of family.codesByVersion[version] ?? []) {
+    for (const gvrsn of [1, 2] as const) {
+      for (const code of family.codesByVersion[gvrsn] ?? []) {
         descriptors.push({
-          version,
+          gvrsn,
           code,
           parserKind: family.parserKind,
           semanticShape: family.semanticShape,
@@ -415,7 +414,7 @@ function buildCodeSetByVersion(
   };
   for (const descriptor of descriptors) {
     if (predicate(descriptor)) {
-      byVersion[descriptor.version].add(descriptor.code);
+      byVersion[descriptor.gvrsn].add(descriptor.code);
     }
   }
   return byVersion;
@@ -443,29 +442,11 @@ const WRAPPER_GROUP_CODES_V2 = WRAPPER_GROUP_CODES_BY_MAJOR[2];
 /** Universal genus-version counter code (v1/v2 compatible encoding semantics). */
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 
-/** Domain-sensitive primitive size (qb64 vs qb2). */
-function primitiveSize(
-  primitive: { fullSize: number; fullSizeB2: number },
-  domain: ParseDomain,
-): number {
-  return domain === "bny" ? primitive.fullSizeB2 : primitive.fullSize;
-}
-
-/** Alias for readability at counter header consumption callsites. */
-function counterHeaderSize(counter: Counter, domain: ParseDomain): number {
-  return primitiveSize(counter, domain);
-}
-
-/** Counter count unit size by domain: quadlets in text, triplets in binary. */
-function quadletUnitSize(domain: ParseDomain): number {
-  return domain === "bny" ? 3 : 4;
-}
-
 /** Parse a fixed primitive tuple shape and return qb64 strings in source order. */
 function parseTuple(
   input: Uint8Array,
   kinds: readonly PrimitiveKind[],
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): { items: GroupEntry[]; consumed: number } {
   const items: GroupEntry[] = [];
   let offset = 0;
@@ -474,7 +455,7 @@ function parseTuple(
       ? parseIndexer(input.slice(offset), domain)
       : parseMatter(input.slice(offset), domain);
     items.push(part);
-    offset += primitiveSize(part, domain);
+    offset += tokenSize(part, domain);
   }
   return { items, consumed: offset };
 }
@@ -484,10 +465,10 @@ function parseTuplesV1(
   input: Uint8Array,
   counter: Counter,
   kinds: readonly PrimitiveKind[],
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const tuple = parseTuple(input.slice(offset), kinds, domain);
     items.push(tupleItem(tuple.items));
@@ -501,10 +482,10 @@ function parseTuplesV2(
   input: Uint8Array,
   counter: Counter,
   kinds: readonly PrimitiveKind[],
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   while (offset < input.length) {
     const tuple = parseTuple(input.slice(offset), kinds, domain);
     items.push(tupleItem(tuple.items));
@@ -514,25 +495,25 @@ function parseTuplesV2(
 }
 
 /** Read v1 ESSR Texters using the declared item count. */
-function parseEssrV1(input: Uint8Array, counter: Counter, _version: Versionage, domain: ParseDomain): ParsedGroup {
+function parseEssrV1(input: Uint8Array, counter: Counter, _gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const texter = parseTexter(input.slice(offset), domain);
     items.push(texter);
-    offset += primitiveSize(texter, domain);
+    offset += tokenSize(texter, domain);
   }
   return { items, consumed: offset };
 }
 
 /** Read v2 ESSR Texters until the dispatch-bounded payload is exhausted. */
-function parseEssrV2(input: Uint8Array, counter: Counter, _version: Versionage, domain: ParseDomain): ParsedGroup {
+function parseEssrV2(input: Uint8Array, counter: Counter, _gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   while (offset < input.length) {
     const texter = parseTexter(input.slice(offset), domain);
     items.push(texter);
-    offset += primitiveSize(texter, domain);
+    offset += tokenSize(texter, domain);
   }
   return { items, consumed: offset };
 }
@@ -540,7 +521,7 @@ function parseEssrV2(input: Uint8Array, counter: Counter, _version: Versionage, 
 /** Split opaque counted payload into domain units (quadlets for text, triplets for binary). */
 function splitOpaqueUnits(
   payload: Uint8Array,
-  domain: ParseDomain,
+  domain: CesrDomain,
   expectedCount?: number,
 ): GroupEntry[] {
   if (domain === "bny") {
@@ -572,17 +553,17 @@ function splitOpaqueUnits(
 /** Parse the controller signature group required inside a transferable signature group. */
 function parseControllerSigs(
   input: Uint8Array,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
 ): { items: GroupEntry[]; consumed: number } {
-  const counter = parseCounter(input, version, domain);
-  if (counter.code !== resolveCtrDex(version).ControllerIdxSigs) {
+  const counter = parseCounter(input, gvrsn, domain);
+  if (counter.code !== resolveCtrDex(gvrsn).ControllerIdxSigs) {
     throw new UnknownCodeError(
       `Expected controller signature counter but got ${counter.code}`,
     );
   }
 
-  const parsed = parseAttachmentDispatch(input, version, domain);
+  const parsed = parseAttachmentDispatch(input, gvrsn, domain);
   return { items: parsed.group.items.flat(), consumed: parsed.consumed };
 }
 
@@ -598,14 +579,14 @@ function parseControllerSigs(
 function parseQuadletGroup(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
+  gvrsn: Versionage,
   wrapperCodes: Set<string>,
-  domain: ParseDomain,
+  domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ): ParsedGroup {
-  const unitSize = quadletUnitSize(domain);
+  const unitSize = unitBytes(domain);
   const payloadSize = counter.count * unitSize;
-  const headerSize = counterHeaderSize(counter, domain);
+  const headerSize = tokenSize(counter, domain);
   const total = headerSize + payloadSize;
   if (input.length < total) {
     throw new ShortageError(total, input.length);
@@ -617,7 +598,7 @@ function parseQuadletGroup(
     // Wrapper payload is a packed stream of nested groups (best effort).
     const items: GroupEntry[] = [];
     let offset = 0;
-    let nestedVersion = version;
+    let nestedVersion = gvrsn;
     while (offset < payload.length) {
       try {
         const nestedCounter = parseCounter(
@@ -627,7 +608,7 @@ function parseQuadletGroup(
         );
         if (nestedCounter.code === GENUS_VERSION_CODE) {
           // Wrapper-scoped version override for subsequent nested groups.
-          offset += counterHeaderSize(nestedCounter, domain);
+          offset += tokenSize(nestedCounter, domain);
           nestedVersion = decodeGenusVersion(nestedCounter);
           continue;
         }
@@ -676,9 +657,9 @@ function parseQuadletGroup(
 }
 
 /** Parse one transferable signature entry: prefix, sequence, digest, and signature list. */
-function parseTransSig(input: Uint8Array, version: Versionage, domain: ParseDomain): ParsedGroup {
+function parseTransSig(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
   const header = parseTuple(input, ["matter", "matter", "matter"], domain);
-  const sigers = parseControllerSigs(input.slice(header.consumed), version, domain);
+  const sigers = parseControllerSigs(input.slice(header.consumed), gvrsn, domain);
   return {
     items: [...header.items, tupleItem(sigers.items)],
     consumed: header.consumed + sigers.consumed,
@@ -686,9 +667,9 @@ function parseTransSig(input: Uint8Array, version: Versionage, domain: ParseDoma
 }
 
 /** Parse one last-establishment signature entry: prefix and signature list. */
-function parseLastSig(input: Uint8Array, version: Versionage, domain: ParseDomain): ParsedGroup {
+function parseLastSig(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
   const header = parseTuple(input, ["matter"], domain);
-  const sigers = parseControllerSigs(input.slice(header.consumed), version, domain);
+  const sigers = parseControllerSigs(input.slice(header.consumed), gvrsn, domain);
   return {
     items: [...header.items, tupleItem(sigers.items)],
     consumed: header.consumed + sigers.consumed,
@@ -699,13 +680,13 @@ function parseLastSig(input: Uint8Array, version: Versionage, domain: ParseDomai
 function parseTransSigsV1(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
-    const entry = parseTransSig(input.slice(offset), version, domain);
+    const entry = parseTransSig(input.slice(offset), gvrsn, domain);
     items.push(tupleItem(entry.items));
     offset += entry.consumed;
   }
@@ -716,13 +697,13 @@ function parseTransSigsV1(
 function parseTransSigsV2(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   while (offset < input.length) {
-    const entry = parseTransSig(input.slice(offset), version, domain);
+    const entry = parseTransSig(input.slice(offset), gvrsn, domain);
     items.push(tupleItem(entry.items));
     offset += entry.consumed;
   }
@@ -733,13 +714,13 @@ function parseTransSigsV2(
 function parseLastSigsV1(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
-    const entry = parseLastSig(input.slice(offset), version, domain);
+    const entry = parseLastSig(input.slice(offset), gvrsn, domain);
     items.push(tupleItem(entry.items));
     offset += entry.consumed;
   }
@@ -750,13 +731,13 @@ function parseLastSigsV1(
 function parseLastSigsV2(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   while (offset < input.length) {
-    const entry = parseLastSig(input.slice(offset), version, domain);
+    const entry = parseLastSig(input.slice(offset), gvrsn, domain);
     items.push(tupleItem(entry.items));
     offset += entry.consumed;
   }
@@ -767,18 +748,18 @@ function parseLastSigsV2(
 function sadPathSigParser(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const path = parseMatter(input.slice(offset), domain);
-    offset += primitiveSize(path, domain);
+    offset += tokenSize(path, domain);
     const sigGroup = parseAttachmentDispatchCompat(
       input.slice(offset),
-      version,
+      gvrsn,
       domain,
       context,
     );
@@ -797,23 +778,23 @@ function sadPathSigParser(
 function sadPathSigGroupParser(
   input: Uint8Array,
   counter: Counter,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
-  let offset = counterHeaderSize(counter, domain);
+  let offset = tokenSize(counter, domain);
 
   const root = parseMatter(input.slice(offset), domain);
-  offset += primitiveSize(root, domain);
+  offset += tokenSize(root, domain);
   items.push(root);
 
   for (let i = 0; i < counter.count; i++) {
     const path = parseMatter(input.slice(offset), domain);
-    offset += primitiveSize(path, domain);
+    offset += tokenSize(path, domain);
     const sigGroup = parseAttachmentDispatchCompat(
       input.slice(offset),
-      version,
+      gvrsn,
       domain,
       context,
     );
@@ -832,14 +813,14 @@ function sadPathSigGroupParser(
 function genusVersionParser(
   _input: Uint8Array,
   counter: Counter,
-  _version: Versionage,
-  domain: ParseDomain,
+  _gvrsn: Versionage,
+  domain: CesrDomain,
   _context: AttachmentDispatchOptions,
 ): ParsedGroup {
   decodeGenusVersion(counter);
   return {
     items: [counter],
-    consumed: counterHeaderSize(counter, domain),
+    consumed: tokenSize(counter, domain),
   };
 }
 
@@ -847,14 +828,14 @@ function genusVersionParser(
 const V1_QUADLET_PARSER: GroupParser = (
   input,
   counter,
-  version,
+  gvrsn,
   domain,
   context,
 ) =>
   parseQuadletGroup(
     input,
     counter,
-    version,
+    gvrsn,
     WRAPPER_GROUP_CODES_V1,
     domain,
     context,
@@ -864,14 +845,14 @@ const V1_QUADLET_PARSER: GroupParser = (
 const V2_QUADLET_PARSER: GroupParser = (
   input,
   counter,
-  version,
+  gvrsn,
   domain,
   context,
 ) =>
   parseQuadletGroup(
     input,
     counter,
-    version,
+    gvrsn,
     WRAPPER_GROUP_CODES_V2,
     domain,
     context,
@@ -886,7 +867,7 @@ const V2_QUADLET_PARSER: GroupParser = (
 function parserForDescriptor(descriptor: DispatchDescriptor): GroupParser {
   switch (descriptor.parserKind) {
     case "quadlet":
-      return descriptor.version === 2 ? V2_QUADLET_PARSER : V1_QUADLET_PARSER;
+      return descriptor.gvrsn === 2 ? V2_QUADLET_PARSER : V1_QUADLET_PARSER;
     case "repeatTuple": {
       if (!descriptor.tupleKinds || descriptor.tupleKinds.length === 0) {
         throw new Error(
@@ -894,15 +875,15 @@ function parserForDescriptor(descriptor: DispatchDescriptor): GroupParser {
         );
       }
       const kinds = descriptor.tupleKinds;
-      const parse = descriptor.version === 1 ? parseTuplesV1 : parseTuplesV2;
-      return (input, counter, _version, domain) => parse(input, counter, kinds, domain);
+      const parse = descriptor.gvrsn === 1 ? parseTuplesV1 : parseTuplesV2;
+      return (input, counter, _gvrsn, domain) => parse(input, counter, kinds, domain);
     }
     case "essr":
-      return descriptor.version === 1 ? parseEssrV1 : parseEssrV2;
+      return descriptor.gvrsn === 1 ? parseEssrV1 : parseEssrV2;
     case "transIdxSigGroups":
-      return descriptor.version === 1 ? parseTransSigsV1 : parseTransSigsV2;
+      return descriptor.gvrsn === 1 ? parseTransSigsV1 : parseTransSigsV2;
     case "transLastIdxSigGroups":
-      return descriptor.version === 1 ? parseLastSigsV1 : parseLastSigsV2;
+      return descriptor.gvrsn === 1 ? parseLastSigsV1 : parseLastSigsV2;
     case "sadPathSig":
       return sadPathSigParser;
     case "sadPathSigGroup":
@@ -927,7 +908,7 @@ function buildDispatchByVersion(
     2: new Map<string, GroupParser>(),
   };
   for (const descriptor of descriptors) {
-    dispatch[descriptor.version].set(
+    dispatch[descriptor.gvrsn].set(
       descriptor.code,
       parserForDescriptor(descriptor),
     );
@@ -959,10 +940,10 @@ function asMinorZeroRegistry<T>(
 const DISPATCH_BY_VERSION = asMinorZeroRegistry(DISPATCH_BY_MAJOR);
 
 /** Resolve attachment dispatch table for the requested stream version. */
-function getDispatch(version: Versionage): Map<string, GroupParser> {
-  return resolveVersionedRegistryValue(
+function getDispatch(gvrsn: Versionage): Map<string, GroupParser> {
+  return resolveTable(
     DISPATCH_BY_VERSION,
-    version,
+    gvrsn,
     "attachment dispatch registry",
   ).value;
 }
@@ -970,12 +951,12 @@ function getDispatch(version: Versionage): Map<string, GroupParser> {
 /** Parse one attachment group with an explicit version (no version fallback). */
 function parseAttachmentDispatchWithVersion(
   input: Uint8Array,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
   context: AttachmentDispatchOptions,
 ): { group: AttachmentGroup; consumed: number } {
-  const counter = parseCounter(input, version, domain);
-  const parser = getDispatch(version).get(counter.code);
+  const counter = parseCounter(input, gvrsn, domain);
+  const parser = getDispatch(gvrsn).get(counter.code);
 
   if (!parser) {
     throw new UnknownCodeError(
@@ -985,9 +966,9 @@ function parseAttachmentDispatchWithVersion(
 
   // V2 counts payload quadlets/triplets; the genus selector carries a version,
   // not a payload length. Bound before parsing so siblings cannot fill a group.
-  const bounded = version.major === 2 && counter.code !== CtrDexV2.KERIACDCGenusVersion;
+  const bounded = gvrsn.major === 2 && counter.code !== CtrDexV2.KERIACDCGenusVersion;
   if (bounded) {
-    const end = counterHeaderSize(counter, domain) + counter.count * quadletUnitSize(domain);
+    const end = tokenSize(counter, domain) + counter.count * unitBytes(domain);
     if (input.length < end) {
       throw new ShortageError(end, input.length);
     }
@@ -996,7 +977,7 @@ function parseAttachmentDispatchWithVersion(
 
   let parsed: ParsedGroup;
   try {
-    parsed = parser(input, counter, version, domain, context);
+    parsed = parser(input, counter, gvrsn, domain, context);
   } catch (error) {
     if (bounded && error instanceof ShortageError) {
       throw new GroupSizeError(`Incomplete item inside ${counter.code} payload`);
@@ -1029,20 +1010,20 @@ function parseAttachmentDispatchWithVersion(
  */
 export function parseAttachmentDispatchCompat(
   input: Uint8Array,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
   options: AttachmentDispatchOptions = {},
 ): { group: AttachmentGroup; consumed: number } {
-  return parseAttachmentDispatchWithVersion(input, version, domain, options);
+  return parseAttachmentDispatchWithVersion(input, gvrsn, domain, options);
 }
 
 /** Parse one attachment group, propagating nested wrapper errors. */
 export function parseAttachmentDispatch(
   input: Uint8Array,
-  version: Versionage,
-  domain: ParseDomain,
+  gvrsn: Versionage,
+  domain: CesrDomain,
 ): { group: AttachmentGroup; consumed: number } {
-  return parseAttachmentDispatchWithVersion(input, version, domain, {
+  return parseAttachmentDispatchWithVersion(input, gvrsn, domain, {
     mode: "strict",
   });
 }

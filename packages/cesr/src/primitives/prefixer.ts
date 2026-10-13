@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { PREFIX_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
@@ -26,7 +26,7 @@ export class Prefixer extends Matter {
 /** Parse and hydrate `Prefixer` from txt/qb2 bytes. */
 export function parsePrefixer(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Prefixer {
   return new Prefixer(parseMatter(input, cold));
 }

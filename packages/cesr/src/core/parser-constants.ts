@@ -1,9 +1,10 @@
 import type { Counter } from "../primitives/counter.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import type { Versionage } from "../tables/table-types.ts";
+import type { CesrDomain } from "./types.ts";
 
 /** Default parser version context when no explicit selector is present. */
-export const DEFAULT_VERSION: Versionage = { major: 2, minor: 0 };
+export const DEFAULT_GVRSN: Versionage = { major: 2, minor: 0 };
 
 /** Native map-body counter codes that permit interleaved label parsing. */
 export const MAP_BODY_CODES = new Set([
@@ -76,17 +77,17 @@ export const GENERIC_GROUP_NAMES = new Set([
 /** Domain-sensitive token size helper (qb64 vs qb2). */
 export function tokenSize(
   token: { fullSize: number; fullSizeB2: number },
-  cold: "txt" | "bny",
+  cold: CesrDomain,
 ): number {
   return cold === "bny" ? token.fullSizeB2 : token.fullSize;
 }
 
 /** Domain-sensitive counter unit (quadlet count for txt, triplet count for bny). */
-export function quadletUnit(cold: "txt" | "bny"): number {
+export function unitBytes(cold: CesrDomain): number {
   return cold === "bny" ? 3 : 4;
 }
 
 /** Attachment parsing domains supported by the parser. */
-export function isAttachmentDomain(cold: string): cold is "txt" | "bny" {
+export function isCesrDomain(cold: string): cold is CesrDomain {
   return cold === "txt" || cold === "bny";
 }

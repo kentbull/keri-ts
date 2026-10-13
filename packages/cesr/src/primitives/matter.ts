@@ -12,7 +12,7 @@ import {
   sceil,
 } from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { MATTER_CODE_NAMES, MATTER_HARDS, MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import { DIGEST_CODES, NON_TRANSFERABLE_CODES, PREFIX_CODES } from "./codex.ts";
 
@@ -494,7 +494,7 @@ export function parseMatterFromBinary(input: Uint8Array): Matter {
 /** Parse matter using caller-provided cold-start domain hint (`txt` or `bny`). */
 export function parseMatter(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Matter {
   return cold === "bny"
     ? parseMatterFromBinary(input)

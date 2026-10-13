@@ -1,6 +1,6 @@
 import { concatBytes, decodeB64, encodeB64 } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import { DECIMAL_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -74,7 +74,7 @@ export class Decimer extends Matter {
 /** Parse and hydrate a `Decimer` from txt or qb2 stream bytes. */
 export function parseDecimer(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Decimer {
   return new Decimer(parseMatter(input, cold));
 }

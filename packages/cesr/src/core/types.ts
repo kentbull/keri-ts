@@ -12,7 +12,10 @@ export interface Smellage {
 }
 
 /** Parser cold-start domain classification for the next unread stream bytes. */
-export type ColdCode = "msg" | "txt" | "bny" | "ano";
+export type ColdCode = "msg" | CesrDomain | "ano";
+
+/** CESR text (qb64) or binary (qb2) encoding domain. */
+export type CesrDomain = "txt" | "bny";
 
 /** Body payload for one parsed CESR frame. */
 export interface CesrBody {

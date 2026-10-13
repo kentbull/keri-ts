@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { MEDIAR_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { CounterGroupLike } from "./primitive.ts";
@@ -36,7 +36,7 @@ export class Mediar extends Structor {
   /** Hydrate a `Mediar` from an already parsed counter-group node. */
   static override fromGroup(
     group: CounterGroupLike,
-    sourceDomain: Extract<ColdCode, "txt" | "bny"> = "txt",
+    sourceDomain: CesrDomain = "txt",
   ): Mediar {
     return new Mediar({ group, sourceDomain });
   }
@@ -46,7 +46,7 @@ export class Mediar extends Structor {
 export function parseMediar(
   input: Uint8Array,
   version: Versionage,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Mediar {
   return new Mediar(
     parseStructor(input, version, cold, MEDIAR_CODES, "mediar"),

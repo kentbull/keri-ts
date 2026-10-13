@@ -1,6 +1,6 @@
 import { t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { TEXTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
@@ -32,7 +32,7 @@ export class Texter extends Matter {
 /** Parse and hydrate `Texter` from txt/qb2 bytes. */
 export function parseTexter(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Texter {
   return new Texter(parseMatter(input, cold));
 }

@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import { DATER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -41,7 +41,7 @@ export class Dater extends Matter {
 /** Parse and hydrate `Dater` from txt/qb2 bytes. */
 export function parseDater(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Dater {
   return new Dater(parseMatter(input, cold));
 }

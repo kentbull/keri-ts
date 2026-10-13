@@ -1,6 +1,6 @@
 import { b, codeB2ToB64, codeB64ToB2, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { AGGOR_CODES, AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
@@ -242,7 +242,7 @@ export class Aggor extends Structor {
   /** Hydrate from an already parsed counter-group node. */
   static override fromGroup(
     group: CounterGroupLike,
-    sourceDomain: Extract<ColdCode, "txt" | "bny"> = "txt",
+    sourceDomain: CesrDomain = "txt",
   ): Aggor {
     const structor = Structor.fromGroup(group, sourceDomain);
     if (isAggorMapCode(structor.code)) {
@@ -506,7 +506,7 @@ export class Aggor extends Structor {
 export function parseAggor(
   input: Uint8Array,
   version: Versionage,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Aggor {
   const counter = parseCounter(input, version, cold);
   if (!isAggorCode(counter.code)) {

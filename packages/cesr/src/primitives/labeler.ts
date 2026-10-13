@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { Bexter } from "./bexter.ts";
 import { BEXTER_CODES, isAttLabel, LABELER_CODES, TAG_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -88,7 +88,7 @@ export class Labeler extends Matter {
  */
 export function parseLabeler(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Labeler {
   return new Labeler(parseMatter(input, cold));
 }

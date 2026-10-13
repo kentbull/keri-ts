@@ -26,19 +26,19 @@ import {
 } from "./errors.ts";
 import {
   BODY_WITH_ATTACHMENT_GROUP_NAMES,
-  DEFAULT_VERSION,
+  DEFAULT_GVRSN,
   FRAME_START_GROUP_NAMES,
   GENERIC_GROUP_NAMES,
   GENUS_VERSION_CODE,
-  isAttachmentDomain,
+  isCesrDomain,
   isFrameBoundaryCounter,
   MAP_BODY_CODES,
   NATIVE_BODY_GROUP_NAMES,
   NON_NATIVE_BODY_GROUP_NAMES,
-  quadletUnit,
   tokenSize,
+  unitBytes,
 } from "./parser-constants.ts";
-import type { CesrBody, CesrFrame, Smellage } from "./types.ts";
+import type { CesrBody, CesrDomain, CesrFrame, Smellage } from "./types.ts";
 
 /** Attachment decoding options for enclosed frames. */
 interface FrameParserOptions {
@@ -54,9 +54,9 @@ export interface ParsedFrameStart {
   siblings?: CesrFrame[];
   consumed: number;
   /** Genus used to decode this frame and its attachments. */
-  version: Versionage;
+  gvrsn: Versionage;
   /** Explicit stream selection; null leaves subsequent frames in legacy inference mode. */
-  streamVersion: Versionage | null;
+  streamGvrsn: Versionage | null;
 }
 
 /** Frame-start classification produced by syntax parsing before behavior dispatch. */
@@ -74,13 +74,13 @@ interface FrameStartSyntaxArtifact {
   /** Byte offset where frame material begins after optional annotation bytes/selectors. */
   offset: number;
   /** Cold-start domain at frame start (`msg` or attachment domain). */
-  cold: "msg" | "txt" | "bny";
+  cold: "msg" | CesrDomain;
   /** Stream version context after optional leading genus-version selector handling. */
-  streamVersion: Versionage | null;
+  streamGvrsn: Versionage | null;
   /** Parsed body-group counter for non-message frame kinds. */
   counter?: Counter;
   /** Frame-local version selected while resolving frame-start counter. */
-  frameVersion?: Versionage;
+  frameGvrsn?: Versionage;
   /** Serialized header size of `counter` in active domain. */
   headerSize?: number;
   /** Payload unit width (`4` for qb64, `3` for qb2) used with counter counts. */
@@ -147,10 +147,10 @@ export class FrameParser {
   /** Probe whether the next token is a top-level frame boundary counter. */
   isFrameBoundaryAhead(
     input: Uint8Array,
-    version: Versionage,
-    cold: "txt" | "bny",
+    gvrsn: Versionage,
+    cold: CesrDomain,
   ): boolean {
-    const peek = this.tryParseCounter(input, version, cold);
+    const peek = this.tryParseCounter(input, gvrsn, cold);
     return peek !== null && isFrameBoundaryCounter(peek);
   }
 
@@ -160,9 +160,9 @@ export class FrameParser {
    */
   parseFrame(
     input: Uint8Array,
-    inheritedVersion: Versionage | null = null,
+    inheritedGvrsn: Versionage | null = null,
   ): ParsedFrameStart {
-    const syntax = this.parseFrameStartSyntax(input, inheritedVersion);
+    const syntax = this.parseFrameStartSyntax(input, inheritedGvrsn);
     return this.interpretFrameStartSyntax(input, syntax);
   }
 
@@ -174,10 +174,10 @@ export class FrameParser {
    */
   private parseFrameStartSyntax(
     input: Uint8Array,
-    inheritedVersion: Versionage | null,
+    inheritedGvrsn: Versionage | null,
   ): FrameStartSyntaxArtifact {
     let offset = 0;
-    let activeVersion = inheritedVersion;
+    let activeGvrsn = inheritedGvrsn;
 
     let cold = sniff(input.slice(offset));
     while (cold === "ano") {
@@ -189,10 +189,10 @@ export class FrameParser {
     }
 
     if (cold === "txt" || cold === "bny") {
-      const peek = parseCounter(input.slice(offset), activeVersion ?? DEFAULT_VERSION, cold);
+      const peek = parseCounter(input.slice(offset), activeGvrsn ?? DEFAULT_GVRSN, cold);
       if (peek.code === GENUS_VERSION_CODE) {
         offset += tokenSize(peek, cold);
-        activeVersion = decodeGenusVersion(peek);
+        activeGvrsn = decodeGenusVersion(peek);
         if (input.length <= offset) {
           throw new ShortageError(offset + 1, input.length);
         }
@@ -205,11 +205,11 @@ export class FrameParser {
         kind: "message",
         offset,
         cold,
-        streamVersion: activeVersion,
+        streamGvrsn: activeGvrsn,
       };
     }
 
-    if (!isAttachmentDomain(cold)) {
+    if (!isCesrDomain(cold)) {
       throw new ColdStartError(
         `Expected message or CESR body group at frame start but got ${cold}`,
       );
@@ -217,24 +217,24 @@ export class FrameParser {
 
     const {
       counter,
-      version: frameVersion,
+      gvrsn: frameGvrsn,
     } = this.resolveFrameStartCounter(
       input.slice(offset),
-      activeVersion ?? DEFAULT_VERSION,
+      activeGvrsn ?? DEFAULT_GVRSN,
       cold,
-      activeVersion === null,
+      activeGvrsn === null,
     );
     const headerSize = tokenSize(counter, cold);
-    const unit = quadletUnit(cold);
+    const unit = unitBytes(cold);
 
     if (BODY_WITH_ATTACHMENT_GROUP_NAMES.has(counter.name)) {
       return {
         kind: "bodyWithAttachmentGroup",
         offset,
         cold,
-        streamVersion: activeVersion,
+        streamGvrsn: activeGvrsn,
         counter,
-        frameVersion,
+        frameGvrsn,
         headerSize,
         unit,
       };
@@ -244,9 +244,9 @@ export class FrameParser {
         kind: "nonNativeBodyGroup",
         offset,
         cold,
-        streamVersion: activeVersion,
+        streamGvrsn: activeGvrsn,
         counter,
-        frameVersion,
+        frameGvrsn,
         headerSize,
         unit,
       };
@@ -256,9 +256,9 @@ export class FrameParser {
         kind: "nativeBodyGroup",
         offset,
         cold,
-        streamVersion: activeVersion,
+        streamGvrsn: activeGvrsn,
         counter,
-        frameVersion,
+        frameGvrsn,
         headerSize,
         unit,
       };
@@ -268,9 +268,9 @@ export class FrameParser {
         kind: "genericGroup",
         offset,
         cold,
-        streamVersion: activeVersion,
+        streamGvrsn: activeGvrsn,
         counter,
-        frameVersion,
+        frameGvrsn,
         headerSize,
         unit,
       };
@@ -288,15 +288,15 @@ export class FrameParser {
   ): ParsedFrameStart {
     const requireGroupMetadata = () => {
       const counter = syntax.counter;
-      const frameVersion = syntax.frameVersion;
+      const frameGvrsn = syntax.frameGvrsn;
       const headerSize = syntax.headerSize;
       const unit = syntax.unit;
-      if (!counter || !frameVersion || !headerSize || !unit) {
+      if (!counter || !frameGvrsn || !headerSize || !unit) {
         throw new SemanticInterpretationError(
           "Frame-start syntax artifact missing required group metadata",
         );
       }
-      return { counter, frameVersion, headerSize, unit };
+      return { counter, frameGvrsn, headerSize, unit };
     };
 
     switch (syntax.kind) {
@@ -305,20 +305,20 @@ export class FrameParser {
         return {
           frame: { body: serder, attachments: [] },
           consumed: syntax.offset + consumed,
-          version: this.bodyGenus(serder, syntax.streamVersion),
-          streamVersion: syntax.streamVersion,
+          gvrsn: this.bodyGenus(serder, syntax.streamGvrsn),
+          streamGvrsn: syntax.streamGvrsn,
         };
       }
       case "bodyWithAttachmentGroup": {
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameGvrsn, headerSize, unit } = requireGroupMetadata();
         return this.parseBodyWithAttachmentGroup(
           input,
           syntax.offset,
           headerSize,
           counter.count,
           unit,
-          frameVersion,
-          syntax.streamVersion,
+          frameGvrsn,
+          syntax.streamGvrsn,
         );
       }
       case "nonNativeBodyGroup": {
@@ -327,7 +327,7 @@ export class FrameParser {
             `Expected attachment domain for non-native body but got ${syntax.cold}`,
           );
         }
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameGvrsn, headerSize, unit } = requireGroupMetadata();
         return this.parseNonNativeBodyGroup(
           input,
           syntax.offset,
@@ -335,8 +335,8 @@ export class FrameParser {
           counter.count,
           unit,
           syntax.cold,
-          frameVersion,
-          syntax.streamVersion,
+          frameGvrsn,
+          syntax.streamGvrsn,
         );
       }
       case "nativeBodyGroup": {
@@ -345,7 +345,7 @@ export class FrameParser {
             `Expected attachment domain for native body but got ${syntax.cold}`,
           );
         }
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameGvrsn, headerSize, unit } = requireGroupMetadata();
         return this.parseNativeBodyGroup(
           input,
           syntax.offset,
@@ -353,21 +353,21 @@ export class FrameParser {
           counter.count,
           unit,
           syntax.cold,
-          frameVersion,
+          frameGvrsn,
           counter.code,
-          syntax.streamVersion,
+          syntax.streamGvrsn,
         );
       }
       case "genericGroup": {
-        const { counter, frameVersion, headerSize, unit } = requireGroupMetadata();
+        const { counter, frameGvrsn, headerSize, unit } = requireGroupMetadata();
         return this.parseGenericGroup(
           input,
           syntax.offset,
           headerSize,
           counter.count,
           unit,
-          frameVersion,
-          syntax.streamVersion,
+          frameGvrsn,
+          syntax.streamGvrsn,
         );
       }
     }
@@ -380,8 +380,8 @@ export class FrameParser {
     headerSize: number,
     count: number,
     unit: number,
-    version: Versionage,
-    streamVersion: Versionage | null,
+    gvrsn: Versionage,
+    streamGvrsn: Versionage | null,
   ): ParsedFrameStart {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
@@ -391,7 +391,7 @@ export class FrameParser {
     const payload = input.slice(offset + headerSize, offset + total);
     let nested: ReturnType<FrameParser["parseCompleteFrame"]>;
     try {
-      nested = this.parseCompleteFrame(payload, version);
+      nested = this.parseCompleteFrame(payload, gvrsn);
     } catch (error) {
       if (error instanceof ShortageError) throw new GroupSizeError("Incomplete frame inside BodyWithAttachmentGroup");
       throw error;
@@ -405,8 +405,8 @@ export class FrameParser {
       frame: nested.frame,
       complete: true,
       consumed: offset + total,
-      version,
-      streamVersion,
+      gvrsn,
+      streamGvrsn,
     };
   }
 
@@ -421,9 +421,9 @@ export class FrameParser {
     headerSize: number,
     count: number,
     unit: number,
-    cold: "txt" | "bny",
-    version: Versionage,
-    streamVersion: Versionage | null,
+    cold: CesrDomain,
+    gvrsn: Versionage,
+    streamGvrsn: Versionage | null,
   ): ParsedFrameStart {
     const matter = parseMatter(input.slice(offset + headerSize), cold);
     const bodySize = tokenSize(matter, cold);
@@ -442,7 +442,7 @@ export class FrameParser {
     } catch {
       // Opaque non-native material need not contain a message version string.
     }
-    if (metadata) this.bodyGenus(metadata, version);
+    if (metadata) this.bodyGenus(metadata, gvrsn);
     let serder: CesrBody;
     try {
       ({ serder } = reapSerder(matter.raw));
@@ -459,23 +459,23 @@ export class FrameParser {
             proto: Protocols.keri,
             kind: Kinds.cesr,
             size: raw.length,
-            pvrsn: version,
-            gvrsn: version,
+            pvrsn: gvrsn,
+            gvrsn: gvrsn,
             ilk: null,
             said: null,
           },
           attachments: [],
         },
         consumed: offset + headerSize + bodySize,
-        version,
-        streamVersion,
+        gvrsn,
+        streamGvrsn,
       };
     }
     return {
       frame: { body: serder, attachments: [] },
       consumed: offset + headerSize + bodySize,
-      version,
-      streamVersion,
+      gvrsn,
+      streamGvrsn,
     };
   }
 
@@ -486,10 +486,10 @@ export class FrameParser {
     headerSize: number,
     count: number,
     unit: number,
-    cold: "txt" | "bny",
-    version: Versionage,
+    cold: CesrDomain,
+    gvrsn: Versionage,
     bodyCode: string,
-    streamVersion: Versionage | null,
+    streamGvrsn: Versionage | null,
   ): ParsedFrameStart {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
@@ -497,10 +497,10 @@ export class FrameParser {
       throw new ShortageError(offset + total, input.length);
     }
     const raw = input.slice(offset, offset + total);
-    const syntax = this.parseNativeBodySyntax(raw, cold, version);
+    const syntax = this.parseNativeBodySyntax(raw, cold, gvrsn);
     const metadata = this.interpretNativeMetadataSyntax(
       syntax.metadata,
-      version,
+      gvrsn,
     );
     const fields = this.interpretNativeFieldSyntax(syntax.fields);
     // KERIpy parity rule: once the frame parser has classified a top-level
@@ -508,7 +508,7 @@ export class FrameParser {
     // real Serder or a parse error. Arbitrary native map/list corpora still
     // belong to lower-level CESR-native surfaces such as Mapper/Aggor.
     const { serder } = reapSerder(raw);
-    this.bodyGenus(serder, version);
+    this.bodyGenus(serder, gvrsn);
     if (
       serder.proto !== metadata.proto
       || serder.pvrsn.major !== metadata.pvrsn.major
@@ -531,8 +531,8 @@ export class FrameParser {
         attachments: [],
       },
       consumed: offset + total,
-      version,
-      streamVersion,
+      gvrsn,
+      streamGvrsn,
     };
   }
 
@@ -546,8 +546,8 @@ export class FrameParser {
     headerSize: number,
     count: number,
     unit: number,
-    version: Versionage,
-    streamVersion: Versionage | null,
+    gvrsn: Versionage,
+    streamGvrsn: Versionage | null,
   ): ParsedFrameStart {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
@@ -558,7 +558,7 @@ export class FrameParser {
     const payload = input.slice(offset + headerSize, offset + total);
     let frames: CesrFrame[];
     try {
-      frames = this.parseFrameSequence(payload, version);
+      frames = this.parseFrameSequence(payload, gvrsn);
     } catch (error) {
       if (error instanceof ShortageError) throw new GroupSizeError("Incomplete frame inside GenericGroup");
       throw error;
@@ -576,19 +576,19 @@ export class FrameParser {
       complete: true,
       siblings: rest,
       consumed: offset + total,
-      version,
-      streamVersion,
+      gvrsn,
+      streamGvrsn,
     };
   }
 
   /** Parse all enclosed frames inside a bounded payload slice, in order. */
   private parseFrameSequence(
     input: Uint8Array,
-    inheritedVersion: Versionage | null,
+    inheritedGvrsn: Versionage | null,
   ): CesrFrame[] {
     const out: CesrFrame[] = [];
     let offset = 0;
-    let activeVersion = inheritedVersion;
+    let activeGvrsn = inheritedGvrsn;
 
     while (offset < input.length) {
       while (offset < input.length && sniff(input.slice(offset)) === "ano") {
@@ -598,13 +598,13 @@ export class FrameParser {
         break;
       }
 
-      const base = this.parseFrame(input.slice(offset), activeVersion);
+      const base = this.parseFrame(input.slice(offset), activeGvrsn);
       offset += base.consumed;
-      const frameVersion = base.version;
+      const frameGvrsn = base.gvrsn;
       const attachments = [...base.frame.attachments];
       if (base.complete) {
         out.push(base.frame, ...(base.siblings ?? []));
-        activeVersion = base.streamVersion;
+        activeGvrsn = base.streamGvrsn;
         continue;
       }
 
@@ -618,7 +618,7 @@ export class FrameParser {
         if (nextCold === "msg") {
           break;
         }
-        if (!isAttachmentDomain(nextCold)) {
+        if (!isCesrDomain(nextCold)) {
           throw new ColdStartError(
             `Unsupported attachment cold code ${nextCold}`,
           );
@@ -627,7 +627,7 @@ export class FrameParser {
         if (
           this.isFrameBoundaryAhead(
             input.slice(offset),
-            frameVersion,
+            frameGvrsn,
             nextCold,
           )
         ) {
@@ -636,7 +636,7 @@ export class FrameParser {
 
         const { group, consumed } = parseAttachmentGroup(
           input.slice(offset),
-          frameVersion,
+          frameGvrsn,
           nextCold,
           { mode: this.attachmentDispatchMode },
         );
@@ -649,7 +649,7 @@ export class FrameParser {
         body: base.frame.body,
         attachments,
       });
-      activeVersion = base.streamVersion;
+      activeGvrsn = base.streamGvrsn;
     }
 
     return out;
@@ -658,14 +658,14 @@ export class FrameParser {
   /** Parse one complete frame from a bounded slice, including trailing attachments. */
   private parseCompleteFrame(
     input: Uint8Array,
-    inheritedVersion: Versionage | null = null,
+    inheritedGvrsn: Versionage | null = null,
   ): { frame: CesrFrame; consumed: number } {
-    const base = this.parseFrame(input, inheritedVersion);
+    const base = this.parseFrame(input, inheritedGvrsn);
     if (base.complete) {
       if (base.siblings?.length) throw new ColdStartError("Expected one enclosed frame");
       return { frame: base.frame, consumed: base.consumed };
     }
-    const version = base.version;
+    const gvrsn = base.gvrsn;
     const attachments = [...base.frame.attachments];
     let offset = base.consumed;
 
@@ -681,7 +681,7 @@ export class FrameParser {
         );
       }
 
-      if (!isAttachmentDomain(nextCold)) {
+      if (!isCesrDomain(nextCold)) {
         throw new ColdStartError(
           `Unsupported attachment cold code ${nextCold}`,
         );
@@ -689,7 +689,7 @@ export class FrameParser {
 
       const { group, consumed } = parseAttachmentGroup(
         input.slice(offset),
-        version,
+        gvrsn,
         nextCold,
         { mode: this.attachmentDispatchMode },
       );
@@ -707,22 +707,22 @@ export class FrameParser {
   /** Build native-body syntax artifacts used by semantic interpretation phase. */
   private parseNativeBodySyntax(
     raw: Uint8Array,
-    cold: "txt" | "bny",
-    fallbackVersion: Versionage,
+    cold: CesrDomain,
+    defaultGvrsn: Versionage,
   ): NativeBodySyntaxArtifact {
     try {
-      const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+      const bodyCounter = parseCounter(raw, defaultGvrsn, cold);
       return {
         metadata: this.parseNativeMetadataSyntax(
           raw,
           cold,
-          fallbackVersion,
+          defaultGvrsn,
           bodyCounter.code,
         ),
         fields: this.parseNativeFieldSyntax(
           raw,
           cold,
-          fallbackVersion,
+          defaultGvrsn,
           bodyCounter.code,
         ),
       };
@@ -744,15 +744,15 @@ export class FrameParser {
   /** Parse advisory native metadata tokens without semantic projection. */
   private parseNativeMetadataSyntax(
     raw: Uint8Array,
-    cold: "txt" | "bny",
-    fallbackVersion: Versionage,
+    cold: CesrDomain,
+    defaultGvrsn: Versionage,
     bodyCode: string,
   ): NativeMetadataSyntaxArtifact {
     const out: NativeMetadataSyntaxArtifact = {};
     let offset = 0;
 
     try {
-      const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+      const bodyCounter = parseCounter(raw, defaultGvrsn, cold);
       offset += tokenSize(bodyCounter, cold);
 
       if (MAP_BODY_CODES.has(bodyCode)) {
@@ -784,7 +784,7 @@ export class FrameParser {
   /** Interpret advisory metadata syntax into projected body metadata fields. */
   private interpretNativeMetadataSyntax(
     syntax: NativeMetadataSyntaxArtifact,
-    fallbackVersion: Versionage,
+    defaultGvrsn: Versionage,
   ): {
     proto: "KERI" | "ACDC";
     pvrsn: Versionage;
@@ -794,8 +794,8 @@ export class FrameParser {
   } {
     return {
       proto: (syntax.verser?.proto as Protocol | undefined) ?? Protocols.keri,
-      pvrsn: syntax.verser?.pvrsn ?? fallbackVersion,
-      gvrsn: syntax.verser?.gvrsn ?? fallbackVersion,
+      pvrsn: syntax.verser?.pvrsn ?? defaultGvrsn,
+      gvrsn: syntax.verser?.gvrsn ?? defaultGvrsn,
       ilk: syntax.ilker?.ilk ?? null,
       said: syntax.saider?.code.startsWith("E") ? syntax.saider.qb64 : null,
     };
@@ -804,20 +804,20 @@ export class FrameParser {
   /** Parse native field tokens without resolving label/value pairing semantics. */
   private parseNativeFieldSyntax(
     raw: Uint8Array,
-    cold: "txt" | "bny",
-    fallbackVersion: Versionage,
+    cold: CesrDomain,
+    defaultGvrsn: Versionage,
     bodyCode: string,
   ): NativeFieldSyntaxArtifact {
     if (MAP_BODY_CODES.has(bodyCode)) {
       return {
         kind: "map",
-        mapper: parseMapperBodySyntax(raw, fallbackVersion, cold),
+        mapper: parseMapperBodySyntax(raw, defaultGvrsn, cold),
       };
     }
 
-    const bodyCounter = parseCounter(raw, fallbackVersion, cold);
+    const bodyCounter = parseCounter(raw, defaultGvrsn, cold);
     const total = tokenSize(bodyCounter, cold);
-    const payloadBytes = bodyCounter.count * quadletUnit(cold);
+    const payloadBytes = bodyCounter.count * unitBytes(cold);
     const start = total;
     const end = start + payloadBytes;
     const entries: NativeFieldSyntaxEntry[] = [];
@@ -825,7 +825,7 @@ export class FrameParser {
 
     while (offset < end) {
       const at = raw.slice(offset, end);
-      const ctr = this.tryParseCounter(at, fallbackVersion, cold);
+      const ctr = this.tryParseCounter(at, defaultGvrsn, cold);
       if (ctr) {
         const size = tokenSize(ctr, cold);
         entries.push({
@@ -907,7 +907,7 @@ export class FrameParser {
   private skipNativeLabelers(
     raw: Uint8Array,
     offset: number,
-    cold: "txt" | "bny",
+    cold: CesrDomain,
   ): number {
     let out = offset;
     while (out < raw.length) {
@@ -923,7 +923,7 @@ export class FrameParser {
   /** Infer unselected legacy bodies, otherwise validate metadata against the stream genus. */
   private bodyGenus(body: Pick<CesrBody, "pvrsn" | "gvrsn">, selected: Versionage | null): Versionage {
     const genus = selected ?? body.gvrsn
-      ?? (body.pvrsn.major === 1 ? { major: 1, minor: 0 } : DEFAULT_VERSION);
+      ?? (body.pvrsn.major === 1 ? { major: 1, minor: 0 } : DEFAULT_GVRSN);
     resolveCounterSizeTable(genus);
     if (body.pvrsn.major > genus.major) {
       throw new VersionError(
@@ -944,11 +944,11 @@ export class FrameParser {
   /** Probe a counter in the selected genus without reinterpreting its bytes. */
   private tryParseCounter(
     input: Uint8Array,
-    version: Versionage,
-    cold: "txt" | "bny",
+    gvrsn: Versionage,
+    cold: CesrDomain,
   ): Counter | null {
     try {
-      return parseCounter(input, version, cold);
+      return parseCounter(input, gvrsn, cold);
     } catch (error) {
       if (error instanceof UnknownCodeError || error instanceof DeserializeError) return null;
       throw error;
@@ -958,25 +958,25 @@ export class FrameParser {
   /** Resolve frame counters in the selected genus; infer legacy forms only when unselected. */
   private resolveFrameStartCounter(
     input: Uint8Array,
-    preferredVersion: Versionage,
-    cold: "txt" | "bny",
+    preferredGvrsn: Versionage,
+    cold: CesrDomain,
     inferLegacy: boolean,
-  ): { counter: Counter; version: Versionage } {
-    const alternate: Versionage = preferredVersion.major >= 2
+  ): { counter: Counter; gvrsn: Versionage } {
+    const alternate: Versionage = preferredGvrsn.major >= 2
       ? { major: 1, minor: 0 }
       : { major: 2, minor: 0 };
-    const attempts = inferLegacy ? [preferredVersion, alternate] : [preferredVersion];
-    let firstParsed: { counter: Counter; version: Versionage } | null = null;
+    const attempts = inferLegacy ? [preferredGvrsn, alternate] : [preferredGvrsn];
+    let firstParsed: { counter: Counter; gvrsn: Versionage } | null = null;
     let firstError: Error | null = null;
 
     for (const attempt of attempts) {
       try {
         const counter = parseCounter(input, attempt, cold);
         if (!firstParsed) {
-          firstParsed = { counter, version: attempt };
+          firstParsed = { counter, gvrsn: attempt };
         }
         if (FRAME_START_GROUP_NAMES.has(counter.name)) {
-          return { counter, version: attempt };
+          return { counter, gvrsn: attempt };
         }
       } catch (error) {
         if (error instanceof ShortageError) {

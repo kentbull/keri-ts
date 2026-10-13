@@ -2,7 +2,7 @@ import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
 import { p256 } from "npm:@noble/curves@1.9.7/nist";
 import { secp256k1 } from "npm:@noble/curves@1.9.7/secp256k1";
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { matterCodexName, MtrDex, VERFER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
@@ -90,7 +90,7 @@ export class Verfer extends Matter {
 /** Parse and hydrate `Verfer` from txt/qb2 bytes. */
 export function parseVerfer(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Verfer {
   return new Verfer(parseMatter(input, cold));
 }
