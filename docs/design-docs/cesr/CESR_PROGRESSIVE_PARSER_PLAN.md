@@ -41,6 +41,27 @@ it and obsolete keri-ts API compatibility surfaces. Move semantic regression
 coverage to the new API rather than deleting protocol tests. Do not ship two
 permanent parser strategies.
 
+## Additional approved review and qualification work
+
+After the open parser PRs through recipient decryption (#129–#133) merge, prepare
+one test cleanup/reorganization PR against current master and leave it open for
+human review. Revalidate the side-chat audit against the new code, remove only
+proven duplication or tests without a production contract, retain protocol and
+resource-lifecycle regressions, and simplify test scheduling without hiding
+coverage. Keep production behavior unchanged in that PR.
+
+Run the complete maintained test inventory, including all manual and long-running
+targets, using the local KERIpy main checkout at
+`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Verify the harness actually imports
+that checkout. Record every run, skip, failure, topology, and duration. Heavy
+qualification remains outside required merge CI.
+
+Continue the progressive parser sequence after preparing that review PR. Any
+interop regressions or missing features discovered against this KERIpy revision
+must have an evidence-backed follow-up list and sequenced implementation plan.
+Execute those follow-ups after the progressive parser work; do not disguise
+production repairs as test cleanup.
+
 ## Benchmark protocol
 
 Generate valid inputs incrementally; never preload the whole corpus or create a
