@@ -19,7 +19,6 @@ import {
   SealEvent,
   SealKind,
   SealSource,
-  Seqner,
   SerderACDC,
   SerderKERI,
   Siger,
@@ -300,7 +299,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
         if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected TransReceiptQuadruples tuple");
         envelope.trqs.push(TransReceiptQuadruple.fromTuple([
           primitive(item[0], Prefixer),
-          primitive(item[1], Seqner),
+          primitive(item[1], NumberPrimitive),
           primitive(item[2], Diger),
           primitive(item[3], Siger),
         ]));
@@ -312,7 +311,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
         if (!isGroupTuple(item) || item.length !== 4) throw new TypeError("Expected TransIdxSigGroups tuple");
         envelope.tsgs.push(TransIdxSigGroup.fromTuple([
           primitive(item[0], Prefixer),
-          primitive(item[1], Seqner),
+          primitive(item[1], NumberPrimitive),
           primitive(item[2], Diger),
           signatureTuple(item[3]),
         ]));
@@ -333,7 +332,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
       for (const item of group.items) {
         if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected FirstSeenReplayCouples tuple");
         envelope.frcs.push(FirstSeenReplayCouple.fromTuple([
-          new NumberPrimitive(primitive(item[0], Seqner)),
+          primitive(item[0], NumberPrimitive),
           primitive(item[1], Dater),
         ]));
       }
@@ -343,7 +342,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
       for (const item of group.items) {
         if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected SealSourceCouples tuple");
         envelope.sscs.push(SealSource.fromTuple([
-          new NumberPrimitive(primitive(item[0], Seqner)),
+          primitive(item[0], NumberPrimitive),
           primitive(item[1], Diger),
         ]));
       }
@@ -354,7 +353,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
         if (!isGroupTuple(item) || item.length !== 3) throw new TypeError("Expected SealSourceTriples tuple");
         envelope.ssts.push(SealEvent.fromTuple([
           primitive(item[0], Prefixer),
-          new NumberPrimitive(primitive(item[1], Seqner)),
+          primitive(item[1], NumberPrimitive),
           primitive(item[2], Diger),
         ]));
       }

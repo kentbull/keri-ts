@@ -213,8 +213,10 @@ must update this contract and the mapped tests in the matrix.
 ## Attachment Primitive Roles
 
 Known tuple positions hydrate their semantic primitives once in CESR: Siger,
-Verfer/Cigar, Prefixer, Seqner, Diger, Dater, Pather, and the extended
+Verfer/Cigar, Prefixer, NumberPrimitive, Diger, Dater, Pather, and the extended
 nonce/label/media roles. Wrong-role codes fail at this boundary. Tuple layouts
-remain ordered and recursive. The pinned KERIpy parser uses fixed-width Seqner
-for receipt, replay, and source ordinals in both versions; the bound-state
-ordinal uses NumberPrimitive. Opaque wire families remain OpaqueSpan entries.
+remain ordered and recursive. The KERIpy CLI interop baseline
+`98b88cf73a746813a8719f05264400467a474c05` uses Number for ordinals in both
+versions, accepting compact numeric codes as well as fixed-width `0A`. The
+older table baseline used Seqner; its narrower reader is not the full supported
+wire surface. Opaque wire families remain OpaqueSpan entries.
