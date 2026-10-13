@@ -49,14 +49,3 @@ processMsg admission. IPEX route verification consumes these factors separately
 from child issuer proofs; sender/KRAM admission policy remains incomplete.
 
 See the [exchange plan](../../plans/exchange/EXCHANGE_ADMISSION_PLAN.md) for remaining sender/KRAM admission.
-
-Internal `KramPolicy` selects exact ilk/route, ilk, then catchall cache records.
-Exemptions retain frozen compact-prefix semantics, including V2 OOBI replies;
-they bypass only KRAM, leaving sender policy and downstream verification intact.
-Invalid configuration and coverage holes fail before publication. Acceptance
-expansions wait for receiver-clocked delays; pure decreases apply immediately.
-Active acceptance and pruning remain ordered, and existing drift stays fixed.
-Atomic `ctyp.`/private `hbys.` transition metadata survives reopen and refreshes
-stale owners. These restart and active-window guarantees strengthen the frozen
-reference, which stores pending transitions only in memory. No Kramer intake or
-runtime enablement is exported; cache windows are not a shared runtime budget.
