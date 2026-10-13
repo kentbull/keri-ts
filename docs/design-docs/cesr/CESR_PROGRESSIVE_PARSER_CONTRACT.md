@@ -10,17 +10,24 @@ complete children before their enclosing payload finishes. The
 [current synchronous contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) still
 applies to callers of the temporary `CesrParser`/`parseBytes` path.
 
-Phase 5 keeps bodies and individual attachment groups materialized through the
-existing Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB
-and admits a complete body plus its attachments, excluding outer GenericGroup
-and BodyWithAttachmentGroup envelopes. Cursor budgets separately bound producer
-backing buffers, queued input, and nesting. ESSR payload sinks, incremental
-attachment traversal, storage, and runtime backpressure remain later phases;
-this intermediate implementation does not claim their memory guarantees.
+The parser materializes bodies and ordinary attachment leaves through the existing
+Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
+that resident metadata; `maxAttachmentGroups` separately caps retained ordinary
+leaf objects at 4,096, including empty groups. Structural attachment wrappers flatten to ordered semantic
+leaves; their raw payloads are not retained. Cursor budgets separately bound
+producer backing buffers, queued input, and nesting.
 
-`packages/cesr/test/unit/parser-progressive.test.ts` proves early delivery,
-exact single-frame wrappers, every-byte partitions in both genera/domains,
-version scope restoration, partial failure, cancellation, and frame admission.
+ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
+concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per frame. Both
+limits are finite even for filesystem sinks. The default is a bounded memory sink;
+`payloadSink(maxWireBytes, signal)` selects another owner. No transfer-sized or
+per-item manifest array is retained. Final storage and runtime backpressure
+migration remains pending; parser tests alone do not establish its memory bound.
+
+`parser-progressive.test.ts` proves early delivery, exact single-frame wrappers,
+every-byte partitions in both genera/domains, version scope restoration, partial
+failure, cancellation, and frame admission. `parser-essr.test.ts` adds payload
+padding/extent validation, separate budgets, backpressure, and stage cleanup.
 Final runtime and benchmark qualification remain pending.
 
 The target is retained memory bounded by the active logical message and explicit
@@ -114,12 +121,22 @@ Shared bounded collection can support finite consumers. No implicit
 Runtime implementations own filesystem paths, staged storage, promotion, and
 cleanup. A parsed large attachment must not also retain a full `CounterGroup.raw`
 copy or an unbounded array of items/references. Use sequential payload storage
-and a paged/on-disk ordered manifest where one message has many fragments.
-Preserve the metadata needed to reconstruct qualified wire tokens.
+without an in-memory fragment manifest. `CesrFrame.essr` stores one canonical
+counterless qb64 Texter sequence in `wire`, its ordered item count, resolved frame
+`gvrsn`, and a non-owning `raw` view that incrementally decodes that wire. The
+canonical sequence retains item codes and boundaries, but not incoming enclosing
+counters or text/binary presentation. Replay chooses counters for its requested
+genus/domain. `discard()` releases the sole wire owner and invalidates both views.
+`essrPayload()` reconstructs these views from an owned stored wire payload.
+The decoded view admits `wire.open()` backing buffers up to 1 MiB; custom sinks
+must meet this reader chunk contract just as the built-in 64 KiB memory/file
+readers do. A small view over a larger allocation is rejected rather than
+silently pinning that allocation.
 
 The parser owns unfinished frame resources. On parse failure or cancellation it
 aborts those resources. At yield, completed payload ownership passes to the
-consumer. A later sibling error or generator close must not delete earlier
+consumer. Internal recursive yields do not transfer ownership: single-frame
+wrappers hold their candidate stages until exact validation. A later sibling error or generator close must not delete earlier
 yielded payloads. Consumers discard rejected/unclaimed owners and promote
 accepted content only after required verification.
 
@@ -128,7 +145,10 @@ accepted content only after required verification.
 Texter boundaries are fragment boundaries, not necessarily sealed-message
 boundaries. Validate the logical ESSR digest over the ordered concatenation of
 decoded raw Texter bytes, matching KERIpy. Perform hashing incrementally without
-joining the whole transfer; do not hash qualified text instead.
+joining the whole transfer; do not hash qualified text instead. `Diger` owns the
+shared incremental algorithm registry, `verifyChunks()` and `verifyStream()`.
+Exchange acceptance checks a string-valued `serder.a` after signature validation
+and before handler acceptance/storage; `serder.seals` is array-only.
 
 Recipient processing admits one bounded logical ciphertext message, verifies
 required exchange evidence and payload integrity, authenticates/decrypts it with

@@ -2,7 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { Diger, Prefixer } from "../../../../cesr/mod.ts";
+import { b, Diger, Prefixer, Texter } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
 import { loadChallengeHandlers } from "../../../src/app/challenging.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
@@ -331,6 +331,48 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
       assertExists(alternate.said);
       assertEquals(accepted.kind, "accept");
       assertEquals(hby.db.exns.get([alternate.said])?.said, alternate.said);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Exchanger verifies an ESSR string digest before accepting payload state", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `essr-digest-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const sender = hby.makeHab("sender", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const digest = new Diger({ raw: Diger.digest(b("abcxyz"), "E"), code: "E" });
+      const serder = exchangeMessage("/essr", {}, { sender: sender.pre, diger: digest })[0];
+      const tsgs = [
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: sender.pre }),
+          sender.kever!.sner,
+          new Diger({ qb64: sender.kever!.said }),
+          sender.sign(serder.raw, true),
+        ),
+      ];
+      const essrs = ["abc", "xyz"].map((text) => new Texter({ raw: b(text), code: "4B" }));
+      const exchanger = new Exchanger(hby);
+      // This projection intentionally distinguishes string ESSR seals from array-valued seals.
+      assertEquals(serder.a, digest.qb64);
+      assertEquals(serder.seals, []);
+      for (const payload of [[], [essrs[0]], [...essrs].reverse()]) {
+        assertEquals(exchanger.processEvent({ serder, tsgs, essrs: payload }).kind, "reject");
+        assertEquals(hby.db.exns.get([serder.said!]), null);
+        assertEquals(hby.db.essrs.get([serder.said!]), []);
+      }
+      // Concatenation order is semantic even though fragment boundaries are not hashed.
+      assertEquals(exchanger.processEvent({ serder, tsgs, essrs }).kind, "accept");
+      assertEquals(hby.db.exns.get([serder.said!])?.said, serder.said);
+      assertEquals(hby.db.essrs.get([serder.said!]).map((item) => item.text), ["abc", "xyz"]);
     } finally {
       yield* hby.close(true);
     }

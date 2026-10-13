@@ -160,6 +160,18 @@ export class Exchanger {
       return verification;
     }
 
+    // KERI's `a` may be an ESSR digest; `seals` only exposes array-shaped values.
+    if (typeof args.serder.a === "string") {
+      try {
+        const digest = new Diger({ qb64: args.serder.a });
+        if (essrs.length === 0 || !digest.verifyChunks(essrBytes(essrs))) {
+          return { kind: "reject", reason: "ESSR payload is missing or its digest does not match.", said };
+        }
+      } catch (error) {
+        return { kind: "reject", reason: `Invalid ESSR digest: ${String(error)}`, said };
+      }
+    }
+
     if (
       handler?.verify && !handler.verify({
         serder: args.serder,
@@ -708,4 +720,9 @@ function aggregateTransIdxSigGroups(
     );
   }
   return [...aggregated.values()];
+}
+
+/** Preserve ESSR fragment order for digest verification without joining or copying. */
+function* essrBytes(essrs: readonly Texter[]): Generator<Uint8Array> {
+  for (const texter of essrs) yield texter.raw;
 }

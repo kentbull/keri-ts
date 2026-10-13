@@ -14,6 +14,7 @@ export * from "./core/types.ts";
 export * from "./core/vocabulary.ts";
 export { parseAttachmentGroup } from "./parser/attachments.ts";
 export * from "./parser/cold-start.ts";
+export { type EssrOptions, essrPayload } from "./parser/essr.ts";
 export * from "./parser/progressive.ts";
 export * from "./parser/stream.ts";
 export * from "./primitives/aggor.ts";

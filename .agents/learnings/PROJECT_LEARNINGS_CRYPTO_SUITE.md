@@ -60,6 +60,11 @@ signing/verification behavior in `keri-ts`.
     try to check module identity. Package qualification must exercise the built
     Node/browser runtime, not source imports alone.
 
+17. `Diger` owns one incremental factory registry for both one-shot digests and
+    streamed verification. ESSR hashes ordered concatenated raw Texter bytes,
+    never qualified wire. KERI exchange `a` may be a string digest even though
+    `.seals` only returns arrays; verify after signatures and before acceptance.
+
 ## Use This Doc For
 
 1. Key generation, derivation, and rotation semantics.
