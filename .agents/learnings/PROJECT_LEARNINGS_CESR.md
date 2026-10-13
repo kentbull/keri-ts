@@ -162,6 +162,11 @@ and use this supplementary adapter at their parsing boundary.
 
 ## Current Follow-Ups
 
+`core/payload.ts` owns the filesystem-neutral payload contract: reopenable reads,
+explicit limited collection, and bounded memory staging. Sink completion transfers
+ownership; abort cannot revoke an already returned payload. KERI's file store owns
+file promotion and disposal, independently of parser and crypto policy.
+
 1. Execute the progressive parser plan with explicit checkpoint evidence. Keep
    current behavior accurate until migration, preserve version/count/boundary
    regressions, and distinguish ESSR fragments from logical sealed messages.
