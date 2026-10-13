@@ -160,9 +160,12 @@ and use this supplementary adapter at their parsing boundary.
     round-trip from the visible SAD, but compactable top-level ACDC SAIDs must
     also verify against the most compact variant. Section identifiers remain
     label-aware (`$id`, `d`, `agid`).
-16. `Mapper`, `Compactor`, and `Aggor` are now real semantic CESR-native
-    primitives. Future ACDC/native work should extend those primitives instead
-    of rebuilding section semantics inside generic serder helpers.
+16. `Mapper`, `Compactor`, and `Aggor` own semantic disclosure. `Aggor` is
+    independent of counted transport wrappers and commits to its declared
+    CESR/JSON/CBOR/MGPK framing. Generic list/map attachment projections live
+    in `Serder.projectStructors().generic` as `Structor` values. Future ACDC
+    work should extend semantic primitives instead of rebuilding section
+    semantics inside generic serder helpers.
 17. Long-tail KERI serder parity includes wrapper accessors, not just scalar
     projections: helpers such as `sner`, `tholder`, `ntholder`, `bner`, and the
     typed `berfers` surface are part of the real subtype contract.

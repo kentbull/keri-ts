@@ -122,7 +122,7 @@ export class Structor extends CounterGroup {
  * Parse counted structing transport without granting its codes attachment admission.
  *
  * Optional `allowedCodes` guard narrows acceptable group families for
- * subclass parsers (`Sealer`, `Blinder`, `Mediar`, `Aggor`).
+ * subclass parsers (`Sealer`, `Blinder`, `Mediar`).
  */
 export function parseStructor(
   input: Uint8Array,

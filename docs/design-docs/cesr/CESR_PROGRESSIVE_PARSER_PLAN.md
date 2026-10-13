@@ -334,10 +334,20 @@ only the digest input excludes them. Twelve frozen Python literals cover JSON,
 CBOR, and MGPK with protocol 1/2, both with and without ignored fields. Tests also
 cover unversioned exclusions, input immutability, and missing-field rejection.
 
-Aggregate credentials still have reproduced gaps: `SerderACDC.issuee` omits a
-disclosed aggregate recipient, and non-CESR aggregates incorrectly pass through
-CESR counter serialization. Repair aggregate representation and recipient
-projection before closing the semantic accessor audit.
+Aggregate commitments now use their declared CESR/JSON/CBOR/MGPK list framing.
+Standalone `Aggor` verifies disclosed map SAIDs before compacting them, while
+generic transport groups remain `Structor` values. Independent frozen fixtures
+cover all four formats, compact/partial disclosure, malformed commitments, and
+26 ACDC issuee projections. `SerderACDC.issuee` reads disclosed attributes or the
+first aggregate member; compact sections reveal no recipient. The KERI revocation
+recipient path exercises those same projections.
+
+One reproduced validation gap remains outside this slice: standalone saidive
+`Mapper` verifies serialization round trips but accepts a stale claimed SAID
+after a map member changes. After the progressive runtime follow-ons below,
+add a focused parity repair with independent positive and tampered vectors for
+all supported kinds. Reuse the resulting verification path from `Aggor` once it
+preserves the independently established disclosure behavior.
 
 Separate API naming differences from reproduced wire or validation gaps. Implement
 actual gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and

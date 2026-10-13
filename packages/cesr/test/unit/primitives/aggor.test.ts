@@ -1,103 +1,87 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { codeB64ToB2 } from "../../../src/core/bytes.ts";
-import { UnknownCodeError } from "../../../src/core/errors.ts";
-import { Aggor, parseAggor } from "../../../src/primitives/aggor.ts";
-import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
-import { counterV2, token } from "../../fixtures/counter-token-fixtures.ts";
-import { KERIPY_STRUCTOR_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
-import { txt } from "../../fixtures/primitive-test-helpers.ts";
+import { decodeHex } from "jsr:@std/encoding/hex";
+import { b, concatBytes } from "../../../src/core/bytes.ts";
+import { DeserializeError, SerializeError, ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
+import { Aggor, type AggorList } from "../../../src/primitives/aggor.ts";
+import { Mapper, type MapperMap } from "../../../src/primitives/mapper.ts";
+import type { Kind } from "../../../src/tables/versions.ts";
+import vectors from "../../fixtures/aggregate-vectors.json" with { type: "json" };
 
-const V2 = { major: 2, minor: 0 } as const;
+for (const row of vectors.rows) {
+  const kind = row.kind as Kind;
 
-// These tests teach the two personalities of `Aggor`:
-// - parser-facing compatibility for generic list/map counter families
-// - real aggregate-list semantics (`agid`, disclosure, verification)
-//
-// Compare with:
-// - `Compactor` for hierarchical map disclosure
-// - `disclosure.ts` for fixed-field blind/bound/media disclosure
+  Deno.test(`aggor: ${kind} construction and disclosure match frozen KERIpy`, () => {
+    const seed = structuredClone(vectors.seed) as AggorList;
+    const aggor = new Aggor({ ael: seed, kind, makify: true });
+    assertEquals(seed, vectors.seed as AggorList);
+    assertEquals(aggor.ael, row.ael as AggorList);
+    assertEquals(aggor.raw, decodeHex(row.raw));
+    assertEquals(aggor.count, row.count);
+    assertEquals(aggor.size, decodeHex(row.raw).length);
+    assertEquals(aggor.code, "E");
+    assertEquals(aggor.kind, kind);
+    assertEquals(new Aggor({ raw: aggor.raw, kind }).ael, row.ael as AggorList);
+    assertEquals(new Aggor({ ael: aggor.ael, kind }).raw, aggor.raw);
 
-Deno.test("aggor: parses list aggregate groups", () => {
-  // Real verifier and digest tokens exercise a populated generic list.
-  const payload = `${token("B")}${token("E")}`;
-  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
+    const [compact] = aggor.disclose();
+    const [partial, disclosedKind] = aggor.disclose([1]);
+    assertEquals(compact, row.compact);
+    assertEquals(partial, row.partial);
+    assertEquals(disclosedKind, kind);
+    assertEquals(new Aggor({ ael: compact, kind }).raw, decodeHex(row.compactRaw));
+    assertEquals(Aggor.verifyDisclosure(partial, kind), true);
+    assertEquals(Aggor.verifyDisclosure(compact, kind), true);
 
-  const aggor = parseAggor(txt(listBody), V2, "txt");
-  assertEquals(aggor instanceof Aggor, true);
-  assertEquals(aggor.kind, "list");
-  assertEquals((aggor.listItems?.length ?? 0) > 0, true);
-  assertEquals(aggor.qb64g, listBody);
-});
-
-Deno.test("aggor: parses KERIpy empty-list aggregate vector", () => {
-  const aggor = parseAggor(
-    txt(KERIPY_STRUCTOR_VECTORS.aggorEmptyList),
-    V2,
-    "txt",
-  );
-  assertEquals(aggor instanceof Aggor, true);
-  assertEquals(aggor.kind, "list");
-  assertEquals(aggor.count, 0);
-  assertEquals(aggor.items.length, 0);
-});
-
-Deno.test("aggor: parses map aggregate groups", () => {
-  // TS still preserves map-family aggor compatibility for parser projections,
-  // even though the richer semantic lane is the list/aggregate path.
-  const payload = `0J_i${token("B")}`;
-  const mapBody = `${counterV2(CtrDexV2.MapBodyGroup, payload.length / 4)}${payload}`;
-
-  const aggor = parseAggor(txt(mapBody), V2, "txt");
-  assertEquals(aggor instanceof Aggor, true);
-  assertEquals(aggor.kind, "map");
-  assertEquals((aggor.mapFields?.length ?? 0) > 0, true);
-});
-
-Deno.test("aggor: qb2 parsing keeps KERIpy-derived payload stable", () => {
-  // Like the rest of native CESR, qb2 should canonicalize back to the same qb64
-  // text-domain shape a maintainer can actually read and reason about.
-  const payload = KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload;
-  const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
-  const qb2 = codeB64ToB2(listBody);
-
-  const aggor = parseAggor(qb2, V2, "bny");
-  assertEquals(aggor.kind, "list");
-  assertEquals(aggor.qb64g, listBody);
-  assertEquals(aggor.qb2g, qb2);
-});
-
-Deno.test("aggor: rejects non-aggregate counter groups", () => {
-  // Counter-family routing matters: random attachment groups must not sneak
-  // into the aggregate primitive just because they are counted.
-  const bad = counterV2(CtrDexV2.ControllerIdxSigs, 1);
-  assertThrows(
-    () => parseAggor(txt(bad), V2, "txt"),
-    UnknownCodeError,
-  );
-});
-
-Deno.test("aggor: makify/disclose/verifyDisclosure explain aggregate-list semantics", () => {
-  // Aggregate lists are the list-form sibling of compacted maps: slot zero is
-  // the commitment (`agid`), and later map elements may be disclosed either as
-  // their compact SAID or as the full map body.
-  const aggor = new Aggor({
-    ael: [
-      "",
-      {
-        d: "",
-        role: "issuer",
-      },
-      "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2",
-    ],
-    makify: true,
-    verify: true,
+    const empty = new Aggor({ kind });
+    assertEquals(empty.raw, decodeHex(row.emptyRaw));
+    assertEquals(empty.agid, null);
+    assertEquals(new Aggor({ raw: empty.raw, kind }).ael, []);
+    assertEquals(aggor.qb64b, aggor.raw);
+    if (kind === "JSON" || kind === "CESR") {
+      assertEquals(aggor.qb64, new TextDecoder().decode(aggor.raw));
+    } else {
+      // Python's text accessor rejects binary CBOR/MGPK bytes rather than replacing them.
+      assertThrows(() => aggor.qb64, TypeError);
+    }
+    if (kind === "CESR") {
+      assertEquals(new Aggor({ qb2: aggor.qb2 }).raw, aggor.raw);
+      assertEquals(aggor.byteCount("txt"), aggor.raw.length);
+      assertEquals(aggor.byteCount("bny"), aggor.qb2.length);
+      // CESR inhale consumes exactly one aggregate from a larger field stream.
+      assertEquals(new Aggor({ raw: concatBytes(aggor.raw, empty.raw) }).raw, aggor.raw);
+    } else {
+      assertEquals(empty.count, null);
+      assertThrows(() => aggor.qb2, SerializeError);
+      assertThrows(() => aggor.byteCount(), SerializeError);
+      assertThrows(() => new Aggor({ qb2: aggor.raw, kind }), DeserializeError);
+    }
   });
 
-  assertEquals(typeof aggor.agid, "string");
-  assertEquals(Array.isArray(aggor.ael), true);
+  Deno.test(`aggor: ${kind} rejects changed AGID, disclosed map SAID, and content`, () => {
+    const ael = structuredClone(row.ael) as AggorList;
+    ael[0] = row.compact[1];
+    assertEquals(Aggor.verifyDisclosure(ael, kind), false);
+    assertThrows(() => new Aggor({ ael, kind }), DeserializeError, "identifier does not verify");
+    assertThrows(() => new Aggor({ raw: new Aggor({ ael, kind, verify: false }).raw, kind }), DeserializeError);
 
-  const [disclosed] = aggor.disclose([1]);
-  assertEquals(typeof disclosed[0], "string");
-  assertEquals(typeof disclosed[1], "object");
-  assertEquals(Aggor.verifyDisclosure(disclosed), true);
+    const altered = structuredClone(row.ael) as AggorList;
+    (altered[1] as MapperMap).d = row.compact[2];
+    assertEquals(Aggor.verifyDisclosure(altered, kind), false);
+    assertThrows(() => new Aggor({ ael: altered, kind }), DeserializeError, "SAID at d does not verify");
+    const missing = structuredClone(row.ael) as AggorList;
+    delete (missing[1] as MapperMap).d;
+    assertEquals(Aggor.verifyDisclosure(missing, kind), false);
+    assertThrows(() => new Aggor({ ael: missing, kind }), kind === "CESR" ? SerializeError : DeserializeError);
+    const changed = structuredClone(row.ael) as AggorList;
+    (changed[1] as MapperMap).role = "changed";
+    assertEquals(Aggor.verifyDisclosure(changed, kind), false);
+    assertThrows(() => new Aggor({ ael: changed, kind }), DeserializeError, "SAID at d does not verify");
+    assertThrows(() => new Aggor({ raw: new Mapper({ mad: {}, kind }).raw, kind }), DeserializeError);
+  });
+}
+
+Deno.test("aggor: CESR rejects generic non-digest elements and truncated framing", () => {
+  assertThrows(() => new Aggor({ qb64: "-JALDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }), UnknownCodeError);
+  assertThrows(() => new Aggor({ qb64: "-JAB" }), ShortageError);
+  assertThrows(() => new Aggor({ raw: b("-JAB-JAA"), verify: false }), DeserializeError, "map element");
 });
