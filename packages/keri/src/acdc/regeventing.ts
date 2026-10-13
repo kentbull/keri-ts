@@ -13,6 +13,7 @@ import {
   type SerderKERI,
 } from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
+import { timestampMicros } from "../time/mod.ts";
 
 /** A parsed disclosure belongs to this node; neighboring or parent proofs do not count. */
 export type RegistryDisclosure = BlindState | BoundState;
@@ -211,19 +212,6 @@ export function vetRegistry(
     if (!state.binding) return { kind: "reject", reason: "binding" };
   }
   return { kind: "verified", state };
-}
-
-/** Historical checks retain microseconds and require explicit RFC3339 timezone offsets. */
-function timestampMicros(value: unknown): bigint | null {
-  if (typeof value !== "string") return null;
-  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(value);
-  if (!match) return null;
-  const [, base, fraction = "", zone] = match;
-  const local = Date.parse(`${base}Z`);
-  if (!Number.isFinite(local) || new Date(local).toISOString().slice(0, 19) !== base) return null;
-  if (zone !== "Z" && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4)) > 59)) return null;
-  const epoch = Date.parse(`${base}${zone}`);
-  return Number.isFinite(epoch) ? BigInt(epoch) * 1000n + BigInt(fraction.padEnd(6, "0")) : null;
 }
 
 /** Node-local disclosures and optional receiver-observed historical cutoff. */

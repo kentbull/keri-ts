@@ -36,7 +36,9 @@ Registrar/Credentialer compose issuer-side operations. Normal outcomes stay type
 V2 observer registry verification is read-only; import/persistence belongs to its
 store and workflow. Supplied anchored prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
-checks. Supplied chain authentication does not prove global freshness. IPEX
+checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
+RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
+Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs require receiver-observed KRAM time, still pending.
 
 IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
