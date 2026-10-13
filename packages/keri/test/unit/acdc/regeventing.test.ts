@@ -359,9 +359,9 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       assertEquals(second.regk, null);
       assertEquals(second.processEvent(other).kind, "accept");
 
-      // Storage corruption is not a missing dependency; a competing occupied slot is never overwritten.
+      // A foreign registry body under an accepted marker is corruption, not a competing valid event.
       baser.tels.pinOn(rip.said!, 0, new Saider({ qb64: other.said! }));
-      assertEquals(engine.processEvent(rip), { kind: "reject", reason: "duplicity" });
+      assertThrows(() => engine.processEvent(rip), Error, "Corrupt accepted registry event");
       assertEquals(store.seqSaider(rip.said!, 0)!.qb64, other.said);
       baser.evts.rem(other.said!);
       assertThrows(() => engine.processEvent(rip), Error, "Corrupt accepted registry event");
@@ -430,9 +430,24 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
       assertEquals(engine.processEvent(huge), { kind: "reject", reason: "ordinalRange" });
       assertEquals(store.event(huge.said!), null, "unsafe ordinals are refused before storage conversion");
 
+      const forgedRegistry = regcept(issuer.pre);
+      const forgedUpdate = blindate(forgedRegistry.said!, rip.said!, blid);
+      store.accept(forgedRegistry.said!, 0, rip);
+      issuer.interact({ data: [{ i: forgedRegistry.said!, s: "1", d: forgedUpdate.said! }] });
+      const forgedEngine = new RegistryEventer(hby.db, issuer.pre, store, forgedRegistry.said!);
+      assertThrows(() => forgedEngine.processEvent(forgedUpdate), Error, "Corrupt accepted registry event");
+      assertEquals(store.seqSaider(forgedRegistry.said!, 1), null);
+      store.putEvent(forgedRegistry);
+      baser.heads.pin(rip.said!, new Saider({ qb64: forgedRegistry.said! }));
+      const third = blindate(rip.said!, second.said!, blid, { sn: 3 });
+      issuer.interact({ data: [{ i: rip.said!, s: "3", d: third.said! }] });
+      assertThrows(() => engine.processEvent(third), Error, "Corrupt registry head");
+      assertEquals(store.seqSaider(rip.said!, 3), null);
+      baser.heads.pin(rip.said!, new Saider({ qb64: second.said! }));
+
       // A surviving higher head prevents a rollback even when its accepted slot was damaged.
       baser.tels.remOn(rip.said!, 2);
-      assertThrows(() => engine.processEvent(second), Error, "downgrade accepted head");
+      assertThrows(() => engine.processEvent(second), Error, "Corrupt registry head ordinal");
       assertEquals(store.head(rip.said!)!.qb64, second.said);
       baser.evts.rem(first.said!);
       assertThrows(() => engine.processEvent(second), Error, "Corrupt accepted registry event");
