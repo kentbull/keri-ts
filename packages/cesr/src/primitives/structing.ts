@@ -79,47 +79,14 @@ export function castage(
   return Object.freeze({ kls, ipn });
 }
 
-const NUMBER_CAPACITIES = [
-  { code: "M", rawSize: 2 },
-  { code: "0H", rawSize: 4 },
-  { code: "R", rawSize: 5 },
-  { code: "N", rawSize: 8 },
-  { code: "S", rawSize: 11 },
-  { code: "T", rawSize: 14 },
-  { code: "0A", rawSize: 16 },
-  { code: "U", rawSize: 17 },
-] as const;
-
 function freezeRecord<T extends object>(value: T): Readonly<T> {
   return Object.freeze(value);
 }
 
-function bigintToBytes(value: bigint): Uint8Array {
-  if (value < 0n) {
-    throw new TypeError(`Negative CESR number=${value}`);
-  }
-  if (value === 0n) {
-    return new Uint8Array([0]);
-  }
-  const bytes: number[] = [];
-  let working = value;
-  while (working > 0n) {
-    bytes.unshift(Number(working & 0xffn));
-    working >>= 8n;
-  }
-  return new Uint8Array(bytes);
-}
-
+/** Hydrate a hexadecimal SAD ordinal with the primitive's canonical automatic code. */
 function hydrateNumber(numh: string): NumberPrimitive {
   const bigint = BigInt(`0x${numh || "0"}`);
-  const raw = bigintToBytes(bigint);
-  const entry = NUMBER_CAPACITIES.find(({ rawSize }) => raw.length <= rawSize);
-  if (!entry) {
-    throw new TypeError(`Unsupported CESR number width=${raw.length}`);
-  }
-  const padded = new Uint8Array(entry.rawSize);
-  padded.set(raw, entry.rawSize - raw.length);
-  return new NumberPrimitive({ code: entry.code, raw: padded });
+  return NumberPrimitive.fromNum(bigint);
 }
 
 function encodeTag(text: string): string {

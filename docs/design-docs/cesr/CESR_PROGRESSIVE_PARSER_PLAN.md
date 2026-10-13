@@ -316,13 +316,24 @@ and changed ACDC/KERI semantic accessors. Python's Pather depth limit applies
 to its resolution API, which TS does not expose; it does not limit wire path
 construction. Do not invent a wire-depth restriction when auditing that gap.
 
-A separate native/Serder defect is reproduced with Python `eventing.incept`
-(version 2, CESR, `a=[{t: "0OKERICAACAA", d: "1AAP"}]`): Python emits a typed-seal
-`-W` group; TS serializes the same SAD seal as a generic map. TS's unchecked
-native projection returns the group wire as a string, and checked `SerderKERI`
-rejects the Python body with `Invalid round trip of SAD against raw.` Fix native
-seal SAD encoding/projection in a separate cohesive slice; typed attachment and
-structing parity do not establish native event parity.
+The native seal repair now encodes and projects the seven frozen `Serder.ClanCodes`
+families through the existing typed descriptors. It preserves homogeneous runs,
+ordered SAD keys, and event-only list admission. Native nonce/big seal counters
+remain excluded. Unsupported maps fail before serialization instead of being
+silently lost. The former generic map/list fallback is removed.
+
+`NumberPrimitive.fromNum` owns automatic `M/R/N/S/T/U` selection for native fields,
+seal records, Serder wrappers, and numeric thresholds. Explicit `0H/0A` wire
+hydration remains supported. Independent fixtures cover all seven seal families,
+23 native events, JSON protocol 1/2, malformed boundaries/roles, and 17 numeric
+transition values. Reverse probes ask the frozen Python reader to reconstruct
+actual TS output. Current Python rejects native protocol 1; the historical TS
+layouts remain, but this slice makes no current native-v1 parity claim.
+
+Two further gaps have direct probes: ignored SAID fields are dropped from the
+returned SAD and sized incorrectly, and `SerderACDC.issuee` omits the recipient
+from a disclosed aggregate. Repair these in separate slices before closing the
+semantic accessor audit.
 
 Separate API naming differences from reproduced wire or validation gaps. Implement
 actual gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and
