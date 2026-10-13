@@ -311,8 +311,7 @@ reference bypass. Larger deployments can raise both caps before parsing begins.
 ### Remaining current-reference primitive and Serder slices
 
 Audit the remaining primitive/Serder delta at the same frozen revision before
-claiming parity: path traversal limits, version-aware SAID derivation,
-and changed ACDC/KERI semantic accessors. Python's Pather depth limit applies
+claiming parity: path traversal limits and changed ACDC/KERI semantic accessors. Python's Pather depth limit applies
 to its resolution API, which TS does not expose; it does not limit wire path
 construction. Do not invent a wire-depth restriction when auditing that gap.
 
@@ -330,10 +329,15 @@ transition values. Reverse probes ask the frozen Python reader to reconstruct
 actual TS output. Current Python rejects native protocol 1; the historical TS
 layouts remain, but this slice makes no current native-v1 parity claim.
 
-Two further gaps have direct probes: ignored SAID fields are dropped from the
-returned SAD and sized incorrectly, and `SerderACDC.issuee` omits the recipient
-from a disclosed aggregate. Repair these in separate slices before closing the
-semantic accessor audit.
+Ignored SAID fields now remain in the returned SAD and its declared version size;
+only the digest input excludes them. Twelve frozen Python literals cover JSON,
+CBOR, and MGPK with protocol 1/2, both with and without ignored fields. Tests also
+cover unversioned exclusions, input immutability, and missing-field rejection.
+
+Aggregate credentials still have reproduced gaps: `SerderACDC.issuee` omits a
+disclosed aggregate recipient, and non-CESR aggregates incorrectly pass through
+CESR counter serialization. Repair aggregate representation and recipient
+projection before closing the semantic accessor audit.
 
 Separate API naming differences from reproduced wire or validation gaps. Implement
 actual gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and

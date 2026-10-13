@@ -1,0 +1,209 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "rows": [
+    {
+      "input": {
+        "v": "KERI10JSON000000_",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [],
+      "sad": {
+        "v": "KERI10JSON00006e_",
+        "d": "EIg5wWu_PE9w1huLvQqgijB7YFDR70V10I2VAPzJMHOI",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "7b2276223a224b45524931304a534f4e3030303036655f222c2264223a22454967357757755f504539773168754c76517167696a423759464452373056313049325641507a4a4d484f49222c226b656570223a2276616c7565222c226f6d6974223a2269676e6f7265206d65227d"
+    },
+    {
+      "input": {
+        "v": "KERI10JSON000000_",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [
+        "omit"
+      ],
+      "sad": {
+        "v": "KERI10JSON00006e_",
+        "d": "EBps4uhk57_Bj2uhVm9TnjDr5vUXxVGK21hHAgUgY26a",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "7b2276223a224b45524931304a534f4e3030303036655f222c2264223a22454270733475686b35375f426a327568566d39546e6a4472357655587856474b323168484167556759323661222c226b656570223a2276616c7565222c226f6d6974223a2269676e6f7265206d65227d"
+    },
+    {
+      "input": {
+        "v": "KERI10CBOR000000_",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [],
+      "sad": {
+        "v": "KERI10CBOR00005f_",
+        "d": "EHhmKKFZgnGnjKMtEZRCvqhhOC5_AdsEVFJfnzmGpOra",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "a46176714b455249313043424f523030303035665f6164782c4548686d4b4b465a676e476e6a4b4d74455a5243767168684f43355f4164734556464a666e7a6d47704f7261646b6565706576616c7565646f6d69746969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERI10CBOR000000_",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [
+        "omit"
+      ],
+      "sad": {
+        "v": "KERI10CBOR00005f_",
+        "d": "EDaPABiON490g_ygePD4qvxlwBDZix8R-8LXPC6D3DIu",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "a46176714b455249313043424f523030303035665f6164782c454461504142694f4e343930675f7967655044347176786c7742445a697838522d384c585043364433444975646b6565706576616c7565646f6d69746969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERI10MGPK000000_",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [],
+      "sad": {
+        "v": "KERI10MGPK00005f_",
+        "d": "EAR2WaMcXI6prIM-gJCIrqSRViWo2-AiSWrC-4nIbM74",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "84a176b14b45524931304d47504b3030303035665fa164d92c4541523257614d635849367072494d2d674a4349727153525669576f322d4169535772432d346e49624d3734a46b656570a576616c7565a46f6d6974a969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERI10MGPK000000_",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [
+        "omit"
+      ],
+      "sad": {
+        "v": "KERI10MGPK00005f_",
+        "d": "EKLewfjmxh7jhEeUYUEanwHRoBYjZ_nD6jqNNJPoDE0u",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "84a176b14b45524931304d47504b3030303035665fa164d92c454b4c6577666a6d7868376a68456555595545616e7748526f42596a5a5f6e44366a714e4e4a506f44453075a46b656570a576616c7565a46f6d6974a969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERICAACAAJSONAAAA.",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [],
+      "sad": {
+        "v": "KERICAACAAJSONAABw.",
+        "d": "EN5LckoK8wtFrH9YmWoHAyTmm0W3JVKaN8YHRMK3DAuQ",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "7b2276223a224b4552494341414341414a534f4e414142772e222c2264223a22454e354c636b6f4b38777446724839596d576f484179546d6d3057334a564b614e385948524d4b3344417551222c226b656570223a2276616c7565222c226f6d6974223a2269676e6f7265206d65227d"
+    },
+    {
+      "input": {
+        "v": "KERICAACAAJSONAAAA.",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [
+        "omit"
+      ],
+      "sad": {
+        "v": "KERICAACAAJSONAABw.",
+        "d": "EIPAxRHVWgVPmywwZugc4plRrjYBEcc3vG7otRdO2p_V",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "7b2276223a224b4552494341414341414a534f4e414142772e222c2264223a224549504178524856576756506d7977775a75676334706c52726a5942456363337647376f7452644f32705f56222c226b656570223a2276616c7565222c226f6d6974223a2269676e6f7265206d65227d"
+    },
+    {
+      "input": {
+        "v": "KERICAACAACBORAAAA.",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [],
+      "sad": {
+        "v": "KERICAACAACBORAABh.",
+        "d": "EPBrfVeEsirszldvH6F-ER-Kqky6oxbqI6A4_dz8EBOU",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "a46176734b45524943414143414143424f52414142682e6164782c4550427266566545736972737a6c64764836462d45522d4b716b79366f786271493641345f647a3845424f55646b6565706576616c7565646f6d69746969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERICAACAACBORAAAA.",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [
+        "omit"
+      ],
+      "sad": {
+        "v": "KERICAACAACBORAABh.",
+        "d": "EL1mwOLZMubAZEviaA9rXH1Y5H6yOouLTwpeOyrWc6LQ",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "a46176734b45524943414143414143424f52414142682e6164782c454c316d774f4c5a4d7562415a4576696141397258483159354836794f6f754c547770654f79725763364c51646b6565706576616c7565646f6d69746969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERICAACAAMGPKAAAA.",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [],
+      "sad": {
+        "v": "KERICAACAAMGPKAABh.",
+        "d": "EImnTT9m86P8BrjWGThBAp_ZYFJde8psvQNjadeG8mLM",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "84a176b34b4552494341414341414d47504b414142682ea164d92c45496d6e5454396d3836503842726a574754684241705f5a59464a646538707376514e6a61646547386d4c4da46b656570a576616c7565a46f6d6974a969676e6f7265206d65"
+    },
+    {
+      "input": {
+        "v": "KERICAACAAMGPKAAAA.",
+        "d": "",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "ignore": [
+        "omit"
+      ],
+      "sad": {
+        "v": "KERICAACAAMGPKAABh.",
+        "d": "EJ2SG8eGQ6_lTiz6H0yGj5vPoPTQiY17QFpo4kWKfwNL",
+        "keep": "value",
+        "omit": "ignore me"
+      },
+      "raw": "84a176b34b4552494341414341414d47504b414142682ea164d92c454a32534738654751365f6c54697a36483079476a3576506f505451695931375146706f346b574b66774e4ca46b656570a576616c7565a46f6d6974a969676e6f7265206d65"
+    }
+  ]
+}
