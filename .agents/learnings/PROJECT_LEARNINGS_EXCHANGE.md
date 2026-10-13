@@ -58,6 +58,11 @@ Keep known-invalid separate from missing state: only the former permits signatur
 fallback. Preserve exact missing sequence numbers beyond safe database ordinals;
 query publication belongs to intake, not the read-only helper.
 
+KRAM signature verification preserves frozen arrival order and qb64 uniqueness.
+Do not substitute Kever's index-sorted verifier: distinct encodings may share an
+index, so intake thresholds must use unique indices. Historical sender groups
+are diagnostic only; normalization borrows owners and leaves foreign proofs separate.
+
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.
