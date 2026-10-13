@@ -139,6 +139,20 @@ and stale candidates leave escrow; corrupt records and I/O failures propagate.
 The read cursor closes before replay writes. This pass still collects registry
 escrow rows; shared scan admission remains part of the resource-policy phase.
 
+Explicit `RegistryObserver` parsed intake borrows public Baser and RegistryStore,
+requiring no local controlling Hab or aliases. This is TypeScript integration
+beyond frozen 927, using the ported engine rather than a bulk chain transaction.
+It is not a global freshness observer or automatic parser/runtime route. Incoming
+updates before inception stage body/anchor-escrow rows, never accepted markers;
+the stored, self-validating inception supplies issuer identity after reopen.
+`processEscrows(regid)` explicitly retries one registry through ordinary engine
+anchoring and ordering. Its full tuple/witness policy deliberately exceeds
+digest-only `vet` evidence. A finite ordinal ceiling bounds accepted chain length
+and prevents tighter configurations from replaying oversized staged rows; it
+does not bound escrow counts, scans, native allocation or total runtime memory.
+Each accepted event commits independently, preserving a prefix if a later event
+fails. Corrupt stored inception/accepted state and datastore failures propagate.
+
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or
 migrating rows. Body presence does not establish acceptance; `tels` contains the

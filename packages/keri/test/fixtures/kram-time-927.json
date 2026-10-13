@@ -1,0 +1,243 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "donor": "04178add",
+  "configurations": {
+    "decreased": [
+      1000,
+      3000,
+      4000,
+      5000,
+      3000,
+      4000,
+      5000
+    ]
+  },
+  "authentications": {
+    "multiPartial": {
+      "kind": "multi",
+      "complete": false
+    },
+    "multiComplete": {
+      "kind": "multi",
+      "complete": true
+    },
+    "single": {
+      "kind": "single"
+    }
+  },
+  "windows": {
+    "d": 1000,
+    "xl": 300000,
+    "pxl": 300000,
+    "long": 60000,
+    "short": 5000
+  },
+  "bodies": {
+    "transaction": "{\"v\":\"KERICAACAAJSONAAFa.\",\"t\":\"exn\",\"d\":\"EJE4Xqu1LkWIwBbS5Ml_Ycm643Av2gojc9dsh1cZbRey\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"EPeOUEdOmoCaciSxcObT13jX1PW1-754vG2HxaBwRei9\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:01.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"partial-transaction\"},\"a\":{}}",
+    "lower": "{\"v\":\"KERICAACAAJSONAAEP.\",\"t\":\"exn\",\"d\":\"EBYvVdV1sNXif0XJQfvJhseEVXkgpp_knM44FE0P526f\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T11:59:01.000000+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}",
+    "beforeLower": "{\"v\":\"KERICAACAAJSONAAEP.\",\"t\":\"exn\",\"d\":\"EHFljelP4sLhvSg4P2xyRrkvV5F0_oYf2FxWWuQmxR8z\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T11:59:00.999999+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}",
+    "upper": "{\"v\":\"KERICAACAAJSONAAEP.\",\"t\":\"exn\",\"d\":\"EMmCum453nXDrzmGA0LuDiu4CBo5tQ9EZaOBP9KzbBcP\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:03.000000+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}",
+    "afterUpper": "{\"v\":\"KERICAACAAJSONAAEP.\",\"t\":\"exn\",\"d\":\"EMDAuEWNnIbQzHyZHLJNMpndjdmfR2BZvSL3Zmg3K4Ot\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"ECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoN\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:03.000001+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}",
+    "unknown": "{\"v\":\"KERICAACAAJSONAAGH.\",\"t\":\"exn\",\"d\":\"EJtXomX9-XCLedRHY_gYgLo_Iz1qMzWv2_jIywNEcE7-\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"ENSSjfu6zmO5vdq0Dd_e6YsxGsI04ELQ3br1IlehVLX1\",\"p\":\"EFniVcZixBjr6nL8MrrHuToJ9vhpC70z5vPvxqZyvB4J\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"unknown-thread-reply\"},\"a\":{}}",
+    "opener": "{\"v\":\"KERICAACAAJSONAAFU.\",\"t\":\"exn\",\"d\":\"EO34K-WenfA9EVCNQhs9AYxMqBVVqSBick-Qn5J_-NDF\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"EDzx09DGCAhmyTmio1ow_EGn9Ej7N_z158EK9cwfyZ54\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"lifetime-open\"},\"a\":{}}",
+    "last": "{\"v\":\"KERICAACAAJSONAAF_.\",\"t\":\"exn\",\"d\":\"EBE6PpPmjGu6Eys3K35JRii_sYFPvph4e_jQD9AhdbWs\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"EDzx09DGCAhmyTmio1ow_EGn9Ej7N_z158EK9cwfyZ54\",\"p\":\"EO34K-WenfA9EVCNQhs9AYxMqBVVqSBick-Qn5J_-NDF\",\"dt\":\"2026-10-13T12:05:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"lifetime-end\"},\"a\":{}}",
+    "afterLast": "{\"v\":\"KERICAACAAJSONAAGD.\",\"t\":\"exn\",\"d\":\"EKk58HUsYV5ldSg_vbMjmQ7t3F3SpGcbGTxCX3y4oyYD\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"EDzx09DGCAhmyTmio1ow_EGn9Ej7N_z158EK9cwfyZ54\",\"p\":\"EBE6PpPmjGu6Eys3K35JRii_sYFPvph4e_jQD9AhdbWs\",\"dt\":\"2026-10-13T12:05:02.000001+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"lifetime-expired\"},\"a\":{}}",
+    "cross": "{\"v\":\"KERICAACAAJSONAAFn.\",\"t\":\"exn\",\"d\":\"ELvikNM6XiVI3SvN-fr55RayU3g_pmsmlYabiDyfk1hi\",\"i\":\"BAOhB7_zzhC-HXDdGOdLwJln5NYwm6UNXx3chmQSVTG4\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"EDzx09DGCAhmyTmio1ow_EGn9Ej7N_z158EK9cwfyZ54\",\"p\":\"EO34K-WenfA9EVCNQhs9AYxMqBVVqSBick-Qn5J_-NDF\",\"dt\":\"2026-10-13T12:00:03.000000+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}",
+    "senderLocal": "{\"v\":\"KERICAACAAJSONAAFn.\",\"t\":\"exn\",\"d\":\"EJNMdPO37lRFF2ZO9a22PnIDsQZCT90SBFKka38URDel\",\"i\":\"BAOhB7_zzhC-HXDdGOdLwJln5NYwm6UNXx3chmQSVTG4\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"EDzx09DGCAhmyTmio1ow_EGn9Ej7N_z158EK9cwfyZ54\",\"p\":\"ELvikNM6XiVI3SvN-fr55RayU3g_pmsmlYabiDyfk1hi\",\"dt\":\"2026-10-13T12:00:04.000000+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}",
+    "xip": "{\"v\":\"KERICAACAAJSONAAEg.\",\"t\":\"xip\",\"d\":\"EB8LRt8g23_JaJQLxh2XemDkxgSJmFk7mFyLCCzNrvHS\",\"u\":\"0AAAAQIDBAUGBwgJCgsMDQ4P\",\"i\":\"BAOhB7_zzhC-HXDdGOdLwJln5NYwm6UNXx3chmQSVTG4\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"dt\":\"2026-10-13T12:00:04.000000+00:00\",\"r\":\"/time\",\"q\":{},\"a\":{}}"
+  },
+  "caches": {
+    "transaction": {
+      "body": "transaction",
+      "windows": "long",
+      "xdt": "2026-10-13T12:00:01.000000+00:00",
+      "rdt": ""
+    },
+    "transaction-received": {
+      "body": "transaction",
+      "windows": "long",
+      "xdt": "2026-10-13T12:00:01.000000+00:00",
+      "rdt": "2026-10-13T12:00:02.000000+00:00"
+    },
+    "lower": {
+      "body": "lower",
+      "windows": "long"
+    },
+    "upper": {
+      "body": "upper",
+      "windows": "long"
+    },
+    "opener-received": {
+      "body": "opener",
+      "windows": "long",
+      "xdt": "2026-10-13T12:00:02.000000+00:00",
+      "rdt": "2026-10-13T12:00:02.000000+00:00"
+    },
+    "last-received": {
+      "body": "last",
+      "windows": "long",
+      "xdt": "2026-10-13T12:00:02.000000+00:00",
+      "rdt": "2026-10-13T12:05:02.000000+00:00"
+    },
+    "source.wrong": {
+      "body": "source.wrong",
+      "windows": "long"
+    },
+    "cross-received": {
+      "body": "cross",
+      "windows": "short",
+      "xdt": "2026-10-13T12:00:02.000000+00:00",
+      "rdt": "2026-10-13T12:00:03.000000+00:00"
+    },
+    "senderLocal-received": {
+      "body": "senderLocal",
+      "windows": "short",
+      "xdt": "2026-10-13T12:00:02.000000+00:00",
+      "rdt": "2026-10-13T12:00:04.000000+00:00"
+    },
+    "xip-received": {
+      "body": "xip",
+      "windows": "short",
+      "xdt": "2026-10-13T12:00:04.000000+00:00",
+      "rdt": "2026-10-13T12:00:04.000000+00:00"
+    }
+  },
+  "cases": [
+    {
+      "name": "transaction first signature has no receiver time",
+      "body": "transaction",
+      "receiverTime": "2026-10-13T12:00:01.000000+00:00",
+      "authentication": "multiPartial",
+      "cache": "transaction"
+    },
+    {
+      "name": "transaction threshold freezes receiver time",
+      "body": "transaction",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiComplete",
+      "partial": true,
+      "sharedOpener": "2026-10-13T12:00:01.000000+00:00",
+      "cache": "transaction-received",
+      "before": "transaction"
+    },
+    {
+      "name": "transaction replay preserves receiver time",
+      "body": "transaction",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiPartial",
+      "sharedOpener": "2026-10-13T12:00:01.000000+00:00",
+      "refusal": "replay",
+      "before": "transaction-received"
+    },
+    {
+      "name": "long acceptance lower boundary is inclusive",
+      "body": "lower",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiComplete",
+      "cache": "lower"
+    },
+    {
+      "name": "one microsecond before the lower boundary is refused",
+      "body": "beforeLower",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiPartial",
+      "refusal": "timeliness"
+    },
+    {
+      "name": "drift upper boundary is inclusive",
+      "body": "upper",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiComplete",
+      "cache": "upper"
+    },
+    {
+      "name": "one microsecond after the drift boundary is refused",
+      "body": "afterUpper",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiPartial",
+      "refusal": "timeliness"
+    },
+    {
+      "name": "reply without a known thread opener is refused",
+      "body": "unknown",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiPartial",
+      "refusal": "unknownThread"
+    },
+    {
+      "name": "exchange lifetime records its opener",
+      "body": "opener",
+      "receiverTime": "2026-10-13T12:00:02.000000+00:00",
+      "authentication": "multiComplete",
+      "cache": "opener-received"
+    },
+    {
+      "name": "exchange lifetime upper boundary is inclusive",
+      "body": "last",
+      "receiverTime": "2026-10-13T12:05:02.000000+00:00",
+      "authentication": "multiComplete",
+      "sharedOpener": "2026-10-13T12:00:02.000000+00:00",
+      "siblings": [
+        "opener-received"
+      ],
+      "cache": "last-received"
+    },
+    {
+      "name": "one microsecond after exchange lifetime is refused",
+      "body": "afterLast",
+      "receiverTime": "2026-10-13T12:05:02.000001+00:00",
+      "authentication": "multiPartial",
+      "sharedOpener": "2026-10-13T12:00:02.000000+00:00",
+      "siblings": [
+        "last-received",
+        "opener-received"
+      ],
+      "refusal": "lifetime"
+    },
+    {
+      "name": "cached multi partial keeps its original windows after policy decrease",
+      "body": "source.wrong",
+      "receiverTime": "2026-10-13T12:20:02.000000+00:00",
+      "authentication": "multiComplete",
+      "partial": true,
+      "configuration": "decreased",
+      "cache": "source.wrong",
+      "before": "source.wrong"
+    },
+    {
+      "name": "completed nontransaction cache remains an exact replay marker",
+      "body": "source.wrong",
+      "receiverTime": "2026-10-13T12:20:02.000000+00:00",
+      "authentication": "multiPartial",
+      "configuration": "decreased",
+      "refusal": "replay",
+      "before": "source.wrong"
+    },
+    {
+      "name": "cross-sender reply recovers the shared opener",
+      "body": "cross",
+      "receiverTime": "2026-10-13T12:00:03.000000+00:00",
+      "authentication": "single",
+      "sharedOpener": "2026-10-13T12:00:02.000000+00:00",
+      "cache": "cross-received"
+    },
+    {
+      "name": "sender-local row takes precedence over the shared opener",
+      "body": "senderLocal",
+      "receiverTime": "2026-10-13T12:00:04.000000+00:00",
+      "authentication": "single",
+      "sharedOpener": "2026-10-13T12:01:03.000000+00:00",
+      "siblings": [
+        "cross-received"
+      ],
+      "cache": "senderLocal-received"
+    },
+    {
+      "name": "xip uses its own SAID and timestamp to open an exchange",
+      "body": "xip",
+      "receiverTime": "2026-10-13T12:00:04.000000+00:00",
+      "authentication": "single",
+      "cache": "xip-received"
+    }
+  ]
+}
