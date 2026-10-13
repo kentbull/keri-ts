@@ -13,6 +13,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    normative lifecycle contract. Parser behavior changes should stay mapped to
    that contract and its tests.
 3. Parser architecture remains intentionally atomic/bounded-substream first.
+   `CesrParser` directly owns its buffer, offset, and selected stream genus.
    Nested incremental parsing is deferred behind explicit performance evidence.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.

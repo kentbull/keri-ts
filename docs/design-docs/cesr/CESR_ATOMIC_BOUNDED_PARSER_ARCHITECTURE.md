@@ -130,7 +130,7 @@ flowchart TD
 sequenceDiagram
     participant C as Caller
     participant P as CesrParser
-    participant S as ParserState
+    participant S as CesrParser stream state
 
     C->>P: "feed(chunk-1)"
     P->>S: "append bytes"

@@ -60,15 +60,6 @@ export interface CesrFrame {
   attachments: AttachmentGroup[];
 }
 
-/**
- * State of the CESR parser engine.
- * Contains the buffer of bytes to be parsed and the current offset.
- */
-export interface ParserState {
-  buffer: Uint8Array;
-  offset: number;
-}
-
 /** Parser stream event union: parsed frame payload or parse error. */
 export type ParseEvent =
   | { type: "frame"; frame: CesrFrame }

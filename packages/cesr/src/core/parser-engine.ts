@@ -1,9 +1,10 @@
+import { sniff } from "../parser/cold-start.ts";
 import type { AttachmentDispatchOptions } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
+import { concatBytes } from "./bytes.ts";
 import { ParserError, ShortageError } from "./errors.ts";
 import { AttachmentCollector } from "./parser-attachment-collector.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
-import { ParserStreamState } from "./parser-stream-state.ts";
 import type { CesrFrame, ParseEvent } from "./types.ts";
 
 /**
@@ -26,7 +27,9 @@ export class CesrParser {
    * `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
    */
   private readonly framed: boolean;
-  private readonly stream: ParserStreamState;
+  private buffer: Uint8Array = new Uint8Array(0);
+  private offset = 0;
+  private streamGvrsn: Versionage | null = null;
   private pending: { frame: CesrFrame; gvrsn: Versionage } | null = null;
   private queued: CesrFrame[] = [];
   private readonly frameParser: FrameParser;
@@ -37,7 +40,6 @@ export class CesrParser {
     this.framed = options.framed ?? false;
     const attachmentDispatchMode = options.attachmentDispatchMode ?? "compat";
 
-    this.stream = new ParserStreamState();
     this.frameParser = new FrameParser({
       attachmentDispatchMode,
     });
@@ -49,7 +51,7 @@ export class CesrParser {
 
   /** Append bytes and emit any complete parse events. */
   feed(chunk: Uint8Array): ParseEvent[] {
-    this.stream.append(chunk);
+    this.append(chunk);
     return this.drain();
   }
 
@@ -59,30 +61,45 @@ export class CesrParser {
   }
 
   reset(): void {
-    this.stream.reset();
+    this.buffer = new Uint8Array(0);
+    this.offset = 0;
+    this.streamGvrsn = null;
     this.pending = null;
     this.queued = [];
+  }
+
+  /** Append bytes without changing the consumed offset or selected genus. */
+  private append(chunk: Uint8Array): void {
+    this.buffer = concatBytes(this.buffer, chunk);
+  }
+
+  /** Remove a consumed prefix and advance the absolute byte offset. */
+  private consume(length: number): void {
+    this.buffer = this.buffer.slice(length);
+    this.offset += length;
   }
 
   /** Resume open attachments or emit enclosed frames before parsing another body. */
   private drain(terminal = false): ParseEvent[] {
     const out: ParseEvent[] = [];
-    while (this.stream.buffer.length > 0 || this.queued.length > 0 || (terminal && this.pending)) {
+    while (this.buffer.length > 0 || this.queued.length > 0 || (terminal && this.pending)) {
       try {
-        this.stream.consumeLeadingAno();
+        while (this.buffer.length > 0 && sniff(this.buffer) === "ano") {
+          this.consume(1);
+        }
         const pending = this.pending;
         if (pending) {
           const collected = this.attachmentCollector.collectTrailingAttachments(
-            this.stream.buffer,
+            this.buffer,
             pending.gvrsn,
             pending.frame.attachments,
             terminal,
           );
-          this.stream.consume(collected.consumed);
+          this.consume(collected.consumed);
           pending.frame.attachments = collected.attachments;
           if (!collected.complete) {
             if (terminal) {
-              throw new ShortageError(this.stream.buffer.length + 1, this.stream.buffer.length, this.stream.offset);
+              throw new ShortageError(this.buffer.length + 1, this.buffer.length, this.offset);
             }
             break;
           }
@@ -91,10 +108,10 @@ export class CesrParser {
         } else if (this.queued.length > 0) {
           out.push({ type: "frame", frame: this.queued.shift()! });
         } else {
-          if (this.stream.buffer.length === 0) break;
-          const base = this.frameParser.parseFrame(this.stream.buffer, this.stream.streamGvrsn);
-          this.stream.consume(base.consumed);
-          this.stream.streamGvrsn = base.streamGvrsn;
+          if (this.buffer.length === 0) break;
+          const base = this.frameParser.parseFrame(this.buffer, this.streamGvrsn);
+          this.consume(base.consumed);
+          this.streamGvrsn = base.streamGvrsn;
           if (!base.complete) {
             this.pending = { frame: base.frame, gvrsn: base.gvrsn };
             continue;
@@ -109,18 +126,18 @@ export class CesrParser {
           out.push({
             type: "error",
             error: new ShortageError(
-              this.stream.buffer.length + 1,
-              this.stream.buffer.length,
-              this.stream.offset,
+              this.buffer.length + 1,
+              this.buffer.length,
+              this.offset,
             ),
           });
-          this.stream.consume(this.stream.buffer.length);
+          this.consume(this.buffer.length);
           this.pending = null;
           break;
         }
         const normalized = error instanceof ParserError
           ? error
-          : new ParserError(String(error), this.stream.offset);
+          : new ParserError(String(error), this.offset);
         out.push({ type: "error", error: normalized });
         this.reset();
         break;
