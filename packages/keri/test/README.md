@@ -65,26 +65,47 @@ endurance cases.
 Manual files live in `test/manual/`; normal PR checks never select them. The
 runner supplies `KERI_LONG_MULTISIG_DELEGATION=1` for the delegation target.
 Direct execution without that opt-in fails clearly instead of silently skipping.
-The manual workflow allows four hours, retains timings and provenance with raw
-logs, and provides `qualification` to run all KERI files. Individual scenario
-timeouts remain in their test bodies. The separate `essr-qualification` workflow
-target owns the large parser benchmark and is never a required PR check.
+Each manual workflow job has a 15-minute limit and retains timings, provenance,
+and raw logs. Select individual targets when the complete `qualification` group
+does not fit that limit; local qualification still runs every KERI file.
+Individual scenario timeouts remain in their test bodies. The separate
+`essr-qualification` target also has a 15-minute job limit and is never a required
+PR check. Manual workflows are dispatched explicitly by the maintainer.
 
 ## Verified KERIpy selection
 
-The historical default CLI runtime is commit
-`98b88cf73a746813a8719f05264400467a474c05`. Historical table-source and witness
-fixture pins are independent data provenance, not claims about the live peer.
+The default CLI runtime is the published `kentbull/keripy` mailbox fork
+`4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186`, based on upstream main
+`927c0cb8794d7c84fc17143c67df64aab9deda6c` plus mailbox commands, admission
+checks, and explicit protocol/genus selection for mailbox startup and authorization. This is fork-on-main qualification, not pure upstream parity. Historical
+table-source pins are independent data provenance, not claims about the live peer.
 No test silently switches to a sibling checkout, PATH `kli`, or another Python.
 
-For current main qualification, select an exact source checkout and interpreter:
+Existing Tufa CLI parity fixtures select KERI 1.0 explicitly at KLI call sites
+that expose protocol selection. Body protocol and attachment genus remain
+independent: an explicit v1 body does not force a v1 replay enclosure. Keep
+same-version byte parity distinct from mixed-version parsing checks. Export tests
+compare exact v1 Tufa bytes with an explicitly v1 Python clone and exact default
+v2 KLI bytes with a v2 clone, then compare complete ordered signature evidence.
+KLI export carries no genus selector, so parsing uses known external v2 context.
+The CESR v1/v2 vectors remain independent coverage. Mailbox fixtures use
+`mailbox add --version 1.0` and `mailbox start --protocol-version 1.0`;
+`mailbox start --version` still prints the Python distribution version.
+
+Witness fixtures use an explicit public test passcode throughout initialization,
+inception, startup, and compatibility inspection. Every scenario owns a fresh
+temporary home; clearing personal KERI stores is neither required nor permitted
+by this harness. The six-node resolver demo has a separate 60-second startup
+budget for its sequential cold key derivation; protocol deadlines are unchanged.
+
+For the maintained mailbox-on-main qualification, select its exact checkout and interpreter:
 
 ```bash
-export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/core/python/keripy
-export KERIPY_INTEROP_EXPECTED_COMMIT=927c0cb8794d7c84fc17143c67df64aab9deda6c
+export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/worktrees/keripy/mailbox-main-interop
+export KERIPY_INTEROP_EXPECTED_COMMIT=4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186
 export KERIPY_INTEROP_PYTHON="$KERIPY_INTEROP_ROOT/venv/bin/python"
 export LMDB_DATA_V1=true
-export KERI_TEST_TIMINGS_DIR=/tmp/keri-main927-qualification
+export KERI_TEST_TIMINGS_DIR=/tmp/keri-mailbox-main-qualification
 
 deno task setup:compat-lmdb
 deno task test:qualification
@@ -94,15 +115,17 @@ The helper executes [`probe-keripy.py`](../../../scripts/ci/probe-keripy.py) bef
 creating scenario state. It checks exact Git/distribution SHA, actual imported
 module path and tracked source cleanliness; it records Python/dependency
 versions. A test-owned CLI launcher uses that same interpreter and observed CLI
-module. Auxiliary verifier and alignment scripts use the identical interpreter.
+module and preserves `main()`'s exit status through `SystemExit`; invoking the
+module with `python -m` would discard handled error returns. Auxiliary verifier
+and alignment scripts use the identical interpreter.
 Wrong SHAs or imports fail before running scenarios. The manual workflow checks
-out this exact main commit and uses the same override contract.
+out this exact fork commit and uses the same override contract.
 
 DID Webs has its own pinned resolver checkout
-`8395277f32b37129fa6ef734c9f3902bb6cbbcbc` and Python 3.13 environment, currently
-using KERI 1.2.13 and hio 0.6.14. Its executed probe checks resolver HEAD and actual
-`dws` import path and records the embedded KERI runtime separately. Selecting
-main927 for KLI does **not** upgrade or establish main927 compatibility for the
+`8395277f32b37129fa6ef734c9f3902bb6cbbcbc` and Python 3.13 environment. Its executed
+probe checks resolver HEAD and actual `dws` import path and records the embedded
+KERI runtime and dependency versions separately. Selecting
+the mailbox-on-main fork for KLI does **not** upgrade or establish that fork's compatibility for the
 resolver's embedded dependency. Preserve this limitation in qualification
 reports. Runtime setup also requires libsodium and a checkout-local LMDB addon
 built with `LMDB_DATA_V1=true`; missing native setup is an environment failure,

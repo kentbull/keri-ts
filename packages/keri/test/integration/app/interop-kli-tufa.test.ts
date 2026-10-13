@@ -14,14 +14,13 @@ import { run } from "npm:effection@^3.6.0";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { mailboxTopicKey, openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { assertExportParity } from "./interop-export-helpers.ts";
 import {
   createInteropContext,
-  extractKelStream,
   extractLastNonEmptyLine,
   extractPrefix,
   extractRawSignature,
   inspectCompatHabery,
-  normalizeCesr,
   packageRoot,
   randomPort,
   requireSuccess,
@@ -36,7 +35,7 @@ import {
   writeAgentConfig,
 } from "./interop-test-helpers.ts";
 
-Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL stream", async () => {
+Deno.test("Interop: kli and tufa produce identical single-sig evidence with exact genus-specific KEL bytes", async () => {
   const ctx = await createInteropContext();
   const env = ctx.env;
   const kliCommand = ctx.kliCommand;
@@ -50,6 +49,8 @@ Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL str
 
   const kliInit = await runCmd(kliCommand, [
     "init",
+    "--version",
+    "1.0",
     "--name",
     kliName,
     "--base",
@@ -65,6 +66,8 @@ Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL str
 
   const kliIncept = await runCmd(kliCommand, [
     "incept",
+    "--version",
+    "1.0",
     "--name",
     kliName,
     "--base",
@@ -200,9 +203,11 @@ Deno.test("Interop: kli and tufa produce identical single-sig prefix and KEL str
     );
   }
 
-  assertEquals(
-    normalizeCesr(extractKelStream(tufaExport.stdout)),
-    normalizeCesr(extractKelStream(kliExport.stdout)),
+  await assertExportParity(
+    ctx,
+    { name: kliName, base, passcode, alias },
+    tufaExport.stdout,
+    kliExport.stdout,
   );
 });
 
@@ -353,6 +358,8 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
     "kli init",
     runCmd(ctx.kliCommand, [
       "init",
+      "--version",
+      "1.0",
       "--name",
       kliName,
       "--base",
@@ -367,6 +374,8 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
     "kli incept",
     runCmd(ctx.kliCommand, [
       "incept",
+      "--version",
+      "1.0",
       "--name",
       kliName,
       "--base",
@@ -432,6 +441,8 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
         [
           "oobi",
           "resolve",
+          "--version",
+          "1.0",
           "--name",
           kliName,
           "--base",
@@ -454,6 +465,8 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
         [
           "mailbox",
           "add",
+          "--version",
+          "1.0",
           "--name",
           kliName,
           "--base",
@@ -585,6 +598,8 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
         ctx.kliCommand,
         [
           "query",
+          "--version",
+          "1.0",
           "--name",
           kliName,
           "--base",

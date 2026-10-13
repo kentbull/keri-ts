@@ -93,6 +93,9 @@ const DEFAULT_KERIPY_WITNESS_ALIASES = [
   "wyz",
 ] as const;
 
+/** Public fixture credential; scripted witness startup must never prompt. */
+export const KERIPY_WITNESS_PASSCODE = "WitnessFixturePasscode";
+
 /** Default Tufa witness aliases used by controller-symmetry interop tests. */
 const DEFAULT_TUFA_WITNESS_ALIASES = [
   "twan",
@@ -102,6 +105,8 @@ const DEFAULT_TUFA_WITNESS_ALIASES = [
 ] as const;
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 15_000;
+/** Six cold demo Haberies perform sequential key derivation before serving. */
+const KERIPY_DEMO_START_TIMEOUT_MS = 60_000;
 const TUFA_WITNESS_START_TIMEOUT_MS = 45_000;
 const TEST_PORT_MIN = 20_000;
 const TEST_PORT_MAX_EXCLUSIVE = 32_768;
@@ -151,8 +156,8 @@ const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
   },
 ];
 
-/** Historical default runtime; an explicit verified source override takes precedence. */
-export const KERIPY_INTEROP_COMMIT = "98b88cf73a746813a8719f05264400467a474c05";
+/** Mailbox fork on main927; an explicit verified source override takes precedence. */
+export const KERIPY_INTEROP_COMMIT = "4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186";
 
 const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
 const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}`;
@@ -755,8 +760,8 @@ async function waitForHealthOrChildExit(
 }
 
 /** Wait until one specific HTTP URL responds with any 2xx status. */
-export async function waitForHttpOk(url: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
+export async function waitForHttpOk(url: string, timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   let lastError = `HTTP probe did not return 2xx for ${url}`;
   while (Date.now() < deadline) {
     try {
@@ -1458,11 +1463,14 @@ async function initializeKeriPyWitness(
       kliCommand,
       [
         "init",
+        "--version",
+        "1.0",
         "--name",
         alias,
         "--base",
         base,
-        "--nopasscode",
+        "--passcode",
+        KERIPY_WITNESS_PASSCODE,
         "--config-dir",
         configRoot,
         "--config-file",
@@ -1478,12 +1486,16 @@ async function initializeKeriPyWitness(
       kliCommand,
       [
         "incept",
+        "--version",
+        "1.0",
         "--name",
         alias,
         "--base",
         base,
         "--alias",
         alias,
+        "--passcode",
+        KERIPY_WITNESS_PASSCODE,
         "--config",
         configRoot,
         "--file",
@@ -1495,7 +1507,7 @@ async function initializeKeriPyWitness(
   return extractPrefix(incepted.stdout);
 }
 
-/** Start explicit KERIpy witness hosts from temp-copied configs and random ports. */
+/** Start real v1 KERIpy witness hosts from CLI-created stores and random ports. */
 export async function startKeriPyWitnessHarness(
   ctx: InteropContext,
   options: KeriPyWitnessHarnessOptions = {},
@@ -1541,16 +1553,18 @@ export async function startKeriPyWitnessHarness(
 
   const children = nodes.map((node) =>
     spawnChild(
-      ctx.kliCommand,
+      ctx.pythonCommand,
       [
-        "witness",
-        "start",
+        // Current `witness start` cannot select protocol/genus; the fixture does.
+        `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
         "--name",
         node.name,
         "--base",
         base,
         "--alias",
         node.alias,
+        "--passcode",
+        KERIPY_WITNESS_PASSCODE,
         "--config-dir",
         configRoot,
         "--config-file",
@@ -1621,7 +1635,7 @@ export async function startKeriPyWitnessDemoHarness(
 
   try {
     for (const node of KERIPY_DEMO_WITNESS_NODES) {
-      await waitForHttpOk(`${node.httpOrigin}/oobi/${node.pre}`);
+      await waitForHttpOk(`${node.httpOrigin}/oobi/${node.pre}`, KERIPY_DEMO_START_TIMEOUT_MS);
       await waitForHttpOk(node.controllerOobi);
       await waitForHttpOk(node.witnessOobi);
     }

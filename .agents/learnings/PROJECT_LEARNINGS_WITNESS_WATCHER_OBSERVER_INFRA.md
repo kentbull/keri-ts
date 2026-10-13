@@ -92,6 +92,12 @@ release, and interoperability operations.
     every response-producing mailbox stream, then await server drain. Awaiting
     drain before runtime closure deadlocks active SSE responses and forces the
     outer process guard to use `SIGKILL`.
+27. Interop provenance must verify the interpreter and imported source, and the
+    launcher must preserve console-entry exit status. Python `-m` can ignore a
+    CLI `main()` return value. Keep body protocol and replay genus explicit in
+    fixture expectations; compare exact wire bytes separately for each genus.
+    The randomized v1 witness fixture uses public KERIpy Habery/setupWitness
+    APIs because the current `witness start` CLI lacks protocol selection.
 
 ## Use This Doc For
 

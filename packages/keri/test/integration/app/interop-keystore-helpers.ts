@@ -15,6 +15,8 @@ export interface ScenarioContext {
   env: Record<string, string>;
   packageRoot: string;
   kliCommand: string;
+  /** Verified interpreter for explicit source-level wire references. */
+  pythonCommand: string;
 }
 
 /**
@@ -42,11 +44,6 @@ export async function runCmd(
     stdout: t(out.stdout),
     stderr: t(out.stderr),
   };
-}
-
-/** Select the exact configured KERIpy revision before launching either CLI. */
-async function resolveKliCommand(env: Record<string, string>, workDir: string): Promise<string> {
-  return (await resolveKeripyRuntime(workDir, env)).kliCommand;
 }
 
 /**
@@ -210,10 +207,12 @@ export async function createScenarioContext(): Promise<ScenarioContext> {
     HOME: home,
     ...(denoDir ? { DENO_DIR: denoDir } : {}),
   };
+  const runtime = await resolveKeripyRuntime(home, env);
   return {
     env,
     packageRoot: packageRoot(),
-    kliCommand: await resolveKliCommand(env, home),
+    kliCommand: runtime.kliCommand,
+    pythonCommand: runtime.pythonCommand,
   };
 }
 

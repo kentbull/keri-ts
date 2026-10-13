@@ -321,6 +321,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         ctx.kliCommand,
         [
           "init",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -347,6 +349,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         ctx.kliCommand,
         [
           "incept",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -385,6 +389,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         ctx.kliCommand,
         [
           "rotate",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -407,6 +413,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         ctx.kliCommand,
         [
           "rotate",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -537,6 +545,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         ctx.kliCommand,
         [
           "init",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -563,6 +573,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
         ctx.kliCommand,
         [
           "incept",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -610,6 +622,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed inception a
           ctx.kliCommand,
           [
             "rotate",
+            "--version",
+            "1.0",
             "--name",
             controllerName,
             "--base",
@@ -792,6 +806,8 @@ Deno.test("Interop witness: KLI controller completes default witness-mode incept
         ctx.kliCommand,
         [
           "init",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -818,6 +834,8 @@ Deno.test("Interop witness: KLI controller completes default witness-mode incept
         ctx.kliCommand,
         [
           "incept",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1128,6 +1146,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
         ctx.kliCommand,
         [
           "init",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1154,6 +1174,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
         ctx.kliCommand,
         [
           "incept",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1192,6 +1214,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
         ctx.kliCommand,
         [
           "rotate",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1214,6 +1238,8 @@ Deno.test("Interop witness: KLI controller completes fully witnessed rotations w
         ctx.kliCommand,
         [
           "rotate",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1434,6 +1460,8 @@ Deno.test("Interop witness: KLI controller mixed Tufa/KERIpy witness replacement
         ctx.kliCommand,
         [
           "init",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1460,6 +1488,8 @@ Deno.test("Interop witness: KLI controller mixed Tufa/KERIpy witness replacement
         ctx.kliCommand,
         [
           "incept",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1499,6 +1529,8 @@ Deno.test("Interop witness: KLI controller mixed Tufa/KERIpy witness replacement
         ctx.kliCommand,
         [
           "rotate",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1563,6 +1595,8 @@ Deno.test("Interop witness: KLI controller reaches full replacement convergence 
         ctx.kliCommand,
         [
           "init",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1589,6 +1623,8 @@ Deno.test("Interop witness: KLI controller reaches full replacement convergence 
         ctx.kliCommand,
         [
           "incept",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",
@@ -1635,6 +1671,8 @@ Deno.test("Interop witness: KLI controller reaches full replacement convergence 
         ctx.kliCommand,
         [
           "rotate",
+          "--version",
+          "1.0",
           "--name",
           controllerName,
           "--base",

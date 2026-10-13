@@ -39,8 +39,8 @@ env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.8.2"
   KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
-  KERIPY_INTEROP_EXPECTED_COMMIT: 927c0cb8794d7c84fc17143c67df64aab9deda6c
-  KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-main
+  KERIPY_INTEROP_EXPECTED_COMMIT: 4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186
+  KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-mailbox-main
   KERIPY_INTEROP_PYTHON: ${{ github.workspace }}/.cache/keripy-venv/bin/python
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
   LMDB_DATA_V1: "true"
@@ -49,14 +49,14 @@ env:
   DENO_CACHE_KEY_PREFIX: ci-deno-v1
   NODE_MODULES_CACHE_KEY_PREFIX: ci-node-modules-v1
   INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v3
-  KERIPY_CACHE_KEY_PREFIX: keripy-source-main927-v1
+  KERIPY_CACHE_KEY_PREFIX: keripy-mailbox-main-v1
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
   extended-interop:
     if: inputs.target != 'essr-qualification'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -105,12 +105,12 @@ jobs:
           cd packages/keri
           deno task setup:compat-lmdb
 
-      - name: check out exact main qualification peer
+      - name: check out exact mailbox fork qualification peer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kentbull/keripy
           ref: ${{ env.KERIPY_INTEROP_EXPECTED_COMMIT }}
-          path: .cache/keripy-main
+          path: .cache/keripy-mailbox-main
 
       - name: restore KERIpy virtualenv cache
         id: keripy-cache
@@ -126,7 +126,7 @@ jobs:
           "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
           "${KERIPY_VENV}/bin/python" -m pip install -e "${KERIPY_INTEROP_ROOT}"
 
-      - name: verify imported main source before running scenarios
+      - name: verify imported fork source before running scenarios
         run: >-
           "${KERIPY_INTEROP_PYTHON}" scripts/ci/probe-keripy.py
           --root "${KERIPY_INTEROP_ROOT}"
@@ -157,7 +157,7 @@ jobs:
     # Deliberately manual-only: never part of the PR stage gate or merge checks.
     if: inputs.target == 'essr-qualification'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

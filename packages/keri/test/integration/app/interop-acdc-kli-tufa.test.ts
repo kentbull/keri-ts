@@ -133,12 +133,14 @@ async function initAndInceptKli(
 ): Promise<string> {
   await requireSuccess(
     "kli issuer init",
-    runCmd(kliCommand, ["init", ...kliStoreArgs(name, passcode)], env),
+    runCmd(kliCommand, ["init", "--version", "1.0", ...kliStoreArgs(name, passcode)], env),
   );
   const incept = await requireSuccess(
     "kli issuer incept",
     runCmd(kliCommand, [
       "incept",
+      "--version",
+      "1.0",
       ...kliStoreArgs(name, passcode),
       "--alias",
       "issuer",
@@ -268,6 +270,8 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
             runCmd(ctx.kliCommand, [
               "oobi",
               "resolve",
+              "--version",
+              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--oobi",
               holderOobi,
@@ -467,6 +471,8 @@ Deno.test("Interop: KLI issuer credential presents through Tufa holder and verif
               [
                 "oobi",
                 "resolve",
+                "--version",
+                "1.0",
                 ...kliStoreArgs(kliName, passcode),
                 "--oobi",
                 verifierOobi,

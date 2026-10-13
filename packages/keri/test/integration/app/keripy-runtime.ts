@@ -33,6 +33,9 @@ export interface KeripyRuntime {
 /** Keep Python executable code in a source file, not generated shell text. */
 const PROBE = fromFileUrl(new URL("../../../../../scripts/ci/probe-keripy.py", import.meta.url));
 
+/** Preserve the installed console entry point's exit status with the verified interpreter. */
+const CLI = fromFileUrl(new URL("../../../../../scripts/ci/run-keripy-cli.py", import.meta.url));
+
 /** Quote a literal executable/module argument for the tiny POSIX CLI launcher. */
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
@@ -74,7 +77,7 @@ export async function verifyKeripy(
   const kliCommand = join(workDir, "verified-kli");
   await Deno.writeTextFile(
     kliCommand,
-    `#!/bin/sh\nexec ${shellQuote(provenance.python)} -m ${shellQuote(provenance.cliModule)} "$@"\n`,
+    `#!/bin/sh\nexec ${shellQuote(provenance.python)} ${shellQuote(CLI)} ${shellQuote(provenance.cliModule)} "$@"\n`,
   );
   await Deno.chmod(kliCommand, 0o755);
   return { kliCommand, pythonCommand: provenance.python, provenance };

@@ -1,11 +1,10 @@
 import { assertEquals } from "jsr:@std/assert";
+import { assertExportParity } from "./interop-export-helpers.ts";
 import {
   createScenarioContext,
   extractIdentifierLines,
-  extractKelStream,
   extractLastNonEmptyLine,
   extractPrefix,
-  normalizeCesr,
   runCmd,
   runTufa,
   type ScenarioContext,
@@ -24,6 +23,8 @@ async function runInitInceptExportParity(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
+    "--version",
+    "1.0",
     "--name",
     kliName,
     "--base",
@@ -39,6 +40,8 @@ async function runInitInceptExportParity(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
+    "--version",
+    "1.0",
     "--name",
     kliName,
     "--base",
@@ -159,9 +162,11 @@ async function runInitInceptExportParity(
     );
   }
 
-  assertEquals(
-    normalizeCesr(extractKelStream(tufaExport.stdout)),
-    normalizeCesr(extractKelStream(kliExport.stdout)),
+  await assertExportParity(
+    ctx,
+    { name: kliName, base, passcode, alias },
+    tufaExport.stdout,
+    kliExport.stdout,
   );
 }
 
@@ -178,6 +183,8 @@ async function runListAidVisibilityParity(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
+    "--version",
+    "1.0",
     "--name",
     kliName,
     "--base",
@@ -249,6 +256,8 @@ async function runListAidVisibilityParity(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
+    "--version",
+    "1.0",
     "--name",
     kliName,
     "--base",

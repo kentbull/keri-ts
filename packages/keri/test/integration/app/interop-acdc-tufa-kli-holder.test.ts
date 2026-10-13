@@ -176,12 +176,14 @@ async function initAndInceptKli(
 ): Promise<string> {
   await requireSuccess(
     `kli ${alias} init`,
-    runCmd(kliCommand, ["init", ...kliStoreArgs(name, passcode)], env),
+    runCmd(kliCommand, ["init", "--version", "1.0", ...kliStoreArgs(name, passcode)], env),
   );
   const incept = await requireSuccess(
     `kli ${alias} incept`,
     runCmd(kliCommand, [
       "incept",
+      "--version",
+      "1.0",
       ...kliStoreArgs(name, passcode),
       "--alias",
       alias,
@@ -413,6 +415,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "oobi",
               "resolve",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--oobi",
               providerMailboxOobi,
@@ -431,6 +435,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "mailbox",
               "add",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -543,6 +549,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "oobi",
               "resolve",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--oobi",
               issuerMailboxUrl,
@@ -654,6 +662,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
           runCmd(kliCommand, [
             "oobi",
             "resolve",
+            "--version",
+            "1.0",
             ...kliStoreArgs(holderName, passcode),
             "--oobi",
             verifierOobi,

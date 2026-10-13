@@ -52,17 +52,23 @@ later frame fails.
 ## Additional approved review and qualification work
 
 After the open parser PRs through recipient decryption (#129–#133) merge, prepare
-one test cleanup/reorganization PR against current master and leave it open for
-human review. Revalidate the side-chat audit against the new code, remove only
+one test cleanup/reorganization PR against current master for human review.
+Merge it after all local tests, including interop/manual targets, pass and required
+static/unit/package CI passes; hosted interop completion is not a merge gate. Revalidate the side-chat audit against the new code, remove only
 proven duplication or tests without a production contract, retain protocol and
 resource-lifecycle regressions, and simplify test scheduling without hiding
 coverage. Keep production behavior unchanged in that PR.
 
 Run the complete maintained test inventory, including all manual and long-running
-targets, using the local KERIpy main checkout at
-`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Verify the harness actually imports
-that checkout. Record every run, skip, failure, topology, and duration. Heavy
-qualification remains outside required merge CI.
+targets. Preserve the frozen upstream-main baseline at
+`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published
+`kentbull/keripy` fork `4ee94ce8fa3bfb30fa5bf595f8d10dad4c9e0186`: that same main
+base plus standalone mailbox commands/admission and explicit mailbox protocol
+selection. This is fork-on-main qualification, not pure upstream parity. Verify
+exact commit and actual imports, and record every run, skip, failure, topology,
+and duration. Extended interop and ESSR workflow jobs have a 15-minute limit;
+only the maintainer dispatches them. Full local qualification still runs every
+maintained target, including long topologies.
 
 Continue the progressive parser sequence after preparing that review PR. Any
 interop regressions or missing features discovered against this KERIpy revision
@@ -118,9 +124,11 @@ parser-only measurements do not establish the full runtime's memory bound.
 
 ## Post-progressive KERIpy main alignment
 
-The test qualification pins `927c0cb8` and records actual execution failures in
-its report. Initial source inspection already found two differences from current
-keri-ts tables; these are not yet claims of a failed live interoperability run:
+The frozen test baseline at upstream `927c0cb8` records actual execution failures;
+final qualification uses the explicit mailbox fork above. A read-only table audit
+also confirmed differences from current keri-ts tables. Preserve their independent
+historical table-source provenance until a protocol change updates implementation
+and vectors together:
 
 1. Align v2 `-N` / `--N` with KERIpy's `NonceSealSingles` /
    `BigNonceSealSingles`, updating generated tables, semantic hydration, encoding,

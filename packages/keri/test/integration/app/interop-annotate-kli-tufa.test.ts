@@ -27,8 +27,8 @@ async function runKliAnnotate(
   bytes: Uint8Array,
 ): Promise<string> {
   const path = await writeTempInput(bytes);
-  const binDir = ctx.kliCommand.slice(0, ctx.kliCommand.lastIndexOf("/"));
-  const python = `${binDir}/python`;
+  // The verified CLI launcher may live outside the interpreter directory.
+  const python = ctx.pythonCommand;
   const script = [
     "from pathlib import Path",
     "from keri.core.annotating import annot",

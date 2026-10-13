@@ -244,6 +244,8 @@ async function runOobiBootstrapParity(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
+    "--version",
+    "1.0",
     "--name",
     kliSourceName,
     "--base",
@@ -259,6 +261,8 @@ async function runOobiBootstrapParity(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
+    "--version",
+    "1.0",
     "--name",
     kliSourceName,
     "--base",
@@ -342,6 +346,8 @@ async function runOobiBootstrapParity(
   const kliLoc = await runCmd(ctx.kliCommand, [
     "location",
     "add",
+    "--version",
+    "1.0",
     "--name",
     kliSourceName,
     "--base",
@@ -390,6 +396,8 @@ async function runOobiBootstrapParity(
   const kliEnds = await runCmd(ctx.kliCommand, [
     "ends",
     "add",
+    "--version",
+    "1.0",
     "--name",
     kliSourceName,
     "--base",
@@ -557,6 +565,8 @@ async function runOobiBootstrapParity(
         const kliTargetInit = yield* promiseOp(() =>
           runCmd(ctx.kliCommand, [
             "init",
+            "--version",
+            "1.0",
             "--name",
             kliTargetName,
             "--base",
@@ -600,6 +610,8 @@ async function runOobiBootstrapParity(
           runCmd(ctx.kliCommand, [
             "oobi",
             "resolve",
+            "--version",
+            "1.0",
             "--name",
             kliTargetName,
             "--base",

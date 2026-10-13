@@ -12,6 +12,7 @@ import {
   createInteropContext,
   extractPrefix,
   inspectCompatHabery,
+  KERIPY_WITNESS_PASSCODE,
   requireSuccess,
   runCmd,
   runCmdWithTimeout,
@@ -180,6 +181,8 @@ export async function resolveWitnessesForKli(
           [
             "oobi",
             "resolve",
+            "--version",
+            "1.0",
             "--name",
             name,
             "--base",
@@ -245,6 +248,8 @@ export async function queryKliPrefix(
       kliCommand,
       [
         "query",
+        "--version",
+        "1.0",
         "--name",
         name,
         "--base",
@@ -327,6 +332,7 @@ export async function assertKeriPyWitnessStores(
         {
           name: node.name,
           base: harness.base,
+          bran: KERIPY_WITNESS_PASSCODE,
           compat: true,
           readonly: true,
           skipConfig: true,
