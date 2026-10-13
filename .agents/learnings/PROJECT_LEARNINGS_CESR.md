@@ -22,6 +22,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    child delivery, payload ownership, and end-to-end memory budgets. These remain
    target obligations until their implementation/tests land; phase 12 removes the
    atomic engine and old keri-ts API shims without dropping protocol support.
+   `parser/cursor.ts` prepares that input boundary: segmented storage drops consumed
+   buffers, scope ends limit all reads, and accepted producer backing buffers count
+   toward resource policy. Demand and cancellation belong to the shared cursor;
+   generator locals will own nested parse progress.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not

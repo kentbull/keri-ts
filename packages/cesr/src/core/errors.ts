@@ -35,6 +35,8 @@ export class VersionError extends ParserError {}
 export class UnknownCodeError extends ParserError {}
 /** Group/count metadata could not describe a valid parse shape. */
 export class GroupSizeError extends ParserError {}
+/** Input exceeds configured parser resource policy rather than a wire-format limit. */
+export class ResourceLimitError extends ParserError {}
 /** Qualified input could not be deserialized into a valid CESR payload. */
 export class DeserializeError extends ParserError {}
 /** A CESR payload could not be serialized into a valid protocol representation. */
