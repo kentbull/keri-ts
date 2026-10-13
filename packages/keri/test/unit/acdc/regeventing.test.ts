@@ -1,15 +1,20 @@
 /** Frozen registry decisions use independently signed KELs through the real runtime. */
-import { b, BlindState, BoundState, discardFrame, parseBytes, SerderACDC } from "cesr-ts";
+import { b, BlindState, BoundState, Diger, discardFrame, NumberPrimitive, parseBytes, SerderACDC } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { blindate, regcept } from "../../../src/acdc/messaging.ts";
 import {
   type RegistryDisclosure,
   type RegistryVerification,
+  validateRip,
+  validateUpdate,
+  verifyRegistryAnchor,
   vet,
   vetBinds,
 } from "../../../src/acdc/regeventing.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { receipt } from "../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
@@ -165,6 +170,112 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
         RangeError,
       );
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry field validation shares parsed facts without accepting a chain", () => {
+  const body = (name: keyof typeof fixture.bodies) => new SerderACDC({ raw: b(fixture.bodies[name]) });
+  const rip = body("rip"), update = body("issued");
+  assertEquals(regcept(rip.issuer!, { uuid: rip.sad!.u as string, stamp: rip.sad!.dt as string }).raw, rip.raw);
+  assertEquals(
+    blindate(rip.said!, rip.said!, update.sad!.b as string, { stamp: update.sad!.dt as string }).raw,
+    update.raw,
+  );
+  const inception = validateRip(rip, rip.issuer!);
+  assertEquals(inception.kind, "valid");
+  if (inception.kind === "valid") {
+    assertEquals(inception.event, {
+      serder: rip,
+      said: rip.said!,
+      ilk: "rip",
+      regid: rip.said!,
+      sn: 0n,
+      prior: null,
+      issuer: rip.issuer,
+    });
+  }
+  assertEquals(validateRip(update), { kind: "reject", reason: "event" });
+  assertEquals(validateRip(body("bad-n")), { kind: "reject", reason: "sequence" });
+  assertEquals(validateRip(rip, body("wrong-issuer-acdc").issuer!), { kind: "reject", reason: "issuer" });
+  assertEquals(validateUpdate(rip, rip.said!), { kind: "reject", reason: "event" });
+  assertEquals(validateUpdate(body("wrong-registry"), rip.said!), { kind: "reject", reason: "registry" });
+  assertEquals(validateUpdate(body("wrong-prior"), rip.said!, rip.said!), { kind: "reject", reason: "prior" });
+  assertEquals(validateUpdate(body("gap"), rip.said!).kind, "valid", "sequence continuity belongs to the engine");
+  assertEquals(validateUpdate(update, rip.said!, rip.said!).kind, "valid");
+  assertEquals(
+    validateUpdate(blindate(rip.said!, rip.said!, update.sad!.b as string, { sn: 0 }), rip.said!),
+    { kind: "reject", reason: "sequence" },
+  );
+});
+
+Deno.test("local registry anchors require the full seal and verified witness receipts", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `registry-anchor-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const witnessHby = yield* createHabery({
+      name: `registry-witness-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const witness = witnessHby.makeHab("witness", undefined, { transferable: false });
+      const issuer = hby.makeHab("issuer", undefined, { wits: [witness.pre], toad: 1 });
+      const rip = regcept(issuer.pre), validated = validateRip(rip, issuer.pre);
+      if (validated.kind !== "valid") throw new Error("Expected valid registry inception");
+      const event = validated.event;
+      const db = hby.db;
+      const seal = { i: rip.said!, s: "0", d: rip.said! };
+      // Observer digest vetting deliberately permits all four seals; the local path permits only the last.
+      for (const candidate of [rip.said!, { ...seal, i: issuer.pre }, { ...seal, s: "1" }, seal]) {
+        issuer.interact({ data: [candidate] });
+        const anchor = issuer.kever!.serder;
+        const claim = {
+          db,
+          issuer: issuer.pre,
+          number: NumberPrimitive.fromNum(BigInt(anchor.sn!)),
+          diger: new Diger({ qb64: anchor.said! }),
+        };
+        assertEquals(verifyRegistryAnchor(event, claim), false, "not yet fully witnessed");
+        hby.kevery.processReceipt({
+          serder: receipt(issuer.pre, anchor.sn!, anchor.said!),
+          cigars: witness.sign(anchor.raw, false),
+          wigers: [],
+          tsgs: [],
+          local: false,
+        });
+        assertEquals(db.fullyWitnessed(anchor), true);
+        assertEquals(vet({ db, rip }).kind, "verified");
+        assertEquals(verifyRegistryAnchor(event, claim), candidate === seal);
+        assertEquals(verifyRegistryAnchor(event, { ...claim, diger: new Diger({ qb64: rip.said! }) }), false);
+      }
+      assertEquals(verifyRegistryAnchor(event, { db, issuer: issuer.pre }), false);
+      assertEquals(
+        verifyRegistryAnchor(event, {
+          db,
+          issuer: issuer.pre,
+          number: NumberPrimitive.fromNum(2n ** 53n + 1n),
+          diger: new Diger({ qb64: rip.said! }),
+        }),
+        false,
+      );
+      const claim = {
+        db,
+        issuer: issuer.pre,
+        number: NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
+        diger: new Diger({ qb64: issuer.kever!.said }),
+      };
+      const read = db.getEvtSerder;
+      try {
+        db.getEvtSerder = () => {
+          throw new Error("anchor database unavailable");
+        };
+        assertThrows(() => verifyRegistryAnchor(event, claim), Error, "anchor database unavailable");
+      } finally {
+        db.getEvtSerder = read;
+      }
+    } finally {
+      yield* witnessHby.close(true);
       yield* hby.close(true);
     }
   });
