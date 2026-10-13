@@ -6,6 +6,13 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current State
 
+`Tholder.maxWeights` (1,000) and `maxSithLength` (65,536) are process-wide
+deployment settings, not protocol maxima; configure them before admitting work.
+Weighted input counts every term, including nested outer weights, before fraction
+conversion. JSON length includes whitespace. Numeric thresholds keep their full
+domain. Unlike frozen Python927's `limen` bypass, the TS weight cap also applies
+to qualified text/binary input; deployments can raise both limits together.
+
 The CESR package is framework-neutral: progressive parsing uses async iterables
 and AbortSignal. The optional `cesr-ts/effection` entrypoint supplies FrameChannel
 and toEffectionFrames with scope-owned cancellation and joined cleanup; importing
