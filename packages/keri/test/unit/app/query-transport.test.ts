@@ -1,12 +1,27 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { concatBytes } from "../../../../cesr/mod.ts";
+import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, ingestKeriBytes, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";
-import { readCesrRequestBytes, splitCesrStream } from "../../../src/app/cesr-http.ts";
+import { chunkBytes } from "../../../src/app/byte-source.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { queryTransportSink } from "../../../src/app/query-transport.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+
+/** Collect the finite signed fixture through the same progressive frame boundary used by HTTP output. */
+async function expectedMessages(bytes: Uint8Array): Promise<Uint8Array[]> {
+  const messages: Uint8Array[] = [];
+  for await (const frame of parse(chunkBytes(bytes))) {
+    try {
+      // HTTP joins the signed body with its counted attachment enclosure, without a stream-level GVC.
+      messages.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame), 8 * 1024 * 1024)));
+    } finally {
+      await frame.essr?.discard();
+    }
+  }
+  return messages;
+}
 
 Deno.test("query transport prepends KERIpy-style introduction before outbound qry delivery", async () => {
   const bodies: Uint8Array[] = [];
@@ -99,11 +114,12 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             messages: [query],
           });
 
+          // The guarded cue sink queues delivery; this separate turn owns the response.
+          assertEquals(bodies.length, 0);
+          yield* runtime.queryDeliveries.process(runtime);
           assertEquals(
             bodies,
-            splitCesrStream(
-              concatBytes(introduce(sender, remoteController.pre), query),
-            ),
+            yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
         } finally {
           yield* runtime.close();
@@ -225,11 +241,12 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             messages: [query],
           });
 
+          // The guarded cue sink queues delivery; this separate turn owns the response.
+          assertEquals(bodies.length, 0);
+          yield* runtime.queryDeliveries.process(runtime);
           assertEquals(
             bodies,
-            splitCesrStream(
-              concatBytes(introduce(sender, remoteWitness.pre), query),
-            ),
+            yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteWitness.pre), query))),
           );
         } finally {
           yield* runtime.close();
@@ -365,9 +382,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           assertEquals(runtime.hby.db.getKever(remoteController.pre)?.sn, 1);
           assertEquals(
             bodies,
-            splitCesrStream(
-              concatBytes(introduce(sender, remoteController.pre), query),
-            ),
+            yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
         } finally {
           yield* runtime.close();
@@ -385,4 +400,49 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
       // Abort-driven shutdown is expected here.
     }
   }
+});
+
+Deno.test("query delivery settles a streamed reply after releasing the guarded cue turn", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender");
+    const peer = remote.makeHab("peer");
+    let requests = 0;
+    const runtime = yield* createAgentRuntime(hby, {
+      services: {
+        http: {
+          fetch: () => {
+            requests++;
+            return Promise.resolve(
+              new Response(new Uint8Array(concatBytes(...remote.db.clonePreIter(peer.pre))), {
+                headers: { "Content-Type": "application/cesr" },
+              }),
+            );
+          },
+        },
+      },
+    });
+    try {
+      hby.db.locs.pin([peer.pre, "http"], { url: "http://query-peer.test/" });
+      hby.db.ends.pin([peer.pre, EndpointRoles.controller, peer.pre], { allowed: true });
+      const sink = queryTransportSink(runtime, hby, sender);
+      const emission = {
+        kind: "wire" as const,
+        cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs", query: {} },
+        messages: [sender.query(peer.pre, peer.pre, {}, "logs")],
+      };
+      // The real guard owns cue handling. Reply parsing here would recursively wait for this same guard.
+      yield* runtime.reactor.settle(undefined, {}, () => sink.send(emission));
+      assertEquals(requests, 0);
+      assertEquals(runtime.queryDeliveries.hasPending, true);
+      yield* runtime.queryDeliveries.process(runtime);
+      assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
+      assertEquals(runtime.queryDeliveries.hasPending, false);
+    } finally {
+      yield* runtime.close();
+      yield* remote.close(true);
+      yield* hby.close(true);
+    }
+  });
 });

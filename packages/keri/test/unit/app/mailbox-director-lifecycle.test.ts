@@ -47,3 +47,32 @@ Deno.test("mailbox director closes a pending query response during runtime shutd
 
   assertEquals(await finished, { value: undefined, done: true });
 });
+
+Deno.test("mailbox SSE provider clones only the event requested by HTTP demand", async () => {
+  let cloned = 0;
+  let returned = 0;
+  const mailboxer = {
+    *cloneTopicIter(_topic: string, start: number) {
+      try {
+        for (let idx = start; idx < 1000; idx++) {
+          cloned++;
+          yield [idx, "", new TextEncoder().encode(`message-${idx}`)];
+        }
+      } finally {
+        returned++;
+      }
+    },
+  } as unknown as Mailboxer;
+  const director = new MailboxDirector({} as Habery, { mailboxer });
+  const reader = director.streamMailbox("aid", { "/reply": 0 }, { emitRetryHeader: false }).getReader();
+  assertEquals(cloned, 0); // Creating an unread response cannot scan the mailbox.
+  await reader.read(); // The header requires exactly one stored event.
+  assertEquals([cloned, returned], [1, 1]);
+  await reader.read(); // Payload and delimiter consume transport credit independently.
+  await reader.read();
+  assertEquals(cloned, 1);
+  await reader.read();
+  assertEquals(cloned, 2);
+  await reader.cancel();
+  director.close();
+});

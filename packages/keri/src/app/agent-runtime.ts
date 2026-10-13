@@ -35,6 +35,7 @@ import { MailboxDirector } from "./mailbox-director.ts";
 import { openMailboxerForHabery } from "./mailboxing.ts";
 import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
+import { QueryDeliveries } from "./query-transport.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor, type VdrRuntimeServices } from "./reactor.ts";
 import { type ReplyStreamLimits, ReplyStreams } from "./reply-streams.ts";
@@ -90,6 +91,8 @@ export interface AgentRuntime {
   querying: QueryCoordinator;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
+  /** Bounded query deliveries drained outside guarded cue handling. */
+  queryDeliveries: QueryDeliveries;
   vdr: VdrRuntimeServices;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
@@ -159,6 +162,14 @@ export function* createAgentRuntime(
       yield* provide(streams);
     } finally {
       streams.close();
+    }
+  });
+  const queryDeliveries = yield* resource<QueryDeliveries>(function*(provide) {
+    const deliveries = new QueryDeliveries();
+    try {
+      yield* provide(deliveries);
+    } finally {
+      yield* deliveries.close();
     }
   });
   const mode = options.mode ?? "local";
@@ -269,9 +280,11 @@ export function* createAgentRuntime(
     delegating,
     querying,
     replyStreams,
+    queryDeliveries,
     vdr,
     services,
     *close(): Operation<void> {
+      yield* queryDeliveries.close();
       replyStreams.close();
       mailboxDirector.close();
       if (ownsNoter && noter?.opened) {
@@ -429,6 +442,7 @@ export function* processRuntimeTurn(
   yield* runtime.delegating.processAllOnce();
   yield* processCuesOnce(runtime, { ...options, sink: runtime.querying });
   yield* runtime.querying.processPending();
+  yield* runtime.queryDeliveries.process(runtime);
 }
 
 /**
@@ -454,7 +468,7 @@ export function runtimePendingState(
     delegationPending: runtime.hby.db.dpwe.cnt() > 0
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
-    queriesPending: runtime.querying.hasPendingWork(),
+    queriesPending: runtime.querying.hasPendingWork() || runtime.queryDeliveries.hasPending,
   };
 }
 
@@ -587,6 +601,12 @@ export function* runAgentRuntime(
   runtime.querying.configure({ hab: options.hab, sink: options.sink });
   runtime.mailboxPoller.configure({ hab: options.hab });
   const tasks = [
+    yield* spawn(function*() {
+      while (true) {
+        yield* runtime.queryDeliveries.process(runtime);
+        yield* runtimeTurn();
+      }
+    }),
     yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),

@@ -5,8 +5,10 @@
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
 import { action, call, type Operation } from "effection";
+import { abortable } from "../../app/abortable.ts";
 import type { AgentRuntime } from "../../app/agent-runtime.ts";
 import { settleRuntimeIngress } from "../../app/agent-runtime.ts";
+import { collectBytes, streamBytes } from "../../app/byte-source.ts";
 import { fetchResponseHandle } from "../../app/httping.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";
@@ -107,13 +109,9 @@ function* fetchJsonWithFallback(
   }
 }
 
+/** Current DID verification collects a finite document/artifact with an explicit 8 MiB ceiling. */
 function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  return yield* action<Uint8Array>((resolve, reject) => {
-    response.arrayBuffer()
-      .then((buffer) => resolve(new Uint8Array(buffer)))
-      .catch(reject);
-    return () => {};
-  });
+  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 8 * 1024 * 1024));
 }
 
 function* closeBody(response: Response): Operation<void> {

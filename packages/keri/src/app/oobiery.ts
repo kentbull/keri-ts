@@ -1,5 +1,5 @@
 import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
-import { action, call, type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck, DeckFullError } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
@@ -10,7 +10,8 @@ import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { Schemer } from "../core/scheming.ts";
-import { chunkBytes } from "./byte-source.ts";
+import { abortable } from "./abortable.ts";
+import { chunkBytes, collectBytes, streamBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -748,17 +749,7 @@ function* fetchOobiResponse(
   return response;
 }
 
-/**
- * Read one HTTP response body into a byte array under Effection control.
- *
- * Like `fetchOobiResponse()`, this keeps raw Web API promise handling at the
- * edge instead of promoting it to the runtime-turn API.
- */
+/** Admit at most 8 MiB for the existing finite OOBI/document consumer and join its reader on cancellation. */
 function* readResponseBytes(response: Response): Operation<Uint8Array> {
-  return yield* action((resolve, reject) => {
-    response.arrayBuffer()
-      .then((buffer) => resolve(new Uint8Array(buffer)))
-      .catch(reject);
-    return () => {};
-  });
+  return yield* abortable((signal) => collectBytes(streamBytes(response.body, { signal }), 8 * 1024 * 1024));
 }

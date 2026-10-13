@@ -7,6 +7,12 @@ and KERIpy interoperability.
 
 ## Current State
 
+Query delivery is deferred until guarded cue handling completes. The runtime owns
+its bounded request queue and joins active HTTP cleanup at shutdown. Mailbox SSE
+awaits each event consumer; provider output reads one record per demand and
+releases LMDB iterators before suspension. Aggregate connection admission and
+pre-read storage size limits remain explicit follow-ons.
+
 Canonical KEL replay emits transferable receipt signature groups (`-F` in v1),
 collated by the complete receiptor establishment seal. Durable `vrcs.` quadruples
 and legacy wire receipt parsing remain unchanged. Current KERIpy main removed

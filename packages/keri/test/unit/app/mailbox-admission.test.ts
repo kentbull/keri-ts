@@ -4,6 +4,7 @@ import { createAgentRuntime, processMailboxTurn } from "../../../src/app/agent-r
 import { MailboxPoller } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { MailboxAdmissionError } from "../../../src/db/mailbox-inbox.ts";
 import {
@@ -266,15 +267,18 @@ async function testLaterEndpointFailure(failure: "throw" | "cancel"): Promise<vo
       const poller = new MailboxPoller(hby, new MailboxDirector(hby), {
         mailboxAdmission: { mode: "durable" },
         pollTransport: {
-          *poll() {
+          *poll(_args, consume) {
             calls++;
-            if (calls === 1) return [{ topic: "/reply", idx: 0, msg: bytes }];
+            if (calls === 1) {
+              yield* consume({ topic: "/reply", idx: 0, msg: bytes });
+              return;
+            }
             if (calls === 2) {
               reached();
               if (failure === "throw") throw new Error("later endpoint failed");
               yield* suspend();
             }
-            return [];
+            return;
           },
         },
       });
@@ -447,6 +451,50 @@ Deno.test("retained replay waits for topic subscription in finite and continuous
       assertEquals(yield* poller.processOnce(), []);
     } finally {
       yield* hby.close();
+    }
+  });
+});
+
+Deno.test("continuous mailbox polling persists and hands off one event before requesting its sibling", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("recipient");
+    const eid = "mailbox-stream";
+    hby.db.locs.pin([eid, "http"], { url: "http://mailbox.test/" });
+    hby.db.ends.pin([hab.pre, Roles.mailbox, eid], { allowed: true });
+    const delivered = Promise.withResolvers<void>();
+    let pulls = 0;
+    let cancelled = false;
+    const responseBody = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const idx = pulls++;
+        controller.enqueue(new TextEncoder().encode(`id: ${idx}\nevent: /reply\ndata: message-${idx}\n\n`));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }, { highWaterMark: 0 });
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), {
+      mailboxAdmission: { mode: "durable" },
+      services: { ...defaultRuntimeServices, http: { fetch: () => Promise.resolve(new Response(responseBody)) } },
+    });
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() =>
+      poller.pollDo(function*(batch) {
+        assertEquals(batch.messages.length, 1);
+        delivered.resolve();
+        yield* suspend(); // No next-event credit until this durable handoff finishes.
+      })
+    );
+    try {
+      yield* call(() => delivered.promise);
+      assertEquals(pulls, 1);
+      assertEquals(hby.db.tops.get([hab.pre, eid])?.topics["/reply"], 0);
+      assertEquals(hby.db.mailboxInbox.pending().length, 1);
+    } finally {
+      yield* worker.halt();
+      assertEquals([cancelled, responseBody.locked], [true, false]);
+      yield* hby.close(true);
     }
   });
 });

@@ -8,12 +8,7 @@ import type {
 } from "../../src/app/forwarding.ts";
 import type { MailboxSseMessage } from "../../src/app/mailbox-sse.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
-import type {
-  RuntimeClock,
-  RuntimeHttpClient,
-  RuntimeServices,
-  RuntimeTimer,
-} from "../../src/app/runtime-services.ts";
+import type { RuntimeClock, RuntimeHttpClient, RuntimeServices, RuntimeTimer } from "../../src/app/runtime-services.ts";
 import { runtimeTurn } from "../../src/app/runtime-turn.ts";
 
 interface ManualTimer {
@@ -156,7 +151,10 @@ export class FakeMailboxPollTransport implements MailboxPollTransport {
     this.results.push(result);
   }
 
-  *poll(args: MailboxPollTransportRequest): Operation<MailboxSseMessage[]> {
+  *poll(
+    args: MailboxPollTransportRequest,
+    consume: (message: MailboxSseMessage) => Operation<boolean | void>,
+  ): Operation<void> {
     this.polls.push({
       endpoint: { ...args.endpoint },
       topics: { ...args.topics },
@@ -167,7 +165,8 @@ export class FakeMailboxPollTransport implements MailboxPollTransport {
       this.clock?.advance(result.advanceMs);
     }
     yield* runtimeTurn();
-    return result.messages ?? [];
+    // Like the wire transport, a rejected event stops this poll before the next event is read.
+    for (const message of result.messages ?? []) if ((yield* consume(message)) === false) break;
   }
 }
 
