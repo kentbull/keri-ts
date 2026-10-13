@@ -2,7 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError } from "../../src/core/errors.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { parseAttachmentDispatch, parseAttachmentDispatchCompat } from "../../src/parser/group-dispatch.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -32,7 +32,7 @@ Deno.test("signature count units match pinned KERIpy in text and binary", () => 
       ] as const
     ) {
       const wire = bytes(header + payload, domain);
-      const parsed = parseAttachmentDispatch(wire, version, domain);
+      const parsed = parseAttachmentGroup(wire, version, domain);
       assertEquals(parsed.consumed, wire.length);
       assertEquals(parsed.group.count, count);
       assertEquals(parsed.group.items.length, items);
@@ -44,28 +44,26 @@ Deno.test("signature count units match pinned KERIpy in text and binary", () => 
 Deno.test("v2 boundaries distinguish incomplete transport from malformed complete payloads", () => {
   for (const domain of domains) {
     const good = bytes("-KAW" + sigerToken(), domain);
-    assertThrows(() => parseAttachmentDispatch(good.slice(0, -1), V2, domain), ShortageError);
-    for (const mode of ["strict", "compat"] as const) {
-      for (
-        const malformed of [
-          "-KAB" + sigerToken(), // A full signature outside the declared four-character boundary cannot repair it.
-          "-KAX" + sigerToken() + "AAAA", // Complete payload, incomplete second signature.
-          groupV2(CtrDexV2.NonTransReceiptCouples, token("B")), // Missing second tuple element.
-          groupV2(CtrDexV2.TransLastIdxSigGroups, token("B") + "-KAW"), // Inner payload exceeds outer boundary.
-        ]
-      ) {
-        for (const wire of [malformed, groupV2(CtrDexV2.AttachmentGroup, malformed)]) {
-          assertThrows(
-            () => parseAttachmentDispatchCompat(bytes(wire + "-KAW" + sigerToken(), domain), V2, domain, { mode }),
-            GroupSizeError,
-          );
-        }
+    assertThrows(() => parseAttachmentGroup(good.slice(0, -1), V2, domain), ShortageError);
+    for (
+      const malformed of [
+        "-KAB" + sigerToken(), // A full signature outside the declared four-character boundary cannot repair it.
+        "-KAX" + sigerToken() + "AAAA", // Complete payload, incomplete second signature.
+        groupV2(CtrDexV2.NonTransReceiptCouples, token("B")), // Missing second tuple element.
+        groupV2(CtrDexV2.TransLastIdxSigGroups, token("B") + "-KAW"), // Inner payload exceeds outer boundary.
+      ]
+    ) {
+      for (const wire of [malformed, groupV2(CtrDexV2.AttachmentGroup, malformed)]) {
+        assertThrows(
+          () => parseAttachmentGroup(bytes(wire + "-KAW" + sigerToken(), domain), V2, domain),
+          GroupSizeError,
+        );
       }
     }
     const adjacent = bytes("-KAW" + sigerToken() + "-LAW" + sigerToken(), domain);
-    const first = parseAttachmentDispatch(adjacent, V2, domain);
+    const first = parseAttachmentGroup(adjacent, V2, domain);
     assertEquals(first.consumed, good.length);
-    assertEquals(parseAttachmentDispatch(adjacent.slice(first.consumed), V2, domain).group.code, "-L");
+    assertEquals(parseAttachmentGroup(adjacent.slice(first.consumed), V2, domain).group.code, "-L");
   }
 });
 
@@ -85,7 +83,7 @@ Deno.test("versioned transferable groups preserve item counts, payload bounds, a
       const payload = (header + inner).repeat(2);
       const group = version.major === 1 ? counterV1(code, 2) + payload : groupV2(code, payload);
       const wire = bytes(group, domain);
-      const parsed = parseAttachmentDispatch(bytes(group + group, domain), version, domain);
+      const parsed = parseAttachmentGroup(bytes(group + group, domain), version, domain);
       assertEquals(parsed.group.raw, wire);
       assertEquals(parsed.consumed, wire.length);
       assertEquals(parsed.group.items.length, 2);
@@ -139,7 +137,7 @@ Deno.test("v2 tuple families exhaust payload lengths rather than repeat the wire
   ) {
     for (const domain of domains) {
       const wire = bytes(groupV2(code, payload.repeat(2)), domain);
-      const parsed = parseAttachmentDispatch(wire, V2, domain);
+      const parsed = parseAttachmentGroup(wire, V2, domain);
       assertEquals(parsed.consumed, wire.length);
       assertEquals(parsed.group.items.length, 2);
       assertEquals(parsed.group.count, payload.length / 2);
@@ -148,13 +146,11 @@ Deno.test("v2 tuple families exhaust payload lengths rather than repeat the wire
 });
 
 Deno.test("a complete malformed v2 signature group errors during feed without waiting for flush", () => {
-  for (const mode of ["strict", "compat"] as const) {
-    const parser = createParser({ attachmentDispatchMode: mode });
-    const events = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY + "-KAB" + sigerToken()));
-    assertEquals(events.map((event) => event.type), ["error"]);
-    if (events[0].type === "error") assertEquals(events[0].error instanceof GroupSizeError, true);
-    assertEquals(parser.flush(), []);
-  }
+  const parser = createParser();
+  const events = parser.feed(encode(KERIPY_NATIVE_V2_ICP_FIX_BODY + "-KAB" + sigerToken()));
+  assertEquals(events.map((event) => event.type), ["error"]);
+  if (events[0].type === "error") assertEquals(events[0].error instanceof GroupSizeError, true);
+  assertEquals(parser.flush(), []);
 });
 
 Deno.test("v2 big signature counters handle payloads beyond the small-counter limit", () => {
@@ -162,7 +158,7 @@ Deno.test("v2 big signature counters handle payloads beyond the small-counter li
   for (const code of [CtrDexV2.BigControllerIdxSigs, CtrDexV2.BigWitnessIdxSigs]) {
     for (const domain of domains) {
       const wire = bytes(groupV2(code, payload), domain);
-      const parsed = parseAttachmentDispatch(wire, V2, domain);
+      const parsed = parseAttachmentGroup(wire, V2, domain);
       assertEquals(parsed.consumed, wire.length);
       assertEquals(parsed.group.count, 4114);
       assertEquals(parsed.group.items.length, 187);

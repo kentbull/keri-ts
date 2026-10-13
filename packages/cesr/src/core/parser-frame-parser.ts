@@ -1,6 +1,5 @@
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
@@ -32,11 +31,6 @@ import {
 } from "./parser-constants.ts";
 import type { CesrBody, CesrDomain, CesrFrame, Smellage } from "./types.ts";
 
-/** Attachment decoding options for enclosed frames. */
-interface FrameParserOptions {
-  attachmentDispatchMode: AttachmentDispatchMode;
-}
-
 /** Parsed frame-start result consumed by top-level parser orchestration. */
 export interface FrameStart {
   frame: CesrFrame;
@@ -60,12 +54,6 @@ export interface FrameStart {
  * - return complete enclosed GenericGroup siblings in stream order
  */
 export class FrameParser {
-  private readonly attachmentDispatchMode: AttachmentDispatchMode;
-
-  constructor(options: FrameParserOptions) {
-    this.attachmentDispatchMode = options.attachmentDispatchMode;
-  }
-
   /** Probe whether the next token is a top-level frame boundary counter. */
   startsFrame(
     input: Uint8Array,
@@ -435,7 +423,6 @@ export class FrameParser {
           input.slice(offset),
           frameGvrsn,
           nextCold,
-          { mode: this.attachmentDispatchMode },
         );
         attachments.push(group);
         offset += consumed;
@@ -488,7 +475,6 @@ export class FrameParser {
         input.slice(offset),
         gvrsn,
         nextCold,
-        { mode: this.attachmentDispatchMode },
       );
       attachments.push(group);
       offset += consumed;

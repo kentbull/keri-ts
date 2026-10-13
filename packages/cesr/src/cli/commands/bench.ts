@@ -14,13 +14,12 @@ interface BenchmarkCliOptions {
   warmupIterations: number;
   chunkSize: number;
   framed: boolean;
-  attachmentDispatchMode: "strict" | "compat";
   allowErrors: boolean;
   json: boolean;
 }
 
 const BENCH_USAGE =
-  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--framed] [--compat] [--allow-errors] [--json]";
+  "Usage: tephra bench [--in <path>] [--iterations <n>] [--warmup <n>] [--chunk-size <bytes>] [--framed] [--allow-errors] [--json]";
 
 /** Parse non-negative integer flags used for sizing and warmup controls. */
 function parseNonNegativeInt(argName: string, value: string): number {
@@ -47,7 +46,6 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
     warmupIterations: 5,
     chunkSize: 0,
     framed: false,
-    attachmentDispatchMode: "strict",
     allowErrors: false,
     json: false,
   };
@@ -84,10 +82,6 @@ function parseArgs(args: string[]): BenchmarkCliOptions {
     }
     if (arg === "--framed") {
       out.framed = true;
-      continue;
-    }
-    if (arg === "--compat") {
-      out.attachmentDispatchMode = "compat";
       continue;
     }
     if (arg === "--allow-errors") {
@@ -146,7 +140,6 @@ export async function benchCommand(args: string[], io: CliIo): Promise<number> {
       chunkSize: options.chunkSize,
       parserOptions: {
         framed: options.framed,
-        attachmentDispatchMode: options.attachmentDispatchMode,
       },
       failOnParseError: !options.allowErrors,
     });

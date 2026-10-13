@@ -1,8 +1,8 @@
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { parseBytes } from "../core/parser-engine.ts";
 import type { CesrDomain, CesrFrame } from "../core/types.ts";
+import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { sniff } from "../parser/cold-start.ts";
-import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import { Counter, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
 import { isLabelerCode, parseLabeler } from "../primitives/labeler.ts";
@@ -158,7 +158,7 @@ function renderAttachmentGroupRaw(
   if (domain !== "txt" && domain !== "bny") {
     return 0;
   }
-  const parsed = parseAttachmentDispatchCompat(raw, version, domain);
+  const parsed = parseAttachmentGroup(raw, version, domain);
   const counter = parseCounter(raw, version, domain);
   emitLine(
     lines,

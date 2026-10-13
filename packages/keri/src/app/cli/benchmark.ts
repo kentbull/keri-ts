@@ -13,7 +13,6 @@ interface BenchmarkArgs {
   warmupIterations?: number;
   chunkSize?: number;
   framed?: boolean;
-  compat?: boolean;
   allowErrors?: boolean;
   json?: boolean;
 }
@@ -199,7 +198,6 @@ function benchmarkParser(
   const failOnParseError = !(options.allowErrors ?? false);
   const parserOptions: ParserOptions = {
     framed: options.framed ?? false,
-    attachmentDispatchMode: options.compat ? "compat" : "strict",
   };
 
   for (let i = 0; i < warmupIterations; i++) {
@@ -280,7 +278,6 @@ export function* benchmarkCommand(
     warmupIterations: args.warmupIterations as number | undefined,
     chunkSize: args.chunkSize as number | undefined,
     framed: args.framed as boolean | undefined,
-    compat: args.compat as boolean | undefined,
     allowErrors: args.allowErrors as boolean | undefined,
     json: args.json as boolean | undefined,
   };

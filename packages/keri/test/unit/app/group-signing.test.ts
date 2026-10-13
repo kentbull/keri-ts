@@ -26,7 +26,7 @@ Deno.test("group query signs only its local member at current index3", async () 
         toad: 0,
       }).hab;
       const bytes = group.query(group.pre, peers[0].pre, { topics: { "/receipt": 0 } }, "mbx");
-      const parser = createParser({ framed: false, attachmentDispatchMode: "compat" });
+      const parser = createParser({ framed: false });
       const envelopes = envelopesFromFrames([...parser.feed(bytes), ...parser.flush()]);
       assertEquals(envelopes.length, 1);
       const envelope = envelopes[0];

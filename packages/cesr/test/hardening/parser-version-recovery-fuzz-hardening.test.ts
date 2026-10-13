@@ -169,7 +169,7 @@ Deno.test(
       const variants = mutateTextStream(base, 0x0210_2026, 20);
       for (const mutated of variants) {
         const bytes = encode(mutated);
-        const parser = createParser({ attachmentDispatchMode: "strict" });
+        const parser = createParser();
         const events = [
           ...parser.feed(
             bytes.slice(0, Math.max(1, Math.floor(bytes.length / 2))),
@@ -190,7 +190,7 @@ Deno.test(
     const bytes = encode(stream);
     const plans = buildNWaySplitPlans(bytes.length, 3, 8, 1, 0x0211_2026);
     for (const plan of plans) {
-      const parser = createParser({ attachmentDispatchMode: "strict" });
+      const parser = createParser();
       const events = [];
       for (const chunk of chunkByBoundaries(bytes, plan)) {
         events.push(...parser.feed(chunk));

@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { ShortageError } from "../../src/core/errors.ts";
-import { parseAttachmentDispatch } from "../../src/parser/group-dispatch.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import {
   CtrDexByVersion,
@@ -151,7 +151,7 @@ Deno.test("every supported wire counter routes in both encoding domains, includi
         : new Counter({ code, count: 0, version: gvrsn });
       for (const domain of ["txt", "bny"] as const) {
         const raw = domain === "txt" ? new TextEncoder().encode(counter.qb64) : counter.qb2;
-        const parse = () => parseAttachmentDispatch(raw, gvrsn, domain);
+        const parse = () => parseAttachmentGroup(raw, gvrsn, domain);
         if (name === "SadPathSigGroup") {
           // Even an empty path-signature group requires its root path token.
           assertThrows(parse, ShortageError);

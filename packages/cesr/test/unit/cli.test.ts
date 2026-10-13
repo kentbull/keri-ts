@@ -131,7 +131,7 @@ Deno.test("tephra validate --json emits structured failure reports on stdout", a
   assertEquals(report.errors[0].name, "NoFramesError");
 });
 
-Deno.test("tephra validate defaults strict and allows --compat", async () => {
+Deno.test("tephra validate rejects malformed wrappers and the removed --compat flag", async () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"rpy\",\"d\":\"Eabc\"}");
   const nestedV2List = "-JAB--FA";
   const mixedMajorStream = `${body}${counterV1("-V", nestedV2List.length / 4)}${nestedV2List}`;
@@ -141,8 +141,8 @@ Deno.test("tephra validate defaults strict and allows --compat", async () => {
   assertStringIncludes(strict.stderr.join(""), "CESR validation failed");
 
   const compat = memoryCliIo({ stdin: mixedMajorStream });
-  assertEquals(await tephraCli(["validate", "--compat"], compat.io), 0);
-  assertStringIncludes(compat.stdout.join(""), "CESR validation passed");
+  assertEquals(await tephraCli(["validate", "--compat"], compat.io), 1);
+  assertStringIncludes(compat.stderr.join(""), "Unknown argument: --compat");
 });
 
 Deno.test("tephra bench routes through the package-level dispatcher", async () => {

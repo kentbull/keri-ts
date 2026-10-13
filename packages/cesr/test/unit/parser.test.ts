@@ -110,7 +110,7 @@ Deno.test("parser strict mode rejects attachments with undeclared major versions
   const v2OnlyAttachment = `${counterV2(selectV2OnlyQuadletGroupCode(), 1)}AAAA`;
   const ims = `${body}${v2OnlyAttachment}`;
 
-  const parser = createParser({ attachmentDispatchMode: "strict" });
+  const parser = createParser();
   const frames = [...parser.feed(encode(ims)), ...parser.flush()];
   assertEquals(frames.some((e) => e.type === "error"), true);
 });

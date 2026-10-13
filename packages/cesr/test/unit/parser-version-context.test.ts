@@ -79,7 +79,7 @@ Deno.test("V-P0-005: enclosed AttachmentGroup payload-leading genus-version over
     enclosedAttachments,
   );
   const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${wrappedAttachmentGroup}`;
-  const out = parseAll(stream, { attachmentDispatchMode: "strict" });
+  const out = parseAll(stream);
 
   const errors = out.filter((event) => event.type === "error");
   const frames = out.filter((event) => event.type === "frame");

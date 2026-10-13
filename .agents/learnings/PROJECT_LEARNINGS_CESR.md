@@ -26,8 +26,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    frame. Complete-record runtime callers finish explicitly; raw streams retain
    parser state. Do not append peer attachments after a closed enclosure.
 5. Attachment dispatch decodes only the selected genus version; unknown codes
-   and primitive failures never trigger a cross-major retry. Strict/compat mode
-   controls opaque wrapper-tail recovery only. Explicit genus selectors and
+   and primitive failures never trigger a cross-major retry. Malformed wrapper
+   tails are errors; there is no strict/compat parser mode. Explicit genus selectors and
    legacy frame-start recognition remain separate from attachment dispatch.
    Non-shortage errors emit the normal parser error event and reset; recovery
    has no separate diagnostic callback API. V1 signature/tuple counters count
@@ -40,7 +40,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    returning Texters. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner
    counters). Genus selectors decode both minor sextets and reject unsupported
-   versions even in compat wrappers.
+   versions inside wrappers as well.
 6. Counter parsing validates genus versions through codex registries before
    choosing an attachment handler from the v1/v2 maps. Stream genus is independent of protocol
    metadata: null selection permits legacy inference, explicit selectors persist,

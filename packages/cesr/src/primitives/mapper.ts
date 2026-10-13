@@ -11,7 +11,7 @@ import {
 } from "../core/errors.ts";
 import { tokenSize } from "../core/parser-constants.ts";
 import type { CesrDomain } from "../core/types.ts";
-import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
+import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
@@ -230,7 +230,7 @@ function parseMapperValueSyntax(
   // shape before falling back to plain Matter parsing.
   const counter = parseCounterProbe(input, version, domain);
   if (counter) {
-    const dispatch = parseAttachmentDispatch(input, version, domain);
+    const dispatch = parseAttachmentGroup(input, version, domain);
     const value: MapperValueTokenSyntax = {
       kind: "value",
       primitive: dispatch.group,

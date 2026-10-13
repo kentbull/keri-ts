@@ -35,7 +35,7 @@ Canonical parser lifecycle/state-machine contract:
   - Streaming frame parser (`CesrParserCore`) for message-domain and CESR-native
     body-group streams.
   - Handles chunk boundaries, pending frames, and attachment continuation.
-- `packages/cesr/src/parser/group-dispatch.ts`
+- `packages/cesr/src/parser/attachment-parser.ts`
   - Counter-group dispatch for attachment/body groups.
   - Version-selected dispatch with no cross-major retry. Compatibility mode
     preserves opaque wrapper tails; it does not reinterpret attachment codes.
@@ -62,7 +62,7 @@ Canonical parser lifecycle/state-machine contract:
    - non-native body group,
    - native fixed/map body groups.
 4. Attachment groups are decoded by `parseAttachmentGroup` ->
-   `parseAttachmentDispatch(Compat)`.
+   `parseAttachmentGroup`.
 5. Annotation layer renders parsed structures into line-oriented, commented CESR
    text.
 
@@ -72,16 +72,14 @@ Canonical parser lifecycle/state-machine contract:
   - `ShortageError` means "need more bytes", never silent data loss.
 - Boundary exactness:
   - group payload sizes must match counter-declared lengths.
-- Compatibility behavior:
-  - `parseAttachmentDispatchCompat()` may switch major version on
-    unknown/deserialize errors.
-  - this is intentional for mixed real-world streams.
+- Version selection:
+  - Decode attachments once under the selected genus.
+  - Malformed wrapper tails are errors; no cross-major retry or recovery mode.
 - Native map strictness:
   - dangling labels must throw.
   - offset must end exactly at payload boundary.
 - Annotation resilience:
-  - unexpected nested wrapper tails should render as opaque payload lines, not
-    crash the tool.
+  - opaque wire families remain renderable; malformed wrapper tails fail.
 
 ## Refactoring guidelines
 
@@ -100,7 +98,7 @@ Canonical parser lifecycle/state-machine contract:
 1. Add codex/table entries (or generator overlays if legacy compatibility is
    needed).
 2. Add primitive parser in `packages/cesr/src/primitives`.
-3. Register group handling in `group-dispatch.ts`:
+3. Register group handling in `attachment-parser.ts`:
    - use `repeatTupleParser(...)` where possible,
    - add dedicated parser only when structure is nested/variable.
 4. Extend annotation token rendering if field-level comments are required.
