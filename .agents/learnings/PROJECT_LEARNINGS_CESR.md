@@ -37,7 +37,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    groups. Complete v2 payloads with incomplete items are boundary errors, not
    transport shortages. Fixtures must encode payload lengths, not item counts.
    Direct handler maps select separate v1 item-count and v2 payload-exhaustion handlers;
-   single-entry parsing and primitive rehydration remain shared.
+   single-entry parsing and primitive rehydration remain shared. Known attachment
+   roles hydrate narrow primitives at the CESR boundary. Ordinals use
+   `NumberPrimitive`, accepting fixed-width `0A` and compact numeric codes in
+   both genera. Table baseline 450ae1c used Seqner; live CLI interop baseline
+   98b88cf uses Number. Do not mistake the old reader for the full wire surface.
    ESSR also has separate v1 item-count and v2 payload-length handlers, both
    returning Texters. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner

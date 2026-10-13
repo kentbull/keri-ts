@@ -80,9 +80,9 @@ Deno.test("serder: structor projection classifies attachment families", () => {
   const body = v2ify("{\"v\":\"KERI20JSON000000_\",\"t\":\"ixn\",\"d\":\"Eabc\"}");
   const aggorPayload = `${token("B")}${token("E")}`;
   const aggor = `${counterV2(CtrDexV2.GenericListGroup, aggorPayload.length / 4)}${aggorPayload}`;
-  const sealer = groupV2(CtrDexV2.SealSourceCouples, `${token("B")}${token("E")}`);
-  const blinder = groupV2(CtrDexV2.BlindedStateQuadruples, `${token("B")}${token("E")}${token("D")}${token("M")}`);
-  const mediar = groupV2(CtrDexV2.TypedMediaQuadruples, `${token("B")}${token("E")}${token("D")}${token("M")}`);
+  const sealer = groupV2(CtrDexV2.SealSourceCouples, `${token("0A")}${token("E")}`);
+  const blinder = groupV2(CtrDexV2.BlindedStateQuadruples, KERIPY_STRUCTOR_VECTORS.blinderBlindStatePayload);
+  const mediar = groupV2(CtrDexV2.TypedMediaQuadruples, KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload);
   const stream = `${body}${aggor}${sealer}${blinder}${mediar}`;
 
   const parser = createParser();

@@ -9,7 +9,7 @@ import { txt } from "../../fixtures/primitive-test-helpers.ts";
 const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("mediar: parses typed-media group", () => {
-  const ims = groupV2(CtrDexV2.TypedMediaQuadruples, `${token("B")}${token("E")}${token("D")}${token("M")}`);
+  const ims = groupV2(CtrDexV2.TypedMediaQuadruples, KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload);
   const mediar = parseMediar(txt(ims), V2, "txt");
   assertEquals(mediar instanceof Mediar, true);
   assertEquals(mediar.code, CtrDexV2.TypedMediaQuadruples);

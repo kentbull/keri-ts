@@ -6,6 +6,7 @@ import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
+import { KERIPY_STRUCTOR_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
 const V1 = { major: 1, minor: 0 } as const;
@@ -71,10 +72,10 @@ Deno.test("versioned transferable groups preserve item counts, payload bounds, a
   for (const domain of domains) {
     for (
       const [version, code, header] of [
-        [V1, CtrDexV1.TransIdxSigGroups, token("B") + token("M") + token("E")],
+        [V1, CtrDexV1.TransIdxSigGroups, token("B") + token("0A") + token("E")],
         [V1, CtrDexV1.TransLastIdxSigGroups, token("B")],
-        [V2, CtrDexV2.TransIdxSigGroups, token("B") + token("M") + token("E")],
-        [V2, CtrDexV2.BigTransIdxSigGroups, token("B") + token("M") + token("E")],
+        [V2, CtrDexV2.TransIdxSigGroups, token("B") + token("0A") + token("E")],
+        [V2, CtrDexV2.BigTransIdxSigGroups, token("B") + token("0A") + token("E")],
         [V2, CtrDexV2.TransLastIdxSigGroups, token("B")],
         [V2, CtrDexV2.BigTransLastIdxSigGroups, token("B")],
       ] as const
@@ -121,18 +122,18 @@ Deno.test("v2 tuple families exhaust payload lengths rather than repeat the wire
   for (
     const [code, payload] of [
       [CtrDexV2.NonTransReceiptCouples, token("B") + token("0B")],
-      [CtrDexV2.FirstSeenReplayCouples, token("M") + token("1AAG")],
-      [CtrDexV2.SealSourceCouples, token("M") + token("E")],
-      [CtrDexV2.SealSourceTriples, token("B") + token("M") + token("E")],
-      [CtrDexV2.TransReceiptQuadruples, token("B") + token("M") + token("E") + sigerToken()],
+      [CtrDexV2.FirstSeenReplayCouples, token("0A") + token("1AAG")],
+      [CtrDexV2.SealSourceCouples, token("0A") + token("E")],
+      [CtrDexV2.SealSourceTriples, token("B") + token("0A") + token("E")],
+      [CtrDexV2.TransReceiptQuadruples, token("B") + token("0A") + token("E") + sigerToken()],
       [CtrDexV2.SealSourceLastSingles, token("B")],
       [CtrDexV2.DigestSealSingles, token("E")],
       [CtrDexV2.MerkleRootSealSingles, token("E")],
       [CtrDexV2.BackerRegistrarSealCouples, token("B") + token("E")],
-      [CtrDexV2.TypedDigestSealCouples, token("M") + token("E")],
-      [CtrDexV2.BlindedStateQuadruples, token("B") + token("E") + token("D") + token("M")],
-      [CtrDexV2.TypedMediaQuadruples, token("B") + token("E") + token("D") + token("M")],
-      [CtrDexV2.BoundStateSextuples, token("B") + token("E") + token("D") + token("M") + token("M") + token("E")],
+      [CtrDexV2.TypedDigestSealCouples, KERIPY_STRUCTOR_VECTORS.sealerTypedDigestPayload],
+      [CtrDexV2.BlindedStateQuadruples, KERIPY_STRUCTOR_VECTORS.blinderBlindStatePayload],
+      [CtrDexV2.TypedMediaQuadruples, KERIPY_STRUCTOR_VECTORS.mediarTypedMediaPayload],
+      [CtrDexV2.BoundStateSextuples, KERIPY_STRUCTOR_VECTORS.blinderBlindStatePayload + token("M") + token("E")],
     ]
   ) {
     for (const domain of domains) {

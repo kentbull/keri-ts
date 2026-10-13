@@ -58,8 +58,8 @@ Deno.test("genus selectors reject unsupported majors and both minor sextets at e
 Deno.test("nested transferable signature groups require the pinned controller counter", () => {
   for (const version of [V1, V2]) {
     const cases = version.major === 1
-      ? [["-F", token("B") + token("M") + token("E")], ["-H", token("B")]]
-      : [["-X", token("B") + token("M") + token("E")], ["-Y", token("B")]];
+      ? [["-F", token("B") + token("0A") + token("E")], ["-H", token("B")]]
+      : [["-X", token("B") + token("0A") + token("E")], ["-Y", token("B")]];
     for (const [code, prefix] of cases) {
       for (const innerCode of version.major === 1 ? ["-A", "-B"] : ["-K", "-L", "--K", "--L"]) {
         const inner = version.major === 1 ? counterV1(innerCode, 1) + sigerToken() : groupV2(innerCode, sigerToken());

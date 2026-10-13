@@ -9,7 +9,7 @@ import { txt } from "../../fixtures/primitive-test-helpers.ts";
 const V2 = { major: 2, minor: 0 } as const;
 
 Deno.test("sealer: parses KERIpy-style seal group", () => {
-  const ims = groupV2(CtrDexV2.SealSourceCouples, `${token("B")}${token("E")}`);
+  const ims = groupV2(CtrDexV2.SealSourceCouples, `${token("0A")}${token("E")}`);
   const sealer = parseSealer(txt(ims), V2, "txt");
   assertEquals(sealer instanceof Sealer, true);
   assertEquals(sealer.code, CtrDexV2.SealSourceCouples);
