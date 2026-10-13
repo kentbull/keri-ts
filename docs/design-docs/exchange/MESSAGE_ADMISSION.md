@@ -50,6 +50,14 @@ Missing coordinates retain `bigint` precision, including beyond the database's
 safe-number range; the eventual intake owner emits exact hexadecimal queries.
 This read-only helper emits no cues and enables no public Kramer/runtime intake.
 
+Internal KRAM time plans preserve inclusive microsecond admission/lifetime windows,
+XIP own-SAID openers, sender-local/shared XID precedence and original cached windows.
+Completed replay is refused before source queries; multi-key partials remain resumable.
+Transaction `rdt` records receiver-observed completion time, distinct from message
+`mdt`, and remains frozen on ready handoff retries. Plans publish no state: intake
+must atomically recheck policy, current keys, caches and durable readiness before
+publishing cache/opener/receipt, partial factors and snapshot together.
+
 Internal `verifyKramSignatures` normalizes sender triples/last groups on cloned
 factor arrays, verifies only current sender factors and returns the borrowed
 normalized envelope. `verified` means at least one valid cigar or indexed
@@ -59,6 +67,18 @@ signer indices for threshold satisfaction. Prior sender groups are removed from
 forwarding and retained only as historically verified diagnostics. Foreign groups
 and children remain independent. These helpers publish no intake state or queries
 and do not change existing parser/v1 normalization.
+
+Internal `stageKram` publishes the parent cache, current sender pool/state, scalar
+factors, private snapshot and first-ready RFC3339 receiver receipt in one transaction.
+It rechecks authentication, current establishment, policy/cache and original ready
+receipt after asynchronous acquisition; concurrent snapshot replacement is refused.
+Rotated partials lose their evidence but retain replay cache. Same-index signature
+variants survive storage while thresholds and later accumulation use unique indices.
+Ready consumption remains scoped through joined hydration, and its generic return
+value must contain no untransferred frame/payload owner. Consumer/disposal failures
+retain durable readiness for at-least-once handoff. A separate handoff owner must
+acknowledge the exact ready receipt/body only after disposal; no public Kramer or
+runtime intake is enabled here. Finite collection limits are not a shared budget.
 
 ## Ownership and HTTP
 

@@ -33,10 +33,11 @@ them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 
 R1–R5 are merged through #185: storage, validation and inception are available.
 Pure verifier names match `vet`/`vetBinds`; the internal engine accepts anchored
-inceptions/updates with protected slots and heads, explicit escrow retry and
-earliest-anchor resealing. Named local services support creation and reopen;
-Blinded updates extend one unambiguous staged frontier; presentation operations
-and runtime integration remain unfinished. Ordinals above the safe-integer storage range are
+inceptions/updates with protected slots and heads, deterministic sibling retry,
+queued progression and earliest-anchor resealing. Named local services support
+creation and reopen; blinded updates extend one unambiguous staged frontier.
+Presentation operations and runtime integration remain unfinished. Ordinals above
+the safe-integer storage range are
 explicitly unsupported pending the storage phase.
 The [import preservation record][import-record] retains the exact original code.
 

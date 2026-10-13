@@ -1,10 +1,15 @@
 /** Cache policy against real LMDB; frozen semantics from KERIpy 927c0cb8. */
-import { b, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { b, Dater, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { type KramExemption, KramPolicy, type KramWindows } from "../../../src/core/kram-policy.ts";
+import { evaluateKramTime, inspectKramReplay, type KramTimeAuthentication } from "../../../src/core/kram-time.ts";
 import { reply } from "../../../src/core/protocol-eventing.ts";
+import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../src/core/records.ts";
 import { createBaser } from "../../../src/db/basing.ts";
+import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
+import sourceReference from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
+import timeReference from "../../fixtures/kram-time-927.json" with { type: "json" };
 
 const initial: KramWindows = [1000, 5000, 60000, 300000, 5000, 60000, 300000];
 const expanded: KramWindows = [2000, 7000, 62000, 302000, 7000, 62000, 302000];
@@ -116,4 +121,100 @@ Deno.test("KRAM changes preserve active pruning, fixed drift and new coverage st
       yield* db.close(true);
     }
   });
+});
+
+// Independent intake observations at 927c0cb8; shared body literals keep source/auth owners separate.
+Deno.test("KRAM replay and time plans match frozen receipts, openers and inclusive microsecond windows", async () => {
+  const bodies: Record<string, string> = { ...timeReference.bodies, "source.wrong": sourceReference.bodies.wrong };
+  const caches = timeReference.caches as Record<
+    string,
+    { body: string; windows: "long" | "short"; xdt?: string; rdt?: string }
+  >;
+  const makeRecord = (name: string) => {
+    const { body, windows, xdt, rdt } = caches[name], { d, xl, pxl } = timeReference.windows;
+    const ml = timeReference.windows[windows], values = { mdt: JSON.parse(bodies[body]).dt, d, ml, pml: ml, xl, pxl };
+    return xdt === undefined ? new MsgCacheRecord(values) : new TxnMsgCacheRecord({ ...values, xdt, rdt });
+  };
+  for (const row of timeReference.cases) {
+    await run(function*() {
+      const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+      try {
+        const configured = row.configuration === "decreased"
+          ? timeReference.configurations.decreased as unknown as KramWindows
+          : initial;
+        const policy = new KramPolicy(db, { caches: { "~": configured } });
+        const body = new SerderKERI({ raw: b(bodies[row.body]) });
+        const seed = (name: string) => {
+          const owner = new SerderKERI({ raw: b(bodies[caches[name].body]) }), record = makeRecord(name);
+          if (record instanceof TxnMsgCacheRecord) {
+            db.tmsc.pin([owner.pre!, owner.ilk === "xip" ? owner.said! : String(owner.ked?.x), owner.said!], record);
+          } else db.msgc.pin([owner.pre!, owner.said!], record);
+        };
+        if (row.before) seed(row.before);
+        for (const sibling of row.siblings ?? []) seed(sibling);
+        if (row.partial) db.pmkm.pin([body.pre!, body.said!], body);
+        if (row.sharedOpener) {
+          db.xdt.pin(String(body.ked?.x), new Dater({ qb64: encodeDateTimeToDater(row.sharedOpener) }));
+        }
+        yield* db.close(false);
+        yield* db.reopen({ reuse: true });
+        const inspection = inspectKramReplay(db, body);
+        const decision = inspection.kind === "drop"
+          ? inspection
+          : evaluateKramTime(
+            db,
+            policy,
+            inspection,
+            timeReference
+              .authentications[
+                row.authentication as keyof typeof timeReference.authentications
+              ] as KramTimeAuthentication,
+            row.receiverTime,
+          );
+        if (row.refusal) {
+          assertEquals<string | false>(decision.kind === "drop" && decision.reason, row.refusal, row.name);
+        } else {
+          assertEquals(decision.kind, "proceed", row.name);
+          if (decision.kind === "proceed") {
+            assertEquals(decision.record.asDict(), makeRecord(row.cache!).asDict(), row.name);
+            assertEquals(decision.receiverTime, caches[row.cache!].rdt || row.receiverTime, row.name);
+          }
+        }
+        const cached = String(body.ked?.x ?? "") || body.ilk === "xip"
+          ? db.tmsc.get([body.pre!, body.ilk === "xip" ? body.said! : String(body.ked?.x), body.said!])
+          : db.msgc.get([body.pre!, body.said!]);
+        assertEquals(
+          cached?.asDict() ?? null,
+          row.before ? makeRecord(row.before).asDict() : null,
+          "planning cannot publish a competing receipt",
+        );
+        if (row.name === "transaction threshold freezes receiver time") {
+          const received = makeRecord("transaction-received") as TxnMsgCacheRecord;
+          db.tmsc.pin([body.pre!, String(body.ked?.x), body.said!], received);
+          const ready = inspectKramReplay(db, body, { resumingReady: true });
+          if (ready.kind === "drop") throw new Error("durable partial must remain resumable");
+          const retry = evaluateKramTime(db, policy, ready, { kind: "seal" }, "2026-10-13T12:20:02.000000+00:00");
+          assertEquals(
+            retry.kind === "proceed" && retry.receiverTime,
+            received.rdt,
+            "ready retry cannot refresh first receipt",
+          );
+          assertEquals(
+            evaluateKramTime(db, policy, { ...ready, resumingReady: false }, { kind: "single" }, row.receiverTime),
+            { kind: "drop", reason: "replay" },
+          );
+          assertThrows(() => evaluateKramTime(db, policy, ready, { kind: "single" }, "bad"), Error, "receiver clock");
+          db.pmkm.rem([body.pre!, body.said!]);
+          assertThrows(() => inspectKramReplay(db, body, { resumingReady: true }), Error, "partial state");
+          db.tmsc.pin(
+            [body.pre!, String(body.ked?.x), body.said!],
+            new TxnMsgCacheRecord({ ...received.asDict(), mdt: "bad" }),
+          );
+          assertThrows(() => inspectKramReplay(db, body), Error, "Corrupt");
+        }
+      } finally {
+        yield* db.close(true);
+      }
+    });
+  }
 });
