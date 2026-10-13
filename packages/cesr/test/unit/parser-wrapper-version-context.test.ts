@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { intToB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
+import { Counter } from "../../src/primitives/counter.ts";
 import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
@@ -9,7 +9,7 @@ import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(0, 1)}`;
+  return new TextDecoder().decode(Counter.makeGVC({ major, minor }));
 }
 
 function wrapQuadletGroupV2(code: string, payload: string): string {

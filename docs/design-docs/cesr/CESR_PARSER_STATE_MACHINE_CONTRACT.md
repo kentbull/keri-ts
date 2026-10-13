@@ -62,7 +62,7 @@ use the same code. Annotation separators do not close frames.
 | `flush()`                 | Drain all complete frames regardless of `framed`; finalize an open frame only if no incomplete attachment remains.       |
 | Terminal shortage         | Emit one `ShortageError`, discard the incomplete pending frame and remaining bytes, preserve earlier complete emissions. |
 | Other parse error         | Emit one error and reset parser state.                                                                                   |
-| `reset()`                 | Clear buffer, pending frame and queued frames; restore default version and offset.                                       |
+| `reset()`                 | Clear buffer, pending frame and queued frames; clear genus selection and reset offset.                                       |
 
 Repeated `flush()` calls are idempotent. A closed enclosure cannot absorb
 attachments outside its declared boundary. Complete bounded payloads containing
@@ -111,20 +111,35 @@ existing version-selector, wrapper, and split-stream suites.
 
 ## Version Context Semantics
 
-- Top-level stream scope: `streamVersion`, affected by leading
-  `KERIACDCGenusVersion` at frame start.
-- Current frame scope: `version` used for that frame's attachment parse.
-- Nested wrapper scope: wrapper-local nested version context in dispatch
-  parsing.
+`FrameParser` owns genus selection. The stream retains only an explicit selector;
+`streamVersion = null` means no selection has been made. Frame `version` is the
+resolved genus for counters and attachments, never the body's protocol version.
 
-These scopes are function-bounded and avoid a global mutable nested version
-stack.
+- A top-level `KERIACDCGenusVersion` selects the genus for subsequent frames
+  until another selector or reset. It survives chunk boundaries and v1 bodies.
+- Body `pvrsn` and `gvrsn` stay as encoded. As in pinned KERIpy `Serdery.reap`,
+  protocol major must not exceed stream genus major; a declared body genus must
+  be supported and must not exceed the stream genus major or minor.
+- Enclosures pass their resolved genus to child parsing. Inner selectors affect
+  subsequent siblings in that enclosure, never the enclosing stream. Attachment
+  wrappers likewise keep their selectors local.
+- With no selector or enclosing genus, bare v1 bodies infer genus 1.0; other
+  bodies use their declared genus or the default 2.0. This is the explicit
+  legacy compatibility path, not a claim that protocol and genus are equal.
+  Inference does not lock the next unselected frame to that version.
+- Alternate-major frame-counter recognition is allowed only at an unselected
+  stream head. Boundary lookahead and native token probes use the resolved genus
+  once. Selected streams and enclosed payloads never retry under another major.
+- Non-native opaque-body recovery cannot hide a recognized header's version
+  incompatibility. Strict and compat modes obey the same genus rules.
 
-Legacy note:
+Selectors use one major sextet plus two minor sextets; `decodeGenusVersion()`
+remains the sole decoder. Fixtures use `Counter.makeGVC()` except when testing
+invalid encodings. No global nested version stack or version policy is needed.
 
-- Deployed v1 streams may omit `KERIACDCGenusVersion` selectors at stream start.
-- In those cases, version context is inferred from the first parsed message/body
-  semantics.
+Coverage: `packages/cesr/test/unit/parser-genus-context.test.ts` checks explicit
+v2 genus with v1 bodies and v2 attachments, nesting, incompatible bodies and
+counters, both minor sextets, reset, and text/binary chunk partitions.
 
 ## Attachment Version Selection
 

@@ -2,7 +2,6 @@ import type { AttachmentDispatchOptions } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ParserError, ShortageError } from "./errors.ts";
 import { AttachmentCollector } from "./parser-attachment-collector.ts";
-import { DEFAULT_VERSION } from "./parser-constants.ts";
 import { FrameParser } from "./parser-frame-parser.ts";
 import { ParserStreamState } from "./parser-stream-state.ts";
 import type { CesrFrame, CesrMessage } from "./types.ts";
@@ -38,7 +37,7 @@ export class CesrParser {
     this.framed = options.framed ?? false;
     const attachmentDispatchMode = options.attachmentDispatchMode ?? "compat";
 
-    this.stream = new ParserStreamState(DEFAULT_VERSION);
+    this.stream = new ParserStreamState();
     this.frameParser = new FrameParser({
       attachmentDispatchMode,
     });
@@ -60,7 +59,7 @@ export class CesrParser {
   }
 
   reset(): void {
-    this.stream.reset(DEFAULT_VERSION);
+    this.stream.reset();
     this.pending = null;
     this.queued = [];
   }
@@ -76,7 +75,6 @@ export class CesrParser {
           const collected = this.attachmentCollector.collectTrailingAttachments(
             this.stream.buffer,
             pending.version,
-            this.stream.streamVersion,
             pending.frame.attachments,
             terminal,
           );

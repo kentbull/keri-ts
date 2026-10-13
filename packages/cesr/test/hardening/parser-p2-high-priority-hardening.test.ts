@@ -1,7 +1,8 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { concatBytes, decodeB64, intToB64 } from "../../src/core/bytes.ts";
+import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
+import { Counter } from "../../src/primitives/counter.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
@@ -70,8 +71,7 @@ function splitIntoThirds(input: Uint8Array): number[] {
 }
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
-  const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
+  return new TextDecoder().decode(Counter.makeGVC({ major, minor }));
 }
 
 Deno.test(
@@ -172,10 +172,8 @@ Deno.test(
   "V-P2-008: alternating nested genus-version selectors preserve wrapper-local version context",
   () => {
     const v1Opaque = `${counterV1(CtrDexV1.NonNativeBodyGroup, 1)}MAAA`;
-    const wrappedV1 = wrapQuadletGroupV2(
-      CtrDexV2.BodyWithAttachmentGroup,
-      `${genusVersionCounter(1)}${v1Opaque}`,
-    );
+    const enclosedV1 = `${genusVersionCounter(1)}${v1Opaque}`;
+    const wrappedV1 = counterV1(CtrDexV1.BodyWithAttachmentGroup, enclosedV1.length / 4) + enclosedV1;
     const payload = `${genusVersionCounter(1)}${v1Opaque}${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}${
       genusVersionCounter(1)
     }${wrappedV1}${genusVersionCounter(2)}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;

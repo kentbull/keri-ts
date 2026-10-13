@@ -44,7 +44,6 @@ export class AttachmentCollector {
   collectTrailingAttachments(
     input: Uint8Array,
     version: Versionage,
-    streamVersion: Versionage,
     seed: AttachmentGroup[] = [],
     terminal = false,
   ): CollectAttachmentsResult {
@@ -70,7 +69,7 @@ export class AttachmentCollector {
         if (
           this.isFrameBoundaryAhead(
             input.slice(offset),
-            streamVersion,
+            version,
             nextCold,
           )
         ) {

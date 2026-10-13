@@ -1,7 +1,8 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { concatBytes, decodeB64, intToB64 } from "../../src/core/bytes.ts";
+import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
+import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -222,8 +223,7 @@ export function wrapQuadletGroupV2(code: string, payload: string): string {
 
 /** Build `KERIACDCGenusVersion` selector token for explicit version-context vectors. */
 export function genusVersionCounter(major: 1 | 2, minor = 0): string {
-  const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
+  return new TextDecoder().decode(Counter.makeGVC({ major, minor }));
 }
 
 /**
