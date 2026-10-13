@@ -48,6 +48,11 @@ V2 non-event sender policy precedes proof prerequisites; allow/deny sets do not
 authenticate signatures. Raw query sigers use the claimed sender only when no
 last-establishment group is present. Optional KRAM remains
 [3f](../../docs/plans/exchange/EXCHANGE_ADMISSION_PLAN.md).
+KRAM source authentication checks only the last couple or sender-matching triple.
+Keep known-invalid separate from missing state: only the former permits signature
+fallback. Preserve exact missing sequence numbers beyond safe database ordinals;
+query publication belongs to intake, not the read-only helper.
+
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.
