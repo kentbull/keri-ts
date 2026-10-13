@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { run } from "effection";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { abortable } from "../../../src/app/abortable.ts";

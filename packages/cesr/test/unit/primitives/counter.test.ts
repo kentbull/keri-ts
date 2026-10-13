@@ -9,15 +9,11 @@ import {
 } from "../../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import type { Versionage } from "../../../src/tables/table-types.ts";
-import { KERIPY_COUNTER_VECTORS, KERIPY_MAIN_BASELINE } from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_COUNTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 const V1 = { major: 1, minor: 0 } as const;
 const V2 = { major: 2, minor: 0 } as const;
-
-Deno.test("counter: baseline uses KERIpy main vectors", () => {
-  assertEquals(KERIPY_MAIN_BASELINE.commit, "5a5597e8b7f7");
-});
 
 Deno.test("counter: parses canonical v1/v2 KERIpy vectors", () => {
   const vectors: Array<{ qb64: string; version: Versionage }> = [

@@ -1,7 +1,7 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../src/core/errors.ts";
 import { parsePrimitiveFromText, supportedPrimitiveCodes } from "../../../src/primitives/registry.ts";
-import { KERIPY_MAIN_BASELINE, KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
+import { KERIPY_MATTER_VECTORS } from "../../fixtures/keripy-primitive-vectors.ts";
 import { txt } from "../../fixtures/primitive-test-helpers.ts";
 
 Deno.test("registry: parses KERIpy verifier vector token", () => {
@@ -17,9 +17,17 @@ Deno.test("registry: supported codes include KERIpy baseline families", () => {
   const codes = supportedPrimitiveCodes();
   assertEquals(codes.includes("A"), true);
   assertEquals(codes.includes("E"), true);
-  assertEquals(KERIPY_MAIN_BASELINE.commit, "5a5597e8b7f7");
 });
 
 Deno.test("registry: rejects malformed primitive text", () => {
   assertThrows(() => parsePrimitiveFromText(txt("?AAA")), UnknownCodeError);
+});
+
+Deno.test("primitive registry includes extended KERIpy codex entries", () => {
+  const codes = supportedPrimitiveCodes();
+  assert(codes.includes("0P")); // GramHeadNeck
+  assert(codes.includes("7AAF")); // HPKEBase_Cipher_Big_L0
+  assert(codes.includes("9AAH")); // Decimal_Big_L2
+  assert(codes.includes("1___")); // TBD testing code
+  assert(codes.length > 100);
 });

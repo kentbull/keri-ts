@@ -1,5 +1,3 @@
-// @file-test-lane interop-delegation
-
 /**
  * Focused KERIpy/Tufa group delegation interop.
  *
@@ -399,6 +397,8 @@ function spawnKliMultisigJoin(
     [
       "multisig",
       "join",
+      "--version",
+      "1.0",
       "--name",
       participant.name,
       "--base",
@@ -425,6 +425,8 @@ function spawnKliMultisigIncept(
     [
       "multisig",
       "incept",
+      "--version",
+      "1.0",
       "--name",
       participant.name,
       "--base",
@@ -701,9 +703,7 @@ async function postTufaGroupDelegationRequest(args: {
         // Witness receipts are ingested before extracting the wire payload so
         // the embedded event includes the indexed witness signatures that KLI
         // expects for a witnessed delegated group inception.
-        const receiptMessage = args.witness
-          ? yield* requestTufaWitnessReceipt(args.witness, message)
-          : null;
+        const receiptMessage = args.witness ? yield* requestTufaWitnessReceipt(args.witness, message) : null;
         if (receiptMessage) {
           yield* settleRuntimeIngress(runtime, [receiptMessage], { local: false });
         }
@@ -975,6 +975,8 @@ Deno.test("Interop delegation: public KLI approval completes a Tufa-generated de
       [
         "delegate",
         "confirm",
+        "--version",
+        "1.0",
         "--name",
         delegator.name,
         "--base",

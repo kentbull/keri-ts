@@ -1,5 +1,3 @@
-// @file-test-lane core-fast-a
-
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { ed25519 } from "npm:@noble/curves@1.9.7/ed25519";
@@ -1242,6 +1240,65 @@ Deno.test("Kevery.processAttachedReceiptQuadruples escrows missing validator est
       yield* source.close(true);
     }
   });
+});
+
+/** Invalid grouped evidence stops later receipts while preserving earlier verified ones. */
+async function assertInvalidReceiptGroup(fault: "signature" | "index" | "seal"): Promise<void> {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `receipt-group-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const controller = hby.makeHab("controller");
+      const validator = hby.makeHab("validator", undefined, {
+        icount: 3,
+        isith: "2",
+        ncount: 3,
+        nsith: "2",
+        toad: 0,
+      });
+      const event = hby.db.getEvtSerder(controller.pre, controller.kever!.said)!;
+      const signatures = validator.sign(event.raw, true);
+      const seal = new Diger({ qb64: validator.kever!.said });
+      const invalid = fault === "signature"
+        ? validator.sign(new TextEncoder().encode("different event"), true)[1]
+        : fault === "index"
+        ? new Siger({ code: signatures[1].code, raw: signatures[1].raw, index: 3, ondex: 3 })
+        : signatures[1];
+      const kvy = new Kevery(hby.db, { local: true, lax: true });
+      kvy.processAttachedReceiptGroups({
+        serder: event,
+        tsgs: [
+          new TransIdxSigGroup(validator.kever!.prefixer, validator.kever!.sner, seal, [signatures[0]]),
+          new TransIdxSigGroup(
+            validator.kever!.prefixer,
+            validator.kever!.sner,
+            fault === "seal" ? new Diger({ qb64: controller.pre }) : seal,
+            [invalid],
+          ),
+          new TransIdxSigGroup(validator.kever!.prefixer, validator.kever!.sner, seal, [signatures[2]]),
+        ],
+        local: true,
+      });
+      // The third group must not be processed after the second group's terminal failure.
+      assertEquals(hby.db.vrcs.get(dgKey(controller.pre, event.said!)).map((receipt) => receipt[3].qb64), [
+        signatures[0].qb64,
+      ]);
+      assertEquals(hby.db.vres.cnt(), 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+}
+
+Deno.test("Kevery grouped replay stops at an invalid signature", async () => {
+  await assertInvalidReceiptGroup("signature");
+});
+
+Deno.test("Kevery grouped replay stops at an invalid index", async () => {
+  await assertInvalidReceiptGroup("index");
+});
+
+Deno.test("Kevery grouped replay stops at an invalid seal", async () => {
+  await assertInvalidReceiptGroup("seal");
 });
 
 Deno.test("Kevery.reprocessEscrowedWitnessReceipt drops bad witness indexes against pwes state", async () => {

@@ -1,5 +1,3 @@
-// @file-test-lane db-fast
-
 import { collectPayload, MemoryPayloadSink, type Payload } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";

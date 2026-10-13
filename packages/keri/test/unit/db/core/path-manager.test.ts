@@ -1,5 +1,3 @@
-// @file-test-lane db-fast
-
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";

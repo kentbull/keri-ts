@@ -1,5 +1,3 @@
-// @file-test-lane db-fast
-
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { t } from "../../../../../cesr/mod.ts";
 import { onKey, splitKey, splitKeyON, splitOnKey } from "../../../../src/db/core/keys.ts";

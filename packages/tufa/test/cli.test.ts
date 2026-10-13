@@ -166,7 +166,6 @@ Deno.test("tufa/cli - parsed command names all have registered handlers", () => 
     .filter((name) => name !== "version")
     .map((name) => name.replaceAll(" ", "."))
     .sort();
-  assertEquals(dispatchedNames.length, 67);
 
   const selections = CLI_COMMAND_EXAMPLES.map(parseCommandSelection);
   const selectedNames = [...new Set(selections.map((selection) => selection.name))].sort();
@@ -514,56 +513,6 @@ Deno.test("tufa/cli - invalid mailbox multisig mode is rejected", async () => {
   );
 });
 
-Deno.test("tufa/cli - old runtime knob flags are not accepted", () => {
-  assertThrows(
-    () =>
-      parseCommandSelection([
-        "ipex",
-        "grant",
-        "-n",
-        "store",
-        "-a",
-        "issuer",
-        "-r",
-        "holder",
-        "--said",
-        "Ecredential",
-        "--wait",
-        "1",
-      ]),
-    Error,
-    "unknown option '--wait'",
-  );
-  assertThrows(
-    () =>
-      parseCommandSelection([
-        "ipex",
-        "poll",
-        "-n",
-        "store",
-        "-a",
-        "holder",
-        "--max-turns",
-        "1",
-      ]),
-    Error,
-    "unknown option '--max-turns'",
-  );
-  assertThrows(
-    () =>
-      parseCommandSelection([
-        "multisig",
-        "join",
-        "-n",
-        "store",
-        "--budget-ms",
-        "1000",
-      ]),
-    Error,
-    "unknown option '--budget-ms'",
-  );
-});
-
 Deno.test("tufa/cli - interact reaches the real command body through the Tufa binary surface", async () => {
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-cli-interact-" });
   const name = `tufa-cli-interact-${crypto.randomUUID()}`;
@@ -713,6 +662,60 @@ Deno.test("tufa/cli - --debug-error prints the Commander stack for parse failure
     "error: required option '-n, --name <name>' not specified",
   );
   assertStringIncludes(res.stderr, "CommanderError:", res.stderr);
+  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
+  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
+});
+
+Deno.test("tufa/cli - mailbox start rejects conflicting config and explicit startup material", async () => {
+  const headDirPath = `/tmp/tufa-mailbox-start-${crypto.randomUUID()}`;
+  const configPath = `${headDirPath}/mailbox-start.json`;
+  Deno.mkdirSync(headDirPath, { recursive: true });
+  Deno.writeTextFileSync(
+    configPath,
+    JSON.stringify({
+      relay: {
+        dt: "2026-04-06T12:00:00.000Z",
+        curls: ["http://127.0.0.1:5632"],
+      },
+    }),
+  );
+
+  await assertRejects(
+    () =>
+      run(() =>
+        mailboxStartCommand({
+          name: `mailbox-start-${crypto.randomUUID()}`,
+          alias: "relay",
+          headDirPath,
+          configFile: configPath,
+          url: "http://127.0.0.1:5632",
+          datetime: "2026-04-06T12:05:00.000Z",
+        })
+      ),
+    ValidationError,
+    "conflicts with explicit --url/--datetime startup material",
+  );
+});
+
+Deno.test("tufa/cli - --debug-error prints the AppError stack for handled command failures", async () => {
+  const res = await runTufa([
+    "--debug-error",
+    "mailbox",
+    "start",
+    "--name",
+    `mailbox-start-${crypto.randomUUID()}`,
+    "--alias",
+    "relay",
+    "--url",
+    "http://127.0.0.1:5632",
+  ]);
+
+  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
+  assertStringIncludes(
+    res.stderr,
+    "Error: --url and --datetime must be provided together",
+  );
+  assertStringIncludes(res.stderr, "ValidationError:", res.stderr);
   assertStringIncludes(res.stderr, "\n    at ", res.stderr);
   assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
 });

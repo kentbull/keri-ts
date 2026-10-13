@@ -14,28 +14,29 @@ Support for arbitrary multi-gigabyte individual sealed messages is not assumed.
 
 ## PR sequence
 
-| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                      |
-| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Merged [#126](https://github.com/kentbull/keri-ts/pull/126) |
-| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Merged [#127](https://github.com/kentbull/keri-ts/pull/127) |
-| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | Merged [#128](https://github.com/kentbull/keri-ts/pull/128) |
-| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Merged [#129](https://github.com/kentbull/keri-ts/pull/129) |
-| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Merged [#130](https://github.com/kentbull/keri-ts/pull/130) |
-| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131) |
-| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Merged [#132](https://github.com/kentbull/keri-ts/pull/132) |
-| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133) |
-| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137) |
-| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | Runtime integration implemented                             |
-| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                     |
-| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                     |
+| Phase | Cohesive change                                                      | Required evidence before completion                                                                | Status                                                         |
+| ----- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1     | Streaming benchmark source and untouched baseline; no parser changes | Immutable commit/runtime/corpus manifest; correctness oracle; bounded isolated runs                | Merged [#126](https://github.com/kentbull/keri-ts/pull/126)    |
+| 2     | Large byte-to-text and base64 correctness; exact token decoding      | 1 MiB+ values, small-token/large-tail cases, both domains; decoding-fixed atomic baseline          | Merged [#127](https://github.com/kentbull/keri-ts/pull/127)    |
+| 3     | Progressive contract, ownership, limits, and execution plan          | Accurate distinction between current behavior and accepted target                                  | Merged [#128](https://github.com/kentbull/keri-ts/pull/128)    |
+| 4     | Segmented input cursor and bounded views                             | No accumulated suffix copying; bounds, split headers, cancellation; cursor checkpoint              | Merged [#129](https://github.com/kentbull/keri-ts/pull/129)    |
+| 5     | Async generator frame traversal with `yield*`                        | Early GenericGroup children, exact single-frame enclosures, scopes, partial failure                | Merged [#130](https://github.com/kentbull/keri-ts/pull/130)    |
+| 6     | Payload sinks, reopenable references, and bounded manifests          | Backpressure, stage ownership, finish/abort, runtime filesystem boundary                           | Merged [#131](https://github.com/kentbull/keri-ts/pull/131)    |
+| 7     | Progressive ESSR attachment reads and incremental digest             | Both count models/domains; no retained raw envelope or unbounded item list                         | Merged [#132](https://github.com/kentbull/keri-ts/pull/132)    |
+| 8     | Bounded recipient decryption and explicit ciphertext retention       | Logical-message limits, authentication before plaintext storage, unchanged crypto wire format      | Merged [#133](https://github.com/kentbull/keri-ts/pull/133)    |
+| 9     | Durable payload storage and reopenable consumers                     | `.essrs` compatibility, escrow/replay, file/DB crash recovery, orphan cleanup                      | Merged [#137](https://github.com/kentbull/keri-ts/pull/137)    |
+| 10    | HTTP/file ingress with end-to-end backpressure                       | No whole-request read on streaming routes; cancellation/EOF propagation; real HTTP test            | In review [#138](https://github.com/kentbull/keri-ts/pull/138) |
+| 11    | Runtime consumption, forwarding, and egress                          | No hidden bulk joins/arrays; streaming serialization and KERIpy interop                            | Pending                                                        |
+| 12    | Final qualification and removal of the old production path           | Complete benchmark/report; old engine, aliases, and compatibility-only tests removed; docs updated | Pending                                                        |
 
 Phase 9 builds on [#135](https://github.com/kentbull/keri-ts/pull/135), which makes
 dispatch/settlement and mailbox batch delivery yield through completion with
 explicit mailbox endpoint identity, and
 [#136](https://github.com/kentbull/keri-ts/pull/136), which publishes durable
 payload references. Exchange integration merged in
-[#137](https://github.com/kentbull/keri-ts/pull/137). HTTP/runtime ingress starts
-from that merged master; its commit list and review diff contain only ingress.
+[#137](https://github.com/kentbull/keri-ts/pull/137). HTTP/runtime ingress also incorporates the merged test cleanup
+[#134](https://github.com/kentbull/keri-ts/pull/134) and grouped-receipt repair
+[#139](https://github.com/kentbull/keri-ts/pull/139); its review diff contains only ingress.
 
 Keep each PR incremental: branch from the latest merged predecessor. If prepared
 ahead, base it on the predecessor branch and retarget after that predecessor
@@ -59,26 +60,42 @@ later frame fails.
 
 ## Additional approved review and qualification work
 
-After the open parser PRs through recipient decryption (#129–#133) merge, prepare
-one test cleanup/reorganization PR against current master.
-Draft [#134](https://github.com/kentbull/keri-ts/pull/134) is prepared and authorized
-to merge once the complete maintained local inventory, including pinned-main,
-manual, and long runs, passes. Interoperability CI is not an additional merge gate
-for this cleanup. Its qualification and harness repairs are tracked separately.
-Revalidate the side-chat audit against the new code, remove only
-proven duplication or tests without a production contract, retain protocol and
-resource-lifecycle regressions, and simplify test scheduling without hiding
-coverage. Keep production behavior unchanged in that PR.
+### Completed test cleanup and qualification
+
+[#134](https://github.com/kentbull/keri-ts/pull/134) merged after the complete
+local inventory passed: 1,059 tests, including 577 KERI tests across 111 files
+and the manual endurance targets. Static/unit/package CI and installed npm
+smokes on glibc and Alpine also passed. The immutable TypeScript qualification
+revision was `1e0af1b189ae947bb236178946e6ab008d885507`; subsequent phases must
+register new tests explicitly and preserve the qualified protocol coverage.
+Hosted interop completion remains outside the merge gate.
 
 Run the complete maintained test inventory, including all manual and long-running
-targets, using the local KERIpy main checkout at
-`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Verify the harness actually imports
-that checkout. Record every run, skip, failure, topology, and duration. Heavy
-qualification remains outside required merge CI. Extended interoperability jobs
-have a 15-minute cap. Do not manually dispatch workflows during this run; the
-user will exercise that CI separately.
+targets. Preserve the frozen upstream-main baseline at
+`927c0cb8794d7c84fc17143c67df64aab9deda6c`. Final qualification uses the published
+`kentbull/keripy` fork `b08ddeb047fd865d60affe82a0dc77f5efaf4672`: that same main
+base plus standalone mailbox commands/admission, explicit mailbox protocol
+selection, the transferable receipt-table lookup repair, and explicit VC export
+genus selection, and JSON mailbox queries for topic names that cannot be native
+CESR labels. Credential CLI commands also select anchor, grant, admit, and
+mailbox-consumption versions explicitly; admit uses protocol-specific serders for
+embedded KERI/ACDC bodies. Explicit encodings and CLI protocol defaults remain
+unchanged. The existing credential fixtures select v1; legacy pathed IPEX grants
+continue to reject v2.
+This is fork-on-main qualification, not pure upstream parity.
+Verify exact commit and actual imports, and record every run, skip, failure,
+topology, and duration. Extended interop and ESSR workflow jobs have a 15-minute
+limit; only the maintainer dispatches them. Full local qualification still runs
+every maintained target, including long topologies.
 
-Continue the progressive parser sequence after preparing that review PR. Any
+The replay blocker discovered during qualification was repaired in
+[#139](https://github.com/kentbull/keri-ts/pull/139). Canonical grouped
+transferable receipt proofs (`-F`) replace emitted v1 `-D` quadruples, and
+runtime dispatch verifies the groups. Stored evidence and legacy decoding are
+preserved. The affected OOBI and credential flows passed without changing their
+topology or assertions; the broader table upgrade remains in the follow-on sequence.
+
+Continue the progressive parser sequence from these merged prerequisites. Any
 interop regressions or missing features discovered against this KERIpy revision
 must have an evidence-backed follow-up list and sequenced implementation plan.
 Execute those follow-ups after the progressive parser work; do not disguise
@@ -139,23 +156,32 @@ missing behavior. Synchronous-engine removal and #134's test reorganization
 already have owners; do not duplicate them or reshuffle those tests here.
 These are approved future obligations, not claims about current parser support.
 
+The frozen test baseline at upstream `927c0cb8` records actual execution failures;
+final qualification uses the explicit mailbox fork above. A read-only table audit
+also confirmed differences from current keri-ts tables. Preserve their independent
+historical table-source provenance until implementation and vectors change together.
+
 The initial evidence was keri-ts `517dd4c3e85b15fa0f84ac829c9a7400594cbbd8`
 and KERIpy main `927c0cb8794d7c84fc17143c67df64aab9deda6c` on 2026-10-13.
 Resolve the applicable upstream main once at this sequence's start and freeze its
 full SHA. Record the actual starting TypeScript revision, Python/runtime versions,
-import paths, fixture provenance, and every harness pin. Current generation/PR
-interop uses `450ae1c`; some runtime harnesses use `98b88cf`. Never label those
-older environments current-main parity or chase a moving main during a run.
+import paths, fixture provenance, and every harness pin. Historical generated tables and PR table verification use `450ae1c`; runtime
+qualification uses the fork pin below. Keep those environments distinct and never
+label old table verification current-main parity or chase a moving main during a run.
 
 For #134 qualification, the user separately authorized rebasing the mailbox
 implementation onto this frozen upstream revision and publishing an immutable
 commit on `kentbull/keripy`. Record that fork commit, upstream parent, mailbox
 delta, and actual import path separately from upstream-main evidence. Preserve
 the existing `mailbox-impl` branch. Published `mailbox-main-interop` commit
-`4b35426fc0b4d2e1d6c8413e6ba1950b87dd0d39` is based on upstream
+`b08ddeb047fd865d60affe82a0dc77f5efaf4672` is based on upstream
 `927c0cb8794d7c84fc17143c67df64aab9deda6c`, ports the original mailbox commits
-`1faba4f2` / `9924fffa`, and adapts their handler to nested messages. The #134
-runtime qualification uses this declared fork; protocol-table pins remain
+`1faba4f2` / `9924fffa`, adapts their handler to nested messages, and adds explicit
+mailbox protocol selection, the `vrcs` lookup repair in forwarding introductions,
+explicit VC export genus selection, and JSON mailbox queries for slash-prefixed
+topics that native CESR labels cannot encode. It also adds explicit credential
+command version boundaries and protocol-specific admit body rehydration.
+The #134 runtime qualification uses this declared fork; protocol-table pins remain
 independently identified. A successful fork run proves that declared combined surface,
 not unmodified upstream-main mailbox behavior.
 
@@ -199,6 +225,20 @@ Python-to-TS and TS-to-Python fixtures in qb64/qb2; exact widths, counts, bytes,
 semantic roles, and consumed extents; small/big forms, malformed lengths, and
 split headers; and generated-table verification against the immutable pin.
 Still-older runtime pins remain explicitly labeled until separately upgraded.
+
+### Follow-on PR 1b: imported v2 event replay
+
+The #134 interop run at TS `f3a267e6` against the declared mailbox fork reproduced
+v2 event bodies being replayed by `Baser.cloneEvtMsg` with fixed v1 attachment
+counters. This fails downstream OOBI and credential-evidence parsing. Explicit v1
+CLI fixtures qualify the existing v1 scenarios; they do not close this v2 defect.
+
+First check whether phase 11 streaming serialization already repairs every
+replay path. Implement only the remaining gap, with independent Python v2
+issuance/anchor fixtures, close/reopen replay, OOBI ingestion, and credential
+import across both genera. Preserve stored bodies and evidence; select a lawful
+explicit enclosure genus without heuristic retries or wire rewriting. Complete
+this repair before claiming the corresponding current-main v2 runtime parity.
 
 ### Follow-on PR 2: parent-owned nested message attachments
 

@@ -133,8 +133,8 @@ export interface QueryEnvelope {
  *
  * KERIpy parity rule:
  * - live `rct` messages carry transferable receipt endorsements as `tsgs`
- * - replay/attached transferable receipt quadruples stay on the separate
- *   `trqs` path and do not flow through `processReceipt()`
+ * - replay endorsements use the accepted KEL body and separate attached-receipt
+ *   processing, whether represented by canonical `tsgs` or legacy `trqs`
  */
 export type ReceiptEnvelope = Pick<
   KeriDispatchEnvelope,
@@ -553,14 +553,45 @@ export class Kevery {
   }
 
   /**
-   * Process replay-attached transferable receipt quadruples for one KEL event.
+   * Verify grouped replay receipts against the accepted KEL event, not an rct body.
+   * Each signature is an independent receipt; the receiptor's controller threshold
+   * does not apply. Missing state escrows the group; invalid evidence stops this pass,
+   * matching KERIpy `processAttachedReceiptSigGroups`.
+   */
+  processAttachedReceiptGroups(args: {
+    serder: SerderKERI;
+    tsgs: readonly TransIdxSigGroup[];
+    firner?: NumberPrimitive;
+    local?: boolean;
+  }): void {
+    if (args.tsgs.length === 0) return;
+    const target = this.resolveReplayReceiptedEvent(args.serder, args.firner);
+    if (target.kind === "drop") return;
+    for (const group of args.tsgs) {
+      const decision = target.kind === "escrow"
+        ? escrowReceipt("missingReceiptedEvent")
+        : this.processVerifiedTransferableReceiptGroup(
+          target.event,
+          group,
+          args.local ?? this.local,
+          "drop",
+        );
+      if (decision.kind === "escrow") {
+        this.escrowTReceipts(args.serder, group.prefixer, group.seqner, group.diger, group.sigers);
+        return;
+      }
+      if (decision.kind === "drop") return;
+    }
+  }
+
+  /**
+   * Process legacy replay-attached transferable receipt quadruples for one KEL event.
    *
    * KERIpy correspondence:
    * - mirrors `Kevery.processAttachedReceiptQuadruples()`
    *
-   * Design rule:
-   * - attached replay receipts stay on the `trqs` family instead of being
-   *   coerced back through live `rct` grouped `tsgs`
+   * Wire rule:
+   * - legacy `trqs` remain readable; canonical replay emits grouped `tsgs`
    * - successful replay promotes verified material into `vrcs.`
    * - missing prerequisites escrow into `vres.` using the same quintuple shape
    *   used by live transferable receipt replay
@@ -1828,19 +1859,19 @@ export class Kevery {
   }
 
   /**
-   * Process one live transferable receipt group against an accepted receipted event.
+   * Process one transferable receipt group against an accepted receipted event.
    *
    * KERIpy correspondence:
    * - missing receiptor establishment state becomes `UnverifiedTransferableReceiptError`
    * - own transferable receiptor conflicts and bad seals/indices become
    *   terminal `ValidationError`
-   * - invalid signature bytes are skipped per siger rather than dropping the
-   *   whole group
+   * - live receipts skip invalid signature bytes; replay stops at invalid evidence
    */
   private processVerifiedTransferableReceiptGroup(
     event: { pre: string; said: string; serder: SerderKERI; wits: string[] },
     tsg: TransIdxSigGroup,
     local: boolean,
+    invalidSignature: "ignore" | "drop" = "ignore",
   ): ReceiptProcessDecision {
     let stored = false;
     for (const siger of tsg.sigers) {
@@ -1851,7 +1882,7 @@ export class Kevery {
         tsg.diger,
         siger,
         local,
-        { invalidSignature: "ignore" },
+        { invalidSignature },
       );
       switch (decision.kind) {
         case "accept":

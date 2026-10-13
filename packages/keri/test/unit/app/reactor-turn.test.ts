@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { ResourceLimitError } from "../../../../cesr/mod.ts";

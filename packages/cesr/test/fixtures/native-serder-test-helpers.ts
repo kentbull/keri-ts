@@ -311,22 +311,3 @@ export function breakdownNativeKeriIcpFixture(): NativeReadableSegment[] {
 
   return segments;
 }
-
-function shorten(qb64: string): string {
-  return qb64.length <= 20 ? qb64 : `${qb64.slice(0, 8)}...${qb64.slice(-6)}`;
-}
-
-/**
- * Render one compact ASCII summary line that keeps the segment order readable.
- *
- * Example output:
- * `bodyCounter=-FA5 | verser=0OKERICAACA | ilk=Xicp | said=EFaYE2LT...JKWXRN | ...`
- */
-export function renderNativeSegmentSummary(
-  segments: NativeReadableSegment[],
-): string {
-  // The summary is intentionally one line so test failures stay easy to scan in
-  // CI logs while still teaching the segment order at a glance.
-  return segments.map((segment) => `${segment.name}=${shorten(segment.qb64)}`)
-    .join(" | ");
-}

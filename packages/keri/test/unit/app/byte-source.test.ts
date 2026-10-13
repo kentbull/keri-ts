@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { ResourceLimitError } from "../../../../cesr/mod.ts";
 import { collectBytes, fileBytes, streamBytes } from "../../../src/app/byte-source.ts";

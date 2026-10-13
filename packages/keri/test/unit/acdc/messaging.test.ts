@@ -1,5 +1,3 @@
-// @file-test-lane core-fast-a
-
 import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { Ilks, Kinds, Mapper, SerderACDC, t } from "../../../../cesr/mod.ts";
 import {

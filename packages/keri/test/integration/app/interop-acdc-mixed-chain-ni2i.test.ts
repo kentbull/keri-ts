@@ -1,5 +1,3 @@
-// @file-test-lane interop-acdc-deep
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   addKliMailbox,
@@ -19,15 +17,12 @@ import {
   type TufaMailboxProviderFixture,
 } from "./interop-delegation-helpers.ts";
 import {
-  canRunLocalKeripy,
   createInteropContext,
   ensureInteropVerifierFixtureRoot,
   extractLastNonEmptyLine,
   type InteropContext,
-  localKeripyRoot,
   randomPort,
   requireSuccess,
-  resolveLocalKeripyKliCommand,
   runCmdWithTimeout,
   runTufa,
   runTufaWithTimeout,
@@ -99,34 +94,6 @@ function kliStoreArgs(store: KliStore): string[] {
   return ["--name", store.name, "--base", store.base, "--passcode", store.passcode];
 }
 
-function pythonCommandForKli(kliCommand: string): string {
-  const slash = kliCommand.lastIndexOf("/");
-  if (slash === -1) {
-    return "python";
-  }
-  return `${kliCommand.slice(0, slash)}/python`;
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function interopVerifierRoot(ctx: InteropContext): Promise<string> {
-  const localRoot = `${ctx.repoRoot.replace(/\/$/, "")}/../../../verifier/apps/interop-verifier`;
-  if (
-    await pathExists(`${localRoot}/src/interop_verifier/app/cli.py`)
-    && await pathExists(`${localRoot}/scripts/interop-verifier-incept-no-wits.json`)
-  ) {
-    return localRoot;
-  }
-  return await ensureInteropVerifierFixtureRoot();
-}
-
 function withPythonPath(
   env: Record<string, string>,
   path: string,
@@ -149,11 +116,14 @@ async function startInteropVerifier(
     schemas?: string[];
   },
 ): Promise<SpawnedChild> {
-  const root = await interopVerifierRoot(ctx);
+  // Use the published fixture pin on every host; a nearby checkout may be stale.
+  const root = await ensureInteropVerifierFixtureRoot();
   const verifierArgs = [
     "-m",
     "interop_verifier.app.cli",
     "start",
+    "--protocol-version",
+    "1.0",
     "--name",
     args.name,
     "--head-dir",
@@ -171,24 +141,8 @@ async function startInteropVerifier(
     verifierArgs.push("--schema", schema);
   }
   const env = withPythonPath(ctx.env, `${root}/src`);
-  if (await canRunLocalKeripy(ctx.env)) {
-    return spawnChild(
-      "uv",
-      [
-        "run",
-        "--project",
-        localKeripyRoot(),
-        "--with-editable",
-        localKeripyRoot(),
-        "python",
-        ...verifierArgs,
-      ],
-      env,
-      ctx.repoRoot,
-    );
-  }
   return spawnChild(
-    pythonCommandForKli(ctx.kliCommand),
+    ctx.pythonCommand,
     verifierArgs,
     env,
     ctx.repoRoot,
@@ -495,6 +449,8 @@ async function inceptKliRegistry(
         "vc",
         "registry",
         "incept",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -523,6 +479,8 @@ async function createKliCredential(
   const command = [
     "vc",
     "create",
+    "--version",
+    "1.0",
     ...kliStoreArgs(store),
     "--alias",
     store.alias,
@@ -630,6 +588,8 @@ async function grantFromKli(
       [
         "ipex",
         "grant",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -730,6 +690,8 @@ async function pollKliGrant(
       [
         "ipex",
         "list",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -794,6 +756,8 @@ async function admitKliGrant(
       [
         "ipex",
         "admit",
+        "--version",
+        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -918,6 +882,7 @@ import json
 from keri.app import Organizer, serialize
 from keri.cli.common import existing
 from keri.core import coring, serdering
+from keri.kering import Vrsn_1_0
 from keri.peer import cloneMessage
 from keri.vc import ipexAdmitExn, ipexGrantExn
 from keri.vdr import credentialing
@@ -939,15 +904,15 @@ def grant_candidate(hby, rgy, args, message):
     if creder is None:
         raise ValueError(f"invalid credential SAID to grant={args.said}")
     recp = resolve_recipient(hby, args.recipient)
-    acdc = serialize(creder, prefixer, seqner, saider)
-    iss = rgy.reger.cloneTvtAt(creder.said)
+    acdc = serialize(creder, prefixer, seqner, saider, gvrsn=Vrsn_1_0)
+    iss = rgy.reger.cloneTvtAt(creder.said, gvrsn=Vrsn_1_0)
     iserder = serdering.SerderKERI(raw=bytes(iss))
     seqner = coring.Seqner(sn=iserder.sn)
     serder = hby.db.fetchLastSealingEventByEventSeal(
         creder.sad["i"],
         seal=dict(i=iserder.pre, s=seqner.snh, d=iserder.said),
     )
-    anc = hby.db.cloneEvtMsg(pre=serder.pre, fn=0, dig=serder.said)
+    anc = hby.db.cloneEvtMsg(pre=serder.pre, fn=0, dig=serder.said, gvrsn=Vrsn_1_0)
     return ipexGrantExn(
         hab=hab,
         recp=recp,
@@ -956,6 +921,7 @@ def grant_candidate(hby, rgy, args, message):
         iss=iss,
         anc=anc,
         dt=args.timestamp,
+        version=Vrsn_1_0,
     )
 
 
@@ -964,7 +930,7 @@ def admit_candidate(hby, args, message):
     grant, _ = cloneMessage(hby, args.said)
     if grant is None:
         raise ValueError(f"invalid grant SAID to admit={args.said}")
-    return ipexAdmitExn(hab=hab, message=message, grant=grant, dt=args.timestamp)
+    return ipexAdmitExn(hab=hab, message=message, grant=grant, dt=args.timestamp, version=Vrsn_1_0)
 
 
 def main():
@@ -980,7 +946,7 @@ def main():
     parser.add_argument("--recipient", default="")
     args = parser.parse_args()
 
-    hby = existing.setupHby(name=args.name, base=args.base, bran=args.passcode)
+    hby = existing.setupHby(name=args.name, base=args.base, bran=args.passcode, version=Vrsn_1_0)
     rgy = credentialing.Regery(hby=hby, name=args.name, base=args.base) if args.mode == "grant" else None
     try:
         for pad in range(16):
@@ -1039,32 +1005,15 @@ async function alignedKliIpexMessage(
     args.timestamp,
     ...(args.recipient ? ["--recipient", args.recipient] : []),
   ];
-  const useLocalKeripy = await canRunLocalKeripy(ctx.env);
   const result = await requireSuccess(
     `${store.name} KLI IPEX alignment preflight`,
-    useLocalKeripy
-      ? runCmdWithTimeout(
-        "uv",
-        [
-          "run",
-          "--project",
-          localKeripyRoot(),
-          "--with-editable",
-          localKeripyRoot(),
-          "python",
-          ...scriptArgs,
-        ],
-        ctx.env,
-        30_000,
-        ctx.repoRoot,
-      )
-      : runCmdWithTimeout(
-        pythonCommandForKli(ctx.kliCommand),
-        scriptArgs,
-        ctx.env,
-        30_000,
-        ctx.repoRoot,
-      ),
+    runCmdWithTimeout(
+      ctx.pythonCommand,
+      scriptArgs,
+      ctx.env,
+      30_000,
+      ctx.repoRoot,
+    ),
   );
   const parsed = parseJsonLine(result.stdout);
   if (typeof parsed.message !== "string") {
@@ -1078,7 +1027,6 @@ Deno.test("Interop: Tufa NI2I edge verifies when source subject is not the Tufa 
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-ni2i-" });
   const ctx: InteropContext = {
     ...baseCtx,
-    kliCommand: await resolveLocalKeripyKliCommand(workDir, baseCtx.kliCommand, baseCtx.env),
     env: {
       ...baseCtx.env,
       KERI_LMDB_MAP_SIZE: "134217728",

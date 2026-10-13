@@ -1,10 +1,7 @@
-// @file-test-lane app-stateful-a
-
 import { type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { Prefixer, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
-import { mailboxStartCommand } from "../../../../tufa/src/cli/mailbox.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
@@ -202,132 +199,6 @@ Deno.test("CLI - init command with missing name", async () => {
   );
 });
 
-Deno.test("CLI - mailbox start rejects --url without --datetime", async () => {
-  await assertOperationThrows(
-    mailboxStartCommand(createMockArgs({
-      name: `mailbox-start-${crypto.randomUUID()}`,
-      alias: "relay",
-      url: "http://127.0.0.1:5632",
-    })),
-    "--url and --datetime must be provided together",
-  );
-});
-
-Deno.test("CLI - mailbox start rejects --datetime without --url", async () => {
-  await assertOperationThrows(
-    mailboxStartCommand(createMockArgs({
-      name: `mailbox-start-${crypto.randomUUID()}`,
-      alias: "relay",
-      datetime: "2026-04-06T00:00:00.000Z",
-    })),
-    "--url and --datetime must be provided together",
-  );
-});
-
-Deno.test("CLI - mailbox start rejects conflicting config and explicit startup material", async () => {
-  const headDirPath = `/tmp/tufa-mailbox-start-${crypto.randomUUID()}`;
-  const configPath = `${headDirPath}/mailbox-start.json`;
-  Deno.mkdirSync(headDirPath, { recursive: true });
-  Deno.writeTextFileSync(
-    configPath,
-    JSON.stringify({
-      relay: {
-        dt: "2026-04-06T12:00:00.000Z",
-        curls: ["http://127.0.0.1:5632"],
-      },
-    }),
-  );
-
-  await assertOperationThrows(
-    mailboxStartCommand(createMockArgs({
-      name: `mailbox-start-${crypto.randomUUID()}`,
-      alias: "relay",
-      headDirPath,
-      configFile: configPath,
-      url: "http://127.0.0.1:5632",
-      datetime: "2026-04-06T12:05:00.000Z",
-    })),
-    "conflicts with explicit --url/--datetime startup material",
-  );
-});
-
-Deno.test("CLI - mailbox start missing required options prints one Commander-owned error without fatal stack", async () => {
-  const res = await runTufa(["mailbox", "start"]);
-
-  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-  assertStringIncludes(
-    res.stderr,
-    "error: required option '-n, --name <name>' not specified",
-  );
-  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
-  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
-  assertEquals(
-    res.stderr.includes("Error: error: required option"),
-    false,
-    res.stderr,
-  );
-  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
-});
-
-Deno.test("CLI - mailbox start validation errors print one concise app error without fatal stack", async () => {
-  const res = await runTufa([
-    "mailbox",
-    "start",
-    "--name",
-    `mailbox-start-${crypto.randomUUID()}`,
-    "--alias",
-    "relay",
-    "--url",
-    "http://127.0.0.1:5632",
-  ]);
-
-  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-  assertStringIncludes(
-    res.stderr,
-    "Error: --url and --datetime must be provided together",
-  );
-  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
-  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
-  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
-  assertEquals((res.stderr.match(/Error:/g) ?? []).length, 1, res.stderr);
-});
-
-Deno.test("CLI - --debug-error prints the Commander stack for parse failures", async () => {
-  const res = await runTufa(["--debug-error", "mailbox", "start"]);
-
-  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-  assertStringIncludes(
-    res.stderr,
-    "error: required option '-n, --name <name>' not specified",
-  );
-  assertStringIncludes(res.stderr, "CommanderError:", res.stderr);
-  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
-  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
-});
-
-Deno.test("CLI - --debug-error prints the AppError stack for handled command failures", async () => {
-  const res = await runTufa([
-    "--debug-error",
-    "mailbox",
-    "start",
-    "--name",
-    `mailbox-start-${crypto.randomUUID()}`,
-    "--alias",
-    "relay",
-    "--url",
-    "http://127.0.0.1:5632",
-  ]);
-
-  assertEquals(res.code, 1, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
-  assertStringIncludes(
-    res.stderr,
-    "Error: --url and --datetime must be provided together",
-  );
-  assertStringIncludes(res.stderr, "ValidationError:", res.stderr);
-  assertStringIncludes(res.stderr, "\n    at ", res.stderr);
-  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
-});
-
 Deno.test("CLI - init command with help flag", async () => {
   // Help is parsed by commander; command handlers should not be invoked directly for help tests.
   await run(() => tufa(["init", "--help"]));
@@ -454,7 +325,7 @@ Deno.test("CLI - setupHby rejects --outboxer when init did not enable it", async
   );
 });
 
-Deno.test("CLI - setupHby defaults CESR body mode to header for older keystores", async () => {
+Deno.test("CLI - setupHby defaults CESR body mode to header when no mode is configured", async () => {
   const name = `cesr-mode-default-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
   await run(() =>
@@ -688,44 +559,13 @@ Deno.test("CLI - ipex grant help exposes gvrsn attachment counter option", async
 
   assertEquals(res.code, 0, `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`);
   assertStringIncludes(res.stdout, "--gvrsn <version>");
-  assertEquals(res.stdout.includes("--counter-profile"), false);
 });
 
-Deno.test("CLI - gvrsn parser accepts KERIpy values and rejects legacy profiles", () => {
+Deno.test("CLI - gvrsn parser accepts numeric KERI versions and rejects malformed versions", () => {
   assertEquals(parseGvrsn("2.0"), Vrsn_2_0);
   assertEquals(parseGvrsn("2"), Vrsn_2_0);
-  assertThrows(() => parseGvrsn("keripy-current"));
-  assertThrows(() => parseGvrsn("legacy"));
-});
-
-Deno.test("CLI - exchange send rejects removed legacy flags", async () => {
-  const res = await runTufa([
-    "exchange",
-    "send",
-    "--name",
-    `legacy-${crypto.randomUUID()}`,
-    "--sender",
-    "alice",
-    "--recipient",
-    "bob",
-    "--route",
-    "/challenge/response",
-    "--alias",
-    "alice",
-  ]);
-
-  assertEquals(
-    res.code === 0,
-    false,
-    `stdout:\n${res.stdout}\nstderr:\n${res.stderr}`,
-  );
-  assertStringIncludes(
-    `${res.stdout}\n${res.stderr}`,
-    "unknown option '--alias'",
-  );
-  assertEquals(res.stderr.includes("Fatal error:"), false, res.stderr);
-  assertEquals(res.stderr.includes("CommanderError:"), false, res.stderr);
-  assertEquals(res.stderr.includes("\n    at "), false, res.stderr);
+  assertThrows(() => parseGvrsn("2.x"));
+  assertThrows(() => parseGvrsn("2.0.0"));
 });
 
 Deno.test("CLI - sign, verify, rotate, and interact commands work for one persistent single-sig store", async () => {

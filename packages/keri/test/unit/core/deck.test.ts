@@ -1,8 +1,5 @@
-// @file-test-lane core-fast-a
-
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { Deck, DeckFullError } from "../../../src/core/deck.ts";
-
 Deno.test("Deck preserves FIFO pull order and supports prepend requeue", () => {
   const deck = new Deck<number>();
 

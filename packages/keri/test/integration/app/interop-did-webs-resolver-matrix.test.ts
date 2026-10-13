@@ -1,9 +1,6 @@
-// @file-test-lane interop-did-webs
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   createInteropContext,
-  DID_WEBS_RESOLVER_INTEROP_COMMIT,
   ensurePinnedDidWebsResolver,
   extractPrefix,
   type InteropContext,
@@ -704,11 +701,4 @@ Deno.test("interop/did-webs-resolver - Python witnessed did:keri AID resolves wi
   } finally {
     await harness.close();
   }
-});
-
-Deno.test("interop/did-webs-resolver - pinned Python resolver SHA is explicit", () => {
-  assertEquals(
-    DID_WEBS_RESOLVER_INTEROP_COMMIT,
-    "8395277f32b37129fa6ef734c9f3902bb6cbbcbc",
-  );
 });

@@ -1,5 +1,3 @@
-// @file-test-lane app-stateful-b
-
 import { type Operation, run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { aidCommand } from "../../../src/app/cli/aid.ts";

@@ -1,5 +1,3 @@
-// @file-test-lane interop-gates-c
-
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { t } from "../../../../cesr/mod.ts";
 import { Schemer } from "../../../src/core/scheming.ts";

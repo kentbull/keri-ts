@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { collectPayload } from "cesr-ts";
 import { assert, assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";

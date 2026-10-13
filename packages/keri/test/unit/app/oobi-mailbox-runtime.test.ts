@@ -1,5 +1,3 @@
-// @file-test-lane runtime-slow
-
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { mailboxAddCommand } from "../../../../tufa/src/cli/mailbox.ts";

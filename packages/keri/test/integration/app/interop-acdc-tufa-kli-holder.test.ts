@@ -1,5 +1,3 @@
-// @file-test-lane interop-acdc-extended
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   createInteropContext,
@@ -7,7 +5,6 @@ import {
   extractPrefix,
   randomPort,
   requireSuccess,
-  resolveLocalKeripyKliCommand,
   runCmd,
   runCmdWithTimeout,
   runTufa,
@@ -106,6 +103,8 @@ async function assertKliCredentialListed(
       [
         "vc",
         "list",
+        "--version",
+        "1.0",
         ...kliStoreArgs(name, passcode),
         "--alias",
         "holder",
@@ -179,12 +178,14 @@ async function initAndInceptKli(
 ): Promise<string> {
   await requireSuccess(
     `kli ${alias} init`,
-    runCmd(kliCommand, ["init", ...kliStoreArgs(name, passcode)], env),
+    runCmd(kliCommand, ["init", "--version", "1.0", ...kliStoreArgs(name, passcode)], env),
   );
   const incept = await requireSuccess(
     `kli ${alias} incept`,
     runCmd(kliCommand, [
       "incept",
+      "--version",
+      "1.0",
       ...kliStoreArgs(name, passcode),
       "--alias",
       alias,
@@ -225,7 +226,7 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
   const verifierAgentConfig = "verifier-agent";
   const providerOrigin = `http://127.0.0.1:${providerAgentPort}`;
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
-  const kliCommand = await resolveLocalKeripyKliCommand(workDir, ctx.kliCommand, env);
+  const kliCommand = ctx.kliCommand;
 
   try {
     await Deno.writeTextFile(schemaPath, JSON.stringify(schemaSed()));
@@ -416,6 +417,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "oobi",
               "resolve",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--oobi",
               providerMailboxOobi,
@@ -434,6 +437,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "mailbox",
               "add",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -546,6 +551,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "oobi",
               "resolve",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--oobi",
               issuerMailboxUrl,
@@ -587,6 +594,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "ipex",
               "list",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -608,6 +617,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "ipex",
               "admit",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -657,6 +668,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
           runCmd(kliCommand, [
             "oobi",
             "resolve",
+            "--version",
+            "1.0",
             ...kliStoreArgs(holderName, passcode),
             "--oobi",
             verifierOobi,
@@ -673,6 +686,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "ipex",
               "grant",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -778,6 +793,8 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
             [
               "vc",
               "list",
+              "--version",
+              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",

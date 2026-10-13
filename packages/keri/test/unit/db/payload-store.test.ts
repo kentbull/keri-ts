@@ -1,5 +1,3 @@
-// @file-test-lane db-fast
-
 import { collectPayload, DigDex, Diger } from "cesr-ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";

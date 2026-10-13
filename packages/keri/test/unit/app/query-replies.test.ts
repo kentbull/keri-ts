@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { ResourceLimitError } from "../../../../cesr/mod.ts";
 import { QueryReplies } from "../../../src/app/query-replies.ts";

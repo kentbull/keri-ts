@@ -1,5 +1,3 @@
-// @file-test-lane runtime-medium
-
 /**
  * Tufa-only delegation matrix for single and group AIDs.
  *

@@ -1,5 +1,3 @@
-// @file-test-lane db-fast
-
 import { action, call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
