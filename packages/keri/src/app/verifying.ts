@@ -337,7 +337,7 @@ export class Verifier {
       if (!said) {
         continue;
       }
-      if (Date.now() - new Date(dater.iso8601).getTime() > timeoutMs) {
+      if (Date.now() - new Date(dater.dts).getTime() > timeoutMs) {
         db.rem([said]);
         continue;
       }

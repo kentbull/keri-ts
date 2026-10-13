@@ -269,20 +269,53 @@ tokens; the Python verifier consumed 108 tokens with matching semantics and
 exact extents. The full CESR suite passed 449 tests, including native, path,
 threshold, protocol v1/v2 consumers, and a 1 MiB Bexter decode through both domains.
 
+### Current-reference fixed-field semantic records
+
+Frozen `927c0cb8` `SealKind.d` now uses `Noncer` throughout TS fixed-field
+records, small/big typed-seal attachment hydration, runtime projection, and tuple
+storage. Qualified empty (`1AAP`), 128/256-bit salt, and digest values retain their
+wire roles; the empty crew field is still `1AAP`, not empty text. Python's
+`kramTDCS` database cast remains `Diger` despite its parser admitting `Noncer`.
+TS preserves all admitted roles after reopen and preserves common digest-row bytes;
+this does not establish Python database interoperability for empty/salt rows.
+
+`FirstSeen` and its clan/cast registries now own `f: NumberPrimitive` and
+`dt: Dater`, including hexadecimal ordinal and ISO datetime crew projections.
+Runtime dispatch consumes this plain record; storage aliases derive from its
+tuple descriptor. `Dater.dts` now returns ISO text, and existing datetime consumers
+use that canonical accessor without retaining the former TS `iso8601` alias.
+The constructor accepts explicit `dts`; encoded-input precedence and datetime
+wire validation remain unchanged. There is no new counter family or context
+admission: nonce seals remain structing-only, and first-seen attachment counters
+retain v1 item counts and v2 quadlet/triplet counts.
+
+`reference-structing-vectors.py` verifies the imported frozen modules and emits
+literal qb64/qb2 records and groups. Independent TS emission is decoded by the
+actual Python Structor and attachment methods: 32 record/group/wrong-role checks
+pass, alongside 455 CESR tests and 59 focused runtime tests. Coverage includes
+small/big counters, split headers, exact consumed extents, truncated input, missing tuple fields,
+wrong primitive roles, record identity, and database reopen.
+
 ### Remaining current-reference primitive and Serder slices
 
 Audit the remaining primitive/Serder delta at the same frozen revision before
 claiming parity: threshold/path validation limits, version-aware SAID derivation,
-nonce/first-seen structures, and changed ACDC/KERI semantic accessors. The table
-audit also found `SealKind.d` and `TypedDigestSealCouples` now use `Noncer` in the
-frozen reference. A direct probe accepts an empty nonce in Python's `SealKind`
-but TS rejects it as a digest. Separate probes confirm TS accepts 1,001 threshold
-leaves and a 65,537-character JSON sith that the reference's deployment limits
-reject. These are deferred gaps, not part of the text-escape repair. Separate
-API naming differences from reproduced wire or validation gaps. Implement actual
-gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and avoiding
-old keri-ts compatibility aliases. Pure diagnostic wording and Python-specific
-buffer adaptations do not require a port.
+and changed ACDC/KERI semantic accessors. Direct probes confirm TS accepts 1,001
+threshold leaves and a 65,537-character JSON sith that the reference rejects.
+These validation limits remain outside the text and fixed-field repairs.
+
+A separate native/Serder defect is reproduced with Python `eventing.incept`
+(version 2, CESR, `a=[{t: "0OKERICAACAA", d: "1AAP"}]`): Python emits a typed-seal
+`-W` group; TS serializes the same SAD seal as a generic map. TS's unchecked
+native projection returns the group wire as a string, and checked `SerderKERI`
+rejects the Python body with `Invalid round trip of SAD against raw.` Fix native
+seal SAD encoding/projection in a separate cohesive slice; typed attachment and
+structing parity do not establish native event parity.
+
+Separate API naming differences from reproduced wire or validation gaps. Implement
+actual gaps in cohesive dependent slices, retaining protocol v1/v2 fixtures and
+avoiding old keri-ts compatibility aliases. Pure diagnostic wording and
+Python-specific buffer adaptations do not require a port.
 
 ### Follow-on PR 1b: imported v2 event replay
 

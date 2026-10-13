@@ -1,0 +1,265 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "records": [
+    {
+      "clan": "SealKind",
+      "inputs": {
+        "code": "1AAP",
+        "raw": ""
+      },
+      "sad": {
+        "t": "0OKERICAACAA",
+        "d": "1AAP"
+      },
+      "parts": [
+        {
+          "qb64": "0OKERICAACAA",
+          "qb2": "d0e284448080002000"
+        },
+        {
+          "qb64": "1AAP",
+          "qb2": "d4000f"
+        }
+      ],
+      "qb64": "0OKERICAACAA1AAP",
+      "qb2": "d0e284448080002000d4000f"
+    },
+    {
+      "clan": "SealKind",
+      "inputs": {
+        "code": "0A",
+        "raw": "000102030405060708090a0b0c0d0e0f"
+      },
+      "sad": {
+        "t": "0OKERICAACAA",
+        "d": "0AAAAQIDBAUGBwgJCgsMDQ4P"
+      },
+      "parts": [
+        {
+          "qb64": "0OKERICAACAA",
+          "qb2": "d0e284448080002000"
+        },
+        {
+          "qb64": "0AAAAQIDBAUGBwgJCgsMDQ4P",
+          "qb2": "d000000102030405060708090a0b0c0d0e0f"
+        }
+      ],
+      "qb64": "0OKERICAACAA0AAAAQIDBAUGBwgJCgsMDQ4P",
+      "qb2": "d0e284448080002000d000000102030405060708090a0b0c0d0e0f"
+    },
+    {
+      "clan": "SealKind",
+      "inputs": {
+        "code": "a",
+        "raw": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      },
+      "sad": {
+        "t": "0OKERICAACAA",
+        "d": "aAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+      },
+      "parts": [
+        {
+          "qb64": "0OKERICAACAA",
+          "qb2": "d0e284448080002000"
+        },
+        {
+          "qb64": "aAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+          "qb2": "68000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        }
+      ],
+      "qb64": "0OKERICAACAAaAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "d0e28444808000200068000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "clan": "SealKind",
+      "inputs": {
+        "code": "E",
+        "raw": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      },
+      "sad": {
+        "t": "0OKERICAACAA",
+        "d": "EAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+      },
+      "parts": [
+        {
+          "qb64": "0OKERICAACAA",
+          "qb2": "d0e284448080002000"
+        },
+        {
+          "qb64": "EAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+          "qb2": "10000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        }
+      ],
+      "qb64": "0OKERICAACAAEAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "d0e28444808000200010000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "clan": "FirstSeen",
+      "inputs": {
+        "code": "M",
+        "numh": "0",
+        "dts": "2026-10-13T01:02:03.000004+00:00"
+      },
+      "sad": {
+        "f": "0",
+        "dt": "2026-10-13T01:02:03.000004+00:00"
+      },
+      "parts": [
+        {
+          "qb64": "MAAA",
+          "qb2": "300000"
+        },
+        {
+          "qb64": "1AAG2026-10-13T01c02c03d000004p00c00",
+          "qb2": "d40006db4dbafb5d3ed774f4d5cd36734dddd34d34d38a74d1cd34"
+        }
+      ],
+      "qb64": "MAAA1AAG2026-10-13T01c02c03d000004p00c00",
+      "qb2": "300000d40006db4dbafb5d3ed774f4d5cd36734dddd34d34d38a74d1cd34"
+    },
+    {
+      "clan": "FirstSeen",
+      "inputs": {
+        "code": "0H",
+        "numh": "10000",
+        "dts": "2026-10-13T01:02:03.123456-06:00"
+      },
+      "sad": {
+        "f": "10000",
+        "dt": "2026-10-13T01:02:03.123456-06:00"
+      },
+      "parts": [
+        {
+          "qb64": "0HAAAQAA",
+          "qb2": "d07000010000"
+        },
+        {
+          "qb64": "1AAG2026-10-13T01c02c03d123456-06c00",
+          "qb2": "d40006db4dbafb5d3ed774f4d5cd36734dddd76df8e7afb4e9cd34"
+        }
+      ],
+      "qb64": "0HAAAQAA1AAG2026-10-13T01c02c03d123456-06c00",
+      "qb2": "d07000010000d40006db4dbafb5d3ed774f4d5cd36734dddd76df8e7afb4e9cd34"
+    },
+    {
+      "clan": "FirstSeen",
+      "inputs": {
+        "code": "0A",
+        "numh": "10000000000000001",
+        "dts": "2026-10-13T23:59:59.999999+05:30"
+      },
+      "sad": {
+        "f": "10000000000000001",
+        "dt": "2026-10-13T23:59:59.999999+05:30"
+      },
+      "parts": [
+        {
+          "qb64": "0AAAAAAAAAAAAQAAAAAAAAAB",
+          "qb2": "d00000000000000000010000000000000001"
+        },
+        {
+          "qb64": "1AAG2026-10-13T23c59c59d999999p05c30",
+          "qb2": "d40006db4dbafb5d3ed774f6ddce7d739f5df7df7df7da74e5cdf4"
+        }
+      ],
+      "qb64": "0AAAAAAAAAAAAQAAAAAAAAAB1AAG2026-10-13T23c59c59d999999p05c30",
+      "qb2": "d00000000000000000010000000000000001d40006db4dbafb5d3ed774f6ddce7d739f5df7df7df7da74e5cdf4"
+    }
+  ],
+  "groups": [
+    {
+      "clan": "SealKind",
+      "version": 2,
+      "code": "-W",
+      "count": 41,
+      "qb64": "-WAp0OKERICAACAA1AAP0OKERICAACAA0AAAAQIDBAUGBwgJCgsMDQ4P0OKERICAACAAaAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f0OKERICAACAAEAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "f96029d0e284448080002000d4000fd0e284448080002000d000000102030405060708090a0b0c0d0e0fd0e28444808000200068000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1fd0e28444808000200010000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "clan": "SealKind",
+      "version": 2,
+      "code": "--W",
+      "count": 41,
+      "qb64": "--WAAAAp0OKERICAACAA1AAP0OKERICAACAA0AAAAQIDBAUGBwgJCgsMDQ4P0OKERICAACAAaAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f0OKERICAACAAEAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+      "qb2": "fbe580000029d0e284448080002000d4000fd0e284448080002000d000000102030405060708090a0b0c0d0e0fd0e28444808000200068000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1fd0e28444808000200010000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "clan": "FirstSeen",
+      "version": 1,
+      "code": "-E",
+      "count": 3,
+      "qb64": "-EADMAAA1AAG2026-10-13T01c02c03d000004p00c000HAAAQAA1AAG2026-10-13T01c02c03d123456-06c000AAAAAAAAAAAAQAAAAAAAAAB1AAG2026-10-13T23c59c59d999999p05c30",
+      "qb2": "f84003300000d40006db4dbafb5d3ed774f4d5cd36734dddd34d34d38a74d1cd34d07000010000d40006db4dbafb5d3ed774f4d5cd36734dddd76df8e7afb4e9cd34d00000000000000000010000000000000001d40006db4dbafb5d3ed774f6ddce7d739f5df7df7df7da74e5cdf4"
+    },
+    {
+      "clan": "FirstSeen",
+      "version": 2,
+      "code": "-O",
+      "count": 36,
+      "qb64": "-OAkMAAA1AAG2026-10-13T01c02c03d000004p00c000HAAAQAA1AAG2026-10-13T01c02c03d123456-06c000AAAAAAAAAAAAQAAAAAAAAAB1AAG2026-10-13T23c59c59d999999p05c30",
+      "qb2": "f8e024300000d40006db4dbafb5d3ed774f4d5cd36734dddd34d34d38a74d1cd34d07000010000d40006db4dbafb5d3ed774f4d5cd36734dddd76df8e7afb4e9cd34d00000000000000000010000000000000001d40006db4dbafb5d3ed774f6ddce7d739f5df7df7df7da74e5cdf4"
+    },
+    {
+      "clan": "FirstSeen",
+      "version": 2,
+      "code": "--O",
+      "count": 36,
+      "qb64": "--OAAAAkMAAA1AAG2026-10-13T01c02c03d000004p00c000HAAAQAA1AAG2026-10-13T01c02c03d123456-06c000AAAAAAAAAAAAQAAAAAAAAAB1AAG2026-10-13T23c59c59d999999p05c30",
+      "qb2": "fbe380000024300000d40006db4dbafb5d3ed774f4d5cd36734dddd34d34d38a74d1cd34d07000010000d40006db4dbafb5d3ed774f4d5cd36734dddd76df8e7afb4e9cd34d00000000000000000010000000000000001d40006db4dbafb5d3ed774f6ddce7d739f5df7df7df7da74e5cdf4"
+    }
+  ],
+  "rejections": [
+    {
+      "clan": "SealKind",
+      "parts": [
+        {
+          "qb64": "0OKERICAACAA",
+          "qb2": "d0e284448080002000"
+        },
+        {
+          "qb64": "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "qb2": "0c0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "clan": "SealKind",
+      "parts": [
+        {
+          "qb64": "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "qb2": "0c0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "qb64": "1AAP",
+          "qb2": "d4000f"
+        }
+      ]
+    },
+    {
+      "clan": "FirstSeen",
+      "parts": [
+        {
+          "qb64": "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "qb2": "0c0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "qb64": "1AAG2026-10-13T01c02c03d000004p00c00",
+          "qb2": "d40006db4dbafb5d3ed774f4d5cd36734dddd34d34d38a74d1cd34"
+        }
+      ]
+    },
+    {
+      "clan": "FirstSeen",
+      "parts": [
+        {
+          "qb64": "MAAA",
+          "qb2": "300000"
+        },
+        {
+          "qb64": "DAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "qb2": "0c0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ]
+}

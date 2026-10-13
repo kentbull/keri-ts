@@ -377,7 +377,7 @@ export class VerifierAgent {
   }
 
   private expired(dater: Dater): boolean {
-    return this.services.clock.now() - new Date(dater.iso8601).getTime() > this.timeoutMs;
+    return this.services.clock.now() - new Date(dater.dts).getTime() > this.timeoutMs;
   }
 }
 

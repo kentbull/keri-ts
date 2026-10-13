@@ -1,6 +1,7 @@
 import {
   Dater,
   Diger,
+  type FirstSeen,
   Ilks,
   NumberPrimitive,
   Prefixer,
@@ -16,7 +17,7 @@ import { dgKey } from "../db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { DispatchOrdinal, FirstSeenReplayCouple } from "./dispatch.ts";
+import { DispatchOrdinal } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import type {
   AttachmentDecision,
@@ -132,7 +133,7 @@ export interface KeverEventInit extends KeverBaseInit {
   serder: SerderKERI;
   sigers: readonly Siger[];
   wigers?: readonly Siger[];
-  frcs?: readonly FirstSeenReplayCouple[];
+  frcs?: readonly FirstSeen[];
   sscs?: readonly SealSource[];
   ssts?: readonly SealEvent[];
   eager?: boolean;
@@ -559,7 +560,7 @@ export class Kever {
       p: this.serder.prior ?? "",
       d: this.said,
       f: this.fn.toString(16),
-      dt: this.dater.iso8601,
+      dt: this.dater.dts,
       et: this.ilk,
       kt: this.tholder?.sith ?? "0",
       k: this.verfers.map((verfer) => verfer.qb64),
@@ -606,8 +607,8 @@ export class Kever {
     }
 
     const first = args.first ?? false;
-    const replayDater = args.frc?.dater ?? null;
-    const nowIso8601 = replayDater?.iso8601 ?? makeNowIso8601();
+    const replayDater = args.frc?.dt ?? null;
+    const nowIso8601 = replayDater?.dts ?? makeNowIso8601();
     const nowDater = replayDater
       ?? new Dater({ qb64: encodeDateTimeToDater(nowIso8601) });
     const dgkey = dgKey(pre, said);
@@ -648,13 +649,13 @@ export class Kever {
     let fn: number | null = null;
     if (first) {
       fn = this.db.appendFel(pre, said);
-      if (args.frc && fn !== Number(args.frc.firner.num)) {
+      if (args.frc && fn !== Number(args.frc.f.num)) {
         this.cues.push({
           kin: "noticeBadCloneFN",
           serder: args.serder,
           fn,
-          firner: args.frc.firner,
-          dater: args.frc.dater,
+          firner: args.frc.f,
+          dater: args.frc.dt,
         });
       }
       this.db.dtss.pin(dgkey, nowDater);
@@ -983,7 +984,7 @@ export class Kever {
       p: serder.prior ?? "",
       d: serder.said ?? "",
       f: this.fn.toString(16),
-      dt: this.dater.iso8601,
+      dt: this.dater.dts,
       et: ilk,
       kt: tholder?.sith ?? "0",
       k: serder.verfers.map((verfer) => verfer.qb64),
@@ -1101,7 +1102,7 @@ export class Kever {
           p: serder.prior ?? "",
           d: serder.said ?? "",
           f: this.fn.toString(16),
-          dt: this.dater.iso8601,
+          dt: this.dater.dts,
           et: Ilks.ixn,
           kt: this.tholder?.sith ?? "0",
           k: this.verfers.map((verfer) => verfer.qb64),
@@ -2063,7 +2064,7 @@ export class Kever {
       pre: string;
       said: string;
       toader: NumberPrimitive;
-      frc: FirstSeenReplayCouple | null;
+      frc: FirstSeen | null;
     },
   ): KeyStateRecord {
     return new KeyStateRecord({
@@ -2072,8 +2073,8 @@ export class Kever {
       s: "0",
       p: "",
       d: said,
-      f: frc ? frc.fnh : "0",
-      dt: frc?.dater.iso8601 ?? makeNowIso8601(),
+      f: frc ? frc.f.numh : "0",
+      dt: frc?.dt.dts ?? makeNowIso8601(),
       et: serder.ilk ?? Ilks.icp,
       kt: serder.tholder?.sith ?? "0",
       k: serder.verfers.map((verfer) => verfer.qb64),

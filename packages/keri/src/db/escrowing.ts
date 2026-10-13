@@ -384,7 +384,7 @@ export class Broker {
     }
 
     if (
-      (Date.now() - new Date(dater.iso8601).getTime()) > (this.timeout * 1000)
+      (Date.now() - new Date(dater.dts).getTime()) > (this.timeout * 1000)
     ) {
       return dropEscrow("stale", {
         message: `Escrow unescrow error: Stale txn state escrow at pre = ${args.aid}`,

@@ -7,6 +7,7 @@ import {
   Dater,
   Diger,
   type EssrPayload,
+  FirstSeen,
   type GroupEntry,
   Ilks,
   isCounterGroupLike,
@@ -30,7 +31,6 @@ import {
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import {
-  FirstSeenReplayCouple,
   KeriDispatchEnvelope,
   PathedMaterialGroup,
   TransIdxSigGroup,
@@ -68,7 +68,7 @@ export interface TelDispatchArgs {
   trqs: TransReceiptQuadruple[];
   tsgs: TransIdxSigGroup[];
   ssgs: TransLastIdxSigGroup[];
-  frcs: FirstSeenReplayCouple[];
+  frcs: FirstSeen[];
   sscs: SealSource[];
   tdcs: SealKind[];
 }
@@ -184,19 +184,19 @@ export function* dispatchEnvelope(
           kevery.processAttachedReceiptCouples({
             serder,
             cigars: envelope.cigars,
-            firner: envelope.lastFrc?.firner,
+            firner: envelope.lastFrc?.f,
             local: envelope.local,
           });
           kevery.processAttachedReceiptQuadruples({
             serder,
             trqs: envelope.trqs,
-            firner: envelope.lastFrc?.firner,
+            firner: envelope.lastFrc?.f,
             local: envelope.local,
           });
           kevery.processAttachedReceiptGroups({
             serder,
             tsgs: envelope.tsgs,
-            firner: envelope.lastFrc?.firner,
+            firner: envelope.lastFrc?.f,
             local: envelope.local,
           });
         }
@@ -342,7 +342,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
     case "BigFirstSeenReplayCouples":
       for (const item of group.items) {
         if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected FirstSeenReplayCouples tuple");
-        envelope.frcs.push(FirstSeenReplayCouple.fromTuple([
+        envelope.frcs.push(FirstSeen.fromTuple([
           primitive(item[0], NumberPrimitive),
           primitive(item[1], Dater),
         ]));
@@ -375,7 +375,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
         if (!isGroupTuple(item) || item.length !== 2) throw new TypeError("Expected TypedDigestSealCouples tuple");
         envelope.tdcs.push(SealKind.fromTuple([
           primitive(item[0], Verser),
-          primitive(item[1], Diger),
+          primitive(item[1], Noncer),
         ]));
       }
       return;

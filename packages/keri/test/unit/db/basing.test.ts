@@ -1,18 +1,24 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import {
+  b,
   CtrDexV1,
   Diger,
+  FirstSeen,
+  Noncer,
   NumberPrimitive,
   parseBytes,
   parseCounterFromText,
   Prefixer,
+  SealKind,
   SerderKERI,
   Siger,
   Signer,
   Vrsn_1_0,
 } from "../../../../cesr/mod.ts";
+import structingVectors from "../../../../cesr/test/fixtures/current-structing-vectors.json" with { type: "json" };
 import { incept } from "../../../src/core/protocol-eventing.ts";
+import { loadEvent } from "../../../src/core/protocol-serialization.ts";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
@@ -117,6 +123,7 @@ Deno.test("db/basing - cloneEvtMsg emits v1 replay counters", async () => {
       assertEquals(baser.appendFel(pre, said), 0);
       assertEquals(baser.putDts(pre, said, dater), true);
 
+      assertEquals(loadEvent(baser, pre, said).timestamp, "2026-03-16T12:34:56.000000+00:00");
       const message = baser.cloneEvtMsg(pre, 0, said);
       let offset = serder.raw.length;
       const group = parseCounterFromText(message.slice(offset), Vrsn_1_0);
@@ -176,4 +183,43 @@ Deno.test("db/basing - imported protocol versions replay exact KERIpy evidence a
       }
     });
   }
+});
+
+Deno.test("db/basing - current typed-seal nonce roles and first-seen tuples survive reopen", async () => {
+  await run(function*() {
+    const baser = yield* createBaser({ name: `structing-${crypto.randomUUID()}`, temp: true });
+    try {
+      for (const row of structingVectors.records) {
+        const parts = row.parts.map((part) => b(part.qb64)) as [Uint8Array, Uint8Array];
+        if (row.clan === "SealKind") {
+          baser.tdcs.add([row.clan], SealKind.toTuple(SealKind.fromQb64bTuple(parts)));
+        } else {
+          baser.frcs.add([row.clan], FirstSeen.toTuple(FirstSeen.fromQb64bTuple(parts)));
+        }
+      }
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      const typed = baser.tdcs.get(["SealKind"]);
+      assertEquals(typed.length, 4);
+      for (const tuple of typed) assertEquals(tuple[1] instanceof Noncer, true);
+      assertEquals(
+        typed.map((tuple) => tuple.map((part) => part.qb64).join("")),
+        structingVectors.records.filter((row) => row.clan === "SealKind").map((row) => row.qb64),
+      );
+      const firstSeen = baser.frcs.get(["FirstSeen"]);
+      assertEquals(
+        firstSeen.map((tuple) => tuple.map((part) => part.qb64).join("")),
+        structingVectors.records.filter((row) => row.clan === "FirstSeen").map((row) => row.qb64),
+      );
+      assertEquals(
+        firstSeen.map((tuple) => FirstSeen.toSad(FirstSeen.fromTuple(tuple))),
+        structingVectors.records.filter((row) => row.clan === "FirstSeen").map((row) => ({
+          f: row.sad.f!,
+          dt: row.sad.dt!,
+        })),
+      );
+    } finally {
+      yield* baser.close(true);
+    }
+  });
 });

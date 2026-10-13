@@ -3,9 +3,9 @@ import {
   BlindState as BlindStateValue,
   BoundState as BoundStateValue,
   type Cigar,
-  type Dater,
   type Diger,
   encodeKeriCbor,
+  FirstSeen as FirstSeenValue,
   type Labeler,
   type Noncer,
   type NumberPrimitive,
@@ -771,7 +771,7 @@ export type GroupMemberTuple = [Prefixer, NumberPrimitive];
 /** Source-seal triple stored in `ssts.`. */
 export type SourceSealTriple = ReturnType<typeof SealEventValue.toTuple>;
 /** First-seen replay couple stored in `frcs.`. */
-export type FirstSeenReplayCouple = [NumberPrimitive, Dater];
+export type FirstSeenReplayCouple = ReturnType<typeof FirstSeenValue.toTuple>;
 /** Typed-digest seal couple stored in `tdcs.`. */
 export type TypedDigestSealCouple = ReturnType<typeof SealKindValue.toTuple>;
 /** Verfer+cigar storage couple stored in `scgs.` and `ecigs.`. */

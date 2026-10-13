@@ -3,9 +3,9 @@ import {
   type BlindState,
   type BoundState,
   Cigar,
-  Dater,
   Diger,
   type EssrPayload,
+  type FirstSeen,
   NumberPrimitive,
   Prefixer,
   type SealEvent,
@@ -141,35 +141,6 @@ export class TransLastIdxSigGroup {
   }
 }
 
-/** One first-seen replay couple carried in parser dispatch state. */
-export class FirstSeenReplayCouple {
-  readonly firner: NumberPrimitive;
-  readonly dater: Dater;
-
-  constructor(firner: NumberPrimitive, dater: Dater) {
-    this.firner = firner;
-    this.dater = dater;
-  }
-
-  static fromTuple(
-    tuple: readonly [NumberPrimitive, Dater],
-  ): FirstSeenReplayCouple {
-    return new FirstSeenReplayCouple(tuple[0], tuple[1]);
-  }
-
-  toTuple(): [NumberPrimitive, Dater] {
-    return [this.firner, this.dater];
-  }
-
-  get fn(): bigint {
-    return this.firner.num;
-  }
-
-  get fnh(): string {
-    return this.firner.numh;
-  }
-}
-
 /** One pathed-material payload group carried in parser dispatch state. */
 export class PathedMaterialGroup {
   readonly raw: Uint8Array;
@@ -195,7 +166,7 @@ export interface KeriDispatchEnvelopeInit {
   trqs?: TransReceiptQuadruple[];
   tsgs?: TransIdxSigGroup[];
   ssgs?: TransLastIdxSigGroup[];
-  frcs?: FirstSeenReplayCouple[];
+  frcs?: FirstSeen[];
   sscs?: SealSource[];
   ssts?: SealEvent[];
   tdcs?: SealKind[];
@@ -233,7 +204,7 @@ export class KeriDispatchEnvelope {
   readonly trqs: TransReceiptQuadruple[];
   readonly tsgs: TransIdxSigGroup[];
   readonly ssgs: TransLastIdxSigGroup[];
-  readonly frcs: FirstSeenReplayCouple[];
+  readonly frcs: FirstSeen[];
   readonly sscs: SealSource[];
   readonly ssts: SealEvent[];
   readonly tdcs: SealKind[];
@@ -265,7 +236,7 @@ export class KeriDispatchEnvelope {
     this.tmqs = [...(init.tmqs ?? [])];
   }
 
-  get lastFrc(): FirstSeenReplayCouple | null {
+  get lastFrc(): FirstSeen | null {
     return this.frcs.at(-1) ?? null;
   }
 
