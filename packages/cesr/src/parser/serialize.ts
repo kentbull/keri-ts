@@ -1,12 +1,12 @@
 /** Reopenable frame serialization with bounded metadata and streamed canonical ESSR wire. */
 import { b, byteString, concatBytes, decodeB64, encodeB64 } from "../core/bytes.ts";
 import { SerializeError } from "../core/errors.ts";
-import { requireFlatFrame } from "../core/frame.ts";
 import type { Payload } from "../core/payload.ts";
 import type { AttachmentGroup, CesrDomain, CesrFrame, EssrPayload } from "../core/types.ts";
 import { Counter } from "../primitives/counter.ts";
 import { OpaqueSpan } from "../primitives/opaque.ts";
 import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
+import { Texter } from "../primitives/texter.ts";
 import { resolveCounterSizeTable, resolveCtrDex } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds } from "../tables/versions.ts";
@@ -14,7 +14,7 @@ import { sniff } from "./cold-start.ts";
 
 /** Output qualification is independent of the body's KERI/ACDC protocol version. */
 export interface SerializeOptions {
-  /** One genus for all newly emitted attachment counters. */
+  /** Override every message's attachment genus; otherwise preserve each node's resolved genus. */
   gvrsn?: Versionage;
   /** One qualification domain for the entire attachment enclosure; default text. */
   domain?: CesrDomain;
@@ -201,9 +201,56 @@ export async function* essrChunks(
   yield* wireChunks(essr.wire, domain, options.signal);
 }
 
-/** Build a reopenable finite attachment enclosure while retaining ESSR only by reference. */
+/** Enclose one child using its parent's counter genus, with any child selector scoped inside. */
+function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: SerializeOptions): Payload {
+  const gvrsn = frameGenus(frame, options.gvrsn);
+  const domain = options.domain ?? "txt";
+  const body = bodyBytes(frame, gvrsn, domain, true);
+  // A selector inside the child wrapper cannot alter the following sibling's counter interpretation.
+  const selector = sameVersion(enclosing, gvrsn) ? new Uint8Array() : qualify(Counter.makeGVC(gvrsn), "txt", domain);
+  // Python's nested extractor expects at least one counter after the body, even without authenticators.
+  const empty = !frame.attachments.length && !frame.nests?.length && !frame.essr
+    ? counter("ControllerIdxSigs", 0, gvrsn, domain)
+    : undefined;
+  const attachments: Payload = empty
+    ? { size: empty.length, open: (signal) => chunks(empty, signal) }
+    : attachmentPayload(frame, options);
+  // All child bytes are qualified, so enclosing counts are quadlets in text and triplets in binary.
+  const header = counter(
+    "BodyWithAttachmentGroup",
+    (selector.length + body.length + attachments.size) / (domain === "txt" ? 4 : 3),
+    enclosing,
+    domain,
+  );
+  return {
+    size: header.length + selector.length + body.length + attachments.size,
+    /** Borrow descendant owners until the caller finishes or cancels this reader. */
+    async *open(signal?: AbortSignal) {
+      yield* chunks(header, signal);
+      yield* chunks(selector, signal);
+      yield* chunks(body, signal);
+      yield* attachments.open(signal);
+    },
+  };
+}
+
+/** Qualify a finite body; nested non-native bodies require a Texter and explicit body enclosure. */
+function bodyBytes(frame: CesrFrame, gvrsn: Versionage, domain: CesrDomain, nested: boolean): Uint8Array {
+  if (frame.body.kind === Kinds.cesr) {
+    if (frame.body.gvrsn && !sameVersion(frame.body.gvrsn, gvrsn)) {
+      throw new SerializeError("Cannot change a native body's genus without rebuilding its Serder");
+    }
+    return qualify(frame.body.raw, sniff(frame.body.raw) as CesrDomain, domain);
+  }
+  if (!nested) return frame.body.raw;
+  // The parser already admitted body metadata under the shared tree byte limit; ESSR never enters here.
+  const texter = new Texter({ raw: frame.body.raw, code: "4B" });
+  const body = domain === "txt" ? texter.qb64b : texter.qb2;
+  return concatBytes(counter("NonNativeBodyGroup", body.length / (domain === "txt" ? 4 : 3), gvrsn, domain), body);
+}
+
+/** Build one admitted tree's attachment enclosure, retaining every descendant ESSR only by reference. */
 export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions = {}): Payload {
-  requireFlatFrame(frame, "Attachment serialization");
   // The frame's resolved genus is distinct from a JSON body's protocol version.
   const gvrsn = frameGenus(frame, options.gvrsn);
   // One attachment enclosure cannot mix text and binary qualification.
@@ -212,6 +259,14 @@ export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions =
   const groups = frame.attachments.map((group) => groupBytes(group, gvrsn, domain));
   // Resident ordinary metadata is bounded when the frame is admitted by parse().
   const ordinary = groups.reduce((size, group) => size + group.length, 0);
+  // Retain one view per already admitted tree node, preserving child order and separate evidence.
+  const children = (frame.nests ?? []).map((child) =>
+    nestedPayload(child, gvrsn, {
+      gvrsn: options.gvrsn,
+      domain,
+    })
+  );
+  const nested = children.reduce((size, child) => size + child.size, 0);
   // Only the ESSR header is resident; its canonical wire stays in its owning sink.
   const essr = frame.essr;
   // The same helper is used when the stream emits this counted payload.
@@ -224,17 +279,18 @@ export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions =
   const selector = sameVersion(enclosing, gvrsn) ? new Uint8Array() : qualify(Counter.makeGVC(gvrsn), "txt", domain);
   const header = counter(
     "AttachmentGroup",
-    (selector.length + ordinary + essrPrefix.length + essrSize) / (domain === "txt" ? 4 : 3),
+    (selector.length + ordinary + nested + essrPrefix.length + essrSize) / (domain === "txt" ? 4 : 3),
     enclosing,
     domain,
   );
   return {
-    size: header.length + selector.length + ordinary + essrPrefix.length + essrSize,
+    size: header.length + selector.length + ordinary + nested + essrPrefix.length + essrSize,
     /** Each reopen retains the existing owner and streams the same logical attachment bytes. */
     async *open(signal?: AbortSignal) {
       yield* chunks(header, signal);
       yield* chunks(selector, signal);
       for (const group of groups) yield* chunks(group, signal);
+      for (const child of children) yield* child.open(signal);
       if (essr) yield* essrChunks(essr, { gvrsn, domain, signal });
     },
   };
@@ -242,20 +298,13 @@ export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions =
 
 /** Serialize one admitted frame with an explicit genus and a complete attachment boundary. */
 export function framePayload(frame: CesrFrame, options: SerializeOptions = {}): Payload {
-  requireFlatFrame(frame, "Frame serialization");
   // Native bodies declare a genus in their own qualification; JSON protocol versions do not.
   const gvrsn = frameGenus(frame, options.gvrsn);
   // One attachment enclosure cannot mix text and binary qualification.
   const domain = options.domain ?? "txt";
-  if (frame.body.kind === Kinds.cesr && frame.body.gvrsn && !sameVersion(frame.body.gvrsn, gvrsn)) {
-    throw new SerializeError("Cannot change a native body's genus without rebuilding its Serder");
-  }
-  // Body serialization is independent of attachment qualification; native CESR can change domain.
-  const body = frame.body.kind === Kinds.cesr
-    ? qualify(frame.body.raw, sniff(frame.body.raw) as CesrDomain, domain)
-    : frame.body.raw;
-  // The view borrows its ESSR owner and therefore must finish before that owner is discarded.
-  const attachments = attachmentPayload(frame, { gvrsn, domain });
+  const body = bodyBytes(frame, gvrsn, domain, false);
+  // Views borrow every tree owner; preserve descendant genera unless the caller explicitly overrides them.
+  const attachments = attachmentPayload(frame, options);
   // Explicit selection prevents a non-native body's protocol version from changing counter interpretation.
   const selector = Counter.makeGVC(gvrsn);
   // Selectors are ordinary qualified CESR tokens in either output domain.

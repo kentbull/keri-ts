@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { annotate } from "../../../src/annotate/annotator.ts";
 import { b, decodeB64, t } from "../../../src/core/bytes.ts";
 import { ColdStartError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
@@ -7,7 +7,6 @@ import { collectPayload, MemoryPayloadSink, type PayloadSink } from "../../../sr
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse, type ParseOptions } from "../../../src/parser/progressive.ts";
-import { attachmentPayload, framePayload } from "../../../src/parser/serialize.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
@@ -271,10 +270,7 @@ Deno.test("collection and recursive discard clean descendants even when another 
   assertEquals(sinks.records.map((record) => record.discarded), [1, 1, 1]);
 });
 
-Deno.test("serialization and annotation reject nested trees explicitly until runtime follow-on", async () => {
-  const [frame] = await parseBytes(b(vectors.rows[0].qb64));
-  assertThrows(() => framePayload(frame), Error, "nested message trees");
-  assertThrows(() => attachmentPayload(frame), Error, "nested message trees");
+Deno.test("annotation rejects nested trees until its owned-tree rendering follow-on", async () => {
   await assertRejects(() => annotate(vectors.rows[0].qb64), Error, "nested message trees");
 });
 

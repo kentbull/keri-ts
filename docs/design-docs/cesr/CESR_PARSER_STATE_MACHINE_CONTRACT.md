@@ -97,6 +97,10 @@ v1 nesting, every-byte splits, malformed later children, closure boundaries,
 shared limits, cancellation during reads and finish, collection failure, and
 repeated recursive disposal. Runtime boundary coverage is in
 `packages/keri/test/unit/app/nested-frame-boundary.test.ts`.
-Nested processing, replay, serialization, and annotation are explicitly unsupported
-at their current public boundaries until the immediate dependent slice preserves
-the complete tree's evidence and ownership.
+`test/unit/parser/serialize-nests.test.ts` covers structure-preserving payload
+views in both domains/genera, scoped children, independent signatures, repeated
+ESSR reopening and cancellation. `scripts/qualify-nested-serialization.ts` feeds
+actual output to frozen Python, verifies imported source bytes, signature
+ownership, full consumption, and Python subtree reserialization. Nested runtime
+processing/replay and annotation remain explicit rejections at their current
+public boundaries.

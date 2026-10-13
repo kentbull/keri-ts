@@ -388,8 +388,8 @@ bytes and no parse failure retries another version.
 
 Regenerate the pinned reference failure: a native signed `xip` parent and two
 signed children serialized with `messagize(..., nests=[child1, child2], nested=True, gvrsn=Vrsn_2_0)`. Reference KERIpy returns one parent, its own
-signature, and two nests; current TS accepts the flat parent and rejects this
-nested form as multiple frames inside `BodyWithAttachmentGroup`. Temporary
+signature, and two nests; the former TS implementation accepted the flat parent
+and rejected the nested form inside `BodyWithAttachmentGroup`. Temporary
 review fixtures are clues only, not durable test inputs.
 
 Represent a bounded parent-owned message tree. Preserve the context-dependent
@@ -407,7 +407,7 @@ no partial-parent delivery, signature reassignment, duplicate child delivery, or
 scope leakage; enforce tree byte/node/depth limits and cancellation cleanup;
 preserve legitimate single-frame rejection cases.
 
-Implementation prepared: `CesrFrame.nests` owns child frames; frame `gvrsn` records
+Implemented in #155: `CesrFrame.nests` owns child frames; frame `gvrsn` records
 resolved attachment genus separately from body metadata. The shared generator
 engine distinguishes enclosed children from GenericGroup siblings and retains
 all descendant stages until parent validation/finalization. Existing frame byte,
@@ -424,21 +424,68 @@ failure, read/finish cancellation, and repeated recursive disposal. Serializatio
 annotation, KERI normalization, and HTTP inspection reject nesting explicitly;
 this parser slice does not claim nested runtime or replay support.
 
-### Follow-on PR 3: nested runtime processing and serialization
+### Follow-on PR 3: nested consumers, split by ownership boundary
 
-Inspect pinned `processMsg`/`msgProcess` and exchange paths to establish actual
-processing order and required verification. Keep structural completion, child
-verification, parent verification, exchange acceptance, escrow, and storage
-distinct. Parsing a child does not authorize it as an unrelated top-level event.
+Frozen authority remains KERIpy `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+The following source references are relative to its `src/keri/` directory; they
+are processing obligations, not claims that TS already implements those paths.
 
-Carry the tree and its ownership through normalization, dispatch, escrow/retry,
-replay, and serialization, preserving each child's evidence and the parent's
-commitments. Reuse hydrated primitives and Serders. Acceptance requires real
-handlers receiving valid nested messages with correct signatures/order; invalid
-child signatures, missing dependencies, malformed children, retries, and duplicates
-matching pinned source/specification; round-trip/replay preserving structure and
-original evidence; and no failed acceptance publication or payload leak. An
-absent required runtime feature gets a narrow dependent PR, never silent omission.
+- `core/parsing.py:1378` routes protocol-v2 `qry/rpy/exn/xip/pro/bar` to
+  `Kevery.processMsg`; `core/eventing.py:4645` applies sender allow/deny policy,
+  optional KRAM intake, then type-specific dispatch. No universal child-dispatch
+  loop exists. `processXip/processPro/processBar` at lines 4780/4784/4788 are
+  explicit stubs; native parsing/serialization does not establish their processing.
+- `peer/exchanging.py:323` passes nests to `/multisig`, `/ipex`, and `/fwd`
+  handlers after sender-evidence handling. Escrow writes nested substreams at
+  line 458, retry reloads them at line 514, accepted storage writes them at
+  line 607, and replay consumes them at line 968. These paths preserve evidence;
+  they do not independently authorize every child as a top-level message.
+- `app/grouping.py:881` validates the specific v2 multisig route, one-child
+  cardinality, child ilk and the parent's signed child SAID. `app/forwarding.py:521`
+  verifies the v2 forward envelope's child relationship, then line 550 stores the
+  serialized child. Each actual route owns its acceptance and dependency rules.
+
+**3a — serialization (implemented):** `framePayload`/`attachmentPayload` preserve
+admitted trees using existing parser ownership. `peer/exchanging.py:1195`
+(`serializeParsedSubstream`) and `core/eventing.py:1563` (`messagize`) establish
+valid child enclosure shapes. TS borrows descendant ESSR references, computes
+counts without opening payloads, scopes child genus selectors, preserves each
+message's signatures and child ordering, and qualifies non-native child bodies
+through Texter. Existing tree byte/node/depth limits bound retained metadata;
+this adds no second parser or resource-policy framework. Both domains and
+protocol versions, scoped genera, empty child evidence, ESSR reopen/cancellation,
+and actual frozen-Python acceptance/re-serialization are qualified. Category
+normalization remains explicit: ordinary leaves, children, then ESSR; original
+interleaving between those categories is absent from `CesrFrame`.
+
+**3b — annotation:** Keep the explicit rejection until the existing validated-wire
+walker in `packages/cesr/src/annotate/render.ts` associates nested bodies with
+their owning `CesrFrame` rather than its current flat global index. Reuse parsed
+Serders, wrapper/selector rendering and `discardFrame`; do not add a second parser.
+Prove parent-only output ownership, child indentation/order, both domains,
+original wrapper preservation and recursive cleanup. This is independent of
+runtime authorization and depends only on parent-owned parsing.
+
+**Remaining runtime dependencies:** `packages/keri/src/app/parsering.ts:435`
+currently rejects nests before dispatch. Its dispatch at line 128 bypasses the
+reference's consolidated v2 `processMsg` boundary; current TS has no KRAM intake
+implementation. Source-ground that missing non-event policy in its own narrow
+slice before claiming full frozen-reference runtime alignment. Carry hydrated
+child evidence through `ExchangeInput`/route contracts in
+`packages/keri/src/app/exchanging.ts:45`, then add bounded persistent child
+substreams alongside existing payload storage (`packages/keri/src/db/basing.ts`).
+TS exchange retry at line 378 and replay at line 400 currently have no nested
+storage readback. Persistent storage, retry, duplicate/reject cleanup and replay
+must land together before accepting nests that can escrow. Route-specific
+multisig/IPEX/forwarding checks then receive retained children and enforce their
+actual source commitments, dependencies and evidence. Enable normalization only
+for those completed paths; no recursive child dispatch or invented authorization
+rule may fill absent runtime behavior. Keep HTTP inspection's rejection until
+its consumer contract supports the same ownership and forwarding behavior.
+
+Acceptance for runtime slices requires real handlers, signature/commitment
+failures, missing dependencies, escrow/retry/duplicates, durable reopen/replay and
+failed-publication cleanup. Serialization success alone is no authorization claim.
 
 ### Follow-on PR 4: shared runtime resource policy
 
