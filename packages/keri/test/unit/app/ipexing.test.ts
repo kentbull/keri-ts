@@ -1,4 +1,4 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { Diger, Prefixer, Saider } from "../../../../cesr/mod.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
@@ -194,17 +194,19 @@ Deno.test("accepted IPEX grants create KERIpy-shaped notifier entries", async ()
       const acdc = exchangeMessage("/dummy/acdc", { d: "data" }, { sender: sender.pre })[0];
       const [grant] = ipexGrantExn(sender, recipient.pre, "grant message", acdc);
       const sigers = sender.sign(grant.raw, true);
-      const decision = exchanger.processEvent({
-        serder: grant,
-        tsgs: [
-          new TransIdxSigGroup(
-            new Prefixer({ qb64: sender.pre }),
-            sender.kever!.sner,
-            new Diger({ qb64: sender.kever!.said }),
-            sigers,
-          ),
-        ],
-      });
+      const decision = yield* call(() =>
+        exchanger.processEvent({
+          serder: grant,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: sender.pre }),
+              sender.kever!.sner,
+              new Diger({ qb64: sender.kever!.said }),
+              sigers,
+            ),
+          ],
+        })
+      );
 
       assertEquals(decision.kind, "accept");
       assertEquals(hby.db.exns.get([grant.said!])?.said, grant.said);
@@ -260,21 +262,23 @@ Deno.test("IPEX grants accept nested weighted threshold combinations from partia
         sigers,
       );
 
-      const initial = exchanger.processEvent({
-        serder: grant,
-        tsgs: [
-          new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
-            sigers[0],
-          ]),
-        ],
-      });
+      const initial = yield* call(() =>
+        exchanger.processEvent({
+          serder: grant,
+          tsgs: [
+            new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [
+              sigers[0],
+            ]),
+          ],
+        })
+      );
       assertExists(grant.said);
       assertEquals(initial.kind, "escrow");
       assertExists(hby.db.epse.get([grant.said]));
 
       const quadKey = [grant.said, group.pre, group.snh, group.said] as const;
       hby.db.esigs.add(quadKey, sigers[1]);
-      exchanger.processEscrows();
+      yield* call(() => exchanger.processEscrows());
 
       assertEquals(hby.db.epse.get([grant.said]), null);
       assertEquals(hby.db.exns.get([grant.said])?.said, grant.said);

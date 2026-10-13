@@ -228,7 +228,7 @@ export class Oobiery {
     }
 
     if (isCesrMediaType(type)) {
-      this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
+      yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
       return;
     }
 
@@ -243,17 +243,18 @@ export class Oobiery {
       return;
     }
 
-    this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
+    yield* this.resolveCesrOobiResponse(url, queuedRecord, meta, bytes);
   }
 
-  private resolveCesrOobiResponse(
+  /** Mark an OOBI resolved only after its complete CESR response has been dispatched. */
+  private *resolveCesrOobiResponse(
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
     bytes: Uint8Array,
-  ): void {
+  ): Operation<void> {
     this.reactor.ingest(bytes);
-    this.reactor.processOnce();
+    yield* this.reactor.processOnce();
 
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, {

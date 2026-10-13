@@ -7,21 +7,41 @@ and KERIpy interoperability.
 
 ## Current State
 
-`db/payload-store.ts` provides bounded file staging and explicitly owned payload
-references without altering KERIpy tables. Filesystem operations use Deno and
-`@std/path`; final names come from a caller-supplied SAID/scoped identity while
-incomplete stages use temporary names. The npm build supplies missing Deno-shim
-fsync methods at its packaging boundary and exercises file publication in the
-installed-artifact smoke test. Finishing a sink transfers its file to
-the caller; store close only aborts unfinished sinks. Database publication and
-orphan recovery must be integrated separately before these files become durable
-accepted application state. See `packages/keri/src/db/payload-store.md`.
+`PayloadArchive` publishes immutable file references in private LMDB tables
+only after file and directory flushes. Recovery walks directory entries and
+rows incrementally, removes unreferenced files, and fails closed on missing
+referenced objects. The host must own its archive directory exclusively across
+processes. KERIpy wire tables remain separate and unchanged.
 
-`EssrRecipient` binds one explicitly hosted habitat and reloads accepted EXNs
-before decrypting their committed raw ESSR bytes. It checks source/destination,
-digest, authentication, and SCS framing before plaintext staging. Ciphertext
-evidence remains in `.essrs`; the returned body is a non-owning file view.
-See `packages/keri/src/app/essr.md` for ownership and admission limits.
+`PayloadStore.adopt` transfers mutation ownership while preserving borrowed
+readers; stale request cleanup cannot delete published content. Native filesystem
+operations use Deno and `@std/path`; the npm packaging shim supplies fsync.
+Final names use scoped owner identities such as `essr.SAID` and `plain.SAID`,
+with temporary UUIDs confined to staging. These names do not claim to be
+independent payload hashes. See `packages/keri/src/db/payload-store.md`.
+
+`Baser` owns its archive lifetime. Startup removes `.essrs` rows lacking accepted
+or escrow ownership with a key-only scan. `Exchanger` carries reopenable ESSR
+wire through acceptance, escrow, and replay; `.essrs` retains individual
+KERIpy-readable Texters. Private canonical wire preserves order and repeated
+fragments despite `.essrs` set semantics. KERIpy-origin rows without private
+metadata remain usable through a bounded borrowed view; retry snapshots and
+publishes them without deleting prior evidence on failure. Such rows retain only
+the insertion order and deduplication KERIpy actually stored.
+
+`Exchanger` and `EssrRecipient` expose Effection operations that join cancellable
+file reads and cleanup. Recipient processing binds one explicitly hosted habitat
+and checks the accepted EXN, digest, sealed-box authentication, and SCS framing
+before plaintext staging. `Baser.savePlaintext` stores authenticated output
+separately from ciphertext evidence; its reopened body view retains no full
+plaintext buffer. See `packages/keri/src/app/essr.md` for ownership and limits.
+
+Runtime dispatch and settlement are Effection operations; mailbox batch callbacks may return an operation. Finish
+one dispatch before advancing its source or marking a mailbox batch handed off.
+The receiving mailbox AID travels as an explicit per-message argument; never
+store it in mutable request-global state across a suspension. Local habitat bootstrap
+configuration remains synchronous because it processes only its own endpoint
+replies directly through Revery.
 
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing

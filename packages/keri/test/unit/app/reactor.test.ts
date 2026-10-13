@@ -1,11 +1,13 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { Cigar, Diger } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { dispatchEnvelope } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
+import { KeriDispatchEnvelope, TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
 import { query as makeQuerySerder } from "../../../src/core/protocol-eventing.ts";
+import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
@@ -34,16 +36,16 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
       }) as typeof reactor.kevery.processQuery;
 
       const query = hab.endorse(makeQuerySerder("ksn", { i: hab.pre, src: hab.pre }), { pipelined: false });
-      reactor.processChunk(query.slice(0, -1));
+      yield* reactor.processChunk(query.slice(0, -1));
       assertEquals(seen, null);
-      reactor.processChunk(query.slice(-1));
+      yield* reactor.processChunk(query.slice(-1));
       assertEquals(seen, null, "Chunk exhaustion must not dispatch an open attachment set");
-      reactor.processChunk(query);
+      yield* reactor.processChunk(query);
       assertExists(seen, "The following body closes the previous query");
       seen = null;
       // Queued complete records finish independently of the open stream.
       reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       if (!seen) {
         throw new Error("Expected normalized query envelope.");
@@ -108,7 +110,7 @@ Deno.test("app/reactor - cloned events replay attached non-transferable receipt 
       for (const msg of source.db.clonePreIter(controller.pre, 0)) {
         reactor.ingest(msg);
       }
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertEquals(
         remote.db.rcts.get(dgKey(controller.pre, event.said)).length,
@@ -183,7 +185,7 @@ Deno.test("app/reactor - cloned events replay attached transferable receipt quad
       for (const msg of source.db.clonePreIter(controller.pre, 0)) {
         reactor.ingest(msg);
       }
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertEquals(
         remote.db.vrcs.get(dgKey(controller.pre, event.said)).length,
@@ -219,7 +221,7 @@ Deno.test("app/reactor - query parsing keeps non-transferable endorsements as ru
       }) as typeof reactor.kevery.processQuery;
 
       reactor.ingest(hab.query(hab.pre, hab.pre, {}, "ksn"));
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       if (!seen) {
         throw new Error("Expected normalized query envelope.");
@@ -259,7 +261,7 @@ Deno.test("app/reactor - reply parsing normalizes transferable groups into dispa
       }) as typeof reactor.revery.processReply;
 
       reactor.ingest(hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true));
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertInstanceOf(seenTsg, TransIdxSigGroup);
       if (!seenTsg) {
@@ -299,7 +301,7 @@ Deno.test("app/reactor - reply parsing normalizes non-transferable receipt coupl
       reactor.ingest(
         hab.makeLocScheme("http://127.0.0.1:9723/", hab.pre, "http"),
       );
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertInstanceOf(seenCigar, Cigar);
       const captured = seenCigar as Cigar;
@@ -329,7 +331,7 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
       ingestingReactor.ingest(
         hab.makeLocScheme("http://127.0.0.1:9724/", hab.pre, "http"),
       );
-      ingestingReactor.processOnce();
+      yield* ingestingReactor.processOnce();
 
       const replay = hab.loadLocScheme(hab.pre, "http");
       assertExists(replay);
@@ -342,7 +344,7 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
       }) as typeof replayReactor.revery.processReply;
 
       replayReactor.ingest(replay);
-      replayReactor.processOnce();
+      yield* replayReactor.processOnce();
 
       assertInstanceOf(seenCigar, Cigar);
       const captured = seenCigar as Cigar;
@@ -396,7 +398,7 @@ Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", 
       }) as typeof reactor.kevery.processReceipt;
 
       reactor.ingest(witness.witness(event));
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertEquals(seen, 1);
     } finally {
@@ -427,11 +429,11 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
       reactor.ingest(
         hab.endorse(makeQuerySerder("ksn", { i: hab.pre })),
       );
-      reactor.processOnce();
+      yield* reactor.processOnce();
       assertEquals(reactor.kevery.cues.pull(), undefined);
 
       reactor.ingest(hab.query(hab.pre, hab.pre, {}, "bogus"));
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       const cue = reactor.kevery.cues.pull();
       assertExists(cue);
@@ -479,13 +481,13 @@ Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escr
 
       const reactor = new Reactor(remote);
       reactor.ingest(icp);
-      reactor.processOnce();
+      yield* reactor.processOnce();
       while (!reactor.cues.empty) {
         reactor.cues.pull();
       }
 
       reactor.ingest(rotatedReply);
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertEquals(remote.db.rpes.cnt(), 1);
       const cue = reactor.cues.pull();
@@ -502,4 +504,39 @@ Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escr
       yield* source.close(true);
     }
   });
+});
+
+Deno.test("runtime dispatch waits for an exchange and keeps its mailbox identity explicit", async () => {
+  const [serder] = exchange("/test", {}, { sender: "EA2X8Lfrl9lZbCGz8cfKIvM_cqLyTYVLSFLhnttezlzQ" });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let completed = false;
+  let mailbox: string | null | undefined;
+  const work = run(function*() {
+    yield* dispatchEnvelope(
+      new KeriDispatchEnvelope({ serder, attachmentGroups: [], local: false }),
+      {} as never,
+      {} as never,
+      {
+        /** Hold dispatch at the real Operation boundary until simulated storage finishes. */
+        *processEvent(args) {
+          mailbox = args.mailboxAid;
+          yield* call(() => gate);
+        },
+      },
+      {},
+      "mailbox-a",
+    );
+    completed = true;
+  });
+
+  // The pending handler models a payload sink; returning early would let ingress outrun storage.
+  await Promise.resolve();
+  assertEquals(completed, false);
+  assertEquals(mailbox, "mailbox-a");
+  release();
+  await work;
+  assertEquals(completed, true);
 });

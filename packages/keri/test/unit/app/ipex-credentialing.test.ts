@@ -214,10 +214,10 @@ Deno.test("IPEX credential artifacts settle in a fresh holder verifier and admit
         },
       });
       for (const message of grant.support) {
-        holderReactor.processCompleteChunk(message);
+        yield* holderReactor.processCompleteChunk(message);
       }
-      holderReactor.processEscrowsOnce();
-      processCredentialPresentationArtifacts(holderReactor, grant.artifacts);
+      yield* holderReactor.processEscrowsOnce();
+      yield* processCredentialPresentationArtifacts(holderReactor, grant.artifacts);
 
       assertEquals(holderReger.saved.get([creder.said!])?.qb64, creder.said);
       assertEquals(new CredentialWallet(holderReger).list({ aid: holder.pre }), [creder.said]);

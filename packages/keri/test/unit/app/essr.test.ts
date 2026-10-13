@@ -1,4 +1,15 @@
-import { collectPayload, concatBytes, Diger, Encrypter, MtrDex, type Payload, Prefixer, Texter } from "cesr-ts";
+import {
+  collectPayload,
+  concatBytes,
+  Diger,
+  Encrypter,
+  essrPayload,
+  MtrDex,
+  type Payload,
+  Prefixer,
+  Texter,
+  Vrsn_1_0,
+} from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { EssrError, EssrRecipient } from "../../../src/app/essr.ts";
@@ -6,7 +17,12 @@ import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
-import { PayloadStore } from "../../../src/db/payload-store.ts";
+import { type FilePayloadSink, PayloadStore } from "../../../src/db/payload-store.ts";
+
+/** Read the tiny fixture directories without importing a separate filesystem runtime. */
+function names(path: string): string[] {
+  return Array.from(Deno.readDirSync(path), (entry) => entry.name);
+}
 
 /** Inspect this test-owned directory without depending on Node filesystem APIs. */
 async function entries(root: string): Promise<string[]> {
@@ -58,13 +74,13 @@ function seal(recipient: Hab, plain: Uint8Array): Uint8Array {
 }
 
 /** Sign and accept through the real Exchanger; keep ciphertext as replay evidence. */
-function accept(
+async function accept(
   hby: Habery,
   sender: Hab,
   recipient: Hab,
   cipher: Uint8Array,
   modifiers: Partial<{ src: string; dest: string }> = {},
-): string {
+): Promise<string> {
   const [serder] = exchange("/essr/req", {}, {
     sender: sender.pre,
     diger: new Diger({ raw: Diger.digest(cipher, MtrDex.Blake3_256), code: MtrDex.Blake3_256 }),
@@ -76,11 +92,15 @@ function accept(
     new Diger({ qb64: sender.kever!.said }),
     sender.sign(serder.raw, true),
   );
-  const result = new Exchanger(hby).processEvent({
-    serder,
-    tsgs: [tsg],
-    essrs: [new Texter({ raw: cipher, code: MtrDex.Bytes_L0 })],
-  });
+  const texter = new Texter({ raw: cipher, code: MtrDex.Bytes_L0 });
+  const wire = fragmentsPayload(texter.qb64b);
+  const result = await run(() =>
+    new Exchanger(hby).processEvent({
+      serder,
+      tsgs: [tsg],
+      essr: essrPayload({ ...wire, discard: async () => {} }, 1, cipher.length, Vrsn_1_0),
+    })
+  );
   assertEquals(result.kind, "accept");
   return serder.said!;
 }
@@ -91,8 +111,9 @@ Deno.test("ESSR recipient decrypts accepted SCS content before staging and prese
     // Nonempty padding is legal and must be skipped with the full Bexter length.
     const plain = plaintext(sender, body, "XSCS", "4AABabcd");
     const cipher = seal(recipient, plain);
-    const said = accept(hby, sender, recipient, cipher);
-    const result = await new EssrRecipient(recipient, store, 4096).decrypt(said, fragmentsPayload(cipher));
+    const said = await accept(hby, sender, recipient, cipher);
+    const receiver = new EssrRecipient(recipient, store, 4096);
+    const result = await Promise.resolve(run(() => receiver.decrypt(said, fragmentsPayload(cipher))));
     assertEquals(await collectPayload(result.plaintext, 4096), plain);
     assertEquals(await collectPayload(result.body, 4096), body);
     assertEquals(hby.db.essrs.get([said])[0].raw, cipher);
@@ -109,15 +130,18 @@ Deno.test("ESSR recipient rejects unaccepted and misaddressed exchanges before r
     const cipher = seal(recipient, plaintext(sender, new TextEncoder().encode("-AAA")));
     const payload = fragmentsPayload(cipher);
     const receiver = new EssrRecipient(recipient, store, 4096);
-    const unaccepted = await assertRejects(() => receiver.decrypt("missing", payload), EssrError);
+    const unaccepted = await assertRejects(
+      () => Promise.resolve(run(() => receiver.decrypt("missing", payload))),
+      EssrError,
+    );
     assertEquals(unaccepted.kind, "unaccepted");
     for (const modifiers of [{ dest: sender.pre }, { src: recipient.pre }]) {
-      const said = accept(hby, sender, recipient, cipher, modifiers);
-      const failure = await assertRejects(() => receiver.decrypt(said, payload), EssrError);
+      const said = await accept(hby, sender, recipient, cipher, modifiers);
+      const failure = await assertRejects(() => Promise.resolve(run(() => receiver.decrypt(said, payload))), EssrError);
       assertEquals(failure.kind, "envelope");
     }
     // PayloadStore.stage has never been called, so even its directory is absent.
-    assertEquals(await entries(root), []);
+    assertEquals(names(root), []);
   });
 });
 
@@ -126,19 +150,28 @@ Deno.test("ESSR digest, sealed-box authentication, and inner source failures wri
     const body = new TextEncoder().encode("-AAA");
     const receiver = new EssrRecipient(recipient, store, 4096);
     const cipher = seal(recipient, plaintext(sender, body));
-    const said = accept(hby, sender, recipient, cipher);
+    const said = await accept(hby, sender, recipient, cipher);
     const tampered = cipher.slice();
     tampered[tampered.length - 1] ^= 1;
-    let failure = await assertRejects(() => receiver.decrypt(said, fragmentsPayload(tampered)), EssrError);
+    let failure = await assertRejects(
+      () => Promise.resolve(run(() => receiver.decrypt(said, fragmentsPayload(tampered)))),
+      EssrError,
+    );
     assertEquals(failure.kind, "digest");
     // Commit the tampered ciphertext to isolate crypto authentication from digest checking.
-    const corruptSaid = accept(hby, sender, recipient, tampered);
-    failure = await assertRejects(() => receiver.decrypt(corruptSaid, fragmentsPayload(tampered)), EssrError);
+    const corruptSaid = await accept(hby, sender, recipient, tampered);
+    failure = await assertRejects(
+      () => Promise.resolve(run(() => receiver.decrypt(corruptSaid, fragmentsPayload(tampered)))),
+      EssrError,
+    );
     assertEquals(failure.kind, "decrypt");
     // A different local key must not become a fallback for the addressed recipient.
     const foreign = seal(sender, plaintext(sender, body));
-    const foreignSaid = accept(hby, sender, recipient, foreign);
-    failure = await assertRejects(() => receiver.decrypt(foreignSaid, fragmentsPayload(foreign)), EssrError);
+    const foreignSaid = await accept(hby, sender, recipient, foreign);
+    failure = await assertRejects(
+      () => Promise.resolve(run(() => receiver.decrypt(foreignSaid, fragmentsPayload(foreign)))),
+      EssrError,
+    );
     assertEquals(failure.kind, "decrypt");
     for (
       const invalid of [
@@ -148,18 +181,21 @@ Deno.test("ESSR digest, sealed-box authentication, and inner source failures wri
       ]
     ) {
       const sealed = seal(recipient, invalid);
-      const invalidSaid = accept(hby, sender, recipient, sealed);
-      failure = await assertRejects(() => receiver.decrypt(invalidSaid, fragmentsPayload(sealed)), EssrError);
+      const invalidSaid = await accept(hby, sender, recipient, sealed);
+      failure = await assertRejects(
+        () => Promise.resolve(run(() => receiver.decrypt(invalidSaid, fragmentsPayload(sealed)))),
+        EssrError,
+      );
       assertEquals(failure.kind, "framing");
     }
-    assertEquals(await entries(root), []);
+    assertEquals(names(root), []);
   });
 });
 
 Deno.test("ESSR cancelled ingress releases its concurrency slot without creating plaintext", async () => {
   await scenario(async ({ hby, sender, recipient, store, root }) => {
     const cipher = seal(recipient, plaintext(sender, new TextEncoder().encode("-AAA")));
-    const said = accept(hby, sender, recipient, cipher);
+    const said = await accept(hby, sender, recipient, cipher);
     const receiver = new EssrRecipient(recipient, store, 4096);
     const controller = new AbortController();
     const waiting: Payload = {
@@ -173,12 +209,12 @@ Deno.test("ESSR cancelled ingress releases its concurrency slot without creating
         yield cipher;
       },
     };
-    const attempt = receiver.decrypt(said, waiting, controller.signal);
+    const attempt = Promise.resolve(run(() => receiver.decrypt(said, waiting, controller.signal)));
     controller.abort(new Error("request cancelled"));
     await assertRejects(() => attempt, Error, "request cancelled");
-    assertEquals(await entries(root), []);
+    assertEquals(names(root), []);
     // A new request proves the cancelled attempt released admission state.
-    const next = await receiver.decrypt(said, fragmentsPayload(cipher));
+    const next = await Promise.resolve(run(() => receiver.decrypt(said, fragmentsPayload(cipher))));
     await next.plaintext.discard();
   });
 });
@@ -200,7 +236,7 @@ function fragmentsPayload(bytes: Uint8Array): Payload {
 Deno.test("ESSR admission caps one message and rejects concurrent work without queueing", async () => {
   await scenario(async ({ hby, sender, recipient, store, root }) => {
     const cipher = seal(recipient, plaintext(sender, new TextEncoder().encode("-AAA")));
-    const said = accept(hby, sender, recipient, cipher);
+    const said = await accept(hby, sender, recipient, cipher);
     const receiver = new EssrRecipient(recipient, store, 4096);
     let opened = false;
     const oversized: Payload = {
@@ -210,7 +246,10 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
         opened = true;
       },
     };
-    assertEquals((await assertRejects(() => receiver.decrypt(said, oversized), EssrError)).kind, "limit");
+    assertEquals(
+      (await assertRejects(() => Promise.resolve(run(() => receiver.decrypt(said, oversized))), EssrError)).kind,
+      "limit",
+    );
     assertEquals(opened, false);
     let resume!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -225,13 +264,97 @@ Deno.test("ESSR admission caps one message and rejects concurrent work without q
         yield cipher;
       },
     };
-    const first = receiver.decrypt(said, waiting);
-    assertEquals((await assertRejects(() => receiver.decrypt(said, waiting), EssrError)).kind, "busy");
-    assertEquals(await entries(root), []);
+    const first = Promise.resolve(run(() => receiver.decrypt(said, waiting)));
+    assertEquals(
+      (await assertRejects(() => Promise.resolve(run(() => receiver.decrypt(said, waiting))), EssrError)).kind,
+      "busy",
+    );
+    assertEquals(names(root), []);
     resume();
     const result = await first;
     await result.plaintext.discard();
     assertThrows(() => new EssrRecipient(recipient, store, Infinity), RangeError);
     assertThrows(() => new EssrRecipient(recipient, store, 4096, 0), RangeError);
+  });
+});
+
+Deno.test("halting an ESSR recipient operation joins its input cleanup and releases admission", async () => {
+  await scenario(async ({ hby, sender, recipient, store, root }) => {
+    const cipher = seal(recipient, plaintext(sender, new TextEncoder().encode("-AAA")));
+    const said = await accept(hby, sender, recipient, cipher);
+    let entered!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let closed = false;
+    const waiting: Payload = {
+      size: cipher.length,
+      /** Remain pending until the recipient's Effection scope aborts this read. */
+      async *open(signal) {
+        try {
+          entered();
+          await new Promise<void>((_resolve, reject) => {
+            signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+          });
+          yield cipher;
+        } finally {
+          closed = true;
+        }
+      },
+    };
+    const receiver = new EssrRecipient(recipient, store, 4096);
+    let continued = false;
+    const task = run(function*() {
+      yield* receiver.decrypt(said, waiting);
+      continued = true;
+    });
+    await reading;
+    await task.halt();
+    assertEquals(closed, true);
+    assertEquals(continued, false); // Scope cancellation must remain abrupt after cleanup.
+    assertEquals(names(root), []);
+    const result = await run(() => receiver.decrypt(said, fragmentsPayload(cipher)));
+    await result.plaintext.discard();
+  });
+});
+
+Deno.test("recipient cancellation disposes a finished plaintext file before result transfer", async () => {
+  await scenario(async ({ hby, sender, recipient, root }) => {
+    const cipher = seal(recipient, plaintext(sender, new TextEncoder().encode("-AAA")));
+    const said = await accept(hby, sender, recipient, cipher);
+    let finished!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    /** Pause only the handoff after real filesystem finish has transferred its stage. */
+    class HandoffStore extends PayloadStore {
+      /** Real writes and fsync finish precede a cancellation-controlled cleanup gate. */
+      override async stage(maxBytes: number, signal?: AbortSignal): Promise<FilePayloadSink> {
+        const sink = await super.stage(maxBytes, signal);
+        return {
+          write: (chunk) => sink.write(chunk),
+          finish: () => sink.finish(),
+          /** Hold the leaf after finish so cancellation wins before its caller receives ownership. */
+          async abort() {
+            finished();
+            if (!signal?.aborted) {
+              await new Promise<void>((resolve) => signal!.addEventListener("abort", () => resolve(), { once: true }));
+            }
+            await sink.abort();
+          },
+        };
+      }
+    }
+    const store = new HandoffStore(root);
+    try {
+      const task = run(() => new EssrRecipient(recipient, store, 4096).decrypt(said, fragmentsPayload(cipher)));
+      await ready;
+      assertEquals((names(`${root}/staging`)).length, 1);
+      await task.halt();
+      // The operation joins the leaf and disposes the result that could not reach a consumer.
+      assertEquals(names(`${root}/staging`), []);
+    } finally {
+      await store.close();
+    }
   });
 });

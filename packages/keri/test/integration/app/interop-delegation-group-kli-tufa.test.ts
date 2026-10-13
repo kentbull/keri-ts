@@ -705,7 +705,7 @@ async function postTufaGroupDelegationRequest(args: {
         // expects for a witnessed delegated group inception.
         const receiptMessage = args.witness ? yield* requestTufaWitnessReceipt(args.witness, message) : null;
         if (receiptMessage) {
-          settleRuntimeIngress(runtime, [receiptMessage], { local: false });
+          yield* settleRuntimeIngress(runtime, [receiptMessage], { local: false });
         }
         let wireMessage = message;
         if (receiptMessage) {

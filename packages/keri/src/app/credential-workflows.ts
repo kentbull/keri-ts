@@ -239,14 +239,14 @@ export function exportCredentialStream(
 }
 
 /** Import one CESR credential stream and return newly saved credential SAIDs. */
-export function importCredentialStream(
+export function* importCredentialStream(
   runtime: AgentRuntime,
   reger: Reger,
   bytes: Uint8Array,
-): CredentialImportResult {
+): Operation<CredentialImportResult> {
   const before = savedCredentials(reger);
-  settleRuntimeIngress(runtime, [bytes]);
-  runtime.reactor.processEscrowsOnce();
+  yield* settleRuntimeIngress(runtime, [bytes]);
+  yield* runtime.reactor.processEscrowsOnce();
   return { saved: [...savedCredentials(reger)].filter((said) => !before.has(said)) };
 }
 

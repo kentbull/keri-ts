@@ -1,4 +1,4 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import {
   Diger,
@@ -49,17 +49,19 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
         new Diger({ qb64: serder.said! }),
       ]);
 
-      dispatchEnvelope(
-        new KeriDispatchEnvelope({
-          serder,
-          attachmentGroups: [],
-          local: false,
-          sscs: [first, second],
-        }),
-        revery,
-        kevery,
-        undefined,
-        { tvy },
+      yield* call(() =>
+        dispatchEnvelope(
+          new KeriDispatchEnvelope({
+            serder,
+            attachmentGroups: [],
+            local: false,
+            sscs: [first, second],
+          }),
+          revery,
+          kevery,
+          undefined,
+          { tvy },
+        )
       );
 
       assertEquals(calls.length, 1);
@@ -113,17 +115,19 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
         new Diger({ qb64: serder.said! }),
       ]);
 
-      dispatchEnvelope(
-        new KeriDispatchEnvelope({
-          serder: serder as unknown as SerderKERI,
-          attachmentGroups: [],
-          local: false,
-          ssts: [first, second],
-        }),
-        revery,
-        kevery,
-        undefined,
-        { vry },
+      yield* call(() =>
+        dispatchEnvelope(
+          new KeriDispatchEnvelope({
+            serder: serder as unknown as SerderKERI,
+            attachmentGroups: [],
+            local: false,
+            ssts: [first, second],
+          }),
+          revery,
+          kevery,
+          undefined,
+          { vry },
+        )
       );
 
       assertEquals(calls.length, 1);
@@ -165,7 +169,7 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
         },
       });
 
-      reactor.processEscrowsOnce();
+      yield* reactor.processEscrowsOnce();
       assertEquals(telEscrows, 1);
       assertEquals(verifierEscrows, 1);
     } finally {

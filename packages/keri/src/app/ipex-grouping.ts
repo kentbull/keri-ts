@@ -77,15 +77,15 @@ export function* approveMultisigIpex(
   }
   const peerAttachment = multisigPathedAttachment(hby, wrapperSaid, "exn");
   if (peerAttachment.length > 0) {
-    runtime.reactor.processCompleteChunk(
+    yield* runtime.reactor.processCompleteChunk(
       concatBytes(embedded.raw, peerAttachment),
       { local: true },
     );
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
   }
   const approved = groupIpexPartial(hby, groupHab, embedded, wrapperSaid);
-  runtime.reactor.processCompleteChunk(approved, { local: true });
-  runtime.reactor.processEscrowsOnce();
+  yield* runtime.reactor.processCompleteChunk(approved, { local: true });
+  yield* runtime.reactor.processEscrowsOnce();
   const deliveries = options.publish ? yield* publishGroupIpexProposal(runtime, groupHab, approved) : [];
   if (
     (options.sendLead ?? true)
@@ -197,14 +197,14 @@ export function* waitForMultisigIpexCompletion(
   const deadline = Date.now() + approvalTimeoutSeconds * 1000;
   while (Date.now() <= deadline) {
     yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     if (runtime.reactor.exchanger.complete(embeddedSaid)) {
       return true;
     }
 
     yield* processMailboxTurn(runtime, { hab: member, budgetMs: 1000 });
     yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     if (runtime.reactor.exchanger.complete(embeddedSaid)) {
       return true;
     }
@@ -247,7 +247,7 @@ export function* nextPendingMultisigIpex(
       return found;
     }
     yield* processMailboxTurn(runtime, { hab: options.hab, budgetMs: options.pollBudgetMs });
-    runtime.reactor.processEscrowsOnce();
+    yield* runtime.reactor.processEscrowsOnce();
     const afterPoll = findPendingMultisigIpex(hby, runtime);
     if (afterPoll) {
       return afterPoll;

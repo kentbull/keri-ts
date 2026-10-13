@@ -1,3 +1,4 @@
+import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { SerderKERI } from "../../../../../cesr/mod.ts";
 import {
@@ -102,26 +103,21 @@ Deno.test("app/protocol/mailbox-admin - confirmation is driven by accepted ends 
   );
 });
 
-Deno.test("app/protocol/mailbox-admin - ingest settles parser state without responder side effects", () => {
+Deno.test("app/protocol/mailbox-admin - ingest settles parser state without responder side effects", async () => {
   const bytes = new Uint8Array([1, 2, 3]);
   const settled: Array<{ bytes: Uint8Array; local: boolean | undefined }> = [];
   let activeMailboxAid: string | null = null;
   const runtime = {
     reactor: {
-      processCompleteChunk(
+      *processCompleteChunk(
         bytes: Uint8Array,
-        { local }: { local?: boolean } = {},
+        { local, mailboxAid }: { local?: boolean; mailboxAid?: string | null } = {},
       ) {
         settled.push({ bytes, local });
+        activeMailboxAid = mailboxAid ?? null;
       },
-      processEscrowsOnce() {
+      *processEscrowsOnce() {
         return;
-      },
-    },
-    mailboxDirector: {
-      withActiveMailboxAid<T>(aid: string | null, fn: () => T): T {
-        activeMailboxAid = aid;
-        return fn();
       },
     },
     hby: {
@@ -133,7 +129,7 @@ Deno.test("app/protocol/mailbox-admin - ingest settles parser state without resp
     },
   } as unknown as AgentRuntime;
 
-  settleMailboxAdminIngress(runtime, bytes, "EMBX");
+  await run(() => settleMailboxAdminIngress(runtime, bytes, "EMBX"));
 
   assertEquals(activeMailboxAid, "EMBX");
   assertEquals(settled, [{ bytes, local: undefined }]);

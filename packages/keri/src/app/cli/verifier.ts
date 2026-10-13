@@ -3,7 +3,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import { createVerifierCueBaser } from "../../db/verifier-cueing.ts";
 import type { AgentRuntime } from "../agent-runtime.ts";
-import { validatorsFromVerifierConfig, VerifierAgent, type VerifierAgentProcessResult } from "../verifier-agent.ts";
+import { validatorsFromVerifierConfig, VerifierAgent } from "../verifier-agent.ts";
 import { withAgentRuntime } from "./common/context.ts";
 
 interface VerifierRunArgs {
@@ -67,13 +67,13 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
         });
 
         if (runArgs.once ?? false) {
-          const result = yield* processAgentOnce(agent);
+          const result = yield* agent.processOnce();
           console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
           return;
         }
 
         while (true) {
-          const result = yield* processAgentOnce(agent);
+          const result = yield* agent.processOnce();
           console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
           yield* sleep(runArgs.intervalMs ?? 1000);
         }
@@ -82,13 +82,6 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
       }
     },
   );
-}
-
-function* processAgentOnce(agent: VerifierAgent): Operation<VerifierAgentProcessResult> {
-  return yield* action((resolve, reject) => {
-    agent.processOnce().then(resolve, reject);
-    return () => {};
-  });
 }
 
 function requireReger(runtime: AgentRuntime): Reger {

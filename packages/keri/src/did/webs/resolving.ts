@@ -44,8 +44,8 @@ export function* resolveDidWebs(
     fallbackUrls.keriCesr,
     options.insecureHttp ?? false,
   );
-  settleRuntimeIngress(runtime, [cesr], { local: false });
-  runtime.reactor.processEscrowsOnce();
+  yield* settleRuntimeIngress(runtime, [cesr], { local: false });
+  yield* runtime.reactor.processEscrowsOnce();
   const expected = generateBareDidDocument(runtime, parsed.canonical);
   const hosted = yield* fetchJsonWithFallback(
     urls.didJson,

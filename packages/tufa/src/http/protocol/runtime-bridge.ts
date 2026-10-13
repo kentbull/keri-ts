@@ -1,11 +1,10 @@
-import type { Operation } from "effection";
+import { type Operation } from "effection";
 import { type AgentRuntime, type CueEmission, type Hab, settleRuntimeIngress } from "keri-ts/runtime";
 
 /**
  * Ingest one mailbox-aware request payload through the shared runtime.
  *
- * The request-scoped mailbox AID is set only for the duration of parsing and
- * cue handling so `/fwd` authorization can stay tied to the mailbox endpoint
+ * The request-scoped mailbox AID travels with each dispatch so `/fwd` authorization can stay tied to the mailbox endpoint
  * that actually received the request.
  */
 export function* processRuntimeRequest(
@@ -14,9 +13,7 @@ export function* processRuntimeRequest(
   mailboxAid: string | null,
   serviceHab?: Hab,
 ): Operation<CueEmission[]> {
-  runtime.mailboxDirector.withActiveMailboxAid(mailboxAid, () => {
-    settleRuntimeIngress(runtime, [bytes]);
-  });
+  yield* settleRuntimeIngress(runtime, [bytes], { mailboxAid });
   return yield* drainRuntimeCues(runtime, serviceHab);
 }
 

@@ -9,6 +9,7 @@ import { ValidationError } from "./errors.ts";
  * choose the v1/v2 code family.
  */
 export type AttachmentCounterName =
+  | "ESSRPayloadGroup"
   | "AttachmentGroup"
   | "ControllerIdxSigs"
   | "WitnessIdxSigs"

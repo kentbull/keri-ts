@@ -838,7 +838,7 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
       const reactor = new Reactor(remote);
 
       reactor.ingest(query);
-      reactor.processOnce();
+      yield* reactor.processOnce();
 
       assertEquals(remote.db.qnfs.cnt(), 1);
 
@@ -1460,7 +1460,7 @@ Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fu
 
       const reactor = new Reactor(remote);
       reactor.ingest(witness.witness(controllerEvent));
-      reactor.processOnce();
+      yield* reactor.processOnce();
       kvy.processEscrows();
 
       kvy.processQueryNotFound();

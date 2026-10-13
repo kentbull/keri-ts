@@ -1,4 +1,4 @@
-import { run } from "effection";
+import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { Diger, Prefixer } from "../../../../cesr/mod.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
@@ -187,17 +187,19 @@ Deno.test("Multiplexor rejects nonlocal group participation proposals", async ()
 
       const exchanger = new Exchanger(hby);
       loadMultisigHandlers(hby, exchanger);
-      const routeDecision = exchanger.processEvent({
-        serder: proposal,
-        tsgs: [
-          new TransIdxSigGroup(
-            new Prefixer({ qb64: sender.pre }),
-            sender.kever!.sner,
-            new Diger({ qb64: sender.kever!.said }),
-            sender.sign(proposal.raw, true),
-          ),
-        ],
-      });
+      const routeDecision = yield* call(() =>
+        exchanger.processEvent({
+          serder: proposal,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: sender.pre }),
+              sender.kever!.sner,
+              new Diger({ qb64: sender.kever!.said }),
+              sender.sign(proposal.raw, true),
+            ),
+          ],
+        })
+      );
       assertEquals(routeDecision.kind, "reject");
       assertEquals(hby.db.exns.get([proposal.said!]), null);
     } finally {
@@ -239,17 +241,19 @@ Deno.test("Exchanger lead elects the signer with the lowest group signature inde
       const exchanger = new Exchanger(hby);
       loadIpexHandlers(hby, exchanger);
       loadMultisigHandlers(hby, exchanger);
-      const decision = exchanger.processEvent({
-        serder: grant,
-        tsgs: [
-          new TransIdxSigGroup(
-            new Prefixer({ qb64: group.pre }),
-            groupKever.sner,
-            new Diger({ qb64: groupKever.said }),
-            sigers,
-          ),
-        ],
-      });
+      const decision = yield* call(() =>
+        exchanger.processEvent({
+          serder: grant,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: group.pre }),
+              groupKever.sner,
+              new Diger({ qb64: groupKever.said }),
+              sigers,
+            ),
+          ],
+        })
+      );
 
       assertEquals(decision.kind, "accept");
       assertEquals(exchanger.lead(group, grant.said!), true);
