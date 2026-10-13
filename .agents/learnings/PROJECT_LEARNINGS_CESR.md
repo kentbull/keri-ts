@@ -48,7 +48,7 @@ and use this supplementary adapter at their parsing boundary.
    The async `parse()` entrypoint and frame adapters yield complete GenericGroup
    children early; they retain Serder/ordinary leaf hydration under cursor and `maxFrameBytes`
    limits. Progressive ESSR stores one owned canonical Texter wire sequence with
-   a reopenable decoded view, per-frame byte/item limits, and awaited sink writes.
+   a reopenable decoded view, shared parent-tree byte/item limits, and awaited sink writes.
    Serialization exposes non-owning `framePayload`/`attachmentPayload` views and
    shared `essrChunks` output. Normalize known leaves to one output genus/domain:
    current KERIpy allows one initial attachment GVC, not selectors between leaves
@@ -57,8 +57,15 @@ and use this supplementary adapter at their parsing boundary.
    Internal one-frame candidates remain parser-owned until the public yield;
    malformed enclosures abort all undelivered stages. Runtime consumers use the progressive engine; shared admission and final
    qualification remain, so parser measurements alone are not an end-to-end memory claim.
-   `CesrFrame` carries the hydrated body, attachments, and optional owned ESSR
-   payload. Parsing returns frames directly and rejects on errors. Recursive
+   `CesrFrame` carries the hydrated body, attachments, resolved genus, optional owned
+   ESSR, and parent-owned `nests`. Enclosed child messages retain their own evidence;
+   GenericGroup siblings remain independently progressive. Shared tree credit caps
+   ordinary bytes/leaves, decoded ESSR/items, and 256 message nodes; cursor depth
+   remains 64. `discardFrame` claims all descendant owners before awaited cleanup,
+   preventing duplicate releases from overlapping consumer scopes. A failed later
+   child or finish releases the entire undelivered tree. Serialization, annotation,
+   KERI normalization, and HTTP inspection reject nests explicitly until follow-on
+   PR 3 carries their verification, replay, and ownership semantics. Parsing returns frames directly and rejects on errors. Recursive
    attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not
    arrays of fabricated primitives. Same-domain serialization preserves the bytes.

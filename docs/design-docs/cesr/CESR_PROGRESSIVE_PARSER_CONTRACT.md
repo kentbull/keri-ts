@@ -9,18 +9,19 @@ provides async `parseBytes(bytes, options)` with an explicit finite input budget
 Nested GenericGroups delegate through `yield*` and deliver complete children
 before their enclosing payload finishes. There is no synchronous stream engine.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
-implemented lifecycle to tests. Shared runtime reservations and parent-owned
-nested message trees remain the approved follow-ons in the execution plan.
+implemented lifecycle to tests. Parent-owned nested message trees are implemented; nested runtime processing and
+serialization, shared runtime reservations, and final qualification remain follow-ons.
 
 The parser materializes bodies and ordinary attachment leaves through the existing
 Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
-that resident metadata; `maxAttachmentGroups` separately caps retained ordinary
-leaf objects at 4,096, including empty groups. Structural attachment wrappers flatten to ordered semantic
-leaves; their raw payloads are not retained. Cursor budgets separately bound
+that resident metadata across each pending parent tree; `maxAttachmentGroups` separately caps retained ordinary
+leaf groups at 4,096 per tree, including empty groups. Structural attachment
+wrappers flatten to ordered semantic leaves; nested messages retain their own evidence; their raw payloads are not retained. Cursor budgets separately bound
 producer backing buffers, queued input, and nesting.
 
 ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
-concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per frame. Both
+concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per owned tree. `maxTreeNodes` defaults to 256 including the root;
+the shared cursor retains its `maxDepth` default of 64. Both
 limits are finite even for filesystem sinks. The default is a bounded memory sink;
 `payloadSink(maxWireBytes, signal)` selects another owner. No transfer-sized or
 per-item manifest array is retained. Durable storage references and runtime source/output ownership preserve this
@@ -69,10 +70,21 @@ explicit frame/attachment enclosure, or genuine source EOF. Chunk exhaustion,
 empty chunks, and annotation separators never close an attachment set. An
 unwrapped frame may require a bounded lookahead into the next body's header.
 
-`BodyWithAttachmentGroup` contains exactly one frame. Verify that single frame
-and exact wrapper exhaustion before yielding it. Do not emit its first child
-and only later discover an illegal second child. Attachment groups, native body
-groups, opaque groups, and ESSR fragments are not independent child frames.
+`BodyWithAttachmentGroup` contains exactly one parent message and its enclosed
+attachment region. There, native/non-native body groups or body-with-attachment
+groups introduce owned children, matching frozen KERIpy `927c0cb8` extraction.
+A child's own enclosure controls its descendants; a following body outside an
+attachment enclosure remains an independent message. GenericGroups inside an
+attachment region, multiple wrapper-only messages without a parent body, and
+extra evidence after a closed attachment enclosure are rejected.
+
+`CesrFrame.nests` holds the plain child records in wire order. Each record retains
+its own body, ordinary signatures/attachments, resolved `gvrsn`, and optional ESSR.
+The body's genus metadata remains independent. The parser always supplies the
+resolved frame genus; manually constructed serializer inputs may omit it.
+No child is publicly yielded separately from its parent. Parse the complete owned
+tree and check exact wrapper exhaustion before delivering the parent. The same source
+can still yield earlier independent GenericGroup siblings before this tree completes.
 
 Parsing and authorization remain separate. A `GenericGroup` is structural
 framing; no new ancestor authorization mechanism is invented for it. Content
@@ -142,9 +154,11 @@ readers do. A small view over a larger allocation is rejected rather than
 silently pinning that allocation.
 
 The parser owns unfinished frame resources. On parse failure or cancellation it
-aborts those resources. At yield, completed payload ownership passes to the
-consumer. Internal recursive yields do not transfer ownership: single-frame
-wrappers hold their candidate stages until exact validation. A later sibling error or generator close must not delete earlier
+aborts those resources. At yield, completed payload ownership for the entire tree passes to the
+consumer. `discardFrame(frame)` claims every descendant owner before awaiting
+cleanup, so overlapping or repeated consumer cleanup releases each owner once.
+It attempts all owners even when one discard fails. Internal recursive yields do not transfer ownership: parent message
+wrappers hold all descendant stages until exact validation and finalization. A later sibling error or generator close must not delete earlier
 yielded payloads. Consumers discard rejected/unclaimed owners and promote
 accepted content only after required verification.
 
@@ -186,7 +200,11 @@ same references incrementally.
 `framePayload()` and `attachmentPayload()` return non-owning reopenable views of
 one admitted frame. Ordinary metadata stays within the parser's frame budget;
 ESSR wire is consumed incrementally through `essrChunks()`. The caller retains
-its `EssrPayload` owner until all output readers finish. Output chunks are owned
+its `EssrPayload` owner until all output readers finish. Nested trees currently
+fail explicitly at `framePayload`, `attachmentPayload`, annotation, KERI envelope
+normalization, and HTTP message inspection. The immediate runtime/serialization
+follow-on must preserve child evidence and verification order before these
+boundaries can accept nests; none may silently omit or flatten them. Output chunks are owned
 copies of at most 64 KiB; custom ESSR wire readers retain the existing 1 MiB
 maximum backing-allocation contract.
 
@@ -219,6 +237,12 @@ cancellation; an async iterable must not escape its runtime lifetime. A supplied
 generic async source must cooperate with cancellation to stop its own I/O; the
 parser cannot force an arbitrary pending promise to settle. Parser cancellation
 must not wait indefinitely for an uncooperative iterator to close.
+
+Tree admission charges each retained body and ordinary group once, before
+hydration; enclosing counters do not double-charge descendant wire. Descendants
+share ordinary bytes, leaves, nodes, decoded ESSR bytes, and Texter counts. ESSR
+credit is reserved from the header before payload writes. Each independent stream
+or GenericGroup message starts fresh tree credit.
 
 Resource budgets cover producer chunk size/read-ahead, admitted body/token and
 logical ciphertext sizes, ordinary attachment metadata, nesting depth, concurrent

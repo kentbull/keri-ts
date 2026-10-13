@@ -1,3 +1,4 @@
+import { discardFrame } from "../../core/frame.ts";
 import { parse } from "../../parser/progressive.ts";
 import type { CliIo } from "../types.ts";
 
@@ -119,7 +120,7 @@ async function validateSource(source: AsyncIterable<Uint8Array>, label: string):
         frameCount++;
         attachmentGroupCount += frame.attachments.length + (frame.essr ? 1 : 0);
       } finally {
-        await frame.essr?.discard();
+        await discardFrame(frame);
       }
     }
   } catch (error) {

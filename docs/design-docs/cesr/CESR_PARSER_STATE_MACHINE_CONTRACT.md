@@ -10,16 +10,16 @@ describes payload ownership and resource policy. The atomic engine has been remo
 pull grants one frame of output credit. Generator locals retain nested progress;
 a segmented cursor owns input, declared enclosure ends, and cancellation.
 
-| Boundary                              | Required behavior                                                                  |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| Partial producer read or empty chunk  | Suspend; retain the open frame and exact nested position.                          |
-| Following body                        | Complete the preceding open attachment set with bounded lookahead.                 |
-| Complete attachment enclosure         | Complete its frame; reject attachments outside that enclosure.                     |
-| GenericGroup child                    | Yield a complete child before requesting remaining siblings.                       |
-| BodyWithAttachmentGroup               | Require exactly one complete frame and exact enclosure exhaustion before yielding. |
-| Source EOF                            | Complete an open frame only when no partial attachment remains.                    |
-| Malformed input or terminal shortage  | Throw once and finish; retain delivery of earlier complete frames.                 |
-| Cancellation or early iterator return | Join input cleanup and discard all undelivered payload stages.                     |
+| Boundary                              | Required behavior                                                                |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| Partial producer read or empty chunk  | Suspend; retain the open frame and exact nested position.                        |
+| Following body                        | Complete the preceding open attachment set with bounded lookahead.               |
+| Complete attachment enclosure         | Complete its frame; reject attachments outside that enclosure.                   |
+| GenericGroup child                    | Yield a complete child before requesting remaining siblings.                     |
+| BodyWithAttachmentGroup               | Require one complete parent tree and exact enclosure exhaustion before yielding. |
+| Source EOF                            | Complete an open frame only when no partial attachment remains.                  |
+| Malformed input or terminal shortage  | Throw once and finish; retain delivery of earlier complete frames.               |
+| Cancellation or early iterator return | Join input cleanup and discard all undelivered payload stages.                   |
 
 Source exhaustion supplies EOF; there are no feed, flush, reset, or framed-mode
 APIs. A new source invocation starts with fresh genus selection. Transport chunk
@@ -30,10 +30,15 @@ that later transport bytes could repair.
 `parseBytes` collects finite input under `maxInputBytes` (8 MiB by default),
 returns frames, and propagates rejection. On failure it releases every collected
 payload because ownership has not transferred. Successful streaming or finite
-callers own each frame's ESSR payload and discard it after consumption.
+callers own every descendant ESSR payload and use `discardFrame` after consumption.
 
 Bodies hydrate once through Serder. Ordinary attachment leaves remain admitted
-finite values; structural wrappers flatten into ordered semantic leaves. ESSR
+finite values; attachment wrappers flatten into ordered semantic leaves. Enclosed
+message bodies remain separate `nests` records; their evidence is never flattened.
+A parent yields only after all descendants finish, using shared tree admission.
+`maxTreeNodes` defaults to 256 and existing byte/leaf/ESSR limits aggregate over
+the owned tree. Failed parse/finalization or cancellation releases every
+undelivered stage and finished owner; independent delivered siblings survive. ESSR
 material streams through an awaited sink with explicit count and byte limits.
 Source/sink failures retain their original identity; malformed wire uses parser
 error classes. Parsing does not itself authorize or verify a KERI event.
@@ -83,3 +88,15 @@ Paths below are relative to `packages/cesr/test/unit/parser`.
 KERI source and complete-record dispatch are covered by
 `packages/keri/test/unit/app/reactor.test.ts`. Contract changes require matching
 source, semantic regressions, and reference-version evidence.
+
+## Nested message evidence
+
+`test/unit/parser/nests.test.ts` compares signed Python `927c0cb8` trees in txt/qb2,
+protocol v1/v2 and JSON/CBOR/MGPK/native forms. It covers child-local genus selectors,
+v1 nesting, every-byte splits, malformed later children, closure boundaries,
+shared limits, cancellation during reads and finish, collection failure, and
+repeated recursive disposal. Runtime boundary coverage is in
+`packages/keri/test/unit/app/nested-frame-boundary.test.ts`.
+Nested processing, replay, serialization, and annotation are explicitly unsupported
+at their current public boundaries until the immediate dependent slice preserves
+the complete tree's evidence and ownership.

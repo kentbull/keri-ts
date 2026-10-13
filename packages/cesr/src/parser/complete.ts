@@ -1,4 +1,5 @@
 import { ResourceLimitError } from "../core/errors.ts";
+import { discardFrame } from "../core/frame.ts";
 import type { CesrFrame } from "../core/types.ts";
 import { parse, type ParseOptions } from "./progressive.ts";
 
@@ -41,7 +42,7 @@ export async function parseBytes(bytes: Uint8Array, options: ParseBytesOptions =
     const failures: unknown[] = [];
     for (const frame of frames) {
       try {
-        await frame.essr?.discard();
+        await discardFrame(frame);
       } catch (failure) {
         failures.push(failure);
       }

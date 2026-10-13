@@ -1,4 +1,5 @@
 import { ResourceLimitError } from "../core/errors.ts";
+import { discardFrame } from "../core/frame.ts";
 import { parse, type ParseOptions } from "../parser/progressive.ts";
 
 /** Finite replay policy for the convenience benchmark, independent of protocol sizes. */
@@ -70,7 +71,7 @@ export async function countFrames(
     try {
       frameCount++;
     } finally {
-      await frame.essr?.discard();
+      await discardFrame(frame);
     }
   }
   return frameCount;

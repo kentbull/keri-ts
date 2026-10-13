@@ -5,7 +5,7 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { Ilks, ParserError, ResourceLimitError, type SerderKERI } from "cesr-ts";
+import { discardFrame, Ilks, ParserError, ResourceLimitError, type SerderKERI } from "cesr-ts";
 import { call, each, type Operation, resource, run } from "effection";
 import {
   type AgentRuntime,
@@ -204,12 +204,12 @@ function* ingest(context: ProtocolRequestContext, hosted: HostedRouteResolution)
       for (const frame of yield* each(channel.frames)) {
         yield* call(function*() {
           // Invalid trailing frames still own payloads even when they never reach runtime dispatch.
-          if (frame.essr) {
+          if (frame.essr || frame.nests?.length) {
             yield* resource<void>(function*(provide) {
               try {
                 yield* provide();
               } finally {
-                yield* call(() => frame.essr!.discard());
+                yield* call(() => discardFrame(frame));
               }
             });
           }

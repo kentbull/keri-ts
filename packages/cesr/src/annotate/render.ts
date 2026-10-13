@@ -1,5 +1,6 @@
 import { encodeB64 } from "../core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
+import { requireFlatFrame } from "../core/frame.ts";
 import type { CesrDomain, CesrFrame } from "../core/types.ts";
 import { parseAttachmentGroup, startsFrame } from "../parser/attachments.ts";
 import { readFrameCounter } from "../parser/body.ts";
@@ -303,6 +304,7 @@ export function renderAnnotatedFrames(
   options: RenderOptions,
   input: Uint8Array,
 ): AnnotatedFrame[] {
+  for (const frame of frames) requireFlatFrame(frame, "Annotation");
   const output: AnnotatedFrame[] = [];
   let next = 0;
   let prefix: string[] = [];

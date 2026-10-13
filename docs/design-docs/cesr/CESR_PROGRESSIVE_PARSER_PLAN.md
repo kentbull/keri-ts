@@ -397,6 +397,23 @@ no partial-parent delivery, signature reassignment, duplicate child delivery, or
 scope leakage; enforce tree byte/node/depth limits and cancellation cleanup;
 preserve legitimate single-frame rejection cases.
 
+Implementation prepared: `CesrFrame.nests` owns child frames; frame `gvrsn` records
+resolved attachment genus separately from body metadata. The shared generator
+engine distinguishes enclosed children from GenericGroup siblings and retains
+all descendant stages until parent validation/finalization. Existing frame byte,
+leaf, ESSR byte/item limits aggregate over the tree; `maxTreeNodes` defaults to
+256 and cursor depth remains 64. `discardFrame` claims and disposes every child
+owner, including runtime cleanup paths when normalization rejects nesting.
+
+`reference-nested-vectors.py` verifies frozen imported source bytes and records
+actual signed Python trees, both wire domains, protocol 1/2 JSON/CBOR/MGPK,
+native xip, deeper descendants, attachment enclosures, v1 nesting, and scoped
+v1 child selectors. A GenericGroup in enclosed attachments remains invalid.
+Focused tests exercise every-byte splits, all admission limits, late-child
+failure, read/finish cancellation, and repeated recursive disposal. Serialization,
+annotation, KERI normalization, and HTTP inspection reject nesting explicitly;
+this parser slice does not claim nested runtime or replay support.
+
 ### Follow-on PR 3: nested runtime processing and serialization
 
 Inspect pinned `processMsg`/`msgProcess` and exchange paths to establish actual

@@ -1,4 +1,4 @@
-import { concatBytes, SerderKERI, type Versionage } from "cesr-ts";
+import { concatBytes, discardFrame, SerderKERI, type Versionage } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { call, each, type Operation } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
@@ -566,7 +566,7 @@ function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
         try {
           if (!grant && frame.body instanceof SerderKERI && frame.body.route === IPEX_GRANT_ROUTE) grant = frame.body;
         } finally {
-          if (frame.essr) yield* call(() => frame.essr!.discard());
+          yield* call(() => discardFrame(frame));
         }
         yield* each.next();
       }

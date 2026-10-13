@@ -74,8 +74,9 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
 
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the parser
    lifecycle contract; keep parser behavior traceable to that contract and its
-   tests. Stream genus controls attachment decoding independently of a body
-   protocol version; only unselected streams permit legacy inference.
+   tests. Parent-owned nested frames preserve descendant evidence and resources; public
+   runtime/serialization seams reject them until the dependent migration. Stream
+   genus controls attachment decoding independently of a body protocol version; only unselected streams permit legacy inference.
 2. CESR progressive parsing is an approved performance phase with before/after
    benchmarks. Keep current and target contracts distinct; the atomic production path and old API shims are removed while protocol
    v1/v2 support remains. Final end-to-end qualification is still required.

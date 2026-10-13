@@ -14,7 +14,7 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, type SerderKERI, type Siger } from "cesr-ts";
+import { Cigar, concatBytes, Counter, CtrDexV1, discardFrame, Ilks, type SerderKERI, type Siger } from "cesr-ts";
 import { toEffectionFrames } from "cesr-ts/effection";
 import { createConnection } from "node:net";
 import { action, call, each, type Operation, resource, spawn } from "npm:effection@^3.6.0";
@@ -213,12 +213,12 @@ function inspectReceiptMessage(
     const channel = yield* toEffectionFrames((signal) => chunkBytes(bytes, { signal }));
     let result: { serder: SerderKERI; wigers: readonly Siger[]; cigars: readonly Cigar[] } | undefined;
     for (const frame of yield* each(channel.frames)) {
-      if (frame.essr) {
+      if (frame.essr || frame.nests?.length) {
         yield* resource<void>(function*(provide) {
           try {
             yield* provide();
           } finally {
-            yield* call(() => frame.essr!.discard());
+            yield* call(() => discardFrame(frame));
           }
         });
       }
