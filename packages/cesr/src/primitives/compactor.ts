@@ -1,5 +1,5 @@
 import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { COMPACTOR_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Mapper, type MapperInit, type MapperMap, type MapperValue, parseMapperBody } from "./mapper.ts";
@@ -358,7 +358,7 @@ export class Compactor extends Mapper {
 export function parseCompactor(
   input: Uint8Array,
   version: Versionage,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Compactor {
   const mapper = parseMapperBody(input, version, cold);
   if (!COMPACTOR_CODES.has(mapper.code)) {

@@ -1,6 +1,6 @@
 import { decodeB64, encodeB64 } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import { BEXTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -70,7 +70,7 @@ export class Bexter extends Matter {
  */
 export function parseBexter(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Bexter {
   return new Bexter(parseMatter(input, cold));
 }

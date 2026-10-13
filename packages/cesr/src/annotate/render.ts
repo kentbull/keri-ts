@@ -1,7 +1,7 @@
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { parseBytes } from "../core/parser-engine.ts";
-import type { CesrFrame } from "../core/types.ts";
+import type { CesrDomain, CesrFrame } from "../core/types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
@@ -46,7 +46,7 @@ function spaces(count: number): string {
   return " ".repeat(Math.max(0, count));
 }
 
-function asDomain(raw: Uint8Array): "txt" | "bny" | "msg" {
+function asDomain(raw: Uint8Array): CesrDomain | "msg" {
   try {
     const cold = sniff(raw);
     if (cold === "txt" || cold === "bny" || cold === "msg") return cold;
@@ -79,7 +79,7 @@ function emitLine(
 function parseCounterCompat(
   input: Uint8Array,
   version: Versionage,
-  domain: "txt" | "bny",
+  domain: CesrDomain,
 ) {
   try {
     return parseCounter(input, version, domain);

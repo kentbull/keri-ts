@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { Bexter } from "./bexter.ts";
 import { LabelDex } from "./codex.ts";
 import { THOLDER_NUMERIC_CODES, THOLDER_WEIGHTED_CODES } from "./codex.ts";
@@ -777,7 +777,7 @@ export class Tholder extends Matter {
  */
 export function parseTholder(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Tholder {
   return new Tholder(parseMatter(input, cold));
 }

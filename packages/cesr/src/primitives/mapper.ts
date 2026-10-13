@@ -9,7 +9,8 @@ import {
   SyntaxParseError,
   UnknownCodeError,
 } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import { tokenSize } from "../core/parser-constants.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
@@ -25,8 +26,6 @@ import { parseLabeler } from "./labeler.ts";
 import { Matter, parseMatter } from "./matter.ts";
 import type { Primitive } from "./primitive.ts";
 import { Texter } from "./texter.ts";
-
-type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 
 /** Scalar semantic values representable by CESR-native `Mapper` leaves. */
 export type MapperScalar = null | boolean | number | string;
@@ -150,13 +149,6 @@ function cloneValue<T>(value: T): T {
   return value;
 }
 
-function tokenSize(
-  token: { fullSize: number; fullSizeB2: number },
-  domain: ParseDomain,
-): number {
-  return domain === "bny" ? token.fullSizeB2 : token.fullSize;
-}
-
 function isMapGroupCode(code: string): boolean {
   return AGGOR_MAP_CODES.has(code);
 }
@@ -181,7 +173,7 @@ function canonicalizeNativeRaw(
 function parseCounterProbe(
   input: Uint8Array,
   version: Versionage,
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): ReturnType<typeof parseCounter> | null {
   const attempts: Versionage[] = [
     version,
@@ -209,7 +201,7 @@ function parseCounterProbe(
 
 function parseLabelProbe(
   input: Uint8Array,
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): ReturnType<typeof parseLabeler> | null {
   // A failed label parse is not automatically an error. In a native map
   // payload, it may simply mean the next token is a value rather than a key.
@@ -232,7 +224,7 @@ function parseLabelProbe(
 function parseMapperValueSyntax(
   input: Uint8Array,
   version: Versionage,
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): MapperValueTokenSyntax {
   // Grouped list/map values always start with a counter token, so probe that
   // shape before falling back to plain Matter parsing.
@@ -265,7 +257,7 @@ function parseMapperValueSyntax(
 function parseMapPayloadSyntax(
   input: Uint8Array,
   version: Versionage,
-  domain: ParseDomain,
+  domain: CesrDomain,
   start: number,
   end: number,
 ): MapperSyntaxEntry[] {
@@ -336,7 +328,7 @@ export function interpretMapperBodySyntax(
 export function parseMapperBodySyntax(
   input: Uint8Array,
   version: Versionage,
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): MapperBodySyntax {
   try {
     const counter = parseCounter(input, version, domain);
@@ -959,7 +951,7 @@ export class Mapper {
 export function parseMapperBody(
   input: Uint8Array,
   version: Versionage,
-  domain: ParseDomain,
+  domain: CesrDomain,
 ): Mapper {
   let syntax: MapperBodySyntax;
   try {

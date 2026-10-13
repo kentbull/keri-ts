@@ -1,6 +1,6 @@
 import { b64ToInt } from "../core/bytes.ts";
 import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Protocol } from "../tables/versions.ts";
 import { VERSER_CODES, VERSER_PROTOCOLS } from "./codex.ts";
@@ -80,7 +80,7 @@ export class Verser extends Tagger {
 /** Parse and hydrate `Verser` from txt/qb2 bytes. */
 export function parseVerser(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Verser {
   return new Verser(parseMatter(input, cold));
 }

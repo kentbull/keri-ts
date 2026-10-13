@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { NONCE_CODES, NonceDex } from "./codex.ts";
 import { Diger } from "./diger.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -37,7 +37,7 @@ export class Noncer extends Diger {
 /** Parse and hydrate `Noncer` from txt/qb2 bytes. */
 export function parseNoncer(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Noncer {
   return new Noncer(parseMatter(input, cold));
 }

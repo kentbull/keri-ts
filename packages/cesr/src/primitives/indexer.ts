@@ -11,7 +11,7 @@ import {
   sceil,
 } from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { INDEXER_HARDS, INDEXER_SIZES } from "../tables/indexer.tables.generated.ts";
 import { INDEXED_BOTH_SIG_CODES } from "./codex.ts";
 
@@ -366,7 +366,7 @@ export function parseIndexerFromBinary(input: Uint8Array): Indexer {
 /** Parse indexer using caller-provided cold-start domain hint (`txt` or `bny`). */
 export function parseIndexer(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Indexer {
   return cold === "bny"
     ? parseIndexerFromBinary(input)

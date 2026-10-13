@@ -15,15 +15,13 @@
  */
 import { b, codeB64ToB2, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { parseAttachmentDispatch } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { isCounterGroupLike, isGroupTuple } from "./primitive.ts";
-
-type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 
 function toText(input: Uint8Array): string {
   return t(input);
@@ -41,7 +39,7 @@ function serializeEntryQb64(entry: GroupEntry): string {
 
 function inferSerialized(
   group: CounterGroupLike,
-  sourceDomain: ParseDomain,
+  sourceDomain: CesrDomain,
 ): Uint8Array {
   const qb64 = `${group.qb64}${group.items.map((item) => serializeEntryQb64(item)).join("")}`;
   return sourceDomain === "txt" ? b(qb64) : codeB64ToB2(qb64);
@@ -50,7 +48,7 @@ function inferSerialized(
 /** Constructor payload for rebuilding a structor from an already parsed group. */
 export interface StructorInit {
   group: CounterGroupLike;
-  sourceDomain?: ParseDomain;
+  sourceDomain?: CesrDomain;
   consumed?: number;
   serialized?: Uint8Array;
 }
@@ -67,7 +65,7 @@ export interface StructorInit {
  * - semantic fixed-field values remain plain records outside this class
  */
 export class Structor extends CounterGroup {
-  readonly sourceDomain: ParseDomain;
+  readonly sourceDomain: CesrDomain;
   readonly consumed: number;
   readonly serialized: Uint8Array;
 
@@ -116,7 +114,7 @@ export class Structor extends CounterGroup {
   /** Hydrate a generic structor from an already parsed counter group. */
   static fromGroup(
     group: CounterGroupLike,
-    sourceDomain: ParseDomain = "txt",
+    sourceDomain: CesrDomain = "txt",
   ): Structor {
     return new Structor({ group, sourceDomain });
   }
@@ -131,7 +129,7 @@ export class Structor extends CounterGroup {
 export function parseStructor(
   input: Uint8Array,
   version: Versionage,
-  cold: ParseDomain,
+  cold: CesrDomain,
   allowedCodes?: ReadonlySet<string>,
   expectedFamily = "structor",
 ): Structor {

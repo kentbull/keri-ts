@@ -1,4 +1,4 @@
-import type { AttachmentGroup, ColdCode } from "../core/types.ts";
+import type { AttachmentGroup, CesrDomain } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { type AttachmentDispatchOptions, parseAttachmentDispatchCompat } from "./group-dispatch.ts";
 
@@ -8,9 +8,9 @@ import { type AttachmentDispatchOptions, parseAttachmentDispatchCompat } from ".
  */
 export function parseAttachmentGroup(
   input: Uint8Array,
-  version: Versionage,
-  domain: Extract<ColdCode, "txt" | "bny">,
+  gvrsn: Versionage,
+  domain: CesrDomain,
   options: AttachmentDispatchOptions = {},
 ): { group: AttachmentGroup; consumed: number } {
-  return parseAttachmentDispatchCompat(input, version, domain, options);
+  return parseAttachmentDispatchCompat(input, gvrsn, domain, options);
 }

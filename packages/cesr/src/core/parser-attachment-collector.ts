@@ -3,16 +3,16 @@ import { sniff } from "../parser/cold-start.ts";
 import type { AttachmentDispatchMode } from "../parser/group-dispatch.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { ColdStartError, ShortageError } from "./errors.ts";
-import { isAttachmentDomain } from "./parser-constants.ts";
-import type { AttachmentGroup } from "./types.ts";
+import { isCesrDomain } from "./parser-constants.ts";
+import type { AttachmentGroup, CesrDomain } from "./types.ts";
 
 /** Attachment decoding mode and recognition of the next body. */
 interface AttachmentCollectorOptions {
   attachmentDispatchMode: AttachmentDispatchMode;
   isFrameBoundaryAhead: (
     input: Uint8Array,
-    version: Versionage,
-    cold: "txt" | "bny",
+    gvrsn: Versionage,
+    cold: CesrDomain,
   ) => boolean;
 }
 
@@ -28,8 +28,8 @@ export class AttachmentCollector {
   private readonly attachmentDispatchMode: AttachmentDispatchMode;
   private readonly isFrameBoundaryAhead: (
     input: Uint8Array,
-    version: Versionage,
-    cold: "txt" | "bny",
+    gvrsn: Versionage,
+    cold: CesrDomain,
   ) => boolean;
 
   constructor(options: AttachmentCollectorOptions) {
@@ -43,7 +43,7 @@ export class AttachmentCollector {
    */
   collectTrailingAttachments(
     input: Uint8Array,
-    version: Versionage,
+    gvrsn: Versionage,
     seed: AttachmentGroup[] = [],
     terminal = false,
   ): CollectAttachmentsResult {
@@ -59,7 +59,7 @@ export class AttachmentCollector {
         offset = this.consumeLeadingAno(input, offset);
         continue;
       }
-      if (!isAttachmentDomain(nextCold)) {
+      if (!isCesrDomain(nextCold)) {
         throw new ColdStartError(
           `Unsupported attachment cold code ${nextCold}`,
         );
@@ -69,7 +69,7 @@ export class AttachmentCollector {
         if (
           this.isFrameBoundaryAhead(
             input.slice(offset),
-            version,
+            gvrsn,
             nextCold,
           )
         ) {
@@ -78,7 +78,7 @@ export class AttachmentCollector {
 
         const { group, consumed } = parseAttachmentGroup(
           input.slice(offset),
-          version,
+          gvrsn,
           nextCold,
           { mode: this.attachmentDispatchMode },
         );

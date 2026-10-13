@@ -1,4 +1,4 @@
-import type { CesrFrame } from "../core/types.ts";
+import type { CesrDomain, CesrFrame } from "../core/types.ts";
 
 /** Rendering options for maintainer-facing CESR annotation output. */
 export interface AnnotateOptions {
@@ -6,7 +6,7 @@ export interface AnnotateOptions {
   indent?: number;
   showOffsets?: boolean;
   showRawHex?: boolean;
-  domainHint?: "txt" | "bny" | "auto";
+  domainHint?: CesrDomain | "auto";
   pretty?: boolean;
 }
 

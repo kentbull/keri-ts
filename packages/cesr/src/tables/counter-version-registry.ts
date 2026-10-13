@@ -112,7 +112,7 @@ function supportedMinors<T>(registry: MinorVersionRegistry<T>): number[] {
  * - requested minor must not exceed latest supported minor for that major
  * - selected value binds to latest supported minor for the major
  */
-export function resolveVersionedRegistryValue<T>(
+export function resolveTable<T>(
   registry: VersionedRegistry<T>,
   version: Versionage,
   label = "versioned registry",
@@ -285,7 +285,7 @@ export const LEGACY_COMPAT_COUNTER_CODES_BY_VERSION: VersionedRegistry<
 
 /** Resolve counter codex for a stream version using latest compatible minor. */
 export function resolveCtrDex(version: Versionage): CounterCodex {
-  return resolveVersionedRegistryValue(
+  return resolveTable(
     CtrDexByVersion,
     version,
     "counter codex",
@@ -294,7 +294,7 @@ export function resolveCtrDex(version: Versionage): CounterCodex {
 
 /** Resolve universal codex for a stream version using latest compatible minor. */
 export function resolveUniDex(version: Versionage): CounterCodex {
-  return resolveVersionedRegistryValue(
+  return resolveTable(
     UniDexByVersion,
     version,
     "universal codex",
@@ -303,7 +303,7 @@ export function resolveUniDex(version: Versionage): CounterCodex {
 
 /** Resolve special-universal codex for a stream version. */
 export function resolveSUDex(version: Versionage): CounterCodex {
-  return resolveVersionedRegistryValue(
+  return resolveTable(
     SUDexByVersion,
     version,
     "special-universal codex",
@@ -312,7 +312,7 @@ export function resolveSUDex(version: Versionage): CounterCodex {
 
 /** Resolve message-universal codex for a stream version. */
 export function resolveMUDex(version: Versionage): CounterCodex {
-  return resolveVersionedRegistryValue(
+  return resolveTable(
     MUDexByVersion,
     version,
     "message-universal codex",
@@ -323,7 +323,7 @@ export function resolveMUDex(version: Versionage): CounterCodex {
 export function resolveCounterSizeTable(
   version: Versionage,
 ): ReadonlyMap<string, Cizage> {
-  return resolveVersionedRegistryValue(
+  return resolveTable(
     COUNTER_SIZE_TABLES_BY_VERSION,
     version,
     "counter size table",
@@ -334,7 +334,7 @@ export function resolveCounterSizeTable(
 export function resolveCounterCodeNameTable(
   version: Versionage,
 ): Readonly<Record<string, string>> {
-  return resolveVersionedRegistryValue(
+  return resolveTable(
     COUNTER_CODE_NAMES_BY_VERSION,
     version,
     "counter code-name table",

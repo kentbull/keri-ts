@@ -1,5 +1,5 @@
 import { SerializeError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { dumps, sizeify } from "../serder/serder.ts";
 import { smell } from "../serder/smell.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
@@ -161,7 +161,7 @@ function inferKind(sad: Record<string, unknown>): Kind {
 /** Parse and hydrate `Saider` from txt/qb2 bytes. */
 export function parseSaider(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Saider {
   return new Saider(parseMatter(input, cold));
 }

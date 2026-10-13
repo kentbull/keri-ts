@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { SEALER_CODES } from "../tables/counter-groups.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { CounterGroupLike } from "./primitive.ts";
@@ -30,7 +30,7 @@ export class Sealer extends Structor {
   /** Hydrate a `Sealer` from an already parsed counter-group node. */
   static override fromGroup(
     group: CounterGroupLike,
-    sourceDomain: Extract<ColdCode, "txt" | "bny"> = "txt",
+    sourceDomain: CesrDomain = "txt",
   ): Sealer {
     return new Sealer({ group, sourceDomain });
   }
@@ -40,7 +40,7 @@ export class Sealer extends Structor {
 export function parseSealer(
   input: Uint8Array,
   version: Versionage,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Sealer {
   return new Sealer(
     parseStructor(input, version, cold, SEALER_CODES, "sealer"),

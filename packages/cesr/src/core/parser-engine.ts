@@ -27,7 +27,7 @@ export class CesrParser {
    */
   private readonly framed: boolean;
   private readonly stream: ParserStreamState;
-  private pending: { frame: CesrFrame; version: Versionage } | null = null;
+  private pending: { frame: CesrFrame; gvrsn: Versionage } | null = null;
   private queued: CesrFrame[] = [];
   private readonly frameParser: FrameParser;
   private readonly attachmentCollector: AttachmentCollector;
@@ -43,7 +43,7 @@ export class CesrParser {
     });
     this.attachmentCollector = new AttachmentCollector({
       attachmentDispatchMode,
-      isFrameBoundaryAhead: (input, version, cold) => this.frameParser.isFrameBoundaryAhead(input, version, cold),
+      isFrameBoundaryAhead: (input, gvrsn, cold) => this.frameParser.isFrameBoundaryAhead(input, gvrsn, cold),
     });
   }
 
@@ -74,7 +74,7 @@ export class CesrParser {
         if (pending) {
           const collected = this.attachmentCollector.collectTrailingAttachments(
             this.stream.buffer,
-            pending.version,
+            pending.gvrsn,
             pending.frame.attachments,
             terminal,
           );
@@ -92,11 +92,11 @@ export class CesrParser {
           out.push({ type: "frame", frame: this.queued.shift()! });
         } else {
           if (this.stream.buffer.length === 0) break;
-          const base = this.frameParser.parseFrame(this.stream.buffer, this.stream.streamVersion);
+          const base = this.frameParser.parseFrame(this.stream.buffer, this.stream.streamGvrsn);
           this.stream.consume(base.consumed);
-          this.stream.streamVersion = base.streamVersion;
+          this.stream.streamGvrsn = base.streamGvrsn;
           if (!base.complete) {
-            this.pending = { frame: base.frame, version: base.version };
+            this.pending = { frame: base.frame, gvrsn: base.gvrsn };
             continue;
           }
           this.queued.push(...(base.siblings ?? []));

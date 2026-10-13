@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import { TAG_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -46,7 +46,7 @@ export class Tagger extends Matter {
 /** Parse and hydrate a `Tagger` from txt or qb2 stream bytes. */
 export function parseTagger(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Tagger {
   return new Tagger(parseMatter(input, cold));
 }

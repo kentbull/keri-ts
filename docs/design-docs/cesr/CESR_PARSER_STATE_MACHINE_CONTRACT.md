@@ -112,7 +112,7 @@ existing version-selector, wrapper, and split-stream suites.
 ## Version Context Semantics
 
 `FrameParser` owns genus selection. The stream retains only an explicit selector;
-`streamVersion = null` means no selection has been made. Frame `version` is the
+`streamGvrsn = null` means no selection has been made. Frame `gvrsn` is the
 resolved genus for counters and attachments, never the body's protocol version.
 
 - A top-level `KERIACDCGenusVersion` selects the genus for subsequent frames

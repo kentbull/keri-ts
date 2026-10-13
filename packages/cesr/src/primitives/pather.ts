@@ -1,6 +1,6 @@
 import { b, t } from "../core/bytes.ts";
 import { DeserializeError, UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { Bexter } from "./bexter.ts";
 import { BEXTER_CODES, MtrDex, TEXTER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
@@ -152,7 +152,7 @@ export class Pather extends Matter {
 /** Parse and hydrate a `Pather` from txt/qb2 bytes. */
 export function parsePather(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Pather {
   return new Pather(parseMatter(input, cold));
 }

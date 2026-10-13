@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { Cigar } from "./cigar.ts";
 import { IdrDex, MtrDex, SIGER_CODES } from "./codex.ts";
 import { Indexer, type IndexerInit, parseIndexer } from "./indexer.ts";
@@ -130,7 +130,7 @@ export class Siger extends Indexer {
 /** Parse and hydrate `Siger` from txt or qb2 encoded bytes. */
 export function parseSiger(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Siger {
   return new Siger(parseIndexer(input, cold));
 }

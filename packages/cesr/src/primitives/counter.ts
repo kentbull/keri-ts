@@ -1,6 +1,6 @@
 import { b, b64ToInt, codeB2ToB64, codeB64ToB2, concatBytes, intToB64, nabSextets, sceil } from "../core/bytes.ts";
 import { DeserializeError, ShortageError, UnknownCodeError, VersionError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { resolveCounterCodeNameTable, resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
 import { COUNTER_HARDS } from "../tables/counter.tables.generated.ts";
@@ -435,7 +435,7 @@ export function parseCounterFromBinary(
 export function parseCounter(
   input: Uint8Array,
   version: Versionage,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Counter {
   return cold === "bny" ? parseCounterFromBinary(input, version) : parseCounterFromText(input, version);
 }

@@ -1,4 +1,4 @@
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { Cigar } from "./cigar.ts";
 import { CIGAR_CODES, DATER_CODES, DECIMAL_CODES, NONCE_CODES, SIGER_CODES } from "./codex.ts";
 import { Dater } from "./dater.ts";
@@ -39,7 +39,7 @@ export function hydrateMatter(init: Matter | MatterInit): Matter {
 /** Parse one text/binary matter token and hydrate it through `hydrateMatter()`. */
 export function parseQualifiedMatter(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Matter {
   return hydrateMatter(parseMatter(input, cold));
 }
@@ -58,7 +58,7 @@ export function hydrateIndexer(init: Indexer | IndexerInit): Indexer {
 /** Parse one text/binary indexer token and hydrate it through `hydrateIndexer()`. */
 export function parseQualifiedIndexer(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Indexer {
   return hydrateIndexer(parseIndexer(input, cold));
 }

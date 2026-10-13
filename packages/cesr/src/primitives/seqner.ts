@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { SEQNER_CODES } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 
@@ -35,7 +35,7 @@ export class Seqner extends Matter {
 /** Parse and hydrate `Seqner` from txt/qb2 bytes. */
 export function parseSeqner(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Seqner {
   return new Seqner(parseMatter(input, cold));
 }

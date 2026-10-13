@@ -1,5 +1,5 @@
 import { UnknownCodeError } from "../core/errors.ts";
-import type { ColdCode } from "../core/types.ts";
+import type { CesrDomain } from "../core/types.ts";
 import { CIGAR_CODES, matterCodexName } from "./codex.ts";
 import { Matter, type MatterInit, parseMatter } from "./matter.ts";
 import type { Verfer } from "./verfer.ts";
@@ -43,7 +43,7 @@ export class Cigar extends Matter {
 /** Parse and hydrate `Cigar` from txt/qb2 bytes. */
 export function parseCigar(
   input: Uint8Array,
-  cold: Extract<ColdCode, "txt" | "bny">,
+  cold: CesrDomain,
 ): Cigar {
   return new Cigar(parseMatter(input, cold));
 }

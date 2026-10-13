@@ -11,11 +11,11 @@ import type { ParserState } from "./types.ts";
  */
 export class ParserStreamState {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
-  private activeVersion: Versionage | null;
+  private activeGvrsn: Versionage | null;
 
   /** Initialize with an explicit genus, or leave the stream unselected. */
-  constructor(initialVersion: Versionage | null = null) {
-    this.activeVersion = initialVersion;
+  constructor(initialGvrsn: Versionage | null = null) {
+    this.activeGvrsn = initialGvrsn;
   }
 
   /** Current unconsumed bytes. */
@@ -29,13 +29,13 @@ export class ParserStreamState {
   }
 
   /** Selected stream genus; null permits legacy inference. */
-  get streamVersion(): Versionage | null {
-    return this.activeVersion;
+  get streamGvrsn(): Versionage | null {
+    return this.activeGvrsn;
   }
 
   /** Update active top-level stream version context. */
-  set streamVersion(version: Versionage | null) {
-    this.activeVersion = version;
+  set streamGvrsn(gvrsn: Versionage | null) {
+    this.activeGvrsn = gvrsn;
   }
 
   /** Append bytes to the buffered stream tail. */
@@ -57,8 +57,8 @@ export class ParserStreamState {
   }
 
   /** Reset buffer/offset/version to initial parser state. */
-  reset(initialVersion: Versionage | null = null): void {
+  reset(initialGvrsn: Versionage | null = null): void {
     this.state = { buffer: new Uint8Array(0), offset: 0 };
-    this.activeVersion = initialVersion;
+    this.activeGvrsn = initialGvrsn;
   }
 }
