@@ -17,6 +17,12 @@ the caller; store close only aborts unfinished sinks. Database publication and
 orphan recovery must be integrated separately before these files become durable
 accepted application state. See `packages/keri/src/db/payload-store.md`.
 
+`EssrRecipient` binds one explicitly hosted habitat and reloads accepted EXNs
+before decrypting their committed raw ESSR bytes. It checks source/destination,
+digest, authentication, and SCS framing before plaintext staging. Ciphertext
+evidence remains in `.essrs`; the returned body is a non-owning file view.
+See `packages/keri/src/app/essr.md` for ownership and admission limits.
+
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue
