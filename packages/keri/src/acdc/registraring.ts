@@ -5,7 +5,12 @@ import type { Hab, Habery } from "../app/habbing.ts";
 import { DatabaseNotOpenError, ValidationError } from "../core/errors.ts";
 import { regcept, type RegceptOptions } from "./messaging.ts";
 import type { RegBaser } from "./regbasing.ts";
-import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
+import {
+  type RegistryBlindOptions,
+  type RegistryBlindResult,
+  type RegistryEventDecision,
+  RegistryEventer,
+} from "./regengine.ts";
 import { validateRip } from "./regeventing.ts";
 import { openRegistry, type OpenRegistryOptions, RegistryStore } from "./registering.ts";
 
@@ -147,6 +152,10 @@ export class Registry {
     const rip = regcept(this.hab.pre, options), result = this.processEvent(rip);
     if (result.kind === "reject") throw new ValidationError(`Registry inception rejected: ${result.reason}`);
     return rip;
+  }
+  /** Derive a disclosure and stage its commitment after checking credential membership. */
+  blind(acdc: SerderACDC, state: string, options: RegistryBlindOptions = {}): RegistryBlindResult {
+    return this.eventer.blind(acdc, state, options);
   }
   /** Process parsed TEL evidence through the shared typed engine. */
   processEvent(serder: SerderACDC): RegistryEventDecision {

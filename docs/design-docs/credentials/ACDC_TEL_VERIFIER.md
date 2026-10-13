@@ -118,7 +118,14 @@ share a transaction, and in-memory maps change only after it commits.
 `createRegery` owns a default backend until transfer, joining cleanup if loading
 fails; injected backends stay caller-owned, including after `close`. Owned close
 is joined and repeat-safe. Opening neither migrates nor rewrites old layouts.
-Blind/present/vacate and runtime installation remain separate implementation gates.
+Local `blind` checks the parsed credential's SAID, registry and issuer, then derives
+its disclosure and bup together. Its next ordinal follows the accepted head plus
+one unambiguous staged successor per slot across both escrows, including after
+reopen. Competing successors refuse construction; staged bodies never establish
+acceptance. Bound-state options remain separate from body serialization options.
+The engine chooses the ordinal and refuses caller-supplied blinder overrides.
+Presentation/vacuous operations and runtime installation remain separate gates.
+Frontier traversal still has local store-sized work; shared scan credit is pending.
 Acceptance advances already anchored successors one transaction at a time.
 Explicit `processEscrows` retries both families, pruning invalid prior links;
 later failures preserve earlier committed events. `anchorMsg` validates stored

@@ -12,7 +12,7 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { blindate, regcept } from "../../../src/acdc/messaging.ts";
+import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryEventer } from "../../../src/acdc/regengine.ts";
 import {
   type RegistryDisclosure,
@@ -24,6 +24,7 @@ import {
   vetBinds,
 } from "../../../src/acdc/regeventing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
+import { createRegery } from "../../../src/acdc/registraring.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { receipt } from "../../../src/core/protocol-eventing.ts";
@@ -602,6 +603,105 @@ Deno.test("registry queued replay retains earliest anchors and advances a contig
         { kind: "reject", reason: "prior" },
       );
       assertEquals(store.anchor(badPrior.said!), null, "validation precedes explicit anchor persistence");
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry blind updates extend one staged frontier across reopen and refuse forks", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    try {
+      let rgy = yield* createRegery({ hby, baser });
+      const issuer = hby.makeHab("issuer"), other = hby.makeHab("other");
+      let registry = rgy.makeRegistry("local", issuer.pre);
+      const regid = registry.regk!, acdc = acdcmap(issuer.pre, { regid, attribute: { d: "", name: "Alice" } });
+      const options = { raw: b("0123456789abcdef"), stamp: "2026-10-13T01:00:00.000001Z" };
+      assertThrows(() => registry.blind(acdc, "issued", options), Error, "must be anchored");
+      issuer.interact({ data: [{ i: regid, s: "0", d: regid }] });
+      assertEquals(registry.anchorMsg(regid).kind, "accept");
+      assertThrows(() => registry.blind({} as SerderACDC, "issued"), Error, "self-verifying");
+      const tampered = new SerderACDC({
+        raw: b(new TextDecoder().decode(acdc.raw).replace(issuer.pre, other.pre)),
+        verify: false,
+      });
+      assertThrows(() => registry.blind(tampered, "issued"), Error, "self-verifying");
+      assertThrows(
+        () => registry.blind(acdcmap(issuer.pre, { attribute: { d: "" } }), "issued"),
+        Error,
+        "another registry",
+      );
+      assertThrows(
+        () => registry.blind(acdcmap(other.pre, { regid, attribute: { d: "" } }), "issued"),
+        Error,
+        "another issuer",
+      );
+      assertThrows(
+        () => registry.blind(acdc, "issued", { ...options, ...{ blinder: disclosure("issued") } }),
+        Error,
+        "blinder overrides",
+      );
+      const [issued, first] = registry.blind(acdc, "issued", options);
+      assertEquals([issued.td.nonce, issued.ts.text, first.sad!.n, first.sad!.p, first.sad!.b], [
+        acdc.said,
+        "issued",
+        "1",
+        regid,
+        issued.d.nonce,
+      ]);
+      const [revoked, second] = registry.blind(acdc, "revoked", {
+        ...options,
+        bound: true,
+        bsn: 1n,
+        bd: issuer.kever!.said,
+      });
+      assertEquals([second.sad!.n, second.sad!.p, second.sad!.b], ["2", first.said, revoked.d.nonce]);
+      assertEquals("bn" in revoked && revoked.bn.num, 1n);
+      assertEquals("bd" in revoked && revoked.bd.nonce, issuer.kever!.said);
+      assertEquals(issued.u.nonce === revoked.u.nonce, false, "ordinal changes the derived UUID");
+      assertEquals(registry.sn, 0n, "staged updates do not establish acceptance");
+      // Duplicate sightings across both escrow families are one successor; stale prior/dangling rows are not.
+      rgy.store.escrowOutOfOrder(regid, 1, first.said!);
+      const stale = blindate(regid, regid, issued.d.nonce, { sn: 2 });
+      rgy.store.putEvent(stale);
+      rgy.store.escrowMissingAnchor(regid, 2, stale.said!);
+      rgy.store.escrowMissingAnchor(regid, 2, issuer.pre);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      rgy = yield* createRegery({ hby, baser });
+      registry = rgy.registryByName("local")!;
+      const [reissued, third] = registry.blind(acdc, "issued", options);
+      assertEquals([third.sad!.n, third.sad!.p, third.sad!.b], ["3", second.said, reissued.d.nonce]);
+      const put = rgy.store.putEvent;
+      try {
+        rgy.store.putEvent = () => {
+          throw new Error("blind storage failed");
+        };
+        assertThrows(() => registry.blind(acdc, "issued", options), Error, "blind storage failed");
+      } finally {
+        rgy.store.putEvent = put;
+      }
+      assertEquals(baser.maes!.get(regid, 4), []);
+      const siblings = ["2026-10-13T02:00:00Z", "2026-10-13T02:00:01Z"].map((stamp) =>
+        blindate(regid, third.said!, issued.d.nonce, { sn: 4, stamp })
+      );
+      for (const event of siblings) registry.processEvent(event);
+      assertThrows(() => registry.blind(acdc, "issued", options), Error, "conflicting staged successors");
+      assertEquals(baser.maes!.get(regid, 5), []);
+      issuer.interact({ data: [first, second, third].map((event) => ({ i: regid, s: event.sad!.n, d: event.said! })) });
+      registry.processEscrows();
+      assertEquals([registry.sn, registry.head!.qb64], [3n, third.said]);
+      const checked = vet({
+        db: hby.db,
+        rip: registry.regser!,
+        updates: [first, second, third],
+        blinder: reissued,
+        acdc,
+      });
+      assertEquals(checked.kind, "verified");
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);

@@ -68,7 +68,7 @@ export type TexterLike = Texter | string | null | undefined;
 export interface MakeBlindUuidOptions {
   /** Raw salt bytes fed into `Salter` when the caller already has them. */
   raw?: Uint8Array;
-  /** Qualified CESR salt (`Salter.qb64`) used instead of `raw`. */
+  /** Qualified CESR salt (`Salter.qb64`) used when `raw` is absent. */
   salt?: string;
   /** Sequence number projected through `numh` before entering the salty path. */
   sn?: NumberLike;
@@ -320,9 +320,9 @@ export function makeBlindUuid(
     tier,
   }: MakeBlindUuidOptions = {},
 ): Noncer {
-  const salter = salt !== undefined || raw !== undefined || tier !== undefined
-    ? new Salter({ qb64: salt, raw, tier })
-    : new Salter({});
+  const salter = raw !== undefined || salt === undefined
+    ? new Salter({ code: NonceDex.Salt_128, raw: raw ?? crypto.getRandomValues(new Uint8Array(16)), tier })
+    : new Salter({ qb64: salt, tier });
   return new Noncer({
     code: NonceDex.Salt_256,
     raw: salter.stretch({ path: coerceNumh(sn), tier }),

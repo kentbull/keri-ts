@@ -10,6 +10,7 @@ import {
   unblindBlindState,
   unblindBoundState,
 } from "../../../src/primitives/disclosure.ts";
+import { Salter } from "../../../src/primitives/salter.ts";
 import { BlindState, BoundState, TypeMedia } from "../../../src/primitives/structing.ts";
 import {
   KERIPY_DISCLOSURE_HELPER_VECTORS,
@@ -36,6 +37,18 @@ Deno.test("primitives/disclosure - helpers preserve KERIpy blind/bound/media com
     }).nonce,
     KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.uuid,
   );
+  assertEquals(
+    makeBlindUuid({
+      raw: new Salter({ qb64: KERIPY_DISCLOSURE_HELPER_VECTORS.salt }).raw,
+      salt: "ignored when raw is supplied",
+      sn: KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.sn,
+    }).nonce,
+    KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.uuid,
+  );
+  const random = makeBlindUuid(), tierOnly = makeBlindUuid({ tier: "low" });
+  assertEquals(random.raw.length, 32);
+  assertEquals(tierOnly.raw.length, 32);
+  assertEquals(random.nonce === tierOnly.nonce, false);
   assertEquals(BlindState.toSad(placeholderBlind), {
     d: KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.said,
     u: KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.uuid,
