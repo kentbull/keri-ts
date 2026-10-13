@@ -68,9 +68,9 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       const second = reactor.replies.reserve("query-b");
       const ready = gate();
       const release = gate();
-      const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: new Uint8Array([1]) };
-      const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", msgs: new Uint8Array([2]) };
-      const ordinary: ReplayCue = { kin: "replay", msgs: new Uint8Array([3]) };
+      const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", messages: [new Uint8Array([1])] };
+      const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [new Uint8Array([2])] };
+      const ordinary: ReplayCue = { kin: "replay", messages: [new Uint8Array([3])] };
       const seen: AgentCue[] = [];
       const runtime = { hby, reactor, cues: reactor.cues } as AgentRuntime;
       const producing = yield* spawn(() =>
@@ -114,7 +114,7 @@ Deno.test("a full cue deck pauses escrow work but still permits a draining turn"
     const hby = yield* createHabery({ name: `turn-cue-limit-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const reactor = new Reactor(hby, { maxPendingCues: 1 });
-      reactor.cues.push({ kin: "replay", msgs: new Uint8Array([1]) });
+      reactor.cues.push({ kin: "replay", messages: [new Uint8Array([1])] });
       // Existing durable work waits for delivery instead of terminating its background worker.
       yield* reactor.settle(undefined, { escrows: true });
       assertEquals(reactor.cues.length, 1);
@@ -174,7 +174,7 @@ Deno.test("cue capacity preserves unaccepted KEL and escrow retry ownership", as
       yield* reactor.process((signal) => chunkBytes(later, { signal }));
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
       reactor.cues.clear();
-      reactor.cues.push({ kin: "replay", msgs: new Uint8Array() });
+      reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
       // Even a partly filled deck cannot accept a transition whose complete cue batch may not fit.
       yield* call(() =>
         assertRejects(() => run(() => reactor.process((signal) => chunkBytes(initial, { signal }))), DeckFullError)
@@ -211,14 +211,14 @@ Deno.test("OOBI notification overload retains durable work until delivery frees 
           http: {
             fetch() {
               // Model another producer filling the shared queue while this request is suspended in transport.
-              if (fillDuringFetch) reactor.cues.push({ kin: "replay", msgs: new Uint8Array() });
+              if (fillDuringFetch) reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
               return Promise.resolve(new Response(null, { status: 404 }));
             },
           },
         },
       });
       const url = "http://example.test/oobi";
-      reactor.cues.push({ kin: "replay", msgs: new Uint8Array() });
+      reactor.cues.push({ kin: "replay", messages: [new Uint8Array()] });
       assertThrows(() => oobi.resolve(url), DeckFullError);
       assertEquals(hby.db.oobis.get(url), null);
       reactor.cues.clear();

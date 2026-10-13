@@ -318,11 +318,8 @@ export class Kevery {
         // so downstream receivers get the same delegation attachment KERIpy
         // would clone from persisted delegating-event state.
         this.repairReplaySourceSeal(kever);
-        const msgs = [...this.db.clonePreIter(pre, fn)];
-        if (kever.delpre) {
-          msgs.push(...this.db.cloneDelegation(kever));
-        }
-        if (msgs.length === 0) {
+        const messages = this.db.replay(pre, fn);
+        if (!messages) {
           // KERIpy treats an empty replay slice as a successful no-op rather
           // than a query-not-found condition.
           return acceptQuery();
@@ -333,7 +330,7 @@ export class Kevery {
           pre,
           src,
           dest,
-          msgs: concatMessages(msgs),
+          messages,
         }]);
       }
       case "ksn": {
@@ -3083,23 +3080,6 @@ export class Kevery {
     }
     return watchers;
   }
-}
-
-function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
-  if (messages.length === 0) {
-    return new Uint8Array();
-  }
-  let total = 0;
-  for (const msg of messages) {
-    total += msg.length;
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const msg of messages) {
-    out.set(msg, offset);
-    offset += msg.length;
-  }
-  return out;
 }
 
 /**

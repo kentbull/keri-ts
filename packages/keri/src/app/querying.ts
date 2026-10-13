@@ -1,6 +1,7 @@
-import type { Operation } from "npm:effection@^3.6.0";
+import { ResourceLimitError } from "cesr-ts";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission, QueryCue } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
+import { Deck, DeckFullError } from "../core/deck.ts";
 import { Roles } from "../core/roles.ts";
 import type { CueSink } from "./cue-runtime.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -423,15 +424,34 @@ export class AnchorQuerier implements QueryContinuation {
  */
 export class QueryCoordinator implements CueSink {
   readonly hby: Habery;
-  readonly pending = new Deck<QueryRequest>();
+  /** Pending requests retain their queue credit until delivery completes. */
+  readonly pending: Deck<QueryRequest>;
+  /** Maximum retained continuation records, independent of pending wire requests. */
+  private readonly maxContinuations: number;
+  /** Prevent a cue consumer and the background worker from sending the same head concurrently. */
+  private processing = false;
   private sink: CueSink;
   private hab: Hab | null;
   private continuations: QueryContinuation[] = [];
 
   constructor(
     hby: Habery,
-    { sink = ignoreSink, hab = null }: { sink?: CueSink; hab?: Hab | null } = {},
+    { sink = ignoreSink, hab = null, maxPending = 1024, maxContinuations = 1024 }: {
+      sink?: CueSink;
+      hab?: Hab | null;
+      /** Maximum unresolved or in-flight query records. */
+      maxPending?: number;
+      /** Maximum active query continuations. */
+      maxContinuations?: number;
+    } = {},
   ) {
+    for (const limit of [maxPending, maxContinuations]) {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new RangeError("Query limits must be positive safe integers");
+      }
+    }
+    this.pending = new Deck(undefined, maxPending);
+    this.maxContinuations = maxContinuations;
     this.hby = hby;
     this.sink = sink;
     this.hab = hab;
@@ -451,6 +471,7 @@ export class QueryCoordinator implements CueSink {
     pre: string,
     options: { hab?: Hab; wits?: string[] } = {},
   ): KeyStateNoticer {
+    this.admitContinuation();
     const noticer = new KeyStateNoticer(pre, options);
     this.continuations.push(noticer);
     return noticer;
@@ -462,6 +483,7 @@ export class QueryCoordinator implements CueSink {
     sn: number,
     options: { fn?: number; hab?: Hab; wits?: string[] } = {},
   ): SeqNoQuerier {
+    this.admitContinuation();
     const querier = new SeqNoQuerier(pre, sn, options);
     this.continuations.push(querier);
     return querier;
@@ -473,6 +495,7 @@ export class QueryCoordinator implements CueSink {
     anchor: Record<string, unknown>,
     options: { hab?: Hab; wits?: string[] } = {},
   ): AnchorQuerier {
+    this.admitContinuation();
     const querier = new AnchorQuerier(pre, anchor, options);
     this.continuations.push(querier);
     return querier;
@@ -521,25 +544,34 @@ export class QueryCoordinator implements CueSink {
    * local state, emit any initial or follow-on queries that can honestly be
    * constructed, and retain unresolved work for later turns.
    */
-  *processPending(): Operation<void> {
-    this.tickContinuations();
-
-    const kept = new Deck<QueryRequest>();
-    while (!this.pending.empty) {
-      const request = this.pending.pull();
-      if (!request) {
-        continue;
+  processPending(): Operation<void> {
+    // deno-lint-ignore no-this-alias -- The isolated generator owns one complete drain pass.
+    const self = this;
+    return call(function*() {
+      if (self.processing) return;
+      self.processing = true;
+      try {
+        self.tickContinuations();
+        const count = self.pending.length;
+        for (let index = 0; index < count; index++) {
+          const request = self.pending.peekHead();
+          if (!request) break;
+          const emission = self.wireEmissionForRequest(request);
+          if (emission) {
+            // Keep the head and its capacity reservation while the transport can suspend or fail.
+            yield* self.sink.send(emission);
+            self.pending.pull();
+          } else {
+            // Unresolved work rotates without releasing capacity across an asynchronous boundary.
+            self.pending.pull();
+            self.pending.push(request);
+          }
+        }
+        self.tickContinuations();
+      } finally {
+        self.processing = false;
       }
-      const emission = this.wireEmissionForRequest(request);
-      if (emission) {
-        yield* this.sink.send(emission);
-      } else {
-        // Keep unresolved work instead of guessing the habitat or attester.
-        kept.push(request);
-      }
-    }
-    this.pending.extend(kept);
-    this.tickContinuations();
+    });
   }
 
   /** Continuous background query worker for long-lived runtime hosts. */
@@ -564,16 +596,34 @@ export class QueryCoordinator implements CueSink {
 
   private observeContinuations(cue: AgentCue): void {
     for (const continuation of this.continuations) {
-      continuation.observe(cue, this);
+      try {
+        continuation.observe(cue, this);
+      } catch (error) {
+        // Each continuation still records this durable notice; only its retryable enqueue waits for capacity.
+        if (!(error instanceof DeckFullError)) throw error;
+      }
     }
     this.compactContinuations();
   }
 
   private tickContinuations(): void {
     for (const continuation of this.continuations) {
-      continuation.tick(this);
+      try {
+        continuation.tick(this);
+      } catch (error) {
+        if (error instanceof DeckFullError) break;
+        throw error;
+      }
     }
     this.compactContinuations();
+  }
+
+  /** Reclaim completed watchers before reserving another bounded continuation record. */
+  private admitContinuation(): void {
+    this.compactContinuations();
+    if (this.continuations.length >= this.maxContinuations) {
+      throw new ResourceLimitError("Too many query continuations");
+    }
   }
 
   private compactContinuations(): void {
@@ -626,7 +676,7 @@ export class QueryCoordinator implements CueSink {
         query,
         wits: request.wits ? [...request.wits] : undefined,
       },
-      msgs: [hab.query(request.pre, src, query, request.route)],
+      messages: [hab.query(request.pre, src, query, request.route)],
       kind: "wire",
     };
   }

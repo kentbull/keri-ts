@@ -56,7 +56,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
       emission: {
         kind: "wire",
         cue: { kin: "receipt", serder: { pre: "EDEST" } as never },
-        msgs: [new Uint8Array([1])],
+        messages: [new Uint8Array([1])],
       },
       recipient: "EDEST",
       topic: "/receipt",
@@ -66,7 +66,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
       emission: {
         kind: "wire",
         cue: { kin: "witness", serder: { pre: "EDEST" } as never },
-        msgs: [new Uint8Array([2])],
+        messages: [new Uint8Array([2])],
       },
       recipient: "EDEST",
       topic: "/receipt",
@@ -76,7 +76,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
       emission: {
         kind: "wire",
         cue: { kin: "reply", route: "/ksn", src: "EWIT", dest: "EDEST" },
-        msgs: [new Uint8Array([3])],
+        messages: [new Uint8Array([3])],
       },
       recipient: "EDEST",
       topic: "/reply",
@@ -89,9 +89,9 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
           kin: "replay",
           src: "EWIT",
           dest: "EDEST",
-          msgs: new Uint8Array([4]),
+          messages: [new Uint8Array([4])],
         },
-        msgs: [new Uint8Array([4])],
+        messages: [new Uint8Array([4])],
       },
       recipient: "EDEST",
       topic: "/replay",
@@ -166,7 +166,7 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
     yield* responder.sendWithHab({
       kind: "transport",
       cue,
-      msgs: [],
+      messages: [],
     });
   });
 
@@ -180,7 +180,7 @@ Deno.test("app/runtime-responder - witness ingress drains through responder inst
   const emission: CueEmission = {
     kind: "wire",
     cue: { kin: "witness", serder: { pre: "EDEST" } as never },
-    msgs: [new Uint8Array([7])],
+    messages: [new Uint8Array([7])],
   };
   const serviceHab = {
     pre: "EWIT",
@@ -267,7 +267,7 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
           {
             kind: "wire",
             cue: { kin: "receipt", serder: { pre: recipient.pre } as never },
-            msgs: [message],
+            messages: [message],
           },
           witness,
         );

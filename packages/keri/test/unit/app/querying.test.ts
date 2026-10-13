@@ -1,6 +1,6 @@
-import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
-import { SerderKERI, type Siger } from "../../../../cesr/mod.ts";
+import { call, run, spawn, suspend } from "effection";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { ResourceLimitError, SerderKERI, type Siger } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
   processRuntimeTurn,
@@ -10,6 +10,7 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 import { type CueSink } from "../../../src/app/cue-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { QueryCoordinator } from "../../../src/app/querying.ts";
 import { type KeverEventEnvelope } from "../../../src/core/eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
@@ -54,10 +55,11 @@ function captureSink(
 ): CueSink {
   return {
     *send(emission) {
+      const message = [...emission.messages][0];
       emissions.push({
         kind: emission.kind,
         kin: emission.cue.kin,
-        serder: emission.msgs[0] ? parseSerder(emission.msgs[0]) : null,
+        serder: message ? parseSerder(message) : null,
       });
     },
   };
@@ -392,7 +394,7 @@ Deno.test("KeyStateNoticer finishes immediately once a saved key state matches l
       });
       yield* runtime.querying.send({
         cue: { kin: "keyStateSaved", ksn: subject.kever!.state() },
-        msgs: [],
+        messages: [],
         kind: "notify",
       });
 
@@ -477,7 +479,7 @@ Deno.test("KeyStateNoticer upgrades to a `logs` query when a saved key state is 
           kin: "keyStateSaved",
           ksn: subjectHby.db.getKever(subject.pre)!.state(),
         },
-        msgs: [],
+        messages: [],
         kind: "notify",
       });
 
@@ -576,6 +578,103 @@ Deno.test("SeqNoQuerier and AnchorQuerier stay pending until their local complet
     } finally {
       yield* subjectHby.close(true);
       yield* requesterHby.close(true);
+    }
+  });
+});
+
+Deno.test("query queues keep failed deliveries and defer newly appended work to the next pass", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `query-bounds-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("alice");
+      seedControllerEndpoint(hby, hab.pre);
+      const coordinator = new QueryCoordinator(hby, { hab, maxPending: 3, maxContinuations: 1 });
+      const request = { pre: hab.pre, src: hab.pre, route: "logs", query: {} };
+      coordinator.enqueue(request);
+      coordinator.enqueue(request);
+      coordinator.enqueue(request);
+      assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
+      coordinator.watchSeqNo(hab.pre, 100);
+      assertThrows(() => coordinator.watchKeyState(hab.pre), ResourceLimitError);
+      coordinator.configure({
+        hab,
+        sink: {
+          *send() {
+            throw new Error("Delivery failed");
+          },
+        },
+      });
+      // The in-flight head retains its queue credit; a failed transport must not erase retry work.
+      let failed = false;
+      try {
+        yield* coordinator.processPending();
+      } catch {
+        failed = true;
+      }
+      assertEquals(failed, true);
+      assertEquals(coordinator.pending.length, 3);
+      coordinator.pending.clear();
+      let sent = 0;
+      coordinator.configure({
+        hab,
+        sink: {
+          *send() {
+            sent++;
+            coordinator.enqueue(request);
+          },
+        },
+      });
+      coordinator.enqueue(request);
+      yield* coordinator.processPending();
+      // One continuation may enqueue a second initial request; each send's new work remains pending.
+      assertEquals(sent, 2);
+      assertEquals(coordinator.pending.length, 2);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("query cancellation preserves its in-flight queue credit and permits the next drain", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `query-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("alice");
+      seedControllerEndpoint(hby, hab.pre);
+      const entered = Promise.withResolvers<void>();
+      const coordinator = new QueryCoordinator(hby, { hab, maxPending: 1 });
+      const request = { pre: hab.pre, src: hab.pre, route: "logs", query: {} };
+      coordinator.configure({
+        hab,
+        sink: {
+          *send() {
+            entered.resolve();
+            yield* suspend();
+          },
+        },
+      });
+      coordinator.enqueue(request);
+      const sending = yield* spawn(() => coordinator.processPending());
+      yield* call(() => entered.promise);
+      // The suspended sender still owns the head, so admission cannot steal its slot.
+      assertThrows(() => coordinator.enqueue(request), ResourceLimitError);
+      yield* sending.halt();
+      assertEquals(coordinator.pending.length, 1);
+      let sent = 0;
+      coordinator.configure({
+        hab,
+        sink: {
+          *send() {
+            sent++;
+          },
+        },
+      });
+      yield* coordinator.processPending();
+      // Halt releases only the drain guard; the retained request is delivered by the next turn.
+      assertEquals(sent, 1);
+      assertEquals(coordinator.pending.length, 0);
+    } finally {
+      yield* hby.close(true);
     }
   });
 });

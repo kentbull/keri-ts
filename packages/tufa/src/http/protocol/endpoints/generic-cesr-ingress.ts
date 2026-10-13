@@ -5,9 +5,10 @@
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
  */
-import { concatBytes, Ilks, ParserError, ResourceLimitError, type SerderKERI } from "cesr-ts";
+import { Ilks, ParserError, ResourceLimitError, type SerderKERI } from "cesr-ts";
 import { call, each, type Operation, resource, run } from "effection";
 import {
+  type AgentRuntime,
   type CueEmission,
   drainWitnessCues,
   type HostedRouteResolution,
@@ -18,7 +19,7 @@ import {
   runtimeTurn,
   ValidationError,
 } from "keri-ts/runtime";
-import { cesrResponse, jsonNoContentResponse, textResponse } from "../responses.ts";
+import { jsonNoContentResponse, textResponse } from "../responses.ts";
 import { drainRuntimeCues } from "../runtime-bridge.ts";
 import type { CesrIngressRoute, ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
@@ -115,22 +116,22 @@ function querySseResponse(
   );
 }
 
-/** Collect immediate replay/reply wire cues into one direct CESR response. */
-function directQueryResponse(
-  emissions: readonly CueEmission[],
-): Response | null {
-  const messages: Uint8Array[] = [];
-  for (const emission of emissions) {
-    if (
-      emission.kind === "wire"
-      && (emission.cue.kin === "replay" || emission.cue.kin === "reply")
-    ) {
-      messages.push(...emission.msgs);
-    }
-  }
-  return messages.length > 0
-    ? cesrResponse(concatBytes(...messages), 200)
-    : null;
+/** Open lazy direct reply bytes under runtime ownership; the request signal ends with ingress. */
+function directQueryResponse(runtime: AgentRuntime, emissions: readonly CueEmission[]): Response | null {
+  const replies = emissions.filter((emission) =>
+    emission.kind === "wire" && (emission.cue.kin === "replay" || emission.cue.kin === "reply")
+  );
+  if (replies.length === 0) return null;
+  const messages = {
+    /** Reopening preserves each reserved cue's order without concatenating its replay. */
+    *[Symbol.iterator]() {
+      for (const reply of replies) yield* reply.messages;
+    },
+  };
+  return new Response(runtime.replyStreams.open(messages), {
+    status: 200,
+    headers: { "Content-Type": "application/cesr" },
+  });
 }
 
 /** Wait for this request's reserved response while other runtime turns continue fairly. */
@@ -145,7 +146,9 @@ function* deferredDirectQueryResponse(
     let response: Response | null = null;
     yield* runtime.reactor.settle(undefined, { escrows: true }, function*() {
       const cue = reply.take();
-      if (cue) response = directQueryResponse(yield* drainRuntimeCues(runtime, context.policy.serviceHab, [cue]));
+      if (cue) {
+        response = directQueryResponse(runtime, yield* drainRuntimeCues(runtime, context.policy.serviceHab, [cue]));
+      }
     });
     if (response) return response;
     if (serder.route !== "logs") return null;

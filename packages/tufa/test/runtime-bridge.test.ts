@@ -13,9 +13,9 @@ Deno.test("tufa/runtime-bridge - replay cues are forwarded through poster instea
       kin: "replay",
       src: "EWIT",
       dest: "EDEST",
-      msgs: new Uint8Array([1, 2, 3]),
+      messages: [new Uint8Array([1, 2, 3])],
     },
-    msgs: [new Uint8Array([1, 2, 3])],
+    messages: [new Uint8Array([1, 2, 3])],
   };
   const serviceHab = {
     pre: "EWIT",

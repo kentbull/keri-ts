@@ -403,7 +403,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
           query: { fn: "0", s: "0", a: seal },
           wits: [witness.pre],
         },
-        msgs: [query],
+        messages: [query],
       });
 
       assertExists(witnessRuntime.hby.db.getKever(proxy.pre));
@@ -568,7 +568,7 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
         mode: "indirect",
       });
       const emissions: Array<
-        { kind: string; kin: string; msgs: number; dest: string | null }
+        { kind: string; kin: string; messages: number; dest: string | null }
       > = [];
       try {
         ingestKeriBytes(runtime, queryBytes);
@@ -580,7 +580,7 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
               emissions.push({
                 kind: emission.kind,
                 kin: emission.cue.kin,
-                msgs: emission.msgs.length,
+                messages: [...emission.messages].length,
                 dest: emission.cue.kin === "replay"
                   ? emission.cue.dest ?? null
                   : null,
@@ -593,7 +593,7 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
           emissions.some((emission) =>
             emission.kind === "wire"
             && emission.kin === "replay"
-            && emission.msgs > 0
+            && emission.messages > 0
           ),
           true,
         );

@@ -7,7 +7,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and transport cues", async () => {
   const name = `cue-runtime-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-cue-runtime-${crypto.randomUUID()}`;
-  const emissions: Array<{ kind: string; msgs: number; kin: string }> = [];
+  const emissions: Array<{ kind: string; messages: number; kin: string }> = [];
 
   await run(function*() {
     const hby = yield* createHabery({
@@ -60,7 +60,7 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
         *send(emission) {
           emissions.push({
             kind: emission.kind,
-            msgs: emission.msgs.length,
+            messages: [...emission.messages].length,
             kin: emission.cue.kin,
           });
         },
@@ -73,11 +73,11 @@ Deno.test("Cue runtime - processCuesOnce emits structured wire, notify, and tran
   });
 
   assertEquals(emissions, [
-    { kind: "wire", msgs: 1, kin: "receipt" },
-    { kind: "wire", msgs: 1, kin: "reply" },
-    { kind: "wire", msgs: 1, kin: "query" },
-    { kind: "transport", msgs: 0, kin: "stream" },
-    { kind: "notify", msgs: 0, kin: "keyStateSaved" },
+    { kind: "wire", messages: 1, kin: "receipt" },
+    { kind: "wire", messages: 1, kin: "reply" },
+    { kind: "wire", messages: 1, kin: "query" },
+    { kind: "transport", messages: 0, kin: "stream" },
+    { kind: "notify", messages: 0, kin: "keyStateSaved" },
   ]);
 });
 

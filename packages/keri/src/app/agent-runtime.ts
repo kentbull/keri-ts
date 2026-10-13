@@ -1,4 +1,4 @@
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
@@ -37,6 +37,7 @@ import { Notifier, openNoterForHabery } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor, type VdrRuntimeServices } from "./reactor.ts";
+import { type ReplyStreamLimits, ReplyStreams } from "./reply-streams.ts";
 import { Respondant } from "./respondant.ts";
 import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -87,6 +88,8 @@ export interface AgentRuntime {
   poster: Poster;
   delegating: Anchorer;
   querying: QueryCoordinator;
+  /** Live lazy HTTP replies, closed before their database owners. */
+  replyStreams: ReplyStreams;
   vdr: VdrRuntimeServices;
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
@@ -108,6 +111,8 @@ export interface AgentRuntimeOptions {
   enableMailboxStore?: boolean;
   services?: Partial<RuntimeServices>;
   mailboxPollTransport?: MailboxPollTransport;
+  /** Finite reply concurrency/event/chunk admission, independent of replay length. */
+  replyLimits?: ReplyStreamLimits;
   /** Raw-byte retention limits; reaching capacity pauses admission without losing cursors. */
   mailboxAdmission?: { mode: "durable"; limits?: Partial<MailboxInboxLimits> };
   vdr?: VdrRuntimeServices;
@@ -148,6 +153,14 @@ export function* createAgentRuntime(
   hby: Habery,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
+  const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
+    const streams = new ReplyStreams(options.replyLimits);
+    try {
+      yield* provide(streams);
+    } finally {
+      streams.close();
+    }
+  });
   const mode = options.mode ?? "local";
   const services = resolveRuntimeServices(options.services);
   const enableMailboxStore = options.enableMailboxStore ?? mode === "indirect";
@@ -255,9 +268,11 @@ export function* createAgentRuntime(
     poster,
     delegating,
     querying,
+    replyStreams,
     vdr,
     services,
     *close(): Operation<void> {
+      replyStreams.close();
       mailboxDirector.close();
       if (ownsNoter && noter?.opened) {
         yield* noter.close();

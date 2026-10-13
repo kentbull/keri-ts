@@ -156,7 +156,7 @@ function delegateWitnessLogsQuery(
       query,
       wits: [witness],
     },
-    msgs: [hab.query(serder.pre, witness, query, "logs")],
+    messages: [hab.query(serder.pre, witness, query, "logs")],
   };
 }
 

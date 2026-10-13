@@ -67,6 +67,14 @@ delivery and ESSR disposal. Header mode is finite text-qualified metadata;
 bulk body mode streams payload references. Replay/cue, mailbox, and annotation
 migration remain separate obligations, not implied by the sender conversion.
 
+KEL replay cues carry a reopenable message iterable with captured first-seen
+endpoints and a bounded delegator list. Reads clone one finite event at a time
+and release the LMDB cursor before yielding to transport. Reply HTTP streams
+pull bounded owned chunks and close on cancellation or runtime shutdown; they
+must not inherit Deno's request signal after the handler returns. Query pending
+records retain capacity through delivery and failures, and one pass only drains
+its initial count; continuations have separate finite admission.
+
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing
 threshold. Naming a prefix in attachment material and correlating a stream cue

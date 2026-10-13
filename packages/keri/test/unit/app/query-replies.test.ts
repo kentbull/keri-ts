@@ -9,9 +9,9 @@ Deno.test("query reply reservations isolate interleaved results from the backgro
   const first = replies.reserve("query-a");
   const duplicate = replies.reserve("query-a");
   const second = replies.reserve("query-b");
-  const replay: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: new Uint8Array([1]) };
-  const other: ReplayCue = { kin: "replay", querySaid: "query-b", msgs: new Uint8Array([2]) };
-  const background: ReplayCue = { kin: "replay", msgs: new Uint8Array([3]) };
+  const replay: ReplayCue = { kin: "replay", querySaid: "query-a", messages: [new Uint8Array([1])] };
+  const other: ReplayCue = { kin: "replay", querySaid: "query-b", messages: [new Uint8Array([2])] };
+  const background: ReplayCue = { kin: "replay", messages: [new Uint8Array([3])] };
   const cues = new Deck<AgentCue>([other, background, replay, replay]);
   // A background turn can drain its own cue after reservation capture without stealing either response.
   replies.capture(cues);
@@ -33,7 +33,7 @@ Deno.test("query reply reservations bound pending requests and release cancellat
   pending.close();
   pending.close();
   const next = replies.reserve("query-b");
-  const cue: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: new Uint8Array([1]) };
+  const cue: ReplayCue = { kin: "replay", querySaid: "query-a", messages: [new Uint8Array([1])] };
   const cues = new Deck<AgentCue>([cue]);
   // Cancellation relinquishes ownership: later results resume normal background delivery.
   replies.capture(cues);

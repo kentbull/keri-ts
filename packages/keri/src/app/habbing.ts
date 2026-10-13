@@ -55,7 +55,7 @@ import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
 import { createOutboxer, DisabledOutboxer, type OutboxerLike } from "../db/outboxing.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE, splitCesrStream } from "./cesr-http.ts";
+import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
@@ -1396,18 +1396,18 @@ export class Hab {
       }
       switch (cue.kin) {
         case "receipt":
-          yield { cue, msgs: [this.receipt(cue.serder)], kind: "wire" };
+          yield { cue, messages: [this.receipt(cue.serder)], kind: "wire" };
           break;
         case "witness":
-          yield { cue, msgs: [this.witness(cue.serder)], kind: "wire" };
+          yield { cue, messages: [this.witness(cue.serder)], kind: "wire" };
           break;
         case "replay":
-          yield { cue, msgs: splitCesrStream(cue.msgs), kind: "wire" };
+          yield { cue, messages: cue.messages, kind: "wire" };
           break;
         case "reply":
           yield {
             cue,
-            msgs: [
+            messages: [
               cue.serder ? this.endorse(cue.serder) : this.reply(cue.route, cue.data ?? {}),
             ],
             kind: "wire",
@@ -1418,16 +1418,16 @@ export class Hab {
           if (cue.pre && cue.src) {
             yield {
               cue,
-              msgs: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
+              messages: [this.query(cue.pre, cue.src, query, cue.route ?? "")],
               kind: "wire",
             };
             break;
           }
-          yield { cue, msgs: [], kind: "notify" };
+          yield { cue, messages: [], kind: "notify" };
           break;
         }
         case "stream":
-          yield { cue, msgs: [], kind: "transport" };
+          yield { cue, messages: [], kind: "transport" };
           break;
         case "notice":
         case "noticeBadCloneFN":
@@ -1438,7 +1438,7 @@ export class Hab {
         case "oobiQueued":
         case "oobiResolved":
         case "oobiFailed":
-          yield { cue, msgs: [], kind: "notify" };
+          yield { cue, messages: [], kind: "notify" };
           break;
         default:
           break;
