@@ -43,6 +43,11 @@ Fresh children remain hydrated, reopened children own temporary ESSR files, and
 remaining tree credit diminishes across rows. Cancellation claims/disposes every
 untransferred descendant.
 
+Opaque pathed evidence uses byte-preserving insertion-ordered storage. UTF-8
+replacement can merge different binary members; never decode wire just to obtain
+a storage or deduplication key. KRAM partial snapshots are private staging, not
+accepted child messages; ordinary public wire publication still belongs to Exchanger.
+
 ## Open boundary
 
 Whole LMDB rows are allocated before current size checks. Finite row ceilings and

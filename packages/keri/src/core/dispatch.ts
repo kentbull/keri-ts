@@ -167,6 +167,8 @@ export interface KeriDispatchEnvelopeInit {
   trqs?: TransReceiptQuadruple[];
   tsgs?: TransIdxSigGroup[];
   ssgs?: TransLastIdxSigGroup[];
+  /** Foreign last references unresolved at their original receipt. */
+  unresolvedLast?: Prefixer[];
   frcs?: FirstSeen[];
   sscs?: SealSource[];
   ssts?: SealEvent[];
@@ -207,6 +209,7 @@ export class KeriDispatchEnvelope {
   readonly trqs: TransReceiptQuadruple[];
   readonly tsgs: TransIdxSigGroup[];
   readonly ssgs: TransLastIdxSigGroup[];
+  readonly unresolvedLast: Prefixer[];
   readonly frcs: FirstSeen[];
   readonly sscs: SealSource[];
   readonly ssts: SealEvent[];
@@ -231,6 +234,7 @@ export class KeriDispatchEnvelope {
     this.trqs = [...(init.trqs ?? [])];
     this.tsgs = [...(init.tsgs ?? [])];
     this.ssgs = [...(init.ssgs ?? [])];
+    this.unresolvedLast = [...(init.unresolvedLast ?? [])];
     this.frcs = [...(init.frcs ?? [])];
     this.sscs = [...(init.sscs ?? [])];
     this.ssts = [...(init.ssts ?? [])];

@@ -3,6 +3,7 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import type { MessagePolicy } from "../core/eventing.ts";
+import type { KramConfig } from "../core/kram-policy.ts";
 import {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -127,6 +128,8 @@ export interface AgentRuntimeOptions {
   registryEvidence?: RegistryEvidenceStore;
   /** Sender filtering for v2 non-event ingress; denial always wins. */
   messagePolicy?: MessagePolicy;
+  /** Optional KRAM uses the shared runtime receiver clock. */
+  kram?: KramConfig;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -225,7 +228,13 @@ export function* createAgentRuntime(
     registryEvidence = yield* openRegistryEvidenceForHabery(hby);
     ownsRegistryEvidence = true;
   }
-  const reactor = new Reactor(hby, { cues, vdr, messagePolicy: options.messagePolicy });
+  const reactor = new Reactor(hby, {
+    cues,
+    vdr,
+    messagePolicy: options.messagePolicy,
+    kram: options.kram,
+    now: () => services.clock.now(),
+  });
   loadChallengeHandlers(hby.db, reactor.exchanger);
   loadDelegationHandlers(hby, reactor.exchanger, notifier);
   loadOobiHandlers(hby, reactor.exchanger, notifier);

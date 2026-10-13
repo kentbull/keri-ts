@@ -4,7 +4,8 @@
 before delegating to the existing processors. This corresponds to
 `Kevery.processMsg` with KRAM disabled in unmodified KERIpy
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` (`core/parsing.py` and
-`core/eventing.py`). KRAM intake remains unimplemented.
+`core/eventing.py`). Optional [KRAM intake](KRAM.md) runs after sender policy
+and before route prerequisites; omission preserves the disabled path.
 
 ## Policy and responsibility
 

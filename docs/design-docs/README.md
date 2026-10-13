@@ -13,7 +13,7 @@ acceptance live in [plans](../plans/README.md); dated evidence lives in [reports
 
 ## Exchange and credentials
 
-- [V2 message admission](exchange/MESSAGE_ADMISSION.md), [EXN proofs](exchange/EXCHANGE_PROOFS.md), [multisig](exchange/MULTISIG.md),
+- [V2 message admission](exchange/MESSAGE_ADMISSION.md), [KRAM](exchange/KRAM.md), [EXN proofs](exchange/EXCHANGE_PROOFS.md), [multisig](exchange/MULTISIG.md),
   [IPEX](exchange/IPEX.md), [ESSR recipient](essr/RECIPIENT.md).
 - [Disclosure](credentials/GRADUATED_DISCLOSURE.md),
   [ACDC/TEL verification](credentials/ACDC_TEL_VERIFIER.md).

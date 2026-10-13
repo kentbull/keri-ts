@@ -6,8 +6,7 @@
  * - JavaScript only exposes millisecond precision, so `keri-ts` follows the
  *   existing convention of zero-padding the millisecond value to six digits
  */
-export function makeNowIso8601(): string {
-  const now = new Date();
+export function makeNowIso8601(now = new Date()): string {
   const y = now.getUTCFullYear().toString().padStart(4, "0");
   const m = (now.getUTCMonth() + 1).toString().padStart(2, "0");
   const d = now.getUTCDate().toString().padStart(2, "0");
@@ -29,4 +28,17 @@ export function makeNowIso8601(): string {
  */
 export function encodeDateTimeToDater(dts: string): string {
   return `1AAG${dts.replace(/:/g, "c").replace(/\./g, "d").replace(/\+/g, "p")}`;
+}
+
+/** Historical checks retain microseconds and require explicit RFC3339 timezone offsets. */
+export function timestampMicros(value: unknown): bigint | null {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, base, fraction = "", zone] = match;
+  const local = Date.parse(`${base}Z`);
+  if (!Number.isFinite(local) || new Date(local).toISOString().slice(0, 19) !== base) return null;
+  if (zone !== "Z" && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4)) > 59)) return null;
+  const epoch = Date.parse(`${base}${zone}`);
+  return Number.isFinite(epoch) ? BigInt(epoch) * 1000n + BigInt(fraction.padEnd(6, "0")) : null;
 }

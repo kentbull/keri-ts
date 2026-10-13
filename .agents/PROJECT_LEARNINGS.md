@@ -3,7 +3,7 @@
 Routing and durable rules only. Current source, tests and normative contracts
 outrank these summaries. The [parity roadmap](../docs/plans/PARITY_ROADMAP.md)
 owns remaining work; do not duplicate its checklist here. Parser structure and
-nested consumers are implemented, while optional KRAM intake, shared budgets,
+nested consumers and optional KRAM intake are implemented, while shared budgets,
 storage/transport reconciliation and final qualification remain incomplete.
 
 ## Read by subject

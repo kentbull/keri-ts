@@ -46,8 +46,15 @@ and child evidence belong in one parent enclosure; constructing it authenticates
 
 V2 non-event sender policy precedes proof prerequisites; allow/deny sets do not
 authenticate signatures. Raw query sigers use the claimed sender only when no
-last-establishment group is present. Optional KRAM remains
-[3f](../../docs/plans/exchange/EXCHANGE_ADMISSION_PLAN.md).
+last-establishment group is present. Optional KRAM pools current sender signatures
+before route processing; foreign proofs never complete that threshold. Missing
+source events block signature fallback and request exact KEL state. Known foreign
+last groups freeze at receipt. Transaction rdt is receiver-observed at completed
+authentication, never sender time. Private partial snapshots preserve nested/ESSR
+owners across reopen; successful route handoff clears them, I/O failure retains
+retry state. Hold busy admission until cancelled readers and owners finish cleanup.
+See the [KRAM contract](../../docs/design-docs/exchange/KRAM.md) and remaining
+[3f/3e boundaries](../../docs/plans/exchange/EXCHANGE_ADMISSION_PLAN.md).
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.

@@ -2,7 +2,7 @@
 
 Owner: roadmap **3f**, reusing proof work from **3e** (#162/165) and nested
 runtime consumers (#159–168). The [proof contract][proof] is implemented;
-sender filtering and non-event routing are implemented; optional KRAM remains incomplete.
+sender filtering, non-event routing and optional KRAM intake are implemented.
 
 ## Current boundary
 
@@ -14,11 +14,15 @@ refusal/readmission. Built-in TEL query processing remains unavailable.
 
 ## Remaining processing boundary
 
-The next cohesive **3f KRAM** PR owns optional intake, durable replay caches,
-partial-signature accumulation, configuration/pruning and receiver-observed time.
-It must integrate before route processing without replacing Exchanger proof policy.
-3f also owns built-in TEL query processing; the injected dispatch seam alone does
-not qualify `tels/tsn` behavior.
+The [KRAM contract](../../design-docs/exchange/KRAM.md) and independent wire
+oracle cover optional intake, replay caches, partial sender pools, configuration,
+pruning and receiver-observed time. Real runtime cases cover nested recovery,
+HTTP authorization, OOBI exemptions and joined cancellation. Nested preservation,
+durable transitions and retryable failed handoff are documented corrections.
+
+The next cohesive **3f TEL query** PR owns built-in `tels/tsn` processing; the
+injected dispatch seam alone does not qualify those routes. Its **3e presentation**
+dependent consumes KRAM receiver time and verifies issuee registry bindings.
 Inspect `core/parsing.py`, `core/eventing.py` and `core/kraming.py` at
 `927c0cb8794d7c84fc17143c67df64aab9deda6c` before editing. Verify the imported
 modules in each evidence run. `processXip`, `processPro` and `processBar` are

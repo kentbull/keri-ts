@@ -1,7 +1,7 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `be32f24b83c7c1c75b849e8f40e44ba5fb9e5014` after
-[#170][pr170]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Verified boundary: keri-ts `b42b2f816e412d80f283cac0cb9c48f41ba9209a` after
+[#171][pr171]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
 completed PR evidence are summarized in the [delivery report][delivered].
@@ -21,8 +21,8 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 | CESR parsing     | Delivered        | [1–2][cesr]           | [Wire/tree][delivered]  | Accessor audit     |
 | Multisig         | Four routes      | [3d][multisig]        | [#160–161][delivered]   | Native/CLI scope   |
 | IPEX             | Nested runtime   | [3e][ipex]            | [#166–168][delivered]   | Presentations      |
-| EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | KRAM integration   |
-| v2 intake        | Sender/routing   | [3f KRAM][exchange]   | [Signed wire][intake]   | KRAM/TEL/stubs     |
+| EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | Full qualification |
+| v2 intake        | Optional KRAM    | [3f TEL][exchange]    | [Wire/recovery][kram]   | TEL/stubs          |
 | ESSR outcomes    | Implemented      | [4 integration][essr] | [#163][delivered]       | Local guards       |
 | Shared budget    | Local guards     | [4][resource]         | [Required][resource]    | Pre-allocation     |
 | Storage/recovery | Durable wire     | [5][storage]          | [Required][storage]     | Whole-row reads    |
@@ -33,11 +33,10 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 
 ## Publication sequence
 
-1. Documentation reorganization (#169) and sender admission (#170) are delivered.
-   The dedicated runtime store-ownership cleanup precedes the remaining 3f work;
-   its [lifecycle contract][ownership] preserves caller-owned stores.
-2. Finish 3f KRAM admission and its dependent 3e presentation
-   path. Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
+1. Docs reorganization (#169), sender admission (#170) and store ownership (#171)
+   are delivered. Optional KRAM is the current 3f publication unit.
+2. Finish built-in TEL queries (3f) and dependent IPEX presentations (3e).
+   Keep unimplemented consumers guarded; `xip/pro/bar` are reference stubs.
 3. Shared admission (4), storage/recovery (5), production backpressure (6).
 4. Full reference audit and repeated end-to-end qualification (7).
 5. Focused standalone Mapper repair; rerun affected qualification after it.
@@ -55,7 +54,8 @@ Passing parser tests or finite per-recipient guards cannot close phases 4–7.
 Long qualification stays outside required merge CI; only the maintainer dispatches
 hosted extended jobs, whose existing 15-minute cap remains unchanged.
 
-[pr170]: https://github.com/kentbull/keri-ts/pull/170
+[pr171]: https://github.com/kentbull/keri-ts/pull/171
+[kram]: ../design-docs/exchange/KRAM.md
 [ownership]: ../design-docs/runtime/INGRESS_AND_EGRESS.md#runtime-store-ownership
 [intake]: ../design-docs/exchange/MESSAGE_ADMISSION.md
 [delivered]: ../reports/parity/DELIVERED_THROUGH_168.md

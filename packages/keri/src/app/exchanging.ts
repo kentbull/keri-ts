@@ -144,6 +144,8 @@ export interface ExchangeInput {
   cigars?: readonly Cigar[];
   /** Last-establishment references must freeze to historical coordinates before escrow. */
   lsgs?: readonly TransLastIdxSigGroup[];
+  /** Foreign last references unresolved when KRAM received their original signatures. */
+  unresolvedLast?: readonly Prefixer[];
   /** Sender-implied source coordinates from parser normalization. */
   sscs?: readonly SealSource[];
   /** Explicit anchoring AID and historical source coordinates. */
@@ -699,7 +701,7 @@ export class Exchanger {
         ...(args.sscs ?? []).map((seal) => ({ ...seal, i: new Prefixer({ qb64: args.serder.pre! }) })),
         ...(args.sourceSeals ?? []),
       ],
-      missing: [],
+      missing: (args.unresolvedLast ?? []).map((prefix) => ({ pre: prefix.qb64, sn: null })),
     };
     for (const group of args.lsgs ?? []) {
       const kever = this.hby.db.getKever(group.pre);

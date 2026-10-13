@@ -42,6 +42,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/ipex-v2.test.ts",
       "test/unit/app/nested-frame-boundary.test.ts",
       "test/unit/app/message-admission.test.ts",
+      "test/unit/app/kram-runtime.test.ts",
       "test/unit/app/notifications-cli.test.ts",
       "test/unit/app/notifying.test.ts",
       "test/unit/app/parsering-essr.test.ts",
@@ -170,6 +171,7 @@ export const suites: Record<string, TestSuite> = {
     files: [
       "test/unit/core/dispatch.test.ts",
       "test/unit/core/kever.test.ts",
+      "test/unit/core/kraming.test.ts",
       "test/unit/core/kevery-query.test.ts",
       "test/unit/core/routing.test.ts",
       "test/unit/core/witnesses.test.ts",

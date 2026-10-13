@@ -93,3 +93,6 @@ export { abortable } from "../app/abortable.ts";
 export * from "../acdc/regeventing.ts";
 
 export * from "../db/registry-evidence.ts";
+
+export * from "../core/kram-policy.ts";
+export * from "../core/kraming.ts";

@@ -704,6 +704,8 @@ export class MsgCacheRecord extends RawRecord<MsgCacheRecordShape> implements Ms
 export interface TxnMsgCacheRecordShape {
   mdt?: string;
   xdt?: string;
+  /** Receiver time recorded only after complete KRAM authentication. */
+  rdt?: string;
   d?: number;
   ml?: number;
   pml?: number;
@@ -720,6 +722,7 @@ export interface TxnMsgCacheRecordShape {
 export class TxnMsgCacheRecord extends RawRecord<TxnMsgCacheRecordShape> implements TxnMsgCacheRecordShape {
   declare mdt?: string;
   declare xdt?: string;
+  declare rdt?: string;
   declare d?: number;
   declare ml?: number;
   declare pml?: number;

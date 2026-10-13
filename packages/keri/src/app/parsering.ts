@@ -39,6 +39,7 @@ import {
   TransReceiptQuadruple,
 } from "../core/dispatch.ts";
 import { Kevery, type QueryEnvelope } from "../core/eventing.ts";
+import type { KramRefusal } from "../core/kraming.ts";
 import { nestedIpexRoute, nestedMultisigIlks } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
@@ -51,6 +52,8 @@ export interface ExchangerLike {
     tsgs: TransIdxSigGroup[];
     cigars: Cigar[];
     ptds: PathedMaterialGroup[];
+    /** Prefixes unresolved at receipt remain missing even after a later key-state update. */
+    unresolvedLast?: readonly Prefixer[];
     /** Source and last-establishment factors retain their own proof ownership. */
     sscs?: readonly SealSource[];
     sourceSeals?: readonly SealEvent[];
@@ -127,7 +130,7 @@ export interface MessageDropDecision {
 }
 
 /** Route-specific results remain distinct from pre-dispatch refusal and unreported outcomes. */
-export type DispatchDecision = ReplyProcessDecision | ExchangeDecision | MessageDropDecision | void;
+export type DispatchDecision = ReplyProcessDecision | ExchangeDecision | MessageDropDecision | KramRefusal | void;
 
 /**
  * Convert one or more already-parsed CESR frames into KERI dispatch envelopes.
@@ -235,7 +238,7 @@ export function* dispatchEnvelope(
 }
 
 /**
- * Frozen processMsg boundary with KRAM disabled: sender policy precedes proof
+ * Frozen processMsg boundary: sender policy precedes optional KRAM, proof
  * prerequisites and delegation. Downstream processors authenticate their own
  * evidence; this layer borrows the envelope and never owns its payloads.
  */
@@ -253,6 +256,25 @@ function* dispatchMessage(
     if (kevery.denyList.has(sender)) return { kind: "drop", reason: "deniedSender" };
     if (kevery.allowList.size && !kevery.allowList.has(sender)) return { kind: "drop", reason: "senderNotAllowed" };
   }
+  if (kevery.kramer) {
+    return yield* kevery.kramer.intake(
+      envelope,
+      (ready) => dispatchReadyMessage(ready, revery, kevery, exchanger, vdr, mailboxAid),
+    );
+  }
+  return yield* dispatchReadyMessage(envelope, revery, kevery, exchanger, vdr, mailboxAid);
+}
+
+/** Delegate only after sender policy and optional KRAM have admitted the parent. */
+function* dispatchReadyMessage(
+  envelope: KeriDispatchEnvelope,
+  revery: Revery,
+  kevery: Kevery,
+  exchanger: ExchangerLike | undefined,
+  vdr: VdrDispatchServices,
+  mailboxAid?: string | null,
+): Operation<DispatchDecision> {
+  const serder = envelope.serder;
   switch (serder.ilk) {
     case Ilks.qry: {
       const query = queryEnvelopeFromDispatch(envelope);
@@ -291,6 +313,7 @@ function* dispatchExchange(
     sscs: envelope.sscs,
     sourceSeals: envelope.ssts,
     lsgs: envelope.ssgs,
+    unresolvedLast: envelope.unresolvedLast,
     cigars: envelope.cigars,
     ptds: envelope.ptds,
     essr: envelope.essr,

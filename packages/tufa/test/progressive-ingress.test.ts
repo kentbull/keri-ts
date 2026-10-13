@@ -419,3 +419,53 @@ Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox 
     }
   });
 });
+
+Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and refuses pending, denied and replayed requests", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
+    const runtime = yield* createAgentRuntime(hby, {
+      enableMailboxStore: true,
+      messagePolicy: { denyList: new Set([sender.pre]) },
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+    });
+    try {
+      const handler = createProtocolHandler(runtime, { serviceHab: sender });
+      const body = query("mbx", { i: sender.pre, src: sender.pre, topics: { "/reply": 0 } }, {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+      });
+      const sigers = sender.sign(body.raw, true);
+      const post = (index: number) =>
+        handler(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: new Uint8Array(messagize(body, { sigers: [sigers[index]], gvrsn: Vrsn_2_0 })),
+          }),
+        );
+      const key = [sender.pre, body.said!];
+      const denied = yield* call(() => post(0));
+      assertEquals(denied.status, 403);
+      yield* call(() => denied.text());
+      assertEquals(hby.db.msgc.get(key), null, "sender denial precedes KRAM durable effects");
+      runtime.reactor.kevery.denyList.clear();
+      const pending = yield* call(() => post(0));
+      assertEquals(pending.status, 403);
+      yield* call(() => pending.text());
+      assertExists(hby.db.pmkm.get(key));
+      assertEquals(hby.db.pmks.get(key).map((s) => s.index), [0]);
+      const ready = yield* call(() => post(1));
+      assertEquals(ready.status, 200, "the combined two-signature pool authorizes this HTTP attempt");
+      yield* call(() => ready.body?.cancel());
+      assertEquals(hby.db.pmkm.get(key), null);
+      assertExists(hby.db.msgc.get(key));
+      const replay = yield* call(() => post(1));
+      assertEquals(replay.status, 403, "an old matching mailbox cue cannot override KRAM replay refusal");
+      yield* call(() => replay.text());
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
