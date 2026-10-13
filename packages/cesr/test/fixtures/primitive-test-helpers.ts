@@ -8,7 +8,6 @@ import {
   isGroupTuple,
   type Primitive,
 } from "../../src/primitives/primitive.ts";
-import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
 
 /** Encode UTF-8 fixture text into parser input bytes. */
 export function txt(input: string): Uint8Array {
@@ -44,14 +43,6 @@ export function expectCounterGroup(entry: GroupEntry): CounterGroupLike {
 export function expectPrimitiveTuple(entry: GroupEntry): readonly GroupEntry[] {
   assertEquals(isGroupTuple(entry), true);
   return entry as readonly GroupEntry[];
-}
-
-/** Assert one entry is an unknown primitive placeholder. */
-export function expectUnknownPrimitive(entry: GroupEntry): UnknownPrimitive {
-  assertEquals(Array.isArray(entry), false);
-  assertEquals(isCounterGroupLike(entry), false);
-  assertInstanceOf(entry as Primitive, UnknownPrimitive);
-  return entry as UnknownPrimitive;
 }
 
 /** Assert one entry is a counter primitive (non-group node allowed). */

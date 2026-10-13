@@ -1,4 +1,4 @@
-import { b, codeB2ToB64, intToB64, t } from "../core/bytes.ts";
+import { b, codeB2ToB64, encodeB64, intToB64, t } from "../core/bytes.ts";
 import { DeserializeError, SerializeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
@@ -26,6 +26,7 @@ import { Mapper, type MapperMap, type MapperValue } from "../primitives/mapper.t
 import { parseMatter } from "../primitives/matter.ts";
 import { parseNoncer } from "../primitives/noncer.ts";
 import { NumberPrimitive } from "../primitives/number.ts";
+import { OpaqueSpan } from "../primitives/opaque.ts";
 import { makePather, parsePather } from "../primitives/pather.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
 import { isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
@@ -442,6 +443,7 @@ function encodeValue(
  * attachment/group decoder.
  */
 function decodeEntry(entry: GroupEntry, gvrsn: Versionage): MapperValue {
+  if (entry instanceof OpaqueSpan) return entry.domain === "txt" ? t(entry.raw) : encodeB64(entry.raw);
   if (isGroupTuple(entry)) {
     return entry.map((item) => decodeEntry(item, gvrsn));
   }

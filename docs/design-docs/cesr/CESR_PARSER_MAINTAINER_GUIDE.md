@@ -32,20 +32,20 @@ Canonical parser lifecycle/state-machine contract:
 ## Module map
 
 - `packages/cesr/src/core/parser-engine.ts`
-  - Streaming frame parser (`CesrParserCore`) for message-domain and CESR-native
+  - Streaming frame parser (`CesrParser`) for message-domain and CESR-native
     body-group streams.
   - Handles chunk boundaries, pending frames, and attachment continuation.
 - `packages/cesr/src/parser/attachment-parser.ts`
   - Counter-group dispatch for attachment/body groups.
-  - Version-selected dispatch with no cross-major retry. Compatibility mode
-    preserves opaque wrapper tails; it does not reinterpret attachment codes.
+  - Version-selected dispatch with no cross-major retry. Parsing
+    rejects malformed wrapper tails; opaque wire families retain one byte span.
 - `packages/cesr/src/primitives/mapper.ts`
   - Strict parsing for map-oriented native groups (labels interleaved with
     values).
   - Recursive map composition support (`children` fields).
 - `packages/cesr/src/annotate/render.ts`
   - Human-readable annotated output for parsed frames.
-  - Resilient wrapper rendering with explicit opaque fallback comments.
+  - Token rendering with explicit comments for opaque wire payloads.
 - `packages/cesr/src/primitives/labeler.ts`
   - Label primitive (`V`/`W`) parsing and shared `isLabelerCode()` helper.
 

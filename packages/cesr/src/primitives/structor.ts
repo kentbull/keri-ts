@@ -13,13 +13,14 @@
  * this is the wrong file. `Structor` only knows how many items are in a group
  * and how that enclosed group serializes.
  */
-import { b, codeB64ToB2, encodeB64, t } from "../core/bytes.ts";
+import { b, codeB64ToB2, concatBytes, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
 import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";
+import { OpaqueSpan } from "./opaque.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
 import { isCounterGroupLike, isGroupTuple } from "./primitive.ts";
 
@@ -27,22 +28,19 @@ function toText(input: Uint8Array): string {
   return t(input);
 }
 
-function serializeEntryQb64(entry: GroupEntry): string {
+/** Serialize graph entries directly so opaque bytes survive in their source domain. */
+function serializeEntry(entry: GroupEntry, domain: CesrDomain): Uint8Array {
+  if (entry instanceof OpaqueSpan) {
+    if (entry.domain === domain) return entry.raw;
+    return domain === "txt" ? b(encodeB64(entry.raw)) : codeB64ToB2(t(entry.raw));
+  }
   if (isGroupTuple(entry)) {
-    return entry.map((item) => serializeEntryQb64(item)).join("");
+    return concatBytes(...entry.map((item) => serializeEntry(item, domain)));
   }
-  if (isCounterGroupLike(entry)) {
-    return `${entry.qb64}${entry.items.map((item) => serializeEntryQb64(item)).join("")}`;
-  }
-  return entry.qb64;
-}
-
-function inferSerialized(
-  group: CounterGroupLike,
-  sourceDomain: CesrDomain,
-): Uint8Array {
-  const qb64 = `${group.qb64}${group.items.map((item) => serializeEntryQb64(item)).join("")}`;
-  return sourceDomain === "txt" ? b(qb64) : codeB64ToB2(qb64);
+  const head = domain === "txt" ? entry.qb64b : entry.qb2;
+  return isCounterGroupLike(entry)
+    ? concatBytes(head, ...entry.items.map((item) => serializeEntry(item, domain)))
+    : head;
 }
 
 /** Constructor payload for rebuilding a structor from an already parsed group. */
@@ -83,7 +81,7 @@ export class Structor extends CounterGroup {
 
     this.sourceDomain = init.sourceDomain ?? "txt";
     this.serialized = init.serialized?.slice()
-      ?? inferSerialized(group, this.sourceDomain);
+      ?? serializeEntry(group, this.sourceDomain);
     this.consumed = init.consumed ?? this.serialized.length;
   }
 

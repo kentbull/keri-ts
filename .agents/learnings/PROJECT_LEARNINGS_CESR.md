@@ -17,6 +17,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    Nested incremental parsing is deferred behind explicit performance evidence.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
+   Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not
+   arrays of fabricated primitives. Same-domain serialization preserves the bytes.
    `CesrDomain` names qb64/qb2 domains; `tokenSize` and `unitBytes` own byte widths.
    Parser genus context uses `gvrsn`/`streamGvrsn`; protocol metadata keeps `pvrsn`.
 4. Chunk exhaustion never completes an open attachment set. A following body,

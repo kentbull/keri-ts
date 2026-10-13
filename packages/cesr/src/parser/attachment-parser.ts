@@ -1,13 +1,12 @@
-import { b } from "../core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { tokenSize, unitBytes } from "../core/parser-constants.ts";
 import type { AttachmentGroup, CesrDomain } from "../core/types.ts";
 import { type Counter, CounterGroup, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import { parseIndexer } from "../primitives/indexer.ts";
 import { parseMatter } from "../primitives/matter.ts";
+import { OpaqueSpan } from "../primitives/opaque.ts";
 import type { GroupEntry } from "../primitives/primitive.ts";
 import { parseTexter } from "../primitives/texter.ts";
-import { UnknownPrimitive } from "../primitives/unknown.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import { resolveCtrDex } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -121,38 +120,6 @@ function parseEssrV2(input: Uint8Array, counter: Counter, _gvrsn: Versionage, do
   return { items, consumed: offset };
 }
 
-/** Split opaque counted payload into domain units (quadlets for text, triplets for binary). */
-function splitOpaqueUnits(
-  payload: Uint8Array,
-  domain: CesrDomain,
-  expectedCount?: number,
-): GroupEntry[] {
-  if (domain === "bny") {
-    const count = expectedCount ?? Math.floor(payload.length / 3);
-    return Array.from(
-      { length: count },
-      (_v, i) =>
-        UnknownPrimitive.fromPayload(
-          payload.slice(i * 3, i * 3 + 3),
-          domain,
-        ),
-    );
-  }
-
-  const text = String.fromCharCode(...payload);
-  if (expectedCount !== undefined) {
-    return Array.from(
-      { length: expectedCount },
-      (_v, i) =>
-        UnknownPrimitive.fromPayload(
-          b(text.slice(i * 4, i * 4 + 4)),
-          domain,
-        ),
-    );
-  }
-  return (text.match(/.{1,4}/g) ?? []).map((token) => UnknownPrimitive.fromPayload(b(token), domain));
-}
-
 /** Parse the controller signature group required inside a transferable signature group. */
 function parseControllerSigs(
   input: Uint8Array,
@@ -174,7 +141,7 @@ function parseControllerSigs(
  * Parse quadlet/triplet-counted groups.
  *
  * Behavior:
- * - non-wrapper groups return raw unit chunks (text quadlets or binary triplets).
+ * - non-wrapper groups preserve their payload as one opaque byte span.
  * - wrapper groups recurse into nested attachment-group dispatch.
  * - malformed wrapper contents propagate their parse error.
  */
@@ -236,7 +203,7 @@ function parseSizedGroup(
     return { items, consumed: total };
   }
 
-  const items = splitOpaqueUnits(payload, domain, counter.count);
+  const items = payload.length ? [new OpaqueSpan(payload, domain)] : [];
 
   return { items, consumed: total };
 }
