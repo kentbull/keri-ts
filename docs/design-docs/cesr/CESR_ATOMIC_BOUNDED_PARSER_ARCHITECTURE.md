@@ -1,5 +1,9 @@
 # CESR Atomic Bounded Parser Architecture
 
+This describes the currently implemented parser. The accepted
+[progressive design](../../adr/adr-0012-progressive-nested-parser.md) is a planned
+replacement, tracked in the [execution plan](CESR_PROGRESSIVE_PARSER_PLAN.md).
+
 The stream parser keeps one open frame and complete queued siblings. Nested
 counted payloads are bounded and parsed atomically; there is no resumable nested
 parse stack. See the [normative contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md)
@@ -73,5 +77,6 @@ Native bodies hydrate once through Serder. Annotation's token walk exists only
 for presentation. Runtime envelopes reuse typed primitives and validate roles at
 the public frame boundary.
 
-Progressive nested emission remains deferred until a measured workload justifies
-its state and complexity, as described in ADR-0001.
+The approved many-message ESSR workload now motivates progressive nested
+emission. Migration and benchmark gates are defined by ADR-0012; this atomic
+implementation remains in service only until that migration completes.

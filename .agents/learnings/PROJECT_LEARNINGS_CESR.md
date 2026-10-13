@@ -12,12 +12,16 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 2. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the
    normative lifecycle contract. Parser behavior changes should stay mapped to
    that contract and its tests.
-3. Parser architecture remains intentionally atomic/bounded-substream first.
+3. The implemented parser remains atomic/bounded-substream first during migration.
    `CesrParser` directly owns its buffer, offset, and selected stream genus.
    The parser lives in `parser/stream.ts`, `frames.ts`, and `attachments.ts`;
    shared byte widths live in `core/domain.ts`. Frame parsing uses stateless
    functions; no collector or frame-parser objects.
-   Nested incremental parsing is deferred behind explicit performance evidence.
+   Progressive async generators are approved in ADR-0012 for many smaller ESSR
+   messages. The target contract and phased plan specify benchmark gates, early
+   child delivery, payload ownership, and end-to-end memory budgets. These remain
+   target obligations until their implementation/tests land; phase 12 removes the
+   atomic engine and old keri-ts API shims without dropping protocol support.
    `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
    union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
    Opaque wire payloads are one `OpaqueSpan` of original bytes plus domain, not
@@ -132,7 +136,10 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Key Docs
 
-1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` (current behavior)
+   and `CESR_PROGRESSIVE_PARSER_CONTRACT.md` (accepted target).
+   `docs/design-docs/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md` tracks execution;
+   `docs/adr/adr-0012-progressive-nested-parser.md` records the replacement decision.
 2. `docs/design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
 3. `docs/archived-plan-docs/cesr/cesr-parser/CESR_PARSER_COMPLETENESS_DECISION_2026-03-01.md`
 4. `docs/archived-plan-docs/cesr/cesr-primitives/CESR_PRIMITIVES_WALKTHROUGH.md`
@@ -141,8 +148,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current Follow-Ups
 
-1. Keep lifecycle-contract tests synchronized with version selection and wrapper
-   recovery behavior.
+1. Execute the progressive parser plan with explicit checkpoint evidence. Keep
+   current behavior accurate until migration, preserve version/count/boundary
+   regressions, and distinguish ESSR fragments from logical sealed messages.
 2. Preserve the full P2 vector set as the regression floor while upper-layer
    KERI work proceeds.
 3. Keep `packages/cesr/scripts/verify-tables.ts` green whenever parity work
