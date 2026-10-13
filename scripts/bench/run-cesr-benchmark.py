@@ -35,6 +35,8 @@ metadata = {
     "clock": "monotonic",
     "note": "Parser-only synthetic ESSR; no encryption, signature verification, storage, or network measurement.",
 }
+# Preserve every sample before reporting an unsuccessful qualification to CI.
+failed = False
 with open(args.output, "w") as report:
     for mib in args.payload_mib:
         for kib in args.item_kib:
@@ -75,6 +77,9 @@ with open(args.output, "w") as report:
                                           wallSeconds=time.monotonic() - start)
                             if failure:
                                 result["status"] = failure
+                            failed |= result["status"] != "ok" or proc.returncode != 0
                             report.write(json.dumps(result) + "\n")
                             report.flush()
                             print(f"{mib} MiB, {kib} KiB items, depth {depth}, run {repetition}: {result['status']}", flush=True)
+
+raise SystemExit(1 if failed else 0)
