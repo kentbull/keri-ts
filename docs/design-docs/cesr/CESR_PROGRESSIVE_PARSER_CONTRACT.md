@@ -9,8 +9,8 @@ provides async `parseBytes(bytes, options)` with an explicit finite input budget
 Nested GenericGroups delegate through `yield*` and deliver complete children
 before their enclosing payload finishes. There is no synchronous stream engine.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
-implemented lifecycle to tests. Parent-owned nested message trees are implemented; nested runtime processing and
-serialization, shared runtime reservations, and final qualification remain follow-ons.
+implemented lifecycle to tests. Parent-owned nested message trees are implemented; nested runtime processing, annotation, shared runtime reservations, and final
+qualification remain follow-ons. Serialization preserves admitted trees.
 
 The parser materializes bodies and ordinary attachment leaves through the existing
 Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
@@ -200,15 +200,26 @@ same references incrementally.
 `framePayload()` and `attachmentPayload()` return non-owning reopenable views of
 one admitted frame. Ordinary metadata stays within the parser's frame budget;
 ESSR wire is consumed incrementally through `essrChunks()`. The caller retains
-its `EssrPayload` owner until all output readers finish. Nested trees currently
-fail explicitly at `framePayload`, `attachmentPayload`, annotation, KERI envelope
-normalization, and HTTP message inspection. The immediate runtime/serialization
-follow-on must preserve child evidence and verification order before these
-boundaries can accept nests; none may silently omit or flatten them. Output chunks are owned
+every descendant `EssrPayload` owner until all output readers finish. Each child
+is emitted as a `BodyWithAttachmentGroup`; non-native child bodies are qualified
+Texters inside `NonNativeBodyGroup`. The child wrapper uses its parent's genus,
+with any child genus selector scoped inside it. Default output preserves each
+node's resolved genus; an explicit `gvrsn` overrides every compatible node.
+Native bodies still reject genus changes that require rebuilding their Serder.
+The serializer preserves parent/child ownership, group order, child order, and
+ESSR item order. It normalizes the attachment categories to ordinary leaves,
+children, then ESSR; the parsed model does not retain original cross-category
+interleaving. One payload view per admitted node and finite body/group metadata
+remain under existing tree admission limits. No descendant ESSR is collected.
+Cancellation closes active readers without disposing the caller's tree owners.
+Annotation, KERI normalization, and HTTP inspection still reject nests explicitly
+pending their separate owned-tree consumer work. Output chunks are owned
 copies of at most 64 KiB; custom ESSR wire readers retain the existing 1 MiB
 maximum backing-allocation contract.
 
-The output attachment enclosure has one selected genus and one wire domain.
+Each message's ordinary attachment leaves use one selected genus; enclosed
+children may select their own genus inside their own boundary. The entire output
+tree uses one attachment wire domain.
 KERIpy `main` at `927c0cb8794d7c84fc17143c67df64aab9deda6c` permits a GVC only
 at its beginning and rejects nested attachment enclosures or mixed domains.
 Progressive parsing can accept broader scoped input, but forwarding normalizes
