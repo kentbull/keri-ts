@@ -4,6 +4,7 @@ import { MemoryPayloadSink, type OwnedPayload, type PayloadSink } from "../core/
 import type { CesrDomain, EssrPayload } from "../core/types.ts";
 import { TEXTER_CODES } from "../primitives/codex.ts";
 import type { Counter } from "../primitives/counter.ts";
+import { Texter } from "../primitives/texter.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Cursor } from "./cursor.ts";
@@ -196,4 +197,40 @@ export function essrFactory(options: EssrOptions, signal?: AbortSignal): (gvrsn:
       : new MemoryPayloadSink(wireLimit, signal);
     return new EssrWriter(sink, bytes, items, gvrsn);
   };
+}
+
+/** Rehydrate one explicitly bounded Texter at a time for per-item consumers. */
+export async function* essrTexters(
+  essr: EssrPayload,
+  maxItemBytes: number,
+  signal?: AbortSignal,
+): AsyncGenerator<Texter> {
+  if (!Number.isSafeInteger(maxItemBytes) || maxItemBytes < 0) throw new RangeError("Invalid ESSR item limit");
+  const input = new Cursor(essr.wire.open(signal), { signal });
+  let decoded = 0;
+  try {
+    for (let item = 0; item < essr.count; item++) {
+      const token = await header(input, "txt");
+      if (token.rawSize > maxItemBytes || token.rawSize > essr.raw.size - decoded) {
+        throw new DeserializeError("ESSR Texter exceeds declared payload size.");
+      }
+      const length = token.text.length + token.count * 4;
+      const bytes = new Uint8Array(length);
+      bytes.set(b(token.text));
+      let offset = token.text.length;
+      while (offset < length) {
+        const chunk = await input.read(Math.min(32768, length - offset));
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const texter = new Texter({ qb64b: bytes });
+      decoded += texter.raw.length;
+      yield texter;
+    }
+    if (decoded !== essr.raw.size || !await input.atEnd()) {
+      throw new DeserializeError("ESSR wire metadata does not match its contents.");
+    }
+  } finally {
+    await input.close();
+  }
 }

@@ -20,11 +20,21 @@ Final names use scoped owner identities such as `essr.SAID` and `plain.SAID`,
 with temporary UUIDs confined to staging. These names do not claim to be
 independent payload hashes. See `packages/keri/src/db/payload-store.md`.
 
-`EssrRecipient` binds one explicitly hosted habitat and reloads accepted EXNs
-before decrypting their committed raw ESSR bytes. It checks source/destination,
-digest, authentication, and SCS framing before plaintext staging. Ciphertext
-evidence remains in `.essrs`; the returned body is a non-owning file view.
-See `packages/keri/src/app/essr.md` for ownership and admission limits.
+`Baser` owns its archive lifetime. Startup removes `.essrs` rows lacking accepted
+or escrow ownership with a key-only scan. `Exchanger` carries reopenable ESSR
+wire through acceptance, escrow, and replay; `.essrs` retains individual
+KERIpy-readable Texters. Private canonical wire preserves order and repeated
+fragments despite `.essrs` set semantics. KERIpy-origin rows without private
+metadata remain usable through a bounded borrowed view; retry snapshots and
+publishes them without deleting prior evidence on failure. Such rows retain only
+the insertion order and deduplication KERIpy actually stored.
+
+`Exchanger` and `EssrRecipient` expose Effection operations that join cancellable
+file reads and cleanup. Recipient processing binds one explicitly hosted habitat
+and checks the accepted EXN, digest, sealed-box authentication, and SCS framing
+before plaintext staging. `Baser.savePlaintext` stores authenticated output
+separately from ciphertext evidence; its reopened body view retains no full
+plaintext buffer. See `packages/keri/src/app/essr.md` for ownership and limits.
 
 Runtime dispatch and settlement are Effection operations; mailbox batch callbacks may return an operation. Finish
 one dispatch before advancing its source or marking a mailbox batch handed off.
