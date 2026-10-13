@@ -209,3 +209,12 @@ must update this contract and the mapped tests in the matrix.
   generation reads committed blobs, independent of the checkout's current HEAD.
   Updating this baseline requires reviewing reused code meanings together with
   parser, serializer, fixture, and interop changes.
+
+## Attachment Primitive Roles
+
+Known tuple positions hydrate their semantic primitives once in CESR: Siger,
+Verfer/Cigar, Prefixer, Seqner, Diger, Dater, Pather, and the extended
+nonce/label/media roles. Wrong-role codes fail at this boundary. Tuple layouts
+remain ordered and recursive. The pinned KERIpy parser uses fixed-width Seqner
+for receipt, replay, and source ordinals in both versions; the bound-state
+ordinal uses NumberPrimitive. Opaque wire families remain OpaqueSpan entries.

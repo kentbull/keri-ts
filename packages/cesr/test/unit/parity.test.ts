@@ -53,7 +53,7 @@ Deno.test("dispatch parses v2 controller indexed signatures group", () => {
 });
 
 Deno.test("dispatch parses v2 trans indexed sig group", () => {
-  const payload = `${token("B")}${token("M")}${token("E")}-KAW${sigerToken()}`;
+  const payload = `${token("B")}${token("0A")}${token("E")}-KAW${sigerToken()}`;
   const ims = `${counterV2("-X", payload.length / 4)}${payload}`;
   const parsed = parseAttachmentGroup(encode(ims), {
     major: 2,

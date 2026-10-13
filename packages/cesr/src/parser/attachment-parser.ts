@@ -1,12 +1,22 @@
 import { GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { tokenSize, unitBytes } from "../core/parser-constants.ts";
 import type { AttachmentGroup, CesrDomain } from "../core/types.ts";
+import { parseCigar } from "../primitives/cigar.ts";
 import { type Counter, CounterGroup, decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
-import { parseIndexer } from "../primitives/indexer.ts";
-import { parseMatter } from "../primitives/matter.ts";
+import { parseDater } from "../primitives/dater.ts";
+import { parseDiger } from "../primitives/diger.ts";
+import { parseLabeler } from "../primitives/labeler.ts";
+import { parseNoncer } from "../primitives/noncer.ts";
+import { parseNumber } from "../primitives/number.ts";
 import { OpaqueSpan } from "../primitives/opaque.ts";
-import type { GroupEntry } from "../primitives/primitive.ts";
+import { parsePather } from "../primitives/pather.ts";
+import { parsePrefixer } from "../primitives/prefixer.ts";
+import type { GroupEntry, Primitive } from "../primitives/primitive.ts";
+import { parseSeqner } from "../primitives/seqner.ts";
+import { parseSiger } from "../primitives/siger.ts";
 import { parseTexter } from "../primitives/texter.ts";
+import { parseVerfer } from "../primitives/verfer.ts";
+import { parseVerser } from "../primitives/verser.ts";
 import { CtrDexV1, CtrDexV2 } from "../tables/counter-codex.ts";
 import { resolveCtrDex } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
@@ -26,12 +36,8 @@ interface ParsedGroup {
   consumed: number;
 }
 
-/** Primitive token families used by tuple/repetition parsers. */
-type PrimitiveKind = "matter" | "indexer";
-
-function tupleItem(items: GroupEntry[]): GroupEntry {
-  return items;
-}
+/** Decode one primitive whose role is fixed by the enclosing group. */
+type PrimitiveParser = (input: Uint8Array, domain: CesrDomain) => Primitive;
 
 /** Parser contract for one attachment-group counter code. */
 type GroupParser = (
@@ -44,18 +50,16 @@ type GroupParser = (
 /** Universal genus-version counter code (v1/v2 compatible encoding semantics). */
 const GENUS_VERSION_CODE = CtrDexV2.KERIACDCGenusVersion;
 
-/** Parse a fixed primitive tuple shape and return qb64 strings in source order. */
+/** Decode a tuple with the primitive readers required by its wire roles. */
 function parseTuple(
   input: Uint8Array,
-  kinds: readonly PrimitiveKind[],
+  parsers: readonly PrimitiveParser[],
   domain: CesrDomain,
 ): { items: GroupEntry[]; consumed: number } {
   const items: GroupEntry[] = [];
   let offset = 0;
-  for (const kind of kinds) {
-    const part = kind === "indexer"
-      ? parseIndexer(input.slice(offset), domain)
-      : parseMatter(input.slice(offset), domain);
+  for (const parse of parsers) {
+    const part = parse(input.slice(offset), domain);
     items.push(part);
     offset += tokenSize(part, domain);
   }
@@ -66,14 +70,14 @@ function parseTuple(
 function parseTuplesV1(
   input: Uint8Array,
   counter: Counter,
-  kinds: readonly PrimitiveKind[],
+  parsers: readonly PrimitiveParser[],
   domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
-    const tuple = parseTuple(input.slice(offset), kinds, domain);
-    items.push(tupleItem(tuple.items));
+    const tuple = parseTuple(input.slice(offset), parsers, domain);
+    items.push(tuple.items);
     offset += tuple.consumed;
   }
   return { items, consumed: offset };
@@ -83,14 +87,14 @@ function parseTuplesV1(
 function parseTuplesV2(
   input: Uint8Array,
   counter: Counter,
-  kinds: readonly PrimitiveKind[],
+  parsers: readonly PrimitiveParser[],
   domain: CesrDomain,
 ): ParsedGroup {
   const items: GroupEntry[] = [];
   let offset = tokenSize(counter, domain);
   while (offset < input.length) {
-    const tuple = parseTuple(input.slice(offset), kinds, domain);
-    items.push(tupleItem(tuple.items));
+    const tuple = parseTuple(input.slice(offset), parsers, domain);
+    items.push(tuple.items);
     offset += tuple.consumed;
   }
   return { items, consumed: offset };
@@ -210,20 +214,20 @@ function parseSizedGroup(
 
 /** Parse one transferable signature entry: prefix, sequence, digest, and signature list. */
 function parseTransSig(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
-  const header = parseTuple(input, ["matter", "matter", "matter"], domain);
+  const header = parseTuple(input, [parsePrefixer, parseSeqner, parseDiger], domain);
   const sigers = parseControllerSigs(input.slice(header.consumed), gvrsn, domain);
   return {
-    items: [...header.items, tupleItem(sigers.items)],
+    items: [...header.items, sigers.items],
     consumed: header.consumed + sigers.consumed,
   };
 }
 
 /** Parse one last-establishment signature entry: prefix and signature list. */
 function parseLastSig(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): ParsedGroup {
-  const header = parseTuple(input, ["matter"], domain);
+  const header = parseTuple(input, [parsePrefixer], domain);
   const sigers = parseControllerSigs(input.slice(header.consumed), gvrsn, domain);
   return {
-    items: [...header.items, tupleItem(sigers.items)],
+    items: [...header.items, sigers.items],
     consumed: header.consumed + sigers.consumed,
   };
 }
@@ -239,7 +243,7 @@ function parseTransSigsV1(
   let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const entry = parseTransSig(input.slice(offset), gvrsn, domain);
-    items.push(tupleItem(entry.items));
+    items.push(entry.items);
     offset += entry.consumed;
   }
   return { items, consumed: offset };
@@ -256,7 +260,7 @@ function parseTransSigsV2(
   let offset = tokenSize(counter, domain);
   while (offset < input.length) {
     const entry = parseTransSig(input.slice(offset), gvrsn, domain);
-    items.push(tupleItem(entry.items));
+    items.push(entry.items);
     offset += entry.consumed;
   }
   return { items, consumed: offset };
@@ -273,7 +277,7 @@ function parseLastSigsV1(
   let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
     const entry = parseLastSig(input.slice(offset), gvrsn, domain);
-    items.push(tupleItem(entry.items));
+    items.push(entry.items);
     offset += entry.consumed;
   }
   return { items, consumed: offset };
@@ -290,7 +294,7 @@ function parseLastSigsV2(
   let offset = tokenSize(counter, domain);
   while (offset < input.length) {
     const entry = parseLastSig(input.slice(offset), gvrsn, domain);
-    items.push(tupleItem(entry.items));
+    items.push(entry.items);
     offset += entry.consumed;
   }
   return { items, consumed: offset };
@@ -306,7 +310,7 @@ function parsePathSigs(
   const items: GroupEntry[] = [];
   let offset = tokenSize(counter, domain);
   for (let i = 0; i < counter.count; i++) {
-    const path = parseMatter(input.slice(offset), domain);
+    const path = parsePather(input.slice(offset), domain);
     offset += tokenSize(path, domain);
     const sigGroup = parseAttachmentGroup(
       input.slice(offset),
@@ -315,10 +319,10 @@ function parsePathSigs(
     );
     offset += sigGroup.consumed;
     items.push(
-      tupleItem([
+      [
         path,
         sigGroup.group,
-      ]),
+      ],
     );
   }
   return { items, consumed: offset };
@@ -334,12 +338,12 @@ function parsePathSigGroup(
   const items: GroupEntry[] = [];
   let offset = tokenSize(counter, domain);
 
-  const root = parseMatter(input.slice(offset), domain);
+  const root = parsePather(input.slice(offset), domain);
   offset += tokenSize(root, domain);
   items.push(root);
 
   for (let i = 0; i < counter.count; i++) {
-    const path = parseMatter(input.slice(offset), domain);
+    const path = parsePather(input.slice(offset), domain);
     offset += tokenSize(path, domain);
     const sigGroup = parseAttachmentGroup(
       input.slice(offset),
@@ -348,10 +352,10 @@ function parsePathSigGroup(
     );
     offset += sigGroup.consumed;
     items.push(
-      tupleItem([
+      [
         path,
         sigGroup.group,
-      ]),
+      ],
     );
   }
   return { items, consumed: offset };
@@ -372,13 +376,13 @@ function parseGenus(
 }
 
 /** Bind a tuple shape to v1 item-count parsing. */
-function tuplesV1(...kinds: PrimitiveKind[]): GroupParser {
-  return (input, counter, _gvrsn, domain) => parseTuplesV1(input, counter, kinds, domain);
+function tuplesV1(...parsers: PrimitiveParser[]): GroupParser {
+  return (input, counter, _gvrsn, domain) => parseTuplesV1(input, counter, parsers, domain);
 }
 
 /** Bind a tuple shape to v2 bounded-payload parsing. */
-function tuplesV2(...kinds: PrimitiveKind[]): GroupParser {
-  return (input, counter, _gvrsn, domain) => parseTuplesV2(input, counter, kinds, domain);
+function tuplesV2(...parsers: PrimitiveParser[]): GroupParser {
+  return (input, counter, _gvrsn, domain) => parseTuplesV2(input, counter, parsers, domain);
 }
 
 /** Direct routes for CESR v1; counter parsing validates the requested minor. */
@@ -396,13 +400,13 @@ const HANDLERS_V1: Readonly<Record<string, GroupParser>> = {
   [CtrDexV1.BigBodyWithAttachmentGroup]: parseSizedGroup,
   [CtrDexV1.ESSRPayloadGroup]: parseEssrV1,
   [CtrDexV1.BigESSRPayloadGroup]: parseEssrV1,
-  [CtrDexV1.ControllerIdxSigs]: tuplesV1("indexer"),
-  [CtrDexV1.WitnessIdxSigs]: tuplesV1("indexer"),
-  [CtrDexV1.NonTransReceiptCouples]: tuplesV1("matter", "matter"),
-  [CtrDexV1.FirstSeenReplayCouples]: tuplesV1("matter", "matter"),
-  [CtrDexV1.SealSourceCouples]: tuplesV1("matter", "matter"),
-  [CtrDexV1.TransReceiptQuadruples]: tuplesV1("matter", "matter", "matter", "indexer"),
-  [CtrDexV1.SealSourceTriples]: tuplesV1("matter", "matter", "matter"),
+  [CtrDexV1.ControllerIdxSigs]: tuplesV1(parseSiger),
+  [CtrDexV1.WitnessIdxSigs]: tuplesV1(parseSiger),
+  [CtrDexV1.NonTransReceiptCouples]: tuplesV1(parseVerfer, parseCigar),
+  [CtrDexV1.FirstSeenReplayCouples]: tuplesV1(parseSeqner, parseDater),
+  [CtrDexV1.SealSourceCouples]: tuplesV1(parseSeqner, parseDiger),
+  [CtrDexV1.TransReceiptQuadruples]: tuplesV1(parsePrefixer, parseSeqner, parseDiger, parseSiger),
+  [CtrDexV1.SealSourceTriples]: tuplesV1(parsePrefixer, parseSeqner, parseDiger),
   [CtrDexV1.TransIdxSigGroups]: parseTransSigsV1,
   [CtrDexV1.TransLastIdxSigGroups]: parseLastSigsV1,
   [CtrDexV1.SadPathSig]: parsePathSigs,
@@ -436,40 +440,54 @@ const HANDLERS_V2: Readonly<Record<string, GroupParser>> = {
   [CtrDexV2.BigBodyWithAttachmentGroup]: parseSizedGroup,
   [CtrDexV2.ESSRPayloadGroup]: parseEssrV2,
   [CtrDexV2.BigESSRPayloadGroup]: parseEssrV2,
-  [CtrDexV2.ControllerIdxSigs]: tuplesV2("indexer"),
-  [CtrDexV2.BigControllerIdxSigs]: tuplesV2("indexer"),
-  [CtrDexV2.WitnessIdxSigs]: tuplesV2("indexer"),
-  [CtrDexV2.BigWitnessIdxSigs]: tuplesV2("indexer"),
-  [CtrDexV2.NonTransReceiptCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.BigNonTransReceiptCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.FirstSeenReplayCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.BigFirstSeenReplayCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.SealSourceCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.BigSealSourceCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.BackerRegistrarSealCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.BigBackerRegistrarSealCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.TypedDigestSealCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.BigTypedDigestSealCouples]: tuplesV2("matter", "matter"),
-  [CtrDexV2.TransReceiptQuadruples]: tuplesV2("matter", "matter", "matter", "indexer"),
-  [CtrDexV2.BigTransReceiptQuadruples]: tuplesV2("matter", "matter", "matter", "indexer"),
-  [CtrDexV2.SealSourceTriples]: tuplesV2("matter", "matter", "matter"),
-  [CtrDexV2.BigSealSourceTriples]: tuplesV2("matter", "matter", "matter"),
-  [CtrDexV2.SealSourceLastSingles]: tuplesV2("matter"),
-  [CtrDexV2.BigSealSourceLastSingles]: tuplesV2("matter"),
-  [CtrDexV2.DigestSealSingles]: tuplesV2("matter"),
-  [CtrDexV2.BigDigestSealSingles]: tuplesV2("matter"),
-  [CtrDexV2.MerkleRootSealSingles]: tuplesV2("matter"),
-  [CtrDexV2.BigMerkleRootSealSingles]: tuplesV2("matter"),
+  [CtrDexV2.ControllerIdxSigs]: tuplesV2(parseSiger),
+  [CtrDexV2.BigControllerIdxSigs]: tuplesV2(parseSiger),
+  [CtrDexV2.WitnessIdxSigs]: tuplesV2(parseSiger),
+  [CtrDexV2.BigWitnessIdxSigs]: tuplesV2(parseSiger),
+  [CtrDexV2.NonTransReceiptCouples]: tuplesV2(parseVerfer, parseCigar),
+  [CtrDexV2.BigNonTransReceiptCouples]: tuplesV2(parseVerfer, parseCigar),
+  [CtrDexV2.FirstSeenReplayCouples]: tuplesV2(parseSeqner, parseDater),
+  [CtrDexV2.BigFirstSeenReplayCouples]: tuplesV2(parseSeqner, parseDater),
+  [CtrDexV2.SealSourceCouples]: tuplesV2(parseSeqner, parseDiger),
+  [CtrDexV2.BigSealSourceCouples]: tuplesV2(parseSeqner, parseDiger),
+  [CtrDexV2.BackerRegistrarSealCouples]: tuplesV2(parsePrefixer, parseDiger),
+  [CtrDexV2.BigBackerRegistrarSealCouples]: tuplesV2(parsePrefixer, parseDiger),
+  [CtrDexV2.TypedDigestSealCouples]: tuplesV2(parseVerser, parseDiger),
+  [CtrDexV2.BigTypedDigestSealCouples]: tuplesV2(parseVerser, parseDiger),
+  [CtrDexV2.TransReceiptQuadruples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger, parseSiger),
+  [CtrDexV2.BigTransReceiptQuadruples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger, parseSiger),
+  [CtrDexV2.SealSourceTriples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger),
+  [CtrDexV2.BigSealSourceTriples]: tuplesV2(parsePrefixer, parseSeqner, parseDiger),
+  [CtrDexV2.SealSourceLastSingles]: tuplesV2(parsePrefixer),
+  [CtrDexV2.BigSealSourceLastSingles]: tuplesV2(parsePrefixer),
+  [CtrDexV2.DigestSealSingles]: tuplesV2(parseDiger),
+  [CtrDexV2.BigDigestSealSingles]: tuplesV2(parseDiger),
+  [CtrDexV2.MerkleRootSealSingles]: tuplesV2(parseDiger),
+  [CtrDexV2.BigMerkleRootSealSingles]: tuplesV2(parseDiger),
   [CtrDexV2.TransIdxSigGroups]: parseTransSigsV2,
   [CtrDexV2.BigTransIdxSigGroups]: parseTransSigsV2,
   [CtrDexV2.TransLastIdxSigGroups]: parseLastSigsV2,
   [CtrDexV2.BigTransLastIdxSigGroups]: parseLastSigsV2,
-  [CtrDexV2.BlindedStateQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
-  [CtrDexV2.BigBlindedStateQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
-  [CtrDexV2.TypedMediaQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
-  [CtrDexV2.BigTypedMediaQuadruples]: tuplesV2("matter", "matter", "matter", "matter"),
-  [CtrDexV2.BoundStateSextuples]: tuplesV2("matter", "matter", "matter", "matter", "matter", "matter"),
-  [CtrDexV2.BigBoundStateSextuples]: tuplesV2("matter", "matter", "matter", "matter", "matter", "matter"),
+  [CtrDexV2.BlindedStateQuadruples]: tuplesV2(parseDiger, parseNoncer, parseNoncer, parseLabeler),
+  [CtrDexV2.BigBlindedStateQuadruples]: tuplesV2(parseDiger, parseNoncer, parseNoncer, parseLabeler),
+  [CtrDexV2.TypedMediaQuadruples]: tuplesV2(parseDiger, parseNoncer, parseLabeler, parseTexter),
+  [CtrDexV2.BigTypedMediaQuadruples]: tuplesV2(parseDiger, parseNoncer, parseLabeler, parseTexter),
+  [CtrDexV2.BoundStateSextuples]: tuplesV2(
+    parseDiger,
+    parseNoncer,
+    parseNoncer,
+    parseLabeler,
+    parseNumber,
+    parseNoncer,
+  ),
+  [CtrDexV2.BigBoundStateSextuples]: tuplesV2(
+    parseDiger,
+    parseNoncer,
+    parseNoncer,
+    parseLabeler,
+    parseNumber,
+    parseNoncer,
+  ),
 };
 
 /** Parse one attachment group with an explicit version (no version fallback). */
