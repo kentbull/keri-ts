@@ -110,7 +110,15 @@ cannot satisfy ordering. Missing anchors take precedence over missing predecesso
 Protocol ordinals retain bigint precision, but the current storage API supports
 only safe integer ordinals; larger updates receive an explicit `ordinalRange`
 refusal before storage conversion. This is an unfinished storage boundary.
-Named services and scheduled retries belong to the remaining registry units.
+Named services are explicitly acquired; runtime scheduling remains a later gate.
+`acdc/registraring.ts` supplies explicit local Regery/Registry creation and alias
+lookup. Reopen resolves the controlling Hab from the stored inception issuer;
+multiple aliases share one instance. Inception staging and alias publication
+share a transaction, and in-memory maps change only after it commits.
+`createRegery` owns a default backend until transfer, joining cleanup if loading
+fails; injected backends stay caller-owned, including after `close`. Owned close
+is joined and repeat-safe. Opening neither migrates nor rewrites old layouts.
+Blind/present/vacate and runtime installation remain separate implementation gates.
 Acceptance advances already anchored successors one transaction at a time.
 Explicit `processEscrows` retries both families, pruning invalid prior links;
 later failures preserve earlier committed events. `anchorMsg` validates stored

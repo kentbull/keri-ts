@@ -1,15 +1,121 @@
 /** Registry observer imports retain only complete verified chains across reopen. */
 import { b, Diger, discardFrame, NumberPrimitive, parseBytes, ResourceLimitError, SerderACDC } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
+import { createRegery, Regery } from "../../../src/acdc/registraring.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { LMDBer } from "../../../src/db/core/lmdber.ts";
 import { createRegistryEvidenceStore } from "../../../src/db/registry-evidence.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
+
+Deno.test("named v2 registries reopen by stored issuer and retain explicit store ownership", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    try {
+      const first = hby.makeHab("first"), second = hby.makeHab("second");
+      let rgy = yield* createRegery({ hby, baser });
+      assertEquals(rgy.registryByName("absent"), null);
+      assertThrows(() => rgy.makeRegistry("unknown", "unknown"), Error, "Unknown local registry issuer");
+      const one = rgy.makeRegistry("one", first.pre), two = rgy.makeRegistry("two", second.pre);
+      assertEquals([one.head, one.regser, one.sn], [null, null, -1n]);
+      const rip = rgy.store.event(one.regk!)!;
+      assertThrows(() => rgy.makeRegistry("one", first.pre), Error, "alias already exists");
+      assertThrows(
+        () =>
+          rgy.makeRegistry("duplicate", first.pre, {
+            uuid: rip.sad!.u as string,
+            stamp: rip.sad!.dt as string,
+          }),
+        Error,
+        "Registry already exists",
+      );
+      rgy.store.putRecord("two.alias", { registryKey: two.regk! });
+      first.interact({ data: [{ i: one.regk!, s: "0", d: one.regk! }] });
+      rgy.processEscrows();
+      assertEquals(one.regser!.said, one.regk);
+      assertEquals([one.regd, one.sn], [one.regk, 0n]);
+      yield* rgy.close();
+      assertEquals(baser.opened, true, "injected store remains caller-owned");
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      rgy = yield* createRegery({ hby, baser });
+      assertEquals(rgy.registryByName("one")!.hab === first, true);
+      assertEquals(rgy.registryByName("two")!.hab === second, true);
+      assertEquals(rgy.registryByName("two.alias") === rgy.registryByName("two"), true);
+      assertEquals(rgy.regs.size, 2);
+      hby.habs.delete(second.pre);
+      try {
+        assertThrows(() => new Regery(hby, baser), Error, "Unknown local registry issuer");
+        assertEquals(baser.opened, true);
+      } finally {
+        hby.habs.set(second.pre, second);
+      }
+      rgy.store.putRecord("broken", { registryKey: first.pre });
+      assertThrows(() => new Regery(hby, baser), Error, "Corrupt registry inception");
+      rgy.store.records!.rem("broken");
+      const records = rgy.store.records!, pin = records.pin;
+      const bodies = [...baser.evts.getTopItemIter()].length;
+      try {
+        records.pin = function(...args) {
+          pin.apply(this, args);
+          throw new Error("alias publication failed");
+        };
+        assertThrows(() => rgy.makeRegistry("failed", first.pre), Error, "alias publication failed");
+      } finally {
+        records.pin = pin;
+      }
+      assertEquals(rgy.registryByName("failed"), null);
+      assertEquals(records.get("failed"), null);
+      assertEquals([...baser.evts.getTopItemIter()].length, bodies);
+      second.interact({ data: [{ i: two.regk!, s: "0", d: two.regk! }] });
+      rgy.processEscrows();
+      assertEquals(rgy.registryByName("two")!.sn, 0n);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true, readonly: true });
+      rgy = yield* createRegery({ hby, baser });
+      assertEquals(rgy.registryByName("one")!.sn, 0n);
+      assertThrows(() => rgy.makeRegistry("readonly", first.pre), Error, "readonly");
+
+      const owned = yield* createRegery({ hby, name: crypto.randomUUID() });
+      const ownedPath = owned.baser.path!;
+      yield* owned.close();
+      yield* owned.close();
+      assertEquals(owned.baser.opened, false);
+      yield* call(() => assertRejects(() => Deno.stat(ownedPath), Deno.errors.NotFound));
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("named registry acquisition closes its owned store when alias loading fails", async () => {
+  const hby = await run(() => createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true }));
+  const load = Regery.prototype.loadRegistries, reopen = RegBaser.prototype.reopen;
+  let opened: RegBaser | undefined;
+  try {
+    RegBaser.prototype.reopen = function*(options) {
+      opened = this;
+      return yield* reopen.call(this, options);
+    };
+    Regery.prototype.loadRegistries = () => {
+      throw new Error("invalid persisted alias");
+    };
+    await assertRejects(() => run(() => createRegery({ hby })), Error, "invalid persisted alias");
+    assertExists(opened);
+    assertEquals(opened.opened, false);
+    assertEquals(opened.env, null);
+  } finally {
+    Regery.prototype.loadRegistries = load;
+    RegBaser.prototype.reopen = reopen;
+    await run(() => hby.close(true));
+  }
+});
 
 Deno.test("registry evidence import verifies before publication and preserves newer accepted heads", async () => {
   await run(function*() {

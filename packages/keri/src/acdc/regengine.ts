@@ -1,5 +1,5 @@
 /** Internal local TEL acceptance; registry facades own instance naming and scheduling. */
-import { Diger, Ilks, NumberPrimitive, type SerderACDC } from "cesr-ts";
+import { Diger, Ilks, NumberPrimitive, type Saider, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import {
@@ -30,6 +30,20 @@ export class RegistryEventer {
     readonly store: RegistryStore,
     public regk: string | null = null,
   ) {}
+
+  /** Read the accepted head only after validating its body and ordinal marker. */
+  get head(): Saider | null {
+    const event = this.regk ? this.acceptedHead(this.regk) : null;
+    return event ? this.store.head(event.regid) : null;
+  }
+  /** Accepted TEL ordinal, retaining -1n for a staged but unaccepted inception. */
+  get sn(): bigint {
+    return this.regk ? this.acceptedHead(this.regk)?.sn ?? -1n : -1n;
+  }
+  /** Return an accepted inception; a corrupt marker/body pair throws. */
+  get regser(): SerderACDC | null {
+    return this.regk ? this.acceptedAt(this.regk, 0) : null;
+  }
 
   /** Retry newly visible anchors, then advance the contiguous accepted chain. */
   processEscrows(): void {
