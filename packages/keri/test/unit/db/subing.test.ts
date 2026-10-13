@@ -6,6 +6,7 @@ import { saltySigner } from "../../../src/app/keeping.ts";
 import { makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
+  BytesIoSetSuber,
   CesrIoSetSuber,
   CesrSuber,
   CryptSignerSuber,
@@ -129,6 +130,23 @@ Deno.test("db/subing - IoSetSuber keeps insertion order while deduplicating valu
       assertEquals(suber.getLast("group"), "gamma");
       assertEquals([...suber.getLastItemIter("")], [[["group"], "gamma"]]);
       assertEquals(suber.cnt("group"), 3);
+
+      const bytes = new BytesIoSetSuber(lmdber, { subkey: "bytes." });
+      const first = new Uint8Array([0xff]);
+      const second = new Uint8Array([0xfe]);
+      // Both decode to the same replacement character, but remain distinct members.
+      assertEquals(new TextDecoder().decode(first), new TextDecoder().decode(second));
+      assertEquals(bytes.put("group", [first, second, first.slice()]), true);
+      assertEquals(bytes.add("group", second.slice()), false);
+      assertEquals(bytes.get("group"), [first, second]);
+      assertEquals([...bytes.getItemIter("group")], [
+        [["group"], first],
+        [["group"], second],
+      ]);
+      assertEquals(bytes.getLast("group"), second);
+      assertEquals(bytes.cnt("group"), 2);
+      assertEquals(bytes.rem("group", first.slice()), true);
+      assertEquals(bytes.get("group"), [second]);
     } finally {
       yield* lmdber.close(true);
     }

@@ -87,6 +87,7 @@ import { PayloadArchive } from "./payload-archive.ts";
 import { payloadRange } from "./payload-view.ts";
 import {
   B64OnIoDupSuber,
+  BytesIoSetSuber,
   CatCesrIoSetSuber,
   CatCesrSuber,
   CesrIoSetSuber,
@@ -499,7 +500,7 @@ export class Baser {
   public ssts!: CatCesrIoSetSuber<SourceSealTriple>; // Source seal triples.
   public frcs!: CatCesrIoSetSuber<FirstSeenReplayCouple>; // First-seen replay couples.
   public tdcs!: CatCesrIoSetSuber<TypedDigestSealCouple>; // Typed digest seal couples.
-  public ptds!: IoSetSuber<string>; // Pathed streams stored as raw bytes.
+  public ptds!: BytesIoSetSuber; // Pathed streams stored as raw bytes.
   public bsqs!: CatCesrIoSetSuber<BlindedStateQuadrupleTuple>; // Blind state quadruples.
   public bsss!: CatCesrIoSetSuber<BoundStateSextuple>; // Bound state sextuples.
   public tmqs!: CatCesrIoSetSuber<TypedMediaQuadrupleTuple>; // Type-media quadruples.
@@ -1150,7 +1151,7 @@ export class Baser {
       });
 
       // Pathed streams stored as raw bytes.
-      this.ptds = new IoSetSuber<string>(this.lmdber, { subkey: "ptds." });
+      this.ptds = new BytesIoSetSuber(this.lmdber, { subkey: "ptds." });
 
       // Blind state quadruples.
       this.bsqs = new CatCesrIoSetSuber<BlindedStateQuadrupleTuple>(

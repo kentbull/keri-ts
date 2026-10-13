@@ -5,8 +5,8 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import {
   type RegistryDisclosure,
   type RegistryVerification,
-  vetRegistry,
-  vetRegistryBindings,
+  vet,
+  vetBinds,
 } from "../../../src/acdc/regeventing.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
@@ -88,7 +88,7 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
           sources,
         };
         const result: RegistryVerification = row.blinders
-          ? vetRegistryBindings({
+          ? vetBinds({
             ...args,
             blinders: row.blinders.map(disclosure),
             target: bodies.get(row.target!)!.said!,
@@ -96,7 +96,7 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
             controller: row.controller ?? undefined,
             requireSource: row.requireSource,
           })
-          : vetRegistry({ ...args, blinder: row.blinder ? disclosure(row.blinder) : undefined });
+          : vet({ ...args, blinder: row.blinder ? disclosure(row.blinder) : undefined });
         if (result.kind === "verified") {
           assertEquals<unknown>(
             { ...result, state: { ...result.state, sn: result.state.sn.toString() } },
@@ -115,7 +115,7 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
         db.getKever = () => {
           throw failed;
         };
-        assertThrows(() => vetRegistry({ db, rip: bodies.get("rip")! }), Error, "storage unavailable");
+        assertThrows(() => vet({ db, rip: bodies.get("rip")! }), Error, "storage unavailable");
       } finally {
         db.getKever = get;
       }
@@ -128,12 +128,12 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
       };
       // The frozen issued state includes its exact timestamp and stays selected one microsecond later.
       const expected = fixture.cases.find((row) => row.name === "microsecond cutoff")!.expected;
-      assertEquals(vetRegistryBindings({ ...args, cutoff: "2026-10-13T01:00:01.000000Z" }), {
+      assertEquals(vetBinds({ ...args, cutoff: "2026-10-13T01:00:01.000000Z" }), {
         kind: "reject",
         reason: "binding",
       });
       for (const cutoff of ["2026-10-13T01:00:01.000001Z", "2026-10-13T01:00:01.000002Z"]) {
-        const result = vetRegistryBindings({ ...args, cutoff });
+        const result = vetBinds({ ...args, cutoff });
         assertEquals(result.kind, "verified", cutoff);
         if (result.kind === "verified") {
           assertEquals<unknown>(
@@ -143,21 +143,21 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
           );
         }
       }
-      assertEquals(vetRegistryBindings({ ...args, cutoff: "2026-02-30T01:00:00+00:00" }), {
+      assertEquals(vetBinds({ ...args, cutoff: "2026-02-30T01:00:00+00:00" }), {
         kind: "reject",
         reason: "timestamp",
       });
-      assertEquals(vetRegistryBindings({ ...args, cutoff: "2026-10-13T01:00:01.000001" }), {
+      assertEquals(vetBinds({ ...args, cutoff: "2026-10-13T01:00:01.000001" }), {
         kind: "reject",
         reason: "timestamp",
       });
       assertEquals(
-        vetRegistryBindings({ ...args, cutoff: "2026-10-13T02:00:01.000001+01:00" }),
-        vetRegistryBindings({ ...args, cutoff: "2026-10-13T01:00:01.000001Z" }),
+        vetBinds({ ...args, cutoff: "2026-10-13T02:00:01.000001+01:00" }),
+        vetBinds({ ...args, cutoff: "2026-10-13T01:00:01.000001Z" }),
       );
       assertThrows(
         () =>
-          vetRegistry({
+          vet({
             db,
             rip: bodies.get("rip")!,
             sources: new Map([[bodies.get("rip")!.said!, Number.MAX_SAFE_INTEGER + 1]]),
