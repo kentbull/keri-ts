@@ -158,7 +158,7 @@ Deno.test("cursor: abort interrupts blocked next and closes an uncooperative sou
     release = resolve;
   });
   let returns = 0;
-  const generator = (async function*() {
+  const generator = (async function* () {
     nextStarted();
     await gate;
     yield new Uint8Array([1]);
@@ -181,6 +181,37 @@ Deno.test("cursor: abort interrupts blocked next and closes an uncooperative sou
   // Release the test-owned source after proving cursor shutdown does not depend on it.
   release();
   await originalReturn();
+});
+
+Deno.test("cursor: cancellation targets only the pending read after completed pulls", async () => {
+  const controller = new AbortController();
+  // Complete many pulls before blocking, exercising replacement of the local cancellation waiter.
+  let pulls = 0;
+  let pending!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    pending = resolve;
+  });
+  const input = new Cursor({
+    [Symbol.asyncIterator]() {
+      return {
+        next() {
+          if (pulls++ < 128) return Promise.resolve({ done: false as const, value: new Uint8Array([1]) });
+          pending();
+          return new Promise<IteratorResult<Uint8Array>>(() => {});
+        },
+        return() {
+          return Promise.resolve({ done: true as const, value: undefined });
+        },
+      };
+    },
+  }, { signal: controller.signal });
+  for (let i = 0; i < 128; i++) await input.read(1);
+  const reading = assertRejects(() => input.read(1), Error, "finished pulls");
+  await blocked;
+  controller.abort(new Error("finished pulls"));
+  await timely(reading);
+  await timely(input.close());
+  assertEquals(input.retainedBytes, 0);
 });
 
 Deno.test("cursor: explicit close interrupts a pending read and rejects concurrent scope reads", async () => {

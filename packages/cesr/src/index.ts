@@ -1,5 +1,4 @@
 export * from "./adapters/async-iterable.ts";
-export * from "./adapters/effection.ts";
 export * from "./annotate/annotator.ts";
 export * from "./annotate/comments.ts";
 export * from "./annotate/denot.ts";

@@ -96,8 +96,11 @@ async function oneFrame(input: Cursor, gvrsn: Versionage, limit: number): Promis
 
 /** Parse one scope; generator locals retain genus and progress across input waits. */
 async function* frames(input: Cursor, inherited: Versionage | null, limit: number): AsyncGenerator<CesrFrame, number> {
+  // A selector belongs to this enclosure; recursive children inherit but cannot overwrite it.
   let selected = inherited;
+  // The returned child count rejects empty GenericGroups without retaining siblings.
   let count = 0;
+  // A trailing genus selector is incomplete even at otherwise clean source EOF.
   let needsBody = false;
   while (true) {
     await separators(input);
@@ -132,6 +135,7 @@ async function* frames(input: Cursor, inherited: Versionage | null, limit: numbe
       continue;
     }
     needsBody = false;
+    // Counted frame enclosures use quadlets in text and triplets in binary.
     const payloadSize = counter.count * unitBytes(domain);
     if (FRAME_LISTS.has(counter.name) || FRAME_GROUPS.has(counter.name)) {
       await consume(input, headerSize);

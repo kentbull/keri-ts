@@ -6,6 +6,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current State
 
+The CESR package is framework-neutral: progressive parsing uses async iterables
+and AbortSignal, with no Effection runtime export or dependency. KERI and Tufa
+own Operation scopes, cancellation bridges, and joined resource cleanup around
+that byte-stream boundary.
+
 1. The historical parser completeness `GO` predates the count-unit correction
    and genus-context correction; current parity claims must name
    their tested reference and version combinations.

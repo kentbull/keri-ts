@@ -16,6 +16,7 @@ Deno.test("streaming benchmark corpus has legal counts and stable item bytes in 
           binary,
           depth,
         });
+        // This tiny correctness fixture may collect; measured workers never do.
         const input = new Uint8Array(manifest.wireBytes);
         let offset = 0;
         for (const chunk of chunks()) {
@@ -31,6 +32,7 @@ Deno.test("streaming benchmark corpus has legal counts and stable item bytes in 
           assertInstanceOf(item, Texter);
           const raw = item.raw;
           assertEquals(new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0), BigInt(index));
+          // Verify ordering first, then normalize the ID for the common digest oracle.
           for (let i = 0; i < 8; i++) raw[i] = i;
           assertEquals(createHash("sha256").update(raw).digest("hex"), manifest.itemSha256);
         }
