@@ -32,6 +32,8 @@ them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
 Pure verifier names match `vet`/`vetBinds`; the processing engine and orchestration remain unfinished.
+R1–R5 are merged through #185: storage, validation and internal inception
+acceptance are available. Update ordering, retries and named services remain.
 The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and

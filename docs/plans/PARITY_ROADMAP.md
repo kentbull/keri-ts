@@ -1,7 +1,7 @@
 # KERIpy parity and bounded runtime roadmap
 
-Verified boundary: keri-ts `b42b2f816e412d80f283cac0cb9c48f41ba9209a` after
-[#171][pr171]. Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
+Verified boundary: keri-ts `5d439213` after [#185][registry-inception].
+Frozen upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
 This roadmap continues the approved parser-gap sequence; the subject plans below
 own its existing work, not additional projects. The original migration and
 completed PR evidence are summarized in the [delivery report][delivered].
@@ -21,9 +21,9 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 | CESR parsing     | Delivered        | [1–2][cesr]           | [Wire/tree][delivered]  | Accessor audit     |
 | Multisig         | Four routes      | [3d][multisig]        | [#160–161][delivered]   | Native/CLI scope   |
 | IPEX             | Nested runtime   | [3e][ipex]            | [#166–168][delivered]   | Presentations      |
-| V1/V2 registries | V1 + v2 observer | [R1–R12][registry]    | [#168][delivered]       | V2 engine/services |
+| V1/V2 registries | V2 inception     | [R6–R12][registry]    | [R1–R5][registry]       | Updates/services   |
 | EXN proofs       | Implemented      | [3e/3f][exchange]     | [#162/165][delivered]   | KRAM integration   |
-| v2 intake        | Sender/routing   | [K1–K10][kram]        | [Signed wire][intake]   | KRAM/TEL/stubs     |
+| v2 intake        | KRAM foundations | [K7–K10][kram]        | [K1–K6b][kram]          | Intake/TEL/stubs   |
 | ESSR outcomes    | Implemented      | [4 integration][essr] | [#163][delivered]       | Local guards       |
 | Shared budget    | Local guards     | [4][resource]         | [Required][resource]    | Pre-allocation     |
 | Storage/recovery | Durable wire     | [5][storage]          | [Required][storage]     | Whole-row reads    |
@@ -31,6 +31,7 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 | Reference pins   | Mixed targets    | [7][qualification]    | [Inventory][pins]       | Actual imports     |
 | Qualification    | Small corpora    | [7][qualification]    | [Matrix][qualification] | Full runtime       |
 | Mapper SAID      | Stale claim gap  | [Final][mapper]       | [Required][mapper]      | Aggor semantics    |
+| npm release      | Pending          | [#104][release]       | Published artifacts     | Final goal gate    |
 
 ## Publication sequence
 
@@ -43,6 +44,9 @@ numbers refer to the seven follow-on phases, not the earlier migration steps.
 3. Shared admission (4), storage/recovery (5), production backpressure (6).
 4. Full reference audit and repeated end-to-end qualification (7).
 5. Focused standalone Mapper repair; rerun affected qualification after it.
+6. Finish with the npm release: refresh and merge [#104][release] only after
+   the preceding work and qualification, then publish and verify the exact
+   package artifacts. The version PR alone does not prove publication.
 
 The multisig responsibility extraction (#161), ESSR outcome extraction (#163),
 and proof cleanup (#165) are delivered. Do not recreate them. Target **300–500
@@ -71,7 +75,21 @@ Passing parser tests or finite per-recipient guards cannot close phases 4–7.
 Long qualification stays outside required merge CI; only the maintainer dispatches
 hosted extended jobs, whose existing 15-minute cap remains unchanged.
 
-[pr171]: https://github.com/kentbull/keri-ts/pull/171
+## Final release gate
+
+The approved final task is publication of `cesr-ts`, `keri-ts` and `@keri-ts/tufa`
+for downstream diddaemon adoption. Recheck #104's generated versions, dependency
+ranges, changelogs and exact-head checks after all implementation changes land.
+The current Changesets workflow only maintains versions; npm publication uses
+the existing package tag/dispatch workflows. Release in dependency order and
+verify registry versions, dependency metadata, tarball identity and installed
+package smoke behavior. If Actions cannot publish, use the authorized local
+publishing path while preserving the checked artifact and version identity.
+Report exact published versions and release evidence for the downstream chat;
+do not close the goal on a merged version PR or a successful build alone.
+
+[registry-inception]: https://github.com/kentbull/keri-ts/pull/185
+[release]: https://github.com/kentbull/keri-ts/pull/104
 [kram]: exchange/KRAM_PLAN.md
 [registry]: credentials/REGISTRY_PLAN.md
 [ownership]: ../design-docs/runtime/INGRESS_AND_EGRESS.md#runtime-store-ownership
