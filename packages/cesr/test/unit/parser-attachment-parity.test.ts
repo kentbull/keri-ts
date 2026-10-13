@@ -1,8 +1,8 @@
 import { assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError, VersionError } from "../../src/core/errors.ts";
-import { parseBytes } from "../../src/core/parser-engine.ts";
-import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachments.ts";
+import { parseBytes } from "../../src/parser/stream.ts";
 import { Texter } from "../../src/primitives/texter.ts";
 import { counterV1, groupV2, sigerToken, token } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";

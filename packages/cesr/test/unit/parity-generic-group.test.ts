@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import { annotate, denot, type ParseEvent, t } from "../../src/index.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";

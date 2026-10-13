@@ -1,10 +1,10 @@
-import { sniff } from "../parser/cold-start.ts";
+import { concatBytes } from "../core/bytes.ts";
+import { ParserError, ShortageError } from "../core/errors.ts";
+import type { CesrFrame, ParseEvent } from "../core/types.ts";
 import type { Versionage } from "../tables/table-types.ts";
-import { concatBytes } from "./bytes.ts";
-import { ParserError, ShortageError } from "./errors.ts";
-import { parseAttachments } from "./parser-attachment-collector.ts";
-import { parseFrameStart } from "./parser-frame-parser.ts";
-import type { CesrFrame, ParseEvent } from "./types.ts";
+import { parseAttachments } from "./attachments.ts";
+import { sniff } from "./cold-start.ts";
+import { parseFrameStart } from "./frames.ts";
 
 /**
  * Parser emission options.

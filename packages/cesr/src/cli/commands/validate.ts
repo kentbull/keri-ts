@@ -1,4 +1,4 @@
-import { parseBytes } from "../../core/parser-engine.ts";
+import { parseBytes } from "../../parser/stream.ts";
 import type { CliIo } from "../types.ts";
 
 interface ValidateCliOptions {

@@ -1,5 +1,5 @@
-import { createParser, type ParserOptions } from "../core/parser-engine.ts";
 import type { ParseEvent } from "../core/types.ts";
+import { createParser, type ParserOptions } from "../parser/stream.ts";
 
 /**
  * Benchmark configuration for parser throughput measurements.

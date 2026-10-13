@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { ShortageError } from "../../src/core/errors.ts";
-import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachments.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import {
   CtrDexByVersion,

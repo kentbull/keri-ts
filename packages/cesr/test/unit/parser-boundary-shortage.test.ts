@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
 import type { ParseEvent } from "../../src/core/types.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";

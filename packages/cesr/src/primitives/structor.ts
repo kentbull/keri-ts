@@ -16,7 +16,7 @@
 import { b, codeB64ToB2, concatBytes, encodeB64, t } from "../core/bytes.ts";
 import { UnknownCodeError } from "../core/errors.ts";
 import type { CesrDomain } from "../core/types.ts";
-import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../parser/attachments.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";

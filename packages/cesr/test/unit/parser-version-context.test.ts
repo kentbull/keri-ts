@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
 import type { ParseEvent } from "../../src/core/types.ts";
+import { createParser, type ParserOptions } from "../../src/parser/stream.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";

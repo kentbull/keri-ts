@@ -1,121 +1,95 @@
 # CESR Parser Maintainer Guide
 
-## Purpose
+The parser has three owners: stream state, frame boundaries, and attachment
+contents. The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md)
+defines completion and version rules; this guide maps those rules to the code.
 
-This document is the maintainer-oriented map for the CESR parser and annotation
-stack in `packages/cesr`. It focuses on readability, extension points, and
-invariants that should stay stable as we push toward full KERIpy parity.
+## Read the code in this order
 
-Canonical parser lifecycle/state-machine contract:
+| Module                                    | Responsibility                                                                                                                               |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cesr/src/parser/stream.ts`      | `CesrParser` owns bytes, offset, selected genus, pending frame, and queued siblings. `feed`, `flush`, and `reset` are the lifecycle.         |
+| `packages/cesr/src/parser/frames.ts`      | `parseFrameStart` reads a body or enclosure. Bounded children are parsed atomically by ordinary functions.                                   |
+| `packages/cesr/src/parser/attachments.ts` | `parseAttachments` walks a frame's attachment set; `parseAttachmentGroup` selects a direct v1/v2 handler and hydrates known primitive roles. |
+| `packages/cesr/src/parser/common.ts`      | Shared frame-family names, default genus, and selector code.                                                                                 |
+| `packages/cesr/src/core/domain.ts`        | `CesrDomain` width helpers: `tokenSize`, `unitBytes`, and domain narrowing.                                                                  |
+| `packages/cesr/src/serder/serdery.ts`     | `reapSerder` hydrates the body once, including native fields.                                                                                |
+| `packages/cesr/src/annotate/render.ts`    | Annotation-only token walking and rendering.                                                                                                 |
+| `packages/keri/src/app/parsering.ts`      | `collectAttachments` projects parsed values into runtime envelopes without decoding their bytes again.                                       |
 
-- `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
+`CesrFrame` is `{ body, attachments }`. `ParseEvent` is a frame or error emission.
+A `GroupTuple` is an ordered recursive tuple, not necessarily a flat primitive
+array. `OpaqueSpan` holds original bytes and their domain for opaque wire families;
+it is not a qualified primitive.
 
-## Parser terminology (normative)
+## Follow one frame
 
-- Frame: one parser emission unit (`type: "frame"`) containing one body plus
-  zero or more trailing attachment groups.
-- `CesrFrame`: historical public type name for the frame payload object
-  (`body` + `attachments`); retained for API stability.
-- Message-domain frame: frame whose body starts with cold-start code `msg` and
-  is parsed via Serder reaping.
-- Body group: counter-declared frame-start payload form (`GenericGroup`,
-  `BodyWithAttachmentGroup`, or native fixed/map group) that defines or encloses
-  the frame body.
-- Attachment group: trailing post-body group parsed by attachment dispatch; may
-  include nested wrapper groups.
-- Annotation separator byte (`ano`): delimiter byte consumed between tokens; not
-  a frame payload unit.
-- Deferred lifecycle terms: `pendingFrame` is the oldest incomplete top-level
-  frame continuation; `queuedFrames` are younger, already-complete enclosed
-  frames emitted after the pending frame to preserve stream order.
+1. `feed` appends bytes and calls `drain`.
+2. `parseFrameStart` reads any selector and dispatches to Serder or a bounded
+   body/enclosure reader. It returns the frame genus separately from the explicit
+   stream selection.
+3. A complete enclosure can emit immediately. Otherwise the stream keeps a
+   pending frame and calls `parseAttachments` on available trailing bytes.
+4. A following body, a closed attachment-set enclosure, or terminal `flush`
+   completes the pending frame. Exhausting a chunk does not.
+5. Runtime envelopes reuse the Serder and typed attachment values. Public
+   caller-supplied frames still undergo role checks. Descriptor views whose
+   classes differ are constructed from existing Matter instances, not qb64 bytes.
 
-## Module map
+## Version and boundary rules
 
-- `packages/cesr/src/core/parser-engine.ts`
-  - Streaming frame parser (`CesrParser`) for message-domain and CESR-native
-    body-group streams.
-  - Handles chunk boundaries, pending frames, and attachment continuation.
-- `packages/cesr/src/parser/attachment-parser.ts`
-  - Counter-group dispatch for attachment/body groups.
-  - Version-selected dispatch with no cross-major retry. Parsing
-    rejects malformed wrapper tails; opaque wire families retain one byte span.
-- `packages/cesr/src/primitives/mapper.ts`
-  - Strict parsing for map-oriented native groups (labels interleaved with
-    values).
-  - Recursive map composition support (`children` fields).
-- `packages/cesr/src/annotate/render.ts`
-  - Human-readable annotated output for parsed frames.
-  - Token rendering with explicit comments for opaque wire payloads.
-- `packages/cesr/src/primitives/labeler.ts`
-  - Label primitive (`V`/`W`) parsing and shared `isLabelerCode()` helper.
+- `gvrsn` is CESR genus; `pvrsn` is message protocol. They are distinct layers.
+- A selected genus controls attachment decoding exactly once. Unknown codes and
+  malformed primitives do not cause cross-major retries.
+- A null stream selection permits legacy frame-start inference. An explicit
+  selector persists; enclosure selectors remain local to their bounded scope.
+- V1 signature/tuple counters count items. V2 counters count payload quadlets
+  (`txt`) or triplets (`bny`). Sized v1 wrappers also count payload units.
+- Await the full declared payload before descending into an enclosure. A
+  truncated item inside that complete payload is a `GroupSizeError`; bytes from
+  the next group cannot repair it.
+- Known roles hydrate narrow primitives such as Siger, Verfer/Cigar, Seqner,
+  Diger, and Texter. Preserve canonical wire family names from the pinned codex.
+- Opaque wire families preserve one span. Malformed wrappers are errors, not
+  opaque recovery paths. Non-native opaque body handling remains a separate,
+  explicit behavior after recognized metadata has passed genus validation.
 
-## Parse flow (high-level)
+## Adding a group
 
-1. `CesrParserCore.feed()` appends bytes and calls `drain()`.
-2. `drain()` repeatedly:
-   - consumes annotation separator bytes (`ano`),
-   - parses a base frame (`parseFrameStart()`),
-   - appends attachment groups until the next frame boundary or shortage.
-3. `parseFrameStart()` chooses one of:
-   - message-domain Serder frame (`reapSerder`),
-   - body-with-attachments wrapper,
-   - non-native body group,
-   - native fixed/map body groups.
-4. Attachment groups are decoded by `parseAttachmentGroup` ->
-   `parseAttachmentGroup`.
-5. Annotation layer renders parsed structures into line-oriented, commented CESR
-   text.
+Check the pinned KERIpy source first. Add the direct handler entry to
+`HANDLERS_V1` or `HANDLERS_V2`; use the existing tuple helpers only for actual
+fixed tuples. Nested or variable shapes deserve a small named reader. Do not add
+schemas that compile into handlers, fallback policies, observers, or compatibility
+modes.
 
-## Invariants to preserve
+Validate real wire bytes in both domains, correct count units, narrow primitive
+roles, and enclosure boundaries. Lifecycle changes also require split-stream
+coverage and a contract update. Generated tables target KERIpy
+`450ae1c2a7eac61d92bc7b830cb6883c41e6a798`; changing that baseline is a coordinated
+interop task.
 
-- Chunk-safety:
-  - `ShortageError` means "need more bytes", never silent data loss.
-- Boundary exactness:
-  - group payload sizes must match counter-declared lengths.
-- Version selection:
-  - Decode attachments once under the selected genus.
-  - Malformed wrapper tails are errors; no cross-major retry or recovery mode.
-- Native map strictness:
-  - dangling labels must throw.
-  - offset must end exactly at payload boundary.
-- Annotation resilience:
-  - opaque wire families remain renderable; malformed wrapper tails fail.
+## Simplification migration
 
-## Refactoring guidelines
+These are deliberate pre-1.0 API cuts; there are no compatibility aliases.
 
-- Prefer short, labeled helpers over long blocks when they reduce cognitive
-  load.
-- Keep parsing helpers pure (input bytes + version/domain => parsed value +
-  consumed bytes).
-- Reuse shared helpers for repeated concerns:
-  - token sizing by domain (`fullSize` vs `fullSizeB2`),
-  - labeler code checks (`isLabelerCode`),
-  - recoverable parse-error classification.
-- Add comments only where behavior is non-obvious or intentionally permissive.
+| Previous surface                                                     | Current surface                                                   |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `CesrMessage` payload                                                | `CesrFrame`                                                       |
+| Old `CesrFrame` frame/error union                                    | `ParseEvent`                                                      |
+| `PrimitiveTuple`, `isPrimitiveTuple`                                 | `GroupTuple`, `isGroupTuple`                                      |
+| `PrimitiveDomain`, repeated `"txt" \| "bny"` aliases                 | `CesrDomain`                                                      |
+| `UnknownPrimitive` parser output                                     | `OpaqueSpan.raw` and `.domain`; no invented qualified-code fields |
+| `parseAttachmentDispatch`, compatibility forwarding helpers          | `parseAttachmentGroup`                                            |
+| Parser strict/compat options and diagnostic observers                | Removed; malformed selected-version input is an error             |
+| `ParserState`, separate stream/deferred lifecycle objects            | Private state directly on `CesrParser`                            |
+| `FrameParser`, `AttachmentCollector`                                 | `parseFrameStart`, `parseAttachments`                             |
+| Attachment dispatch specs, descriptor factories, minor-zero registry | Direct `HANDLERS_V1` and `HANDLERS_V2` maps                       |
+| `CesrBody.native`, Serder native token sidecar                       | Hydrated Serder; annotation walks tokens when requested           |
+| Runtime dispatch `fromQb64bTuple` factories                          | Construct primitives at raw-input boundaries and use `fromTuple`  |
+| Parser-related CLI `--compat`                                        | Removed; unrelated Tufa store/path compatibility remains          |
 
-## Adding new primitives/groups
-
-1. Add codex/table entries (or generator overlays if legacy compatibility is
-   needed).
-2. Add primitive parser in `packages/cesr/src/primitives`.
-3. Register group handling in `attachment-parser.ts`:
-   - use `repeatTupleParser(...)` where possible,
-   - add dedicated parser only when structure is nested/variable.
-4. Extend annotation token rendering if field-level comments are required.
-5. Add tests:
-   - unit parser test,
-   - qb64/qb2 parity,
-   - chunk-fuzz split-boundary coverage,
-   - annotation rendering expectations where applicable.
-
-## Error handling policy
-
-- Throw for structural violations and boundary mismatches.
-- Use typed recovery only at explicit compatibility/recovery points.
-- Avoid broad `catch {}` without error classification.
-
-## CLI annotation behavior notes
-
-- `deno task tephra:annotate --in <stream.cesr> [--out <file>] [--qb2] [--pretty]`
-- `--pretty` only applies to JSON serder message bodies.
-- Non-JSON or malformed JSON bodies are emitted as-is.
+Internal vocabulary is deliberately short: `readFrameCounter`, `bodyGenus`,
+`parseFrame`, `parseFrames`, `parseEnclosedFrame`, `parseNativeBody`,
+`parseWrappedBody`, `parseSizedGroup`, `parsePathSigs`, `parseTransSigsV1/V2`,
+`tokenSize`, and `unitBytes`. The version suffix on a handler communicates a real
+count-unit distinction. Long protocol counter names remain canonical.

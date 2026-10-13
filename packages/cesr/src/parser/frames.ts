@@ -1,4 +1,13 @@
-import { sniff } from "../parser/cold-start.ts";
+import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
+import {
+  ColdStartError,
+  DeserializeError,
+  GroupSizeError,
+  ShortageError,
+  UnknownCodeError,
+  VersionError,
+} from "../core/errors.ts";
+import type { CesrBody, CesrDomain, CesrFrame, Smellage } from "../core/types.ts";
 import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
 import type { Counter } from "../primitives/counter.ts";
 import { parseMatter } from "../primitives/matter.ts";
@@ -7,28 +16,17 @@ import { smell } from "../serder/smell.ts";
 import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds, Protocols } from "../tables/versions.ts";
+import { parseAttachments } from "./attachments.ts";
+import { sniff } from "./cold-start.ts";
 import {
-  ColdStartError,
-  DeserializeError,
-  GroupSizeError,
-  ShortageError,
-  UnknownCodeError,
-  VersionError,
-} from "./errors.ts";
-import { parseAttachments } from "./parser-attachment-collector.ts";
-import {
-  BODY_WITH_ATTACHMENT_GROUP_NAMES,
   DEFAULT_GVRSN,
-  FRAME_START_GROUP_NAMES,
-  GENERIC_GROUP_NAMES,
+  FRAME_GROUPS,
+  FRAME_LISTS,
+  FRAME_STARTS,
   GENUS_VERSION_CODE,
-  isCesrDomain,
-  NATIVE_BODY_GROUP_NAMES,
-  NON_NATIVE_BODY_GROUP_NAMES,
-  tokenSize,
-  unitBytes,
-} from "./parser-constants.ts";
-import type { CesrBody, CesrDomain, CesrFrame, Smellage } from "./types.ts";
+  NATIVE_BODIES,
+  WRAPPED_BODIES,
+} from "./common.ts";
 
 /** Parsed frame-start result consumed by top-level parser orchestration. */
 export interface FrameStart {
@@ -95,7 +93,7 @@ export function parseFrameStart(
   const {
     counter,
     gvrsn: frameGvrsn,
-  } = resolveFrameStartCounter(
+  } = readFrameCounter(
     input.slice(offset),
     activeGvrsn ?? DEFAULT_GVRSN,
     cold,
@@ -104,7 +102,7 @@ export function parseFrameStart(
   const headerSize = tokenSize(counter, cold);
   const unit = unitBytes(cold);
 
-  if (BODY_WITH_ATTACHMENT_GROUP_NAMES.has(counter.name)) {
+  if (FRAME_GROUPS.has(counter.name)) {
     return parseEnclosedFrame(
       input,
       offset,
@@ -115,7 +113,7 @@ export function parseFrameStart(
       activeGvrsn,
     );
   }
-  if (NON_NATIVE_BODY_GROUP_NAMES.has(counter.name)) {
+  if (WRAPPED_BODIES.has(counter.name)) {
     return parseWrappedBody(
       input,
       offset,
@@ -127,7 +125,7 @@ export function parseFrameStart(
       activeGvrsn,
     );
   }
-  if (NATIVE_BODY_GROUP_NAMES.has(counter.name)) {
+  if (NATIVE_BODIES.has(counter.name)) {
     return parseNativeBody(
       input,
       offset,
@@ -138,7 +136,7 @@ export function parseFrameStart(
       activeGvrsn,
     );
   }
-  if (GENERIC_GROUP_NAMES.has(counter.name)) {
+  if (FRAME_LISTS.has(counter.name)) {
     return parseEnclosedFrames(
       input,
       offset,
@@ -429,7 +427,7 @@ function bodyGenus(body: Pick<CesrBody, "pvrsn" | "gvrsn">, selected: Versionage
 }
 
 /** Resolve frame counters in the selected genus; infer legacy forms only when unselected. */
-function resolveFrameStartCounter(
+function readFrameCounter(
   input: Uint8Array,
   preferredGvrsn: Versionage,
   cold: CesrDomain,
@@ -448,7 +446,7 @@ function resolveFrameStartCounter(
       if (!firstParsed) {
         firstParsed = { counter, gvrsn: attempt };
       }
-      if (FRAME_START_GROUP_NAMES.has(counter.name)) {
+      if (FRAME_STARTS.has(counter.name)) {
         return { counter, gvrsn: attempt };
       }
     } catch (error) {

@@ -1,6 +1,7 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, codeB2ToB64, codeB64ToB2, t } from "../core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../core/cbor.ts";
+import { tokenSize } from "../core/domain.ts";
 import {
   DeserializeError,
   SemanticInterpretationError,
@@ -9,9 +10,8 @@ import {
   SyntaxParseError,
   UnknownCodeError,
 } from "../core/errors.ts";
-import { tokenSize } from "../core/parser-constants.ts";
 import type { CesrDomain } from "../core/types.ts";
-import { parseAttachmentGroup } from "../parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../parser/attachments.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import { AGGOR_LIST_CODES, AGGOR_MAP_CODES } from "../tables/counter-groups.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";

@@ -1,11 +1,11 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 
-Deno.test("V-P1-002: strict/parity mode rejects opaque tail remainder inside AttachmentGroup wrapper payload", () => {
+Deno.test("V-P1-002: parser rejects opaque tail remainder inside AttachmentGroup wrapper payload", () => {
   const nested = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
   const payload = `${nested}ABCD`; // valid nested group + opaque tail quadlet
   const wrappedAttachmentGroup = `${counterV2(CtrDexV2.AttachmentGroup, payload.length / 4)}${payload}`;

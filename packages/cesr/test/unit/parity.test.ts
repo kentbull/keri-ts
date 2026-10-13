@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { UnknownCodeError } from "../../src/core/errors.ts";
-import { parseAttachmentGroup } from "../../src/parser/attachment-parser.ts";
+import { parseAttachmentGroup } from "../../src/parser/attachments.ts";
 import { supportedPrimitiveCodes } from "../../src/primitives/registry.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {

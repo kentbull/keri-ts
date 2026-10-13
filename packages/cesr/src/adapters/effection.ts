@@ -1,6 +1,6 @@
 import { action, type Operation } from "npm:effection@^3.6.0";
-import type { ParserOptions } from "../core/parser-engine.ts";
 import type { CesrFrame } from "../core/types.ts";
+import type { ParserOptions } from "../parser/stream.ts";
 import { toAsyncFrames } from "./async-iterable.ts";
 
 /** Effection-facing handle for a parsed-frame async iterable. */

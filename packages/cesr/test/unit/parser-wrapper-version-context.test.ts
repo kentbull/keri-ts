@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createParser } from "../../src/core/parser-engine.ts";
+import { createParser } from "../../src/parser/stream.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CounterGroup } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
@@ -45,7 +45,7 @@ Deno.test("V-P1-007: GenericGroup enclosed genus-version override applies across
   }
 });
 
-Deno.test("V-P1-008: strict mode rejects nested mixed-version wrapper groups that require fallback", () => {
+Deno.test("V-P1-008: parser rejects nested mixed-version wrapper groups that require fallback", () => {
   const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
   // Use a v2-only counter token that fails immediately under v1 dispatch.
   const v2OnlyNested = counterV2(CtrDexV2.BigBlindedStateQuadruples, 1);
