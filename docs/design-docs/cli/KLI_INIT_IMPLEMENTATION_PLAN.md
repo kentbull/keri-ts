@@ -275,11 +275,11 @@ enabled:
 **1.3 Parser (Full Implementation)**
 
 - [ ] `CesrStream` class - Pure CESR stream parser (Generator Pattern)
-  - [ ] Transforms bytes -> `CesrFrame` (Serder + Attachments)
+  - [ ] Transforms bytes -> `ParseEvent` (Serder + Attachments)
   - [ ] Handle cold start (sniffing)
   - [ ] Handle framed and unframed streams
 - [ ] `CesrRouter` class - Message dispatcher
-  - [ ] Consumes `CesrFrame` objects from `CesrStream`
+  - [ ] Consumes `ParseEvent` objects from `CesrStream`
   - [ ] Routes to Kevery (events), Revery (replies), Exchanger (exchanges)
 - [ ] Parse CESR streams (framed/unframed)
 - [ ] Parse KERI events with attachments

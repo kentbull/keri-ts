@@ -5,7 +5,7 @@ import {
   type CounterGroupLike,
   type GroupEntry,
   isCounterGroupLike,
-  isPrimitiveTuple,
+  isGroupTuple,
   type Primitive,
 } from "../../src/primitives/primitive.ts";
 import { UnknownPrimitive } from "../../src/primitives/unknown.ts";
@@ -42,7 +42,7 @@ export function expectCounterGroup(entry: GroupEntry): CounterGroupLike {
 
 /** Narrow one group entry to primitive tuple node. */
 export function expectPrimitiveTuple(entry: GroupEntry): readonly GroupEntry[] {
-  assertEquals(isPrimitiveTuple(entry), true);
+  assertEquals(isGroupTuple(entry), true);
   return entry as readonly GroupEntry[];
 }
 

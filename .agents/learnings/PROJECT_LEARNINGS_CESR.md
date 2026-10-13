@@ -14,6 +14,8 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    that contract and its tests.
 3. Parser architecture remains intentionally atomic/bounded-substream first.
    Nested incremental parsing is deferred behind explicit performance evidence.
+   `CesrFrame` is the body-plus-attachments payload; `ParseEvent` is the frame/error
+   union. Recursive attachment tuples are `GroupTuple`, guarded by `isGroupTuple`.
 4. Chunk exhaustion never completes an open attachment set. A following body,
    a complete frame/attachment enclosure, or explicit `flush()` does. Initial and
    resumed collection share one path; `framed` only caps emissions per feed.

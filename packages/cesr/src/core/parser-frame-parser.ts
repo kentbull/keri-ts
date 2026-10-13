@@ -38,7 +38,7 @@ import {
   quadletUnit,
   tokenSize,
 } from "./parser-constants.ts";
-import type { CesrBody, CesrMessage, Smellage } from "./types.ts";
+import type { CesrBody, CesrFrame, Smellage } from "./types.ts";
 
 /** Attachment decoding options for enclosed frames. */
 interface FrameParserOptions {
@@ -47,11 +47,11 @@ interface FrameParserOptions {
 
 /** Parsed frame-start result consumed by top-level parser orchestration. */
 export interface ParsedFrameStart {
-  frame: CesrMessage;
+  frame: CesrFrame;
   /** True only when an enclosure proves the entire frame is present. */
   complete?: boolean;
   /** Further complete frames from the same enclosure, in stream order. */
-  siblings?: CesrMessage[];
+  siblings?: CesrFrame[];
   consumed: number;
   /** Genus used to decode this frame and its attachments. */
   version: Versionage;
@@ -520,11 +520,11 @@ export class FrameParser {
         "Native body syntax pre-read disagreed with Serder hydration",
       );
     }
-    (serder as CesrMessage["body"]).native = {
+    (serder as CesrFrame["body"]).native = {
       bodyCode,
       fields,
     };
-    const body: CesrMessage["body"] = serder;
+    const body: CesrFrame["body"] = serder;
     return {
       frame: {
         body,
@@ -556,7 +556,7 @@ export class FrameParser {
     }
 
     const payload = input.slice(offset + headerSize, offset + total);
-    let frames: CesrMessage[];
+    let frames: CesrFrame[];
     try {
       frames = this.parseFrameSequence(payload, version);
     } catch (error) {
@@ -585,8 +585,8 @@ export class FrameParser {
   private parseFrameSequence(
     input: Uint8Array,
     inheritedVersion: Versionage | null,
-  ): CesrMessage[] {
-    const out: CesrMessage[] = [];
+  ): CesrFrame[] {
+    const out: CesrFrame[] = [];
     let offset = 0;
     let activeVersion = inheritedVersion;
 
@@ -659,7 +659,7 @@ export class FrameParser {
   private parseCompleteFrame(
     input: Uint8Array,
     inheritedVersion: Versionage | null = null,
-  ): { frame: CesrMessage; consumed: number } {
+  ): { frame: CesrFrame; consumed: number } {
     const base = this.parseFrame(input, inheritedVersion);
     if (base.complete) {
       if (base.siblings?.length) throw new ColdStartError("Expected one enclosed frame");

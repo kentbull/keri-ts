@@ -1,5 +1,5 @@
 import { createParser, type ParserOptions } from "../core/parser-engine.ts";
-import type { CesrFrame } from "../core/types.ts";
+import type { ParseEvent } from "../core/types.ts";
 
 /**
  * Benchmark configuration for parser throughput measurements.
@@ -110,7 +110,7 @@ function buildChunks(input: Uint8Array, chunkSize: number): Uint8Array[] {
 /**
  * Count parser frame/error events for one parser emission batch.
  */
-function countFrames(events: CesrFrame[]): CesrParseRunSummary {
+function countFrames(events: ParseEvent[]): CesrParseRunSummary {
   let frameCount = 0;
   let errorCount = 0;
   for (const event of events) {

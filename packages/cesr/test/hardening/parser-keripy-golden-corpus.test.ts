@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import type { CesrFrame } from "../../src/core/types.ts";
+import type { ParseEvent } from "../../src/core/types.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import {
   CtrDexByVersion,
@@ -25,9 +25,9 @@ interface FrameSummary {
 function parseFrames(
   input: Uint8Array,
   boundaries: number[] = [],
-): CesrFrame[] {
+): ParseEvent[] {
   const parser = createParser();
-  const events: CesrFrame[] = [];
+  const events: ParseEvent[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
     events.push(...parser.feed(chunk));
   }

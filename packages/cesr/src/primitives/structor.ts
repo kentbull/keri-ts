@@ -21,7 +21,7 @@ import type { Versionage } from "../tables/table-types.ts";
 import { CounterGroup } from "./counter.ts";
 import type { Counter } from "./counter.ts";
 import type { CounterGroupLike, GroupEntry } from "./primitive.ts";
-import { isCounterGroupLike, isPrimitiveTuple } from "./primitive.ts";
+import { isCounterGroupLike, isGroupTuple } from "./primitive.ts";
 
 type ParseDomain = Extract<ColdCode, "txt" | "bny">;
 
@@ -30,7 +30,7 @@ function toText(input: Uint8Array): string {
 }
 
 function serializeEntryQb64(entry: GroupEntry): string {
-  if (isPrimitiveTuple(entry)) {
+  if (isGroupTuple(entry)) {
     return entry.map((item) => serializeEntryQb64(item)).join("");
   }
   if (isCounterGroupLike(entry)) {

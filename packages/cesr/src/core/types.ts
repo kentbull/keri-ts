@@ -51,14 +51,8 @@ export type AttachmentItem = GroupEntry;
 /** Trailing attachment group parsed after a frame body. */
 export interface AttachmentGroup extends CounterGroupLike {}
 
-/**
- * Historical public type name for one parsed frame payload.
- *
- * Terminology note: parser docs use "frame" for the emitted unit
- * (`body` + trailing `attachments`), while this exported type name
- * remains `CesrMessage` for backward compatibility.
- */
-export interface CesrMessage {
+/** One parsed frame: a body and its complete attachment set. */
+export interface CesrFrame {
   body: CesrBody;
   attachments: AttachmentGroup[];
 }
@@ -73,6 +67,6 @@ export interface ParserState {
 }
 
 /** Parser stream event union: parsed frame payload or parse error. */
-export type CesrFrame =
-  | { type: "frame"; frame: CesrMessage }
+export type ParseEvent =
+  | { type: "frame"; frame: CesrFrame }
   | { type: "error"; error: Error };

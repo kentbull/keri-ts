@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import type { CesrFrame } from "../../src/core/types.ts";
+import type { ParseEvent } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -14,12 +14,12 @@ function wrapQuadletGroupV2(code: string, payload: string): string {
   return `${counterV2(code, payload.length / 4)}${payload}`;
 }
 
-function parseEvents(stream: Uint8Array): CesrFrame[] {
+function parseEvents(stream: Uint8Array): ParseEvent[] {
   const parser = createParser();
   return [...parser.feed(stream), ...parser.flush()];
 }
 
-function summarizeFrames(events: CesrFrame[]): string[] {
+function summarizeFrames(events: ParseEvent[]): string[] {
   const errors = events.filter((event) => event.type === "error");
   assertEquals(errors.length, 0);
   return events

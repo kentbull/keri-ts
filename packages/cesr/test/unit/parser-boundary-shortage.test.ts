@@ -1,12 +1,12 @@
 import { assertEquals } from "jsr:@std/assert";
 import { createParser } from "../../src/core/parser-engine.ts";
-import type { CesrFrame } from "../../src/core/types.ts";
+import type { ParseEvent } from "../../src/core/types.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v2ify } from "../fixtures/versioned-body-fixtures.ts";
 
-function summarizeFrames(events: CesrFrame[]): string[] {
+function summarizeFrames(events: ParseEvent[]): string[] {
   const errors = events.filter((event) => event.type === "error");
   assertEquals(errors.length, 0);
   return events

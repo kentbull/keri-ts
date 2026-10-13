@@ -19,9 +19,9 @@ reason about lifecycle behavior without re-deriving rules from control flow.
 
 ## Terminology (Normative)
 
-- Frame: one parser emission unit (`CesrFrame` event with `type: "frame"`).
-- `CesrMessage`: historical public payload type name for that frame unit
-  (`body` + `attachments`), retained for API compatibility.
+- Frame: one parser emission unit (`ParseEvent` event with `type: "frame"`).
+- `CesrFrame`: the parsed frame payload (`body` + `attachments`).
+- `ParseEvent`: a frame emission or parse error.
 - Message-domain frame: frame whose body starts with cold-start code `msg` and
   is parsed through Serder reaping.
 - Body group: counter-declared frame-start payload form that defines or encloses

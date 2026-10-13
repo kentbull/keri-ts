@@ -1,6 +1,6 @@
 import { b } from "../core/bytes.ts";
 import { parseBytes } from "../core/parser-engine.ts";
-import type { CesrFrame } from "../core/types.ts";
+import type { ParseEvent } from "../core/types.ts";
 import { renderAnnotatedFrames, renderWrapperAnnotatedStream } from "./render.ts";
 import type { AnnotatedFrame, AnnotateOptions } from "./types.ts";
 
@@ -20,7 +20,7 @@ function resolveOptions(options?: AnnotateOptions): Required<AnnotateOptions> {
   };
 }
 
-function parsedFramesOrThrow(frames: CesrFrame[]) {
+function parsedFramesOrThrow(frames: ParseEvent[]) {
   const parsedFrames = [];
   for (const frame of frames) {
     if (frame.type === "error") {

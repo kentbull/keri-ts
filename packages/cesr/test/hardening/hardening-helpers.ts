@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { createParser, type ParserOptions } from "../../src/core/parser-engine.ts";
-import type { CesrFrame } from "../../src/core/types.ts";
+import type { ParseEvent } from "../../src/core/types.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
@@ -51,9 +51,9 @@ export function parseEvents(
   input: Uint8Array,
   boundaries: number[] = [],
   options?: ParserOptions,
-): CesrFrame[] {
+): ParseEvent[] {
   const parser = createParser(options);
-  const out: CesrFrame[] = [];
+  const out: ParseEvent[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
     out.push(...parser.feed(chunk));
   }
@@ -72,7 +72,7 @@ export function parseFramesNoError(
   input: Uint8Array,
   boundaries: number[] = [],
   options?: ParserOptions,
-): CesrFrame[] {
+): ParseEvent[] {
   const events = parseEvents(input, boundaries, options);
   const errors = events.filter((event) => event.type === "error");
   assertEquals(errors.length, 0);
@@ -85,7 +85,7 @@ export function parseFramesNoError(
  * The summary intentionally excludes raw bytes and verbose nested payload detail,
  * so vector tests can assert contract-level semantics without overfitting.
  */
-export function summarizeFrames(frames: CesrFrame[]): FrameSummary[] {
+export function summarizeFrames(frames: ParseEvent[]): FrameSummary[] {
   return frames
     .filter((event) => event.type === "frame")
     .map((event) => ({
@@ -293,7 +293,7 @@ export function concatWithAno(parts: Uint8Array[], anoRuns = 2): Uint8Array {
  * Guardrail for mutation-fuzz vectors: parser may fail, but only with known,
  * bounded parser error classes.
  */
-export function assertNoUnexpectedErrorClasses(events: CesrFrame[]): void {
+export function assertNoUnexpectedErrorClasses(events: ParseEvent[]): void {
   const allowed = new Set([
     "ParserError",
     "ShortageError",

@@ -6,4 +6,4 @@ export { CesrParser, createParser, parseBytes, type ParserOptions } from "cesr-t
 
 export { toAsyncFrames } from "cesr-ts";
 export { type FrameChannel, toEffectionFrames } from "cesr-ts";
-export type { CesrFrame, CesrMessage, ParserState } from "cesr-ts";
+export type { CesrFrame, ParseEvent, ParserState } from "cesr-ts";

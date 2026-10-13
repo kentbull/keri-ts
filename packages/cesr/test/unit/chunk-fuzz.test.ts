@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../src/core/bytes.ts";
 import { createParser } from "../../src/core/parser-engine.ts";
-import { CesrFrame } from "../../src/index.ts";
+import { ParseEvent } from "../../src/index.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../fixtures/external-vectors.ts";
@@ -10,7 +10,7 @@ import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
   const parser = createParser();
-  const frames: CesrFrame[] = [];
+  const frames: ParseEvent[] = [];
   for (const chunk of chunkByBoundaries(input, boundaries)) {
     frames.push(...parser.feed(chunk));
   }

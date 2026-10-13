@@ -1,13 +1,13 @@
 import { b64ToInt, intToB64 } from "../core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, UnknownCodeError } from "../core/errors.ts";
 import { parseBytes } from "../core/parser-engine.ts";
-import type { CesrMessage } from "../core/types.ts";
+import type { CesrFrame } from "../core/types.ts";
 import { sniff } from "../parser/cold-start.ts";
 import { parseAttachmentDispatchCompat } from "../parser/group-dispatch.ts";
 import { Counter, parseCounter } from "../primitives/counter.ts";
 import { Indexer } from "../primitives/indexer.ts";
 import { Matter, parseMatter } from "../primitives/matter.ts";
-import { type GroupEntry, isCounterGroupLike, isPrimitiveTuple } from "../primitives/primitive.ts";
+import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
 import { UnknownPrimitive } from "../primitives/unknown.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { counterCodeName, counterCodeNameForVersion, matterCodeName, nativeLabelName } from "./comments.ts";
@@ -118,7 +118,7 @@ function renderGroupItems(
   options: Required<AnnotateOptions>,
 ): void {
   for (const item of items) {
-    if (isPrimitiveTuple(item)) {
+    if (isGroupTuple(item)) {
       renderGroupItems(
         lines,
         item,
@@ -270,7 +270,7 @@ function renderAttachmentGroupRaw(
 /** Render a native CESR body-group payload using hydrated native field projections when available. */
 function renderNativeBody(
   lines: string[],
-  frame: CesrMessage,
+  frame: CesrFrame,
   options: Required<AnnotateOptions>,
   version: Versionage,
 ): void {
@@ -333,7 +333,7 @@ function renderNativeBody(
 /** Render non-native or opaque message bodies as one annotated body line. */
 function renderMessageBody(
   lines: string[],
-  frame: CesrMessage,
+  frame: CesrFrame,
   options: Required<AnnotateOptions>,
 ): void {
   const rawBody = TEXT_DECODER.decode(frame.body.raw);
@@ -374,7 +374,7 @@ function renderMessageBody(
 
 /** Render one parsed frame and all of its attachment groups into annotation lines. */
 function renderFrame(
-  frame: CesrMessage,
+  frame: CesrFrame,
   index: number,
   options: Required<AnnotateOptions>,
 ): AnnotatedFrame {
@@ -405,7 +405,7 @@ function renderFrameChunk(
   options: Required<AnnotateOptions>,
 ): void {
   const parsed = parseBytes(input);
-  const frames: CesrMessage[] = [];
+  const frames: CesrFrame[] = [];
   for (const event of parsed) {
     if (event.type === "error") {
       throw event.error;
@@ -523,7 +523,7 @@ export function renderWrapperAnnotatedStream(
 
 /** Render parsed CESR frames into line-oriented, human-annotated text blocks. */
 export function renderAnnotatedFrames(
-  frames: CesrMessage[],
+  frames: CesrFrame[],
   options: Required<AnnotateOptions>,
 ): AnnotatedFrame[] {
   return frames.map((frame, index) => renderFrame(frame, index + 1, options));
