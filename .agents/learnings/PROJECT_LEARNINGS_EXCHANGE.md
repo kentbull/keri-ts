@@ -53,6 +53,11 @@ Persist staged windows with cache rows; reconfigure from active windows, preserv
 drift and keep pruning at least as long as active acceptance. Restart safety and
 stale-owner refresh strengthen the frozen reference; intake remains pending.
 
+KRAM source authentication checks only the last couple or sender-matching triple.
+Keep known-invalid separate from missing state: only the former permits signature
+fallback. Preserve exact missing sequence numbers beyond safe database ordinals;
+query publication belongs to intake, not the read-only helper.
+
 Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
 empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
 not prove that path. Full runtime/resource qualification remains open.

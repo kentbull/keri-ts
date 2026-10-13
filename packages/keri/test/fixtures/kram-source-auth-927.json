@@ -1,0 +1,111 @@
+{
+  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "donor": "04178add",
+  "sourceModuleSha256": "460422f5d2bec0675642975525c09d7c3eec2ef7170b52247ecff62badfa6fc2",
+  "kel": [
+    "{\"v\":\"KERICAACAAJSONAAHp.\",\"t\":\"icp\",\"d\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"s\":\"0\",\"kt\":\"2\",\"k\":[\"DL6IyVB3-sDapkjj46zdZbCgGkzo70EJPw8nZ5MoA958\",\"DGLr_v_FSNsAZ55kLyJvX3g9tCu9QgL-4ab02U1PxNK7\",\"DNc-I2SLoMCgMZ86fIUbc3bO1zSgAe0eBO9kTm2sxIl2\"],\"nt\":\"2\",\"n\":[\"EAcj7hDxrQGDrH52NCKFnQo6GQtVvdyRs4bflqdDyJpv\",\"EAZS5vSUJqgZQw4Qfg-dWFZjJqpOrXOlkhByYyb087Ao\",\"ENZXFlvNrS99uDWS5ol6jgakk9cXJAgl-jASBNfQ38qV\"],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}-KBCAAD_x6PwzEhFEo_wY5mQG4PFf6vlpV2-xhBeTjGh6udoCGGvbN-DaCJ4ausLDsaiJ7df5Pp4uHkKRYlyQMPtS50FABA8qMlCNSAfYbYraljVjk_2HpVTtVtFBs_ncKfdcF8bkYIiFnMMEhKzu7BRYfpCUZJKI63m-NZ9yjFRGgJkhHUPACCgf0D8GdJcFicaeaUxVq99IaX7rjWa0EzxK1sGzz8G21J_tbNVSXy9GmBX3jDGdxAI51xfLjH7FGQh9VS4Q1UP",
+    "{\"v\":\"KERICAACAAJSONAAIl.\",\"t\":\"rot\",\"d\":\"EHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"s\":\"1\",\"p\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"kt\":\"2\",\"k\":[\"DPRa7YGQG_JBfxc2DpzQxOpmBci71siAxoF9G3NCSlbO\",\"DIzL2Fijd-ckOEgrMvmpPIuCq58h8N2BOsq1iK3ZJwFD\",\"DCUXAhJqmK3bDEqfRCTuYHvS6ck07Y0C2nfPbzNTytiR\"],\"nt\":\"2\",\"n\":[\"EFJdIdkcAN_i-VKLIPVyApF9I0hlDdtihSo1XWcC0G6w\",\"EEinJ7CElBqyB8tDNy-Gw4cd9RdtaiRWrCwVQHiYZ0IK\",\"EBLAOM5nvh5pACCV_yqDuZ6I4RznPaGzNDErVRVdjuij\"],\"bt\":\"0\",\"br\":[],\"ba\":[],\"c\":[],\"a\":[]}-KBCAAAUB209YvVu1W8-QMmsfSoF2IZgzYH0TbuRvUM3nnhXoz5MROM0YL1PdBHM6Un1DqTvyYVxeRB6sACgQHFr5i4FABDNpFRUO543A28cnnUBORcp4du2UVWfdIZs1xr5fQhb4BTe7iDCZs-9ycdPwo1YZ50Qr3MHkazVDgOXmGdZ3loPACAamwthTymxyl81adEyNng2wXqt6Bo8SgfF033TM1V8qqZ49RwJxtBxiQmA1pQyJ8jED_qTV1rmec2pj3Q9mRED",
+    "{\"v\":\"KERICAACAAJSONAAEB.\",\"t\":\"ixn\",\"d\":\"EBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"s\":\"2\",\"p\":\"EHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc\",\"a\":[{\"d\":\"EDBzU4Y7MBvcsulb1acs9IVEqMLUvScmZ4NIDQ9ruHLp\"}]}-CBD-KBCAAByFoKrd6Nwtiv9f8O7doM11E9pBizPV_aUhl3ADSat6cW3InlD_2crEXs6mwV3mtKJslcs1_r25MiadbdYkI4FABD9S4vr_ap-7NgOpW-1OYqR94cy0xRh9UqtTN5mS1FXcLmE8U7UTbBzNZXDlYYIcmBPI1bmfMY-_-ljhMkZKpEGACAeFtcnV2aIZicxK9uvq1ikRb1o5jg-M1Fiej3zVg0o_2AQ-LL3gRgQ2QWOBj2Nth0a0F8nWTpSzXpE8yOLjlcJ",
+    "{\"v\":\"KERICAACAAJSONAAEB.\",\"t\":\"ixn\",\"d\":\"EFm9TUg2kBhvkpHqr2WpN1AVsqu-uzI9ouS0f9G70iTm\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"s\":\"3\",\"p\":\"EBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S\",\"a\":[{\"d\":\"EGLhUbYDrVr_ky_x8kjRBxamIcTfWXoH60KcWQh6GU7h\"}]}-CBD-KBCAABSzSp-sgMXYG3N3i-7AeKjL17aVgnpP4q_2rBUN9QfFD0aGEkj0UHnE7IYLnt9vEQsAzocSr8WaARUtR9OvgQOABA8ZbAa-wyu-tFAbOOoAB9VLYwVLLUUmH_CKiUOfaTt02yvfFKwfsKb85nkaMdG-6H6d1MFv6xVVYcToKcNnlkFACBzBNpjyLnnJNGcTPVgu0se30YZU2PP3ZmE-zrhs73cs9eDluZmp5QO0Z8votllKFLZBacwI-eJOLe-ABuaaKcE"
+  ],
+  "bodies": {
+    "sealed": "{\"v\":\"KERICAACAAJSONAAEm.\",\"t\":\"exn\",\"d\":\"EDBzU4Y7MBvcsulb1acs9IVEqMLUvScmZ4NIDQ9ruHLp\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"source-seal\"},\"a\":{}}",
+    "wrong": "{\"v\":\"KERICAACAAJSONAAEy.\",\"t\":\"exn\",\"d\":\"EN3yrfZoW8J4Ir84aBUbQgoocDANbho36ntb9-2cCvL5\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"invalid-source-fallback\"},\"a\":{}}",
+    "missing": "{\"v\":\"KERICAACAAJSONAAEp.\",\"t\":\"exn\",\"d\":\"EL8XfSn2sblv3HY1FC6CUlUMVcXekAZHzLmJ-8JZpVCi\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"missing-source\"},\"a\":{}}",
+    "last": "{\"v\":\"KERICAACAAJSONAAEm.\",\"t\":\"exn\",\"d\":\"EGLhUbYDrVr_ky_x8kjRBxamIcTfWXoH60KcWQh6GU7h\",\"i\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"ri\":\"EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-10-13T12:00:02.000000+00:00\",\"r\":\"/ipex/apply\",\"q\":{\"n\":\"last-source\"},\"a\":{}}"
+  },
+  "cases": [
+    {
+      "name": "known valid",
+      "body": "sealed",
+      "attachments": "-CAN-SAMMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "valid"
+    },
+    {
+      "name": "known wrong digest",
+      "body": "wrong",
+      "attachments": "-CBG-YA4EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAsAAB-dxyrD-rNWhsSUY3xhINhnkCq5Hz31qK-uotMpgWB5_ZoXeOHLFfQu4S6WzNlVA0iV9i_IQlqf-saO5qF1EwLABBAZbZ6vmEFY-O66zKEwmgbDvVGrRAZYBsHioOO9hKsF0TUac1C0Gd9hNBO9OH_Fbu7uqx653XF_uasPLVGycsA-SAMMAACEGIw6ZBCh3dq3s11p920kRNfRYQH6tgVGi61hVW3ODtC",
+      "kind": "invalid",
+      "intakeReady": true
+    },
+    {
+      "name": "missing 99 blocks signature fallback",
+      "body": "missing",
+      "attachments": "-CBG-YA4EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAsAAAaW9TQBsI82VZhmvO0T1nKmMW5M6yJgajYCMAnGzMde6rEV7I-wRT6aKsV83bOSCcBNwo9mOj8b2qHLihShE0IABAc3IuHMSrXMfyTozKY4yUXCN795wTvHhidmosVQhRorWZe3rj_JzcT3n0HvnYNlgM6lvPwGMoEsJWIJ4if8-4A-SAMMABjEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "missing",
+      "snhex": "63",
+      "intakeReady": false
+    },
+    {
+      "name": "last couple overrides earlier valid",
+      "body": "last",
+      "attachments": "-CAZ-SAYMAADEFm9TUg2kBhvkpHqr2WpN1AVsqu-uzI9ouS0f9G70iTmMAACEGIw6ZBCh3dq3s11p920kRNfRYQH6tgVGi61hVW3ODtC",
+      "kind": "invalid"
+    },
+    {
+      "name": "known event without message anchor",
+      "body": "sealed",
+      "attachments": "-CAN-SAMMAABEHtvg5zxE2otNrosBUyhNzp-SslgJALKXpmIbF0MvtDc",
+      "kind": "invalid"
+    },
+    {
+      "name": "last valid ignores earlier missing",
+      "body": "sealed",
+      "attachments": "-CAZ-SAYMABjEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49SMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "valid"
+    },
+    {
+      "name": "last missing overrides earlier valid",
+      "body": "sealed",
+      "attachments": "-CAZ-SAYMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49SMABjEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "missing",
+      "snhex": "63"
+    },
+    {
+      "name": "sender triple authenticates",
+      "body": "sealed",
+      "attachments": "-CAY-TAXEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-MAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "valid"
+    },
+    {
+      "name": "sender triple overrides valid couple",
+      "body": "sealed",
+      "attachments": "-CAl-SAMMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S-TAXEHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi-MAACEGIw6ZBCh3dq3s11p920kRNfRYQH6tgVGi61hVW3ODtC",
+      "kind": "invalid"
+    },
+    {
+      "name": "foreign triple cannot override sender couple",
+      "body": "sealed",
+      "attachments": "-CAn-SAMMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S-TAZECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoNNAAgAAAAAAABEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "valid"
+    },
+    {
+      "name": "foreign triple alone cannot authenticate",
+      "body": "sealed",
+      "attachments": "-CAY-TAXECxWIGcIneOwlN1IToG3cEdBG725J-EXovuQS6scxpoNMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "invalid"
+    },
+    {
+      "name": "last valid couple wins",
+      "body": "last",
+      "attachments": "-CAZ-SAYMAACEGIw6ZBCh3dq3s11p920kRNfRYQH6tgVGi61hVW3ODtCMAADEFm9TUg2kBhvkpHqr2WpN1AVsqu-uzI9ouS0f9G70iTm",
+      "kind": "valid"
+    },
+    {
+      "name": "missing beyond safe integer blocks signature fallback",
+      "body": "missing",
+      "attachments": "-CBI-YA4EHreASnB_4r3YSEnKz27Ep6fhzd__UNqgZRDoylvQCi--KAsAAAaW9TQBsI82VZhmvO0T1nKmMW5M6yJgajYCMAnGzMde6rEV7I-wRT6aKsV83bOSCcBNwo9mOj8b2qHLihShE0IABAc3IuHMSrXMfyTozKY4yUXCN795wTvHhidmosVQhRorWZe3rj_JzcT3n0HvnYNlgM6lvPwGMoEsJWIJ4if8-4A-SAONAAgAAAAAAABEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "missing",
+      "snhex": "20000000000001",
+      "intakeReady": false
+    },
+    {
+      "name": "accepted digest without event body",
+      "body": "sealed",
+      "attachments": "-CAN-SAMMAACEBApnt1MdFEAX-xvixbwv2qJsLwfu-SpbpeQ6KZqT49S",
+      "kind": "missing",
+      "snhex": "2",
+      "missingEvent": true
+    }
+  ]
+}
