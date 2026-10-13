@@ -18,8 +18,8 @@ const V2 = { major: 2, minor: 0 } as const;
 // - `disclosure.ts` for fixed-field blind/bound/media disclosure
 
 Deno.test("aggor: parses list aggregate groups", () => {
-  // Minimal parser-compat inhale example for a plain generic list group.
-  const payload = "ABCDWXYZ";
+  // Real verifier and digest tokens exercise a populated generic list.
+  const payload = `${token("B")}${token("E")}`;
   const listBody = `${counterV2(CtrDexV2.GenericListGroup, payload.length / 4)}${payload}`;
 
   const aggor = parseAggor(txt(listBody), V2, "txt");

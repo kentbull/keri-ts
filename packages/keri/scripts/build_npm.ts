@@ -6,6 +6,7 @@
  * manifest targets instead of hard-coding the final tree layout.
  */
 import { build, emptyDir } from "@deno/dnt";
+import { dirname } from "jsr:@std/path/posix/dirname";
 import {
   assertPackagePathExists,
   findGeneratedEntrypoint,
@@ -203,23 +204,24 @@ function normalizeBuiltManifest(): void {
       import: targets.db.import,
       types: targets.db.types,
     },
-    "./app/*": {
-      import: "./esm/keri/npm/src/app/*.js",
-      types: "./types/app/*.d.ts",
-    },
-    "./core/*": {
-      import: "./esm/keri/npm/src/core/*.js",
-      types: "./types/core/*.d.ts",
-    },
-    "./db/*": {
-      import: "./esm/keri/npm/src/db/*.js",
-      types: "./types/db/*.d.ts",
-    },
-    "./vdr/*": {
-      import: "./esm/keri/npm/src/vdr/*.js",
-      types: "./types/vdr/*.d.ts",
-    },
   };
+  // Internal scopes are siblings of the discovered npm entrypoint directory.
+  // DNT may emit a flat or nested tree, so derive both JS and declaration roots.
+  const sourceRoot = dirname(dirname(targets.root.import));
+  const typesRoot = dirname(dirname(targets.root.types));
+  for (const scope of ["app", "core", "db", "vdr"]) {
+    const source = `${sourceRoot}/${scope}`;
+    const declarations = `${typesRoot}/${scope}`;
+    for (const directory of [source, declarations]) {
+      if (!Deno.statSync(`${OUT_DIR}/${directory}`).isDirectory) {
+        throw new Error(`Missing generated npm scope directory: ${directory}`);
+      }
+    }
+    manifest.exports[`./${scope}/*`] = {
+      import: `${source}/*.js`,
+      types: `${declarations}/*.d.ts`,
+    };
+  }
   writeJsonFileSync(packageJsonPath, manifest);
 }
 
@@ -296,22 +298,6 @@ try {
         "./db": {
           import: NPM_DB_PATH,
           types: NPM_DB_TYPES_PATH,
-        },
-        "./app/*": {
-          import: "./esm/keri/npm/src/app/*.js",
-          types: "./types/app/*.d.ts",
-        },
-        "./core/*": {
-          import: "./esm/keri/npm/src/core/*.js",
-          types: "./types/core/*.d.ts",
-        },
-        "./db/*": {
-          import: "./esm/keri/npm/src/db/*.js",
-          types: "./types/db/*.d.ts",
-        },
-        "./vdr/*": {
-          import: "./esm/keri/npm/src/vdr/*.js",
-          types: "./types/vdr/*.d.ts",
         },
       },
       files: ["esm", "types", "README.md", "LICENSE"],

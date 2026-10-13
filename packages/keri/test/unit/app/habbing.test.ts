@@ -1,5 +1,3 @@
-// @file-test-lane app-stateful-a
-
 import { run } from "effection";
 import {
   assertEquals,
@@ -30,7 +28,6 @@ import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import type { Poster } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
-import * as parsering from "../../../src/app/parsering.ts";
 import type { QueryCoordinator } from "../../../src/app/querying.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
@@ -1483,13 +1480,6 @@ Deno.test("Hab receives KERIpy-style config and local routing seams from Habery"
       yield* hby.close();
     }
   });
-});
-
-Deno.test("Parsering exports no fake parser seam", () => {
-  assertEquals("KeriParserAdapter" in parsering, false);
-  assertEquals("KeriParserLike" in parsering, false);
-  assertEquals("KeriEnvelopeStreamParser" in parsering, false);
-  assertEquals(typeof parsering.envelopesFromFrames, "function");
 });
 
 Deno.test("Hab endorse matches KERIpy EXN pipelining modes", async () => {

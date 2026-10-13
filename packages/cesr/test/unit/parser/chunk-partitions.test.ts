@@ -1,0 +1,104 @@
+import { assertEquals } from "jsr:@std/assert";
+import { decodeB64 } from "../../../src/core/bytes.ts";
+import { ParseEvent } from "../../../src/index.ts";
+import { createParser } from "../../../src/parser/stream.ts";
+import { CtrDexV2 } from "../../../src/tables/counter-codex.ts";
+import { counterV1, counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
+import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
+import { chunkByBoundaries, encode } from "../../fixtures/stream-byte-fixtures.ts";
+import { v1ify } from "../../fixtures/versioned-body-fixtures.ts";
+
+/** Require error-free parsing and compare frame identity and ordered attachment metadata. */
+function summarizeFrames(input: Uint8Array, boundaries: number[]): string[] {
+  const parser = createParser();
+  const frames: ParseEvent[] = [];
+  for (const chunk of chunkByBoundaries(input, boundaries)) {
+    frames.push(...parser.feed(chunk));
+  }
+  frames.push(...parser.flush());
+
+  const errors = frames.filter((e) => e.type === "error");
+  assertEquals(errors.length, 0);
+
+  const messages = frames.filter((e) => e.type === "frame");
+  return messages.map((e) => {
+    const message = e.frame as {
+      body: {
+        kind: string;
+        ilk: string | null;
+        said: string | null;
+      };
+      attachments: Array<{ code: string; count: number }>;
+    };
+    const atts = message.attachments.map((a) => `${a.code}:${a.count}`).join(
+      ",",
+    );
+    return `${message.body.kind}|${message.body.ilk ?? ""}|${message.body.said ?? ""}|${atts}`;
+  });
+}
+
+/** Compare every single cut and adjacent selected cuts against the complete input. */
+function assertSplitDeterminism(
+  name: string,
+  input: Uint8Array,
+  secondSplitGrid = 18,
+): void {
+  const baseline = summarizeFrames(input, []);
+
+  // Exhaustive single-split matrix
+  for (let i = 1; i < input.length; i++) {
+    assertEquals(summarizeFrames(input, [i]), baseline, `${name}: split=${i}`);
+  }
+
+  // Large two-split matrix on uniform grid
+  const step = Math.max(1, Math.floor(input.length / secondSplitGrid));
+  const points: number[] = [];
+  for (let p = step; p < input.length; p += step) {
+    points.push(p);
+  }
+  if (points[points.length - 1] !== input.length - 1) {
+    points.push(input.length - 1);
+  }
+
+  for (let a = 0; a < points.length; a++) {
+    for (let b = a + 1; b < points.length; b++) {
+      assertEquals(
+        summarizeFrames(input, [points[a], points[b]]),
+        baseline,
+        `${name}: split=${points[a]},${points[b]}`,
+      );
+    }
+  }
+}
+
+Deno.test("chunk-fuzz matrix: v1 json frame with wrapped attachments", () => {
+  const body = v1ify("{\"v\":\"KERI10JSON000000_\",\"t\":\"icp\",\"d\":\"Eabc\"}");
+  const nested = `-AAB${sigerToken()}`;
+  const frame = `${body}${counterV1("-V", nested.length / 4)}${nested}`;
+  assertSplitDeterminism("v1-wrapped", encode(frame));
+});
+
+Deno.test("chunk-fuzz matrix: v2 native fix-body frame stream", () => {
+  assertSplitDeterminism(
+    "v2-native-fix",
+    encode(KERIPY_NATIVE_V2_ICP_FIX_BODY),
+  );
+});
+
+Deno.test("chunk-fuzz matrix: v2 BodyWithAttachmentGroup stream (txt + qb2)", () => {
+  const nestedAttachment = groupV2(CtrDexV2.ControllerIdxSigs, sigerToken());
+  const payload = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${nestedAttachment}`;
+  const wrapped = `${
+    counterV2(
+      CtrDexV2.BodyWithAttachmentGroup,
+      payload.length / 4,
+    )
+  }${payload}`;
+
+  const txtStream = wrapped;
+  assertSplitDeterminism("v2-body-with-attachment-txt", encode(txtStream));
+  assertSplitDeterminism(
+    "v2-body-with-attachment-qb2",
+    decodeB64(txtStream),
+  );
+});

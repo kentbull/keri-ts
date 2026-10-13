@@ -1,4 +1,3 @@
-// @file-test-lane app-stateful-a
 import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { createConfiger } from "../../../src/app/configing.ts";

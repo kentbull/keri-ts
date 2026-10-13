@@ -1,5 +1,3 @@
-// @file-test-lane core-fast-a
-
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { Ilks, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { incept, query, reply, rotate, state } from "../../../src/core/protocol-eventing.ts";

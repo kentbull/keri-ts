@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { Cigar, concatBytes, Diger, parseBytes } from "../../../../cesr/mod.ts";

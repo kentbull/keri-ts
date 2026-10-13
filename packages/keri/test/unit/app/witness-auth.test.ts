@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { resolveWitnessAuths } from "../../../src/app/cli/common/witness-auth.ts";
 import { ValidationError } from "../../../src/core/errors.ts";

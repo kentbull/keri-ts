@@ -173,8 +173,10 @@ file promotion and disposal, independently of parser and crypto policy.
 1. Execute the progressive parser plan with explicit checkpoint evidence. Keep
    current behavior accurate until migration, preserve version/count/boundary
    regressions, and distinguish ESSR fragments from logical sealed messages.
-2. Preserve the full P2 vector set as the regression floor while upper-layer
-   KERI work proceeds.
+2. Preserve parser boundary, partition, external-vector and lifecycle coverage
+   under `packages/cesr/test/unit/parser`; serder and table tests have their own
+   sibling owners. Test labels describe current behavior, not development phases.
+   Shared fixture provenance remains independent of the tested runtime version.
 3. Keep `packages/cesr/scripts/verify-tables.ts` green whenever parity work
    touches code tables or codex-family consumers.
 4. Extend native and ACDC support only through the shared native matrix and the

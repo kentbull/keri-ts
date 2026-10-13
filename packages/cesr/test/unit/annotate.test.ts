@@ -8,6 +8,8 @@ import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
+import { parseFramesNoError, summarizeFrames } from "../fixtures/parser-test-helpers.ts";
+import { encode } from "../fixtures/stream-byte-fixtures.ts";
 import { v1ify } from "../fixtures/versioned-body-fixtures.ts";
 
 const TEXT_ENCODER = new TextEncoder();
@@ -148,3 +150,23 @@ Deno.test("annotation validates both selector minor sextets and unsupported majo
     assertThrows(() => annotate(selector.qb64 + KERIPY_NATIVE_V2_ICP_FIX_BODY), VersionError);
   }
 });
+
+Deno.test(
+  "annotate/denot round-trip remains stable for native bodies with supported primitive labels",
+  () => {
+    // Two native frames keep the round-trip assertion focused on semantic
+    // stability, not on preserving literal source-token formatting.
+    const stream = `${KERIPY_NATIVE_V2_ICP_FIX_BODY}${KERIPY_NATIVE_V2_ICP_FIX_BODY}`;
+    const annotated = annotate(stream);
+    const restored = TEXT_DECODER.decode(denot(annotated));
+    const originalSummary = summarizeFrames(parseFramesNoError(encode(stream)));
+    const restoredSummary = summarizeFrames(
+      parseFramesNoError(encode(restored)),
+    );
+    // Contract: annotate+denot must preserve parser-observable frame semantics.
+    assertEquals(restoredSummary, originalSummary);
+    assertEquals(restoredSummary.length, 2);
+    assertEquals(restoredSummary[0].nativeBodyCode, CtrDexV2.FixBodyGroup);
+    assertEquals(restoredSummary[1].nativeBodyCode, CtrDexV2.FixBodyGroup);
+  },
+);

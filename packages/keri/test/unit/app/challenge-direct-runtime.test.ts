@@ -1,5 +1,3 @@
-// @file-test-lane runtime-medium
-
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {

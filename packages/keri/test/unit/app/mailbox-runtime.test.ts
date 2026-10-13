@@ -1,5 +1,3 @@
-// @file-test-lane runtime-medium
-
 /**
  * Mailbox runtime end-to-end unit scenarios.
  *

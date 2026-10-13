@@ -1,5 +1,3 @@
-// @file-test-lane db-fast
-
 import { assertEquals } from "jsr:@std/assert";
 import {
   readStoredLmdbMapSize,

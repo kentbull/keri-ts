@@ -7,6 +7,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { type KeripyRuntime, recordResolverRuntime, verifyKeripy } from "./keripy-runtime.ts";
 
 /** Decoded subprocess result. */
 export interface CmdResult {
@@ -33,6 +34,8 @@ export interface InteropContext {
   env: Record<string, string>;
   repoRoot: string;
   kliCommand: string;
+  /** Verified interpreter used by auxiliary Python interop helpers. */
+  pythonCommand: string;
 }
 
 /** One started KERIpy witness process plus its advertised network state. */
@@ -90,6 +93,9 @@ const DEFAULT_KERIPY_WITNESS_ALIASES = [
   "wyz",
 ] as const;
 
+/** Public fixture credential; scripted witness startup must never prompt. */
+export const KERIPY_WITNESS_PASSCODE = "WitnessFixturePasscode";
+
 /** Default Tufa witness aliases used by controller-symmetry interop tests. */
 const DEFAULT_TUFA_WITNESS_ALIASES = [
   "twan",
@@ -99,6 +105,8 @@ const DEFAULT_TUFA_WITNESS_ALIASES = [
 ] as const;
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 15_000;
+/** Six cold demo Haberies perform sequential key derivation before serving. */
+const KERIPY_DEMO_START_TIMEOUT_MS = 60_000;
 const TUFA_WITNESS_START_TIMEOUT_MS = 45_000;
 const TEST_PORT_MIN = 20_000;
 const TEST_PORT_MAX_EXCLUSIVE = 32_768;
@@ -148,15 +156,15 @@ const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
   },
 ];
 
-/** Pinned KERIpy fork commit used by all KLI interop tests. */
-export const KERIPY_INTEROP_COMMIT = "98b88cf73a746813a8719f05264400467a474c05";
+/** Mailbox fork on main927; an explicit verified source override takes precedence. */
+export const KERIPY_INTEROP_COMMIT = "b08ddeb047fd865d60affe82a0dc77f5efaf4672";
 
 const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
 const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}`;
 const KERIPY_INTEROP_RAW_BASE = `https://raw.githubusercontent.com/kentbull/keripy/${KERIPY_INTEROP_COMMIT}`;
 
 /** Pinned interop verifier fixture used by mixed KERIpy/Tufa ACDC tests. */
-export const INTEROP_VERIFIER_COMMIT = "fef457d65df1ca72bd44d52bea57d28cc78e62d0";
+export const INTEROP_VERIFIER_COMMIT = "14658341afd47beb0cd8f4dd9f4f636239bb1bbd";
 
 const INTEROP_VERIFIER_RAW_BASE =
   `https://raw.githubusercontent.com/kentbull/interop-verifier/${INTEROP_VERIFIER_COMMIT}`;
@@ -414,58 +422,18 @@ export function workspaceRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
 }
 
-/** Resolve the sibling local KERIpy checkout used for branch-local interop fixes. */
-export function localKeripyRoot(): string {
-  return new URL("../../../../../../../python/keripy/", import.meta.url).pathname;
-}
-
-/** Create a temp executable that runs KLI from the local KERIpy checkout. */
-export async function createLocalKeripyKliWrapper(workDir: string): Promise<string> {
-  const path = `${workDir}/local-kli`;
-  const root = localKeripyRoot().replace(/'/g, "'\\''");
-  await Deno.writeTextFile(
-    path,
-    [
-      "#!/bin/sh",
-      `KERIPY_ROOT='${root}'`,
-      "exec uv run --project \"$KERIPY_ROOT\" --with-editable \"$KERIPY_ROOT\" python -m keri.cli.kli \"$@\"",
-      "",
-    ].join("\n"),
-  );
-  await Deno.chmod(path, 0o755);
-  return path;
-}
-
-let localKeripyRunnable: Promise<boolean> | undefined;
-
-/** Return true when the branch-local KERIpy checkout can be run through uv. */
-export async function canRunLocalKeripy(
-  env: Record<string, string>,
-): Promise<boolean> {
-  localKeripyRunnable ??= (async () => {
-    try {
-      await Deno.stat(localKeripyRoot());
-      return await canRunCommand("uv", ["--version"], pyenvProbeEnv(env));
-    } catch {
-      return false;
-    }
-  })();
-  return await localKeripyRunnable;
-}
-
-/**
- * Prefer the branch-local KERIpy checkout when it is runnable, otherwise use
- * the already-provisioned pinned interop KLI command.
- */
-export async function resolveLocalKeripyKliCommand(
+/** Select explicit source or the historical pinned runtime without an implicit PATH fallback. */
+export async function resolveKeripyRuntime(
   workDir: string,
-  fallbackCommand: string,
   env: Record<string, string>,
-): Promise<string> {
-  if (await canRunLocalKeripy(env)) {
-    return await createLocalKeripyKliWrapper(workDir);
-  }
-  return fallbackCommand;
+): Promise<KeripyRuntime> {
+  if (!env.KERIPY_INTEROP_ROOT) await ensurePinnedKeripyKli(env);
+  // Runtime selection does not alter independent historical witness fixture provenance.
+  await ensurePinnedKeripyFixtures();
+  return await verifyKeripy(workDir, env, {
+    python: keripyInteropVenvBin("python"),
+    commit: KERIPY_INTEROP_COMMIT,
+  });
 }
 
 function cacheHome(): string {
@@ -676,6 +644,7 @@ export async function ensurePinnedDidWebsResolver(
   const dws = didWebsResolverVenvBin("dws");
   const markerMatches = await pathExists(marker) ? (await Deno.readTextFile(marker)).trim() === markerValue : false;
   if (markerMatches && await canUseDws(dws, env)) {
+    await recordResolverRuntime(checkout, DID_WEBS_RESOLVER_INTEROP_COMMIT, didWebsResolverVenvBin("python"), env);
     return {
       root: checkout,
       dwsCommand: dws,
@@ -694,6 +663,7 @@ export async function ensurePinnedDidWebsResolver(
   }
   await Deno.mkdir(didWebsResolverCacheRoot(), { recursive: true });
   await Deno.writeTextFile(marker, `${markerValue}\n`);
+  await recordResolverRuntime(checkout, DID_WEBS_RESOLVER_INTEROP_COMMIT, didWebsResolverVenvBin("python"), env);
   return {
     root: checkout,
     dwsCommand: dws,
@@ -790,8 +760,8 @@ async function waitForHealthOrChildExit(
 }
 
 /** Wait until one specific HTTP URL responds with any 2xx status. */
-export async function waitForHttpOk(url: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
+export async function waitForHttpOk(url: string, timeoutMs = DEFAULT_HEALTH_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   let lastError = `HTTP probe did not return 2xx for ${url}`;
   while (Date.now() < deadline) {
     try {
@@ -1282,7 +1252,7 @@ export async function createInteropContext(): Promise<InteropContext> {
     HOME: home,
     ...(denoDir ? { DENO_DIR: denoDir } : {}),
   };
-  const kliCommand = await ensurePinnedKeripyKli(baseEnv);
+  const { kliCommand, pythonCommand } = await resolveKeripyRuntime(home, baseEnv);
   const kliBin = kliCommand.slice(0, kliCommand.lastIndexOf("/"));
   const env = {
     ...baseEnv,
@@ -1293,6 +1263,7 @@ export async function createInteropContext(): Promise<InteropContext> {
     env,
     repoRoot: workspaceRoot(),
     kliCommand,
+    pythonCommand,
   };
 }
 
@@ -1492,11 +1463,14 @@ async function initializeKeriPyWitness(
       kliCommand,
       [
         "init",
+        "--version",
+        "1.0",
         "--name",
         alias,
         "--base",
         base,
-        "--nopasscode",
+        "--passcode",
+        KERIPY_WITNESS_PASSCODE,
         "--config-dir",
         configRoot,
         "--config-file",
@@ -1512,12 +1486,16 @@ async function initializeKeriPyWitness(
       kliCommand,
       [
         "incept",
+        "--version",
+        "1.0",
         "--name",
         alias,
         "--base",
         base,
         "--alias",
         alias,
+        "--passcode",
+        KERIPY_WITNESS_PASSCODE,
         "--config",
         configRoot,
         "--file",
@@ -1529,7 +1507,7 @@ async function initializeKeriPyWitness(
   return extractPrefix(incepted.stdout);
 }
 
-/** Start explicit KERIpy witness hosts from temp-copied configs and random ports. */
+/** Start real v1 KERIpy witness hosts from CLI-created stores and random ports. */
 export async function startKeriPyWitnessHarness(
   ctx: InteropContext,
   options: KeriPyWitnessHarnessOptions = {},
@@ -1575,16 +1553,18 @@ export async function startKeriPyWitnessHarness(
 
   const children = nodes.map((node) =>
     spawnChild(
-      ctx.kliCommand,
+      ctx.pythonCommand,
       [
-        "witness",
-        "start",
+        // Current `witness start` cannot select protocol/genus; the fixture does.
+        `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
         "--name",
         node.name,
         "--base",
         base,
         "--alias",
         node.alias,
+        "--passcode",
+        KERIPY_WITNESS_PASSCODE,
         "--config-dir",
         configRoot,
         "--config-file",
@@ -1655,7 +1635,7 @@ export async function startKeriPyWitnessDemoHarness(
 
   try {
     for (const node of KERIPY_DEMO_WITNESS_NODES) {
-      await waitForHttpOk(`${node.httpOrigin}/oobi/${node.pre}`);
+      await waitForHttpOk(`${node.httpOrigin}/oobi/${node.pre}`, KERIPY_DEMO_START_TIMEOUT_MS);
       await waitForHttpOk(node.controllerOobi);
       await waitForHttpOk(node.witnessOobi);
     }
@@ -1890,4 +1870,30 @@ export async function startTufaWitnessHarness(
   }
 
   return new TufaWitnessHarness(headDirPath, ctx.env, nodes, children);
+}
+
+/** Write one controller's advertised loopback endpoint for live interop hosts. */
+export async function writeAgentConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
 }

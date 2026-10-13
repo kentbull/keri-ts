@@ -1,5 +1,3 @@
-// @file-test-lane runtime-slow
-
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { createParser } from "../../../../cesr/mod.ts";

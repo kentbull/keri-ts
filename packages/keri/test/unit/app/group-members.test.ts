@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import {
   findLocalGroupMember,

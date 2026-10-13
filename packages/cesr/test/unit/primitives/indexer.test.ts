@@ -25,6 +25,10 @@ Deno.test("indexer: parses key KERIpy indexed-signature vectors", () => {
     const indexer = parseIndexerFromText(txt(qb64));
     assertEquals(indexer.qb64, qb64);
     assertQb64Qb2Parity(indexer);
+    // Exercise the public binary reader directly, independently of constructors.
+    const binary = parseIndexerFromBinary(codeB64ToB2(qb64));
+    assertEquals(binary.qb64, indexer.qb64);
+    assertEquals(binary.index, indexer.index);
   }
 });
 

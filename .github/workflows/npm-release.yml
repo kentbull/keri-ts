@@ -80,6 +80,9 @@ jobs:
             tufa) deno task test:quality:tufa ;;
           esac
 
+      - name: test package tooling
+        run: deno task test:package-tools
+
       - name: build exact npm artifacts
         env:
           BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}

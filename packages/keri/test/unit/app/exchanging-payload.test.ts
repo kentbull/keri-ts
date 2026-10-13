@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import {
   b,
   collectPayload,

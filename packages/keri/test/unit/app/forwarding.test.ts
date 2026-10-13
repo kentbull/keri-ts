@@ -1,5 +1,3 @@
-// @file-test-lane runtime-medium
-
 /**
  * Focused mailbox forwarding and cursor utility tests.
  *
@@ -52,7 +50,6 @@ const ACDC_FIXTURE_RAW = new TextEncoder().encode(
 );
 
 /** Proves KERIpy-compatible mailbox topic defaults for credential presentation routes. */
-// @test-lane app-fast-parallel
 Deno.test("mailboxTopicForRoute routes IPEX exchanges to /credential", () => {
   assertEquals(mailboxTopicForRoute("/ipex/apply"), CREDENTIAL_MAILBOX_TOPIC);
   assertEquals(mailboxTopicForRoute("/ipex/offer"), CREDENTIAL_MAILBOX_TOPIC);
@@ -63,7 +60,6 @@ Deno.test("mailboxTopicForRoute routes IPEX exchanges to /credential", () => {
 });
 
 /** Proves sender-side `credential` and poll-side `/credential` share one mailbox key. */
-// @test-lane app-fast-parallel
 Deno.test("mailboxTopicKey normalizes credential topic slash forms", () => {
   assertEquals(
     mailboxTopicKey("Erecipient", "credential"),
@@ -72,7 +68,6 @@ Deno.test("mailboxTopicKey normalizes credential topic slash forms", () => {
 });
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
-// @test-lane app-fast-parallel
 Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -113,7 +108,6 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
 });
 
 /** Proves KERIpy-shaped alias failure messages for missing and ambiguous contacts. */
-// @test-lane app-fast-parallel
 Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -331,7 +325,6 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
 });
 
 /** Proves mailbox-first EXN delivery preserves embedded CESR payloads on the wire. */
-// @test-lane app-fast-parallel
 Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-style EXNs", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -420,7 +413,6 @@ Deno.test("Poster.sendExchange carries embedded CESR attachments for delegation-
 });
 
 /** Proves IPEX delivery defaults to the credential mailbox topic without caller override. */
-// @test-lane app-fast-parallel
 Deno.test("Poster.sendExchange defaults IPEX delivery to /credential", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -566,7 +558,6 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
 });
 
 /** Proves EXN delivery falls back to a hosted witness mailbox when no direct or mailbox endpoints exist. */
-// @test-lane app-fast-parallel
 Deno.test("Poster.sendExchange falls back to local witness mailbox storage", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -635,7 +626,6 @@ Deno.test("Poster.sendExchange falls back to local witness mailbox storage", asy
 });
 
 /** Proves raw CESR delivery falls back to one witness with KERIpy-style introduction plus `/fwd`. */
-// @test-lane app-fast-parallel
 Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus forwarded delivery", async () => {
   const bodies: Uint8Array[] = [];
   const controller = new AbortController();
@@ -762,7 +752,6 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
 });
 
 /** Proves KERIpy-style introduction carries all sender end-role replies. */
-// @test-lane app-fast-parallel
 Deno.test("introduce includes mailbox and witness end-role replies when both are known", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -847,7 +836,6 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
 });
 
 /** Proves `direct` delivery mode stays strict and does not silently fall back to witnesses. */
-// @test-lane app-fast-parallel
 Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses", async () => {
   const attempt = run(function*() {
     const hby = yield* createHabery({
@@ -912,7 +900,6 @@ Deno.test("Poster.sendBytes with direct delivery does not fall back to witnesses
 });
 
 /** Proves inbound `/fwd` storage accepts mailbox-like hosts but not controller-only hosts. */
-// @test-lane app-fast-parallel
 Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects controller-only hosts", async () => {
   await run(function*() {
     const hby = yield* createHabery({

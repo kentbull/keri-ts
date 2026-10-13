@@ -1,4 +1,3 @@
-// @file-test-lane app-stateful-a
 import { run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createParser } from "../../../../cesr/mod.ts";

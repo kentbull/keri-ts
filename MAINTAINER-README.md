@@ -38,12 +38,20 @@ Local macOS note:
 - the script intentionally resolves `npm:lmdb` through Deno itself so the
   runtime-selected package directory is materialized and rebuilt, not just the
   package directory we assume should be used
-- `deno task test` triggers that rebuild automatically through the KERI test
-  group runner on macOS
+- Run `deno task setup:compat-lmdb` explicitly before compat-dependent tests;
+  the test runner never mutates native dependency builds.
 - the cleanup-hook source patch comes from the forked `lmdb-js` dependency
 - if the macOS data-v1 lock path still fails with `ENOSPC`, treat it as a host
   OS/resource-exhaustion problem to document separately, not as justification
   for weakening LMDB locking semantics in `keri-ts`
+
+## Test selection
+
+`deno task test:quality` runs exactly the required PR unit/runtime and parity
+coverage. `deno task test` adds all functional interop, including DID Webs;
+`deno task test:qualification` also runs both manual endurance scenarios.
+See [test ownership and verified external runtimes](packages/keri/test/README.md)
+for exact files, topology, provenance, concurrency limits and retained timings.
 
 ## Release and versioning
 

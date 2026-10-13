@@ -1,5 +1,3 @@
-// @file-test-lane interop-witness-cli
-
 import { run } from "effection";
 import { assertEquals, assertExists, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";

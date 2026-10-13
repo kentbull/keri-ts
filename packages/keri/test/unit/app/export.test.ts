@@ -1,5 +1,3 @@
-// @file-test-lane app-stateful-b
-
 import { run } from "effection";
 import { assertRejects, assertStringIncludes } from "jsr:@std/assert";
 import { Diger } from "../../../../cesr/mod.ts";
