@@ -40,6 +40,7 @@ Deno.test("Effection frames: halting a pending read joins source cleanup", async
   const started = Promise.withResolvers<void>();
   let closed = false;
   let aborted = false;
+  let continued = false; // Cancellation must not resume the caller after a joined cleanup.
   const task = run(function*() {
     const channel = yield* toEffectionFrames(async function*(signal) {
       try {
@@ -57,10 +58,12 @@ Deno.test("Effection frames: halting a pending read joins source cleanup", async
     });
     const subscription = yield* channel.frames;
     yield* subscription.next();
+    continued = true;
   });
   await started.promise;
   await task.halt();
   assertEquals(aborted, true);
+  assertEquals(continued, false);
   assertEquals(closed, true);
 });
 
@@ -85,4 +88,49 @@ Deno.test("Effection frames: consumer failures close the source and subscription
     "already has a subscriber",
   );
   assertEquals(closed, true);
+});
+
+Deno.test("Effection adapter joins a cooperative source's asynchronous finally", async () => {
+  let entered!: () => void;
+  let closing!: () => void;
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const closeStarted = new Promise<void>((resolve) => {
+    closing = resolve;
+  });
+  const cleanup = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let cleaned = false;
+  const task = run(function*() {
+    const channel = yield* toEffectionFrames(async function*(signal) {
+      try {
+        entered();
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      } finally {
+        // The reader obeys abort immediately, but closing its owned resource is asynchronous.
+        closing();
+        await cleanup;
+        cleaned = true;
+      }
+    });
+    for (const _frame of yield* each(channel.frames)) yield* each.next();
+  });
+  await ready;
+  let halted = false;
+  const halt = task.halt().then(() => {
+    halted = true;
+  });
+  try {
+    await closeStarted;
+    // One event-loop turn flushes Promise reactions while the explicit cleanup gate remains closed.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assertEquals(halted, false);
+  } finally {
+    release();
+  }
+  await halt;
+  assertEquals(cleaned, true);
 });

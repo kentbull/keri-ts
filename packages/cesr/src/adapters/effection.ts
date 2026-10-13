@@ -30,7 +30,8 @@ export function* toEffectionFrames(
     async function* input(): AsyncGenerator<Uint8Array> {
       yield* source(controller.signal);
     }
-    const parser = parse(input(), { ...options, signal: controller.signal });
+    const iterator = input(); // Retain source lifetime separately from the cursor's interruptible read.
+    const parser = parse(iterator, { ...options, signal: controller.signal });
     let subscribed = false; // One source has one position; this stream is not a broadcast channel.
     let pending: Promise<IteratorResult<CesrFrame, void>> | undefined;
     let closing: Promise<void> | undefined;
@@ -45,7 +46,12 @@ export function* toEffectionFrames(
         try {
           if (unclaimed && !unclaimed.done) await unclaimed.value.essr?.discard();
         } finally {
-          await parser.return(undefined);
+          try {
+            await parser.return(undefined);
+          } finally {
+            // Cursor abort wakes locally; the cooperative adapter also joins source cleanup.
+            await iterator.return(undefined);
+          }
         }
       })();
     }
@@ -59,20 +65,23 @@ export function* toEffectionFrames(
             subscribed = true;
             return {
               /** Transfer one complete frame only after its input and framing checks finish. */
-              *next(): Operation<IteratorResult<CesrFrame, void>> {
-                if (closing) throw new Error("Frame channel is closed");
-                if (pending) throw new Error("Frame channel cannot read concurrently");
-                pending = parser.next();
-                let delivered = false;
-                try {
-                  const result = yield* call(() => pending!);
-                  delivered = true;
-                  return result;
-                } finally {
-                  // Halting only this next() must also cancel the in-flight parser read.
-                  if (!delivered) yield* call(close);
-                  pending = undefined;
-                }
+              next(): Operation<IteratorResult<CesrFrame, void>> {
+                // Isolate teardown yields so halting next() cannot resume its caller with undefined.
+                return call(function*() {
+                  if (closing) throw new Error("Frame channel is closed");
+                  if (pending) throw new Error("Frame channel cannot read concurrently");
+                  pending = parser.next();
+                  let delivered = false;
+                  try {
+                    const result = yield* call(() => pending!);
+                    delivered = true;
+                    return result;
+                  } finally {
+                    // Halting only this next() must also cancel the in-flight parser read.
+                    if (!delivered) yield* call(close);
+                    pending = undefined;
+                  }
+                });
               },
             };
           },

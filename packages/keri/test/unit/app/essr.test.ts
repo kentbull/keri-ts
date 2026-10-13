@@ -92,7 +92,7 @@ Deno.test("ESSR recipient decrypts accepted SCS content before staging and prese
     assertEquals(await collectPayload(result.plaintext, 4096), plain);
     assertEquals(await collectPayload(result.body, 4096), body);
     assertEquals(hby.db.essrs.get([said])[0].raw, cipher);
-    await result.plaintext.promote();
+    await result.plaintext.promote(`plain.${said}`);
     // The view reopens the owning file, so it survives promotion without a RAM copy.
     assertEquals(await collectPayload(result.body, 4096), body);
     await result.plaintext.discard();
