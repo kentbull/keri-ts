@@ -10,6 +10,8 @@ import { parseMatter } from "../primitives/matter.ts";
 import type { Primitive } from "../primitives/primitive.ts";
 import { parseVerser } from "../primitives/verser.ts";
 import { reapSerder } from "../serder/serdery.ts";
+import { smell } from "../serder/smell.ts";
+import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds, type Protocol, Protocols } from "../tables/versions.ts";
 import {
@@ -20,6 +22,7 @@ import {
   ShortageError,
   SyntaxParseError,
   UnknownCodeError,
+  VersionError,
 } from "./errors.ts";
 import {
   BODY_WITH_ATTACHMENT_GROUP_NAMES,
@@ -35,7 +38,7 @@ import {
   quadletUnit,
   tokenSize,
 } from "./parser-constants.ts";
-import type { CesrMessage } from "./types.ts";
+import type { CesrBody, CesrMessage, Smellage } from "./types.ts";
 
 /** Attachment decoding options for enclosed frames. */
 interface FrameParserOptions {
@@ -50,8 +53,10 @@ export interface ParsedFrameStart {
   /** Further complete frames from the same enclosure, in stream order. */
   siblings?: CesrMessage[];
   consumed: number;
+  /** Genus used to decode this frame and its attachments. */
   version: Versionage;
-  streamVersion: Versionage;
+  /** Explicit stream selection; null leaves subsequent frames in legacy inference mode. */
+  streamVersion: Versionage | null;
 }
 
 /** Frame-start classification produced by syntax parsing before behavior dispatch. */
@@ -71,7 +76,7 @@ interface FrameStartSyntaxArtifact {
   /** Cold-start domain at frame start (`msg` or attachment domain). */
   cold: "msg" | "txt" | "bny";
   /** Stream version context after optional leading genus-version selector handling. */
-  streamVersion: Versionage;
+  streamVersion: Versionage | null;
   /** Parsed body-group counter for non-message frame kinds. */
   counter?: Counter;
   /** Frame-local version selected while resolving frame-start counter. */
@@ -155,7 +160,7 @@ export class FrameParser {
    */
   parseFrame(
     input: Uint8Array,
-    inheritedVersion: Versionage = DEFAULT_VERSION,
+    inheritedVersion: Versionage | null = null,
   ): ParsedFrameStart {
     const syntax = this.parseFrameStartSyntax(input, inheritedVersion);
     return this.interpretFrameStartSyntax(input, syntax);
@@ -169,7 +174,7 @@ export class FrameParser {
    */
   private parseFrameStartSyntax(
     input: Uint8Array,
-    inheritedVersion: Versionage,
+    inheritedVersion: Versionage | null,
   ): FrameStartSyntaxArtifact {
     let offset = 0;
     let activeVersion = inheritedVersion;
@@ -184,7 +189,7 @@ export class FrameParser {
     }
 
     if (cold === "txt" || cold === "bny") {
-      const peek = parseCounter(input.slice(offset), activeVersion, cold);
+      const peek = parseCounter(input.slice(offset), activeVersion ?? DEFAULT_VERSION, cold);
       if (peek.code === GENUS_VERSION_CODE) {
         offset += tokenSize(peek, cold);
         activeVersion = decodeGenusVersion(peek);
@@ -215,8 +220,9 @@ export class FrameParser {
       version: frameVersion,
     } = this.resolveFrameStartCounter(
       input.slice(offset),
-      activeVersion,
+      activeVersion ?? DEFAULT_VERSION,
       cold,
+      activeVersion === null,
     );
     const headerSize = tokenSize(counter, cold);
     const unit = quadletUnit(cold);
@@ -226,7 +232,7 @@ export class FrameParser {
         kind: "bodyWithAttachmentGroup",
         offset,
         cold,
-        streamVersion: frameVersion,
+        streamVersion: activeVersion,
         counter,
         frameVersion,
         headerSize,
@@ -238,7 +244,7 @@ export class FrameParser {
         kind: "nonNativeBodyGroup",
         offset,
         cold,
-        streamVersion: frameVersion,
+        streamVersion: activeVersion,
         counter,
         frameVersion,
         headerSize,
@@ -250,7 +256,7 @@ export class FrameParser {
         kind: "nativeBodyGroup",
         offset,
         cold,
-        streamVersion: frameVersion,
+        streamVersion: activeVersion,
         counter,
         frameVersion,
         headerSize,
@@ -262,7 +268,7 @@ export class FrameParser {
         kind: "genericGroup",
         offset,
         cold,
-        streamVersion: frameVersion,
+        streamVersion: activeVersion,
         counter,
         frameVersion,
         headerSize,
@@ -299,8 +305,8 @@ export class FrameParser {
         return {
           frame: { body: serder, attachments: [] },
           consumed: syntax.offset + consumed,
-          version: serder.gvrsn ?? serder.pvrsn,
-          streamVersion: serder.gvrsn ?? serder.pvrsn,
+          version: this.bodyGenus(serder, syntax.streamVersion),
+          streamVersion: syntax.streamVersion,
         };
       }
       case "bodyWithAttachmentGroup": {
@@ -375,7 +381,7 @@ export class FrameParser {
     count: number,
     unit: number,
     version: Versionage,
-    streamVersion: Versionage,
+    streamVersion: Versionage | null,
   ): ParsedFrameStart {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
@@ -399,7 +405,7 @@ export class FrameParser {
       frame: nested.frame,
       complete: true,
       consumed: offset + total,
-      version: nested.frame.body.gvrsn ?? nested.frame.body.pvrsn, // fallback to pvrsn is a v1 fallback compatibility heuristic
+      version,
       streamVersion,
     };
   }
@@ -417,7 +423,7 @@ export class FrameParser {
     unit: number,
     cold: "txt" | "bny",
     version: Versionage,
-    streamVersion: Versionage,
+    streamVersion: Versionage | null,
   ): ParsedFrameStart {
     const matter = parseMatter(input.slice(offset + headerSize), cold);
     const bodySize = tokenSize(matter, cold);
@@ -428,14 +434,18 @@ export class FrameParser {
       );
     }
 
+    // A recognizable body header must satisfy the enclosure's genus even if
+    // the remaining body cannot be hydrated and would otherwise stay opaque.
+    let metadata: Smellage | undefined;
     try {
-      const { serder } = reapSerder(matter.raw);
-      return {
-        frame: { body: serder, attachments: [] },
-        consumed: offset + headerSize + bodySize,
-        version: serder.gvrsn ?? serder.pvrsn,
-        streamVersion,
-      };
+      metadata = smell(matter.raw).smellage;
+    } catch {
+      // Opaque non-native material need not contain a message version string.
+    }
+    if (metadata) this.bodyGenus(metadata, version);
+    let serder: CesrBody;
+    try {
+      ({ serder } = reapSerder(matter.raw));
     } catch (_error) {
       // Non-native body groups wrap one Matter primitive. If Serder hydration
       // fails, expose the primitive body bytes only; callers that inspect the
@@ -461,6 +471,12 @@ export class FrameParser {
         streamVersion,
       };
     }
+    return {
+      frame: { body: serder, attachments: [] },
+      consumed: offset + headerSize + bodySize,
+      version,
+      streamVersion,
+    };
   }
 
   /** Parse native fixed/map body group and extract metadata/native fields. */
@@ -473,7 +489,7 @@ export class FrameParser {
     cold: "txt" | "bny",
     version: Versionage,
     bodyCode: string,
-    streamVersion: Versionage,
+    streamVersion: Versionage | null,
   ): ParsedFrameStart {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
@@ -492,6 +508,7 @@ export class FrameParser {
     // real Serder or a parse error. Arbitrary native map/list corpora still
     // belong to lower-level CESR-native surfaces such as Mapper/Aggor.
     const { serder } = reapSerder(raw);
+    this.bodyGenus(serder, version);
     if (
       serder.proto !== metadata.proto
       || serder.pvrsn.major !== metadata.pvrsn.major
@@ -521,7 +538,7 @@ export class FrameParser {
 
   /**
    * Parse bounded `GenericGroup` payload into enclosed frames.
-   * Returns first frame and reports remaining siblings via callback.
+   * Returns the first complete frame and its ordered siblings.
    */
   private parseGenericGroup(
     input: Uint8Array,
@@ -530,7 +547,7 @@ export class FrameParser {
     count: number,
     unit: number,
     version: Versionage,
-    streamVersion: Versionage,
+    streamVersion: Versionage | null,
   ): ParsedFrameStart {
     const payloadSize = count * unit;
     const total = headerSize + payloadSize;
@@ -559,7 +576,7 @@ export class FrameParser {
       complete: true,
       siblings: rest,
       consumed: offset + total,
-      version: first.body.gvrsn ?? first.body.pvrsn,
+      version,
       streamVersion,
     };
   }
@@ -567,7 +584,7 @@ export class FrameParser {
   /** Parse all enclosed frames inside a bounded payload slice, in order. */
   private parseFrameSequence(
     input: Uint8Array,
-    inheritedVersion: Versionage,
+    inheritedVersion: Versionage | null,
   ): CesrMessage[] {
     const out: CesrMessage[] = [];
     let offset = 0;
@@ -584,7 +601,6 @@ export class FrameParser {
       const base = this.parseFrame(input.slice(offset), activeVersion);
       offset += base.consumed;
       const frameVersion = base.version;
-      const streamVersion = base.streamVersion;
       const attachments = [...base.frame.attachments];
       if (base.complete) {
         out.push(base.frame, ...(base.siblings ?? []));
@@ -611,7 +627,7 @@ export class FrameParser {
         if (
           this.isFrameBoundaryAhead(
             input.slice(offset),
-            streamVersion,
+            frameVersion,
             nextCold,
           )
         ) {
@@ -642,7 +658,7 @@ export class FrameParser {
   /** Parse one complete frame from a bounded slice, including trailing attachments. */
   private parseCompleteFrame(
     input: Uint8Array,
-    inheritedVersion: Versionage = DEFAULT_VERSION,
+    inheritedVersion: Versionage | null = null,
   ): { frame: CesrMessage; consumed: number } {
     const base = this.parseFrame(input, inheritedVersion);
     if (base.complete) {
@@ -904,46 +920,52 @@ export class FrameParser {
     return out;
   }
 
-  /** Probe parseCounter with ordered major-version fallback. */
+  /** Infer unselected legacy bodies, otherwise validate metadata against the stream genus. */
+  private bodyGenus(body: Pick<CesrBody, "pvrsn" | "gvrsn">, selected: Versionage | null): Versionage {
+    const genus = selected ?? body.gvrsn
+      ?? (body.pvrsn.major === 1 ? { major: 1, minor: 0 } : DEFAULT_VERSION);
+    resolveCounterSizeTable(genus);
+    if (body.pvrsn.major > genus.major) {
+      throw new VersionError(
+        `Protocol ${body.pvrsn.major}.${body.pvrsn.minor} exceeds stream genus ${genus.major}.${genus.minor}`,
+      );
+    }
+    if (body.gvrsn) {
+      resolveCounterSizeTable(body.gvrsn);
+      if (body.gvrsn.major > genus.major || body.gvrsn.minor > genus.minor) {
+        throw new VersionError(
+          `Body genus ${body.gvrsn.major}.${body.gvrsn.minor} exceeds stream genus ${genus.major}.${genus.minor}`,
+        );
+      }
+    }
+    return genus;
+  }
+
+  /** Probe a counter in the selected genus without reinterpreting its bytes. */
   private tryParseCounter(
     input: Uint8Array,
     version: Versionage,
     cold: "txt" | "bny",
   ): Counter | null {
-    const attempts: Versionage[] = [
-      version,
-      { major: 2, minor: 0 },
-      { major: 1, minor: 0 },
-    ];
-    for (const attempt of attempts) {
-      try {
-        return parseCounter(input, attempt, cold);
-      } catch (error) {
-        if (error instanceof ShortageError) {
-          throw error;
-        }
-        if (
-          error instanceof UnknownCodeError
-          || error instanceof DeserializeError
-        ) {
-          continue;
-        }
-        throw error;
-      }
+    try {
+      return parseCounter(input, version, cold);
+    } catch (error) {
+      if (error instanceof UnknownCodeError || error instanceof DeserializeError) return null;
+      throw error;
     }
-    return null;
   }
 
-  /** Resolve a valid frame-start counter, preferring current stream major version. */
+  /** Resolve frame counters in the selected genus; infer legacy forms only when unselected. */
   private resolveFrameStartCounter(
     input: Uint8Array,
     preferredVersion: Versionage,
     cold: "txt" | "bny",
+    inferLegacy: boolean,
   ): { counter: Counter; version: Versionage } {
     const alternate: Versionage = preferredVersion.major >= 2
       ? { major: 1, minor: 0 }
       : { major: 2, minor: 0 };
-    const attempts = [preferredVersion, alternate];
+    const attempts = inferLegacy ? [preferredVersion, alternate] : [preferredVersion];
     let firstParsed: { counter: Counter; version: Versionage } | null = null;
     let firstError: Error | null = null;
 

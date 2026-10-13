@@ -54,7 +54,8 @@ is unchanged. See the KEL learnings and mailbox-read-authorization plan.
 
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the parser
    lifecycle contract; keep parser behavior traceable to that contract and its
-   tests.
+   tests. Stream genus controls attachment decoding independently of a body
+   protocol version; only unselected streams permit legacy inference.
 2. CESR parser architecture remains atomic/bounded-substream first. Do not
    reopen nested incremental parsing without real performance evidence.
 3. Generated KERIpy-parity codex objects are authoritative; helper sets are

@@ -7,7 +7,7 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 ## Current State
 
 1. The historical parser completeness `GO` predates the count-unit correction
-   and mixed-version precedence issue below; current parity claims must name
+   and genus-context correction; current parity claims must name
    their tested reference and version combinations.
 2. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the
    normative lifecycle contract. Parser behavior changes should stay mapped to
@@ -37,7 +37,11 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    counters). Genus selectors decode both minor sextets and reject unsupported
    versions even in compat wrappers.
 6. Version and codex lookup now goes through explicit registries rather than ad
-   hoc major-version branching.
+   hoc major-version branching. Stream genus is independent of protocol
+   metadata: null selection permits legacy inference, explicit selectors persist,
+   and enclosure context is authoritative for children. Version compatibility
+   checks precede non-native opaque recovery. Selected counter probes never
+   retry another major. Selector fixtures use `Counter.makeGVC`.
 7. Syntax and semantic failures are intentionally separated on high-coupling
    paths so parser errors explain whether bytes were malformed or interpretation
    failed.
@@ -115,11 +119,6 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 6. `docs/design-docs/keri/WEIGHTED_THRESHOLD_PARITY.md`
 
 ## Current Follow-Ups
-
-- Mixed v1 JSON protocol bodies with an explicit v2 genus selector still lose
-  the stream selector in `FrameParser` message handling (`gvrsn ?? pvrsn`).
-  Keep this version-precedence issue separate from v2 count-unit correctness;
-  serializer/parser coverage currently proves explicit v2 protocol/genus.
 
 1. Keep lifecycle-contract tests synchronized with version selection and wrapper
    recovery behavior.

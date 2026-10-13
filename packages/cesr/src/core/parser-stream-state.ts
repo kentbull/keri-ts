@@ -11,10 +11,10 @@ import type { ParserState } from "./types.ts";
  */
 export class ParserStreamState {
   private state: ParserState = { buffer: new Uint8Array(0), offset: 0 };
-  private activeVersion: Versionage;
+  private activeVersion: Versionage | null;
 
-  /** Initialize stream state with the parser's default top-level version. */
-  constructor(initialVersion: Versionage) {
+  /** Initialize with an explicit genus, or leave the stream unselected. */
+  constructor(initialVersion: Versionage | null = null) {
     this.activeVersion = initialVersion;
   }
 
@@ -28,13 +28,13 @@ export class ParserStreamState {
     return this.state.offset;
   }
 
-  /** Active top-level stream version context. */
-  get streamVersion(): Versionage {
+  /** Selected stream genus; null permits legacy inference. */
+  get streamVersion(): Versionage | null {
     return this.activeVersion;
   }
 
   /** Update active top-level stream version context. */
-  set streamVersion(version: Versionage) {
+  set streamVersion(version: Versionage | null) {
     this.activeVersion = version;
   }
 
@@ -57,7 +57,7 @@ export class ParserStreamState {
   }
 
   /** Reset buffer/offset/version to initial parser state. */
-  reset(initialVersion: Versionage): void {
+  reset(initialVersion: Versionage | null = null): void {
     this.state = { buffer: new Uint8Array(0), offset: 0 };
     this.activeVersion = initialVersion;
   }

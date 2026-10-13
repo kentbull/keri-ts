@@ -2,7 +2,8 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { annotate } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { tephraCli } from "../../src/cli/main.ts";
-import { decodeB64, intToB64 } from "../../src/core/bytes.ts";
+import { decodeB64 } from "../../src/core/bytes.ts";
+import { Counter } from "../../src/primitives/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY, PARSIDE_GROUP_VECTORS } from "../fixtures/external-vectors.ts";
@@ -12,8 +13,7 @@ const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
 function genusVersionCounter(major: 1 | 2, minor = 0): string {
-  const patch = 0;
-  return `${CtrDexV2.KERIACDCGenusVersion}${intToB64(major, 1)}${intToB64(minor, 1)}${intToB64(patch, 1)}`;
+  return new TextDecoder().decode(Counter.makeGVC({ major, minor }));
 }
 
 Deno.test("annotate + denot roundtrip for CESR text stream", () => {

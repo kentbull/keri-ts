@@ -67,7 +67,7 @@ flowchart TD
     C -- "txt or bny" --> F{"Leading selector is KERIACDCGenusVersion?"}
     F -- "yes" --> G["Decode selector and update active stream version"]
     F -- "no" --> H["Keep inherited active stream version"]
-    G --> I["resolveFrameStartCounter(preferred major, alternate major)"]
+    G --> I["resolveFrameStartCounter(selected genus or legacy inference)"]
     H --> I
     I --> J{"Frame start type (counter.name)"}
     J -- "BodyWithAttachmentGroup" --> K["parseBodyWithAttachmentGroup()"]
@@ -77,9 +77,9 @@ flowchart TD
     J -- "other" --> O["ColdStartError"]
 ```
 
-`resolveFrameStartCounter(...)` is intentionally counter-name based. It prefers
-the inherited major version, then tries the alternate major if needed, and
-accepts the first parsed counter when no frame-start name is found.
+`resolveFrameStartCounter(...)` uses the selected genus. Only an unselected
+stream head permits alternate-major legacy recognition. Enclosures supply a
+concrete genus to their children; body protocol metadata cannot replace it.
 
 ## Atomic Nested Group Boundaries
 
