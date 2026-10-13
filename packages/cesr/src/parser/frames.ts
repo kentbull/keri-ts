@@ -398,7 +398,7 @@ function bodyGenus(body: Pick<CesrBody, "pvrsn" | "gvrsn">, selected: Versionage
 }
 
 /** Resolve frame counters in the selected genus; infer legacy forms only when unselected. */
-function readFrameCounter(
+export function readFrameCounter(
   input: Uint8Array,
   preferredGvrsn: Versionage,
   cold: CesrDomain,

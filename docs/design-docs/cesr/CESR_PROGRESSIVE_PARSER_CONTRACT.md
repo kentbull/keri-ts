@@ -2,11 +2,26 @@
 
 ## Status and scope
 
-**Accepted target; not implemented by this documentation change.**
-[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) authorizes the
-migration. The [current synchronous contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md)
-continues to describe shipped behavior until its callers migrate. Update these
-status statements with implementation evidence, not ahead of it.
+**Partially implemented; runtime and payload migration remains in progress.**
+[ADR-0012](../../adr/adr-0012-progressive-nested-parser.md) authorizes the migration.
+`parser/progressive.ts` now provides `parse(source, options)` and the async frame
+adapters use it. Nested GenericGroups delegate through `yield*` and deliver
+complete children before their enclosing payload finishes. The
+[current synchronous contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) still
+applies to callers of the temporary `CesrParser`/`parseBytes` path.
+
+Phase 5 keeps bodies and individual attachment groups materialized through the
+existing Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB
+and admits a complete body plus its attachments, excluding outer GenericGroup
+and BodyWithAttachmentGroup envelopes. Cursor budgets separately bound producer
+backing buffers, queued input, and nesting. ESSR payload sinks, incremental
+attachment traversal, storage, and runtime backpressure remain later phases;
+this intermediate implementation does not claim their memory guarantees.
+
+`packages/cesr/test/unit/parser-progressive.test.ts` proves early delivery,
+exact single-frame wrappers, every-byte partitions in both genera/domains,
+version scope restoration, partial failure, cancellation, and frame admission.
+Final runtime and benchmark qualification remain pending.
 
 The target is retained memory bounded by the active logical message and explicit
 queue/resource budgets, independent of aggregate transfer size. This covers
@@ -88,10 +103,10 @@ not a payload size. All bounded groups must exhaust their declared extent.
 
 ## Payload interfaces and ownership
 
-CESR core depends on the small contracts `Payload { size, open() }` and
-`PayloadSink { write(), finish(), abort() }`. `open()` returns a fresh async byte
+CESR core depends on the small read-only contract `Payload { size, open() }`,
+`OwnedPayload` with `discard()`, and `PayloadSink { write(), finish(), abort() }`. `open()` returns a fresh async byte
 iterator and accepts an optional abort signal; `write()` provides backpressure;
-`finish()` returns a reopenable reference. Sinks capture their operation signal.
+`finish()` returns the reopenable owner; borrowed wire/raw views remain read-only. Sinks capture their operation signal.
 Aborting a sink after successful finish must not delete the returned payload.
 Shared bounded collection can support finite consumers. No implicit
 `.raw` getter may materialize an external payload.
@@ -105,7 +120,7 @@ Preserve the metadata needed to reconstruct qualified wire tokens.
 The parser owns unfinished frame resources. On parse failure or cancellation it
 aborts those resources. At yield, completed payload ownership passes to the
 consumer. A later sibling error or generator close must not delete earlier
-yielded payloads. Consumers dispose of rejected/unclaimed stages and promote
+yielded payloads. Consumers discard rejected/unclaimed owners and promote
 accepted content only after required verification.
 
 ## ESSR verification, encryption, and durable storage
@@ -143,7 +158,7 @@ same references incrementally.
 Generator `.return()` alone cannot interrupt an in-flight awaited source
 `.next()`. Owned HTTP/file adapters, cursor reads, and sinks must honor a shared
 abort signal. Cancellation interrupts pending I/O, then `finally` closes the
-source once and aborts unfinished stages. Effection shutdown owns the same
+source once and aborts unfinished stages. KERI/Tufa Effection scopes own the same
 cancellation; an async iterable must not escape its runtime lifetime. A supplied
 generic async source must cooperate with cancellation to stop its own I/O; the
 parser cannot force an arbitrary pending promise to settle. Parser cancellation
@@ -175,3 +190,12 @@ These are acceptance obligations; their tests land with the corresponding phase.
 Reference pins for tables, CLI interoperability, and source comparisons remain
 explicit and independent. This migration does not silently upgrade generated
 codices to a newer KERIpy revision.
+
+## Framework boundary
+
+The CESR root exposes async iterables and AbortSignal without importing Effection.
+The supported optional `cesr-ts/effection` entrypoint exports FrameChannel and
+toEffectionFrames. Its single-subscription Effection Stream supplies pull
+backpressure and owns source cancellation and joined cleanup. KERI and Tufa use
+Operation scopes around parsing, dispatch, and transport lifetimes; merely
+awaiting a Promise with `call` does not cancel the underlying I/O.

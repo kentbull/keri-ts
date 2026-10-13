@@ -1,5 +1,4 @@
 export * from "./adapters/async-iterable.ts";
-export * from "./adapters/effection.ts";
 export * from "./annotate/annotator.ts";
 export * from "./annotate/comments.ts";
 export * from "./annotate/denot.ts";
@@ -13,6 +12,7 @@ export * from "./core/types.ts";
 export * from "./core/vocabulary.ts";
 export { parseAttachmentGroup } from "./parser/attachments.ts";
 export * from "./parser/cold-start.ts";
+export * from "./parser/progressive.ts";
 export * from "./parser/stream.ts";
 export * from "./primitives/aggor.ts";
 export * from "./primitives/bexter.ts";

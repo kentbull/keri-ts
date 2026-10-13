@@ -1,30 +1,10 @@
 import type { CesrFrame } from "../core/types.ts";
-import { createParser, type ParserOptions } from "../parser/stream.ts";
+import { parse, type ParseOptions } from "../parser/progressive.ts";
 
-/**
- * Adapt an async byte stream into parsed CESR frames.
- *
- * Boundary contract:
- * - chunks are fed in arrival order into one parser instance
- * - emitted parser error events are rethrown as stream errors
- * - yielded values are the historical `CesrFrame` frame payloads only
- */
+/** Adapt an async byte source through the progressive parser with pull backpressure. */
 export async function* toAsyncFrames(
   source: AsyncIterable<Uint8Array>,
-  options: ParserOptions = {},
+  options: ParseOptions = {},
 ): AsyncGenerator<CesrFrame> {
-  const parser = createParser(options);
-
-  for await (const chunk of source) {
-    const frames = parser.feed(chunk);
-    for (const frame of frames) {
-      if (frame.type === "error") throw frame.error;
-      yield frame.frame;
-    }
-  }
-
-  for (const frame of parser.flush()) {
-    if (frame.type === "error") throw frame.error;
-    yield frame.frame;
-  }
+  yield* parse(source, options);
 }

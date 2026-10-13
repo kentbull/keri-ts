@@ -545,7 +545,7 @@ export function parseAttachmentGroup(
 }
 
 /** Probe only the selected genus; a shortage must remain a shortage. */
-function startsFrame(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): boolean {
+export function startsFrame(input: Uint8Array, gvrsn: Versionage, domain: CesrDomain): boolean {
   try {
     const counter = parseCounter(input, gvrsn, domain);
     return FRAME_STARTS.has(counter.name) || counter.code === GENUS_VERSION_CODE;
