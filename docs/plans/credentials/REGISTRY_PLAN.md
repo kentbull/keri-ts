@@ -14,12 +14,15 @@ public observer verification must remain independent of issuer private state.
 
 ## Current boundary and target ownership
 
-`RegistryEvidenceStore` currently combines layout, chain assembly and atomic
-verified import. It is not a full v2 Regery. Pure `regcept`/`blindate` construction and JSON/native vectors
-already exist in `acdc/messaging.ts`; reuse them. #171 delivered explicit scoped
-ownership; retain its finite acquisition scopes and joined failure cleanup.
+`RegBaser` owns public registry layout and joined LMDB lifecycle. `RegistryStore`
+provides storage access, local aliases, earliest-anchor retention and ordered
+escrows without authenticating evidence. `RegistryEvidenceStore` extends the
+same owner for complete-chain observer reads and atomic verified import.
+These are storage facilities, not a full v2 Regery. Pure `regcept`/`blindate`
+construction and JSON/native vectors already exist in `acdc/messaging.ts`; reuse
+them. Runtime acquisition retains explicit scopes and joined failure cleanup.
 
-| Existing responsibility      | Target owner                                       |
+| Responsibility               | Owner or planned boundary                          |
 | ---------------------------- | -------------------------------------------------- |
 | Layout/lifecycle             | RegBaser (`acdc/regbasing.ts`)                     |
 | Storage/local aliases        | RegistryStore/openRegistry (`acdc/registering.ts`) |
@@ -28,7 +31,7 @@ ownership; retain its finite acquisition scopes and joined failure cleanup.
 | Complete-chain assembly      | IPEX through RegistryStore                         |
 | Runtime acquisition          | Explicit `acdc.rgy` ownership                      |
 
-Pure verifier names now match `vet`/`vetBinds`; storage/engine extraction remains.
+Pure verifier names match `vet`/`vetBinds`; the processing engine and orchestration remain unfinished.
 The [import preservation record][import-record] retains the exact original code.
 
 Use `evts/ancs/tels/heads/maes/ooes`; accepted heads use physical `heds.` and

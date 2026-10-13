@@ -22,7 +22,10 @@ responsibilities into one vague "VC" layer.
 - `app/ipexing.ts` registers version-specific IPEX policy; `ipex-v2.ts` owns
   disclosure and issuer-proof verification, using `ipex-graph.ts` for graph rules.
 - `acdc/regbasing.ts` owns the public registry paths, LMDB lifecycle and typed
-  `evts`/`tels`/`heads` bindings (physical `evts.`/`tels.`/`heds.`).
+  `evts`/`tels`/`heads` bindings (physical `evts.`/`tels.`/`heds.`), plus
+  optional existing `ancs.`/`maes.`/`ooes.` adapters.
+- `acdc/registering.ts` supplies storage-only RegistryStore access, aliases,
+  accepted-body cloning, earliest-anchor retention and insertion-ordered escrows.
 - `db/registry-evidence.ts` extends that same RegBaser owner for accepted v2
   observer chains, separately from Reger.
 - `app/ipex-credentialing.ts` owns KERIpy-shaped grant/admit credential
@@ -96,9 +99,21 @@ engine and end-to-end production qualification remain unfinished.
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or
 migrating rows. Body presence does not establish acceptance; `tels` contains the
-accepted ordinals and `heads` is their current head cache. Anchor/escrow bindings
-and the full registry service remain later work. Verified import still owns its
-complete-chain check and atomic publication; extraction does not replace it.
+accepted ordinals and `heads` is their current head cache. Missing anchor/escrow
+and `regs.` alias tables remain null on old layouts; reads create no tables.
+Explicit storage writes initialize their facilities. Alias records contain only
+`registryKey`, distinct from legacy VDR records. Earliest-anchor storage compares
+full bigint NumberPrimitive values, preserving equal/later reseals unchanged;
+its caller authenticates the Number/Diger couple. Storage `accept` publishes
+caller-approved markers; event/anchor validity and duplicate/head protection stay
+with the processing engine. `openRegistry` transfers one LMDB owner after joined
+acquisition; RegistryStore wraps that owner, and explicit close delegates to it.
+The facade rejects negative/unsafe numeric ordinals before any storage mutation;
+engines retain incoming ordinals as bigint until checked conversion. `cloneTel`
+eagerly collects accepted bodies and provides no shared-budget guarantee; IPEX
+must reserve credit before collecting. The web backend remains unsupported.
+Verified observer import retains its complete-
+chain check and atomic publication. The full registry service remains unfinished.
 
 ## IPEX
 

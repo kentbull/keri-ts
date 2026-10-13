@@ -1,5 +1,7 @@
 import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { RegBaser } from "../../../src/acdc/regbasing.ts";
+import { openRegistry } from "../../../src/acdc/registering.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { MailboxAdmissionError } from "../../../src/db/mailbox-inbox.ts";
@@ -9,7 +11,7 @@ import { createRegistryEvidenceStore, RegistryEvidenceStore } from "../../../src
 const habitatOptions = { name: "runtime-ownership", temp: true, skipConfig: true, skipSignator: true };
 
 /** Assert native close has joined before a temporary owner is released. */
-function assertReleased(store: RegistryEvidenceStore | Reger): void {
+function assertReleased(store: RegBaser | Reger): void {
   assertEquals(store.opened, false);
   assertEquals(store.env, null);
   assertThrows(() => Deno.statSync(store.path!), Deno.errors.NotFound);
@@ -187,4 +189,42 @@ Deno.test("runtime stores - cancelling a live runtime closes scope-owned stores"
     await task.halt();
     await run(() => hby.close(true));
   }
+});
+
+Deno.test("registry opener - failed and cancelled acquisition joins backing-store cleanup", async () => {
+  const original = RegBaser.prototype.reopen;
+  const failure = new Error("registry open failed after acquisition");
+  let baser!: RegBaser;
+  let entered!: () => void;
+  const ready = new Promise<void>((resolve) => entered = resolve);
+  try {
+    RegBaser.prototype.reopen = function*(options) {
+      yield* original.call(this, options);
+      baser = this;
+      throw failure;
+    };
+    assertEquals(await assertRejects(() => run(() => openRegistry({ temp: true }))), failure);
+    assertReleased(baser);
+    RegBaser.prototype.reopen = function*(options) {
+      const opened = yield* original.call(this, options);
+      baser = this;
+      entered();
+      yield* action<void>(() => () => {});
+      return opened;
+    };
+    const task = run(() => openRegistry({ temp: true }));
+    try {
+      await ready;
+      await task.halt();
+      assertReleased(baser);
+    } finally {
+      await task.halt();
+    }
+  } finally {
+    RegBaser.prototype.reopen = original;
+  }
+  const closed = await run(() => openRegistry({ reopen: false, temp: true }));
+  assertEquals(closed.opened, false);
+  await run(() => closed.close(true));
+  await assertRejects(() => run(() => openRegistry({ web: true })), Error, "web registry backend");
 });

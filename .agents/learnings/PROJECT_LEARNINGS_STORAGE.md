@@ -16,7 +16,11 @@ LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
 chain reads/imports extend that same environment. Readonly old-store opening
-binds existing tables without migration; anchor/escrow bindings remain separate.
+binds existing tables without migration. RegBaser's absent anchor/escrow adapters
+and RegistryStore's alias mapper are null on old layouts until explicit storage
+writes initialize them; reads cannot migrate a store. Anchor tuples retain bigint
+NumberPrimitive/Diger bytes and the earliest caller-verified source. The facade
+stores markers, not protocol validity; the engine owns acceptance policy.
 Do not suppress errors or weaken live-host assertions. Do not run command-local
 mutations against a store still hosted by a stale runtime. Prefer narrow tufa db
 dump selectors. Reacquire named handles after close/reopen.
