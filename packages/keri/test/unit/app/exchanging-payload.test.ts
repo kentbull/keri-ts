@@ -251,6 +251,48 @@ Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private meta
   });
 });
 
+Deno.test("exchange imports preserve valid first fragments and reject corrupt retained rows", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender);
+    hby.db.exns.pin([serder.said!], serder);
+    for (const text of ["abc", "xyz"]) {
+      hby.db.essrs.add([serder.said!], new Texter({ raw: b(text), code: MtrDex.Bytes_L0 }));
+    }
+    const exchanger = new Exchanger(hby);
+    const invalid = await payload(hby, ["bad"]);
+    assertEquals(
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: invalid }))).kind,
+      "reject",
+    );
+    await invalid.discard();
+    assertEquals(hby.db.exchangeMeta.get([serder.said!]), null);
+    const supplied = await payload(hby, ["ab", "cxyz"]);
+    assertEquals(
+      (await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essr: supplied }))).kind,
+      "accept",
+    );
+    await supplied.discard();
+    // Identical decoded bytes permit different fragmentation, but the first representation remains evidence.
+    const original = hby.db.essrs.get([serder.said!]).map((texter) => texter.qb64).join("");
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.wire, original.length), b(original));
+
+    const corrupt = message(sender, "uvwxyz");
+    hby.db.epse.pin([corrupt.said!], corrupt);
+    hby.db.essrs.add([corrupt.said!], new Texter({ raw: b("bad"), code: MtrDex.Bytes_L0 }));
+    const valid = await payload(hby, ["uvw", "xyz"]);
+    const decision = await run(() =>
+      exchanger.processEvent({ serder: corrupt, tsgs: signatures(sender, corrupt), essr: valid })
+    );
+    assertEquals(decision.kind, "reject");
+    await valid.discard();
+    // Valid new wire cannot bless corrupt imported evidence or create contradictory accepted representations.
+    assertEquals(hby.db.exns.get([corrupt.said!]), null);
+    assertEquals(hby.db.exchangeMeta.get([corrupt.said!]), null);
+    assertEquals(hby.db.essrs.get([corrupt.said!]).map((texter) => texter.text), ["bad"]);
+    assertEquals(names(join(hby.db.path!, "payloads", "staging")), []);
+  });
+});
+
 Deno.test("exchange escrow retry imports KERIpy ESSR rows through ordinary publication", async () => {
   await scenario(async (hby, sender) => {
     const serder = message(sender);

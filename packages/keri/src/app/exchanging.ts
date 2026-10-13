@@ -227,8 +227,8 @@ export class Exchanger {
       }
     }
     if (args.essr || (retained && !existing)) {
-      // Snapshot borrowed KERIpy rows into the ordinary archive publication path.
-      const incoming = args.essr ?? retained!;
+      // Keep the first retained representation; a duplicate may use different legal fragment boundaries.
+      const incoming = retained && !existing ? retained : args.essr!;
       essr = yield* abortable(async (signal) => {
         const archive = await this.hby.db.openPayloads(signal);
         let wire = incoming.wire;
@@ -268,6 +268,25 @@ export class Exchanger {
         const raw = essr?.raw;
         if (!raw || !(yield* abortable((signal) => diger.verifyStream(raw.open(signal))))) {
           return reject("Exchange ESSR payload digest does not match its signed commitment.");
+        }
+        const supplied = args.essr;
+        if (retained && !existing && supplied) {
+          // Imported rows and the supplied duplicate must both match; never trust its caller-provided raw view.
+          const duplicate = essrPayload(
+            {
+              size: supplied.wire.size,
+              /** Read the candidate wire without adopting its request-owned payload. */
+              open: (signal) => supplied.wire.open(signal),
+              /** Verification leaves disposal with the caller. */
+              discard: async () => {},
+            },
+            supplied.count,
+            supplied.raw.size,
+            supplied.gvrsn,
+          );
+          if (!(yield* abortable((signal) => diger.verifyStream(duplicate.raw.open(signal))))) {
+            return reject("Duplicate ESSR payload digest does not match its signed commitment.");
+          }
         }
       } catch (error) {
         return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);

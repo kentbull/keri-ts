@@ -101,7 +101,10 @@ remain separate from private file references and retain their protocol schema.
 private metadata. It borrows their stored insertion order and deduplication,
 admits finite byte/item limits, and reopens bounded chunks without retaining a
 token list. Replay stays read-only; escrow retry snapshots the borrowed bytes and
-uses normal archive publication. The wire table does not retain the original
+uses normal archive publication. Imported rows and any supplied duplicate must
+both match the signed commitment; valid duplicate fragmentation preserves the
+first stored representation. Corrupt retained evidence is never silently blessed
+by a valid new payload. The wire table does not retain the original
 frame genus, so its reconstruction starts with v1 and replay raises the counter
 genus when required by the body. Repetitions already deduplicated by KERIpy cannot
 be reconstructed; the signed digest still decides whether the retained bytes
