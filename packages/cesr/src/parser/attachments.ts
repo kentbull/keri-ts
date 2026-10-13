@@ -49,8 +49,6 @@ type GroupParser = (
   domain: CesrDomain,
 ) => ParsedGroup;
 
-/** Universal genus-version counter code (v1/v2 compatible encoding semantics). */
-
 /** Decode a tuple with the primitive readers required by its wire roles. */
 function parseTuple(
   input: Uint8Array,

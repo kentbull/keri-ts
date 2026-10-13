@@ -18,20 +18,12 @@ export interface CounterGroupLike extends Counter {
 /** Any first-class hydrated CESR primitive returned by parser hydration. */
 export type Primitive = Matter | Indexer | Counter;
 /**
- * Rehydratable qualified primitive from one parsed recursive group graph.
- *
- * These entries are safe to pass through `new X({ qb64b: entry.qb64b })` style
- * reconstruction because they are real qualified CESR primitives, not tuple
- * payloads, nested counted groups, or lossless unknown placeholders.
- */
-export type QualifiedPrimitive = Matter | Indexer | Counter;
-/**
  * Primitive family that cipher encryption/decryption can faithfully round-trip.
  *
  * This intentionally excludes `OpaqueSpan`: sealed-box decrypt returns a
  * fully hydrated constructor-backed value, not a parser fallback placeholder.
  */
-export type CipherHydratable = QualifiedPrimitive | Streamer;
+export type CipherHydratable = Primitive | Streamer;
 /** Constructor contract for cipher plaintext rehydration. */
 export type CipherHydratableCtor<
   T extends CipherHydratable = CipherHydratable,
@@ -63,7 +55,7 @@ export function isCounterGroupLike(
  */
 export function isQualifiedPrimitive(
   entry: unknown,
-): entry is QualifiedPrimitive {
+): entry is Primitive {
   return typeof entry === "object"
     && entry !== null
     && !Array.isArray(entry)

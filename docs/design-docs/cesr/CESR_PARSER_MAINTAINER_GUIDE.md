@@ -70,12 +70,14 @@ interop task.
 
 ## Simplification migration
 
-These are deliberate pre-1.0 API cuts; there are no compatibility aliases.
+These are deliberate API cuts; old keri-ts APIs need no compatibility aliases.
+Protocol compatibility remains required across supported KERI/CESR/ACDC versions.
 
 | Previous surface                                                     | Current surface                                                   |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `CesrMessage` payload                                                | `CesrFrame`                                                       |
 | Old `CesrFrame` frame/error union                                    | `ParseEvent`                                                      |
+| `AttachmentItem`, `QualifiedPrimitive`                               | Use `GroupEntry` and `Primitive`                                  |
 | `PrimitiveTuple`, `isPrimitiveTuple`                                 | `GroupTuple`, `isGroupTuple`                                      |
 | `PrimitiveDomain`, repeated `"txt" \| "bny"` aliases                 | `CesrDomain`                                                      |
 | `UnknownPrimitive` parser output                                     | `OpaqueSpan.raw` and `.domain`; no invented qualified-code fields |

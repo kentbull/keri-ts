@@ -1,4 +1,4 @@
-import type { CounterGroupLike, GroupEntry } from "../primitives/primitive.ts";
+import type { CounterGroupLike } from "../primitives/primitive.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind, Protocol } from "../tables/versions.ts";
 
@@ -40,9 +40,6 @@ export interface CesrBody {
   /** The SAID of the body. */
   said: string | null;
 }
-
-/** One parsed attachment-group entry. */
-export type AttachmentItem = GroupEntry;
 
 /** Trailing attachment group parsed after a frame body. */
 export interface AttachmentGroup extends CounterGroupLike {}

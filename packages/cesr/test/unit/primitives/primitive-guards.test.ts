@@ -44,7 +44,7 @@ Deno.test("primitive guards: detects rehydratable qualified primitives", () => {
   assertEquals(isQualifiedPrimitive(counter), true);
 });
 
-Deno.test("primitive guards: unknown primitive is not tuple/group", () => {
+Deno.test("primitive guards: opaque span is not a primitive, tuple, or group", () => {
   const unknown = new OpaqueSpan(
     b("ABCD"),
     "txt",
