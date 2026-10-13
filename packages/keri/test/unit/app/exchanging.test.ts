@@ -339,8 +339,10 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
 
 Deno.test("Exchanger verifies an ESSR string digest before accepting payload state", async () => {
   await run(function*() {
+    // Isolated real LMDB state proves rejection occurs before accepted storage writes.
     const hby = yield* createHabery({ name: `essr-digest-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
+      // A current transferable signer makes payload integrity the remaining acceptance gate.
       const sender = hby.makeHab("sender", undefined, {
         transferable: true,
         icount: 1,
@@ -349,8 +351,11 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
         nsith: "1",
         toad: 0,
       });
+      // The commitment covers concatenated raw fragments rather than Texter qualification.
       const digest = new Diger({ raw: Diger.digest(b("abcxyz"), "E"), code: "E" });
+      // A string-valued a field exercises the ESSR commitment form of an exchange.
       const serder = exchangeMessage("/essr", {}, { sender: sender.pre, diger: digest })[0];
+      // Real signatures establish sender authorization independently of payload correctness.
       const tsgs = [
         new TransIdxSigGroup(
           new Prefixer({ qb64: sender.pre }),
@@ -359,7 +364,9 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
           sender.sign(serder.raw, true),
         ),
       ];
+      // Separate fragments make order and completeness observable without a giant fixture.
       const essrs = ["abc", "xyz"].map((text) => new Texter({ raw: b(text), code: "4B" }));
+      // Run the actual acceptance pipeline against the same isolated database.
       const exchanger = new Exchanger(hby);
       // This projection intentionally distinguishes string ESSR seals from array-valued seals.
       assertEquals(serder.a, digest.qb64);

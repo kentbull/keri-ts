@@ -23,19 +23,28 @@ export interface EssrOptions {
 
 /** Texter headers are aligned whole quadlets/triplets in both Bytes code families. */
 async function header(input: Cursor, domain: CesrDomain) {
+  // One byte identifies the hard-code width without reading past a short token.
   const first = await input.peek(1);
+  // The first binary sextet and first text character name the same Bytes family.
   const selector = domain === "txt" ? byteString(first) : encodeB64(first)[0];
   if (!"456789".includes(selector)) throw new UnknownCodeError("ESSR requires a Texter Bytes code", input.offset);
   // Small codes use 2 hard + 2 soft characters; big codes use 4 + 4.
   const hard = "456".includes(selector) ? 2 : 4;
+  // Header sextets occur in equal hard/soft halves; qb2 uses three bytes per quadlet.
   const size = hard * (domain === "txt" ? 2 : 1.5);
+  // Consume only the complete admitted header, leaving the payload queued.
   const bytes = await input.read(size);
+  // Canonical header text supplies the same code and soft count in either domain.
   const text = domain === "txt" ? byteString(bytes) : encodeB64(bytes);
+  // The hard part must name a Texter, not another variable-length Matter family.
   const code = text.slice(0, hard);
   if (!TEXTER_CODES.has(code)) throw new UnknownCodeError(`Expected Texter, got ${code}`, input.offset - size);
   if (!/^[A-Za-z0-9_-]+$/.test(text)) throw new DeserializeError("Invalid Texter header", input.offset - size);
+  // Soft count measures padded triplets; the code supplies the number of zero lead bytes.
   const count = b64ToInt(text.slice(hard));
+  // Generated codex metadata owns the padding rule.
   const lead = MATTER_SIZES.get(code)!.ls;
+  // Remove only qualification padding from the declared decoded byte length.
   const rawSize = count * 3 - lead;
   if (rawSize < 0) throw new DeserializeError("Texter lead exceeds its payload", input.offset);
   return { text, count, lead, rawSize };
@@ -48,21 +57,27 @@ async function* texter(
   remaining: number,
   sink?: PayloadSink,
 ): AsyncGenerator<Uint8Array, number> {
+  // Admission happens before pulling any declared payload bytes.
   const token = await header(input, domain);
   if (token.rawSize > remaining) throw new ResourceLimitError("ESSR exceeds decoded byte limit", input.offset);
+  // This scope prevents following attachment bytes from repairing an incomplete token.
   const payload = input.scope(token.count * (domain === "txt" ? 4 : 3));
   if (sink) await sink.write(b(token.text));
+  // Leading zeros are removed once, from the first decoded block only.
   let lead = token.lead;
   while (!await payload.atEnd()) {
     // Aligned blocks need no text carry and never allocate the complete token.
     const bytes = await payload.read(Math.min(payload.remaining, domain === "txt" ? 32768 : 24576));
+    // Canonical text is staged in either domain; alignment avoids interior base64 padding.
     const text = domain === "txt" ? byteString(bytes) : encodeB64(bytes);
     if (!/^[A-Za-z0-9_-]+$/.test(text)) throw new DeserializeError("Invalid Texter base64 payload", input.offset);
+    // Binary bytes already represent decoded triplets; text blocks need base64 decoding.
     const raw = domain === "txt" ? decodeB64(text) : bytes;
     for (let i = 0; i < lead; i++) {
       if (raw[i] !== 0) throw new DeserializeError("Nonzero Texter lead padding", input.offset);
     }
     if (sink) await sink.write(domain === "txt" ? bytes : b(text));
+    // The yielded view excludes qualification padding and remains bounded by one block.
     const value = raw.subarray(lead);
     lead = 0;
     if (value.length) yield value;
@@ -86,8 +101,11 @@ export function essrPayload(wire: OwnedPayload, count: number, size: number, gvr
     wire,
     raw: {
       size,
+      /** Revalidate token bounds while reopening decoded bytes without taking ownership. */
       async *open(signal?: AbortSignal) {
+        // Each open owns an independent cursor and source lifetime.
         const input = new Cursor(wire.open(signal), { signal });
+        // Track the advertised raw size without an item-size manifest.
         let decoded = 0;
         try {
           for (let item = 0; item < count; item++) {
@@ -100,29 +118,41 @@ export function essrPayload(wire: OwnedPayload, count: number, size: number, gvr
         }
       },
     },
+    /** Both borrowed views share this sole storage owner. */
     discard: () => wire.discard(),
   };
 }
 
 /** One unfinished frame's ESSR staging owner; only the public yield transfers it. */
 export class EssrWriter {
+  /** Completed Texters across every ESSR group in this frame. */
   private count = 0;
+  /** Sum of admitted decoded bytes, excluding qualification padding. */
   private size = 0;
 
+  /** Capture one stage and the frame-wide budgets that all appended groups share. */
   constructor(
+    /** Unfinished storage owned by this writer until finish succeeds. */
     private readonly sink: PayloadSink,
+    /** Decoded-byte cap across this frame, independent of sink storage medium. */
     private readonly maxBytes: number,
+    /** Item cap also bounds streams containing only empty Texters. */
     private readonly maxItems: number,
+    /** Resolved frame genus used as the default when replay constructs new counters. */
     private readonly gvrsn: Versionage,
   ) {}
 
   /** Append one group; v1 counts items and v2 bounds qualified payload bytes. */
   async read(input: Cursor, counter: Counter, gvrsn: Versionage, domain: CesrDomain): Promise<void> {
+    // Genus controls whether the group count names bytes or logical items.
     const bounded = gvrsn.major === 2;
+    // V2 must exhaust its own extent; v1 stops after exactly the declared item count.
     const body = bounded ? input.scope(counter.count * (domain === "txt" ? 4 : 3)) : input;
+    // This counter is local to the group; this.count enforces the frame-wide policy.
     let items = 0;
     while (bounded ? !await body.atEnd() : items < counter.count) {
       if (this.count >= this.maxItems) throw new ResourceLimitError("ESSR exceeds item limit", input.offset);
+      // Fully validate this token while each awaited write supplies downstream credit.
       const token = texter(body, domain, this.maxBytes - this.size, this.sink);
       // The iterator return carries even a zero-length item's admitted byte count.
       let step = await token.next();
@@ -147,7 +177,9 @@ export class EssrWriter {
 
 /** Validate budgets and derive a finite canonical-wire cap including empty item headers. */
 export function essrFactory(options: EssrOptions, signal?: AbortSignal): (gvrsn: Versionage) => Promise<EssrWriter> {
+  // Decoded-byte and item limits constrain separate sources of retained work.
   const bytes = options.maxEssrBytes ?? 8 * 1024 ** 2;
+  // Empty items consume headers even when they contribute no decoded bytes.
   const items = options.maxEssrItems ?? 16384;
   for (const value of [bytes, items]) {
     if (!Number.isSafeInteger(value) || value < 0) {
@@ -158,6 +190,7 @@ export function essrFactory(options: EssrOptions, signal?: AbortSignal): (gvrsn:
   const wireLimit = 4 * Math.ceil(bytes / 3) + 12 * items;
   if (!Number.isSafeInteger(wireLimit)) throw new RangeError("ESSR wire limit exceeds safe integer range");
   return async (gvrsn) => {
+    // A custom sink receives the same finite wire cap and operation cancellation signal.
     const sink = options.payloadSink
       ? await options.payloadSink(wireLimit, signal)
       : new MemoryPayloadSink(wireLimit, signal);
