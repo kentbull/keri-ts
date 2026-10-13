@@ -1,8 +1,19 @@
 /** Frozen registry decisions use independently signed KELs through the real runtime. */
-import { b, BlindState, BoundState, Diger, discardFrame, NumberPrimitive, parseBytes, SerderACDC } from "cesr-ts";
+import {
+  b,
+  BlindState,
+  BoundState,
+  Diger,
+  discardFrame,
+  NumberPrimitive,
+  parseBytes,
+  Saider,
+  SerderACDC,
+} from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { blindate, regcept } from "../../../src/acdc/messaging.ts";
+import { RegistryEventer } from "../../../src/acdc/regengine.ts";
 import {
   type RegistryDisclosure,
   type RegistryVerification,
@@ -12,6 +23,7 @@ import {
   vet,
   vetBinds,
 } from "../../../src/acdc/regeventing.ts";
+import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { receipt } from "../../../src/core/protocol-eventing.ts";
@@ -276,6 +288,85 @@ Deno.test("local registry anchors require the full seal and verified witness rec
       }
     } finally {
       yield* witnessHby.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry inception atomically accepts or escrows without overwriting an accepted slot", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `registry-engine-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const baser = yield* openRegistry({ name: `registry-engine-${crypto.randomUUID()}`, temp: true });
+    try {
+      const store = new RegistryStore(baser), issuer = hby.makeHab("issuer");
+      const rip = regcept(issuer.pre);
+      let engine = new RegistryEventer(hby.db, issuer.pre, store);
+      const foreign = regcept(hby.makeHab("foreign").pre);
+      assertEquals(engine.processInception(foreign), { kind: "reject", reason: "issuer" });
+      assertEquals(store.event(foreign.said!), null);
+      assertEquals(engine.regk, null);
+      assertEquals(engine.processInception(rip).kind, "escrow");
+      assertEquals(store.event(rip.said!)!.raw, rip.raw);
+      assertEquals(store.seqSaider(rip.said!, 0), null);
+      assertEquals(store.head(rip.said!), null);
+      assertEquals(baser.maes!.get(rip.said!, 0), [[rip.said!]]);
+      assertEquals(engine.regk, rip.said);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      engine = new RegistryEventer(hby.db, issuer.pre, store, rip.said!);
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      assertEquals(engine.processInception(rip).kind, "accept");
+      assertEquals(store.seqSaider(rip.said!, 0)!.qb64, rip.said);
+      assertEquals(store.head(rip.said!)!.qb64, rip.said);
+      assertEquals(store.anchor(rip.said!)!.map((v) => v.qb64), [
+        NumberPrimitive.fromNum(1n).qb64,
+        issuer.kever!.said,
+      ]);
+      assertEquals(baser.maes!.get(rip.said!, 0), []);
+      assertEquals(baser.ooes!.get(rip.said!, 0), []);
+      assertEquals(engine.processInception(rip).kind, "duplicate");
+      assertEquals(store.head(rip.said!)!.qb64, rip.said);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true, readonly: true });
+      engine = new RegistryEventer(hby.db, issuer.pre, store);
+      assertEquals(engine.processInception(rip).kind, "duplicate", "readonly replay requires no writable setup");
+      assertEquals(engine.regk, rip.said);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true, readonly: false });
+      const other = regcept(issuer.pre);
+      assertEquals(engine.processInception(other), { kind: "reject", reason: "registry" });
+      assertEquals(store.event(other.said!), null);
+
+      // A failure after tentative publication must roll back body, anchor, ordering and instance binding.
+      const second = new RegistryEventer(hby.db, issuer.pre, store);
+      issuer.interact({ data: [{ i: other.said!, s: "0", d: other.said! }] });
+      const accept = store.accept;
+      try {
+        store.accept = function(...args) {
+          accept.apply(this, args);
+          throw new Error("registry write failed");
+        };
+        assertThrows(() => second.processInception(other), Error, "registry write failed");
+      } finally {
+        store.accept = accept;
+      }
+      assertEquals([
+        store.event(other.said!),
+        store.anchor(other.said!),
+        store.seqSaider(other.said!, 0),
+        store.head(other.said!),
+      ], [null, null, null, null]);
+      assertEquals(second.regk, null);
+      assertEquals(second.processInception(other).kind, "accept");
+
+      // Storage corruption is not a missing dependency; a competing occupied slot is never overwritten.
+      baser.tels.pinOn(rip.said!, 0, new Saider({ qb64: other.said! }));
+      assertEquals(engine.processInception(rip), { kind: "reject", reason: "duplicity" });
+      assertEquals(store.seqSaider(rip.said!, 0)!.qb64, other.said);
+      baser.evts.rem(other.said!);
+      assertThrows(() => engine.processInception(rip), Error, "Corrupt accepted registry inception");
+    } finally {
+      yield* baser.close(true);
       yield* hby.close(true);
     }
   });
