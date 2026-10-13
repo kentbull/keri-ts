@@ -121,7 +121,7 @@ primitive, tuple, or nested group is a `GroupSizeError`: following bytes cannot
 repair it. Wrappers propagate this boundary error.
 Old v2 fixtures that used item counts are invalid; no fallback accepts them.
 
-Coverage: `packages/cesr/test/unit/parser-count-units.test.ts` and the KERI
+Coverage: `packages/cesr/test/unit/parser/count-units.test.ts` and the KERI
 `protocol-serialization.test.ts` serializer-to-parser regression, plus the
 existing version-selector, wrapper, and split-stream suites.
 
@@ -153,7 +153,7 @@ Selectors use one major sextet plus two minor sextets; `decodeGenusVersion()`
 remains the sole decoder. Fixtures use `Counter.makeGVC()` except when testing
 invalid encodings. No global nested version stack or version policy is needed.
 
-Coverage: `packages/cesr/test/unit/parser-genus-context.test.ts` checks explicit
+Coverage: `packages/cesr/test/unit/parser/genus-context.test.ts` checks explicit
 v2 genus with v1 bodies and v2 attachments, nesting, incompatible bodies and
 counters, both minor sextets, reset, and text/binary chunk partitions.
 
@@ -168,8 +168,8 @@ Malformed wrapper tails are rejected; there is no recovery mode. Explicit scoped
 `KERIACDCGenusVersion` selectors remain supported. Frame-start recognition and
 legacy implicit-v1 behavior are separate from attachment dispatch.
 
-Regression coverage: `test/unit/parity.test.ts` exercises selected-version
-rejection in both text/binary domains; `test/unit/parser.test.ts`
+Regression coverage: `test/unit/parser/attachment-dispatch.test.ts` exercises selected-version
+rejection in both text/binary domains; `test/unit/parser/frames.test.ts`
 checks that the default parser emits an error rather than a frame for malformed
 v1 signatures. Paths are relative to `packages/cesr`.
 
@@ -182,17 +182,17 @@ emission cadence, not whether the caller supplied a complete transport record.
 
 ## Contract-to-Test Matrix
 
-| Contract Item                                                             | Test Coverage (under `packages/cesr/test`)                                                                                             |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Every byte split, bytewise feeds, empty feeds, v1/v2 and text/binary      | `unit/parser-chunk-completion.test.ts`                                                                                                 |
-| Enclosures close promptly and exclude outside attachments                 | `unit/parser-chunk-completion.test.ts`                                                                                                 |
-| Partial attachments cannot emit incomplete frames                         | `unit/parser-chunk-completion.test.ts`, `unit/parser-flush.test.ts`                                                                    |
-| Flush drains complete siblings before terminal shortage and is idempotent | `unit/parser-flush.test.ts`                                                                                                            |
-| Framed emission cadence                                                   | `unit/parser-framed-mode.test.ts`                                                                                                      |
-| GenericGroup atomic parsing and split determinism                         | `unit/parity-generic-group.test.ts`                                                                                                    |
-| Version scopes, selectors, implicit v1 and wrapper scopes                 | `unit/parser-version-context.test.ts`, `unit/parser-wrapper-version-context.test.ts`, `unit/parser-legacy-v1-implicit-version.test.ts` |
-| Mixed frame order and error reset                                         | `unit/parser-mixed-stream.test.ts`, `unit/parser-recovery.test.ts`                                                                     |
-| Native hydration                                                          | `unit/external-fixtures.test.ts`, `hardening/parser-native-body-breadth.test.ts`                                                       |
+| Contract Item                                                             | Test Coverage (under `packages/cesr/test`)                                                                      |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Every byte split, bytewise feeds, empty feeds, v1/v2 and text/binary      | `unit/parser/chunk-completion.test.ts`                                                                          |
+| Enclosures close promptly and exclude outside attachments                 | `unit/parser/chunk-completion.test.ts`                                                                          |
+| Partial attachments cannot emit incomplete frames                         | `unit/parser/chunk-completion.test.ts`, `unit/parser/flush.test.ts`                                             |
+| Flush drains complete siblings before terminal shortage and is idempotent | `unit/parser/flush.test.ts`                                                                                     |
+| Framed emission cadence                                                   | `unit/parser/framed-mode.test.ts`                                                                               |
+| GenericGroup atomic parsing and split determinism                         | `unit/parser/generic-group.test.ts`                                                                             |
+| Version scopes, selectors, implicit v1 and wrapper scopes                 | `unit/parser/version-context.test.ts`, `unit/parser/wrapper-version.test.ts`, `unit/parser/implicit-v1.test.ts` |
+| Mixed frame order and error reset                                         | `unit/parser/mixed-stream.test.ts`, `unit/parser/recovery.test.ts`                                              |
+| Native hydration                                                          | `unit/parser/external-fixtures.test.ts`, `unit/parser/enclosure-errors.test.ts, unit/annotate.test.ts`          |
 
 Runtime complete-record versus raw-stream coverage:
 `packages/keri/test/unit/app/reactor.test.ts`.

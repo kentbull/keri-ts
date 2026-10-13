@@ -1,5 +1,3 @@
-// @file-test-lane interop-parity
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import { denot } from "../../../../cesr/src/annotate/denot.ts";
@@ -10,8 +8,8 @@ import {
   KERIPY_NATIVE_V2_ICP_FIX_BODY,
   PARSIDE_GROUP_VECTORS,
 } from "../../../../cesr/test/fixtures/external-vectors.ts";
+import { wrapperHeavyV2Stream } from "../../../../cesr/test/fixtures/parser-test-helpers.ts";
 import { v1ify } from "../../../../cesr/test/fixtures/versioned-body-fixtures.ts";
-import { wrapperHeavyV2Stream } from "../../../../cesr/test/hardening/hardening-helpers.ts";
 import { createInteropContext, requireSuccess, runCmd, runTufa, workspaceRoot } from "./interop-test-helpers.ts";
 
 const TEXT_ENCODER = new TextEncoder();

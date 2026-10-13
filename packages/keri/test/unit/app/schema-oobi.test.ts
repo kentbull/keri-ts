@@ -1,5 +1,3 @@
-// @file-test-lane runtime-medium
-
 import { type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, processRuntimeTurn } from "../../../src/app/agent-runtime.ts";

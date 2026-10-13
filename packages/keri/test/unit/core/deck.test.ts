@@ -1,5 +1,3 @@
-// @file-test-lane core-fast-a
-
 import { assertEquals } from "jsr:@std/assert";
 import { Deck } from "../../../src/core/deck.ts";
 

@@ -1,5 +1,3 @@
-// @file-test-lane core-fast-a
-
 import { decode as decodeMsgpack } from "@msgpack/msgpack";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { decodeKeriCbor } from "../../../../cesr/mod.ts";

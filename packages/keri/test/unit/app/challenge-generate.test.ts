@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { challengeGenerateCommand } from "../../../src/app/cli/challenge.ts";

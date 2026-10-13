@@ -1,5 +1,3 @@
-// @file-test-lane interop-parity
-
 import { assertEquals } from "jsr:@std/assert";
 import { createInteropContext, requireSuccess, runCmd, runTufa, workspaceRoot } from "./interop-test-helpers.ts";
 

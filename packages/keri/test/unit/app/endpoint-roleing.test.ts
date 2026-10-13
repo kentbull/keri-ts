@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-isolated
-
 import { type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";

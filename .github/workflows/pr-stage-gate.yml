@@ -19,10 +19,7 @@ env:
   PYTHON_VERSION: "3.14"
   LMDB_DATA_V1: "true"
   DEPS_CACHE_KEY_PREFIX: ci-deps-v6
-  KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
   KERIPY_GIT_SHA: 450ae1c2a7eac61d92bc7b830cb6883c41e6a798
-  KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
-  KERIPY_CACHE_KEY_PREFIX: keripy-v2-mailbox-impl
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
@@ -91,13 +88,13 @@ jobs:
                 run_unit=true
                 run_package=true
                 ;;
-              scripts/ci/run-*.ts|scripts/setup-lmdb-v1.sh)
+              scripts/ci/*|scripts/bench/*|packages/keri/scripts/setup_lmdb_v1.sh)
                 run_unit=true
                 ;;
             esac
 
             case "$file" in
-              packages/cesr/*|packages/keri/*|scripts/ci/interop-*|scripts/ci/run-interop-*)
+              packages/cesr/*|packages/keri/*|scripts/ci/*|.github/workflows/keri-extended-interop.yml)
                 run_interop=true
                 ;;
             esac
@@ -139,17 +136,19 @@ jobs:
         run: deno task setup:compat-lmdb
 
       - name: run the maintained package and runtime suites once
+        shell: bash
         run: |
-          deno task test:quality:keri:db-fast
-          deno task test:quality:keri:core-fast-a
-          deno task test:quality:keri:core-fast-b
-          deno task test:quality:keri:app-fast
-          deno task test:quality:keri:runtime-medium
-          deno task test:quality:keri:runtime-slow
-          deno task test:quality:keri:app-stateful-a
-          deno task test:quality:keri:app-stateful-b
-          deno task test:quality:tufa
-          deno task test:cesr
+          mkdir -p .test-timings
+          deno task test:unit 2>&1 | tee .test-timings/required.log
+
+      - name: retain required-suite timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: keri-required-timings-pr-${{ github.event.pull_request.number }}
+          path: .test-timings/
+          if-no-files-found: ignore
+          retention-days: 14
 
   interop-parity:
     needs: changeset-required
@@ -173,23 +172,6 @@ jobs:
         if: steps.setup.outputs.cache-hit != 'true'
         run: deno task setup:compat-lmdb
 
-      - name: restore KERIpy virtualenv
-        id: keripy-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERIPY_VENV }}
-          key: ${{ runner.os }}-${{ env.KERIPY_CACHE_KEY_PREFIX }}-python-${{ env.PYTHON_VERSION }}-keripy-${{ env.KERIPY_GIT_SHA }}
-
-      - name: install pinned KERIpy CLI
-        if: steps.keripy-cache.outputs.cache-hit != 'true'
-        run: |
-          python -m venv "${KERIPY_VENV}"
-          "${KERIPY_VENV}/bin/python" -m pip install --upgrade pip
-          "${KERIPY_VENV}/bin/python" -m pip install "git+${KERIPY_GIT_URL}@${KERIPY_GIT_SHA}"
-
-      - name: add KERIpy CLI to PATH
-        run: echo "${KERIPY_VENV}/bin" >> "$GITHUB_PATH"
-
       - name: check out pinned KERIpy table source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -203,14 +185,17 @@ jobs:
         run: deno run -A packages/cesr/scripts/verify-tables.ts
 
       - name: run representative KERIpy parity
-        run: deno task test:quality:keri:interop-parity
+        shell: bash
+        run: |
+          mkdir -p .test-timings
+          deno task test:interop 2>&1 | tee .test-timings/parity.log
 
-      - name: retain parity timings on failure
-        if: ${{ failure() }}
+      - name: retain parity timings and provenance
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keri-interop-parity-timings-pr-${{ github.event.pull_request.number }}
-          path: .test-timings/*.json
+          path: .test-timings/
           if-no-files-found: ignore
           retention-days: 3
 
@@ -225,6 +210,9 @@ jobs:
       - uses: ./.github/actions/common-release-setup
         with:
           do-fmt-check: "false"
+
+      - name: test package tooling
+        run: deno task test:package-tools
 
       - name: build npm packages
         run: deno task npm:build:all

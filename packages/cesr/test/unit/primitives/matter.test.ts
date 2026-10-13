@@ -23,6 +23,10 @@ Deno.test("matter: parses canonical KERIpy qb64 vectors", () => {
     const matter = parseMatterFromText(txt(qb64));
     assertEquals(matter.qb64, qb64);
     assertQb64Qb2Parity(matter);
+    // Exercise the public binary reader directly, independently of constructors.
+    const binary = parseMatterFromBinary(codeB64ToB2(qb64));
+    assertEquals(binary.qb64, matter.qb64);
+    assertEquals(binary.code, matter.code);
   }
 });
 

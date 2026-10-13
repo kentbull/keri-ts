@@ -1,5 +1,3 @@
-// @file-test-lane app-fast-parallel
-
 import { type Operation, run } from "effection";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import type { AgentRuntime, AgentRuntimeOptions } from "../../../src/app/agent-runtime.ts";

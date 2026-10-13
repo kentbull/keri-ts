@@ -1,5 +1,9 @@
 # Aggressive Test Optimization Plan
 
+> Historical optimization plan. Execution ownership has been superseded by
+> [explicit test suites](../../../packages/keri/test/README.md); the old lane
+> annotations, name filters and compatibility aliases below are not active.
+
 ## Summary
 
 - Optimize in this order:

@@ -1,5 +1,3 @@
-// @file-test-lane interop-acdc-extended
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   createInteropContext,
@@ -7,7 +5,6 @@ import {
   extractPrefix,
   randomPort,
   requireSuccess,
-  resolveLocalKeripyKliCommand,
   runCmd,
   runCmdWithTimeout,
   runTufa,
@@ -225,7 +222,7 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
   const verifierAgentConfig = "verifier-agent";
   const providerOrigin = `http://127.0.0.1:${providerAgentPort}`;
   const hookOrigin = `http://127.0.0.1:${hookPort}`;
-  const kliCommand = await resolveLocalKeripyKliCommand(workDir, ctx.kliCommand, env);
+  const kliCommand = ctx.kliCommand;
 
   try {
     await Deno.writeTextFile(schemaPath, JSON.stringify(schemaSed()));

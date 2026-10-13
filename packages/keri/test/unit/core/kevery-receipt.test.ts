@@ -1,5 +1,3 @@
-// @file-test-lane core-fast-a
-
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { IdrDex, SerderKERI } from "../../../../cesr/mod.ts";

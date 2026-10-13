@@ -1,5 +1,3 @@
-// @file-test-lane interop-parity
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   createInteropContext,

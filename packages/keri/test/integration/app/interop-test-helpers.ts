@@ -7,6 +7,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { type KeripyRuntime, recordResolverRuntime, verifyKeripy } from "./keripy-runtime.ts";
 
 /** Decoded subprocess result. */
 export interface CmdResult {
@@ -33,6 +34,8 @@ export interface InteropContext {
   env: Record<string, string>;
   repoRoot: string;
   kliCommand: string;
+  /** Verified interpreter used by auxiliary Python interop helpers. */
+  pythonCommand: string;
 }
 
 /** One started KERIpy witness process plus its advertised network state. */
@@ -148,7 +151,7 @@ const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
   },
 ];
 
-/** Pinned KERIpy fork commit used by all KLI interop tests. */
+/** Historical default runtime; an explicit verified source override takes precedence. */
 export const KERIPY_INTEROP_COMMIT = "98b88cf73a746813a8719f05264400467a474c05";
 
 const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
@@ -414,58 +417,18 @@ export function workspaceRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
 }
 
-/** Resolve the sibling local KERIpy checkout used for branch-local interop fixes. */
-export function localKeripyRoot(): string {
-  return new URL("../../../../../../../python/keripy/", import.meta.url).pathname;
-}
-
-/** Create a temp executable that runs KLI from the local KERIpy checkout. */
-export async function createLocalKeripyKliWrapper(workDir: string): Promise<string> {
-  const path = `${workDir}/local-kli`;
-  const root = localKeripyRoot().replace(/'/g, "'\\''");
-  await Deno.writeTextFile(
-    path,
-    [
-      "#!/bin/sh",
-      `KERIPY_ROOT='${root}'`,
-      "exec uv run --project \"$KERIPY_ROOT\" --with-editable \"$KERIPY_ROOT\" python -m keri.cli.kli \"$@\"",
-      "",
-    ].join("\n"),
-  );
-  await Deno.chmod(path, 0o755);
-  return path;
-}
-
-let localKeripyRunnable: Promise<boolean> | undefined;
-
-/** Return true when the branch-local KERIpy checkout can be run through uv. */
-export async function canRunLocalKeripy(
-  env: Record<string, string>,
-): Promise<boolean> {
-  localKeripyRunnable ??= (async () => {
-    try {
-      await Deno.stat(localKeripyRoot());
-      return await canRunCommand("uv", ["--version"], pyenvProbeEnv(env));
-    } catch {
-      return false;
-    }
-  })();
-  return await localKeripyRunnable;
-}
-
-/**
- * Prefer the branch-local KERIpy checkout when it is runnable, otherwise use
- * the already-provisioned pinned interop KLI command.
- */
-export async function resolveLocalKeripyKliCommand(
+/** Select explicit source or the historical pinned runtime without an implicit PATH fallback. */
+export async function resolveKeripyRuntime(
   workDir: string,
-  fallbackCommand: string,
   env: Record<string, string>,
-): Promise<string> {
-  if (await canRunLocalKeripy(env)) {
-    return await createLocalKeripyKliWrapper(workDir);
-  }
-  return fallbackCommand;
+): Promise<KeripyRuntime> {
+  if (!env.KERIPY_INTEROP_ROOT) await ensurePinnedKeripyKli(env);
+  // Runtime selection does not alter independent historical witness fixture provenance.
+  await ensurePinnedKeripyFixtures();
+  return await verifyKeripy(workDir, env, {
+    python: keripyInteropVenvBin("python"),
+    commit: KERIPY_INTEROP_COMMIT,
+  });
 }
 
 function cacheHome(): string {
@@ -676,6 +639,7 @@ export async function ensurePinnedDidWebsResolver(
   const dws = didWebsResolverVenvBin("dws");
   const markerMatches = await pathExists(marker) ? (await Deno.readTextFile(marker)).trim() === markerValue : false;
   if (markerMatches && await canUseDws(dws, env)) {
+    await recordResolverRuntime(checkout, DID_WEBS_RESOLVER_INTEROP_COMMIT, didWebsResolverVenvBin("python"), env);
     return {
       root: checkout,
       dwsCommand: dws,
@@ -694,6 +658,7 @@ export async function ensurePinnedDidWebsResolver(
   }
   await Deno.mkdir(didWebsResolverCacheRoot(), { recursive: true });
   await Deno.writeTextFile(marker, `${markerValue}\n`);
+  await recordResolverRuntime(checkout, DID_WEBS_RESOLVER_INTEROP_COMMIT, didWebsResolverVenvBin("python"), env);
   return {
     root: checkout,
     dwsCommand: dws,
@@ -1282,7 +1247,7 @@ export async function createInteropContext(): Promise<InteropContext> {
     HOME: home,
     ...(denoDir ? { DENO_DIR: denoDir } : {}),
   };
-  const kliCommand = await ensurePinnedKeripyKli(baseEnv);
+  const { kliCommand, pythonCommand } = await resolveKeripyRuntime(home, baseEnv);
   const kliBin = kliCommand.slice(0, kliCommand.lastIndexOf("/"));
   const env = {
     ...baseEnv,
@@ -1293,6 +1258,7 @@ export async function createInteropContext(): Promise<InteropContext> {
     env,
     repoRoot: workspaceRoot(),
     kliCommand,
+    pythonCommand,
   };
 }
 
@@ -1890,4 +1856,30 @@ export async function startTufaWitnessHarness(
   }
 
   return new TufaWitnessHarness(headDirPath, ctx.env, nodes, children);
+}
+
+/** Write one controller's advertised loopback endpoint for live interop hosts. */
+export async function writeAgentConfig(
+  headDirPath: string,
+  configFile: string,
+  alias: string,
+  port: number,
+): Promise<void> {
+  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  await Deno.mkdir(configDir, { recursive: true });
+  await Deno.writeTextFile(
+    `${configDir}/${configFile}.json`,
+    `${
+      JSON.stringify(
+        {
+          [alias]: {
+            dt: "2026-06-08T00:00:00.000Z",
+            curls: [`http://127.0.0.1:${port}/`],
+          },
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
 }

@@ -1,5 +1,3 @@
-// @file-test-lane runtime-medium
-
 import { assertEquals } from "jsr:@std/assert";
 import type { Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";

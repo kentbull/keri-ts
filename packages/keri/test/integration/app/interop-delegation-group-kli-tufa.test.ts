@@ -1,5 +1,3 @@
-// @file-test-lane interop-delegation
-
 /**
  * Focused KERIpy/Tufa group delegation interop.
  *

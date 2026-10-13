@@ -1,5 +1,3 @@
-// @file-test-lane interop-delegation
-
 /**
  * Cross-implementation delegation matrix.
  *

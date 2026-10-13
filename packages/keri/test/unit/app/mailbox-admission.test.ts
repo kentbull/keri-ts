@@ -1,4 +1,3 @@
-// @file-test-lane runtime-medium
 import { call, run, scoped, sleep, spawn, suspend } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, processMailboxTurn } from "../../../src/app/agent-runtime.ts";

@@ -1,5 +1,3 @@
-// @file-test-lane interop-acdc-deep
-
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import {
   addKliMailbox,
@@ -19,15 +17,12 @@ import {
   type TufaMailboxProviderFixture,
 } from "./interop-delegation-helpers.ts";
 import {
-  canRunLocalKeripy,
   createInteropContext,
   ensureInteropVerifierFixtureRoot,
   extractLastNonEmptyLine,
   type InteropContext,
-  localKeripyRoot,
   randomPort,
   requireSuccess,
-  resolveLocalKeripyKliCommand,
   runCmdWithTimeout,
   runTufa,
   runTufaWithTimeout,
@@ -99,14 +94,6 @@ function kliStoreArgs(store: KliStore): string[] {
   return ["--name", store.name, "--base", store.base, "--passcode", store.passcode];
 }
 
-function pythonCommandForKli(kliCommand: string): string {
-  const slash = kliCommand.lastIndexOf("/");
-  if (slash === -1) {
-    return "python";
-  }
-  return `${kliCommand.slice(0, slash)}/python`;
-}
-
 async function pathExists(path: string): Promise<boolean> {
   try {
     await Deno.stat(path);
@@ -171,24 +158,8 @@ async function startInteropVerifier(
     verifierArgs.push("--schema", schema);
   }
   const env = withPythonPath(ctx.env, `${root}/src`);
-  if (await canRunLocalKeripy(ctx.env)) {
-    return spawnChild(
-      "uv",
-      [
-        "run",
-        "--project",
-        localKeripyRoot(),
-        "--with-editable",
-        localKeripyRoot(),
-        "python",
-        ...verifierArgs,
-      ],
-      env,
-      ctx.repoRoot,
-    );
-  }
   return spawnChild(
-    pythonCommandForKli(ctx.kliCommand),
+    ctx.pythonCommand,
     verifierArgs,
     env,
     ctx.repoRoot,
@@ -1039,32 +1010,15 @@ async function alignedKliIpexMessage(
     args.timestamp,
     ...(args.recipient ? ["--recipient", args.recipient] : []),
   ];
-  const useLocalKeripy = await canRunLocalKeripy(ctx.env);
   const result = await requireSuccess(
     `${store.name} KLI IPEX alignment preflight`,
-    useLocalKeripy
-      ? runCmdWithTimeout(
-        "uv",
-        [
-          "run",
-          "--project",
-          localKeripyRoot(),
-          "--with-editable",
-          localKeripyRoot(),
-          "python",
-          ...scriptArgs,
-        ],
-        ctx.env,
-        30_000,
-        ctx.repoRoot,
-      )
-      : runCmdWithTimeout(
-        pythonCommandForKli(ctx.kliCommand),
-        scriptArgs,
-        ctx.env,
-        30_000,
-        ctx.repoRoot,
-      ),
+    runCmdWithTimeout(
+      ctx.pythonCommand,
+      scriptArgs,
+      ctx.env,
+      30_000,
+      ctx.repoRoot,
+    ),
   );
   const parsed = parseJsonLine(result.stdout);
   if (typeof parsed.message !== "string") {
@@ -1078,7 +1032,6 @@ Deno.test("Interop: Tufa NI2I edge verifies when source subject is not the Tufa 
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-ni2i-" });
   const ctx: InteropContext = {
     ...baseCtx,
-    kliCommand: await resolveLocalKeripyKliCommand(workDir, baseCtx.kliCommand, baseCtx.env),
     env: {
       ...baseCtx.env,
       KERI_LMDB_MAP_SIZE: "134217728",
