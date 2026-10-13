@@ -420,9 +420,9 @@ actual signed Python trees, both wire domains, protocol 1/2 JSON/CBOR/MGPK,
 native xip, deeper descendants, attachment enclosures, v1 nesting, and scoped
 v1 child selectors. A GenericGroup in enclosed attachments remains invalid.
 Focused tests exercise every-byte splits, all admission limits, late-child
-failure, read/finish cancellation, and repeated recursive disposal. Serialization,
-annotation, KERI normalization, and HTTP inspection reject nesting explicitly;
-this parser slice does not claim nested runtime or replay support.
+failure, read/finish cancellation, and repeated recursive disposal. The parser
+slice initially guarded serialization, annotation, KERI normalization, and HTTP
+inspection. Follow-on consumers remove only their independently tested guard.
 
 ### Follow-on PR 3: nested consumers, split by ownership boundary
 
@@ -458,13 +458,23 @@ and actual frozen-Python acceptance/re-serialization are qualified. Category
 normalization remains explicit: ordinary leaves, children, then ESSR; original
 interleaving between those categories is absent from `CesrFrame`.
 
-**3b — annotation:** Keep the explicit rejection until the existing validated-wire
-walker in `packages/cesr/src/annotate/render.ts` associates nested bodies with
-their owning `CesrFrame` rather than its current flat global index. Reuse parsed
-Serders, wrapper/selector rendering and `discardFrame`; do not add a second parser.
-Prove parent-only output ownership, child indentation/order, both domains,
-original wrapper preservation and recursive cleanup. This is independent of
-runtime authorization and depends only on parent-owned parsing.
+**3b — finite nested annotation (implemented):**
+
+Implemented after the nested serializer slice: annotation traverses each parent's
+hydrated child iterator while GenericGroup siblings remain independent roots.
+One `AnnotatedFrame` retains the root and all descendant lines. The existing
+finite wire renderer preserves original wrapper headers, indentation, scoped
+genus selectors, signatures, and ESSR order; it checks every node is consumed
+exactly once without introducing another body parser or flattening child evidence.
+
+Frozen Python `927c0cb8` trees prove text/qb2, v1/v2, native/non-native, deep nesting,
+scoped child genera, and signed annotation/deannotation round-trips. Focused
+regressions cover root ordinals, indentation, missing/extra/repeated child nodes,
+and recursive payload transfer or cleanup after rendering failure, collection
+failure, and cancellation. Finite annotation retains its 8 MiB default admission;
+`annotateFrames` callers release entire trees through `discardFrame`. KERI
+normalization and HTTP inspection guards remain until the runtime slice proves
+verification, dispatch, replay, and ownership behavior.
 
 **Remaining runtime dependencies:** `packages/keri/src/app/parsering.ts:435`
 currently rejects nests before dispatch. Its dispatch at line 128 bypasses the
@@ -482,6 +492,25 @@ actual source commitments, dependencies and evidence. Enable normalization only
 for those completed paths; no recursive child dispatch or invented authorization
 rule may fill absent runtime behavior. Keep HTTP inspection's rejection until
 its consumer contract supports the same ownership and forwarding behavior.
+
+Publish the remaining runtime work as four reviewable slices:
+
+- **3c — forwarding and exchange persistence:** implement the v2 `/fwd` child
+  commitment, bounded `enst.` evidence, escrow/retry, reopen/replay, and failure
+  cleanup together before enabling that normalization path.
+- **3d — multisig:** carry children through the actual route-specific commitment,
+  evidence, coordination, and retry rules.
+- **3e — IPEX:** extend the applicable credential exchange handlers with nested
+  verification and processing, retaining their distinct dependency rules.
+- **3f — affected v2 dispatch policy:** reconcile non-event routing and admission
+  with the frozen reference, distinguishing optional KRAM behavior and explicit
+  reference stubs from implemented processing.
+
+After these slices, follow-ons 4–7 remain resource policy, durable recovery,
+transport backpressure, and final qualification. The standalone Mapper repair
+recorded above follows qualification. Together with annotation, this is ten
+remaining publication units at the #157 boundary; reproduced qualification
+failures may require additional focused repairs.
 
 Acceptance for runtime slices requires real handlers, signature/commitment
 failures, missing dependencies, escrow/retry/duplicates, durable reopen/replay and

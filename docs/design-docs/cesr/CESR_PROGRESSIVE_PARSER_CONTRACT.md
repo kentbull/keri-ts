@@ -9,8 +9,9 @@ provides async `parseBytes(bytes, options)` with an explicit finite input budget
 Nested GenericGroups delegate through `yield*` and deliver complete children
 before their enclosing payload finishes. There is no synchronous stream engine.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
-implemented lifecycle to tests. Parent-owned nested message trees are implemented; nested runtime processing, annotation, shared runtime reservations, and final
-qualification remain follow-ons. Serialization preserves admitted trees.
+implemented lifecycle to tests. Parent-owned trees, serialization, and finite
+annotation are implemented. Nested runtime processing, shared runtime
+reservations, and final qualification remain follow-ons.
 
 The parser materializes bodies and ordinary attachment leaves through the existing
 Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
@@ -132,7 +133,13 @@ Aborting a sink after successful finish must not delete the returned payload.
 Finite annotation uses the progressive engine through an internal complete-input
 collector, with an 8 MiB default input limit. Failed collection releases every
 undelivered payload, even when another cleanup fails. `annotate()` releases its
-temporary owners; `annotateFrames()` transfers them to the caller. Validation
+temporary tree owners; `annotateFrames()` transfers them to the caller for
+recursive `discardFrame` cleanup. Each `AnnotatedFrame` represents one root
+with its descendants rendered inside that root's lines. GenericGroup siblings
+retain independent entries and one-based root ordinals. Ownership-scoped traversal
+consumes every hydrated node exactly once while preserving original wrapper
+headers, indentation, scoped genus selectors, signatures, and ESSR wire order.
+Deannotation restores the original qualified text, including for qb2 inputs. Validation
 consumes file/stdin chunks progressively and discards each delivered payload.
 Convenience benchmarks retain a finite corpus, defaulting to 64 MiB, and reject
 malformed runs instead of reporting successful throughput. No implicit `.raw`
@@ -212,8 +219,8 @@ children, then ESSR; the parsed model does not retain original cross-category
 interleaving. One payload view per admitted node and finite body/group metadata
 remain under existing tree admission limits. No descendant ESSR is collected.
 Cancellation closes active readers without disposing the caller's tree owners.
-Annotation, KERI normalization, and HTTP inspection still reject nests explicitly
-pending their separate owned-tree consumer work. Output chunks are owned
+Finite annotation preserves the original tree wire. KERI normalization and HTTP
+inspection still reject nests pending their owned-tree consumer work. Output chunks are owned
 copies of at most 64 KiB; custom ESSR wire readers retain the existing 1 MiB
 maximum backing-allocation contract.
 

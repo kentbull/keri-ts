@@ -1,5 +1,4 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
-import { annotate } from "../../../src/annotate/annotator.ts";
 import { b, decodeB64, t } from "../../../src/core/bytes.ts";
 import { ColdStartError, ResourceLimitError, ShortageError } from "../../../src/core/errors.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
@@ -268,10 +267,6 @@ Deno.test("collection and recursive discard clean descendants even when another 
   const sinks = tracking(0, 1);
   await assertRejects(() => parseBytes(b(payloadTree() + "-B"), { payloadSink: sinks.factory }), AggregateError);
   assertEquals(sinks.records.map((record) => record.discarded), [1, 1, 1]);
-});
-
-Deno.test("annotation rejects nested trees until its owned-tree rendering follow-on", async () => {
-  await assertRejects(() => annotate(vectors.rows[0].qb64), Error, "nested message trees");
 });
 
 Deno.test("earlier delivered trees survive a malformed later independent tree", async () => {

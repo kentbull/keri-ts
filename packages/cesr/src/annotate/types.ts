@@ -17,12 +17,12 @@ export interface AnnotateOptions {
 /** Resolved presentation options, separate from input admission and cancellation. */
 export type RenderOptions = Required<Omit<AnnotateOptions, "maxBytes" | "signal">>;
 
-/** Annotated line set for one parsed frame. */
+/** Annotated line set for one independently delivered root and its owned descendants. */
 export interface AnnotatedFrame {
-  /** One-based body ordinal in parser delivery order. */
+  /** One-based root ordinal in parser delivery order. */
   index: number;
-  /** Parsed frame; the caller owns and must discard its ESSR payload. */
+  /** Parsed root; the caller owns the complete tree and releases it with discardFrame. */
   frame: CesrFrame;
-  /** Rendered original wire, including surrounding wrapper headers. */
+  /** Rendered original wire, including wrapper headers and all descendant lines. */
   lines: string[];
 }
