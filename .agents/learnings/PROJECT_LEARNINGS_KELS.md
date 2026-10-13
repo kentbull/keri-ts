@@ -24,7 +24,10 @@ independent payload hashes. See `packages/keri/src/db/payload-store.md`.
 or escrow ownership with a key-only scan. `Exchanger` carries reopenable ESSR
 wire through acceptance, escrow, and replay; `.essrs` retains individual
 KERIpy-readable Texters. Private canonical wire preserves order and repeated
-fragments despite `.essrs` set semantics.
+fragments despite `.essrs` set semantics. KERIpy-origin rows without private
+metadata remain usable through a bounded borrowed view; retry snapshots and
+publishes them without deleting prior evidence on failure. Such rows retain only
+the insertion order and deduplication KERIpy actually stored.
 
 `Exchanger` and `EssrRecipient` expose Effection operations that join cancellable
 file reads and cleanup. Recipient processing binds one explicitly hosted habitat

@@ -12,6 +12,7 @@ import {
   MtrDex,
   parse,
   Prefixer,
+  ResourceLimitError,
   type SerderKERI,
   Texter,
   Vrsn_1_0,
@@ -25,7 +26,7 @@ import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
-import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 
 /** Read the tiny fixture directories without importing a separate filesystem runtime. */
 function names(path: string): string[] {
@@ -197,6 +198,90 @@ Deno.test("exchange replay streams v1 and v2 ESSR into a fresh progressive parse
       }
       assertEquals(frames, 1);
     }
+  });
+});
+
+Deno.test("exchange replay borrows bounded KERIpy ESSR rows without private metadata", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender);
+    hby.db.exns.pin([serder.said!], serder);
+    // KERIpy stores insertion-ordered unique Texters, never a private file reference.
+    for (const text of ["abc", "xyz", "abc"]) {
+      hby.db.essrs.add([serder.said!], new Texter({ raw: b(text), code: MtrDex.Bytes_L0 }));
+    }
+    for (const group of signatures(sender, serder)) {
+      for (const siger of group.sigers) hby.db.esigs.add([serder.said!, group.pre, group.snh, group.said], siger);
+    }
+    const exchanger = new Exchanger(hby);
+    let frames = 0;
+    for await (const frame of parse(exchanger.replay(serder.said!))) {
+      frames++;
+      assertEquals(frame.essr!.count, 2);
+      assertEquals(await collectPayload(frame.essr!.raw, 6), b("abcxyz"));
+      await frame.essr!.discard();
+    }
+    assertEquals(frames, 1);
+    assertEquals(hby.db.exchangeMeta.get([serder.said!]), null); // Replay does not introduce a second publication path.
+    for (const limits of [{ maxEssrBytes: 5 }, { maxEssrItems: 1 }]) {
+      await assertRejects(() => hby.db.getEssr(serder.said!, undefined, limits), ResourceLimitError);
+    }
+    // Borrowing and disposing the view never transfers ownership of KERIpy rows.
+    const borrowed = (await hby.db.getEssr(serder.said!))!;
+    for await (const chunk of borrowed.wire.open()) assertEquals(chunk.buffer.byteLength <= 65536, true);
+    await borrowed.discard();
+    assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
+    // One stored token crosses the read target, proving chunks cannot retain its whole backing buffer.
+    const text = "x".repeat(65537);
+    const large = message(sender, text);
+    hby.db.exns.pin([large.said!], large);
+    hby.db.essrs.add([large.said!], new Texter({ raw: b(text), code: MtrDex.Bytes_L0 }));
+    const split = (await hby.db.getEssr(large.said!))!;
+    let chunks = 0;
+    for await (const chunk of split.wire.open()) {
+      chunks++;
+      assertEquals(chunk.buffer.byteLength <= 65536, true);
+    }
+    assertEquals(chunks > 1, true);
+    assertEquals(await collectPayload(split.raw, text.length), b(text));
+    await assertRejects(
+      () => hby.db.getEssr(large.said!, undefined, { maxEssrBytes: text.length - 1 }),
+      ResourceLimitError,
+    );
+    await split.discard();
+  });
+});
+
+Deno.test("exchange escrow retry imports KERIpy ESSR rows through ordinary publication", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender);
+    hby.db.epse.pin([serder.said!], serder);
+    hby.db.epsd.pin([serder.said!], new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601()) }));
+    for (const text of ["abc", "xyz"]) {
+      hby.db.essrs.add([serder.said!], new Texter({ raw: b(text), code: MtrDex.Bytes_L0 }));
+    }
+    for (const group of signatures(sender, serder)) {
+      for (const siger of group.sigers) hby.db.esigs.add([serder.said!, group.pre, group.snh, group.said], siger);
+    }
+    assertEquals(hby.db.exchangeMeta.get([serder.said!]), null);
+    await hby.db.openPayloads();
+    const blocked = join(hby.db.path!, "payloads", "objects", `essr.${serder.said!}`);
+    await Deno.mkdir(blocked);
+    // A real publication failure must preserve the prior KERIpy rows and retry ownership.
+    await assertRejects(
+      () => Promise.resolve(run(() => new Exchanger(hby).processEscrows())),
+      Error,
+      "Unexpected entry",
+    );
+    assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
+    assertExists(hby.db.epse.get([serder.said!]));
+    await Deno.remove(blocked);
+    await run(() => new Exchanger(hby).processEscrows());
+    assertEquals(hby.db.epse.get([serder.said!]), null);
+    assertExists(hby.db.exns.get([serder.said!]));
+    assertEquals(hby.db.exchangeMeta.get([serder.said!])!.essr!.count, 2);
+    // Retry snapshots borrowed rows and publishes through the same archive path.
+    assertEquals(await collectPayload((await hby.db.getEssr(serder.said!))!.raw, 6), b("abcxyz"));
+    assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
   });
 });
 

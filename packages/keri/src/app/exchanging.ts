@@ -211,8 +211,11 @@ export class Exchanger {
     if (signatures.kind === "reject") return signatures;
 
     const previous = this.hby.db.exchangeMeta.get([said]);
-    const existing = previous?.essr ? yield* abortable((signal) => this.hby.db.getEssr(said, signal)) : null;
-    let essr = args.essr ?? existing ?? undefined;
+    const retained = yield* abortable((signal) =>
+      this.hby.db.getEssr(said, signal, { maxEssrBytes: this.maxEssrBytes, maxEssrItems: this.maxEssrItems })
+    );
+    const existing = previous?.essr ? retained : null;
+    let essr = args.essr ?? retained ?? undefined;
     if (essr) {
       if (
         !Number.isSafeInteger(essr.count) || essr.count < 0 || essr.count > this.maxEssrItems
@@ -223,8 +226,9 @@ export class Exchanger {
         return reject("Exchange ESSR exceeds admission limits.");
       }
     }
-    if (args.essr) {
-      const incoming = args.essr;
+    if (args.essr || (retained && !existing)) {
+      // Snapshot borrowed KERIpy rows into the ordinary archive publication path.
+      const incoming = args.essr ?? retained!;
       essr = yield* abortable(async (signal) => {
         const archive = await this.hby.db.openPayloads(signal);
         let wire = incoming.wire;
@@ -307,12 +311,17 @@ export class Exchanger {
     let stored = existing ?? essr;
     if (essr && !existing) {
       const wire = essr;
-      this.hby.db.essrs.rem([said]);
-      evidenceStarted = true;
+      // KERIpy-origin rows already have accepted/escrow ownership; failed import must preserve them.
+      if (!retained) {
+        this.hby.db.essrs.rem([said]);
+        evidenceStarted = true;
+      }
       stored = yield* abortable(async (signal) => {
-        // Populate the KERIpy evidence table one bounded Texter at a time.
-        for await (const texter of essrTexters(wire, this.maxEssrBytes, signal)) {
-          this.hby.db.essrs.add([said], texter);
+        if (!retained) {
+          // Populate new KERIpy evidence one bounded Texter at a time.
+          for await (const texter of essrTexters(wire, this.maxEssrBytes, signal)) {
+            this.hby.db.essrs.add([said], texter);
+          }
         }
         await (await this.hby.db.openPayloads(signal)).publish(
           `essr/${said}`,
@@ -320,7 +329,10 @@ export class Exchanger {
           commit,
           signal,
         );
-        return (await this.hby.db.getEssr(said))!;
+        return (await this.hby.db.getEssr(said, signal, {
+          maxEssrBytes: this.maxEssrBytes,
+          maxEssrItems: this.maxEssrItems,
+        }))!;
       });
     } else {
       yield* abortable(async (signal) => {
@@ -368,7 +380,10 @@ export class Exchanger {
     signal?.throwIfAborted();
     const serder = this.hby.db.exns.get([said]);
     if (!serder) throw new ValidationError("Cannot replay an unaccepted exchange.");
-    const essr = await this.hby.db.getEssr(said, signal);
+    const essr = await this.hby.db.getEssr(said, signal, {
+      maxEssrBytes: this.maxEssrBytes,
+      maxEssrItems: this.maxEssrItems,
+    });
     const gvrsn = resolveAttachmentGvrsn(serder, essr?.gvrsn);
     yield serializeMessage(serder, {
       tsgs: this.rebuildEscrowedGroups(said),
