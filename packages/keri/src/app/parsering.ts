@@ -203,6 +203,12 @@ export function* dispatchEnvelope(
             firner: envelope.lastFrc?.firner,
             local: envelope.local,
           });
+          kevery.processAttachedReceiptGroups({
+            serder,
+            tsgs: envelope.tsgs,
+            firner: envelope.lastFrc?.firner,
+            local: envelope.local,
+          });
         }
       }
       break;

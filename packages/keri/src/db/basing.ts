@@ -1560,16 +1560,31 @@ export class Baser {
 
     const vrcs = this.vrcs.get(dgkey);
     if (vrcs.length > 0) {
-      const vrcPayload = vrcs.flatMap(([prefixer, snu, diger, siger]) => [
-        prefixer.qb64b,
-        seqnerFromNumber(snu).qb64b,
-        diger.qb64b,
-        siger.qb64b,
-      ]);
+      // Receipt storage remains per signature; wire groups share one establishment seal.
+      const groups = new Map<string, [Prefixer, NumberPrimitive, Diger, Siger[]]>();
+      for (const [prefixer, snu, diger, siger] of vrcs) {
+        const key = `${prefixer.qb64}:${snu.num}:${diger.qb64}`;
+        const group = groups.get(key);
+        if (group) {
+          group[3].push(siger);
+        } else {
+          groups.set(key, [prefixer, snu, diger, [siger]]);
+        }
+      }
+      const vrcPayload = [...groups.values()].flatMap(([prefixer, snu, diger, sigers]) => {
+        const signatures = sigers.map((siger) => siger.qb64b);
+        return [
+          prefixer.qb64b,
+          seqnerFromNumber(snu).qb64b,
+          diger.qb64b,
+          attachmentCounterPayloadQb64b("ControllerIdxSigs", sigers.length, signatures),
+          ...signatures,
+        ];
+      });
       attachments.push(
         attachmentCounterPayloadQb64b(
-          "TransReceiptQuadruples",
-          vrcs.length,
+          "TransIdxSigGroups",
+          groups.size,
           vrcPayload,
         ),
         ...vrcPayload,

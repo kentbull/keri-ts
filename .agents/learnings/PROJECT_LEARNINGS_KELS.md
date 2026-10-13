@@ -7,6 +7,14 @@ and KERIpy interoperability.
 
 ## Current State
 
+Canonical KEL replay emits transferable receipt signature groups (`-F` in v1),
+collated by the complete receiptor establishment seal. Durable `vrcs.` quadruples
+and legacy wire receipt parsing remain unchanged. Current KERIpy main removed
+v1 `-D`; emitting it can truncate an OOBI stream before endpoint replies arrive.
+Grouped receipts authenticate each signature independently, without the
+receiptor's controller threshold. Missing state escrows the group; invalid
+evidence stops that receipt pass. Following KEL/reply frames still dispatch.
+
 `PayloadArchive` publishes immutable file references in private LMDB tables
 only after file and directory flushes. Recovery walks directory entries and
 rows incrementally, removes unreferenced files, and fails closed on missing

@@ -48,6 +48,10 @@ stay short enough to reread at session start.
 
 ## Cross-Topic Snapshot
 
+Replay wire encoding and durable receipt storage are separate contracts: canonical
+transferable receipt groups preserve every signature while allowing current KERIpy
+to consume following OOBI endpoint replies. See the KEL learnings.
+
 Runtime ingress yields each dispatch as an Effection operation and carries the receiving mailbox AID with
 the message; request identity must never live in shared mutable ambient state.
 
