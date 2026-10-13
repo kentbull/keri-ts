@@ -252,7 +252,7 @@ try {
     ],
     outDir: OUT_DIR,
     shims: {
-      deno: true,
+      custom: [{ module: "./src/npm/deno-shim.ts", globalNames: ["Deno"] }],
     },
     importMap: DNT_IMPORT_MAP_PATH,
     typeCheck: false,
