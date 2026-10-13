@@ -80,6 +80,21 @@ retain durable readiness for at-least-once handoff. A separate handoff owner mus
 acknowledge the exact ready receipt/body only after disposal; no public Kramer or
 runtime intake is enabled here. Finite collection limits are not a shared budget.
 
+Internal `KramHandoff` holds its local busy permit through atomic staging,
+callback consumption, joined hydration disposal and acknowledgement. Private
+`kready.` freezes the first ready receiver timestamp for retries, including
+nontransaction messages whose interoperable cache has no receipt field.
+This retryable handoff extends frozen KERIpy's removal-before-delivery behavior.
+Failures preserve durable readiness; successful acknowledgement compares the
+receipt, key and exact parent body before removing partial factors and snapshot.
+Replay caches remain, and neither parent nor child is accepted by this wrapper.
+Callbacks return non-owning values and consume/adopt plaintext within their scope,
+disposing untransferred owners in finally. Callback effects and owner adoption
+are at least once: disposal or acknowledgement failure can replay delivery and
+does not roll back prior effects. Local busy guards supply no shared runtime budget.
+An active-scope count shared by Baser excludes synchronous pruning through final
+cleanup. Pruning must check before its read/mutation batch and must not yield.
+
 ## Ownership and HTTP
 
 Dispatch borrows the envelope, including separate parent and child proof owners.
