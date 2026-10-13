@@ -145,6 +145,7 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
       assertEquals(notifier.list().map((notice) => notice.attrs), [{ r: MULTISIG_EXN_ROUTE, d: wrapped.said }]);
 
       assertEquals((yield* mux.add(wrapped)).kind, "duplicate");
+      assertEquals(notifier.list().map((notice) => notice.attrs), [{ r: MULTISIG_EXN_ROUTE, d: wrapped.said }]);
     } finally {
       if (noter.opened) {
         yield* noter.close();

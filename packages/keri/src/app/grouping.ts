@@ -389,7 +389,8 @@ export class Multiplexor {
       if (serder.pvrsn.major === 2 && submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
         // The parent is durable, but approval never lends its signatures to the child.
         yield* this.processApproved(nests);
-      } else {
+      } else if (serder.pvrsn.major === 2 || firstSubmission) {
+        // Legacy approval polling consumes its first notice; repeated v1 notices would re-propose it.
         this.notifier?.add(firstSubmission ? { r: route, d: said } : { r: route, d: said, e: embeddedSaid });
       }
     } else if (serder.pvrsn.major === 2 && submitters.some((submitter) => !this.isLocalHab(submitter.qb64))) {

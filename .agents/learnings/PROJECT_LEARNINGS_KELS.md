@@ -31,6 +31,8 @@ signatures; v1 output retains pathed evidence and its distinct aggregation key.
 The frozen native EXN builder leaves `ri/x/p` empty and cannot decode its own
 output; default native multisig construction remains unqualified. JSON/CBOR/MGPK
 have actual accepted storage/replay and Python return-path evidence.
+CLI proposal/join remains v1, as in the frozen reference. Preserve its first-notice
+behavior; repeated notices for indexed proposals cause approval re-publication.
 
 Exchange retry reads one key at a time up to a captured initial horizon, closing
 the LMDB cursor before awaiting or removing rows. Mutating a suspended live range

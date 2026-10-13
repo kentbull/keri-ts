@@ -526,7 +526,7 @@ recovery and durable replay. `packages/keri/scripts/qualify-nested-exchange.ts`
 qualifies actual stored rows with frozen Python `927c0cb8`, checking nested
 signature ownership and Python's replacement/handler semantics.
 
-**3d — multisig (implemented; publication pending):** `/multisig/icp|rot|ixn|rpy`
+**3d — multisig (in review, [#160](https://github.com/kentbull/keri-ts/pull/160)):** `/multisig/icp|rot|ixn|rpy`
 requires exactly one child of the frozen allowed ilk, its valid SAID and the
 matching signed route field. V1 aggregation stays keyed by embedded `e.d`; v2
 uses the signed child SAID. Local membership is necessary for coordination, and
@@ -547,6 +547,13 @@ frozen upstream927 and reparses Python's serialized children. The reference's
 27 selected v2/approval tests pass independently. These are small-corpus checks,
 not memory/endurance qualification.
 
+The Tufa CLI still proposes and joins v1 pathed exchanges, matching frozen
+`cli/commands/multisig/{incept,interact,rotate,join}.py`; v2 evidence here covers
+the explicit builders and runtime approval APIs, not a v2 CLI workflow. Preserve
+v1 first-notice behavior: notifying again for an already indexed v1 proposal
+causes its CLI approval consumer to re-propose it. The unchanged three-member
+weighted CLI/mailbox/DID Webs integration passes after retaining that boundary.
+
 The frozen default native EXN builder leaves `ri/x/p` empty and reports local
 verification success even though `SerderKERI(raw=...)` rejects its output.
 Default native multisig builders therefore remain unqualified; TS rejects the
@@ -554,6 +561,17 @@ empty required field. The qualification probe reproduces and reports this case
 instead of counting it as supported. Nested children with further descendants,
 `/multisig/vcp|iss|rev|exn`, and legacy pathed protocol-v2 coordination remain
 guarded. Complete node/tree resource admission remains in follow-ons 4–5.
+
+**3e — IPEX (source audit complete; implementation pending):** use frozen
+`acdc/ipexing.py`, not just legacy `vc/protocoling.py`. Its 62 maintained tests
+pass with actual imports from `/work/keripy-main927/src`. The existing TS handler
+implements the legacy conversation graph only. The same planned IPEX unit owns
+supplemental evidence selection and source-seal persistence, single-DAG disclosure
+plans and graph semantics, independent issuer proofs, and `rip/bup` registry
+vetting/retry. Presentation-registry history additionally depends on the
+receiver-observed KRAM acceptance timestamp addressed with 3f. TS currently lacks
+that v2 registry processing and path-directed Compactor API; these are concrete
+dependencies inside 3e, not completed capabilities or parallel workstreams.
 
 **Remaining runtime slices:** IPEX workflow evidence and the affected v2
 `processMsg` policy remain separate PRs. TS dispatch still bypasses the reference's consolidated non-event
@@ -653,6 +671,20 @@ without changing #134's organization, original participant topology, or assertio
 Fast deterministic parser/resource/interop regressions belong in ordinary checks;
 large/manual/endurance qualification stays outside required merge CI. The local
 qualification exception and 15-minute extended-job cap above remain in force.
+
+Reference inventory observed during #160 preparation (2026-10-13); pin changes
+and full qualification remain owned by this follow-on. A declared pin is not
+evidence of the modules a process actually imports.
+
+| Environment               | Declared target                                               | Observed import boundary / unresolved qualification                                                                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary PR table CI      | Upstream `927c0cb8` in `pr-stage-gate.yml`                    | Table generation checks the frozen checkout; retain upstream provenance separately from runtime fork results.                                                                                                                                                                                 |
+| Extended interoperability | Fork `b08ddeb0` in `keri-extended-interop.yml`                | Shared runtime probe verifies source and interpreter; retain manual dispatch and both 15-minute caps.                                                                                                                                                                                         |
+| Shared local CLI harness  | Fork `b08ddeb0` in `interop-test-helpers.ts`                  | Explicit `/work/keripy-mailbox` runtime remains separate from frozen source probes.                                                                                                                                                                                                           |
+| Frozen nested probes      | Upstream `927c0cb8`                                           | `PYTHONPATH=/work/keripy-main927/src`; multisig probe verifies loaded module bytes against Git. IPEX, registry and KRAM import paths also observed under this root.                                                                                                                           |
+| macOS compatibility       | Historical `450ae1c2` in `macos-compatibility.yml`            | Workflow installs an older CLI on PATH while shared test helpers select their own runtime; reconcile both selections and probe actual imports. Not executed in this slice.                                                                                                                    |
+| Standalone Sally harness  | Historical `98b88cf7` in `scripts/vlei-tufa-sally-interop.sh` | Separate installer/cache; not covered merely by changing the shared TypeScript helper. Not executed in this slice.                                                                                                                                                                            |
+| Embedded DID Webs         | Resolver `8395277f`; dependency `keri>=1.2.13,<1.3`           | Actual cached Python 3.13 environment imports released KERIpy 1.2.14 from its own site-packages with no commit provenance, and HIO 0.6.14. This is historical release compatibility, not frozen upstream or fork-on-main qualification; upgrade and qualify or explicitly retain that target. |
 
 Run incrementally generated 16 MiB, 256 MiB, 1 GiB, and 4 GiB aggregates using
 fixed small messages and representative 1 MiB messages. Include flat and nested
