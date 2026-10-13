@@ -432,7 +432,11 @@ Deno.test("retained replay waits for topic subscription in finite and continuous
       hby.db.mailboxInbox.admit("pre", "eid", [{ topic: "/later", idx: 0, msg }]);
       const poller = new MailboxPoller(hby, new MailboxDirector(hby), { mailboxAdmission: { mode: "durable" } });
       const received: Uint8Array[] = [];
-      const task = yield* spawn(() => poller.pollDo((batch) => received.push(...batch.messages)));
+      const task = yield* spawn(() =>
+        poller.pollDo((batch) => {
+          received.push(...batch.messages);
+        })
+      );
       yield* sleep(10);
       yield* task.halt();
       assertEquals(received, [], "continuous zero-topic poll must not dispatch retained bytes");
