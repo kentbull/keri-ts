@@ -201,8 +201,13 @@ export async function* essrChunks(
   yield* wireChunks(essr.wire, domain, options.signal);
 }
 
-/** Enclose one child using its parent's counter genus, with any child selector scoped inside. */
-function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: SerializeOptions): Payload {
+/**
+ * Borrow one child subtree as a qualified BodyWithAttachmentGroup substream.
+ * The explicit enclosing genus belongs to the parent; any differing child selector stays
+ * inside that boundary. Options choose the tree domain (text by default) and optional
+ * genus override. Owners remain with the caller until every reader completes.
+ */
+export function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: SerializeOptions = {}): Payload {
   const gvrsn = frameGenus(frame, options.gvrsn);
   const domain = options.domain ?? "txt";
   const body = bodyBytes(frame, gvrsn, domain, true);
@@ -214,7 +219,7 @@ function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: Seriali
     : undefined;
   const attachments: Payload = empty
     ? { size: empty.length, open: (signal) => chunks(empty, signal) }
-    : attachmentPayload(frame, options);
+    : attachmentContent(frame, options);
   // All child bytes are qualified, so enclosing counts are quadlets in text and triplets in binary.
   const header = counter(
     "BodyWithAttachmentGroup",
@@ -249,8 +254,8 @@ function bodyBytes(frame: CesrFrame, gvrsn: Versionage, domain: CesrDomain, nest
   return concatBytes(counter("NonNativeBodyGroup", body.length / (domain === "txt" ? 4 : 3), gvrsn, domain), body);
 }
 
-/** Build one admitted tree's attachment enclosure, retaining every descendant ESSR only by reference. */
-export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions = {}): Payload {
+/** Borrow ordered attachment content; an enclosing child already supplies its complete boundary. */
+function attachmentContent(frame: CesrFrame, options: SerializeOptions): Payload {
   // The frame's resolved genus is distinct from a JSON body's protocol version.
   const gvrsn = frameGenus(frame, options.gvrsn);
   // One attachment enclosure cannot mix text and binary qualification.
@@ -273,25 +278,38 @@ export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions =
   const essrPrefix = essr ? essrHeader(essr, gvrsn, domain) : new Uint8Array();
   // Each four text characters encode exactly three binary bytes.
   const essrSize = essr ? essr.wire.size * (domain === "txt" ? 1 : 0.75) : 0;
-  // KERIpy permits a genus selector only at the beginning of an attachment enclosure.
+  return {
+    size: ordinary + nested + essrPrefix.length + essrSize,
+    /** Each reopen retains the existing owner and streams the same logical attachment bytes. */
+    async *open(signal?: AbortSignal) {
+      for (const group of groups) yield* chunks(group, signal);
+      for (const child of children) yield* child.open(signal);
+      if (essr) yield* essrChunks(essr, { gvrsn, domain, signal });
+    },
+  };
+}
+
+/** Enclose one tree's attachments; children use their own body boundary without another wrapper. */
+export function attachmentPayload(frame: CesrFrame, options: AttachmentOptions = {}): Payload {
+  const gvrsn = frameGenus(frame, options.gvrsn);
+  const domain = options.domain ?? "txt";
+  const content = attachmentContent(frame, options);
   const enclosing = options.enclosingGvrsn ?? gvrsn;
-  // A selector is legal only in this first position inside the enclosure.
+  // KERIpy permits this selector only at the beginning of the attachment enclosure.
   const selector = sameVersion(enclosing, gvrsn) ? new Uint8Array() : qualify(Counter.makeGVC(gvrsn), "txt", domain);
   const header = counter(
     "AttachmentGroup",
-    (selector.length + ordinary + nested + essrPrefix.length + essrSize) / (domain === "txt" ? 4 : 3),
+    (selector.length + content.size) / (domain === "txt" ? 4 : 3),
     enclosing,
     domain,
   );
   return {
-    size: header.length + selector.length + ordinary + nested + essrPrefix.length + essrSize,
-    /** Each reopen retains the existing owner and streams the same logical attachment bytes. */
+    size: header.length + selector.length + content.size,
+    /** The caller retains every owner until this complete attachment reader closes. */
     async *open(signal?: AbortSignal) {
       yield* chunks(header, signal);
       yield* chunks(selector, signal);
-      for (const group of groups) yield* chunks(group, signal);
-      for (const child of children) yield* child.open(signal);
-      if (essr) yield* essrChunks(essr, { gvrsn, domain, signal });
+      yield* content.open(signal);
     },
   };
 }

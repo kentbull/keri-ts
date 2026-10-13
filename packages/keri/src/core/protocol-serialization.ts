@@ -1,12 +1,15 @@
 import {
+  type AttachmentGroup,
   type Cigar,
   concatBytes,
   Counter,
+  CounterGroup,
   Diger,
   Kinds,
   LabelDex,
   NON_TRANSFERABLE_CODES,
   type NumberPrimitive,
+  OpaqueSpan,
   Prefixer,
   Seqner,
   type SerderACDC,
@@ -361,74 +364,70 @@ export function serializeMessage(
     genusify?: boolean;
   } = {},
 ): Uint8Array {
-  const attachments: Uint8Array[] = [];
   const gvrsn = resolveAttachmentGvrsn(serder, requestedGvrsn, nested);
+  const groups = messageAttachmentGroups({ tsgs, cigars, pathed }, gvrsn);
+  return concatMessageWithAttachmentGroup(serder, groups.map((group) => group.raw), pipelined, gvrsn, nested, genusify);
+}
 
+/** Existing exchange evidence accepted by both finite message encoding and streamed frame replay. */
+export interface MessageEvidence {
+  /** Transferable endorsements tied to accepted establishment coordinates. */
+  tsgs?: readonly TransIdxSigGroup[];
+  /** Nontransferable endorsements carrying their verifiers. */
+  cigars?: readonly Cigar[];
+  /** Finite qualified path material in original order. */
+  pathed?: readonly (string | Uint8Array)[];
+}
+
+/**
+ * Build real CESR leaf groups from hydrated exchange evidence without parsing the body again.
+ * The caller supplies the resolved genus. Group raw includes its counter, and semantic tuples
+ * retain the original primitives for subsequent normalization; pathed material remains opaque.
+ */
+export function messageAttachmentGroups(
+  { tsgs = [], cigars = [], pathed = [] }: MessageEvidence,
+  gvrsn: Versionage,
+): AttachmentGroup[] {
+  const groups: AttachmentGroup[] = [];
   for (const tsg of tsgs) {
-    const sigerPayload = tsg.sigers.map((siger) => siger.qb64b);
-    const sigerGroup = [
-      attachmentCounterPayloadQb64b(
-        "ControllerIdxSigs",
-        tsg.sigers.length,
-        sigerPayload,
-        gvrsn,
-      ),
-      ...sigerPayload,
-    ];
-    const transPayload = [
-      tsg.prefixer.qb64b,
-      encodeSealSeqnerQb64b(tsg.seqner),
-      tsg.diger.qb64b,
-      ...sigerGroup,
-    ];
-    attachments.push(
-      attachmentCounterPayloadQb64b(
-        "TransIdxSigGroups",
-        1,
-        transPayload,
-        gvrsn,
-      ),
-      ...transPayload,
+    const sigers = tsg.sigers.map((siger) => siger.qb64b);
+    const inner = attachmentCounterPayloadQb64b("ControllerIdxSigs", tsg.sigers.length, sigers, gvrsn);
+    // Frozen KERIpy v2 preserves the supplied qualified Number; only v1 widens it to Seqner.
+    const ordinal = gvrsn.major >= 2 || tsg.seqner instanceof Seqner
+      ? tsg.seqner
+      : new Seqner({ code: "0A", raw: hexToFixedBytes(tsg.snh, 16) });
+    const payload = [tsg.prefixer.qb64b, ordinal.qb64b, tsg.diger.qb64b, inner, ...sigers];
+    const header = attachmentCounterPayloadQb64b("TransIdxSigGroups", 1, payload, gvrsn);
+    groups.push(
+      new CounterGroup(new Counter({ qb64b: header, version: gvrsn }), concatBytes(header, ...payload), [[
+        tsg.prefixer,
+        ordinal,
+        tsg.diger,
+        tsg.sigers,
+      ]]),
     );
   }
-
-  if (cigars.length > 0) {
-    const cigarPayload = cigars.flatMap((cigar) => {
-      const verfer = requireCigarVerfer(cigar);
-      return [verfer.qb64b, cigar.qb64b];
-    });
-    attachments.push(
-      attachmentCounterPayloadQb64b(
-        "NonTransReceiptCouples",
-        cigars.length,
-        cigarPayload,
-        gvrsn,
-      ),
-      ...cigarPayload,
+  if (cigars.length) {
+    const couples = cigars.map((cigar) => [requireCigarVerfer(cigar), cigar] as const);
+    const payload = couples.flatMap(([verfer, cigar]) => [verfer.qb64b, cigar.qb64b]);
+    const header = attachmentCounterPayloadQb64b("NonTransReceiptCouples", cigars.length, payload, gvrsn);
+    groups.push(
+      new CounterGroup(new Counter({ qb64b: header, version: gvrsn }), concatBytes(header, ...payload), couples),
     );
   }
-
   for (const path of pathed) {
     const raw = typeof path === "string" ? new TextEncoder().encode(path) : path;
     if (raw.length % 4 !== 0) {
-      throw new ValidationError(
-        `Invalid pathed material size=${raw.length}, nonintegral quadlets.`,
-      );
+      throw new ValidationError(`Invalid pathed material size=${raw.length}, nonintegral quadlets.`);
     }
-    attachments.push(
-      pathedMaterialCounterQb64b(raw.length / 4, gvrsn),
-      raw,
+    const header = pathedMaterialCounterQb64b(raw.length / 4, gvrsn);
+    groups.push(
+      new CounterGroup(new Counter({ qb64b: header, version: gvrsn }), concatBytes(header, raw), [
+        new OpaqueSpan(raw, "txt"),
+      ]),
     );
   }
-
-  return concatMessageWithAttachmentGroup(
-    serder,
-    attachments,
-    pipelined,
-    gvrsn,
-    nested,
-    genusify,
-  );
+  return groups;
 }
 
 /**

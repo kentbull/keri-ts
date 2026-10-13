@@ -52,6 +52,8 @@ export interface ExchangerLike {
     ptds: PathedMaterialGroup[];
     /** Reopenable payload views owned by the dispatch caller. */
     essr?: EssrPayload;
+    /** Borrowed parent-owned descendants for a supported route. */
+    nests?: readonly CesrFrame[];
     /** Hosted endpoint that received this message, independent of its claimed sender. */
     mailboxAid?: string | null;
   }): Operation<void | ExchangeDecision>;
@@ -162,6 +164,7 @@ export function* dispatchEnvelope(
           cigars: envelope.cigars,
           ptds: envelope.ptds,
           essr: envelope.essr,
+          nests: envelope.nests,
           mailboxAid,
         });
       }
@@ -432,7 +435,10 @@ export function envelopeFromFrame(
   message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {
-  requireFlatFrame(message, "KERI runtime normalization");
+  // Only the completed forwarding path preserves nested evidence through escrow and replay.
+  if (message.body.ilk !== "exn" || message.body.pvrsn.major < 2 || message.body.ked?.r !== "/fwd") {
+    requireFlatFrame(message, "KERI runtime normalization");
+  }
   const serder = (message.body instanceof SerderKERI || message.body instanceof SerderACDC)
     ? message.body as SerderKERI
     : parseSerder(message.body.raw, smellageFromMessage(message)) as SerderKERI;
@@ -440,6 +446,7 @@ export function envelopeFromFrame(
     serder,
     attachmentGroups: message.attachments,
     essr: message.essr,
+    nests: message.nests,
     local,
   });
   for (const group of message.attachments) {

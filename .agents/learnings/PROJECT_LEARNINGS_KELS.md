@@ -7,6 +7,18 @@ and KERIpy interoperability.
 
 ## Current State
 
+Protocol-v2 `/fwd` now preserves parent-owned child trees through `Exchanger`,
+`enst.` storage, escrow retry, reopen and replay. The signed `a.evt` digest binds
+one verified child body; child signatures remain recipient evidence. Candidate
+rows use uniquely owned private stages and replace the public IoSet atomically
+with accepted/escrow state. Verified duplicates replace child evidence and rerun
+the handler, matching frozen Python. Fresh children stay hydrated; reopened ESSR
+uses temporary file owners and aggregate tree credit across rows. See
+`packages/keri/src/db/payload-store.md` for finite LMDB-copy and recovery limits.
+Shared exchange encoding retains supplied v2 Number primitives; only v1 widens
+ordinals to Seqner. Nested multisig, IPEX and the broader v2 non-event policy
+remain unsupported.
+
 Query delivery is deferred until guarded cue handling completes. The runtime owns
 its bounded request queue and joins active HTTP cleanup at shutdown. Mailbox SSE
 awaits each event consumer; provider output reads one record per demand and

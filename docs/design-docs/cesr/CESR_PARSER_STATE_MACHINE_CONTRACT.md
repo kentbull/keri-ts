@@ -105,5 +105,8 @@ ownership, full consumption, and Python subtree reserialization.
 `test/unit/annotate-nests.test.ts` checks exact frozen Python wire round-trips,
 scoped genera, root/child presentation, exactly-once traversal, and recursive
 ESSR transfer/cleanup on success, failure, and cancellation. Nested runtime
-processing/replay remain explicit rejections at the KERI normalization and HTTP
-inspection boundaries.
+forwarding preserves evidence through exchange escrow, storage, reopen, and
+replay; `packages/keri/test/unit/app/exchanging-nests.test.ts` covers those
+route and ownership decisions. Other nested routes and HTTP inspection remain
+guarded. A frozen 40-node fixture verifies serialization preserves admitted
+enclosure depth under the default parser limit.

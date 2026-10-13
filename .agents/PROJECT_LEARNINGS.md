@@ -79,7 +79,8 @@ CESR group bytes. See the ACDC topic for verification limits.
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md` is the parser
    lifecycle contract; keep parser behavior traceable to that contract and its
    tests. Parent-owned nested frames preserve descendant evidence and resources; public
-   runtime/serialization seams reject them until the dependent migration. Stream
+   runtime normalization admits them only for the completed v2 forwarding path;
+   serialization borrows complete trees and other runtime routes remain guarded. Stream
    genus controls attachment decoding independently of a body protocol version; only unselected streams permit legacy inference.
 2. CESR progressive parsing is an approved performance phase with before/after
    benchmarks. Keep current and target contracts distinct; the atomic production path and old API shims are removed while protocol

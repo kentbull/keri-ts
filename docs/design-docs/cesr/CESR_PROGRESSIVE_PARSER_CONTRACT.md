@@ -10,8 +10,8 @@ Nested GenericGroups delegate through `yield*` and deliver complete children
 before their enclosing payload finishes. There is no synchronous stream engine.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
 implemented lifecycle to tests. Parent-owned trees, serialization, and finite
-annotation are implemented. Nested runtime processing, shared runtime
-reservations, and final qualification remain follow-ons.
+annotation and v2 forwarding are implemented. Other nested runtime routes,
+shared runtime reservations, and final qualification remain follow-ons.
 
 The parser materializes bodies and ordinary attachment leaves through the existing
 Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
@@ -210,7 +210,8 @@ ESSR wire is consumed incrementally through `essrChunks()`. The caller retains
 every descendant `EssrPayload` owner until all output readers finish. Each child
 is emitted as a `BodyWithAttachmentGroup`; non-native child bodies are qualified
 Texters inside `NonNativeBodyGroup`. The child wrapper uses its parent's genus,
-with any child genus selector scoped inside it. Default output preserves each
+with any child genus selector scoped inside it. The body enclosure already
+supplies the child boundary; another attachment wrapper would double its depth. Default output preserves each
 node's resolved genus; an explicit `gvrsn` overrides every compatible node.
 Native bodies still reject genus changes that require rebuilding their Serder.
 The serializer preserves parent/child ownership, group order, child order, and
@@ -219,8 +220,9 @@ children, then ESSR; the parsed model does not retain original cross-category
 interleaving. One payload view per admitted node and finite body/group metadata
 remain under existing tree admission limits. No descendant ESSR is collected.
 Cancellation closes active readers without disposing the caller's tree owners.
-Finite annotation preserves the original tree wire. KERI normalization and HTTP
-inspection still reject nests pending their owned-tree consumer work. Output chunks are owned
+Finite annotation preserves the original tree wire. KERI normalization admits
+v2 `/fwd` trees with route-specific child commitments and durable evidence.
+Other nested routes and HTTP inspection retain their consumer guards. Output chunks are owned
 copies of at most 64 KiB; custom ESSR wire readers retain the existing 1 MiB
 maximum backing-allocation contract.
 

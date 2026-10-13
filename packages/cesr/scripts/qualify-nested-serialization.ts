@@ -6,6 +6,7 @@ import type { CesrFrame } from "../src/core/types.ts";
 import { parseBytes } from "../src/parser/complete.ts";
 import { essrPayload } from "../src/parser/essr.ts";
 import { framePayload, type SerializeOptions } from "../src/parser/serialize.ts";
+import depthVector from "../test/fixtures/nested-depth.json" with { type: "json" };
 import vectors from "../test/fixtures/nested-vectors.json" with { type: "json" };
 
 /** Explicit executable keeps the reference environment independent of the developer's PATH. */
@@ -27,6 +28,15 @@ for (const row of vectors.rows) {
   } finally {
     await discardFrame(frame);
   }
+}
+// Build expected ownership from frozen Python data, independently of TS traversal.
+let deepTree = { sad: depthVector.sad, sigers: [depthVector.signature], nests: [] as unknown[] };
+for (let level = 1; level < depthVector.depth; level++) {
+  deepTree = { sad: depthVector.sad, sigers: [depthVector.signature], nests: [deepTree] };
+}
+const [deepFrame] = await parseBytes(b(depthVector.qb64));
+for (const domain of ["txt", "bny"] as const) {
+  rows.push(await emit(`depth-${depthVector.depth}-${domain}`, deepFrame, deepTree, { domain }));
 }
 /** A protocol-v1 body can be serialized under either supported attachment genus. */
 const legacy = vectors.rows.find((row) => row.name === "JSON-v1")!;

@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { decodeHex } from "jsr:@std/encoding/hex";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { discardFrame } from "../../../src/core/frame.ts";
 import { collectPayload, MemoryPayloadSink } from "../../../src/core/payload.ts";
@@ -9,6 +10,7 @@ import { attachmentPayload, framePayload } from "../../../src/parser/serialize.t
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
 import { Verfer } from "../../../src/primitives/verfer.ts";
+import depthVector from "../../fixtures/nested-depth.json" with { type: "json" };
 import vectors from "../../fixtures/nested-vectors.json" with { type: "json" };
 
 /** Compare independently generated Python bodies/signatures while verifying their actual ownership. */
@@ -32,6 +34,28 @@ function summary(frame: CesrFrame): unknown {
 function nodes(frame: CesrFrame): CesrFrame[] {
   return [frame, ...(frame.nests ?? []).flatMap(nodes)];
 }
+
+Deno.test("nested serialization preserves admitted deep trees under the default enclosure limit", async () => {
+  const body = decodeHex(depthVector.body);
+  for (const input of [b(depthVector.qb64), decodeHex(depthVector.qb2)]) {
+    const [frame] = await parseBytes(input);
+    assertEquals(nodes(frame).length, depthVector.depth);
+    for (const domain of ["txt", "bny"] as const) {
+      // A child already has its BWA boundary; adding another wrapper would double the nesting depth.
+      const [roundtrip] = await parseBytes(await collectPayload(framePayload(frame, { domain }), 65536));
+      assertEquals(nodes(roundtrip).length, depthVector.depth);
+      for (const node of nodes(roundtrip)) {
+        assertEquals(node.body.raw, body);
+        const tuple = node.attachments[0].items[0];
+        assert(Array.isArray(tuple));
+        assert(tuple[0] instanceof Siger);
+        assertEquals(tuple[0].qb64, depthVector.signature);
+      }
+      // Existing signature checks prove each retained signature covers its own body.
+      summary(roundtrip);
+    }
+  }
+});
 
 Deno.test("nested serialization preserves signed trees, scoped genera and order across wire domains", async () => {
   for (const row of vectors.rows) {

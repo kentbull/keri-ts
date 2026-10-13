@@ -6,17 +6,20 @@ import {
   CtrDexV2,
   Diger,
   Indexer,
+  NumberPrimitive,
   parseBytes,
   parseCounterFromText,
   Prefixer,
+  Seqner,
   type Siger,
   Signer,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
-import { messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
+import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 
 const SENDER = "EDmvqjn9t8x9zkPHCgn_QxTHlP-1v-qqJh-zdg7CrXVe";
 
@@ -125,6 +128,31 @@ Deno.test("protocol v2 signature serialization parses flat, sealed, and nested e
       const parsedSigs = group.items.flat(2).filter((item) => item instanceof Indexer);
       assertEquals(parsedSigs.map((siger) => siger.qb64), sigers.map((siger) => siger.qb64));
       assertEquals(group.items.length, 1);
+    }
+  }
+});
+
+Deno.test("exchange signature groups preserve supplied v2 ordinals and widen only v1 Numbers", async () => {
+  const { serder, sigers } = signerMessage();
+  // Frozen Python 927c0cb8 Number(num=1) and Seqner(sn=1) produce these distinct qualified bytes.
+  const compact = NumberPrimitive.fromNum(1n);
+  const fixed = new Seqner({ qb64: "0AAAAAAAAAAAAAAAAAAAAAAB" });
+  assertEquals(compact.qb64, "MAAB");
+  for (const ordinal of [compact, fixed]) {
+    const tsg = new TransIdxSigGroup(
+      new Prefixer({ qb64: SENDER }),
+      ordinal,
+      new Diger({ qb64: serder.said! }),
+      sigers,
+    );
+    for (const gvrsn of [Vrsn_1_0, Vrsn_2_0]) {
+      const groups = messageAttachmentGroups({ tsgs: [tsg] }, gvrsn);
+      const expected = gvrsn.major === 1 ? "0AAAAAAAAAAAAAAAAAAAAAAB" : ordinal.qb64;
+      // Inspect both the actual wire span and parser readback, without relying only on a same-codec round trip.
+      assertEquals(new TextDecoder().decode(groups[0].raw.slice(48, 48 + expected.length)), expected);
+      const [frame] = await parseBytes(serializeMessage(serder, { tsgs: [tsg], gvrsn, genusify: true }));
+      assertEquals((frame.attachments[0].items[0] as readonly { qb64: string }[])[1].qb64, expected);
+      if (gvrsn.major === 2) assertEquals((groups[0].items[0] as readonly unknown[])[1], ordinal);
     }
   }
 });
