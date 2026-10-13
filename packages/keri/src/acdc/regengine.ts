@@ -31,6 +31,70 @@ export class RegistryEventer {
     public regk: string | null = null,
   ) {}
 
+  /** Retry anchor escrow by ordinal, arbitrating siblings before entering normal acceptance. */
+  processMissingAnchors(): void {
+    if (this.regk === null) return;
+    const slots = new Map<number, string[]>();
+    // Finish the read cursor before writes. Shared scan credit belongs to the resource-policy phase.
+    for (const [, sn, [said]] of this.store.baser.maes?.getTopItemIter(this.regk) ?? []) {
+      if (!Number.isSafeInteger(sn) || sn < 0) throw new RangeError("Unsafe registry escrow ordinal.");
+      const candidates = slots.get(sn) ?? [];
+      candidates.push(said);
+      slots.set(sn, candidates);
+    }
+    for (const [sn, saids] of [...slots].sort(([a], [b]) => a - b)) {
+      const candidates: RegistryEvent[] = [];
+      for (const said of saids) {
+        const event = this.replayCandidate(said, sn);
+        if (!event) continue;
+        this.discoverAnchor(event);
+        candidates.push(event);
+      }
+      candidates.sort((a, b) => this.compareAnchors(a.said, b.said));
+      for (const event of candidates) {
+        const result = this.processEvent(event.serder);
+        if (result.kind === "reject" || result.kind === "duplicate") {
+          this.store.clearEscrows(this.regk, sn, event.said);
+        }
+      }
+    }
+  }
+
+  /** Prune unrecoverable candidates; corrupt records and storage failures still propagate. */
+  private replayCandidate(said: string, sn: number): RegistryEvent | null {
+    const serder = this.store.event(said);
+    if (!serder) {
+      this.store.clearEscrows(this.regk!, sn, said);
+      return null;
+    }
+    if (serder.said !== said) throw new Error("Corrupt escrowed registry event.");
+    const result = serder.ilk === Ilks.rip
+      ? validateRip(serder, this.issuer)
+      : validateUpdate(serder, this.regk!);
+    if (result.kind === "valid") {
+      const event = result.event;
+      if (event.regid === this.regk && event.sn === BigInt(sn)) {
+        const existing = this.acceptedEvent(event);
+        const prior = sn > 0 ? this.acceptedAt(event.regid, sn - 1) : null;
+        if (!existing && (!prior || prior.said === event.prior)) return event;
+      }
+    }
+    this.store.clearEscrows(this.regk!, sn, said);
+    return null;
+  }
+
+  /** Earliest verified anchor wins; digest then event SAID break ties using code-point order. */
+  private compareAnchors(left: string, right: string): number {
+    const a = this.store.anchor(left), b = this.store.anchor(right);
+    if (a && !b) return -1;
+    if (!a && b) return 1;
+    if (a && b) {
+      if (a[0].num !== b[0].num) return a[0].num < b[0].num ? -1 : 1;
+      if (a[1].qb64 !== b[1].qb64) return a[1].qb64 < b[1].qb64 ? -1 : 1;
+    }
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+
   /** Process one parsed event; automatic escrow progression is owned by the retry pass. */
   processEvent(serder: SerderACDC): RegistryEventDecision {
     if (this.regk === null || serder.ilk === Ilks.rip) return this.processInception(serder);

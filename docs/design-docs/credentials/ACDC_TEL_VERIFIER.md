@@ -111,6 +111,12 @@ Protocol ordinals retain bigint precision, but the current storage API supports
 only safe integer ordinals; larger updates receive an explicit `ordinalRange`
 refusal before storage conversion. This is an unfinished storage boundary.
 Named services and scheduled retries belong to the remaining registry units.
+Explicit missing-anchor retry groups candidates by ordinal and discovers all
+visible anchors before choosing siblings by anchor number, anchor digest, then
+event SAID (code-point order). Unanchored candidates sort last. Dangling bodies
+and stale candidates leave escrow; corrupt records and I/O failures propagate.
+The read cursor closes before replay writes. This pass still collects registry
+escrow rows; shared scan admission remains part of the resource-policy phase.
 
 Existing #168 stores retain their paths, bodies, 32-digit ordinal keys and head
 markers. Readonly opening binds the existing three tables without rewriting or
