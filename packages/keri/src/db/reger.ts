@@ -20,6 +20,7 @@ import {
   Saider,
   Seqner,
   SerderACDC,
+  SerderKERI,
   Siger,
   t,
   Verfer,
@@ -27,7 +28,11 @@ import {
   Vrsn_1_0,
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { attachmentCounterPayloadQb64b, attachmentCounterQb64b } from "../core/attachment-countering.ts";
+import {
+  attachmentCounterPayloadQb64b,
+  attachmentCounterQb64b,
+  resolveAttachmentGvrsn,
+} from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
 import { dgKey } from "./core/keys.ts";
@@ -80,6 +85,7 @@ function fixedOrdinalRaw(num: bigint, size = 16): Uint8Array {
   return raw;
 }
 
+/** Widen the ordinal value to the fixed v1 seal encoding. */
 function seqnerFromNumber(number: NumberPrimitive): Seqner {
   return new Seqner({ code: NumDex.Huge, raw: fixedOrdinalRaw(number.num) });
 }
@@ -288,20 +294,22 @@ export class Reger extends LMDBer {
     return [creder, prefixer, number, diger];
   }
 
-  /** Iterate TEL event messages for `pre` from ordinal `fn`, with attachments. */
+  /** Iterate TEL events from ordinal `fn`, honoring the requested attachment genus floor. */
   *clonePreIter(
     pre: KeyPart,
     fn = 0,
+    gvrsn: Versionage = Vrsn_1_0,
   ): Generator<Uint8Array> {
     for (const [, , diger] of this.tels.getAllItemIter(pre, fn)) {
-      yield this.cloneTvt(pre, diger);
+      yield this.cloneTvt(pre, diger, gvrsn);
     }
   }
 
-  /** Clone one TEL event message at sequence number `sn`, with attachments. */
+  /** Clone one TEL event at sequence `sn`, preserving its body and honoring the genus floor. */
   cloneTvtAt(
     pre: KeyPart,
     sn = 0,
+    gvrsn: Versionage = Vrsn_1_0,
   ): Uint8Array {
     const diger = this.tels.getOn(pre, sn);
     if (diger === null) {
@@ -309,13 +317,14 @@ export class Reger extends LMDBer {
         `Missing event digest for pre=${keyText(pre)} sn=${sn}.`,
       );
     }
-    return this.cloneTvt(pre, diger);
+    return this.cloneTvt(pre, diger, gvrsn);
   }
 
-  /** Clone one TEL event message by digest, including KERIpy attachment groups. */
+  /** Preserve one TEL body, choosing counters and ordinals for its minimum/requested genus. */
   cloneTvt(
     pre: KeyPart,
     dig: string | Uint8Array | Diger | Saider,
+    gvrsn: Versionage = Vrsn_1_0,
   ): Uint8Array {
     const preText = keyText(pre);
     const digText = digestText(dig);
@@ -325,8 +334,12 @@ export class Reger extends LMDBer {
       throw new ValidationError(`Missing event for dig=${digText}.`);
     }
 
-    const attachments: Uint8Array[] = [];
     const tibs = this.tibs.get([preText, digText]);
+    const couple = this.ancs.get(dgkey);
+    if (tibs.length === 0 && couple === null) return raw;
+    // A requested genus is a floor; retain the body bytes and honor its declared minimum.
+    gvrsn = resolveAttachmentGvrsn(new SerderKERI({ raw }), gvrsn);
+    const attachments: Uint8Array[] = [];
     if (tibs.length > 0) {
       const tibPayload = tibs.map((tib) => tib.qb64b);
       attachments.push(
@@ -334,16 +347,16 @@ export class Reger extends LMDBer {
           "WitnessIdxSigs",
           tibs.length,
           tibPayload,
+          gvrsn,
         ),
         ...tibPayload,
       );
     }
 
-    const couple = this.ancs.get(dgkey);
     if (couple !== null) {
       const [number, diger] = couple;
       const sealPayload = [
-        seqnerFromNumber(number).qb64b,
+        gvrsn.major === 1 ? seqnerFromNumber(number).qb64b : number.qb64b,
         saiderFromDigest(diger).qb64b,
       ];
       attachments.push(
@@ -351,6 +364,7 @@ export class Reger extends LMDBer {
           "SealSourceCouples",
           1,
           sealPayload,
+          gvrsn,
         ),
         ...sealPayload,
       );
@@ -364,12 +378,12 @@ export class Reger extends LMDBer {
     }
     return concatBytes(
       raw,
-      attachmentCounterQb64b("AttachmentGroup", atc.length / 4),
+      attachmentCounterQb64b("AttachmentGroup", atc.length / 4, gvrsn),
       atc,
     );
   }
 
-  /** Return recursive source credentials with `SealSourceTriples` attachments. */
+  /** Return recursive source credentials with source seals at each body/requested genus floor. */
   sources(
     _db: unknown,
     creder: SerderACDC,
@@ -387,9 +401,10 @@ export class Reger extends LMDBer {
     const sources: CredentialSource[] = [];
     for (const said of saids) {
       const [sourceCreder, prefixer, number, diger] = this.cloneCred(said);
+      const selected = resolveAttachmentGvrsn(sourceCreder, gvrsn);
       const sealPayload = [
         prefixer.qb64b,
-        number.qb64b,
+        selected.major === 1 ? seqnerFromNumber(number).qb64b : number.qb64b,
         saiderFromDigest(diger).qb64b,
       ];
       const atc = concatBytes(
@@ -397,7 +412,7 @@ export class Reger extends LMDBer {
           "SealSourceTriples",
           1,
           sealPayload,
-          gvrsn,
+          selected,
         ),
         ...sealPayload,
       );

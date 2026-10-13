@@ -14,7 +14,6 @@ import {
   Diger,
   Ilks,
   NumberPrimitive,
-  NumDex,
   Prefixer,
   type SealSource,
   SerderKERI,
@@ -145,16 +144,6 @@ function telIlk(serder: SerderKERI): TelIlk {
     default:
       throw new ValidationError(`Unsupported TEL ilk=${String(serder.ilk)}.`);
   }
-}
-
-function ordinal(num: number | bigint): NumberPrimitive {
-  const raw = new Uint8Array(16);
-  let value = BigInt(num);
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return new NumberPrimitive({ code: NumDex.Huge, raw });
 }
 
 function nowDater(): Dater {
@@ -766,6 +755,7 @@ export class Tever {
       && seal?.d === serder.said;
   }
 
+  /** Retain partial-witness evidence with its qualified source ordinal. */
   private escrowPWEvent(
     serder: SerderKERI,
     seqner?: NumberPrimitive | null,
@@ -776,7 +766,7 @@ export class Tever {
     const said = okSaid(serder);
     const key = dgKey(pre, said);
     if (seqner && saider) {
-      this.reger.ancs.put(key, [ordinal(seqner.num), new Diger({ qb64: saider.qb64 })]);
+      this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);
     }
     if (bigers.length > 0) {
       this.reger.tibs.pin(key, [...bigers]);
@@ -785,6 +775,7 @@ export class Tever {
     this.reger.twes.put(pre, okSn(serder), said);
   }
 
+  /** Retain anchorless evidence without changing the source seal representation. */
   private escrowALEvent(
     serder: SerderKERI,
     seqner?: NumberPrimitive | null,
@@ -796,7 +787,7 @@ export class Tever {
     const said = okSaid(serder);
     const key = dgKey(pre, said);
     if (seqner && saider) {
-      this.reger.ancs.put(key, [ordinal(seqner.num), new Diger({ qb64: saider.qb64 })]);
+      this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);
     }
     if (bigers.length > 0) {
       this.reger.tibs.pin(key, [...bigers]);
@@ -831,6 +822,7 @@ export class Tever {
     return { kind: "backers", toad, baks };
   }
 
+  /** Persist accepted TEL evidence and the exact qualified source seal. */
   private logEvent(args: {
     pre: string;
     sn: number;
@@ -845,7 +837,8 @@ export class Tever {
     if (!args.seqner || !args.saider) {
       throw new ValidationError("Cannot log TEL event without source seal.");
     }
-    this.reger.ancs.put(key, [ordinal(args.seqner.num), new Diger({ qb64: args.saider.qb64 })]);
+    // Keep the qualified Number; widening it here would alter v2 replay evidence.
+    this.reger.ancs.put(key, [args.seqner, new Diger({ qb64: args.saider.qb64 })]);
     if (args.bigers && args.bigers.length > 0) {
       this.reger.tibs.pin(key, [...args.bigers]);
     }
@@ -1061,6 +1054,7 @@ export class Tevery {
     this.reger.states.pin(regk, tever.state());
   }
 
+  /** Preserve the original source seal while waiting for earlier TEL events. */
   private escrowOOEvent(
     serder: SerderKERI,
     seqner?: NumberPrimitive | null,
@@ -1071,7 +1065,7 @@ export class Tevery {
     const key = dgKey(pre, said);
     this.reger.tvts.put(key, serder.raw);
     if (seqner && saider) {
-      this.reger.ancs.put(key, [ordinal(seqner.num), new Diger({ qb64: saider.qb64 })]);
+      this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);
     }
     this.reger.oots.put(pre, okSn(serder), said);
   }

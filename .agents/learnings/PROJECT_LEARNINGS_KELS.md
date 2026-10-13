@@ -18,7 +18,12 @@ selects attachment genus from the body protocol/genus. Every outer and inner
 counter uses that genus. Source and receipt ordinals convert to `Seqner` only
 for v1; v2 retains the stored qualified `Number`. Independent frozen KERIpy
 fixtures cover both genera, grouped receipts, source seals, and database reopen.
-Full v2 OOBI/credential import qualification remains a separate obligation.
+Frozen issuance evidence now also enters through real HTTP/OOBI resolution,
+TEL escrow, and credential verification before reopen/export in either attachment
+genus. `Reger` accepts an explicit genus floor for TEL clones; credential exports
+apply the body minimum and preserve qualified Numbers through TEL escrow/storage.
+The reference supports v1 TEL/ACDC issuance bodies under v2 attachment framing;
+it rejects v2 `vcp` bodies. This proof does not claim v2 TEL protocol support.
 
 Canonical KEL replay emits transferable receipt signature groups (`-F` in v1),
 collated by the complete receiptor establishment seal. Durable `vrcs.` quadruples
