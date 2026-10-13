@@ -22,6 +22,10 @@ escrow and cue handling; a cue consumer must not reenter its guarded Reactor.
 Receiving mailbox identity is an explicit per-message argument, never ambient
 mutable request state.
 
+Owned hydration uses an isolated consume callback with direct joined finalization.
+A bare yielding finalizer can resume cancelled parent work; resource-only teardown
+can hide disposal errors after delivery. Fail cleanup before returning to its caller.
+
 Runtime store acquisition and ownership must be visible in composition-root
 control flow. Default registry-evidence and TEL stores are scope-owned; readonly
 Haberies get neither, and injected stores remain caller-owned. Factories retain

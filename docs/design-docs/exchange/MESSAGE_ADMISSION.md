@@ -41,6 +41,25 @@ stale owners. These restart and active-window guarantees strengthen the frozen
 reference, which stores pending transitions only in memory. No Kramer intake or
 runtime enablement is exported; cache windows are not a shared runtime budget.
 
+Internal `authenticateKramSource` returns valid, known-invalid, or missing-state
+source decisions. It checks the last source couple or sender-matching triple
+against the accepted sender KEL digest and an event seal containing the message
+SAID. Foreign triples and child proofs remain independent. Known-invalid source
+results remain eligible for later signature fallback; missing state blocks it.
+Missing coordinates retain `bigint` precision, including beyond the database's
+safe-number range; the eventual intake owner emits exact hexadecimal queries.
+This read-only helper emits no cues and enables no public Kramer/runtime intake.
+
+Internal `verifyKramSignatures` normalizes sender triples/last groups on cloned
+factor arrays, verifies only current sender factors and returns the borrowed
+normalized envelope. `verified` means at least one valid cigar or indexed
+signature, never threshold satisfaction. Frozen factor ordering and qb64-based
+deduplication retain distinct encodings at one index; intake must use unique
+signer indices for threshold satisfaction. Prior sender groups are removed from
+forwarding and retained only as historically verified diagnostics. Foreign groups
+and children remain independent. These helpers publish no intake state or queries
+and do not change existing parser/v1 normalization.
+
 ## Ownership and HTTP
 
 Dispatch borrows the envelope, including separate parent and child proof owners.

@@ -23,6 +23,7 @@ storage/transport reconciliation and final qualification remain incomplete.
 
 One progressive parser engine; CESR stays framework-neutral with an optional
 Effection adapter. KERI/Tufa own cancellable operations and joined cleanup.
+Consume-scoped hydration joins disposal and propagates cleanup failures before returning.
 Parsed evidence, wrapper construction, verified acceptance and durable publication
 are separate boundaries. Parent signatures never authenticate nested children.
 
