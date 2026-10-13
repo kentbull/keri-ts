@@ -491,7 +491,9 @@ export class Baser {
   public maids!: CesrIoSetSuber<Prefixer>; // Multisig embed payload SAIDs to participant AIDs.
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
+  public xdt!: CesrSuber<Dater>; // Shared KRAM exchange opener time keyed by XID.
   public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
+  public kready!: Suber; // Private first ready receiver timestamp; consumed only after joined handoff.
   public kpnd!: BytesSuber; // Private KRAM parent snapshots, never accepted wire publication.
   public ulgs!: CesrIoSetSuber<Prefixer>; // Foreign last references unresolved at original receipt.
   public cigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Independently owned foreign cigar proofs.
@@ -1086,6 +1088,7 @@ export class Baser {
         subkey: "msgc.",
         recordClass: MsgCacheRecord,
       });
+      this.xdt = new CesrSuber<Dater>(this.lmdber, { subkey: "xdt.", ctor: Dater });
 
       // KRAM transactioned message-cache records keyed by `(AID, XID, MID)`.
       this.tmsc = new Komer<TxnMsgCacheRecord>(
@@ -1097,6 +1100,7 @@ export class Baser {
       );
 
       this.kpnd = new BytesSuber(this.lmdber, { subkey: "kpnd." });
+      this.kready = new Suber(this.lmdber, { subkey: "kready." });
       this.ulgs = new CesrIoSetSuber<Prefixer>(this.lmdber, { subkey: "ulgs.", ctor: Prefixer });
       this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.lmdber, { subkey: "cigs.", ctor: [Verfer, Cigar] });
 
@@ -1327,8 +1331,9 @@ export class Baser {
     }
 
     for (const serder of this.getEvtPreIter(pre, sn)) {
-      for (const current of serder.eventSeals) {
-        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
+      for (const raw of serder.seals) {
+        const current = normalizeEventSeal(raw);
+        if (current && eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
           return serder;
         }
       }
@@ -1362,8 +1367,9 @@ export class Baser {
       if (!serder) {
         continue;
       }
-      for (const current of serder.eventSeals) {
-        if (eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
+      for (const raw of serder.seals) {
+        const current = normalizeEventSeal(raw);
+        if (current && eventSealsEqual(current, target) && this.fullyWitnessed(serder)) {
           return serder;
         }
       }

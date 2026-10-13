@@ -25,6 +25,11 @@ mutable request state.
 Owned hydration uses an isolated consume callback with direct joined finalization.
 A bare yielding finalizer can resume cancelled parent work; resource-only teardown
 can hide disposal errors after delivery. Fail cleanup before returning to its caller.
+KRAM handoff retains its local busy guard until that disposal and checked durable
+acknowledgement finish. Failed callbacks, disposal or ack preserve ready retries;
+callback side effects/owner adoption are at least once, without rollback.
+Per-Baser active scope counts exclude synchronous cache maintenance, while
+admission remains guarded per instance; neither supplies a shared memory budget.
 
 Runtime store acquisition and ownership must be visible in composition-root
 control flow. Default registry-evidence and TEL stores are scope-owned; readonly
