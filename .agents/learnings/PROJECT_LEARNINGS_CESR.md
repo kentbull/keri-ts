@@ -6,6 +6,12 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
 
 ## Current State
 
+SAID exclusion is a hash-input rule: size the complete versioned SAD first,
+then omit ignored fields only from the digest serialization. Keep ignored fields
+in the returned SAD/raw. Frozen `927c0cb8` literals cover JSON, CBOR, and MGPK for
+both protocol versions, with and without exclusions. A missing ignored field
+rejects instead of silently changing the commitment contract.
+
 `Tholder.maxWeights` (1,000) and `maxSithLength` (65,536) are process-wide
 deployment settings, not protocol maxima; configure them before admitting work.
 Weighted input counts every term, including nested outer weights, before fraction

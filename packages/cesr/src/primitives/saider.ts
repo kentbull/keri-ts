@@ -24,6 +24,8 @@ export interface SaidifyOptions {
 export interface SaidifyFieldsOptions {
   kind?: Kind;
   saids: Record<string, string>;
+  /** Omit these fields from hashing only; retain them in the sized, returned SAD. */
+  ignore?: string[];
   digest?: SaidDigestFn;
 }
 
@@ -71,15 +73,10 @@ export class Saider extends Matter {
     saider: Saider;
     sad: Record<string, unknown>;
   } {
-    const working = { ...sad };
-    if (ignore) {
-      for (const field of ignore) {
-        delete working[field];
-      }
-    }
-    const { sad: saidified, saiders } = Saider.saidifyFields(working, {
+    const { sad: saidified, saiders } = Saider.saidifyFields(sad, {
       kind,
       saids: { [label]: code },
+      ignore,
       digest,
     });
     const saider = saiders[label];
@@ -102,6 +99,7 @@ export class Saider extends Matter {
     {
       kind,
       saids,
+      ignore,
       digest = Diger.digest,
     }: SaidifyFieldsOptions,
   ): {
@@ -131,7 +129,16 @@ export class Saider extends Matter {
       sizeify(working, actualKind);
     }
 
-    const digestRaw = dumps(working, actualKind);
+    // The version declares the full SAD size, including ignored fields. Only
+    // the hash input loses those fields; the returned SAD and raw retain them.
+    const digestSad = { ...working };
+    for (const field of ignore ?? []) {
+      if (!Object.hasOwn(digestSad, field)) {
+        throw new SerializeError(`Missing ignored field labeled ${field}`);
+      }
+      delete digestSad[field];
+    }
+    const digestRaw = dumps(digestSad, actualKind);
     const saiders: Record<string, Saider> = {};
     for (const [label, code] of Object.entries(saids)) {
       if (!DIGEST_CODES.has(code)) {
