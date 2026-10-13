@@ -14,6 +14,9 @@ options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
+RegBaser owns the existing public registry evts/tels/heads layout; observer
+chain reads/imports extend that same environment. Readonly old-store opening
+binds existing tables without migration; anchor/escrow bindings remain separate.
 Do not suppress errors or weaken live-host assertions. Do not run command-local
 mutations against a store still hosted by a stale runtime. Prefer narrow tufa db
 dump selectors. Reacquire named handles after close/reopen.
@@ -42,6 +45,10 @@ atomically with accepted/escrow state; failed replacement preserves prior rows.
 Fresh children remain hydrated, reopened children own temporary ESSR files, and
 remaining tree credit diminishes across rows. Cancellation claims/disposes every
 untransferred descendant.
+
+Opaque pathed evidence uses byte-preserving insertion-ordered storage. UTF-8
+replacement can merge different binary members; never decode wire just to obtain
+a storage or deduplication key. `Baser.ptds` retains raw bytes through reopen.
 
 ## Open boundary
 
