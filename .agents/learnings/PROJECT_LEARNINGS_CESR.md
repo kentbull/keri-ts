@@ -42,7 +42,9 @@ Persistent CESR parser, primitive, and serder memory for `keri-ts`.
    fixed-width `Seqner` for receipt/replay/source ordinals in both genera;
    `NumberPrimitive` remains the extended bound-state ordinal.
    ESSR also has separate v1 item-count and v2 payload-length handlers, both
-   returning Texters. Nested transferable signatures require the controller
+   returning Texters. KERI envelopes reuse hydrated Serders and primitives, validating
+   roles at the public frame boundary. Structing views use existing Matter instances
+   when their semantic class differs, never a qb64 round trip. Nested transferable signatures require the controller
    counter, matching the pinned reference (including its exclusion of big inner
    counters). Genus selectors decode both minor sextets and reject unsupported
    versions inside wrappers as well.
