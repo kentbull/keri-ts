@@ -6,7 +6,7 @@
   and `packages/cesr`
 - Related:
   - `docs/ARCHITECTURE_MAP.md`
-  - `docs/plans/layers-and-libs-reorg.md`
+  - `docs/archived-plan-docs/packaging/layers-and-libs-reorg.md`
   - `docs/adr/adr-0003-agent-runtime-composition-root.md`
   - `docs/adr/adr-0004-cue-runtime-portability.md`
   - `docs/adr/adr-0009-mailbox-architecture.md`

@@ -7,17 +7,20 @@ internal-only implementation areas so refactors can preserve stable contracts.
 
 ## Relevant ADRs
 
-- `docs/adr/adr-0001-parser-atomic-bounded-first.md`
+- `docs/adr/adr-0012-progressive-nested-parser.md`
 - `docs/adr/adr-0011-three-package-architecture.md`
+
+See the [documentation index](README.md) for subject designs, active plans,
+reference material and historical reports.
 
 ## Current Maintainer Guides
 
-- `docs/design-docs/keri/ATTACHMENT_COUNTER_GVRSN_MAINTAINER_GUIDE.md`
-- `docs/design-docs/keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md`
-- `docs/design-docs/keri/DELEGATION_MULTISIG_ENDPOINT_ROLES_MAINTAINER_GUIDE.md`
-- `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
-- `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`
-- `docs/design-docs/keri/QUERY_REPLY_CORRESPONDENCE_AND_WATCHER_SUPPORT.md`
+- `docs/design-docs/cesr/ATTACHMENT_COUNTER_GVRSN.md`
+- `docs/design-docs/credentials/ACDC_TEL_VERIFIER.md`
+- `docs/design-docs/kel/DELEGATION_AND_ENDPOINTS.md`
+- `docs/design-docs/runtime/CUES.md`
+- `docs/design-docs/mailbox/MAILBOX.md`
+- `docs/design-docs/runtime/QUERY_REPLY.md`
 
 ## Top-Level Boundaries
 

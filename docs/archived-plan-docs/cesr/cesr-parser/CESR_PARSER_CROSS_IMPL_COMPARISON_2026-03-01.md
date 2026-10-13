@@ -43,5 +43,5 @@ Use this archived note only as historical context. For active parser decisions,
 prefer:
 
 1. `docs/design-docs/cesr/CESR_PARSER_STATE_MACHINE_CONTRACT.md`
-2. `docs/design-docs/cesr/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
+2. `docs/archived-plan-docs/cesr/cesr-parser/CESR_ATOMIC_BOUNDED_PARSER_ARCHITECTURE.md`
 3. `.agents/learnings/PROJECT_LEARNINGS_CESR.md`

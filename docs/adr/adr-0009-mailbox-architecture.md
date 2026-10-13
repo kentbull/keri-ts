@@ -9,8 +9,8 @@
   - `docs/adr/adr-0004-cue-runtime-portability.md`
   - `docs/adr/adr-0008-escrow-decision-architecture.md`
   - `docs/adr/adr-0010-signed-keri-http-ingress.md`
-  - `docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`
-  - `docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`
+  - `docs/design-docs/mailbox/MAILBOX.md`
+  - `docs/design-docs/runtime/CUES.md`
   - `packages/keri/src/db/mailboxing.ts`
   - `packages/keri/src/app/forwarding.ts`
   - `packages/keri/src/app/mailbox-director.ts`
@@ -85,12 +85,12 @@ operational seams.
 This ADR keeps mailbox storage, forwarding, authorization, and transport policy
 in scope. The broader cue-system explanation, including why `mbx` query
 streaming depends on `stream` cue routing and not just mailbox storage, lives in
-`docs/design-docs/keri/CUE_ARCHITECTURE_CROSS_RUNTIME.md`.
+`docs/design-docs/runtime/CUES.md`.
 
 For the full end-to-end mailbox explainer, including the sender/recipient/
 mailbox-provider split, `/fwd` as a provider transport wrapper, mailbox polling,
 and the `POST /mailboxes` mental model across both KERIpy and `keri-ts`, see
-`docs/design-docs/keri/MAILBOX_ARCHITECTURE_ACROSS_KERIPY_AND_KERI_TS.md`.
+`docs/design-docs/mailbox/MAILBOX.md`.
 
 ## Runtime And Data-Flow Mental Model
 

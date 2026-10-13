@@ -10,8 +10,9 @@ Nested GenericGroups delegate through `yield*` and deliver complete children
 before their enclosing payload finishes. There is no synchronous stream engine.
 The [state-machine contract](CESR_PARSER_STATE_MACHINE_CONTRACT.md) maps the
 implemented lifecycle to tests. Parent-owned trees, serialization, and finite
-annotation, v2 forwarding, and the four supported nested multisig routes are implemented. Other nested runtime routes,
-shared runtime reservations, and final qualification remain follow-ons.
+annotation, v2 forwarding, and route-specific consumers are implemented. Consumer support is tracked in the
+[roadmap](../../plans/PARITY_ROADMAP.md); shared runtime reservations and final
+qualification remain incomplete.
 
 The parser materializes bodies and ordinary attachment leaves through the existing
 Serder and selected-version handlers. `maxFrameBytes` defaults to 8 MiB and bounds
@@ -169,191 +170,6 @@ wrappers hold all descendant stages until exact validation and finalization. A l
 yielded payloads. Consumers discard rejected/unclaimed owners and promote
 accepted content only after required verification.
 
-## ESSR verification, encryption, and durable storage
-
-Texter boundaries are fragment boundaries, not necessarily sealed-message
-boundaries. Validate the logical ESSR digest over the ordered concatenation of
-decoded raw Texter bytes, matching KERIpy. Perform hashing incrementally without
-joining the whole transfer; do not hash qualified text instead. `Diger` owns the
-shared incremental algorithm registry, `verifyChunks()` and `verifyStream()`.
-Exchange acceptance checks a string-valued `serder.a` after signature validation
-and before handler acceptance/storage; `serder.seals` is array-only.
-
-Recipient processing admits one bounded logical ciphertext message, verifies
-required exchange evidence and payload integrity, authenticates/decrypts it with
-the existing compatible sealed-box primitive, and writes its authenticated
-plaintext to the selected sink. Limit concurrent decryptions. Oversized logical
-messages produce an explicit resource-limit outcome, not different encryption
-framing or unauthenticated plaintext output. Choose sinks by flow: a recipient
-keeps its admitted ciphertext in bounded memory until decryption; it does not
-automatically spill ciphertext to disk. Intentional evidence/relay retention is
-the separate ciphertext-preserving flow described below.
-
-Recipient `EssrDecision` separates admission `refuse` (`busy`, configured
-`limit`, durable-exchange `unaccepted`) from verification `reject` (`envelope`,
-`digest`, `decrypt`, `framing`). Only `accept` transfers an authenticated message
-and its plaintext owner. Undersized sealed ciphertext is malformed input;
-invalid size metadata is a payload contract exception. Admission occurs before
-ciphertext reads/allocation. Cancellation and unexpected I/O/storage/invariant
-failures remain abrupt and join owner cleanup; no unsuccessful path publishes
-plaintext. Per-recipient finite guards are not shared runtime admission.
-
-KERIpy-compatible `.essrs` values remain qualified Texters where exchange
-evidence, escrow, replay, or relay requires them. Do not replace those values with
-proprietary file pointers or silently overwrite them with plaintext. Retain
-insertion order and the table's duplicate semantics. Plaintext storage is
-separate; its representation and digest are distinguished from original wire
-ciphertext and its commitment.
-
-Storage operations iterate items or bounded batches instead of `getAll()` on the
-bulk path. File/DB publication must not expose a committed reference to missing
-content. Stage, finalize, publish, and recover orphaned content with explicit
-crash-recovery tests. Reopen, retry, forwarding, and serialization consume the
-same references incrementally.
-
-## Exchange proof ownership
-
-Sender source seals authenticate the EXN only when an accepted key event at the
-claimed historical coordinates contains its SAID. The anchor may be an
-interaction event; transferable signature groups instead require establishment
-keys. Supplemental route evidence authenticates this same body independently;
-it cannot authenticate a nested child. Routes explicitly select verified
-supplemental factors and may return an escrow decision for unavailable
-credential/KEL/TEL dependencies. Invalidity and missing evidence stay distinct.
-
-`verifyEvidence` selects valid supplemental factors. `acceptsEvidence` independently
-permits delivery of that selection to route verification, including an empty
-selection when no hook exists. `acceptsSscs` permits nonempty validated sender
-couples in verification and handling. `acceptsMissingEvidence` permits unresolved
-supplemental factors to be queried and omitted and exposes missing coordinates to
-the selection hook. No capability implies another.
-
-Missing sender source state creates escrow only for `acceptsSscs` routes. Strict
-supplemental or unresolved last-reference failures query and reject the attempt
-without creating escrow. A rejection corresponding to KERIpy's
-`MissingSignatureError` preserves an already existing escrow for retry; it does
-not authorize a new one. Missing sender signatures and route dependency outcomes
-can create escrow. Sender-signature query cues and route dependency proof cues
-follow insertion of a new escrow row; missing-state query lists deduplicate their
-coordinates within each reference-equivalent invocation.
-
-An incomplete duplicate reports its pending attempt even when the exchange was
-previously accepted. It cannot replace accepted evidence, create escrow, emit a
-new-escrow cue, or invoke handling. `complete(said)` reports durable acceptance
-separately from the current attempt's decision.
-
-Resolve known last-establishment references before sender escrow so later key
-rotation cannot reinterpret saved signatures. Store signature ordinals as 32-digit
-hexadecimal keys for both Number and Seqner inputs, matching KERIpy and avoiding
-duplicate rows after retry. Retain source triples in `ests.`
-and approved foreign endorsers in `eidx.`; restore stored cigar verifier context
-for retry and recheck all stored proof factors before replay. `ExchangeFactors`
-is the attachment shape; `ExchangeProofVerification` returns its valid subset
-plus invalid/missing observations. Resolved and authenticated records mark the
-historical-resolution and route-selection boundaries. The latter names all
-retained factors separately from selected supplemental factors.
-
-Group leader selection considers the group's own signatures only, a deliberate
-correction relative to the frozen reference's first stored signature group.
-Safe-integer ordinal bounds are JavaScript/database limits, not protocol limits.
-Legacy v1 parser intake still requires signatures; source-only intake is a v2
-behavior. Unresolved sender last groups remain guarded pending consolidated
-processMsg admission. IPEX route verification consumes these factors separately
-from child issuer proofs; sender/KRAM admission policy remains incomplete.
-
-## Registry evidence verification
-
-V2 `rip`/`bup` verification consumes parsed child Serders and node-local semantic
-disclosures. Parent EXN acceptance supplies no implicit credential or registry
-proof. `vetRegistry`/`vetRegistryBindings` return complete verified state,
-retryable missing-anchor coordinates, or refusal, and never write accepted
-registry/credential state or escrow. The owning IPEX workflow retains those
-responsibilities. Nested offer/grant routes validate borrowed child frames before
-Exchanger persists the parent and evidence; missing dependencies use its durable
-escrow. Presentation registries remain guarded until a historical cutoff can
-originate in receiver-observed KRAM acceptance state.
-
-See the [registry ownership contract](../keri/ACDC_TEL_IPEX_VERIFIER_MAINTAINER_GUIDE.md#v2-registry-evidence)
-for chain, source, binding, precision, and explicit reference/API boundaries.
-
-## Canonical disclosure prerequisite
-
-`Compactor` retains canonical child maps throughout full compaction and restores
-requested SAD-path closures with ancestors before descendants. `compact(paths, root)` produces one targeted partial; `expand()` produces staged partials.
-Internal exact label paths preserve dotted-label distinctions. Compaction and
-path resolution are synchronous semantic operations, separate from parsing,
-cryptographic proof verification and payload ownership.
-
-`Pather.resolve()` traverses labels or field/list ordinals with a default
-256-component deployment limit. The limit applies to resolution and can be
-configured per call; it does not reject otherwise legal deep wire paths.
-Malformed UTF-8 byte paths fail before traversal. IPEX uses these helpers for
-disclosure validation, separately from each node's issuer authentication. The standalone Mapper claimed-SAID
-repair and preservation of Aggor disclosure semantics remain separate work.
-
-## Serialization and HTTP egress
-
-`framePayload()` and `attachmentPayload()` return non-owning reopenable views of
-one admitted frame. Ordinary metadata stays within the parser's frame budget;
-ESSR wire is consumed incrementally through `essrChunks()`. The caller retains
-every descendant `EssrPayload` owner until all output readers finish. Each child
-is emitted as a `BodyWithAttachmentGroup`; non-native child bodies are qualified
-Texters inside `NonNativeBodyGroup`. The child wrapper uses its parent's genus,
-with any child genus selector scoped inside it. The body enclosure already
-supplies the child boundary; another attachment wrapper would double its depth. Default output preserves each
-node's resolved genus; an explicit `gvrsn` overrides every compatible node.
-Native bodies still reject genus changes that require rebuilding their Serder.
-The serializer preserves parent/child ownership, group order, child order, and
-ESSR item order. It normalizes the attachment categories to ordinary leaves,
-children, then ESSR; the parsed model does not retain original cross-category
-interleaving. One payload view per admitted node and finite body/group metadata
-remain under existing tree admission limits. No descendant ESSR is collected.
-Cancellation closes active readers without disposing the caller's tree owners.
-Finite annotation preserves the original tree wire. KERI normalization admits
-v2 `/fwd` trees with route-specific child commitments and durable evidence.
-Other nested routes and HTTP inspection retain their consumer guards. Output chunks are owned
-copies of at most 64 KiB; custom ESSR wire readers retain the existing 1 MiB
-maximum backing-allocation contract.
-
-Each message's ordinary attachment leaves use one selected genus; enclosed
-children may select their own genus inside their own boundary. The entire output
-tree uses one attachment wire domain.
-KERIpy `main` at `927c0cb8794d7c84fc17143c67df64aab9deda6c` permits a GVC only
-at its beginning and rejects nested attachment enclosures or mixed domains.
-Progressive parsing can accept broader scoped input, but forwarding normalizes
-known leaf tuples rather than reproducing interior selectors. Transferable
-signature tuples retain their required small controller counter. A genus
-conversion that would need a big inner counter, or would reinterpret opaque
-content, fails explicitly; same-genus opaque wire remains byte-preserving.
-
-KERI's `requestFrame()` is an Effection resource. Header mode admits at most
-64 KiB of text-qualified attachments by default; it uses the body's inferred
-genus for the outer header and one initial selector when needed. Body mode
-streams the complete admitted frame. A response remains readable inside its
-resource scope; exit aborts and joins request preparation, fetch, upload, and
-response cleanup. Failed-response diagnostics retain at most 16 KiB by default.
-`postCesr()` awaits one frame's delivery and disposal before asking the parser
-for its next output. These policies do not yet migrate replay cues, CLI
-annotation, or retained mailbox queues; those remain later phase-11 slices.
-
-### Proposal construction boundary
-
-Multisig v2 body construction is synchronous: `multisigExnBody()` receives the
-parsed child's `SerderKERI`, checks the supported route/child ilk, and commits its
-SAID. It performs no byte parsing, payload I/O, storage access, or disposal, and
-cannot authenticate child signatures. Already-parsed callers retain their
-`CesrFrame` and use `nestedPayload()` plus the existing serializer; these views
-borrow every owner until consumption completes.
-
-Byte callers use `prepareMultisigEventExn()` through the route convenience
-operations. It owns `parseBytes()` results, delegates body construction, collects
-nested wire under the existing 8 MiB ceiling, and joins all frame disposal in
-`finally`. Cancellation aborts underlying reads and joins their cleanup before
-returning. Its result is finite bytes, with no lazy owner escaping. V1 callers
-retain established pathed encoding. Parent signatures and nested evidence must
-remain within one parent attachment enclosure. Apply the same split to IPEX
-construction as its route processing is implemented.
-
 ## Cancellation and resource policy
 
 Generator `.return()` alone cannot interrupt an in-flight awaited source
@@ -377,34 +193,6 @@ work, and open resources. These are explicit deployment policy, not narrower
 claims about valid CESR encodings. A producer yielding one enormous buffer can
 already exceed the budget; slicing it into views does not remove its allocation.
 
-## Required regression evidence
-
-These are acceptance obligations; their tests land with the corresponding phase.
-
-- **Early child delivery:** Hold the source before sibling B; receive wrapped child A first,
-  including nested GenericGroups, both domains and genera.
-- **Frame boundaries:** Unwrapped attachments wait for lookahead/EOF; single-frame wrappers reject
-  extra children before yielding.
-- **Partial failure:** Valid A survives malformed/truncated B without duplication or deletion of A's
-  payload.
-- **Enclosure isolation:** Impossible child extent fails while input is blocked; queued sibling
-  bytes cannot complete it.
-- **Versions/counts:** Preserve scoped selectors, legacy inference, both count models, big counters,
-  and every-byte split regressions.
-- **Backpressure:** Paused consumer/throttled sink bounds producer reads and pending work.
-- **Cancellation:** Interrupt blocked input and sink writes; close once and remove only unfinished
-  stages.
-- **Payload integrity:** Fragmented digest equals KERIpy concatenation; wrong digest or failed
-  decryption publishes no accepted plaintext.
-- **Durable behavior:** Reopen/retry/replay, original `.essrs` interoperability, crash recovery, and
-  orphan cleanup.
-- **Memory:** Fixed item size with rising aggregate size keeps queues and retained metadata within
-  declared budgets.
-
-Reference pins for tables, CLI interoperability, and source comparisons remain
-explicit and independent. This migration does not silently upgrade generated
-codices to a newer KERIpy revision.
-
 ## Framework boundary
 
 The CESR root exposes async iterables and AbortSignal without importing Effection.
@@ -413,3 +201,12 @@ toEffectionFrames. Its single-subscription Effection Stream supplies pull
 backpressure and owns source cancellation and joined cleanup. KERI and Tufa use
 Operation scopes around parsing, dispatch, and transport lifetimes; merely
 awaiting a Promise with `call` does not cancel the underlying I/O.
+
+## Related ownership contracts
+
+- [Serialization](SERIALIZATION.md) borrows complete frame trees.
+- [ESSR recipient](../essr/RECIPIENT.md) owns authenticated plaintext.
+- [Exchange proofs](../exchange/EXCHANGE_PROOFS.md) never authenticate child proofs implicitly.
+- [Payload storage](../db/PAYLOAD_STORAGE.md) owns durable publication and recovery.
+- [Runtime ingress/egress](../runtime/INGRESS_AND_EGRESS.md) owns processing and transport scopes.
+- [Parser plan](../../plans/cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) owns remaining parser-specific gates.
