@@ -11,6 +11,7 @@ import {
   type NumberPrimitive,
   OpaqueSpan,
   Prefixer,
+  type SealEvent,
   Seqner,
   type SerderACDC,
   type SerderKERI,
@@ -350,6 +351,7 @@ export function serializeMessage(
     tsgs = [],
     cigars = [],
     pathed = [],
+    sourceSeals = [],
     pipelined = false,
     gvrsn: requestedGvrsn = Vrsn_1_0,
     nested = false,
@@ -357,6 +359,7 @@ export function serializeMessage(
   }: {
     tsgs?: readonly TransIdxSigGroup[];
     cigars?: readonly Cigar[];
+    sourceSeals?: readonly SealEvent[];
     pathed?: readonly (string | Uint8Array)[];
     pipelined?: boolean;
     gvrsn?: Versionage;
@@ -365,7 +368,7 @@ export function serializeMessage(
   } = {},
 ): Uint8Array {
   const gvrsn = resolveAttachmentGvrsn(serder, requestedGvrsn, nested);
-  const groups = messageAttachmentGroups({ tsgs, cigars, pathed }, gvrsn);
+  const groups = messageAttachmentGroups({ tsgs, cigars, sourceSeals, pathed }, gvrsn);
   return concatMessageWithAttachmentGroup(serder, groups.map((group) => group.raw), pipelined, gvrsn, nested, genusify);
 }
 
@@ -375,6 +378,8 @@ export interface MessageEvidence {
   tsgs?: readonly TransIdxSigGroup[];
   /** Nontransferable endorsements carrying their verifiers. */
   cigars?: readonly Cigar[];
+  /** Explicit anchoring AID and historical source coordinate. */
+  sourceSeals?: readonly SealEvent[];
   /** Finite qualified path material in original order. */
   pathed?: readonly (string | Uint8Array)[];
 }
@@ -385,7 +390,7 @@ export interface MessageEvidence {
  * retain the original primitives for subsequent normalization; pathed material remains opaque.
  */
 export function messageAttachmentGroups(
-  { tsgs = [], cigars = [], pathed = [] }: MessageEvidence,
+  { tsgs = [], cigars = [], sourceSeals = [], pathed = [] }: MessageEvidence,
   gvrsn: Versionage,
 ): AttachmentGroup[] {
   const groups: AttachmentGroup[] = [];
@@ -413,6 +418,20 @@ export function messageAttachmentGroups(
     const header = attachmentCounterPayloadQb64b("NonTransReceiptCouples", cigars.length, payload, gvrsn);
     groups.push(
       new CounterGroup(new Counter({ qb64b: header, version: gvrsn }), concatBytes(header, ...payload), couples),
+    );
+  }
+  if (sourceSeals.length) {
+    const triples = sourceSeals.map((seal) =>
+      [
+        seal.i,
+        gvrsn.major >= 2 ? seal.s : new Seqner({ code: "0A", raw: hexToFixedBytes(seal.s.numh, 16) }),
+        seal.d,
+      ] as const
+    );
+    const payload = triples.flatMap((triple) => triple.map((part) => part.qb64b));
+    const header = attachmentCounterPayloadQb64b("SealSourceTriples", triples.length, payload, gvrsn);
+    groups.push(
+      new CounterGroup(new Counter({ qb64b: header, version: gvrsn }), concatBytes(header, ...payload), triples),
     );
   }
   for (const path of pathed) {

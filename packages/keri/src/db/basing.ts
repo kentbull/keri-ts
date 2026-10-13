@@ -447,6 +447,8 @@ export class Baser {
   public exns!: SerderSuber<SerderKERI>; // Exchange messages keyed by their digest.
   public erpy!: CesrSuber<Saider>; // Forward pointers to provided reply messages.
   public esigs!: CesrIoSetSuber<Siger>; // Exchange-message indexed signatures.
+  public ests!: CatCesrIoSetSuber<EventSealTuple>; // Exchange source seals keyed by SAID and anchoring AID.
+  public eidx!: CesrIoSetSuber<Diger>; // Accepted supplemental endorser to exchange SAIDs.
   public ecigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Exchange-message non-indexed signature couples.
   /** Qualified nested substreams in KERIpy insertion order with exact-value deduplication. */
   public enst!: IoSetSuber<string>;
@@ -865,6 +867,13 @@ export class Baser {
           ctor: [Verfer, Cigar],
         },
       );
+
+      // Historical source coordinates remain interoperable CESR couples, never private pointers.
+      this.ests = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
+        subkey: "ests.",
+        ctor: [NumberPrimitive, Diger],
+      });
+      this.eidx = new CesrIoSetSuber<Diger>(this.lmdber, { subkey: "eidx.", ctor: Diger });
 
       // Exchange-message pathed attachments.
       this.epath = new IoSetSuber<string>(this.lmdber, { subkey: ".epath" });

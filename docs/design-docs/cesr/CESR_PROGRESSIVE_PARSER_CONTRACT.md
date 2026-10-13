@@ -202,6 +202,25 @@ content. Stage, finalize, publish, and recover orphaned content with explicit
 crash-recovery tests. Reopen, retry, forwarding, and serialization consume the
 same references incrementally.
 
+## Exchange proof ownership
+
+Sender source seals authenticate the EXN only when an accepted key event at the
+claimed historical coordinates contains its SAID. The anchor may be an
+interaction event; transferable signature groups instead require establishment
+keys. Supplemental route evidence authenticates this same body independently;
+it cannot authenticate a nested child. Routes explicitly select verified
+supplemental factors and may return an escrow decision for unavailable
+credential/KEL/TEL dependencies. Invalidity and missing evidence stay distinct.
+
+Resolve known last-establishment references before sender escrow so later key
+rotation cannot reinterpret saved signatures. Retain source triples in `ests.`
+and approved foreign endorsers in `eidx.`; restore stored cigar verifier context
+for retry and recheck all stored proof factors before replay. Group leader
+selection considers the group's own signatures only. Legacy v1 parser intake
+still requires signatures; source-only intake is a v2 behavior. These proof
+facilities do not enable guarded nested IPEX routes or complete v2 processMsg
+sender/KRAM admission policy.
+
 ## Serialization and HTTP egress
 
 `framePayload()` and `attachmentPayload()` return non-owning reopenable views of
