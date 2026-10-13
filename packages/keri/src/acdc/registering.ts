@@ -70,12 +70,17 @@ export class RegistryStore {
 
   /** Explicit alias write creates regs. only when needed, without an opening migration. */
   putRecord(name: string, record: RegistryRecordShape): boolean {
+    return this.initializeRecords().pin(name, record);
+  }
+
+  /** Bind aliases before a rollback-capable transaction; opening and reads never call this. */
+  initializeRecords(): Komer<RegistryRecord> {
     let records = this.records;
     if (!records) {
       if (this.baser.readonly) throw new DatabaseOperationError("Cannot create readonly registry aliases.");
       records = this.aliases = new Komer(this.baser, { subkey: "regs.", recordClass: RegistryRecord });
     }
-    return records.pin(name, record);
+    return records;
   }
 
   /** Report the supplied backing owner's lifecycle state. */
