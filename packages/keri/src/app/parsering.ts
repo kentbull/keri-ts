@@ -6,6 +6,8 @@ import {
   Cigar,
   Dater,
   Diger,
+  type EssrPayload,
+  essrPayload,
   type GroupEntry,
   Ilks,
   isCounterGroupLike,
@@ -27,8 +29,9 @@ import {
   TypeMedia,
   Verfer,
   Verser,
+  Vrsn_1_0,
 } from "cesr-ts";
-import { call, type Operation } from "npm:effection@^3.6.0";
+import type { Operation } from "npm:effection@^3.6.0";
 import {
   FirstSeenReplayCouple,
   KeriDispatchEnvelope,
@@ -49,10 +52,11 @@ export interface ExchangerLike {
     tsgs: TransIdxSigGroup[];
     cigars: Cigar[];
     ptds: PathedMaterialGroup[];
-    essrs: Texter[];
+    /** Reopenable payload views owned by the dispatch caller. */
+    essr?: EssrPayload;
     /** Hosted endpoint that received this message, independent of its claimed sender. */
     mailboxAid?: string | null;
-  }): void | ExchangeDecision | Operation<void | ExchangeDecision>;
+  }): Operation<void | ExchangeDecision>;
 }
 
 export interface TelDispatchArgs {
@@ -80,7 +84,8 @@ export interface AcdcDispatchArgs {
   attachmentGroups: readonly AttachmentGroup[];
   local: boolean;
   ptds: PathedMaterialGroup[];
-  essrs: Texter[];
+  /** Reopenable ESSR views carried alongside credential attachments. */
+  essr?: EssrPayload;
   ssts: SealEvent[];
   bsqs: BlindState[];
   bsss: BoundState[];
@@ -160,16 +165,14 @@ export function* dispatchEnvelope(
       break;
     case Ilks.exn:
       if (exchanger) {
-        yield* call(() =>
-          exchanger.processEvent({
-            serder,
-            tsgs: envelope.tsgs,
-            cigars: envelope.cigars,
-            ptds: envelope.ptds,
-            essrs: envelope.essrs,
-            mailboxAid,
-          })
-        );
+        yield* exchanger.processEvent({
+          serder,
+          tsgs: envelope.tsgs,
+          cigars: envelope.cigars,
+          ptds: envelope.ptds,
+          essr: envelope.essr,
+          mailboxAid,
+        });
       }
       break;
     case Ilks.vcp:
@@ -244,7 +247,7 @@ function acdcEnvelopeFromDispatch(
     attachmentGroups: envelope.attachmentGroups,
     local: envelope.local,
     ptds: [...envelope.ptds],
-    essrs: [...envelope.essrs],
+    essr: envelope.essr,
     ssts: [...envelope.ssts],
     bsqs: [...envelope.bsqs],
     bsss: [...envelope.bsss],
@@ -424,7 +427,6 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
       return;
     case "ESSRPayloadGroup":
     case "BigESSRPayloadGroup":
-      for (const item of group.items) envelope.essrs.push(primitive(item, Texter));
       return;
     default:
       return;
@@ -441,6 +443,7 @@ function envelopeFromMessage(
   const envelope = new KeriDispatchEnvelope({
     serder,
     attachmentGroups: message.attachments,
+    essr: message.essr ?? atomicEssr(message),
     local,
   });
   for (const group of message.attachments) {
@@ -460,4 +463,62 @@ export function queryEnvelopeFromDispatch(
     sigers: lastSsg ? [...lastSsg.sigers] : [],
     cigars: [...envelope.cigars],
   };
+}
+
+/** Adapt the atomic parser's already resident items without copying their array. */
+function atomicEssr(message: CesrFrame): EssrPayload | undefined {
+  let groups = message.attachments;
+  let count = 0;
+  let size = 0;
+  let wireSize = 0;
+  // The outer attachment header carries the atomic frame's selected genus.
+  const gvrsn = message.attachments[0]?.version ?? message.body.gvrsn ?? Vrsn_1_0;
+  let disposed = false;
+  /** Visit only attachment wrappers that may legally contain ESSR groups. */
+  function* items(attachments: readonly AttachmentGroup[]): Generator<Texter> {
+    for (const group of attachments) {
+      if (group.name === "ESSRPayloadGroup" || group.name === "BigESSRPayloadGroup") {
+        for (const item of group.items) yield primitive(item, Texter);
+      } else if (
+        ["AttachmentGroup", "BigAttachmentGroup", "BodyWithAttachmentGroup", "BigBodyWithAttachmentGroup"].includes(
+          group.name,
+        )
+      ) {
+        for (const item of group.items) if (isCounterGroupLike(item)) yield* items([item]);
+      }
+    }
+  }
+  for (const item of items(groups)) {
+    count++;
+    size += item.raw.length;
+    wireSize += item.qb64.length;
+  }
+  if (!count) return undefined;
+  return essrPayload(
+    {
+      size: wireSize,
+      /** Yield bounded backing buffers from already resident atomic primitives. */
+      async *open(signal?: AbortSignal) {
+        signal?.throwIfAborted();
+        if (disposed) throw new Error("Atomic ESSR payload is disposed");
+        for (const item of items(groups)) {
+          const bytes = item.qb64b;
+          // Copies bound the backing buffer passed into the progressive decoder.
+          for (let offset = 0; offset < bytes.length; offset += 65536) {
+            signal?.throwIfAborted();
+            yield bytes.slice(offset, offset + 65536);
+          }
+        }
+      },
+      /** Release the adapter references without taking ownership of its original frame. */
+      discard() {
+        disposed = true;
+        groups = [];
+        return Promise.resolve();
+      },
+    },
+    count,
+    size,
+    gvrsn,
+  );
 }

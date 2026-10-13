@@ -2,22 +2,28 @@ import {
   type Cigar,
   Dater,
   Diger,
+  type EssrPayload,
+  essrPayload,
+  essrTexters,
   Prefixer,
   Saider,
   Seqner,
   type SerderKERI,
   type Siger,
-  type Texter,
 } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation, type Provide, resource } from "npm:effection@^3.6.0";
+import { attachmentCounterQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
 import { exchange as exchangeMessage } from "../core/protocol-exchanging.ts";
+import { serializeMessage } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
+import type { FilePayload } from "../db/payload-store.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { abortable } from "./abortable.ts";
 import { buildCesrRequest, type CesrBodyMode, splitCesrStream } from "./cesr-http.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
@@ -37,20 +43,40 @@ export interface ExchangeAttachment {
 /** Route-handler contract for accepted exchange messages. */
 export interface ExchangeRouteHandler {
   readonly resource: string;
+  /** Validate route policy before publishing accepted evidence. */
   verify?(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
-    essrs: readonly Texter[];
-    /** Receiving hosted endpoint used for mailbox authorization. */
+    /** Borrowed payload views valid for this route invocation. */
+    essr?: EssrPayload;
+    /** Hosted endpoint provenance, distinct from the signed sender. */
     mailboxAid?: string | null;
-  }): boolean;
+  }): boolean | Operation<boolean>;
+  /** Consume already durable evidence within the caller's Effection scope. */
   handle(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
-    essrs: readonly Texter[];
-    /** Receiving hosted endpoint used for mailbox authorization. */
+    /** Borrowed payload views valid for this route invocation. */
+    essr?: EssrPayload;
+    /** Hosted endpoint provenance, distinct from the signed sender. */
     mailboxAid?: string | null;
-  }): void;
+  }): void | Operation<void>;
+}
+
+/** One signed exchange and its bounded attachment views at runtime admission. */
+export interface ExchangeInput {
+  /** Signed exchange body, including any ESSR byte commitment. */
+  serder: SerderKERI;
+  /** Transferable sender endorsements. */
+  tsgs?: readonly TransIdxSigGroup[];
+  /** Nontransferable sender endorsements. */
+  cigars?: readonly Cigar[];
+  /** Ordinary bounded pathed attachments. */
+  ptds?: readonly PathedMaterialGroup[];
+  /** Caller-owned wire; successful publication transfers local file ownership. */
+  essr?: EssrPayload;
+  /** Hosted endpoint provenance, retained across escrow. */
+  mailboxAid?: string | null;
 }
 
 /** Result of one `Exchanger` processing attempt. */
@@ -87,17 +113,33 @@ export class Exchanger {
   readonly hby: Habery;
   readonly cues: Deck<AgentCue>;
   readonly routes = new Map<string, ExchangeRouteHandler>();
+  /** At most one active admission; the runtime owns bounded waiting and backpressure. */
+  private processing = false;
+  /** Finite decoded-byte limit, independent of total stream length. */
+  private readonly maxEssrBytes: number;
+  /** Finite token count, including empty Texters. */
+  private readonly maxEssrItems: number;
 
+  /** Bind route handlers and explicit per-message resource budgets to one habitat database. */
   constructor(
     hby: Habery,
     {
       handlers = [],
       cues,
+      maxEssrBytes = 8 * 1024 ** 2,
+      maxEssrItems = 16384,
     }: {
       handlers?: readonly ExchangeRouteHandler[];
       cues?: Deck<AgentCue>;
+      maxEssrBytes?: number;
+      maxEssrItems?: number;
     } = {},
   ) {
+    for (const limit of [maxEssrBytes, maxEssrItems, 4 * Math.ceil(maxEssrBytes / 3) + 12 * maxEssrItems]) {
+      if (!Number.isSafeInteger(limit) || limit < 0) throw new RangeError("Invalid exchange ESSR limit");
+    }
+    this.maxEssrBytes = maxEssrBytes;
+    this.maxEssrItems = maxEssrItems;
     this.hby = hby;
     this.cues = cues ?? new Deck();
     for (const handler of handlers) {
@@ -122,129 +164,257 @@ export class Exchanger {
    * effects run so later reopen and verification paths can reuse the same
    * stored evidence.
    */
-  processEvent(args: {
-    serder: SerderKERI;
-    tsgs?: readonly TransIdxSigGroup[];
-    cigars?: readonly Cigar[];
-    ptds?: readonly PathedMaterialGroup[];
-    essrs?: readonly Texter[];
-    /** Receiving hosted endpoint used for mailbox authorization. */
-    mailboxAid?: string | null;
-  }): ExchangeDecision {
+  processEvent(args: ExchangeInput): Operation<ExchangeDecision> {
+    return call(() => this.admit(args));
+  }
+
+  /** Hold one exchange mutation until its child I/O and payload cleanup have finished. */
+  private admission(): Operation<void> {
+    return resource(function*(this: Exchanger, provide: Provide<void>) {
+      if (this.processing) throw new ValidationError("Exchanger has an active admission.");
+      this.processing = true;
+      try {
+        yield* provide(undefined);
+      } finally {
+        this.processing = false;
+      }
+    }.bind(this));
+  }
+
+  /** Isolate admission cleanup so cancelling it cannot resume the caller after delegation. */
+  private *admit(args: ExchangeInput): Operation<ExchangeDecision> {
     const said = args.serder.said ?? "<unknown>";
-    if (args.serder.ilk !== "exn") {
-      return {
-        kind: "reject",
-        reason: `Unsupported exchange ilk ${args.serder.ilk}.`,
-        said,
-      };
-    }
-
+    /** Keep normal remote admission failures in the decision channel. */
+    const reject = (reason: string): ExchangeDecision => ({ kind: "reject", reason, said });
+    // A foreign or in-memory wire is snapshotted before verification and disposed on rejection.
+    let staged: FilePayload | undefined;
+    let evidenceStarted = false;
+    // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
+    yield* this.admission();
+    yield* resource(function*(this: Exchanger, provide: Provide<void>) {
+      try {
+        yield* provide(undefined);
+      } finally {
+        if (evidenceStarted && !this.hby.db.exchangeMeta.get([said])?.essr) this.hby.db.essrs.rem([said]);
+        if (staged) yield* call(() => staged!.discard());
+      }
+    }.bind(this));
+    if (args.serder.ilk !== "exn") return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
     const sender = args.serder.pre;
-    if (!sender) {
-      return {
-        kind: "reject",
-        reason: "Exchange message is missing sender AID.",
-        said,
-      };
-    }
-
-    const attachments = normalizeAttachments(args.ptds ?? []);
-    const essrs = [...(args.essrs ?? [])];
-    const route = args.serder.route ?? "";
-    const handler = this.routes.get(route);
-
-    const verification = this.verifySignatures({
+    if (!sender || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
+    const signatures = this.verifySignatures({
       serder: args.serder,
       sender,
-      tsgs: [...(args.tsgs ?? [])],
-      cigars: [...(args.cigars ?? [])],
-      ptds: [...(args.ptds ?? [])],
-      essrs,
+      tsgs: args.tsgs ?? [],
+      cigars: args.cigars ?? [],
     });
-    if (verification.kind !== "verified") {
-      return verification;
-    }
+    if (signatures.kind === "reject") return signatures;
 
-    // KERI's `a` may be an ESSR digest; `seals` only exposes array-shaped values.
-    if (typeof args.serder.a === "string") {
-      try {
-        // The commitment hashes ordered decoded fragments, not their qualified encoding.
-        const digest = new Diger({ qb64: args.serder.a });
-        if (essrs.length === 0 || !digest.verifyChunks(essrBytes(essrs))) {
-          return { kind: "reject", reason: "ESSR payload is missing or its digest does not match.", said };
-        }
-      } catch (error) {
-        return { kind: "reject", reason: `Invalid ESSR digest: ${String(error)}`, said };
+    const previous = this.hby.db.exchangeMeta.get([said]);
+    const retained = yield* abortable((signal) =>
+      this.hby.db.getEssr(said, signal, { maxEssrBytes: this.maxEssrBytes, maxEssrItems: this.maxEssrItems })
+    );
+    const existing = previous?.essr ? retained : null;
+    let essr = args.essr ?? retained ?? undefined;
+    if (essr) {
+      if (
+        !Number.isSafeInteger(essr.count) || essr.count < 0 || essr.count > this.maxEssrItems
+        || !Number.isSafeInteger(essr.raw.size) || essr.raw.size < 0 || essr.raw.size > this.maxEssrBytes
+        || !Number.isSafeInteger(essr.wire.size) || essr.wire.size < 0
+        || essr.wire.size > 4 * Math.ceil(essr.raw.size / 3) + 12 * essr.count
+      ) {
+        return reject("Exchange ESSR exceeds admission limits.");
       }
     }
-
-    if (
-      handler?.verify && !handler.verify({
-        serder: args.serder,
-        attachments,
-        essrs,
-        mailboxAid: args.mailboxAid,
-      })
-    ) {
-      return {
-        kind: "reject",
-        reason: `Exchange route ${route} failed handler verification.`,
-        said,
-      };
+    if (args.essr || (retained && !existing)) {
+      // Keep the first retained representation; a duplicate may use different legal fragment boundaries.
+      const incoming = retained && !existing ? retained : args.essr!;
+      essr = yield* abortable(async (signal) => {
+        const archive = await this.hby.db.openPayloads(signal);
+        let wire = incoming.wire;
+        if (!archive.files.owns(wire)) {
+          const sink = await archive.files.stage(wire.size, signal);
+          try {
+            let copied = 0;
+            for await (const chunk of wire.open(signal)) {
+              await sink.write(chunk);
+              copied += chunk.length;
+            }
+            if (copied !== wire.size) throw new ValidationError("ESSR wire size changed during admission.");
+            staged = await sink.finish();
+            wire = staged;
+          } finally {
+            await sink.abort();
+          }
+        }
+        // Derive authenticated bytes from the immutable wire, never from a caller-supplied raw view.
+        return essrPayload(
+          {
+            size: wire.size,
+            /** Reopen the immutable snapshot without transferring mutation rights. */
+            open: (signal) => wire.open(signal),
+            /** Admission or archive ownership outlives this borrowed decoding view. */
+            discard: async () => {},
+          },
+          incoming.count,
+          incoming.raw.size,
+          incoming.gvrsn,
+        );
+      });
     }
-
-    this.removeEscrow(said);
-    this.logAcceptedEvent({
-      serder: args.serder,
-      tsgs: verification.tsgs,
-      cigars: verification.cigars,
-      ptds: [...(args.ptds ?? [])],
-      essrs,
-    });
-
-    handler?.handle({
-      serder: args.serder,
-      attachments,
-      essrs,
-      mailboxAid: args.mailboxAid,
-    });
-
+    if (typeof args.serder.a === "string") {
+      try {
+        const diger = new Diger({ qb64: args.serder.a });
+        const raw = essr?.raw;
+        if (!raw || !(yield* abortable((signal) => diger.verifyStream(raw.open(signal))))) {
+          return reject("Exchange ESSR payload digest does not match its signed commitment.");
+        }
+        const supplied = args.essr;
+        if (retained && !existing && supplied) {
+          // Imported rows and the supplied duplicate must both match; never trust its caller-provided raw view.
+          const duplicate = essrPayload(
+            {
+              size: supplied.wire.size,
+              /** Read the candidate wire without adopting its request-owned payload. */
+              open: (signal) => supplied.wire.open(signal),
+              /** Verification leaves disposal with the caller. */
+              discard: async () => {},
+            },
+            supplied.count,
+            supplied.raw.size,
+            supplied.gvrsn,
+          );
+          if (!(yield* abortable((signal) => diger.verifyStream(duplicate.raw.open(signal))))) {
+            return reject("Duplicate ESSR payload digest does not match its signed commitment.");
+          }
+        }
+      } catch (error) {
+        return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    // An already accepted exchange cannot be downgraded into signature escrow.
+    if (signatures.kind !== "verified" && this.complete(said)) return { kind: "accept", said };
+    const attachments = normalizeAttachments(args.ptds ?? []);
+    const handler = this.routes.get(args.serder.route ?? "");
+    const mailboxAid = args.mailboxAid ?? previous?.mailboxAid ?? null;
+    if (signatures.kind === "verified" && handler?.verify) {
+      const verified = yield* call(() => handler.verify!({ serder: args.serder, attachments, essr, mailboxAid }));
+      if (!verified) return reject(`Exchange route ${args.serder.route ?? ""} failed handler verification.`);
+    }
+    /** Publish ordinary evidence and private provenance in the archive transaction. */
+    const commit = () => {
+      if (signatures.kind === "verified") {
+        this.clearEscrow(said, true);
+        this.logAcceptedEvent({
+          serder: args.serder,
+          tsgs: signatures.tsgs,
+          cigars: signatures.cigars,
+          ptds: args.ptds ?? [],
+        });
+      } else {
+        this.escrowPartialSigned(args.serder, args.tsgs ?? [], args.ptds ?? []);
+      }
+      this.hby.db.exchangeMeta.pin([said], {
+        mailboxAid,
+        ...((existing ?? essr)
+          ? {
+            essr: {
+              count: (existing ?? essr)!.count,
+              size: (existing ?? essr)!.raw.size,
+              gvrsn: (existing ?? essr)!.gvrsn,
+            },
+          }
+          : {}),
+      });
+    };
+    let stored = existing ?? essr;
+    if (essr && !existing) {
+      const wire = essr;
+      // KERIpy-origin rows already have accepted/escrow ownership; failed import must preserve them.
+      if (!retained) {
+        this.hby.db.essrs.rem([said]);
+        evidenceStarted = true;
+      }
+      stored = yield* abortable(async (signal) => {
+        if (!retained) {
+          // Populate new KERIpy evidence one bounded Texter at a time.
+          for await (const texter of essrTexters(wire, this.maxEssrBytes, signal)) {
+            this.hby.db.essrs.add([said], texter);
+          }
+        }
+        await (await this.hby.db.openPayloads(signal)).publish(
+          `essr/${said}`,
+          staged ?? args.essr?.wire ?? wire.wire,
+          commit,
+          signal,
+        );
+        return (await this.hby.db.getEssr(said, signal, {
+          maxEssrBytes: this.maxEssrBytes,
+          maxEssrItems: this.maxEssrItems,
+        }))!;
+      });
+    } else {
+      yield* abortable(async (signal) => {
+        signal.throwIfAborted();
+        this.hby.db.env!.transactionSync(commit);
+        await this.hby.db.env!.flushed;
+      });
+    }
+    if (signatures.kind !== "verified") return signatures;
+    if (handler) {
+      yield* call(() => handler.handle({ serder: args.serder, attachments, essr: stored ?? undefined, mailboxAid }));
+    }
     return { kind: "accept", said };
   }
 
-  /** Retry any partially signed exchange escrows that are still fresh enough to matter. */
-  processEscrows(): void {
+  /** Retry escrows using their persisted payload references and mailbox provenance. */
+  processEscrows(): Operation<void> {
+    return call(() => this.retryEscrows());
+  }
+
+  /** Retry each bounded escrow inside one structured child scope. */
+  private *retryEscrows(): Operation<void> {
+    if (this.processing) throw new ValidationError("Exchanger has an active admission.");
     for (const [keys, serder] of this.hby.db.epse.getTopItemIter()) {
       const said = keys[0];
-      if (!said) {
-        continue;
-      }
-
+      if (!said) continue;
       const dater = this.hby.db.epsd.get([said]);
-      if (!dater) {
-        this.removeEscrow(said);
+      if (!dater || Date.now() - new Date(dater.iso8601).getTime() > EXCHANGE_ESCROW_TIMEOUT_MS) {
+        yield* call(() => this.dropEscrow(said));
         continue;
       }
-      if (
-        Date.now() - new Date(dater.iso8601).getTime()
-          > EXCHANGE_ESCROW_TIMEOUT_MS
-      ) {
-        this.removeEscrow(said);
-        continue;
-      }
-
-      const decision = this.processEvent({
+      const decision = yield* this.processEvent({
         serder,
         tsgs: this.rebuildEscrowedGroups(said),
         cigars: this.hby.db.ecigs.get([said]).map(([, cigar]) => cigar),
         ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
-        essrs: this.hby.db.essrs.get([said]),
+        mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
       });
+      if (decision.kind === "reject") yield* call(() => this.dropEscrow(said));
+    }
+  }
 
-      if (decision.kind === "reject") {
-        this.removeEscrow(said);
-      }
+  /** Stream accepted signatures and canonical ESSR wire without concatenating the message. */
+  async *replay(said: string, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
+    signal?.throwIfAborted();
+    const serder = this.hby.db.exns.get([said]);
+    if (!serder) throw new ValidationError("Cannot replay an unaccepted exchange.");
+    const essr = await this.hby.db.getEssr(said, signal, {
+      maxEssrBytes: this.maxEssrBytes,
+      maxEssrItems: this.maxEssrItems,
+    });
+    const gvrsn = resolveAttachmentGvrsn(serder, essr?.gvrsn);
+    yield serializeMessage(serder, {
+      tsgs: this.rebuildEscrowedGroups(said),
+      cigars: this.hby.db.ecigs.get([said]).map(([, cigar]) => cigar),
+      pathed: this.hby.db.epath.get([said]),
+      gvrsn,
+      genusify: gvrsn.major >= 2,
+    });
+    if (essr) {
+      const count = gvrsn.major >= 2 ? essr.wire.size / 4 : essr.count;
+      yield attachmentCounterQb64b("ESSRPayloadGroup", count, gvrsn);
+      yield* essr.wire.open(signal);
     }
   }
 
@@ -287,13 +457,12 @@ export class Exchanger {
     return leadKey === memberKey;
   }
 
+  /** Classify sender endorsements without publishing exchange or payload ownership. */
   private verifySignatures(args: {
     serder: SerderKERI;
     sender: string;
     tsgs: readonly TransIdxSigGroup[];
     cigars: readonly Cigar[];
-    ptds: readonly PathedMaterialGroup[];
-    essrs: readonly Texter[];
   }):
     | {
       kind: "verified";
@@ -318,12 +487,6 @@ export class Exchanger {
         const estSaid = this.hby.db.kels.getLast(tsg.pre, Number(tsg.sn));
         const estEvent = this.hby.db.getEvtSerder(tsg.pre, tsg.said);
         if (!estSaid || estSaid !== tsg.said || !estEvent) {
-          this.escrowPartialSigned(
-            args.serder,
-            args.tsgs,
-            args.ptds,
-            args.essrs,
-          );
           this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
           return {
             kind: "escrow",
@@ -347,12 +510,6 @@ export class Exchanger {
           estEvent.verfers,
         );
         if (!tholder.satisfy(verified.indices)) {
-          this.escrowPartialSigned(
-            args.serder,
-            args.tsgs,
-            args.ptds,
-            args.essrs,
-          );
           this.cues.push({ kin: "query", pre: tsg.pre, q: { pre: tsg.pre } });
           return {
             kind: "escrow",
@@ -404,7 +561,6 @@ export class Exchanger {
       return { kind: "verified", tsgs: [], cigars: verifiedCigars };
     }
 
-    this.escrowPartialSigned(args.serder, args.tsgs, args.ptds, args.essrs);
     return {
       kind: "escrow",
       reason: "Exchange message has no signatures yet.",
@@ -412,11 +568,11 @@ export class Exchanger {
     };
   }
 
+  /** Retain incomplete endorsements and the original expiration clock for retry. */
   private escrowPartialSigned(
     serder: SerderKERI,
     tsgs: readonly TransIdxSigGroup[],
     ptds: readonly PathedMaterialGroup[],
-    essrs: readonly Texter[],
   ): void {
     const said = serder.said;
     if (!said) {
@@ -431,7 +587,8 @@ export class Exchanger {
     }
 
     this.hby.db.epse.pin([said], serder);
-    this.hby.db.epsd.pin(
+    // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
+    this.hby.db.epsd.put(
       [said],
       new Dater({
         qb64: encodeDateTimeToDater(makeNowIso8601()),
@@ -441,17 +598,14 @@ export class Exchanger {
       [said],
       ptds.map((group) => textDecoder.decode(group.raw)),
     );
-    for (const essr of essrs) {
-      this.hby.db.essrs.add([said], essr);
-    }
   }
 
+  /** Persist protocol evidence inside the admission transaction before route handling. */
   private logAcceptedEvent(args: {
     serder: SerderKERI;
     tsgs: readonly TransIdxSigGroup[];
     cigars: readonly Cigar[];
     ptds: readonly PathedMaterialGroup[];
-    essrs: readonly Texter[];
   }): void {
     const said = args.serder.said;
     if (!said) {
@@ -476,9 +630,6 @@ export class Exchanger {
       [said],
       args.ptds.map((group) => textDecoder.decode(group.raw)),
     );
-    for (const essr of args.essrs) {
-      this.hby.db.essrs.add([said], essr);
-    }
 
     const prior = args.serder.ked?.p;
     if (typeof prior === "string" && prior.length > 0) {
@@ -529,13 +680,32 @@ export class Exchanger {
     return groups;
   }
 
-  private removeEscrow(said: string): void {
+  /** Clear pending metadata, preserving wire evidence during the acceptance transaction. */
+  private clearEscrow(said: string, keepEvidence = false): void {
     this.hby.db.epse.rem([said]);
     this.hby.db.epsd.rem([said]);
     this.hby.db.esigs.trim([said, ""], { topive: false });
     this.hby.db.ecigs.rem([said]);
     this.hby.db.epath.rem([said]);
-    this.hby.db.essrs.rem([said]);
+    if (!keepEvidence) {
+      this.hby.db.essrs.rem([said]);
+      this.hby.db.exchangeMeta.rem([said]);
+    }
+  }
+
+  /** Remove pending ownership only; accepted wire evidence always remains retained. */
+  private *dropEscrow(said: string): Operation<void> {
+    yield* this.admission();
+    if (this.complete(said)) {
+      this.hby.db.epse.rem([said]);
+      this.hby.db.epsd.rem([said]);
+      return;
+    }
+    if (this.hby.db.exchangeMeta.get([said])?.essr) {
+      yield* abortable(async (signal) => {
+        await (await this.hby.db.openPayloads(signal)).remove(`essr/${said}`, () => this.clearEscrow(said), signal);
+      });
+    } else this.clearEscrow(said);
   }
 }
 
@@ -729,9 +899,4 @@ function aggregateTransIdxSigGroups(
     );
   }
   return [...aggregated.values()];
-}
-
-/** Preserve ESSR fragment order for digest verification without joining or copying. */
-function* essrBytes(essrs: readonly Texter[]): Generator<Uint8Array> {
-  for (const texter of essrs) yield texter.raw;
 }
