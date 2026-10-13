@@ -62,7 +62,7 @@ use the same code. Annotation separators do not close frames.
 | `flush()`                 | Drain all complete frames regardless of `framed`; finalize an open frame only if no incomplete attachment remains.       |
 | Terminal shortage         | Emit one `ShortageError`, discard the incomplete pending frame and remaining bytes, preserve earlier complete emissions. |
 | Other parse error         | Emit one error and reset parser state.                                                                                   |
-| `reset()`                 | Clear buffer, pending frame and queued frames; clear genus selection and reset offset.                                       |
+| `reset()`                 | Clear buffer, pending frame and queued frames; clear genus selection and reset offset.                                   |
 
 Repeated `flush()` calls are idempotent. A closed enclosure cannot absorb
 attachments outside its declared boundary. Complete bounded payloads containing
